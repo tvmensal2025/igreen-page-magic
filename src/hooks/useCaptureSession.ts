@@ -57,6 +57,7 @@ export interface CaptureCustomer {
   name_mismatch_acknowledged_at?: string | null;
   bill_owner_relationship?: string | null;
   phone_contact_confirmed?: boolean | null;
+  bot_paused?: boolean | null;
   created_at: string;
 }
 
