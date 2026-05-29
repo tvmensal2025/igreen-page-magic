@@ -368,6 +368,8 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                     isComplete={!!session.isComplete}
                     allStepsSent={sentSteps.size > 0}
                     pendingStepsCount={Math.max(0, 10 - sentSteps.size)}
+                    botPaused={!!session.customer?.bot_paused}
+                    captureMode={session.customer?.capture_mode}
                   />
 
                   {/* Composer fixo no rodapé: atalhos /, templates, fluxos, anexos, áudio, AI suggest */}
