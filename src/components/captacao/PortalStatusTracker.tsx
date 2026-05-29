@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, CheckCircle2, AlertTriangle, KeyRound, ScanFace, Send, Copy, RefreshCw } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, KeyRound, ScanFace, Send, Copy, RefreshCw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast as sonnerToast } from "sonner";
 
@@ -20,6 +20,12 @@ interface Row {
   finalized_at: string | null;
 }
 
+interface PortalTrace {
+  status: string | null;
+  error: string | null;
+  created_at: string;
+}
+
 const ACTIVE_STEPS = new Set([
   "portal_submitting", "aguardando_otp", "awaiting_otp",
   "validando_otp", "validating_otp",
@@ -28,32 +34,72 @@ const ACTIVE_STEPS = new Set([
   "worker_offline", "automation_failed",
 ]);
 
+// Tradução amigável para erros conhecidos do portal iGreen
+function friendlyPortalError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes("duplicatephone") || (m.includes("celular") && m.includes("já existe"))) {
+    return "❌ Portal rejeitou: este celular já está cadastrado no iGreen. Cancele o cadastro anterior no portal ou troque o telefone do lead e reenvie.";
+  }
+  if (m.includes("duplicatedocument") || m.includes("cpf") && m.includes("já existe")) {
+    return "❌ Portal rejeitou: este CPF já está cadastrado no iGreen.";
+  }
+  if (m.includes("duplicateemail") || (m.includes("email") && m.includes("já existe"))) {
+    return "❌ Portal rejeitou: este e-mail já está cadastrado no iGreen.";
+  }
+  if (m.includes("nenhuma cobertura ativa")) {
+    return "❌ Portal rejeitou: não há cobertura ativa para essa concessionária/UF.";
+  }
+  return raw;
+}
+
 export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props) {
   const [row, setRow] = useState<Row | null>(null);
+  const [trace, setTrace] = useState<PortalTrace | null>(null);
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (!customerId) return;
     let cancelled = false;
-    void (async () => {
-      const { data } = await supabase
-        .from("customers")
-        .select("status, conversation_step, otp_code, link_assinatura, igreen_code, error_message, finalized_at")
-        .eq("id", customerId).maybeSingle();
-      if (!cancelled) setRow((data as Row) || null);
-    })();
+    const reload = async () => {
+      const [{ data: cust }, { data: traces }] = await Promise.all([
+        supabase
+          .from("customers")
+          .select("status, conversation_step, otp_code, link_assinatura, igreen_code, error_message, finalized_at")
+          .eq("id", customerId).maybeSingle(),
+        supabase
+          .from("portal2_audit_traces")
+          .select("status, error, created_at")
+          .eq("customer_id", customerId)
+          .order("created_at", { ascending: false })
+          .limit(1),
+      ]);
+      if (cancelled) return;
+      setRow((cust as Row) || null);
+      setTrace(((traces as PortalTrace[])?.[0]) || null);
+    };
+    void reload();
     const ch = supabase
       .channel(`portal-${customerId}-${Math.random().toString(36).slice(2, 8)}`)
       .on("postgres_changes",
         { event: "UPDATE", schema: "public", table: "customers", filter: `id=eq.${customerId}` },
         (payload) => setRow((prev) => ({ ...(prev || {} as Row), ...(payload.new as any) })),
       )
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "portal2_audit_traces", filter: `customer_id=eq.${customerId}` },
+        (payload) => setTrace(payload.new as PortalTrace),
+      )
       .subscribe();
     return () => { cancelled = true; void supabase.removeChannel(ch); };
   }, [customerId]);
 
   const step = String(row?.conversation_step || row?.status || "").toLowerCase();
-  const visible = !!row?.finalized_at || ACTIVE_STEPS.has(step);
+  const hasPortalError =
+    (trace?.status === "failed" && !!trace?.error) ||
+    step === "worker_offline" ||
+    step === "automation_failed" ||
+    (!!row?.error_message && step !== "cadastro_concluido" && step !== "registered_igreen");
+
+  const visible = !!row?.finalized_at || ACTIVE_STEPS.has(step) || hasPortalError;
   if (!visible) return null;
 
   const isOffline = step === "worker_offline" || step === "automation_failed";
@@ -62,10 +108,14 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   const isSign = step === "aguardando_assinatura" || step === "awaiting_signature";
   const isValidating = step === "validando_otp" || step === "validating_otp";
 
+  // Banner de erro do portal tem prioridade máxima (cobre duplicate phone/cpf, etc.)
+  const showError = hasPortalError && !isDone;
+
   let icon = <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />;
   let title = "Abrindo portal no navegador da VPS…";
   let tone = "border-yellow-500/40 bg-yellow-500/10 text-yellow-100";
-  if (isOtp) { icon = <KeyRound className="w-4 h-4 text-orange-300" />; title = "Código enviado ao WhatsApp do cliente — aguardando digitar"; tone = "border-orange-500/40 bg-orange-500/10 text-orange-100"; }
+  if (showError) { icon = <XCircle className="w-4 h-4 text-red-300" />; title = "Cadastro recusado pelo portal iGreen"; tone = "border-red-500/50 bg-red-500/15 text-red-100"; }
+  else if (isOtp) { icon = <KeyRound className="w-4 h-4 text-orange-300" />; title = "Código enviado ao WhatsApp do cliente — aguardando digitar"; tone = "border-orange-500/40 bg-orange-500/10 text-orange-100"; }
   else if (isValidating) { icon = <Loader2 className="w-4 h-4 animate-spin text-blue-300" />; title = "Validando código no portal…"; tone = "border-blue-500/40 bg-blue-500/10 text-blue-100"; }
   else if (isSign) { icon = <ScanFace className="w-4 h-4 text-purple-300" />; title = "Link de selfie enviado ao cliente"; tone = "border-purple-500/40 bg-purple-500/10 text-purple-100"; }
   else if (isDone) { icon = <CheckCircle2 className="w-4 h-4 text-emerald-300" />; title = "Cadastro concluído ✅"; tone = "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"; }
@@ -88,14 +138,18 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
     try { await navigator.clipboard.writeText(txt); sonnerToast.success(`${label} copiado`); } catch {}
   };
 
+  // Texto detalhado do erro: prefere trace.error, fallback para row.error_message
+  const rawError = (trace?.status === "failed" ? trace?.error : null) || row?.error_message || "";
+  const errorText = rawError ? friendlyPortalError(rawError) : "";
+
   return (
     <div className={`mx-3 mt-2 rounded-md border px-3 py-2 text-[11px] ${tone}`}>
       <div className="flex items-center gap-2">
         {icon}
         <span className="font-bold flex-1 truncate">{title}</span>
-        {isOffline && (
+        {(isOffline || showError) && (
           <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={retrying} onClick={retry}>
-            {retrying ? <Loader2 className="w-3 h-3 animate-spin" /> : <><RefreshCw className="w-3 h-3 mr-1" />Tentar novamente</>}
+            {retrying ? <Loader2 className="w-3 h-3 animate-spin" /> : <><RefreshCw className="w-3 h-3 mr-1" />Reenviar ao portal</>}
           </Button>
         )}
       </div>
@@ -116,7 +170,10 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
       {isDone && row?.igreen_code && (
         <div className="mt-1.5">Código iGreen: <code className="font-mono font-bold">{row.igreen_code}</code></div>
       )}
-      {isOffline && row?.error_message && (
+      {showError && errorText && (
+        <p className="mt-1.5 leading-snug whitespace-pre-wrap">{errorText}</p>
+      )}
+      {!showError && isOffline && row?.error_message && (
         <p className="mt-1 opacity-80">{row.error_message}</p>
       )}
     </div>
