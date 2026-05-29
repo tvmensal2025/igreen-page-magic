@@ -154,14 +154,21 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         !docConfirmed ? "Confirmar dados do documento" : "",
       ].filter(Boolean).join(" · ");
 
-  const handleSubmit = async () => {
+  const runFinalize = async (sendNotice: boolean) => {
     if (!customer || !canSubmit) return;
     setSubmitting(true);
     try {
-      // Mantém capture_mode='manual' — captação fica sempre ligada por padrão para todos os leads.
-      await supabase.from("customers").update({
-        conversation_step: "finalizando",
-      }).eq("id", customer.id);
+      const { data, error } = await supabase.functions.invoke("finalize-capture", {
+        body: { customerId: customer.id, consultantId, sendNotice },
+      });
+      if (error) throw new Error(error.message || "Falha ao enviar ao portal");
+      const res = (data as any) || {};
+      if (res.error && res.mode !== "queued_offline") {
+        const msg = res.error === "incomplete"
+          ? `Faltam dados: ${(res.missing || []).join(", ")}`
+          : String(res.error);
+        throw new Error(msg);
+      }
 
       // 🏆 Cadastro completo — 5 efeitos combinados:
       //   1. Confetti aleatório (já existia)
@@ -177,7 +184,13 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
       xpFloater.show(100 + c.bonusXp, c.level >= 2 ? `COMBO x${c.level}` : undefined);
       await bump();
 
-      toast({ title: "🎉 Cadastro enviado!", description: "Portal Worker concluindo…", duration: 3500 });
+      if (res.already) {
+        toast({ title: "Lead já está em processamento no portal.", duration: 3000 });
+      } else if (res.mode === "queued_offline") {
+        toast({ title: "Portal com falha", description: "O erro vai aparecer no painel para reenviar.", variant: "destructive", duration: 5000 });
+      } else {
+        toast({ title: "🎉 Cadastro enviado!", description: "Portal Worker concluindo…", duration: 3500 });
+      }
       onOpenChange(false);
     } catch (e: any) {
       haptics.error();
@@ -185,6 +198,15 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = () => {
+    if (!customer || !canSubmit || submitting) return;
+    if ((customer.capture_mode || "manual") === "manual" && !!customer.bot_paused) {
+      setAskNotice(true);
+      return;
+    }
+    void runFinalize(true);
   };
 
   const disableCapture = async () => {
