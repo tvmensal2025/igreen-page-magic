@@ -3,10 +3,21 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CaptureStepsList } from "./CaptureStepsList";
 import { CaptureLeadCard } from "./CaptureLeadCard";
 import { CaptureProgressBar } from "./CaptureProgressBar";
 import { SendSequenceDialog, type SequenceStep } from "./SendSequenceDialog";
+import { PortalStatusTracker } from "./PortalStatusTracker";
 import { useCaptureSession, CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { useCaptureScoreboard } from "@/hooks/useCaptureScoreboard";
 import { useCaptureCombo } from "@/hooks/useCaptureCombo";
@@ -60,6 +71,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const [expanded, setExpanded] = useState(false);
   const [allSteps, setAllSteps] = useState<SequenceStep[]>([]);
   const [seqOpen, setSeqOpen] = useState(false);
+  const [askNotice, setAskNotice] = useState(false);
   const lastCountRef = useRef(0);
 
   // No mobile o painel abre minimizado (pílula no rodapé) pra não tampar o teclado/composer.
