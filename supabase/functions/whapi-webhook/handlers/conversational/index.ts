@@ -14,7 +14,7 @@ import { getStepMediaOrder, makeKindComparator } from "../../../_shared/step-med
 import { isMockMode, shouldBypassQuietHours } from "../../../_shared/test-mode.ts";
 import { isFlowInstantMode } from "../../../_shared/flow-pace.ts";
 // rules-engine removido em Sprint 2.5 (bot_flow_rules = 0 linhas, código morto)
-import { answerFaqWithAI } from "../../../_shared/ai-faq-answerer.ts";
+// answerFaqWithAI removido — agora usa runOrchestrator diretamente (linha ~1483).
 import { ensureAudioTranscript } from "../../../_shared/audio-transcript.ts";
 import { isQuietHourBRT, logQuietSkip } from "../../../_shared/quiet-hours.ts";
 import { isStrictScriptMode } from "../../../_shared/ai-decisions.ts";
@@ -1473,25 +1473,80 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // Nota: action="repeat" (confiança média) é tratado implicitamente — se
   // nenhuma transição casar, o fluxo default já é repetir o passo atual.
 
-  // ─── AI FAQ Answerer (Lovable AI) ──────────────────────────────────
+  // ─── AI Orchestrator (GPT-5.5 + memória persistente + RAG) ─────────
   // Quando o lead faz pergunta (tem_duvida) que NÃO casou em bot_flow_qa
-  // E não é uma captura legítima, tenta responder via Lovable AI usando
-  // ai_knowledge_sections como base. Mantém o passo atual (não avança
-  // o funil). Se confidence < 0.6 OU shouldHandoff → pula e deixa o
-  // fluxo default seguir (que vai disparar regras/handoff conforme cfg).
+  // E não é uma captura legítima, chama o orquestrador completo
+  // (triagem → GPT-5.5 → Gemini 3.1 Pro RAG) com persona do consultor
+  // e conversation_summary injetados. Sempre responde quando há reply
+  // (mesmo com shouldHandoff) — silenciar a pergunta fazia o lead voltar
+  // para "me manda a conta" sem resposta, frustrando a conversa.
   if (cls.intent === "tem_duvida" && !hasCapture) {
     try {
-      const ai = await answerFaqWithAI({
+      // Histórico recente para contexto do orquestrador
+      const { data: hist } = await ctx.supabase
+        .from("conversations")
+        .select("message_direction, message_text, created_at")
+        .eq("customer_id", ctx.customer.id)
+        .order("created_at", { ascending: false })
+        .limit(8);
+      const recentHistory = ((hist as any[]) || [])
+        .slice()
+        .reverse()
+        .map((r) => `${r.message_direction === "inbound" ? "Lead" : "Bot"}: ${String(r.message_text || "").slice(0, 240)}`)
+        .join("\n");
+
+      const { runOrchestrator } = await import("../../../_shared/ai-orchestrator.ts");
+      const orch = await runOrchestrator({
         supabase: ctx.supabase,
-        question: ctx.messageText || "",
-        leadName: ctx.customer.name,
-        currentStepLabel: currentStep.step_key,
+        customer: ctx.customer,
         consultantId: ctx.customer.consultant_id,
+        message: ctx.messageText || "",
+        step: stepKey,
+        history: recentHistory,
+        isButton: !!ctx.buttonId,
+        hasMedia: false,
       });
-      if (ai.source === "ai" && ai.text && ai.confidence >= 0.6 && !ai.shouldHandoff) {
-        console.log(`[ai-faq] hit step="${stepKey}" conf=${ai.confidence.toFixed(2)}`);
+
+      // Memória persistente: atualiza conversation_summary em background (~6 turnos)
+      try {
+        const { count: inboundCount } = await ctx.supabase
+          .from("conversations")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_id", ctx.customer.id)
+          .eq("message_direction", "inbound");
+        const { maybeUpdateSummary } = await import("../../../_shared/ai-summary.ts");
+        void maybeUpdateSummary({
+          supabase: ctx.supabase,
+          customerId: ctx.customer.id,
+          consultantId: ctx.customer.consultant_id,
+          history: recentHistory,
+          customer: ctx.customer,
+          inboundTurnCount: inboundCount || 0,
+          previousSummary: (ctx.customer as any).conversation_summary || null,
+        });
+      } catch (_) { /* best-effort */ }
+
+      const answerText = (orch.reply || "").trim();
+      if (answerText && orch.confidence >= 0.55) {
+        console.log(`[conversational-orch] hit step="${stepKey}" route=${orch.route} conf=${orch.confidence.toFixed(2)} handoff=${orch.shouldHandoff} chain=${orch.modelChain.join("→")}`);
+
+        // Se handoff sugerido, pausa o bot APÓS responder a pergunta
+        const handoffUpdates = orch.shouldHandoff
+          ? {
+              bot_paused: true,
+              bot_paused_reason: "ai_handoff_duvidas",
+              bot_paused_at: new Date().toISOString(),
+            }
+          : {};
+
+        if (orch.shouldHandoff) {
+          try {
+            await notifyHandoff(ctx.supabase, ctx.customer, `Dúvida exigiu humano (passo ${stepKey})`).catch(() => {});
+          } catch (_) { /* best-effort */ }
+        }
+
         return _finalize(stepKey, {
-          reply: renderTemplate(ai.text, {
+          reply: renderTemplate(answerText, {
             nome: ctx.customer.name,
             representante: ctx.nomeRepresentante,
             valor_conta: (ctx.customer as any).electricity_bill_value,
@@ -1502,16 +1557,15 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             conversation_step: stepKey,
             __intent: cls.intent,
             __confidence: cls.confidence,
-            __ai_faq: true,
+            __ai_orch: true,
+            ...handoffUpdates,
             ...restoreDetourUpdates,
           },
         });
       }
-      if (ai.shouldHandoff) {
-        console.log(`[ai-faq] handoff sugerido step="${stepKey}" — deixando fluxo default tratar`);
-      }
+      console.log(`[conversational-orch] miss step="${stepKey}" route=${orch.route} conf=${orch.confidence.toFixed(2)} reply_len=${answerText.length} — fluxo default segue`);
     } catch (e) {
-      console.warn("[ai-faq] erro, ignorando:", (e as Error).message);
+      console.warn("[conversational-orch] erro, ignorando:", (e as Error).message);
     }
   }
 
