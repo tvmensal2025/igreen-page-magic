@@ -1,37 +1,65 @@
-# Cadastrar sempre aceso + escolha de envio ao cliente
+# Diagnóstico: cadastro não foi para o portal por **duplicidade de celular**
 
-## Problema
-No card do lead `11971254913`, o botão **Finalizar Cadastro** está desabilitado (bloqueado por campos faltantes / passos não enviados). Você quer:
+## O que aconteceu com `482c0262…` (PAULO/BRUNO, 5511971254913)
 
-1. O botão **sempre aceso** — mesmo com campos faltando — para você poder cadastrar manualmente quando quiser.
-2. Quando o **bot estiver desligado** naquele lead, ao clicar em Cadastrar deve aparecer um **pop-up perguntando se quer avisar o cliente no WhatsApp** (sim/não). Só envia a mensagem "Estamos enviando seu cadastro…" se você confirmar.
-3. Comportamento válido **apenas no modo manual** (captação).
+1. Você clicou Finalizar → `finalize-capture` rodou, marcou `finalized_at=20:56:44`, enfileirou no `worker-portal-2` (job 2 e job 7).
+2. Worker fez:
+  - `GET /customers/check-exists?document=***8885&email=…` → `exists:false` ✅
+  - `GET /bonus/distributors?uf=SP` → resolveu para `CPFL PIRATININGA` ✅
+  - `GET /bonus/rules` → tier A 8% ✅
+  - `POST /customers` → **HTTP 400** `error.customer.duplicatePhone` (campo `celular`) ❌
+3. Worker marcou o job como `failed` (visto em `portal2_audit_traces`).
+4. Bot recebeu nova msg do cliente no WhatsApp → step voltou para `aguard_conta` → no card o lead parece "perdido".
 
-Hoje o `finalize-capture` sempre dispara o aviso ao cliente, sem perguntar.
+A API do iGreen valida duplicidade de **celular** no POST final, mas o `check-exists` só olha CPF/e-mail — por isso o frontend mostra "enviado" e a falha real aparece só nos traces.
 
-## Mudanças
+## Como resolver agora (operacional, sem código)
 
-### 1. `src/components/captacao/FinalizeButton.tsx`
-- Remover `disabled={!canFinalize}`. Botão sempre clicável.
-- Manter o aviso de "Falta: …" apenas como alerta visual (não bloqueia).
-- Novas props: `botPaused: boolean`, `captureMode: "manual" | "auto" | string`.
-- Ao clicar:
-  - Se `captureMode === "manual"` **e** `botPaused === true` → abrir um `AlertDialog` (shadcn) com:
-    - Título: "Avisar o cliente no WhatsApp?"
-    - Texto: "O bot está desligado para este lead. Deseja enviar a mensagem 'Estamos enviando seu cadastro ao portal' agora?"
-    - Botões: **Enviar mensagem e cadastrar** / **Cadastrar sem avisar** / Cancelar.
-  - Caso contrário → segue direto (envia aviso, comportamento atual).
-- Chama `supabase.functions.invoke("finalize-capture", { body: { customerId, consultantId, sendNotice } })` passando o booleano escolhido.
+- **Confirmar no portal iGreen** quem está usando o celular `(11) 97125-4913`. Provavelmente é uma tentativa antiga do **Bruno Manoel** que não foi excluída.
+- Duas saídas:
+  1. **Cancelar** o cadastro antigo no portal e reenviar (botão Finalizar novamente).
+  2. Cadastrar o titular **PAULO** com **outro celular** (o do próprio titular). Editar `phone_whatsapp` no card e finalizar.
 
-### 2. `src/components/captacao/CaptacaoPanel.tsx`
-- Ler `bot_paused` e `capture_mode` do customer já carregado (ou via `session`) e passar como props para os dois `<FinalizeButton>`.
+## Mudanças no código (proposta — me confirme antes de implementar)
 
-### 3. `supabase/functions/finalize-capture/index.ts`
-- Aceitar `sendNotice` no body (default `true` para manter compatibilidade).
-- Só chamar `sendWhatsAppNotice(...)` se `sendNotice !== false`.
-- Resto da lógica (validação, regenerar igreen_link, dispatch worker) **não muda** — o cadastro continua acontecendo independente da escolha.
+### 1. `worker-portal-2` → repercutir falha no `customers`
+
+Hoje o worker só grava em `portal2_audit_traces`. Adicionar (após o catch do `POST /customers`):
+
+- Se `status=400` e `code=error.customer.duplicatePhone` (ou similar):
+  - `UPDATE customers SET status='portal_rejected_duplicate', error_message='Celular já cadastrado no portal iGreen — verifique cadastro existente ou troque o número' WHERE id=…`
+- Para outros 4xx/5xx finais: `status='portal_failed'`, `error_message=<msg>`.
+
+### 2. `finalize-capture` → não derrubar status pelo bot depois
+
+Quando `status` for um dos terminais de falha (`portal_rejected_duplicate`, `portal_failed`, `worker_offline`), o `whapi-webhook` **não** deve sobrescrever `conversation_step` automaticamente. Adicionar guard em `bot-flow.ts` / `conversational/index.ts`:
+
+```
+const PORTAL_FAILED = new Set(["portal_rejected_duplicate","portal_failed","worker_offline"]);
+if (PORTAL_FAILED.has(customer.status)) return; // não mexe no step
+```
+
+### 3. UI — banner no card de captação
+
+No `CaptureLeadCard` / `PortalStatusTracker`, quando `customer.status === 'portal_rejected_duplicate'`:
+
+- Banner vermelho fixo: "❌ Portal rejeitou: celular já cadastrado. Cancele o cadastro anterior no iGreen ou edite o telefone e reenvie."
+- Botão **Reenviar ao portal** (chama `finalize-capture` de novo) habilitado.
+
+### 4. (opcional) `finalize-capture` → checar duplicidade **antes** de enfileirar
+
+Adicionar uma chamada `GET /customers/check-exists?celular=…` se o portal expor; senão, manter só o tratamento pós-falha (item 1).
 
 ## Fora de escopo
-- Não muda a validação de 10 campos no servidor: se faltar dado obrigatório, o `finalize-capture` ainda retorna `incomplete` e mostra toast. O botão fica aceso, mas o servidor protege a integridade. Se você quiser permitir cadastro **incompleto**, é outra mudança (mais arriscada) — me avise.
-- Não mexe no `bot-flow`, no orquestrador de IA, nem no worker-portal-2.
-- Não muda o comportamento quando o bot está ativo (continua avisando o cliente automaticamente).
+
+- Mexer no validador de duplicidade do backend iGreen (externo).
+- OCR / extração de titularidade (separado).
+- worker-portal-2 também aparece com SIGTERM nos seus logs locais — isso é outro problema (container reiniciando), me avise se quiser tratar junto.
+
+## Próximo passo imediato
+
+Você quer que eu:
+
+- (A) implemente só **#3** (banner no UI mostrando o erro real) — mais rápido e seguro;
+- INDEPEDENTE DO ERRO VAI MOSTRARNO BANNER
+- &nbsp;
