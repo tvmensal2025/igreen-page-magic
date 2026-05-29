@@ -4346,6 +4346,86 @@ export type Database = {
         }
         Relationships: []
       }
+      portal2_audit_traces: {
+        Row: {
+          ai_cost_usd: number | null
+          ai_findings: Json | null
+          ai_model: string | null
+          ai_summary: string | null
+          ai_tokens_in: number | null
+          ai_tokens_out: number | null
+          created_at: string
+          customer_id: string | null
+          duration_ms: number | null
+          error: string | null
+          id: string
+          idconsultor: number | null
+          input_summary: Json | null
+          is_official_reference: boolean
+          job_id: string | null
+          official_label: string | null
+          official_marked_at: string | null
+          official_notes: string | null
+          result: Json | null
+          status: string
+          trace: Json
+        }
+        Insert: {
+          ai_cost_usd?: number | null
+          ai_findings?: Json | null
+          ai_model?: string | null
+          ai_summary?: string | null
+          ai_tokens_in?: number | null
+          ai_tokens_out?: number | null
+          created_at?: string
+          customer_id?: string | null
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          idconsultor?: number | null
+          input_summary?: Json | null
+          is_official_reference?: boolean
+          job_id?: string | null
+          official_label?: string | null
+          official_marked_at?: string | null
+          official_notes?: string | null
+          result?: Json | null
+          status: string
+          trace?: Json
+        }
+        Update: {
+          ai_cost_usd?: number | null
+          ai_findings?: Json | null
+          ai_model?: string | null
+          ai_summary?: string | null
+          ai_tokens_in?: number | null
+          ai_tokens_out?: number | null
+          created_at?: string
+          customer_id?: string | null
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          idconsultor?: number | null
+          input_summary?: Json | null
+          is_official_reference?: boolean
+          job_id?: string | null
+          official_label?: string | null
+          official_marked_at?: string | null
+          official_notes?: string | null
+          result?: Json | null
+          status?: string
+          trace?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal2_audit_traces_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       production_health_snapshot: {
         Row: {
           active_variants: string[] | null
