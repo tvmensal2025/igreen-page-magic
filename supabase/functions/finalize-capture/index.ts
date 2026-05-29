@@ -172,8 +172,8 @@ Deno.serve(async (req) => {
       return jres({ error: "Falha ao marcar lead", detail: upErr.message }, 500);
     }
 
-    // Avisa o cliente no WhatsApp (não bloqueia)
-    await sendWhatsAppNotice(supabase, customer);
+    // Avisa o cliente no WhatsApp (não bloqueia) — só se o consultor pediu
+    if (sendNotice) await sendWhatsAppNotice(supabase, customer);
 
     // Dispara o worker
     const dispatch = await dispatchPortalWorker(supabase, customerId);
