@@ -191,7 +191,6 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
       } else {
         toast({ title: "🎉 Cadastro enviado!", description: "Portal Worker concluindo…", duration: 3500 });
       }
-      onOpenChange(false);
     } catch (e: any) {
       haptics.error();
       toast({ title: "Erro", description: e?.message || String(e), variant: "destructive" });
