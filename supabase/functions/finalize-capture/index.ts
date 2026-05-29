@@ -93,6 +93,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const customerId = String(body?.customerId || body?.customer_id || "").trim();
+    const sendNotice = body?.sendNotice !== false; // default true
     if (!customerId) return jres({ error: "customerId obrigatório" }, 400);
 
     // Identifica quem apertou (best-effort)
