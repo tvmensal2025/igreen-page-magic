@@ -395,6 +395,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         </Tabs>
 
         <footer className="border-t border-border/60 bg-card/80 backdrop-blur sticky bottom-0 z-20 p-2 space-y-1.5">
+          <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
           {customer?.conversation_step && ["finalizando", "portal_submitting", "aguardando_otp", "validando_otp"].includes(customer.conversation_step) && (
             <p className="text-[10px] text-center text-primary font-semibold animate-pulse">
               🚀 Portal: {customer.conversation_step.replace("_", " ")}…
@@ -438,6 +439,12 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           variant={(((customer as any)?.flow_variant || "A").toUpperCase()) as "A" | "B" | "C" | "D" | "E"}
           onStepSent={(key) => setSentSteps((s) => new Set(s).add(key))}
           onAskName={handleAskName}
+        />
+        <FinalizeNoticeDialog
+          open={askNotice}
+          onOpenChange={setAskNotice}
+          onWithoutNotice={() => void runFinalize(false)}
+          onWithNotice={() => void runFinalize(true)}
         />
       </aside>
     );
@@ -610,6 +617,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           className={`border-t border-border/60 bg-card/80 backdrop-blur sticky bottom-0 z-20 ${expanded ? "p-3 space-y-2" : "px-2 py-1"}`}
           style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom, 0px))" }}
         >
+          <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
           {customer?.conversation_step && ["finalizando", "portal_submitting", "aguardando_otp", "validando_otp"].includes(customer.conversation_step) && (
             <p className="text-[10px] text-center text-primary font-semibold animate-pulse">
               🚀 Portal: {customer.conversation_step.replace("_", " ")}…
@@ -658,7 +666,58 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         onStepSent={(key) => setSentSteps((s) => new Set(s).add(key))}
         onAskName={handleAskName}
       />
+      <FinalizeNoticeDialog
+        open={askNotice}
+        onOpenChange={setAskNotice}
+        onWithoutNotice={() => void runFinalize(false)}
+        onWithNotice={() => void runFinalize(true)}
+      />
     </Sheet>
+  );
+}
+
+function FinalizeNoticeDialog({
+  open,
+  onOpenChange,
+  onWithoutNotice,
+  onWithNotice,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onWithoutNotice: () => void;
+  onWithNotice: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Avisar o cliente no WhatsApp?</AlertDialogTitle>
+          <AlertDialogDescription>
+            O bot está desligado para este lead. Você pode cadastrar no portal sem enviar nada ao cliente, ou enviar a mensagem agora.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              onOpenChange(false);
+              onWithoutNotice();
+            }}
+            className="bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          >
+            Cadastrar sem avisar
+          </AlertDialogAction>
+          <AlertDialogAction
+            onClick={() => {
+              onOpenChange(false);
+              onWithNotice();
+            }}
+          >
+            Enviar mensagem e cadastrar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
