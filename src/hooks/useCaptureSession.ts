@@ -57,6 +57,7 @@ export interface CaptureCustomer {
   name_mismatch_acknowledged_at?: string | null;
   bill_owner_relationship?: string | null;
   phone_contact_confirmed?: boolean | null;
+  bot_paused?: boolean | null;
   created_at: string;
 }
 
@@ -78,7 +79,7 @@ export function useCaptureSession(customerId: string | null) {
     setLoading(true);
     const { data } = await supabase
       .from("customers")
-      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, created_at")
+      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, created_at")
       .eq("id", customerId)
       .maybeSingle();
     setCustomer((data as CaptureCustomer) || null);
