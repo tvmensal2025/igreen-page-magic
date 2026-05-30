@@ -48,23 +48,24 @@ async function signOutSilently() {
 }
 
 async function getAccessToken(forceRefresh = false): Promise<string> {
-  const sessionResult = forceRefresh
-    ? await supabase.auth.refreshSession()
-    : await supabase.auth.getSession();
-
-  const token = sessionResult.data.session?.access_token;
-  if (token) return token;
-
   if (!forceRefresh) {
-    const refreshResult = await supabase.auth.refreshSession();
-    const refreshedToken = refreshResult.data.session?.access_token;
-    if (refreshedToken) return refreshedToken;
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) return token;
   }
 
+  // Sem sessão local (ou refresh forçado): tenta refresh uma vez.
+  const refreshResult = await supabase.auth.refreshSession();
+  const refreshedToken = refreshResult.data.session?.access_token;
+  if (refreshedToken) return refreshedToken;
+
+  // Sem token e sem refresh possível — não dispare chamada à edge function;
+  // ela retornaria 401 e poluiria os logs/runtime-error tracker.
   throw new EvolutionAuthError("Sessão expirada. Faça login novamente.", {
     requiresRelogin: true,
   });
 }
+
 
 async function executeProxyRequest(
   token: string,
