@@ -5753,6 +5753,10 @@ export type Database = {
         Returns: string
       }
       seed_flow_d: { Args: { _consultant_id: string }; Returns: Json }
+      seed_igreen_faq_pack: {
+        Args: { _flow_id: string }
+        Returns: number
+      }
       seed_objection_shortcut: {
         Args: {
           _flow_id: string

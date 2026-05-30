@@ -54,6 +54,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
   const [filterCat, setFilterCat] = useState<ObjectionCategory | "all">("all");
   const [search, setSearch] = useState("");
   const [seeding, setSeeding] = useState(false);
+  const [seedingPack, setSeedingPack] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -165,6 +166,30 @@ export default function FaqSection({ flowId }: { flowId: string }) {
       await load();
     } finally {
       setSeeding(false);
+    }
+  };
+
+  const seedIgreenPack = async () => {
+    const ok = await confirm({
+      title: "Adicionar o pacote iGreen FAQ (15 atalhos)?",
+      description: "Adiciona as 15 respostas oficiais e revisadas da iGreen (golpe, taxa escondida, fidelidade, LGPD, etc). Atalhos com o mesmo nome são preservados — nada é sobrescrito.",
+      confirmText: "Adicionar pacote",
+      tone: "success",
+    });
+    if (!ok) return;
+    setSeedingPack(true);
+    try {
+      const { data, error } = await supabase.rpc("seed_igreen_faq_pack", { _flow_id: flowId });
+      if (error) {
+        console.error(error);
+        toast.error("Erro ao adicionar o pacote");
+        return;
+      }
+      const added = Number(data ?? 0);
+      toast.success(added > 0 ? `${added} atalho(s) do pacote iGreen adicionados` : "Todos os atalhos do pacote já existiam");
+      await load();
+    } finally {
+      setSeedingPack(false);
     }
   };
 
@@ -305,10 +330,16 @@ export default function FaqSection({ flowId }: { flowId: string }) {
             Tem áudio? Ela manda áudio. Não achou aqui? Tenta a Base da IA.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={seedDefaults} disabled={seeding}>
-          {seeding ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-          40 atalhos padrão
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="default" size="sm" onClick={seedIgreenPack} disabled={seedingPack}>
+            {seedingPack ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+            Pacote iGreen (15)
+          </Button>
+          <Button variant="outline" size="sm" onClick={seedDefaults} disabled={seeding}>
+            {seeding ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+            40 atalhos padrão
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}

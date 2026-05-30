@@ -26,6 +26,7 @@ import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
+import { pickFlowVariant } from "../_shared/pick-flow-variant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -463,6 +464,9 @@ Deno.serve(async (req) => {
 
     if (!customer) {
       const pushedName = cleanPushName(fromName);
+      // A/B test 50/50 por lead (com kill-switch em settings.flow_ab_mode).
+      // Só sorteia para lead NOVO — lead existente mantém sua variante.
+      const abVariant = await pickFlowVariant(supabase);
       const { data: newCustomer, error } = await supabase
         .from("customers")
         .insert({
@@ -470,6 +474,7 @@ Deno.serve(async (req) => {
           consultant_id: superAdminConsultantId,
           status: "pending",
           conversation_step: "welcome",
+          flow_variant: abVariant,
           ...(realMode ? { is_test_lead: true, is_sandbox: false, capture_mode: "auto" } : {}),
           ...(pushedName ? { name: pushedName, name_source: "whatsapp_profile" } : {}),
         })
