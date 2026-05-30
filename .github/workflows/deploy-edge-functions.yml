@@ -1,12 +1,10 @@
 name: Deploy Edge Functions
 
-# Deploy automático de Supabase Edge Functions ao dar push em main.
-# Detecta quais funções foram modificadas (por path) e deploya só essas
-# pra não estourar tempo do CI. Funções que dependem de _shared/* são
-# redeployadas quando _shared muda (porque o bundle inclui _shared).
+# Deploy manual de Supabase Edge Functions.
+# Push em main não inicia este workflow, evitando consumo automático de
+# minutos do GitHub Actions enquanto a conta está com bloqueio de billing.
 #
 # Triggers:
-#   - push em main que toca supabase/functions/**  → deploy automático
 #   - workflow_dispatch                            → deploy manual de função específica
 #
 # Requer secret: SUPABASE_ACCESS_TOKEN no repositório.
