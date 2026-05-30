@@ -57,7 +57,7 @@ export function CaptureSheet(props: Props) {
 }
 
 function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, customerName, phoneNumber, inline = false }: Props) {
-  const { customer, filledCount, totalFields, progress } = useCaptureSession(customerId);
+  const { customer, filledCount, totalFields, progress, validation } = useCaptureSession(customerId);
   const { bump } = useCaptureScoreboard(consultantId);
   const combo = useCaptureCombo();
   const xpFloater = useXpFloater();
