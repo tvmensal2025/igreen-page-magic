@@ -157,6 +157,7 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
       uf: c.address_state || "",
       numeroInstalacao: c.numero_instalacao || "",
       consumoMedio,
+      electricityBillValue: valorConta || undefined,
       // Concessionária = distribuidora local. Fornecedora é resolvida pelo
       // worker via /bonus/rules baseado em UF + concessionária + consumo.
       concessionaria: c.distribuidora || "",
