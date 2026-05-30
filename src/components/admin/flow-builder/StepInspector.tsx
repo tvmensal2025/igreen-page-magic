@@ -12,6 +12,7 @@ import { Plus, Trash2, ChevronDown, ChevronRight, ScanLine, Sparkles, Maximize2,
 import { cn } from "@/lib/utils";
 import StepMediaPanel from "@/components/admin/fluxo/StepMediaPanel";
 import StepSuggestions from "./StepSuggestions";
+import InlineAiButton from "./InlineAiButton";
 import {
   Step, Transition, Capture, BUTTON_PRESETS, STEP_TYPE_OPTIONS, getButtons, isOcrStep, isAiAnswerStep,
 } from "./flowTypes";
