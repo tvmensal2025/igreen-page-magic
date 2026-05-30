@@ -730,3 +730,5 @@ export default function StepInspector({
       </SheetContent>
     </Sheet>
   );
+}
+
