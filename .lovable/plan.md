@@ -1,34 +1,110 @@
-# Campo "Próximo passo" no Editor de Fluxo
 
-## Problema
-No drawer "Editar passo #N" → aba **Básico**, hoje não há um seletor explícito que mostre/configure o próximo passo da conversa. O usuário precisa abrir a aba **Regras** ou **Botões** para entender pra onde o bot vai. Quando o passo não tem botão nem regra, fica invisível que ele segue pelo `position` (sequência).
+# Recriação do Painel de Fluxos (`/admin/fluxos`)
 
-## Solução
-Adicionar um seletor **"Próximo passo (padrão)"** no fim da aba Básico, logo após "Passo ativo", para todos os passos do tipo `message`, `capture_*` e `finalizar_cadastro`. O seletor controla o `fallback` do passo (que já existe no schema — `Fallback.mode = "goto" | "repeat"`), e o runtime já respeita esse fallback como destino padrão quando nenhuma regra/botão casa.
+## Diagnóstico do que está ruim hoje
+- `FlowDiagram.tsx` tem **2.250 linhas** num único arquivo — virou monolito difícil de evoluir, nós não expandem inline, zoom/pan engasga.
+- `StepInspector.tsx` (705 linhas) mistura Básico/Mídias/Botões/Regras/Avançado num drawer estreito — regras e botões ficam escondidos em abas.
+- IA (`flow-step-suggest`) existe mas só aparece como botão isolado em `StepSuggestions.tsx`. Sem copiloto, sem inline, sem auto-fix.
+- Conexões entre passos não são editáveis arrastando — só via select no inspector.
 
-### Comportamento do seletor
+## Visão da nova UX
 
-Opções (Select):
-- **➡ Seguir a ordem da lista (#N+1)** — `fallback = { mode: "repeat" }` + nenhum override; runtime cai no próximo `position` (comportamento atual default, agora explícito visualmente). Mostra hint: *"Vai para #6 Sem título"*.
-- **Passo específico** — listagem de todos os passos ativos (`#3 Resultado`, `#5 Pedir documento…`), grava `fallback = { mode: "goto", goto_step_id: <id> }`.
-- **🔁 Repetir este passo** — `fallback = { mode: "repeat" }` explícito (já existe).
-- **👤 Encerrar / falar com humano** — grava transição default com `goto_special: "humano"`.
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│ Header: nome fluxo | toggle ativo | warnings | [✨ IA Copiloto] [+] │
+├──────────────┬──────────────────────────────────────┬───────────────┤
+│              │                                      │               │
+│  Mini-mapa   │         CANVAS React Flow            │  Inspector    │
+│  + Lista     │  (zoom/pan/auto-layout/expand)       │  do passo     │
+│  filtro      │                                      │  selecionado  │
+│  passos      │  • Nós expansíveis (colapsado vs    │               │
+│  (220px)     │    expandido com preview + botões)   │  Tabs claras: │
+│              │  • Arrastar handle → cria regra      │  Conteúdo     │
+│              │  • Edge clicável edita transição     │  Regras+IA    │
+│              │  • Atalho ✨ em cada nó              │  Mídia        │
+│              │                                      │  Avançado     │
+│              │                                      │  (480px)      │
+└──────────────┴──────────────────────────────────────┴───────────────┘
+                                                       Painel IA flutuante
+                                                       (drawer direita,
+                                                        sobrepõe inspector)
+```
 
-A escolha default exibida deve ser inferida do estado atual:
-1. Se há `fallback.mode === "goto"` → mostra esse passo.
-2. Se há transição com `trigger_intent === "default"` → mostra esse destino.
-3. Caso contrário → "Seguir a ordem da lista".
+## Escopo da reconstrução
 
-### Garantia de ordem
-O runtime (`whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`) já segue `position` quando não há goto explícito (linha ~1034: `find((s) => s.position > current.position)`). **Nenhuma alteração de engine é necessária** — só estamos expondo no UI o que já existe.
+### 1. Canvas (React Flow v12 já instalado)
+- **Quebrar `FlowDiagram.tsx`** em módulos por responsabilidade: `useFlowGraph` (estado nodes/edges), `useAutoLayout` (dagre/elk), `useNodeInteractions` (drag/connect/expand), `CanvasShell` (Provider + Controls + MiniMap + Background).
+- **Nó expansível**: dois modos — *colapsado* (título + tipo + badges) e *expandido* (preview da mensagem + botões + regras inline + ✨). Toggle por clique no header.
+- **Auto-layout** com `dagre`: botão "Organizar" no toolbar + ao adicionar passo. Vertical top-down por `position`.
+- **Conectar arrastando**: handle inferior do nó → handle superior de outro nó cria transition (`trigger_intent: "default"` ou pergunta intent).
+- **Editar edge**: clique na seta abre popover compacto (intent, condição, label) — já existe `TransitionPopover`, integrar melhor.
+- **Controls customizados**: zoom in/out, fit-view, organizar, exportar PNG, toggle mini-mapa.
+- **Performance**: virtualizar nós fora do viewport via React Flow nativo (`onlyRenderVisibleElements`).
 
-Validação adicional em `useFlowValidation.ts`: se o passo tem `fallback.goto_step_id` apontando para passo removido/inativo, vira warning (já coberto pelo padrão atual de "destino removido").
+### 2. Inspector lateral (reorganizado)
+Reduzir abas de 5 para **4 com hierarquia mais clara**:
+- **Conteúdo** — mensagem, tipo de passo, capture target, próximo passo (já adicionado).
+- **Regras + Botões** — unificado: botão presets no topo (✅/❌/📸/👤) cria botão + regra atômica; lista de regras abaixo com edição inline; cada regra tem ✨ "sugerir resposta da IA".
+- **Mídia** — reusa `StepMediaPanel`.
+- **Avançado** — fallback, delay, condições, captures custom, JSON raw.
 
-## Arquivos a editar
-- `src/components/admin/flow-builder/StepInspector.tsx` — adicionar bloco "Próximo passo" no `TabsContent value="basico"` após o card "Passo ativo" (linha ~240). Componente `<Select>` com as 4 opções acima, handler aplica `onPatch` em `fallback` + `transitions` conforme escolha.
-- `src/components/admin/flow-builder/StepCard.tsx` — opcional: adicionar badge "→ #6" no card quando o fallback é explícito, para reforçar a ordem visual.
+Drawer aumenta para **480px** (hoje aperta tudo num sheet padrão), com toggle "expandir tela cheia" para edição pesada.
 
-## Fora de escopo
-- Não mexer no engine de runtime.
-- Não alterar schema de banco (campo `fallback` já é jsonb e suporta `goto`).
-- Não tocar nos templates de fluxo.
+### 3. IA integrada (3 superfícies)
+- **Inline ✨ em campos** (Textarea de mensagem, título de botão, label de regra): popover com "reescrever / encurtar / mais formal / traduzir / gerar do zero". Edge function nova: `flow-ai-rewrite` chamando Lovable AI Gateway (`google/gemini-3-flash-preview`).
+- **✨ por nó no canvas**: usa `flow-step-suggest` existente (já retorna 3 próximos passos). Botão flutuante no canto do nó expandido.
+- **Copiloto lateral** (novo drawer à direita, toggle no header): chat com contexto do fluxo inteiro. Capaz de:
+  - "Onde tem regra quebrada?" → lista warnings com botão "corrigir".
+  - "Adiciona um passo de objeção depois do #5" → propõe diff (criar passo + regra) com preview antes de aplicar.
+  - "Resume o que esse fluxo faz" → walkthrough textual.
+  - Edge function nova: `flow-copilot` (streaming SSE, tool-calling pra `create_step`, `update_step`, `add_rule`, `fix_warning`).
+
+### 4. Não muda
+- Schema do banco (`bot_flow_steps`, `transitions`, `captures`, `fallback`).
+- Runtime (`whapi-webhook`, `evolution-webhook`) — segue lendo o mesmo JSON.
+- `WhatsAppPreview`, `FlowSimulator`, templates.
+- Legacy `/admin/fluxos-legado` continua disponível pra rollback.
+
+## Plano de execução (4 PRs sequenciais)
+
+### PR 1 — Canvas novo
+- Criar `src/components/admin/flow-builder/diagram-v2/` com `useFlowGraph.ts`, `useAutoLayout.ts`, `CanvasShell.tsx`, `ExpandableNode.tsx`, `EditableEdge.tsx`, `CanvasToolbar.tsx`.
+- Instalar `dagre` (`bun add dagre @types/dagre`).
+- Feature flag: toggle "Diagrama v2" no header do `FluxoBuilder` que troca `FlowDiagram` → `FlowDiagramV2`.
+- Manter `FlowDiagram.tsx` legado intacto.
+
+### PR 2 — Inspector reorganizado
+- Refatorar `StepInspector.tsx` em sub-componentes por aba (`tabs/ContentTab.tsx`, `tabs/RulesButtonsTab.tsx`, `tabs/MediaTab.tsx`, `tabs/AdvancedTab.tsx`).
+- Aumentar largura do Sheet para 480px com modo fullscreen.
+- Unificar regras+botões com presets no topo.
+
+### PR 3 — IA copiloto
+- Edge function `flow-ai-rewrite` (inline ✨).
+- Edge function `flow-copilot` (chat streaming + tool-calling).
+- Componente `<AiCopilotDrawer />` no `FluxoBuilder`.
+- Componente `<InlineAiButton />` reusável em todos os Textarea/Input do inspector.
+- Botão ✨ flutuante no `ExpandableNode` (canvas).
+
+### PR 4 — Polimento e remoção do legado
+- Validar com fluxos reais (Fluxo D, Fluxo Camila).
+- Promover Diagrama v2 como default; remover flag.
+- Arquivar `FlowDiagram.tsx` antigo.
+- Atualizar `mem/features/flow-editor-redesign.md`.
+
+## Detalhes técnicos
+
+**Stack adicionada:**
+- `dagre` (auto-layout grafo).
+- Nada de novo pesado — React Flow v12 já está no projeto.
+
+**Edge functions novas:**
+- `supabase/functions/flow-ai-rewrite/index.ts` — POST `{text, action: "rewrite"|"shorten"|"formal"|"generate", context?}` → texto reescrito.
+- `supabase/functions/flow-copilot/index.ts` — SSE streaming, recebe `{flowId, messages, userId}`, tem tools `propose_step`, `propose_rule_fix`, `explain_flow`. Aplicação de mudanças passa por confirmação visual no drawer (diff preview), nunca escreve direto.
+
+**Compatibilidade:** todas as escritas seguem o schema atual (`bot_flow_steps`, `transitions` jsonb, etc.). Nenhuma migração de banco necessária.
+
+**Fora de escopo:**
+- Mudar engine de runtime.
+- Mudar schema do banco.
+- Reescrever templates de fluxo.
+- Mexer no `FlowSimulator`.
