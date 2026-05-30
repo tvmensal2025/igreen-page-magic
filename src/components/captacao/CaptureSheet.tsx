@@ -158,10 +158,12 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
       if (error) throw new Error(error.message || "Falha ao enviar ao portal");
       const res = (data as any) || {};
       if (res.error && res.mode !== "queued_offline") {
-        const msg = res.error === "incomplete"
-          ? `Faltam dados: ${(res.missing || []).join(", ")}`
-          : String(res.error);
-        throw new Error(msg);
+        const parts: string[] = [];
+        if (res.error === "incomplete") {
+          if (res.missing?.length) parts.push(`Faltam: ${res.missing.join(", ")}`);
+          if (res.invalid?.length) parts.push(res.invalid.map((i: any) => `${i.label}: ${i.reason}`).join(" · "));
+        }
+        throw new Error(parts.join(" · ") || String(res.error));
       }
 
       // 🏆 Cadastro completo — 5 efeitos combinados:
