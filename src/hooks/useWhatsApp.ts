@@ -775,6 +775,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     operationalHealth,
     consecutiveTimeouts,
     isWhapi,
+    hasInstance,
     createAndConnect,
     disconnect,
     reconnect,
