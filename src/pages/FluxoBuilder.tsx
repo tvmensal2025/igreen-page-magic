@@ -126,6 +126,7 @@ export default function FluxoBuilder() {
   const [showConnections, setShowConnections] = useState(true);
   const [mediaCounts, setMediaCounts] = useState<Record<string, { audio: number; image: number; video: number }>>({});
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
 
