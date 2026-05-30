@@ -38,8 +38,8 @@ interface Props {
 export default function StepInspector({
   step, steps, consultantId, variant, flowId, maxPosition, onClose, onPatch, onReload,
 }: Props) {
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
