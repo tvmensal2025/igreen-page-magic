@@ -668,6 +668,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (isSuperAdmin) {
           setIsWhapi(true);
+          setHasInstance(true);
           setStatus("connected");
           setError(null);
           setIsLoading(false);
