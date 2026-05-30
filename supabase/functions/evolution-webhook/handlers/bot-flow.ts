@@ -35,6 +35,7 @@ import {
   resetLeadIdentity,
   detectQuestionIntent,
   shouldSkipAskStep,
+  hasBillData,
 } from "../../_shared/conversation-helpers.ts";
 import { matchQA } from "./conversational/index.ts";
 import { getTemplate } from "./conversational/templates.ts";
