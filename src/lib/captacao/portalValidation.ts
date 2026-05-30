@@ -143,7 +143,14 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
   const invalid: InvalidIssue[] = [];
 
   if (!c) {
-    return { ok: false, missing: [...PORTAL_FIELDS], invalid: [], filledCount: 0, totalFields: PORTAL_FIELDS.length };
+    return {
+      ok: false,
+      missing: [...PORTAL_FIELDS],
+      invalid: [],
+      filledCount: 0,
+      totalFields: PORTAL_FIELDS.length,
+      pendingItems: PORTAL_FIELDS.map((f) => ({ kind: "missing" as const, field: f.key, label: f.label })),
+    };
   }
 
   // 1) Presença — campos string
@@ -198,7 +205,32 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação parece curto demais" });
   }
 
-  // 3) Cruzamento crítico — R$/kWh tem que bater
+  // 3) Distribuidora — bloqueia holding genérica ("CPFL ENERGIA", "ENEL BRASIL"
+  //    etc) e nome fora da allow-list da UF. É a causa #1 de lead "voltar"
+  //    silencioso do Portal 2 (404 em /bonus/rules).
+  if (isStrFilled(c.distribuidora)) {
+    if (isHoldingName(c.distribuidora)) {
+      const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
+      invalid.push({
+        field: "distribuidora",
+        label: "Distribuidora",
+        reason: `"${c.distribuidora}" é o grupo holding, não a concessionária. Use a regional${opts ? `: ${opts}` : ""}.`,
+        suggestion: opts || undefined,
+      });
+    } else if (!isValidDistribuidora(c.distribuidora, c.address_state)) {
+      const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
+      if (opts) {
+        invalid.push({
+          field: "distribuidora",
+          label: "Distribuidora",
+          reason: `"${c.distribuidora}" não é uma concessionária válida em ${c.address_state}. Opções: ${opts}.`,
+          suggestion: opts,
+        });
+      }
+    }
+  }
+
+  // 4) Cruzamento crítico — R$/kWh tem que bater
   const valor = Number(c.electricity_bill_value || 0);
   const kwh = Number(c.media_consumo || 0);
   if (valor > 0 && kwh > 0) {
@@ -214,7 +246,7 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     }
   }
 
-  // 4) Mismatch de titularidade não confirmado bloqueia
+  // 5) Mismatch de titularidade não confirmado bloqueia
   if (c.name_mismatch_flag && !c.name_mismatch_acknowledged_at) {
     invalid.push({
       field: "name_mismatch",
@@ -224,19 +256,18 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
   }
 
   const filledCount = PORTAL_FIELDS.length - missing.length;
+  const pendingItems: PendingItem[] = [
+    ...missing.map((f) => ({ kind: "missing" as const, field: f.key, label: f.label })),
+    ...invalid.map((i) => ({ kind: "invalid" as const, field: String(i.field), label: i.label, reason: i.reason })),
+  ];
   return {
     ok: missing.length === 0 && invalid.length === 0,
     missing,
     invalid,
     filledCount,
     totalFields: PORTAL_FIELDS.length,
+    pendingItems,
   };
 }
-
-// Sugestão de consumo a partir do valor da conta (≈ R$1/kWh).
-// Usada pelo CaptureLeadCard pra "auto-preencher" quando OCR não trouxer.
-export function estimateConsumoFromValor(valor: number | null | undefined): number | null {
-  const v = Number(valor || 0);
-  if (v <= 0) return null;
   return Math.max(50, Math.min(3000, Math.round(v / 1.0)));
 }
