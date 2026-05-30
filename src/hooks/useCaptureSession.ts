@@ -1,21 +1,20 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { PORTAL_FIELDS, validateForPortal, type ValidationResult } from "@/lib/captacao/portalValidation";
 
-/** 10 campos que contam pra barra XP */
-export const CAPTURE_FIELDS = [
-  { key: "name", label: "Nome completo" },
-  { key: "cpf", label: "CPF" },
-  { key: "rg", label: "RG" },
-  { key: "data_nascimento", label: "Nascimento" },
-  { key: "phone_landline", label: "Telefone" },
-  { key: "email", label: "E-mail" },
-  { key: "cep", label: "CEP" },
-  { key: "address_number", label: "Número" },
-  { key: "electricity_bill_value", label: "Valor da conta" },
-  { key: "document_front_url", label: "Documento" },
-] as const;
+/**
+ * Lista canônica usada pela ficha + barra de progresso.
+ * É a MESMA lista que o portal iGreen exige no POST /customers — não tem
+ * mais "RG" nem "Telefone fixo" inventados que sempre ficavam vermelhos.
+ * Inclui media_consumo e numero_instalacao, que antes ficavam ocultos e
+ * causavam falha silenciosa no worker (404 em /bonus/rules).
+ */
+export const CAPTURE_FIELDS = PORTAL_FIELDS
+  // Documentos (uploads) ficam num módulo separado (CaptureDocumentTiles)
+  .filter((f) => f.group !== "docs")
+  .map((f) => ({ key: f.key, label: f.label } as const));
 
-export type CaptureFieldKey = typeof CAPTURE_FIELDS[number]["key"];
+export type CaptureFieldKey = typeof PORTAL_FIELDS[number]["key"];
 
 export interface CaptureCustomer {
   id: string;
