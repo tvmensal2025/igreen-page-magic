@@ -109,24 +109,45 @@ export default function StepInspector({
 
   return (
     <Sheet open={!!step} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-[480px]">
+      <SheetContent
+        side="right"
+        className={cn(
+          "overflow-y-auto transition-[max-width] duration-200",
+          fullscreen ? "w-screen sm:max-w-[100vw]" : "w-full sm:max-w-[520px]",
+        )}
+      >
         <SheetHeader>
-          <SheetTitle>Editar passo #{step.position}</SheetTitle>
-          <SheetDescription>
-            Mudanças são salvas automaticamente. Veja o preview do WhatsApp ao lado.
-          </SheetDescription>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <SheetTitle>Editar passo #{step.position}</SheetTitle>
+              <SheetDescription>
+                Mudanças são salvas automaticamente. Veja o preview do WhatsApp ao lado.
+              </SheetDescription>
+            </div>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0"
+              onClick={() => setFullscreen((v) => !v)}
+              aria-label={fullscreen ? "Reduzir" : "Tela cheia"}
+              title={fullscreen ? "Reduzir" : "Tela cheia"}
+            >
+              {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+          </div>
         </SheetHeader>
 
-        <Tabs defaultValue="basico" className="mt-4">
+        <Tabs defaultValue="conteudo" className="mt-4">
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="basico">Básico</TabsTrigger>
-            <TabsTrigger value="midias">Mídias</TabsTrigger>
-            <TabsTrigger value="botoes">Botões</TabsTrigger>
-            <TabsTrigger value="regras">Regras</TabsTrigger>
+            <TabsTrigger value="conteudo">Conteúdo</TabsTrigger>
+            <TabsTrigger value="regras">Regras &amp; Botões</TabsTrigger>
+            <TabsTrigger value="midias">Mídia</TabsTrigger>
+            <TabsTrigger value="avancado">Avançado</TabsTrigger>
           </TabsList>
 
-          {/* BÁSICO */}
-          <TabsContent value="basico" className="space-y-4 pt-4">
+          {/* CONTEÚDO */}
+          <TabsContent value="conteudo" className="space-y-4 pt-4">
             {isAiAnswerStep(step) && (
               <div className="space-y-2 rounded-lg border border-purple-500/40 bg-purple-500/10 p-3">
                 <div className="flex items-center gap-2">
