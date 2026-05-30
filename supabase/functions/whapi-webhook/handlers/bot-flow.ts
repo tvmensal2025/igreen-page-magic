@@ -2863,6 +2863,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               else if (ntype === "capture_email") { nextStepValue = "ask_email"; _isCapture = true; }
               else if (ntype === "confirm_phone") { nextStepValue = "ask_phone_confirm"; _isCapture = true; }
               else if (ntype === "finalizar_cadastro") nextStepValue = "finalizando";
+              // 🛡️ Skip-guard: se o capture seguinte já tem o dado, avança direto.
+              if (_isCapture && shouldSkipAskStep(nextStepValue, customer)) {
+                const skipped = nextStepValue;
+                nextStepValue = getNextMissingStep({ ...customer });
+                _isCapture = false;
+                console.log(`[custom-step-resolver] skip ${skipped} → ${nextStepValue} (dado já existe)`);
+              }
               console.log(`[custom-step-resolver] message→advance final=${current.step_key} type=${ntype} isCapture=${_isCapture}`);
               const _updates: any = { conversation_step: nextStepValue, __inline_sent: (emittedCurrent || dispatchedAny) || undefined };
               // Marca timestamp para steps com inline capture (mesmo sendo message)
