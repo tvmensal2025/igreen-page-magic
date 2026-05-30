@@ -1,63 +1,60 @@
-# Garantir ordem do fluxo: Conta → Simulação → Documento
+# O que aconteceu com 5511971254913 (customer `bf89171d…`, variant D)
 
-## Problema identificado
+Reconstrução pelos logs do `whapi-webhook` (09:28:59 → 09:29:18):
 
-No fluxo **D (botões)** do consultor `0c2711ad…`, vários gatilhos de "Cadastrar" pulam direto para `d_pedir_documento` **sem antes coletar a conta de luz e mostrar a simulação**.
+1. Bot estava em `d_pedir_documento` (variant D, fluxo `320bf22c…`) e enviou corretamente: *"Show, BRUNO! 🙌 Agora preciso de mais uma foto…"*
+2. Logo em seguida o chain-resolver chamou `findNextActiveFlowStep(...)` como fallback (o `d_pedir_documento` está com `transitions: []`).
+3. **Bug:** `findNextActiveFlowStep` está com `.eq("variant", "A")` **hardcoded** (linha 340 do `whapi-webhook/handlers/bot-flow.ts`, idem `evolution-webhook` linha ~347). Resultado: para um lead variant **D**, a função foi buscar o "próximo passo" no fluxo errado (**Fluxo Padrão**, `66a19db4…`) e devolveu `passo_mpagqq3g` (UUID `bdc7ebb3…`, position 6 de outro flow).
+4. `conversation_step` foi gravado como `bdc7ebb3…` — um passo que **não existe** no fluxo da variant D do consultor.
+5. O lead respondeu mandando a CNH (PDF). O webhook acionou o **step-mismatch-cure**, viu que `bdc7ebb3…` não pertence à variant D e resetou para `welcome`.
+6. O handler conversational viu "📸 arquivo recebido em step=welcome" e redirecionou para `aguardando_conta` (conta de luz) — caminho errado, o bot estava pedindo documento.
+7. O dispatcher tentou re-emitir `d_pedir_conta` e `d_resultado`, mas o anti-rep (10 min) bloqueou ambos. Resultado: **o PDF do CNH não foi processado, nenhuma resposta foi enviada → travou**. E o usuário viu o funil "voltar" da etapa de documento para conta de luz → percepção de **duplicação**.
 
-Caminhos errados hoje:
+A ordem que você definiu (conta de luz → simulação → documento) está correta no `bot_flow_steps`. O problema foi puramente o leak entre flows causado pelo `variant="A"` fixo.
 
-```text
-d_duvidas        ── "Quero cadastrar" ──► d_pedir_documento   ❌ (sem conta)
-d_como_funciona  ── "Cadastrar agora"  ──► d_pedir_documento   ❌ (sem conta)
-```
+# Correções
 
-Foi exatamente isso que aconteceu no lead `bd64e790…`: depois de ouvir o áudio de "como funciona" e cair em "dúvidas", ele clicou **Quero cadastrar** e o bot pediu o RG/CNH antes da conta.
+## 1. `findNextActiveFlowStep` — usar a variant real do lead
 
-## Regra que vale para todos os flows
+Em `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (≈l.331) e `evolution-webhook/handlers/bot-flow.ts` (≈l.338):
 
-`d_pedir_conta` ➜ `d_resultado` (simulação) ➜ **só então** `d_pedir_documento` ➜ email/telefone ➜ finalizar.
+- Adicionar parâmetro `variant?: string` no `opts`.
+- Substituir `.eq("variant", "A")` por `.eq("variant", opts.variant || "A")`.
+- Alternativa mais robusta: aceitar `flowId?: string` direto e, quando presente, pular o lookup em `bot_flows` (filtra `bot_flow_steps.flow_id = flowId`). Isso impede qualquer cross-flow mesmo se a variant for desconhecida.
 
-```text
-welcome ─► pedir_conta ─► resultado(simulação) ─► pedir_documento ─► email ─► telefone ─► finalizar
-                ▲                    │
-                │                    └─ "cadastrar" só aqui leva ao documento
-"cadastrar"/"simular"/"1" sempre cai aqui antes da simulação
-```
+## 2. Atualizar todas as call sites
 
-## Mudanças
+Nos 2 webhooks (whapi + evolution), todos os 5 pontos que chamam `findNextActiveFlowStep` devem passar `variant: customer.flow_variant` (e/ou `flowId` quando o `stepRow.flow_id` já é conhecido pelo resolver). Pontos identificados:
 
-### 1. Migration — corrigir transitions do flow D
+- `whapi-webhook/handlers/bot-flow.ts`: l.2819, l.2872, l.3504, l.3512
+- `evolution-webhook/handlers/bot-flow.ts`: l.2450, l.2483, l.3051, l.3058, l.3082
 
-No `bot_flow_steps` do flow `320bf22c-e383-4f53-a3c0-b88b89b02558`:
+## 3. Cura inteligente do `step-mismatch-cure`
 
-- **d_duvidas** (`38c0d101`): trigger `cadastrar / Quero cadastrar` passa a apontar para `d_pedir_conta` (`279d3926`) em vez de `d_pedir_documento`.
-- **d_como_funciona** (`c87d76f8`): trigger `Cadastrar agora / cadastrar / 📝 Cadastrar agora / btn_mpru57ht` passa a apontar para `d_pedir_conta`.
-- **d_welcome** (`aee7b26c`): adicionar gatilho explícito `cadastrar / quero cadastrar` ➜ `d_pedir_conta` (hoje só "simular/1" leva à conta).
-- **d_resultado** (`4df1f90a`): mantém `cadastrar` ➜ `d_pedir_documento` (correto: já passou pela simulação).
+Em `whapi-webhook/index.ts` (≈l.1388) e `evolution-webhook/index.ts` (≈l.1258):
 
-### 2. Guardas em runtime (idempotência)
+Hoje, quando o step é estranho à variant, reseta para `welcome`. Trocar por:
 
-Em `supabase/functions/_shared/conversation-helpers.ts` e nos dispatchers `whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`:
+1. Olhar `customers.last_custom_prompt_at` + log do último prompt; se o último step disparado for um `capture_*`, snap `conversation_step` para esse step (em vez de `welcome`).
+2. Senão, snap para o primeiro step ativo da variant correta (mantém comportamento atual).
 
-- **Antes de disparar `d_pedir_documento`**, verificar:
-  - se `customer.electricity_bill_url` ou `customer.media_consumo` estiverem vazios ➜ redirecionar para `d_pedir_conta` (mesmo se a transition mandar para documento).
-  - se `customer.document_front_url` já estiver preenchido ➜ pular para o próximo passo faltante (`getNextMissingStep`).
-- **Antes de disparar `d_pedir_conta`**: se já há conta + `media_consumo` válidos, pular para `d_resultado`.
-- **Antes de disparar `d_como_funciona`**: se já houve outbound desse step nas últimas 24h da mesma conversa, pular direto para `d_duvidas` (sem re-enviar áudio + vídeo).
+Isso garante que um PDF chegando depois do bot pedir documento entre em `capture_documento` (não `capture_conta`).
 
-### 3. Outros consultores
+## 4. Recuperação imediata do lead `bf89171d…`
 
-Verificar se algum outro flow ativo (variants A/B) tem o mesmo desvio "cadastrar → documento" antes da simulação. Hoje só o D usa `capture_conta`/`capture_documento`; os outros são hardcoded — não exigem mudança de dados, só herdarão as guardas de runtime.
+Migration única (manual, pontual):
 
-## Validação
+- `UPDATE customers SET conversation_step = '58f0a7e2-16ce-4ee2-ad07-1466ce7e9f1f' WHERE id = 'bf89171d-d4ef-484b-b3a8-80e201b5c83c'` — coloca de volta em `d_pedir_documento`.
+- Não mexer em `electricity_bill_*` (simulação já tinha sido feita antes).
+- O lead pode reenviar a CNH e o fluxo segue normalmente.
 
-1. Lead novo no sandbox: enviar "Oi" → "Cadastrar" no welcome → bot deve pedir **conta de luz** (não documento).
-2. Conversa que ficou em dúvidas: "Quero cadastrar" → bot pede **conta**.
-3. Após simulação: "Cadastrar agora" → bot pede **documento**.
-4. Reenviar PDF da CNH não deve ser pedido novamente se `document_front_url` já existe.
-5. Áudio + vídeo de "como funciona" não devem repetir na segunda passagem.
+## 5. Validação pós-deploy
 
-## Fora do escopo
+- Lead novo variant D → conta de luz → simulação → documento → email → telefone → finalizar (sem leak para `passo_mpagqq3g`).
+- Mesmo teste em variant A (Fluxo Padrão) continua usando o fluxo correto.
+- Logs não mostram mais `passo_mpagqq3g` em chains de variant D.
 
-- OCR / worker portal-2 (já corrigidos).
-- Reordenar positions físicas no `bot_flow_steps` — só as `transitions` mudam, o que é suficiente.
+# Fora de escopo
+
+- Reescrever transitions de `d_pedir_documento` (adicionar default → `d_pedir_email`) — vale como hardening separado, mas a correção do `findNextActiveFlowStep` já basta porque `getNextMissingStep` lida com o "depois do documento".
+- OCR/classificação automática de mídia inbound.

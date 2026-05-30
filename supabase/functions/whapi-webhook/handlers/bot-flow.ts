@@ -331,17 +331,25 @@ function safeAssignName(currentName: string | null | undefined, currentSource: s
 async function findNextActiveFlowStep(
   supabase: any,
   consultantId: string | null | undefined,
-  opts: { afterPosition?: number; stepType?: string; stepTypeIn?: string[] } = {},
+  opts: { afterPosition?: number; stepType?: string; stepTypeIn?: string[]; variant?: string; flowId?: string } = {},
 ): Promise<{ id: string; step_key: string; step_type: string; position: number; transitions: any[]; message_text: string } | null> {
-  if (!consultantId) return null;
   try {
-    const { data: flow } = await supabase
-      .from("bot_flows").select("id")
-      .eq("consultant_id", consultantId).eq("is_active", true).eq("variant", "A").maybeSingle();
-    if (!flow?.id) return null;
+    let flowId: string | null = opts.flowId || null;
+    if (!flowId) {
+      if (!consultantId) return null;
+      const variant = opts.variant || "A";
+      const { data: flow } = await supabase
+        .from("bot_flows").select("id")
+        .eq("consultant_id", consultantId).eq("is_active", true).eq("variant", variant).maybeSingle();
+      if (!flow?.id) {
+        console.warn(`[findNextActiveFlowStep] sem fluxo ativo consultant=${consultantId} variant=${variant}`);
+        return null;
+      }
+      flowId = String((flow as any).id);
+    }
     let q = supabase.from("bot_flow_steps")
       .select("id, step_key, step_type, position, transitions, message_text")
-      .eq("flow_id", (flow as any).id).eq("is_active", true)
+      .eq("flow_id", flowId).eq("is_active", true)
       .order("position", { ascending: true });
     if (typeof opts.afterPosition === "number") q = q.gt("position", opts.afterPosition);
     if (opts.stepType) q = q.eq("step_type", opts.stepType);
@@ -2816,7 +2824,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
             // Fallback: próximo por position
             if (!nextCustom) {
-              nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, {
+              nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant,
                 afterPosition: Number(stepRow.position) || 0,
               });
             }
@@ -2869,7 +2877,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 let nxt: any = null;
                 if (defTxn?.goto_step_id) nxt = await _loadStepById(String(defTxn.goto_step_id));
                 if (!nxt) {
-                  nxt = await findNextActiveFlowStep(supabase, customer.consultant_id, {
+                  nxt = await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant,
                     afterPosition: Number(current.position) || 0,
                   });
                 }
@@ -3501,7 +3509,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         } catch (_e) { /* best-effort */ }
         if (!nextCustom) {
           nextCustom = _captureContaPos > 0
-            ? await findNextActiveFlowStep(supabase, customer.consultant_id, { afterPosition: _captureContaPos })
+            ? await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant, afterPosition: _captureContaPos })
             : null;
         }
         if (nextCustom && Number(nextCustom.position || 0) <= _captureContaPos) {
@@ -3509,7 +3517,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           nextCustom = null;
         }
         if (!nextCustom) {
-          nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, {
+          nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant,
             afterPosition: _captureContaPos > 0 ? _captureContaPos : undefined,
             stepTypeIn: ["capture_documento", "capture_doc", "finalizar_cadastro"],
           });
