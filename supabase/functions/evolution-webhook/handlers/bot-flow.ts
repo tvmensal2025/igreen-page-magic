@@ -3865,7 +3865,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const merged = { ...customer, ...updates };
         const next = await autoResolveCepIfNeeded(merged, updates);
         updates.conversation_step = next;
-        reply = "Entendido — a conta é em nome de outra pessoa. Vou registrar isso pro consultor revisar na hora do cadastro. ✅\n\n" + getReplyForStep(next, merged);
+        reply = "Entendido — a conta está em nome de outra pessoa. Vou registrar isso para o consultor revisar na hora do cadastro. ✅\n\n" + getReplyForStep(next, merged);
       } else if (resp === "titular_corrigir" || /corrigir|errado|edit/i.test(resp)) {
         updates.conversation_step = "editing_doc_menu";
         reply = "✏️ O que deseja corrigir?\n\n1️⃣ Nome\n2️⃣ CPF\n3️⃣ RG\n4️⃣ Data de Nascimento\n0️⃣ Cancelar";
