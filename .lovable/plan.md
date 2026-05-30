@@ -1,127 +1,34 @@
-## Diagnóstico
+# Campo "Próximo passo" no Editor de Fluxo
 
-Analisei o lead do WhatsApp `11971254913` / `5511971254913` (`b5bbc2c2-2b25-4e55-a78d-524276c26b7c`) e o fluxo executado.
+## Problema
+No drawer "Editar passo #N" → aba **Básico**, hoje não há um seletor explícito que mostre/configure o próximo passo da conversa. O usuário precisa abrir a aba **Regras** ou **Botões** para entender pra onde o bot vai. Quando o passo não tem botão nem regra, fica invisível que ele segue pelo `position` (sequência).
 
-### O que aconteceu no teste
+## Solução
+Adicionar um seletor **"Próximo passo (padrão)"** no fim da aba Básico, logo após "Passo ativo", para todos os passos do tipo `message`, `capture_*` e `finalizar_cadastro`. O seletor controla o `fallback` do passo (que já existe no schema — `Fallback.mode = "goto" | "repeat"`), e o runtime já respeita esse fallback como destino padrão quando nenhuma regra/botão casa.
 
-1. O lead iniciou corretamente:
-   - `Oi`
-   - recebeu `d_welcome`
-   - clicou `Quero simular`
-   - entrou em `aguardando_conta`
+### Comportamento do seletor
 
-2. O lead digitou valor antes da foto:
-   - `Eu gasto 300 reais por mes`
-   - depois `300 reais`
+Opções (Select):
+- **➡ Seguir a ordem da lista (#N+1)** — `fallback = { mode: "repeat" }` + nenhum override; runtime cai no próximo `position` (comportamento atual default, agora explícito visualmente). Mostra hint: *"Vai para #6 Sem título"*.
+- **Passo específico** — listagem de todos os passos ativos (`#3 Resultado`, `#5 Pedir documento…`), grava `fallback = { mode: "goto", goto_step_id: <id> }`.
+- **🔁 Repetir este passo** — `fallback = { mode: "repeat" }` explícito (já existe).
+- **👤 Encerrar / falar com humano** — grava transição default com `goto_special: "humano"`.
 
-3. O bot não usou esse valor para simular naquele momento.
-   - Ele apenas pediu novamente a foto/PDF da conta.
-   - O motivo técnico é que, em `aguardando_conta`, o texto com valor só é salvo se `customer.electricity_bill_value` ainda estiver vazio, mas a resposta não dispara a simulação nem avança para um CTA claro.
+A escolha default exibida deve ser inferida do estado atual:
+1. Se há `fallback.mode === "goto"` → mostra esse passo.
+2. Se há transição com `trigger_intent === "default"` → mostra esse destino.
+3. Caso contrário → "Seguir a ordem da lista".
 
-4. Depois o lead mandou a conta.
-   - O OCR leu a conta e salvou `electricity_bill_value = 1576.34`.
-   - Ao clicar `✅ SIM`, a simulação foi enviada:
-     - `Sua conta hoje: R$ 1.576,34`
-     - economia estimada `R$ 126 a R$ 316`
+### Garantia de ordem
+O runtime (`whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`) já segue `position` quando não há goto explícito (linha ~1034: `find((s) => s.position > current.position)`). **Nenhuma alteração de engine é necessária** — só estamos expondo no UI o que já existe.
 
-5. Mais tarde, no cadastro, o bot pediu novamente valor médio:
-   - `Qual o valor médio da sua conta de luz?`
-   - o lead respondeu `900`
-   - depois, ao finalizar, o bot voltou a pedir a foto da conta obrigatória.
+Validação adicional em `useFlowValidation.ts`: se o passo tem `fallback.goto_step_id` apontando para passo removido/inativo, vira warning (já coberto pelo padrão atual de "destino removido").
 
-### Causa provável
+## Arquivos a editar
+- `src/components/admin/flow-builder/StepInspector.tsx` — adicionar bloco "Próximo passo" no `TabsContent value="basico"` após o card "Passo ativo" (linha ~240). Componente `<Select>` com as 4 opções acima, handler aplica `onPatch` em `fallback` + `transitions` conforme escolha.
+- `src/components/admin/flow-builder/StepCard.tsx` — opcional: adicionar badge "→ #6" no card quando o fallback é explícito, para reforçar a ordem visual.
 
-Há dois problemas de regra no fluxo:
-
-1. **Valor digitado antes da foto não dispara simulação inicial.**
-   - O bot aceita o texto como possível valor, mas continua preso em `aguardando_conta` pedindo foto.
-   - Isso explica “não simulou no início”.
-
-2. **O valor digitado no fallback de cadastro (`ask_bill_value`) pode sobrescrever ou competir com o valor real do OCR.**
-   - No lead atual, o banco terminou certo com `1576.34`, mas durante a jornada o bot perguntou `900` depois, criando a percepção de que “errou ao salvar o valor da conta”.
-   - O fluxo não deveria pedir `ask_bill_value` se já existe conta OCR confirmada ou valor da conta salvo.
-
-### Estado atual do lead
-
-O lead está em `portal_submitting`, com:
-
-- `electricity_bill_value = 1576.34`
-- `distribuidora = CPFL PIRATININGA`
-- `numero_instalacao = 2095093800`
-- `bill_holder_name = BRUNO MANOEL DOS SANTOS`
-- worker do portal disparado com status `200`
-
-Ou seja: ele chegou ao final, mas o caminho teve prompts incorretos e confusos.
-
-## Plano de correção
-
-### 1. Corrigir `aguardando_conta` para simular quando o cliente digita valor
-
-Quando o lead estiver em `aguardando_conta` e mandar texto como `300 reais`:
-
-- salvar `electricity_bill_value`
-- enviar a simulação inicial com base no valor digitado
-- oferecer o próximo CTA correto:
-  - se quiser cadastro completo, pedir a foto da conta para OCR/validação
-  - se o fluxo permitir seguir só com média, avançar para documento conforme regra existente
-
-Isso evita o loop “me manda a foto” sem simular.
-
-### 2. Blindar `ask_bill_value` para não sobrescrever valor do OCR
-
-Se o cliente já tem:
-
-- `electricity_bill_value` preenchido
-- ou `electricity_bill_photo_url`
-- ou `bill_holder_name`/`distribuidora` vindos do OCR
-
-então o step `ask_bill_value` não deve pedir/salvar novo valor médio. Ele deve pular para o próximo dado faltante ou finalizar.
-
-### 3. Evitar retorno para “foto da conta obrigatória” depois de dados preenchidos
-
-No fechamento (`ask_finalizar`/finalização), se a conta já foi enviada e OCR salvo, não deve voltar para `aguardando_conta`.
-
-A regra será: só pedir foto da conta se não houver foto/OCR/valor válido.
-
-### 4. Aplicar a mesma correção nos dois canais
-
-Ajustar os handlers equivalentes:
-
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
-
-Assim Whapi e Evolution ficam consistentes.
-
-### 5. Validar com o cenário real
-
-Depois da alteração, testar o cenário:
-
-```text
-Oi
-Quero simular
-300 reais
-```
-
-Resultado esperado:
-
-```text
-Simulação enviada imediatamente com R$ 300,00
-Bot não pede novamente o mesmo dado
-Fluxo segue para foto da conta/documento conforme regra do cadastro
-```
-
-E testar também:
-
-```text
-envia conta
-confirma SIM
-finaliza cadastro
-```
-
-Resultado esperado:
-
-```text
-Valor OCR preservado
-Sem pergunta duplicada de valor médio
-Sem retorno indevido para foto obrigatória
-```
+## Fora de escopo
+- Não mexer no engine de runtime.
+- Não alterar schema de banco (campo `fallback` já é jsonb e suporta `goto`).
+- Não tocar nos templates de fluxo.

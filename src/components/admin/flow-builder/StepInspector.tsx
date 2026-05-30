@@ -238,6 +238,84 @@ export default function StepInspector({
               />
             </div>
 
+            {/* PRÓXIMO PASSO (fallback default) */}
+            {(() => {
+              const sortedSteps = [...steps].sort((a, b) => a.position - b.position);
+              const nextByOrder = sortedSteps.find((s) => s.position > step.position && s.is_active);
+              const defaultTransition = step.transitions.find((t) => t.trigger_intent === "default");
+              const fb = step.fallback ?? { mode: "repeat" };
+
+              let current = "order";
+              if (defaultTransition?.goto_special === "humano") current = "humano";
+              else if (fb.mode === "goto" && fb.goto_step_id) current = `step:${fb.goto_step_id}`;
+              else if (defaultTransition?.goto_step_id) current = `step:${defaultTransition.goto_step_id}`;
+              else if (defaultTransition?.goto_special === "repeat") current = "repeat";
+              else current = "order";
+
+              const handleChange = (value: string) => {
+                const others = step.transitions.filter((t) => t.trigger_intent !== "default");
+                if (value === "order") {
+                  onPatch({
+                    fallback: { mode: "repeat" } as any,
+                    transitions: others,
+                  });
+                } else if (value === "repeat") {
+                  onPatch({
+                    fallback: { mode: "repeat" } as any,
+                    transitions: [
+                      ...others,
+                      { trigger_intent: "default", trigger_phrases: [], goto_step_id: null, goto_special: "repeat" } as Transition,
+                    ],
+                  });
+                } else if (value === "humano") {
+                  onPatch({
+                    fallback: { mode: "repeat" } as any,
+                    transitions: [
+                      ...others,
+                      { trigger_intent: "default", trigger_phrases: [], goto_step_id: null, goto_special: "humano" } as Transition,
+                    ],
+                  });
+                } else if (value.startsWith("step:")) {
+                  const id = value.slice(5);
+                  onPatch({
+                    fallback: { mode: "goto", goto_step_id: id } as any,
+                    transitions: [
+                      ...others,
+                      { trigger_intent: "default", trigger_phrases: [], goto_step_id: id, goto_special: null } as Transition,
+                    ],
+                  });
+                }
+              };
+
+              return (
+                <div className="space-y-1.5 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+                  <Label className="text-sm">Próximo passo (padrão)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Para onde o bot vai quando nenhum botão nem regra casa.
+                  </p>
+                  <Select value={current} onValueChange={handleChange}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="order">
+                        ➡ Seguir a ordem da lista{nextByOrder ? ` (#${nextByOrder.position} ${nextByOrder.title})` : " (fim do fluxo)"}
+                      </SelectItem>
+                      <SelectItem value="repeat">🔁 Repetir este passo</SelectItem>
+                      <SelectItem value="humano">👤 Encerrar / falar com humano</SelectItem>
+                      {sortedSteps
+                        .filter((s) => s.id !== step.id)
+                        .map((s) => (
+                          <SelectItem key={s.id} value={`step:${s.id}`}>
+                            #{s.position} {s.title}{!s.is_active ? " (inativo)" : ""}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })()}
+
             {(() => {
               const ocr = isOcrStep(step);
               if (!ocr) return null;
