@@ -2290,6 +2290,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             step = getNextMissingStep(merged);
             console.log(`[custom-step-resolver] skip ${skipped} → ${step} (dado já existe)`);
           }
+          // 🛡️ Para passos de captura (capture_conta/documento/email/confirm_phone),
+          // NÃO re-emitir prompt nem avançar por posição. O handler legacy
+          // (aguardando_conta/aguardando_doc_auto/ask_email/ask_phone_confirm)
+          // processa o inbound (arquivo/texto) e decide o próximo passo.
+          // Re-emitir aqui causa prompt duplicado; avançar por posição faz o
+          // bot pular o documento sem processar a foto.
+          else if (
+            stype === "capture_conta" ||
+            stype === "capture_documento" || stype === "capture_doc" ||
+            stype === "capture_email" || stype === "confirm_phone"
+          ) {
+            console.log(`[custom-step-resolver] capture-passthrough step=${stepRow.step_key} type=${stype} → legacy ${step}`);
+            // step já foi setado para o alias legacy acima; cai no switch
+          }
           else {
             // step_type === "message" → passo informativo.
             // ANTES de avançar, garante que o conteúdo do step ATUAL foi emitido
