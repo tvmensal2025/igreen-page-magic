@@ -175,7 +175,7 @@ ${JSON.stringify(flowTable.filter((x) => Math.abs(x.pos - (focusStep?.position ?
     }];
 
     const reqBody: Record<string, any> = {
-      model: "openai/gpt-5.5-pro",
+      model: "google/gemini-2.5-pro",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
