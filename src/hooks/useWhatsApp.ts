@@ -683,6 +683,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           const email = user?.email?.toLowerCase().trim();
           if (email === "rafael.ids@icloud.com" && user?.id === consultantId) {
             setIsWhapi(true);
+            setHasInstance(true);
             setStatus("connected");
             setPhoneNumber("+55 11 99009-2401");
             setError(null);
