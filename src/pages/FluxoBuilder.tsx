@@ -640,7 +640,7 @@ export default function FluxoBuilder() {
         `selectedId` e `inspectorId` (R1.6) vivem no `FluxoBuilder` e são
         naturalmente preservados.
       */}
-      <main className="mx-auto grid max-w-7xl gap-4 px-4 py-6 lg:grid-cols-[1fr_400px]">
+      <main className={`mx-auto grid gap-4 px-4 py-6 ${viewMode === "diagrama" && panelHidden ? "max-w-none lg:grid-cols-1" : "max-w-7xl lg:grid-cols-[1fr_400px]"}`}>
         {/* Coluna esquerda — Modo_Lista (mantida montada) */}
         <section
           className={viewMode === "diagrama" ? "hidden" : "space-y-3"}
