@@ -2604,6 +2604,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           else if (stype === "capture_email") step = "ask_email";
           else if (stype === "confirm_phone") step = "ask_phone_confirm";
           else if (stype === "finalizar_cadastro") step = "finalizando";
+
+          // 🛡️ Skip-guard global: se o passo determinístico mapeado já tem o dado
+          // preenchido (OCR, edição manual, passo anterior), avança para o próximo
+          // realmente faltante. Evita reperguntar documento/email/telefone/etc.
+          if (step && shouldSkipAskStep(step, customer)) {
+            const merged = { ...customer };
+            const skipped = step;
+            step = getNextMissingStep(merged);
+            console.log(`[custom-step-resolver] skip ${skipped} → ${step} (dado já existe)`);
+          }
           else {
             // step_type === "message" → passo informativo.
             // ANTES de avançar, garante que o conteúdo do step ATUAL foi emitido
