@@ -4312,6 +4312,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "portal_submitting": {
+      if (String((customer as any).portal2_error || "").includes("Consumo médio não informado")) {
+        const valorConta = Number((customer as any).electricity_bill_value || 0);
+        if (valorConta >= 30) {
+          updates.media_consumo = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+          updates.portal2_status = "retry_ready";
+          updates.error_message = null;
+          reply = "Já ajustei os dados da conta por aqui e estou reenviando seu cadastro para o portal. Pode aguardar alguns instantes ✅";
+          try {
+            const { dispatchPortalWorker } = await import("../../_shared/portal-worker.ts");
+            await supabase.from("customers").update(updates).eq("id", customer.id);
+            await dispatchPortalWorker(supabase, customer.id);
+            (updates as any).__inline_sent = false;
+          } catch (e: any) {
+            console.warn("[portal_submitting] retry consumo falhou:", e?.message);
+          }
+          break;
+        }
+      }
       reply = "⏳ Estamos processando seu cadastro no portal...\n\n📱 Em breve você receberá um *código de verificação no WhatsApp*. Quando receber, *digite aqui*!\n\nAguarde alguns instantes...";
       break;
     }
