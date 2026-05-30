@@ -45,6 +45,10 @@ const FlowDiagram = React.lazy(
 const FlowDiagramV2 = React.lazy(
   () => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"),
 );
+const FlowSpreadsheet = React.lazy(
+  () => import("@/components/admin/flow-builder/FlowSpreadsheet"),
+);
+import FlowReviewPanel, { type ReviewResult } from "@/components/admin/flow-builder/FlowReviewPanel";
 
 function readUseV2(): boolean {
   if (typeof window === "undefined") return true;
@@ -72,10 +76,9 @@ function readInitialViewMode(): ViewMode {
   if (typeof window === "undefined") return "lista";
   try {
     const v = window.localStorage.getItem("flow-view-mode");
-    return v === "diagrama" ? "diagrama" : "lista";
+    if (v === "diagrama" || v === "planilha" || v === "lista") return v;
+    return "lista";
   } catch {
-    // Falha silenciosa (R1.7) — `try` cobre QuotaExceededError, modo
-    // privado e ambientes onde `localStorage` é bloqueado pelo browser.
     return "lista";
   }
 }
@@ -133,6 +136,39 @@ export default function FluxoBuilder() {
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
+
+  // Revisão IA da planilha (GPT-5.5)
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [suggestingStepId, setSuggestingStepId] = useState<string | null>(null);
+
+  const runReview = useCallback(async (mode: "global" | "step", stepId?: string) => {
+    if (!flowId) return;
+    setReviewError(null);
+    setReviewResult(null);
+    setReviewOpen(true);
+    if (mode === "global") setReviewLoading(true);
+    else setSuggestingStepId(stepId ?? null);
+    try {
+      const { data, error } = await supabase.functions.invoke("flow-spreadsheet-review", {
+        body: { mode, flowId, stepId },
+      });
+      if (error) throw new Error(error.message ?? "Erro na revisão IA");
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setReviewResult({
+        summary: (data as any).summary ?? "",
+        issues: (data as any).issues ?? [],
+      });
+    } catch (e: any) {
+      setReviewError(e?.message ?? "Erro desconhecido");
+    } finally {
+      setReviewLoading(false);
+      setSuggestingStepId(null);
+    }
+  }, [flowId]);
+
 
   // PR4 — busca/filtro/colapso da lista de steps
   const [listQuery, setListQuery] = useState("");
@@ -641,11 +677,15 @@ export default function FluxoBuilder() {
         `selectedId` e `inspectorId` (R1.6) vivem no `FluxoBuilder` e são
         naturalmente preservados.
       */}
-      <main className={`mx-auto grid gap-4 px-4 py-6 ${viewMode === "diagrama" && panelHidden ? "max-w-none lg:grid-cols-1" : "max-w-7xl lg:grid-cols-[1fr_400px]"}`}>
+      <main className={`mx-auto grid gap-4 px-4 py-6 ${
+        viewMode === "planilha" || (viewMode === "diagrama" && panelHidden)
+          ? "max-w-none lg:grid-cols-1"
+          : "max-w-7xl lg:grid-cols-[1fr_400px]"
+      }`}>
         {/* Coluna esquerda — Modo_Lista (mantida montada) */}
         <section
-          className={viewMode === "diagrama" ? "hidden" : "space-y-3"}
-          aria-hidden={viewMode === "diagrama"}
+          className={viewMode === "lista" ? "space-y-3" : "hidden"}
+          aria-hidden={viewMode !== "lista"}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium text-muted-foreground">
@@ -847,14 +887,51 @@ export default function FluxoBuilder() {
           </section>
         )}
 
+        {/* Modo_Planilha — tabela densa só-leitura com revisão IA GPT-5.5 */}
+        {viewMode === "planilha" && (
+          <section className="w-full" aria-label="Editor de fluxo em planilha">
+            <Suspense fallback={
+              <div className="grid h-64 place-items-center text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            }>
+              <FlowSpreadsheet
+                steps={steps}
+                flowId={flowId}
+                variant={editingVariant}
+                mediaCounts={mediaCounts}
+                onOpenStep={(id) => { setSelectedId(id); setInspectorId(id); }}
+                onReviewAll={() => runReview("global")}
+                onSuggestForStep={(id) => runReview("step", id)}
+                reviewing={reviewLoading}
+                suggestingStepId={suggestingStepId}
+              />
+            </Suspense>
+          </section>
+        )}
+
         {/* Coluna direita — preview WhatsApp + preferências de IA */}
-        {!(viewMode === "diagrama" && panelHidden) && (
+        {!(viewMode === "diagrama" && panelHidden) && viewMode !== "planilha" && (
           <aside className="hidden space-y-3 lg:block">
             <WhatsAppPreview step={selected} steps={steps} consultantName={consultantName} />
             {userId && <AiPreferencesCard consultantId={userId} />}
           </aside>
         )}
       </main>
+
+      {/* Painel lateral de revisão IA */}
+      <FlowReviewPanel
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        result={reviewResult}
+        loading={reviewLoading}
+        error={reviewError}
+        steps={steps}
+        flowId={flowId}
+        consultantId={userId}
+        onApplied={() => userId && reload(userId, editingVariant)}
+        onJumpToStep={(id) => { setSelectedId(id); setInspectorId(id); }}
+      />
 
       {/* Inspector */}
       {userId && (
