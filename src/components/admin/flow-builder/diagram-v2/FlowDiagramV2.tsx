@@ -53,6 +53,10 @@ export interface FlowDiagramV2Props {
   onAutoFixAll: () => Promise<void>;
   onReloadAfterAutoLayout?: () => void | Promise<void>;
   onCreateFromTemplate?: () => void;
+  /** PR5 — controla a visibilidade do painel direito (preview WhatsApp). */
+  panelHidden?: boolean;
+  /** PR5 — alterna painel direito a partir do toolbar do canvas. */
+  onTogglePanel?: () => void;
 }
 
 const nodeTypes: NodeTypes = {
