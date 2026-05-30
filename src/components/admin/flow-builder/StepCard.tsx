@@ -100,6 +100,11 @@ export default function StepCard({
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono text-muted-foreground">#{step.position}</span>
               <h4 className="truncate text-sm font-semibold">{step.title}</h4>
+              {step.position === 1 && (
+                <Badge className="h-5 bg-primary/15 text-[10px] text-primary hover:bg-primary/15">
+                  Início
+                </Badge>
+              )}
               {!step.is_active && (
                 <Badge variant="outline" className="h-5 text-[10px]">
                   inativo
