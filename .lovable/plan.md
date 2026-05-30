@@ -1,66 +1,76 @@
+# Plano de correção
+
 ## Objetivo
 
-Substituir a lista atual de `StepCard` por uma **Timeline Vertical Numerada** — uma "linha do roteiro" top‑down onde cada passo é uma estação do fluxo. Mais fácil de ler que o diagrama porque é linear, numerada e sem cruzamentos.
+Deixar o Fluxo D novamente com todos os botões combinados e corrigir o erro de IA que gerou respostas truncadas como `Max 280 characters.`.
 
-## Como vai parecer
+## 1. Restaurar botões do passo #3: Como funciona
 
-```text
-┌─ Timeline ──────────────────────────────┐
-│                                         │
-│  ●─① Boas-vindas               [Início] │
-│  │   "Oi! Eu sou a Iggy, posso te…"     │
-│  │   💬 3 botões  •  ⚡ 2 regras        │
-│  │   → #2 Quero economizar              │
-│  │   → #5 Já sou cliente                │
-│  │                                       │
-│  ●─② Quero economizar          [Pergunta]│
-│  │   "Me conta seu consumo médio…"       │
-│  │   📷 OCR conta  •  ⚡ 1 regra         │
-│  │   → #3 Simulação                      │
-│  │                                       │
-│  ●─③ Simulação                  [IA]    │
-│  ⋮   …                                   │
-└─────────────────────────────────────────┘
-```
+Hoje o passo `d_como_funciona` ficou sem `captures._buttons`, então o WhatsApp envia só texto/mídia, sem os botões.
 
-- **Trilho vertical** à esquerda (1px, `border`) ligando todas as estações.
-- **Bolinha numerada** (`●` com `#1`, `#2`…) ancorada no trilho. Tamanho 28px, fundo `primary/10`, número em `primary`. Passo inicial recebe anel `ring-2 ring-primary` + badge "Início".
-- **Card médio (3 linhas)** ao lado:
-  1. Título + tipo (badge pequeno à direita) + status (inativo, alerta)
-  2. Preview da mensagem (1 linha, truncada em ~70 chars)
-  3. Badges compactos: nº de botões, nº de regras, OCR/IA, mídia
-- **Setas inline clicáveis** abaixo do card (uma por linha): `→ #5 Confirmação`. Clicar **rola e seleciona** o passo destino na própria timeline (scroll suave + highlight pulsante de 1s). Destinos quebrados em `text-destructive` com ⚠.
-- **Selecionado**: bolinha vira sólida `primary`, card ganha `ring-2 ring-primary/30` e `bg-primary/5`.
-- **Hover no card**: trilho do passo acende (`bg-primary/40`) e os destinos também (preview do caminho sem ir pro diagrama).
+Vou atualizar o passo #3 para ter exatamente estes botões:
 
-## Interações
 
-- **Drag‑and‑drop** continua funcionando (já temos `dnd-kit`). Handle fica na bolinha numerada (cursor‑grab no hover).
-- **Click no card** → seleciona (sincroniza com diagrama e inspector).
-- **Double‑click** → abre inspector.
-- **Click numa seta `→ #N`** → scroll suave até o passo + highlight de 1s.
-- **Filtros/busca** da `StepListToolbar` (PR4) continuam por cima — quando filtra, as bolinhas dos passos ocultos somem mas o trilho permanece tracejado nos "gaps", deixando claro que há passos escondidos.
+| Botão              | Destino                |
+| ------------------ | ---------------------- |
+| Quero simular      | #2 Enviar conta de luz |
+| Ainda tenho dúvida | #8 Esclarecer dúvidas  |
+| Falar com Rafael   | Humano                 |
 
-## Densidade
 
-Card médio padrão (~96px de altura). Para fluxos grandes, o toggle "compacto" da toolbar reduz para 1 linha (só título + tipo + badge de contagem de destinos), mantendo o trilho.
+As rotas/transições continuam únicas, sem duplicar e sem loop.
 
-## Arquivos a mudar
+## 2. Confirmar botões do passo #8: Esclarecer dúvidas
 
-- **Novo**: `src/components/admin/flow-builder/StepTimeline.tsx` — container da timeline (trilho + map de estações).
-- **Novo**: `src/components/admin/flow-builder/StepTimelineItem.tsx` — uma estação (bolinha + card + setas inline). Substitui o uso direto de `StepCard` na sidebar.
-- **Editado**: `src/pages/FluxoBuilder.tsx` — trocar `<StepCard>` por `<StepTimelineItem>` dentro do `SortableContext`. Adicionar `scrollIntoView` + state de `pulseId` para o "clique pula".
-- **Mantido**: `StepCard.tsx` continua existindo (usado em outros lugares? checar). Se só usado aqui, marca como legado mas não remove neste PR.
-- **Mantido**: `StepListToolbar.tsx` (busca/filtros) sem mudanças.
+Manter o passo #8 com os botões já combinados:
 
-## Fora de escopo
 
-- Diagrama (sem alterações).
-- Inspector lateral direito (sem alterações).
-- Edge functions, banco, IA.
-- Remover `StepCard.tsx` (fica para um PR de limpeza).
+| Botão            | Destino                |
+| ---------------- | ---------------------- |
+| Quero simular    | #2 Enviar conta de luz |
+| Quero cadastrar  | #5 Pedir documento     |
+| Falar com Rafael | Humano                 |
 
-## Riscos
 
-- `scrollIntoView` dentro de container com `overflow-auto` precisa de `block: "nearest"` pra não bagunçar a página inteira. Vou usar ref no container da timeline.
-- Drag‑and‑drop: o `useSortable` precisa do mesmo `id` no item externo (timeline item), não no card interno. Vou mover os listeners pra bolinha numerada.
+## 3. Garantir compatibilidade Whapi + Evolution
+
+A correção será feita na definição do fluxo, usando o padrão `_buttons` que os adapters já leem.
+
+Isso deve funcionar tanto para:
+
+- Whapi, quando `supports_buttons=true` e limite máximo de 3 botões.
+- Evolution, usando o mesmo payload lógico de botões do fluxo.
+
+Não vou criar 4+ botões em um passo, porque o Whapi suporta no máximo 3 botões rápidos. Para ter mais opções, teria que virar lista, mas você pediu para voltar igual antes.
+
+## 4. Corrigir tokens da IA
+
+O erro real nos logs é o uso de `max_tokens` com modelos de IA que exigem `max_completion_tokens`.
+
+Vou corrigir os helpers de IA para:
+
+- usar `max_completion_tokens` nos modelos reasoning;
+- remover `temperature` nesses modelos quando necessário;
+- aumentar bastante o teto de resposta para evitar corte no meio;
+- preservar resposta final curta para WhatsApp, mas sem truncar errado.
+
+Arquivos previstos:
+
+- `supabase/functions/_shared/ai-gateway.ts`
+- `supabase/functions/_shared/ai-answer.ts`
+- `supabase/functions/_shared/ai-button-intent.ts`
+
+## 5. Validação
+
+Depois da correção:
+
+1. Resetar lead `11971254913`.
+2. Enviar `Oi`.
+3. Clicar `Como funciona`.
+4. Confirmar que aparecem os 3 botões do passo #3.
+5. Enviar pergunta livre e confirmar que não sai mais `Max 280 characters.` nem resposta cortada.
+6. Conferir logs do webhook sem erro de tokens.
+
+## Resultado esperado
+
+O fluxo volta a iniciar corretamente, os botões aparecem como combinado, e a IA para de responder mensagens truncadas.

@@ -25,16 +25,30 @@ export interface AIChatResult {
   raw: any;
 }
 
+// Modelos "reasoning" (gpt-5*, o1/o3/o4) rejeitam `max_tokens` e `temperature`!=1
+// no Lovable AI Gateway / OpenAI. Usam `max_completion_tokens` e consomem parte
+// do orçamento em reasoning tokens invisíveis, então o teto precisa ser bem maior.
+function isReasoningModel(model: string): boolean {
+  return /^(openai\/)?(gpt-5|o[134])/i.test(model);
+}
+
 export async function aiChat(opts: AIChatOptions): Promise<AIChatResult> {
   const key = Deno.env.get("LOVABLE_API_KEY");
   if (!key) throw new Error("LOVABLE_API_KEY not configured");
 
+  const model = opts.model || "google/gemini-3-flash-preview";
+  const reasoning = isReasoningModel(model);
   const body: Record<string, any> = {
-    model: opts.model || "google/gemini-3-flash-preview",
+    model,
     messages: opts.messages,
-    temperature: opts.temperature ?? 0.4,
   };
-  if (opts.maxTokens) body.max_tokens = opts.maxTokens;
+  if (!reasoning) body.temperature = opts.temperature ?? 0.4;
+  if (opts.maxTokens) {
+    // Reasoning models gastam tokens "ocultos"; dá folga para a resposta final.
+    const tokens = reasoning ? Math.max(opts.maxTokens * 8, 2000) : opts.maxTokens;
+    if (reasoning) body.max_completion_tokens = tokens;
+    else body.max_tokens = tokens;
+  }
   if (opts.jsonSchema) {
     body.response_format = {
       type: "json_schema",
