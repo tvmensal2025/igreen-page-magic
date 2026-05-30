@@ -24,7 +24,7 @@ interface Props {
 }
 
 export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sentStepsCount = 0 }: Props) {
-  const { customer, loading, filledCount, totalFields, progress, updateField } = useCaptureSession(customerId);
+  const { customer, loading, filledCount, totalFields, progress, updateField, validation } = useCaptureSession(customerId);
   const { suggestions, resolve } = useCaptureSuggestions(customerId);
   const { toast } = useToast();
   const lastCountRef = useRef<number>(0);
@@ -147,7 +147,8 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
     return <div className="p-6 text-center text-sm text-muted-foreground"><Loader2 className="w-5 h-5 mx-auto animate-spin" /></div>;
   }
 
-  const canSubmit = filledCount === totalFields;
+  const canSubmit = !!validation?.ok;
+  const firstPending = validation?.pendingItems?.[0];
 
   return (
     <aside className={embedded
@@ -276,8 +277,8 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
             {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trophy className="w-3 h-3" />}
             {canSubmit ? "FINALIZAR" : "CADASTRAR TUDO"}
           </Button>
-          <p className="text-[9px] text-center text-muted-foreground leading-tight">
-            {canSubmit ? "Confirme" : `Faltam ${totalFields - filledCount}`}
+          <p className="text-[9px] text-center text-muted-foreground leading-tight truncate" title={firstPending?.reason || firstPending?.label}>
+            {canSubmit ? "Confirme" : firstPending ? `Faltam ${validation.pendingItems.length}: ${firstPending.label}` : `Faltam ${totalFields - filledCount}`}
           </p>
         </div>
       )}
