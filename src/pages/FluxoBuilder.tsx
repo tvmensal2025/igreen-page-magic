@@ -646,33 +646,71 @@ export default function FluxoBuilder() {
               </p>
             </div>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-2">
-                  {steps.map((s) => (
-                    <StepCard
-                      key={s.id}
-                      step={s}
-                      steps={steps}
-                      selected={selectedId === s.id}
-                      mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
-                      showConnections={true}
-                      onSelect={() => setSelectedId(s.id)}
-                      onEdit={() => { setSelectedId(s.id); setInspectorId(s.id); }}
-                      onDelete={() => deleteStep(s.id)}
-                      onDuplicate={() => duplicateStep(s.id)}
-                      onJumpTo={(targetId) => {
-                        setSelectedId(targetId);
-                        // Scroll suave até o card destino
-                        setTimeout(() => {
-                          document.getElementById(`step-card-${targetId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                        }, 50);
-                      }}
-                    />
-                  ))}
+            <>
+              <StepListToolbar
+                query={listQuery}
+                onQueryChange={setListQuery}
+                typeFilter={typeFilter}
+                onToggleType={toggleTypeFilter}
+                onClear={() => { setListQuery(""); setTypeFilter(new Set()); }}
+                total={steps.length}
+                visible={filteredSteps.length}
+              />
+
+              {filteredSteps.length === 0 ? (
+                <div className="rounded-lg border border-dashed bg-muted/10 p-6 text-center text-xs text-muted-foreground">
+                  Nenhum passo corresponde à busca.
                 </div>
-              </SortableContext>
-            </DndContext>
+              ) : (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={filteredSteps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-3">
+                      {groupedSteps.map((g) => {
+                        const collapsed = collapsedGroups.has(g.type);
+                        return (
+                          <div key={g.type} className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroup(g.type)}
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-left text-xs font-medium hover:bg-muted/60"
+                            >
+                              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              <span>{g.emoji}</span>
+                              <span className="flex-1 truncate">{g.label}</span>
+                              <span className="text-muted-foreground">{g.items.length}</span>
+                            </button>
+                            {!collapsed && (
+                              <div className="space-y-2 pl-1">
+                                {g.items.map((s) => (
+                                  <StepCard
+                                    key={s.id}
+                                    step={s}
+                                    steps={steps}
+                                    selected={selectedId === s.id}
+                                    mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
+                                    showConnections={true}
+                                    onSelect={() => setSelectedId(s.id)}
+                                    onEdit={() => { setSelectedId(s.id); setInspectorId(s.id); }}
+                                    onDelete={() => deleteStep(s.id)}
+                                    onDuplicate={() => duplicateStep(s.id)}
+                                    onJumpTo={(targetId) => {
+                                      setSelectedId(targetId);
+                                      setTimeout(() => {
+                                        document.getElementById(`step-card-${targetId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      }, 50);
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              )}
+            </>
           )}
 
           <Button variant="outline" className="w-full" onClick={() => { void addStep(); }}>
