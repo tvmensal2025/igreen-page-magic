@@ -56,6 +56,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [qrGeneratedAt, setQrGeneratedAt] = useState<number | null>(null);
   const [isWhapi, setIsWhapi] = useState(false);
+  const [hasInstance, setHasInstance] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
