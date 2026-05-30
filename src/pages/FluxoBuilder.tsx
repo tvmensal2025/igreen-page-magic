@@ -315,6 +315,41 @@ export default function FluxoBuilder() {
   const selected = useMemo(() => steps.find((s) => s.id === selectedId) ?? null, [steps, selectedId]);
   const inspectorStep = useMemo(() => steps.find((s) => s.id === inspectorId) ?? null, [steps, inspectorId]);
 
+  // PR4 — filtragem + agrupamento da lista
+  const filteredSteps = useMemo(() => {
+    const q = listQuery.trim().toLowerCase();
+    return steps.filter((s) => {
+      if (typeFilter.size > 0 && !typeFilter.has(s.step_type)) return false;
+      if (!q) return true;
+      const haystack = [
+        s.title, s.message_text, s.step_key, s.summary,
+        ...(s.transitions ?? []).flatMap((t) => [t.trigger_intent, ...(t.trigger_phrases || [])]),
+      ].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [steps, listQuery, typeFilter]);
+
+  const groupedSteps = useMemo(() => {
+    const groups = new Map<string, { type: string; label: string; emoji: string; items: Step[] }>();
+    for (const s of filteredSteps) {
+      const meta = STEP_TYPE_OPTIONS.find((o) => o.value === s.step_type);
+      const key = s.step_type || "outros";
+      if (!groups.has(key)) {
+        groups.set(key, {
+          type: key,
+          label: meta?.label ?? "Outros",
+          emoji: meta?.emoji ?? "📄",
+          items: [],
+        });
+      }
+      groups.get(key)!.items.push(s);
+    }
+    // ordena grupos pela posição mínima do item (mantém fluxo lógico)
+    return [...groups.values()].sort(
+      (a, b) => Math.min(...a.items.map((s) => s.position)) - Math.min(...b.items.map((s) => s.position)),
+    );
+  }, [filteredSteps]);
+
   const validation = useFlowValidation(steps);
   const flowWarnings = validation.total;
   const flowErrors = validation.errors;
