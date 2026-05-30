@@ -31,6 +31,7 @@ export interface CaptureCustomer {
   address_number: string | null;
   address_complement: string | null;
   electricity_bill_value: number | null;
+  media_consumo?: number | null;
   document_front_url: string | null;
   document_back_url: string | null;
   electricity_bill_photo_url: string | null;
