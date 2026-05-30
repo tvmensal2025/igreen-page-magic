@@ -192,6 +192,20 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
       dados.valorConta = (!isNaN(v) && v > 0) ? v.toFixed(2) : "";
     }
 
+
+    // Normaliza distribuidora — resolve holdings (CPFL ENERGIA → CPFL PIRATININGA via cidade)
+    if (dados.distribuidora) {
+      const original = String(dados.distribuidora);
+      const normalized = normalizeDistribuidora(original, dados.estado, dados.cidade);
+      if (normalized && normalized !== original) {
+        console.log(`🔧 OCR distribuidora normalizada: "${original}" → "${normalized}" (uf=${dados.estado} cidade=${dados.cidade})`);
+      } else if (!normalized && isHoldingName(original)) {
+        console.warn(`⚠️ OCR distribuidora holding sem cidade conhecida: "${original}" (uf=${dados.estado} cidade=${dados.cidade}) — exigirá correção manual`);
+      }
+      dados.distribuidora = normalized;
+      dados.distribuidora_needs_review = !normalized;
+    }
+
     // Score de confiança: % de campos críticos preenchidos.
     const criticos = [dados.nome, dados.endereco, dados.cidade, dados.estado, dados.distribuidora, dados.valorConta];
     const preenchidos = criticos.filter((v: any) => v && String(v).trim().length > 0).length;
