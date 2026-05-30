@@ -128,9 +128,10 @@ Extraia:
 8. DISTRIBUIDORA (nome REGIONAL da concessionária — NUNCA o grupo holding. Use: CPFL PIRATININGA, CPFL PAULISTA, CPFL SANTA CRUZ, RGE, ENEL SP, ENEL RJ, EDP SP, EDP ES, LIGHT, CEMIG, COPEL, CELESC, COELBA, CELPE, COSERN, COELCE, EQUATORIAL GO/PA/MA/PI/AL, CEB, ENERGISA <UF>, AMAZONAS ENERGIA, RORAIMA ENERGIA, ELEKTRO etc. NÃO escreva apenas "CPFL ENERGIA", "ENEL", "EDP", "ENERGISA" ou "EQUATORIAL" sozinhos)
 9. NÚMERO DA INSTALAÇÃO (campo "Seu Código" na CPFL, "Nº do Cliente" na Enel, geralmente 7-12 dígitos)
 10. VALOR TOTAL A PAGAR (em reais)
+11. CONSUMO MÉDIO em kWh — procure por "Consumo medido (kWh)", "Consumo do mês (kWh)", "Média kWh", "Histórico de Consumo - Média", "Consumo Faturado kWh". Quando houver histórico mensal, calcule a média dos últimos 12 meses. Se só houver o consumo do mês atual, devolva esse valor. Retorne APENAS o número inteiro em kWh (sem unidade).
 
 Retorne APENAS JSON válido:
-{"nome":"","endereco":"","numero":"","bairro":"","cep":"","cidade":"","estado":"","distribuidora":"","numeroInstalacao":"","valorConta":""}
+{"nome":"","endereco":"","numero":"","bairro":"","cep":"","cidade":"","estado":"","distribuidora":"","numeroInstalacao":"","valorConta":"","consumoMedio":""}
 
 Se não encontrar um campo, use "". NÃO invente dados.`;
 
