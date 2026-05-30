@@ -160,9 +160,11 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       try {
         await saveInstance(name);
         instanceSavedRef.current = true;
+        setHasInstance(true);
         ensureWebhook(name);
       } catch { /* non-critical */ }
     }
+    setHasInstance(true);
     fetchAndSaveConnectedPhone(name).catch(() => {/* non-critical */});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addLog, ensureWebhook, fetchAndSaveConnectedPhone, saveInstance, setHealth, setStatus]);
