@@ -147,5 +147,5 @@ export function useCaptureSession(customerId: string | null) {
     }
   }, [customerId, customer]);
 
-  return { customer, loading, filledCount, totalFields, progress, missing, isComplete, updateField, reload: load };
+  return { customer, loading, filledCount, totalFields, progress, missing, isComplete, validation, updateField, reload: load };
 }
