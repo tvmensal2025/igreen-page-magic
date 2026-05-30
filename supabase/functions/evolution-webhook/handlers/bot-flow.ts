@@ -2673,7 +2673,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const billValue = Number(valueMatch[1].replace(".", "").replace(",", "."));
           if (Number.isFinite(billValue) && billValue >= 30) {
             updates.electricity_bill_value = billValue;
-            reply = `Boa, ${first || "anotado"}! Anotei R$ ${billValue.toFixed(0)} 💚\n\nSe puder mandar a *foto* (ou PDF) da sua conta também, eu trava o cálculo exato. Mas se preferir, dá pra seguir só com a média mesmo.`;
+            // Simulação inicial já com base no valor digitado (mem://copy/discount-rate-20 — "até 20%")
+            const economiaMin = Math.max(1, Math.round(billValue * 0.08));
+            const economiaMax = Math.max(2, Math.round(billValue * 0.20));
+            const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            reply =
+              `Boa, ${first || "anotado"}! Anotei R$ ${fmt(billValue)} 💚\n\n` +
+              `💡 Conta atual: *R$ ${fmt(billValue)}*\n` +
+              `💚 Economia estimada: *R$ ${economiaMin} a R$ ${economiaMax}* por mês (até 20%)\n\n` +
+              `✅ Sem obra\n✅ Sem instalação\n✅ Mesma distribuidora\n\n` +
+              `Pra travar o cálculo exato e seguir o cadastro, me manda agora a *foto* (ou PDF) da sua última conta de luz 📸`;
             break;
           }
         }
@@ -4173,6 +4182,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "ask_bill_value": {
+      // 🛡️ Se já temos valor (via OCR da conta), NÃO sobrescrever — apenas avança.
+      const existingVal = Number((customer as any).electricity_bill_value || 0);
+      if (existingVal >= 30) {
+        console.log(`[ask_bill_value] skip — valor já existe (R$ ${existingVal})`);
+        const merged = { ...customer };
+        const next = await autoResolveCepIfNeeded(merged, updates);
+        updates.conversation_step = next;
+        reply = getReplyForStep(next, merged);
+        break;
+      }
       const val = parseFloat(messageText.replace(/[^\d.,]/g, "").replace(",", "."));
       if (isNaN(val) || val <= 0) { reply = "❌ Valor inválido. Digite um número (ex: 350):"; break; }
       updates.electricity_bill_value = val;
