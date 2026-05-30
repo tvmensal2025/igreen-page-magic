@@ -317,6 +317,22 @@ export function shouldSkipAskStep(step: string, customer: any): boolean {
   return shouldSkipAsk(field, customer);
 }
 
+/**
+ * Retorna true se já existem evidências de que a conta de luz foi recebida
+ * (foto, base64, ou dados extraídos pelo OCR). Usado para bloquear o
+ * disparo de capture_documento ANTES da simulação.
+ */
+export function hasBillData(customer: any): boolean {
+  if (!customer) return false;
+  const url = String(customer.electricity_bill_photo_url || customer.electricity_bill_url || "").trim();
+  if (url && url !== "evolution-media:pending") return true;
+  if (customer.bill_base64) return true;
+  if (Number(customer.electricity_bill_value || 0) >= 30) return true;
+  if (Number(customer.media_consumo || 0) > 0) return true;
+  if (String(customer.numero_instalacao || "").replace(/\D/g, "").length >= 7) return true;
+  return false;
+}
+
 // ─── detectQuestionIntent ───────────────────────────────────────────────
 // Heurística leve para "isso parece uma pergunta?". Usada pelo midflow QA
 // para decidir se vale tentar casar uma FAQ no meio do cadastro.
