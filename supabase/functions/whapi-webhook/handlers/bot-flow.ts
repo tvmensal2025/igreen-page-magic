@@ -6,7 +6,6 @@
 // the closure variables are now properties of `ctx`.
 
 import {
-import { resolveFlowId } from "../../_shared/resolve-flow.ts";
   validateCustomerForPortal,
   isPlaceholderEmail,
   isValidEmailFormat,
@@ -161,7 +160,229 @@ async function resolveOcrFallback(
     let { data: flow } = await flowQ.maybeSingle();
     if (!flow?.id) {
       // Fallback: primeiro fluxo ativo do consultor (legado, sem variante)
-      const anyFlow = await resolveFlowId(supabase, consultantId, variant);
+      const { data: anyFlow } = await supabase
+        .from("bot_flows").select("id")
+        .eq("consultant_id", consultantId).eq("is_active", true)
+        .order("created_at", { ascending: true }).limit(1).maybeSingle();
+      flow = anyFlow;
+    }
+    if (!flow?.id) return { retryText: defaultRetryText, escalate: false };
+    const { data: stepRow } = await supabase
+      .from("bot_flow_steps").select("fallback")
+      .eq("flow_id", flow.id).eq("step_type", stepType).eq("is_active", true)
+      .order("position", { ascending: true }).limit(1).maybeSingle();
+    const fb = (stepRow as any)?.fallback;
+    if (!fb || fb.mode !== "retry") return { retryText: defaultRetryText, escalate: false };
+    const maxRetries = Math.max(1, Number(fb.max_retries ?? 2));
+    const retryText = String(fb.retry_text || defaultRetryText);
+    const escalate = attempts >= maxRetries && String(fb.then || "") === "humano";
+    return { retryText, escalate };
+  } catch (e) {
+    console.warn("[resolveOcrFallback] erro:", (e as any)?.message);
+    return { retryText: defaultRetryText, escalate: false };
+  }
+}
+
+// ── Auto-resolve CEP from address data (avoid asking user) ──
+async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string> {
+
+  let step = getNextMissingStep(merged);
+  if (step === "ask_cep" && merged.address_city && merged.address_state && merged.address_street) {
+    console.log("🔍 Auto-resolvendo CEP via ViaCEP antes de perguntar ao usuário...");
+    try {
+      const cepAuto = await buscarCepPorEndereco(merged.address_state, merged.address_city, merged.address_street);
+      if (cepAuto && cepAuto.length === 8 && !/000$/.test(cepAuto)) {
+        console.log(`✅ CEP auto-resolvido: ${cepAuto}`);
+        merged.cep = cepAuto;
+        updates.cep = cepAuto;
+        step = getNextMissingStep(merged);
+      } else {
+        console.log("⚠️ ViaCEP não retornou CEP específico, perguntando ao usuário.");
+      }
+    } catch (e: any) {
+      console.warn(`⚠️ Erro auto-resolve CEP: ${e?.message}`);
+    }
+  }
+  return step;
+}
+
+// ── Quick HEAD check to confirm a media URL is reachable before sending ──
+async function urlExists(url: string): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(url, { method: "HEAD", signal: ctrl.signal });
+    clearTimeout(timer);
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+const NON_NAME_RESPONSES = /^(oi|ola|olá|hey|opa|bom dia|boa tarde|boa noite|sim|nao|não|ok|tudo bem|pode|quero|cadastrar|humano|atendente|menu|reset|recomecar|recomeçar|nao sou eu|não sou eu|como funciona|me explica|o que é|que é isso|quanto custa|é caro|preço|valor|tem taxa|minha distribuidora|qual distribuidora|atende aqui|cidade)$/i;
+const RE_GREETING_ONLY = /^(oi|ol[aá]|opa|bom dia|boa tarde|boa noite|hey)$/i;
+// Reapresentação: "me chamo X", "meu nome é X", "sou (a|o) X", "aqui (é|eh) (a|o) X", "(eu )?sou X" — captura o primeiro nome.
+const RE_SELF_INTRO = /(?:me\s+chamo|meu\s+nome\s+(?:é|eh|e)|aqui\s+(?:é|eh|e)\s+(?:o|a)|(?:eu\s+)?sou\s+(?:o|a))\s+([A-Za-zÀ-ÖØ-öø-ÿ]{2,30})/i;
+// Lead recusa mandar foto da conta — aceita seguir sem.
+const RE_REFUSE_BILL = /\b(n[aã]o\s+(?:tenho|quero|posso|vou)\s+(?:mandar|enviar|tirar|mostrar)|sem\s+(?:foto|conta|comprovante)|n[aã]o\s+(?:tenho|achei)\s+a\s+conta|conta\s+(?:n[aã]o|nao)\s+est[aá]\s+aqui|s[oó]\s+(?:o\s+)?valor)\b/i;
+
+function isPositiveCheckinIntent(text: string): boolean {
+  return /^(sim|s|ss+|joia|ok|okay|blz|beleza|perfeito|quero|pode|vamos|bora|seguir|claro|certo|tranquilo|entendi|deu|show|fechou)\b/i.test(text) || /[👍✅]/.test(text);
+}
+
+function isClubProgressIntent(text: string): boolean {
+  return isPositiveCheckinIntent(text) || /^(pode seguir|sem duvida|nenhuma|nao tenho|não tenho|nao|não|tudo certo|partiu|segue)\b/i.test(text) || /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(text);
+}
+
+function isComoFuncionaStep(row: any): boolean {
+  return /(?:^|[_\s-])como[_\s-]*funciona|d_como_funciona/i.test(`${row?.step_key || ""} ${row?.slot_key || ""} ${row?.title || ""}`);
+}
+
+function isConfidentDocDetection(det: any): boolean {
+  if (!det || det.source === "fallback") return false;
+  const conf = Number(det.confianca || 0);
+  const tipo = String(det.tipo || "").toLowerCase();
+  if (tipo === "cnh") return conf >= 0.62;
+  return conf >= 0.78;
+}
+
+function buildMissingDocPrompt(label: string, merged: any): string {
+  const missing = [
+    !String(merged?.cpf || "").replace(/\D/g, "") ? "CPF" : "",
+    !String(merged?.rg || "").trim() ? (label === "CNH" ? "RG/registro da CNH" : "RG") : "",
+    !String(merged?.data_nascimento || "").trim() ? "data de nascimento" : "",
+  ].filter(Boolean);
+  if (missing.length <= 1 && missing[0] === "CPF") {
+    return `Não consegui ler o CPF na ${label}. Digite os *11 números do CPF* para continuar:`;
+  }
+  return `Consegui ler o documento, mas alguns dados ficaram ilegíveis.\n\nMe envie em uma única mensagem:\n${missing.map((m) => `• ${m}`).join("\n")}`;
+}
+
+function normalizeLeadName(rawText: string | null | undefined): string | null {
+  const raw = String(rawText || "").trim().replace(/[.!?,;:"']/g, "").replace(/\s+/g, " ");
+  const looksLikeName =
+    raw.length >= 2 &&
+    raw.length <= 60 &&
+    /^[A-Za-zÀ-ÖØ-öø-ÿ' ]+$/.test(raw) &&
+    raw.split(/\s+/).length <= 4 &&
+    !NON_NAME_RESPONSES.test(raw);
+  if (!looksLikeName) return null;
+  return raw
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+function isBogusCapturedName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return NON_NAME_RESPONSES.test(String(name).trim());
+}
+
+function buildNotReadyReply(nomeRepresentante: string): string {
+  return `Sem problema, vou respeitar seu tempo 😊\n\nSe quiser continuar depois, é só mandar *cadastrar* ou chamar ${nomeRepresentante}.`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Anti-alucinação: nome OCR só sobrescreve nome confirmado se for muito similar
+// ───────────────────────────────────────────────────────────────
+const RG_HEADER_TERMS = /REP[ÚU]BLICA|FEDERATIVA|CARTEIRA|IDENTIDADE|MINIST[ÉE]RIO|NACIONAL|SECRETARIA|SEGURAN[ÇC]A|INSTITUTO|DETRAN|VALIDA EM TODO|REGISTRO GERAL/i;
+
+function _normName(s: string): string {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
+}
+function _levSim(a: string, b: string): number {
+  a = _normName(a); b = _normName(b);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const m = a.length, n = b.length;
+  const dp: number[] = Array(n + 1).fill(0).map((_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = i - 1; dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return 1 - dp[n] / Math.max(m, n);
+}
+
+/**
+ * Fontes de nome consideradas "confiáveis" — uma vez setado, só pode ser
+ * sobrescrito por confirmação explícita do usuário (editing_* / user_confirmed).
+ */
+const TRUSTED_NAME_SOURCES_LOCK = new Set(["user_confirmed", "ocr_conta", "ocr_doc"]);
+
+/**
+ * Verifica se dois nomes (conta de luz × RG) representam a mesma pessoa.
+ * Match se similaridade ≥ 0.85 ou se primeiro+último nome coincidem.
+ */
+export function checkHolderMatch(billName: string | null | undefined, docName: string | null | undefined): { match: boolean; similarity: number; reason: string } {
+  const a = _normName(String(billName || ""));
+  const b = _normName(String(docName || ""));
+  if (!a || !b) return { match: true, similarity: 1, reason: "missing_one_side" };
+  const sim = _levSim(a, b);
+  const partsA = a.split(/\s+/);
+  const partsB = b.split(/\s+/);
+  const firstLastMatch = partsA[0] === partsB[0] && partsA[partsA.length - 1] === partsB[partsB.length - 1];
+  const match = sim >= 0.85 || firstLastMatch;
+  return { match, similarity: sim, reason: `sim=${sim.toFixed(2)} firstLast=${firstLastMatch}` };
+}
+
+/**
+ * Decide o nome a usar dado OCR de doc.
+ * Retorna null se OCR é alucinação OU se o nome atual veio de fonte confiável.
+ * Fontes confiáveis (ocr_conta, ocr_doc, user_confirmed) só podem ser sobrescritas
+ * via fluxo de edição explícito (editing_conta_nome / editing_doc_nome).
+ */
+function safeAssignName(currentName: string | null | undefined, currentSource: string | null | undefined, ocrName: string | null | undefined): string | null {
+  if (!ocrName) return null;
+  const cleaned = String(ocrName).trim().replace(/\s+/g, " ");
+  if (cleaned.length < 5) return null;
+  if (/\d/.test(cleaned)) return null;
+  if (cleaned.split(/\s+/).length < 2) return null;
+  if (RG_HEADER_TERMS.test(cleaned)) return null;
+  const src = String(currentSource || "");
+  const isOcrSource = src === "ocr_conta" || src === "ocr_doc";
+  // Fonte confiável (outro OCR ou confirmação explícita do usuário) só pode
+  // ser sobrescrita via fluxo de edição. Nome digitado (self_introduced/typed/null)
+  // SEMPRE é sobrescrito pelo OCR — é o nome do titular real da conta/doc.
+  if (currentName && String(currentName).trim().length >= 3 && TRUSTED_NAME_SOURCES_LOCK.has(src)) {
+    if (isOcrSource || src === "user_confirmed") {
+      // Sprint D-B9: log explícito quando OCR é descartado por lock — antes era silencioso
+      console.warn(`[name-lock] OCR descartado: atual="${currentName}" (src=${src}) novo="${cleaned}" — use editing_*_nome para alterar`);
+      return null;
+    }
+  }
+  // Nome atual veio de OCR e é muito diferente: mantém (não confiamos no novo OCR)
+  if (isOcrSource && currentName && String(currentName).trim().length >= 5) {
+    if (_levSim(currentName, cleaned) < 0.7) {
+      console.warn(`[name-lock] OCR rejeitado por baixa similaridade: atual="${currentName}" novo="${cleaned}" sim=${_levSim(currentName, cleaned).toFixed(2)}`);
+      return null;
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * Acha o próximo step ativo do fluxo customizado do consultor por position,
+ * opcionalmente filtrando por step_type. Retorna null se não houver fluxo
+ * configurado ou nenhum step compatível (caller usa fallback legado).
+ */
+async function findNextActiveFlowStep(
+  supabase: any,
+  consultantId: string | null | undefined,
+  opts: { afterPosition?: number; stepType?: string; stepTypeIn?: string[]; variant?: string; flowId?: string } = {},
+): Promise<{ id: string; step_key: string; step_type: string; position: number; transitions: any[]; message_text: string } | null> {
+  try {
+    let flowId: string | null = opts.flowId || null;
+    if (!flowId) {
+      if (!consultantId) return null;
+      const variant = opts.variant || "A";
+      const { data: flow } = await supabase
+        .from("bot_flows").select("id")
+        .eq("consultant_id", consultantId).eq("is_active", true).eq("variant", variant).maybeSingle();
       if (!flow?.id) {
         console.warn(`[findNextActiveFlowStep] sem fluxo ativo consultant=${consultantId} variant=${variant}`);
         return null;
@@ -387,7 +608,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // 1) FAQ
     try {
-      const flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+      const { data: flowRow } = await supabase
+        .from("bot_flows").select("id")
+        .eq("consultant_id", customer.consultant_id)
+        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
       if (flowRow?.id) {
         const qa = await matchQA(supabase, (flowRow as any).id, customer.consultant_id, questionText);
         if (qa && (qa.text || qa.mediaUrls.length)) {
@@ -673,7 +897,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       messageText && !isFile && !isButton &&
       detectQuestionIntent(messageText)
     ) {
-      const flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+      const { data: flowRow } = await supabase
+        .from("bot_flows").select("id")
+        .eq("consultant_id", customer.consultant_id)
+        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
       if (flowRow?.id) {
         const qa = await matchQA(supabase, (flowRow as any).id, customer.consultant_id, messageText);
         if (qa && (qa.text || qa.mediaUrls.length)) {
@@ -774,7 +1001,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
       } catch (_e) { /* ignora — anti-rep é best-effort */ }
 
-      const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+      const { data: flow } = await supabase
+        .from("bot_flows")
+        .select("id")
+        .eq("consultant_id", customer.consultant_id)
+        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
+        .maybeSingle();
       if (!flow?.id) return false;
 
       const { data: stepRow } = await supabase
@@ -1208,7 +1440,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     // precisa extrair o valor e avançar pra aguardando_conta.
     if (!opts?.force && step === "qualificacao" && /\d{2,5}/.test(normalizedText)) return null;
 
-    const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+    const { data: activeFlow } = await supabase
+      .from("bot_flows")
+      .select("id")
+      .eq("consultant_id", customer.consultant_id)
+      .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
+      .maybeSingle();
     if (!activeFlow) return null;
 
     const { data: qaRows } = await supabase
@@ -1430,7 +1667,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // (bot_flow_qa.is_opening). O motor dinâmico (runConversationalFlow) é
       // a única fonte de verdade. Esse caminho só serve para consultores que
       // ainda não migraram para o Flow Builder.
-      const hasDynamicFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+      const { data: hasDynamicFlow } = await supabase
+        .from("bot_flows")
+        .select("id")
+        .eq("consultant_id", customer.consultant_id)
+        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
+        .maybeSingle();
       if (hasDynamicFlow?.id) {
         console.log(`[opening-flow] pulado — consultor tem Fluxo da Camila ativo (${(hasDynamicFlow as any).id})`);
         // segue o switch normal
@@ -1443,7 +1685,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const isFirstContact = (outboundCount || 0) === 0;
 
       if (isFirstContact) {
-        const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+        const { data: activeFlow } = await supabase
+          .from("bot_flows")
+          .select("id")
+          .eq("consultant_id", customer.consultant_id)
+          .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
+          .maybeSingle();
 
         if (activeFlow) {
           const { data: openingQa } = await supabase
@@ -2278,7 +2525,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   };
   if (customer.consultant_id && (CONVERSATIONAL_LEGACY.has(step) || STATE_LEGACY_TO_TYPE[step])) {
     try {
-      const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+      const { data: activeFlow } = await supabase
+        .from("bot_flows").select("id")
+        .eq("consultant_id", customer.consultant_id)
+        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
+        .maybeSingle();
       if (activeFlow?.id) {
         let mapped: any = null;
         if (CONVERSATIONAL_LEGACY.has(step)) {
@@ -2315,7 +2566,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
   if (customer.consultant_id && (stepIsUuid || stepIsCustom)) {
     try {
-      const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+      const { data: flow } = await supabase
+        .from("bot_flows").select("id")
+        .eq("consultant_id", customer.consultant_id)
+        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
       if (flow?.id) {
         let stepRow: any = null;
         if (stepIsUuid) {
@@ -3274,7 +3528,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         // porque isso retorna o primeiro passo ativo (geralmente "Nome do cliente").
         let _captureContaPos = 0;
         try {
-          const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+          const { data: _flowRow } = await supabase
+            .from("bot_flows").select("id")
+            .eq("consultant_id", customer.consultant_id).eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
           if (_flowRow?.id) {
             const { data: _captureRow } = await supabase
               .from("bot_flow_steps").select("position")
@@ -3294,7 +3550,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         // Flag: quando true, despacha SOMENTE este step e pula o CHAIN amplo.
         let _hasExplicitSuccessGoto = false;
         try {
-          const _flowRowSuccess = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+          const { data: _flowRowSuccess } = await supabase
+            .from("bot_flows").select("id")
+            .eq("consultant_id", customer.consultant_id).eq("is_active", true)
+            .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
           if (_flowRowSuccess?.id) {
             const { data: _captureStep } = await supabase
               .from("bot_flow_steps").select("fallback")
@@ -3394,7 +3653,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
           // 2. Avança nextCustom para o próximo capture/finalizar após este step.
           try {
-            const _flowRow3 = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+            const { data: _flowRow3 } = await supabase
+              .from("bot_flows").select("id")
+              .eq("consultant_id", customer.consultant_id).eq("is_active", true)
+              .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
             if (_flowRow3?.id) {
               const { data: _afterSuccess } = await supabase
                 .from("bot_flow_steps")
@@ -3415,7 +3677,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           } catch (_) { /* fallback null */ }
         } else if (nextCustom && nextCustom.step_type === "message" && _captureContaPos > 0) {
           try {
-            const _flowRow2 = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+            const { data: _flowRow2 } = await supabase
+              .from("bot_flows").select("id")
+              .eq("consultant_id", customer.consultant_id).eq("is_active", true)
+              .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
             if (_flowRow2?.id) {
               const { data: _allSteps } = await supabase
                 .from("bot_flow_steps")
@@ -4827,7 +5092,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
         // Procura o passo capture_documento do fluxo ativo e dispara.
         try {
-          const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+          const { data: _flowRow } = await supabase
+            .from("bot_flows").select("id")
+            .eq("consultant_id", customer.consultant_id).eq("is_active", true)
+            .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
           if (_flowRow?.id) {
             const { data: _docStep } = await supabase
               .from("bot_flow_steps")
@@ -5020,7 +5288,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // no FluxoCamila. Se tiver, usa o message_text do passo dela.
       let parabens = "✅ Seus dados já foram registrados! Se precisar de algo, um consultor entrará em contato. ☀️";
       try {
-        const flow = await resolveFlowId(supabase, customer.consultant_id || consultorId, (customer as any);
+        const { data: flow } = await supabase
+          .from("bot_flows").select("id")
+          .eq("consultant_id", customer.consultant_id || consultorId)
+          .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").order("created_at", { ascending: true })
+          .limit(1).maybeSingle();
         if (flow?.id) {
           const { data: passo } = await supabase
             .from("bot_flow_steps")
@@ -5054,7 +5326,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       } else {
         let hasCustomFlow = false;
         try {
-          const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any);
+          const { data: flow } = await supabase
+            .from("bot_flows").select("id")
+            .eq("consultant_id", customer.consultant_id)
+            .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
           hasCustomFlow = !!flow?.id;
         } catch (_) { /* noop */ }
 
