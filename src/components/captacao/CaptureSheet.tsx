@@ -211,6 +211,14 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
     onOpenChange(false);
   };
 
+  // Aplica a sugestão de um campo inválido (ex: consumo estimado a partir do valor)
+  const applySuggestion = async (field: string, value: any) => {
+    if (!customer) return;
+    const { error } = await supabase.from("customers").update({ [field]: value }).eq("id", customer.id);
+    if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
+    else toast({ title: `${field} atualizado`, description: `Valor: ${value}`, duration: 2000 });
+  };
+
   const [askingName, setAskingName] = useState(false);
   // Alinhado com manual-step-send: nome do perfil do WhatsApp NÃO conta como capturado.
   const _nSrc = String((customer as any)?.name_source || ((customer as any)?.name ? "whatsapp_profile" : "")).toLowerCase();
