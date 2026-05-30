@@ -42,6 +42,7 @@ interface UseWhatsAppReturn {
   operationalHealth: OperationalHealth;
   consecutiveTimeouts: number;
   isWhapi: boolean;
+  hasInstance: boolean;
   createAndConnect: () => Promise<void>;
   disconnect: () => Promise<void>;
   reconnect: () => Promise<void>;
