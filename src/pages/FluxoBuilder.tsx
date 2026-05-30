@@ -132,6 +132,13 @@ export default function FluxoBuilder() {
   // Valor inicial vem do `localStorage` (chave `flow-view-mode`) com
   // fallbacks de R1.5 e R1.7 aplicados em `readInitialViewMode()`.
   const [viewMode, setViewModeState] = useState<ViewMode>(readInitialViewMode);
+  const [useV2, setUseV2State] = useState<boolean>(readUseV2);
+  const setUseV2 = useCallback((next: boolean) => {
+    setUseV2State(next);
+    try {
+      window.localStorage.setItem("flow-diagram-v2", next ? "1" : "0");
+    } catch { /* noop */ }
+  }, []);
 
   // task 12.1 — modo somente leitura do `Modo_Diagrama` derivado da viewport
   // atual (R15.2). `isNarrow` (<768px) força `readOnly={true}` no
