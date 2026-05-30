@@ -308,6 +308,29 @@ function Inner(props: FlowDiagramV2Props) {
     setSearchOpen(false);
   }, [rf, onSelectStep]);
 
+  // Fullscreen API
+  const toggleFullscreen = useCallback(async () => {
+    const el = containerRef.current;
+    if (!el) return;
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (e) {
+      console.warn("[FlowDiagramV2] fullscreen error", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    function onFs() {
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    }
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
   // Atalhos de teclado
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -316,13 +339,15 @@ function Inner(props: FlowDiagramV2Props) {
       const isTyping = tag === "input" || tag === "textarea" || target?.isContentEditable;
       if (isTyping) return;
       if (e.key === "/") { e.preventDefault(); setSearchOpen(true); }
+      else if (e.key === "f" && e.shiftKey) { e.preventDefault(); void toggleFullscreen(); }
       else if (e.key === "f" || e.key === "F") { e.preventDefault(); fit(); }
       else if (e.key === "0") { e.preventDefault(); zoom100(); }
       else if (e.key === "h" || e.key === "H") { e.preventDefault(); goHome(); }
+      else if (e.key === "\\") { e.preventDefault(); onTogglePanel?.(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fit, zoom100, goHome]);
+  }, [fit, zoom100, goHome, toggleFullscreen, onTogglePanel]);
 
   return (
     <>
