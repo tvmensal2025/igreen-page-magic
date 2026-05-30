@@ -1,74 +1,66 @@
-# PR5 — Diagrama Blueprint + Fullscreen + Edges legíveis
-
 ## Objetivo
-Tornar o diagrama do FlowBuilder muito mais legível e profissional, no estilo n8n/Retool, com suporte real a tela cheia e edges monocromáticos com peso variável.
 
-## Parte A — Visual "Blueprint técnico" (n8n/Retool)
+Substituir a lista atual de `StepCard` por uma **Timeline Vertical Numerada** — uma "linha do roteiro" top‑down onde cada passo é uma estação do fluxo. Mais fácil de ler que o diagrama porque é linear, numerada e sem cruzamentos.
 
-Atualizar `ExpandableNode.tsx` e o canvas em `FlowDiagramV2.tsx`:
+## Como vai parecer
 
-- **Fundo do canvas**: grid azulado sutil (substituir o `Background` atual por variant `lines` com cor `hsl(var(--primary) / 0.06)` + dots secundários).
-- **Nós com header colorido por tipo**:
-  - Header (top) com cor sólida do tipo (`color.accentBg` mais saturado) + ícone do tipo + título em branco/foreground-on-color.
-  - Corpo em `bg-card` neutro com borda fina `border-border`.
-  - Remover stripe lateral (redundante com o header).
-  - Cantos `rounded-lg` (menos arredondado, mais técnico).
-- **Handles maiores e visíveis**: 10x10px, com anel branco, posicionados nas laterais (left/right em vez de top/bottom) — fluxo horizontal fica mais legível como n8n.
-- **Tipografia**: título 13px semibold, badges 10px uppercase tracking-wide.
-- **Estado selecionado**: anel `ring-2 ring-primary` + leve `shadow-lg`, sem mudar borda (mantém leitura do tipo).
-- **Estado início**: badge "INÍCIO" no header em vez de só ícone.
+```text
+┌─ Timeline ──────────────────────────────┐
+│                                         │
+│  ●─① Boas-vindas               [Início] │
+│  │   "Oi! Eu sou a Iggy, posso te…"     │
+│  │   💬 3 botões  •  ⚡ 2 regras        │
+│  │   → #2 Quero economizar              │
+│  │   → #5 Já sou cliente                │
+│  │                                       │
+│  ●─② Quero economizar          [Pergunta]│
+│  │   "Me conta seu consumo médio…"       │
+│  │   📷 OCR conta  •  ⚡ 1 regra         │
+│  │   → #3 Simulação                      │
+│  │                                       │
+│  ●─③ Simulação                  [IA]    │
+│  ⋮   …                                   │
+└─────────────────────────────────────────┘
+```
 
-## Parte B — Fullscreen
+- **Trilho vertical** à esquerda (1px, `border`) ligando todas as estações.
+- **Bolinha numerada** (`●` com `#1`, `#2`…) ancorada no trilho. Tamanho 28px, fundo `primary/10`, número em `primary`. Passo inicial recebe anel `ring-2 ring-primary` + badge "Início".
+- **Card médio (3 linhas)** ao lado:
+  1. Título + tipo (badge pequeno à direita) + status (inativo, alerta)
+  2. Preview da mensagem (1 linha, truncada em ~70 chars)
+  3. Badges compactos: nº de botões, nº de regras, OCR/IA, mídia
+- **Setas inline clicáveis** abaixo do card (uma por linha): `→ #5 Confirmação`. Clicar **rola e seleciona** o passo destino na própria timeline (scroll suave + highlight pulsante de 1s). Destinos quebrados em `text-destructive` com ⚠.
+- **Selecionado**: bolinha vira sólida `primary`, card ganha `ring-2 ring-primary/30` e `bg-primary/5`.
+- **Hover no card**: trilho do passo acende (`bg-primary/40`) e os destinos também (preview do caminho sem ir pro diagrama).
 
-Dois controles no `CanvasToolbar`:
+## Interações
 
-1. **Toggle "Esconder lista"** (ícone `PanelLeftClose` / `PanelLeftOpen`):
-   - Em `FluxoBuilder.tsx`, esconder a coluna esquerda da lista de steps, dando 100% da largura para o canvas.
-   - Persistir em `localStorage` (`flow-list-hidden`).
-   - Atalho: `\`.
+- **Drag‑and‑drop** continua funcionando (já temos `dnd-kit`). Handle fica na bolinha numerada (cursor‑grab no hover).
+- **Click no card** → seleciona (sincroniza com diagrama e inspector).
+- **Double‑click** → abre inspector.
+- **Click numa seta `→ #N`** → scroll suave até o passo + highlight de 1s.
+- **Filtros/busca** da `StepListToolbar` (PR4) continuam por cima — quando filtra, as bolinhas dos passos ocultos somem mas o trilho permanece tracejado nos "gaps", deixando claro que há passos escondidos.
 
-2. **Botão "Tela cheia"** (ícone `Maximize2` / `Minimize2`):
-   - Usa `element.requestFullscreen()` na div raiz do canvas.
-   - ESC fecha (nativo do browser).
-   - Atalho: `Shift+F`.
-   - Esconde header do app porque o fullscreen é no elemento do canvas (a div toma 100vw/100vh do navegador).
+## Densidade
 
-Ambos podem coexistir (esconder lista + entrar em fullscreen).
+Card médio padrão (~96px de altura). Para fluxos grandes, o toggle "compacto" da toolbar reduz para 1 linha (só título + tipo + badge de contagem de destinos), mantendo o trilho.
 
-## Parte C — Edges monocromáticos com peso
+## Arquivos a mudar
 
-Reescrever a geração de edges em `useFlowGraphV2.ts`:
-
-- **Cor única**: `hsl(var(--foreground))` para todos os edges válidos.
-- **Peso por importância**:
-  - Edge "ordem" (implícito): `strokeWidth: 1`, `opacity: 0.25`, dashed `4 4`.
-  - Edge de transição "default": `strokeWidth: 1.5`, `opacity: 0.5`.
-  - Edge de regra normal: `strokeWidth: 2`, `opacity: 0.75`.
-  - Edge a partir de botão: `strokeWidth: 2.5`, `opacity: 1`.
-  - Edge selecionado/hovered: `strokeWidth: 3`, `opacity: 1` + `markerEnd` com seta cheia.
-  - Edge missing (alvo inexistente): único caso colorido — `hsl(var(--destructive))`, `strokeWidth: 2`, tracejado.
-- **Tipo**: `smoothstep` mantém, mas com `pathOptions: { borderRadius: 12 }` para curvas mais suaves.
-- **Labels**: fundo `bg-background` com `border` fina, padding maior, font 10px medium, só aparece em edges relevantes (esconder em "ordem" por padrão; mostrar no hover).
-- **Setas (markerEnd)**: arrow simples em todos, mesma cor do edge.
-
-## Parte D — Ajustes de layout
-
-- Em `useAutoLayout`, considerar trocar direção para **horizontal (LR)** já que handles agora são laterais. Mais natural para fluxos conversacionais (esquerda → direita = início → fim).
-- Aumentar espaçamento entre nós: `nodesep: 80`, `ranksep: 120`.
-
-## Arquivos afetados
-
-- `src/components/admin/flow-builder/diagram-v2/ExpandableNode.tsx` — redesign blueprint
-- `src/components/admin/flow-builder/diagram-v2/FlowDiagramV2.tsx` — background, fullscreen API, toggle lista
-- `src/components/admin/flow-builder/diagram-v2/CanvasToolbar.tsx` — botões + atalhos
-- `src/components/admin/flow-builder/diagram-v2/useFlowGraphV2.ts` — edges monocromáticos
-- `src/components/admin/flow-builder/diagram-v2/useAutoLayout.ts` — direção LR + espaçamento
-- `src/pages/FluxoBuilder.tsx` — esconder coluna da lista quando toggle ativo
+- **Novo**: `src/components/admin/flow-builder/StepTimeline.tsx` — container da timeline (trilho + map de estações).
+- **Novo**: `src/components/admin/flow-builder/StepTimelineItem.tsx` — uma estação (bolinha + card + setas inline). Substitui o uso direto de `StepCard` na sidebar.
+- **Editado**: `src/pages/FluxoBuilder.tsx` — trocar `<StepCard>` por `<StepTimelineItem>` dentro do `SortableContext`. Adicionar `scrollIntoView` + state de `pulseId` para o "clique pula".
+- **Mantido**: `StepCard.tsx` continua existindo (usado em outros lugares? checar). Se só usado aqui, marca como legado mas não remove neste PR.
+- **Mantido**: `StepListToolbar.tsx` (busca/filtros) sem mudanças.
 
 ## Fora de escopo
-- Lista de steps (já feita no PR4).
-- Diagrama legacy (`FlowDiagram`).
-- Edge functions, DB, IA.
 
-## Validação
-Após implementar: abrir `/admin` → FluxoBuilder, verificar grid azulado, nós com header colorido, edges em escala de cinza com pesos diferentes, botão maximizar funciona, ESC sai, toggle lista funciona.
+- Diagrama (sem alterações).
+- Inspector lateral direito (sem alterações).
+- Edge functions, banco, IA.
+- Remover `StepCard.tsx` (fica para um PR de limpeza).
+
+## Riscos
+
+- `scrollIntoView` dentro de container com `overflow-auto` precisa de `block: "nearest"` pra não bagunçar a página inteira. Vou usar ref no container da timeline.
+- Drag‑and‑drop: o `useSortable` precisa do mesmo `id` no item externo (timeline item), não no card interno. Vou mover os listeners pra bolinha numerada.
