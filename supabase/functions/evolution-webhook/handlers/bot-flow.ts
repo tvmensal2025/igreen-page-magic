@@ -3096,6 +3096,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         let nextCustom = _captureContaPos > 0
           ? await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant, afterPosition: _captureContaPos })
           : null;
+        if (nextCustom && isComoFuncionaStep(nextCustom)) {
+          const { data: _flowRowResultado } = await supabase
+            .from("bot_flows").select("id")
+            .eq("consultant_id", customer.consultant_id).eq("is_active", true)
+            .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+          if (_flowRowResultado?.id) {
+            const { data: _resultado } = await supabase
+              .from("bot_flow_steps").select("*")
+              .eq("flow_id", (_flowRowResultado as any).id).eq("is_active", true)
+              .or("step_key.eq.d_resultado,message_text.ilike.%economia%,message_text.ilike.%valor_conta%")
+              .order("position", { ascending: true }).limit(1).maybeSingle();
+            if (_resultado) {
+              console.log(`[post-confirm-conta] pulando ${nextCustom.step_key} pós-conta → ${(_resultado as any).step_key}`);
+              nextCustom = _resultado;
+            }
+          }
+        }
         if (nextCustom && Number(nextCustom.position || 0) <= _captureContaPos) {
           console.warn(`[post-confirm-conta] ignorando regressão next=${nextCustom.step_key} pos=${nextCustom.position} capture_pos=${_captureContaPos}`);
           nextCustom = null;
