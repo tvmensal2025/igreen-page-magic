@@ -2824,7 +2824,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
             // Fallback: próximo por position
             if (!nextCustom) {
-              nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, {
+              nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant,
                 afterPosition: Number(stepRow.position) || 0,
               });
             }
@@ -2877,7 +2877,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 let nxt: any = null;
                 if (defTxn?.goto_step_id) nxt = await _loadStepById(String(defTxn.goto_step_id));
                 if (!nxt) {
-                  nxt = await findNextActiveFlowStep(supabase, customer.consultant_id, {
+                  nxt = await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant,
                     afterPosition: Number(current.position) || 0,
                   });
                 }
@@ -3509,7 +3509,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         } catch (_e) { /* best-effort */ }
         if (!nextCustom) {
           nextCustom = _captureContaPos > 0
-            ? await findNextActiveFlowStep(supabase, customer.consultant_id, { afterPosition: _captureContaPos })
+            ? await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant, afterPosition: _captureContaPos })
             : null;
         }
         if (nextCustom && Number(nextCustom.position || 0) <= _captureContaPos) {
@@ -3517,7 +3517,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           nextCustom = null;
         }
         if (!nextCustom) {
-          nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, {
+          nextCustom = await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant,
             afterPosition: _captureContaPos > 0 ? _captureContaPos : undefined,
             stepTypeIn: ["capture_documento", "capture_doc", "finalizar_cadastro"],
           });
