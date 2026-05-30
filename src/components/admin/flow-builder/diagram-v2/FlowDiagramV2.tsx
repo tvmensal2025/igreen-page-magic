@@ -82,7 +82,12 @@ function Inner(props: FlowDiagramV2Props) {
     onPatchStep,
     onAddStep,
     onAutoFixAll,
+    panelHidden,
+    onTogglePanel,
   } = props;
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const rf = useReactFlow();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
