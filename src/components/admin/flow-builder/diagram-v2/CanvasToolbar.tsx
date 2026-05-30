@@ -40,7 +40,7 @@ export function CanvasToolbar({
   isFullscreen, onToggleFullscreen,
 }: Props) {
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
+    <div className="flex flex-wrap items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur text-slate-50 bg-slate-800">
       <Button size="sm" variant="ghost" onClick={onAutoLayout} title="Reorganizar layout">
         <Wand2 className="mr-1 h-3.5 w-3.5" />
         Organizar
