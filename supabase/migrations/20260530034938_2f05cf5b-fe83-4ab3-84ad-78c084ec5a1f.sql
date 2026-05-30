@@ -1,0 +1,2 @@
+DELETE FROM customer_flow_state WHERE customer_id='146137eb-8c3b-4bd8-b014-7e2d4f3e30a8';
+UPDATE customers SET conversation_step=NULL, bot_paused=false, bot_paused_until=NULL, last_step_advanced_at=NULL WHERE id='146137eb-8c3b-4bd8-b014-7e2d4f3e30a8';
