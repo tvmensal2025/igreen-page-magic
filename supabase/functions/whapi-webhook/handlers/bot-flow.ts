@@ -37,6 +37,7 @@ import {
   resetLeadIdentity,
   detectQuestionIntent,
   shouldSkipAskStep,
+  hasBillData,
 } from "../../_shared/conversation-helpers.ts";
 import { matchQA } from "./conversational/index.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
