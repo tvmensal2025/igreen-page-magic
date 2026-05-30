@@ -2673,7 +2673,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const billValue = Number(valueMatch[1].replace(".", "").replace(",", "."));
           if (Number.isFinite(billValue) && billValue >= 30) {
             updates.electricity_bill_value = billValue;
-            reply = `Boa, ${first || "anotado"}! Anotei R$ ${billValue.toFixed(0)} 💚\n\nSe puder mandar a *foto* (ou PDF) da sua conta também, eu trava o cálculo exato. Mas se preferir, dá pra seguir só com a média mesmo.`;
+            // Simulação inicial já com base no valor digitado (mem://copy/discount-rate-20 — "até 20%")
+            const economiaMin = Math.max(1, Math.round(billValue * 0.08));
+            const economiaMax = Math.max(2, Math.round(billValue * 0.20));
+            const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            reply =
+              `Boa, ${first || "anotado"}! Anotei R$ ${fmt(billValue)} 💚\n\n` +
+              `💡 Conta atual: *R$ ${fmt(billValue)}*\n` +
+              `💚 Economia estimada: *R$ ${economiaMin} a R$ ${economiaMax}* por mês (até 20%)\n\n` +
+              `✅ Sem obra\n✅ Sem instalação\n✅ Mesma distribuidora\n\n` +
+              `Pra travar o cálculo exato e seguir o cadastro, me manda agora a *foto* (ou PDF) da sua última conta de luz 📸`;
             break;
           }
         }
