@@ -130,26 +130,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Buscar os 10 campos para validar
+    // Carrega TODOS os campos do portal para validar com a régua oficial
     const { data: full } = await supabase
       .from("customers")
-      .select(REQUIRED_FIELDS.join(","))
+      .select(SELECT_FIELDS)
       .eq("id", customerId)
       .maybeSingle();
 
-    const missing: string[] = [];
-    for (const f of REQUIRED_FIELDS) {
-      const v = (full as any)?.[f];
-      if (v === null || v === undefined) { missing.push(f); continue; }
-      if (typeof v === "string" && !v.trim()) { missing.push(f); continue; }
-      if (f === "electricity_bill_value" && Number(v) <= 0) { missing.push(f); }
-    }
-    if (!customer.document_back_url) missing.push("document_back_url");
-    if (!customer.electricity_bill_photo_url) missing.push("electricity_bill_photo_url");
-    if (customer.name_mismatch_flag && !customer.name_mismatch_acknowledged_at) missing.push("name_mismatch_acknowledged");
+    const validation = validateForPortal(full as any);
+    const docMissing: { key: string; label: string }[] = [];
+    if (!customer.document_back_url) docMissing.push({ key: "document_back_url", label: "Documento (verso)" });
+    if (!customer.electricity_bill_photo_url) docMissing.push({ key: "electricity_bill_photo_url", label: "Conta de luz" });
 
-    if (missing.length) {
-      return jres({ ok: false, error: "incomplete", missing }, 400);
+    if (!validation.ok || docMissing.length) {
+      const missing = [...validation.missing, ...docMissing];
+      console.warn(`[finalize-capture] customer=${customerId} REJEITADO — missing=${missing.length} invalid=${validation.invalid.length}`);
+      return jres({
+        ok: false,
+        error: "incomplete",
+        missing: missing.map((m) => m.label),
+        invalid: validation.invalid.map((i) => ({ field: i.field, label: i.label, reason: i.reason, suggestion: i.suggestion })),
+      }, 400);
     }
 
     // Regenera igreen_link do consultor dono (mesmo guard do bot-flow)
