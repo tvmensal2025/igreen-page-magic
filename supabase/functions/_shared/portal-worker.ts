@@ -102,7 +102,7 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
       email,
       cep, address_street, address_number, address_complement,
       address_neighborhood, address_city, address_state,
-      numero_instalacao, media_consumo,
+      numero_instalacao, media_consumo, electricity_bill_value,
       distribuidora, debitos_aberto, possui_procurador,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
@@ -119,6 +119,23 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
   if (!igreenId) {
     console.warn(`[portal-worker] customer=${customerId} sem igreen_id do consultor`);
     return null;
+  }
+
+  const consumoAtual = Number(c.media_consumo || 0);
+  const valorConta = Number(c.electricity_bill_value || 0);
+  let consumoMedio = Number.isFinite(consumoAtual) && consumoAtual >= 50
+    ? Math.round(consumoAtual)
+    : 0;
+
+  if (!consumoMedio && Number.isFinite(valorConta) && valorConta >= 30) {
+    consumoMedio = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+    console.log(`[portal-worker] media_consumo ausente; estimado=${consumoMedio} kWh a partir de R$${valorConta} customer=${customerId}`);
+    await supabase.from("customers").update({ media_consumo: consumoMedio }).eq("id", customerId);
+  }
+
+  if (!consumoMedio) {
+    consumoMedio = 350;
+    console.warn(`[portal-worker] media_consumo e valor ausentes; usando fallback=${consumoMedio} kWh customer=${customerId}`);
   }
 
   return {
@@ -139,7 +156,8 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
       cidade: c.address_city || "",
       uf: c.address_state || "",
       numeroInstalacao: c.numero_instalacao || "",
-      consumoMedio: Number(c.media_consumo || 0),
+      consumoMedio,
+      electricityBillValue: valorConta || undefined,
       // Concessionária = distribuidora local. Fornecedora é resolvida pelo
       // worker via /bonus/rules baseado em UF + concessionária + consumo.
       concessionaria: c.distribuidora || "",

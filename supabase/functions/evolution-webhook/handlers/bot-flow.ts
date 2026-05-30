@@ -4312,6 +4312,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "portal_submitting": {
+      if (String((customer as any).portal2_error || "").includes("Consumo médio não informado")) {
+        const valorConta = Number((customer as any).electricity_bill_value || 0);
+        if (valorConta >= 30) {
+          updates.media_consumo = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+          updates.portal2_status = "retry_ready";
+          updates.error_message = null;
+          reply = "Já ajustei os dados da conta por aqui e estou reenviando seu cadastro para o portal. Pode aguardar alguns instantes ✅";
+          try {
+            const { dispatchPortalWorker } = await import("../../_shared/portal-worker.ts");
+            await supabase.from("customers").update(updates).eq("id", customer.id);
+            await dispatchPortalWorker(supabase, customer.id);
+            (updates as any).__inline_sent = false;
+          } catch (e: any) {
+            console.warn("[portal_submitting] retry consumo falhou:", e?.message);
+          }
+          break;
+        }
+      }
       reply = "⏳ Estamos processando seu cadastro no portal...\n\n📱 Em breve você receberá um *código de verificação no WhatsApp*. Quando receber, *digite aqui*!\n\nAguarde alguns instantes...";
       break;
     }
@@ -4598,6 +4616,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       updates.debitos_aberto = false;
       updates.status = "portal_submitting";
       updates.conversation_step = "portal_submitting";
+
+      // Blindagem final: se o OCR/revisão não gravou consumo médio, estima pelo
+      // valor da conta antes de montar o payload do Portal 2.
+      {
+        const mediaAtual = Number((updates as any).media_consumo ?? (customer as any).media_consumo ?? 0);
+        const valorConta = Number((updates as any).electricity_bill_value ?? (customer as any).electricity_bill_value ?? 0);
+        if ((!Number.isFinite(mediaAtual) || mediaAtual < 50) && Number.isFinite(valorConta) && valorConta >= 30) {
+          updates.media_consumo = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+          console.log(`⚡ media_consumo final estimado=${updates.media_consumo} kWh (valor=R$${valorConta})`);
+        }
+      }
 
       if (isTestMode()) {
         reply = "✅ *Teste concluído:* todos os dados foram coletados e o lead chegou ao ponto de envio para o portal.";

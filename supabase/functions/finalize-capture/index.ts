@@ -160,6 +160,12 @@ Deno.serve(async (req) => {
       finalized_at: new Date().toISOString(),
       ...(finalizedBy ? { finalized_by: finalizedBy } : {}),
     };
+    const mediaAtual = Number((full as any)?.media_consumo || 0);
+    const valorConta = Number((full as any)?.electricity_bill_value || 0);
+    if ((!Number.isFinite(mediaAtual) || mediaAtual < 50) && Number.isFinite(valorConta) && valorConta >= 30) {
+      updates.media_consumo = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+      console.log(`[finalize-capture] media_consumo estimado=${updates.media_consumo} kWh customer=${customerId}`);
+    }
     if (customer.consultant_id) {
       const { data: c } = await supabase
         .from("consultants").select("cadastro_url").eq("id", customer.consultant_id).maybeSingle();
