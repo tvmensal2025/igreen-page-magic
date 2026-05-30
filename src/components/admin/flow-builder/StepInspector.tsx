@@ -449,52 +449,289 @@ export default function StepInspector({
               </div>
             )}
 
-            {isSuperAdmin && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setAdvancedOpen((v) => !v)}
-                  className="flex w-full items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-sm font-medium hover:bg-muted/60"
-                >
-                  <span>Avançado <Badge variant="outline" className="ml-2 text-[10px]">SuperAdmin</Badge></span>
-                  {advancedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                </button>
+          </TabsContent>
 
-                {advancedOpen && (
-                  <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="key">Chave técnica (step_key)</Label>
-                      <Input
-                        id="key"
-                        value={step.step_key ?? ""}
-                        onChange={(e) => onPatch({ step_key: e.target.value || null })}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Usado pra identificar este passo nos relatórios. Mude com cuidado.
-                      </p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Slot de mídia (slot_key)</Label>
-                      <Input
-                        value={step.slot_key ?? ""}
-                        onChange={(e) => onPatch({ slot_key: e.target.value || null })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Delay antes do texto (ms)</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={20000}
-                        value={step.text_delay_ms ?? 0}
-                        onChange={(e) => onPatch({ text_delay_ms: Number(e.target.value) || 0 })}
-                      />
-                    </div>
-                  </div>
-                )}
-              </>
+          {/* MÍDIA */}
+          <TabsContent value="midias" className="pt-4">
+            {step.slot_key ? (
+              <StepMediaPanel
+                consultantId={consultantId}
+                stepKey={step.step_key ?? ""}
+                slotKeys={[step.slot_key]}
+                variant={variant}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                Defina uma <code className="rounded bg-muted px-1">slot_key</code> na aba
+                <br />
+                <strong>Avançado</strong> para anexar mídias.
+              </div>
             )}
           </TabsContent>
+
+          {/* REGRAS & BOTÕES (unificado) */}
+          <TabsContent value="regras" className="space-y-5 pt-4">
+            {/* — Botões — */}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Botões interativos</Label>
+                <Badge variant="outline" className="text-[10px]">{buttons.length}</Badge>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Adicionar pronto:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {BUTTON_PRESETS.map((p) => {
+                    const used = buttons.some((b) => b.id === p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={used}
+                        onClick={() => addButton(p)}
+                        className="rounded-full border bg-card px-2.5 py-1 text-xs hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {p.emoji} {p.title}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {buttons.length === 0 && (
+                <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-center text-xs text-muted-foreground">
+                  Sem botões. Use os presets acima ou deixe o bot esperar texto livre.
+                </div>
+              )}
+
+              {buttons.length > 0 && (
+                <div className="space-y-2">
+                  {buttons.map((b, i) => (
+                    <div key={b.id} className="rounded-lg border bg-card p-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs">{i + 1}</Badge>
+                        <Input
+                          value={b.title}
+                          onChange={(e) => {
+                            const next = [...buttons];
+                            next[i] = { ...b, title: e.target.value };
+                            setButtons(next);
+                          }}
+                          className="h-8 text-sm"
+                        />
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => setButtons(buttons.filter((_, j) => j !== i))}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        <Label className="text-xs">Quando clicar, vai para:</Label>
+                        <Select
+                          value={getButtonGoto(b.id)}
+                          onValueChange={(v) => setButtonGoto(b.id, v)}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Escolher destino…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">⚠ Sem destino</SelectItem>
+                            <SelectItem value="special:ai">🤖 Responder com IA (Gemini)</SelectItem>
+                            <SelectItem value="special:humano">👤 Falar com humano</SelectItem>
+                            <SelectItem value="special:cadastro">📝 Pular para cadastro</SelectItem>
+                            {steps
+                              .filter((s) => s.id !== step.id && s.is_active)
+                              .sort((a, b2) => a.position - b2.position)
+                              .map((s) => (
+                                <SelectItem key={s.id} value={`step:${s.id}`}>
+                                  #{s.position} {s.title}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() =>
+                  setButtons([
+                    ...buttons,
+                    { id: `btn_${Date.now().toString(36)}`, title: "Novo botão" },
+                  ])
+                }
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Botão personalizado
+              </Button>
+            </section>
+
+            <div className="h-px bg-border" />
+
+            {/* — Regras (palavras-chave) — */}
+            <section className="space-y-3">
+              <Label className="text-sm font-semibold">Regras por palavra-chave</Label>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+                Palavras que o lead digita pra pular pra outro passo. Ex: <em>"humano"</em> → handoff.
+              </div>
+              {(() => {
+                const buttonKeys = new Set(buttons.flatMap((b) => [b.id, b.title, b.title.replace(/^\S+\s/, "").trim()]));
+                const ruleTransitions = step.transitions
+                  .map((t, idx) => ({ t, idx }))
+                  .filter(({ t }) => t.trigger_intent !== "default" && !t.trigger_phrases.some((p) => buttonKeys.has(p)) && !buttonKeys.has(t.trigger_intent));
+
+                const updateTransition = (idx: number, patch: Partial<Transition>) => {
+                  const next = step.transitions.map((t, i) => (i === idx ? { ...t, ...patch } : t));
+                  onPatch({ transitions: next });
+                };
+                const removeTransition = (idx: number) => {
+                  onPatch({ transitions: step.transitions.filter((_, i) => i !== idx) });
+                };
+                const addRule = () => {
+                  onPatch({
+                    transitions: [
+                      ...step.transitions,
+                      { trigger_intent: "palavra_chave", trigger_phrases: [""], goto_step_id: null, goto_special: null },
+                    ],
+                  });
+                };
+                const getGoto = (t: Transition): string => {
+                  if (t.goto_special) return `special:${t.goto_special}`;
+                  if (t.goto_step_id) return `step:${t.goto_step_id}`;
+                  return "none";
+                };
+                const setGoto = (idx: number, value: string) => {
+                  updateTransition(idx, {
+                    goto_step_id: value.startsWith("step:") ? value.slice(5) : null,
+                    goto_special: value.startsWith("special:") ? (value.slice(8) as any) : null,
+                  });
+                };
+
+                return (
+                  <>
+                    {ruleTransitions.length === 0 && (
+                      <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-center text-xs text-muted-foreground">
+                        Nenhuma regra. Clique em <strong>+ Nova regra</strong> abaixo.
+                      </div>
+                    )}
+
+                    {ruleTransitions.map(({ t, idx }) => (
+                      <div key={idx} className="space-y-2 rounded-lg border bg-card p-3">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs">Regra {idx + 1}</Badge>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="ml-auto h-7 w-7 text-destructive"
+                            onClick={() => removeTransition(idx)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Palavras-chave (separadas por vírgula)</Label>
+                          <Input
+                            className="h-9 text-sm"
+                            value={t.trigger_phrases.join(", ")}
+                            onChange={(e) =>
+                              updateTransition(idx, {
+                                trigger_phrases: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                              })
+                            }
+                            placeholder="ex: humano, atendente, falar com alguém"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Quando casar, vai para:</Label>
+                          <Select value={getGoto(t)} onValueChange={(v) => setGoto(idx, v)}>
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Escolher destino…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">⚠ Sem destino</SelectItem>
+                              <SelectItem value="special:ai">🤖 Responder com IA (Gemini)</SelectItem>
+                              <SelectItem value="special:humano">👤 Falar com humano</SelectItem>
+                              <SelectItem value="special:cadastro">📝 Pular para cadastro</SelectItem>
+                              {steps
+                                .filter((s) => s.id !== step.id && s.is_active)
+                                .sort((a, b2) => a.position - b2.position)
+                                .map((s) => (
+                                  <SelectItem key={s.id} value={`step:${s.id}`}>
+                                    #{s.position} {s.title}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    ))}
+
+                    <Button variant="outline" size="sm" className="w-full" onClick={addRule}>
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Nova regra
+                    </Button>
+                  </>
+                );
+              })()}
+            </section>
+          </TabsContent>
+
+          {/* AVANÇADO */}
+          <TabsContent value="avancado" className="space-y-3 pt-4">
+            {!isSuperAdmin ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                Configurações avançadas disponíveis apenas para <strong>SuperAdmin</strong>.
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold">Configurações técnicas</Label>
+                  <Badge variant="outline" className="text-[10px]">SuperAdmin</Badge>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="key">Chave técnica (step_key)</Label>
+                  <Input
+                    id="key"
+                    value={step.step_key ?? ""}
+                    onChange={(e) => onPatch({ step_key: e.target.value || null })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Usado pra identificar este passo nos relatórios. Mude com cuidado.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Slot de mídia (slot_key)</Label>
+                  <Input
+                    value={step.slot_key ?? ""}
+                    onChange={(e) => onPatch({ slot_key: e.target.value || null })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Delay antes do texto (ms)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={20000}
+                    value={step.text_delay_ms ?? 0}
+                    onChange={(e) => onPatch({ text_delay_ms: Number(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 
           {/* MÍDIAS */}
           <TabsContent value="midias" className="pt-4">
