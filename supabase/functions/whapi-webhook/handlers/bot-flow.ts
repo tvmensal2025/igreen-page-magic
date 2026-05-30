@@ -36,6 +36,7 @@ import {
   TRUSTED_NAME_SOURCES,
   resetLeadIdentity,
   detectQuestionIntent,
+  shouldSkipAskStep,
 } from "../../_shared/conversation-helpers.ts";
 import { matchQA } from "./conversational/index.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
@@ -2603,6 +2604,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           else if (stype === "capture_email") step = "ask_email";
           else if (stype === "confirm_phone") step = "ask_phone_confirm";
           else if (stype === "finalizar_cadastro") step = "finalizando";
+
+          // 🛡️ Skip-guard global: se o passo determinístico mapeado já tem o dado
+          // preenchido (OCR, edição manual, passo anterior), avança para o próximo
+          // realmente faltante. Evita reperguntar documento/email/telefone/etc.
+          if (step && shouldSkipAskStep(step, customer)) {
+            const merged = { ...customer };
+            const skipped = step;
+            step = getNextMissingStep(merged);
+            console.log(`[custom-step-resolver] skip ${skipped} → ${step} (dado já existe)`);
+          }
           else {
             // step_type === "message" → passo informativo.
             // ANTES de avançar, garante que o conteúdo do step ATUAL foi emitido
@@ -2852,6 +2863,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               else if (ntype === "capture_email") { nextStepValue = "ask_email"; _isCapture = true; }
               else if (ntype === "confirm_phone") { nextStepValue = "ask_phone_confirm"; _isCapture = true; }
               else if (ntype === "finalizar_cadastro") nextStepValue = "finalizando";
+              // 🛡️ Skip-guard: se o capture seguinte já tem o dado, avança direto.
+              if (_isCapture && shouldSkipAskStep(nextStepValue, customer)) {
+                const skipped = nextStepValue;
+                nextStepValue = getNextMissingStep({ ...customer });
+                _isCapture = false;
+                console.log(`[custom-step-resolver] skip ${skipped} → ${nextStepValue} (dado já existe)`);
+              }
               console.log(`[custom-step-resolver] message→advance final=${current.step_key} type=${ntype} isCapture=${_isCapture}`);
               const _updates: any = { conversation_step: nextStepValue, __inline_sent: (emittedCurrent || dispatchedAny) || undefined };
               // Marca timestamp para steps com inline capture (mesmo sendo message)
@@ -4857,6 +4875,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const respNorm = resp.replace(/^[^a-z0-9]+/i, "").trim();
       const wants = triggers.includes(resp) || triggers.includes(respNorm) || /^(sim|quero|bora|vamos|pode|ok|cadastr|simular)\b/i.test(respNorm);
       if (wants) {
+        // 🛡️ Se o documento JÁ foi enviado (frente + verso quando aplicável),
+        // não pedir de novo — avança direto para o próximo passo faltando.
+        if (shouldSkipAskStep("aguardando_doc_auto", customer) && shouldSkipAskStep("aguardando_doc_verso", customer)) {
+          console.log("[ask_quero_cadastrar] skip — documento já enviado, avançando direto");
+          const merged = { ...customer };
+          const next = await autoResolveCepIfNeeded(merged, updates);
+          updates.conversation_step = next === "ask_finalizar" ? "finalizando" : next;
+          reply = next === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(next, merged);
+          break;
+        }
         // Procura o passo capture_documento do fluxo ativo e dispara.
         try {
           const { data: _flowRow } = await supabase
