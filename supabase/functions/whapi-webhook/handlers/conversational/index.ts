@@ -1727,7 +1727,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // Quando é reply final, o texto vai como reply (não inline). Quando é cascade
     // ou quando o consultor pediu texto antes da mídia, mandamos tudo inline aqui.
     const slotKey = st.slot_key || st.step_key || st.id;
-    const uiOrder = await getStepMediaOrder(ctx.supabase, consultantId, slotKey);
+    const uiOrder = await getStepMediaOrder(
+      ctx.supabase,
+      consultantId,
+      [st.step_key, st.slot_key, slotKey].filter(Boolean) as string[],
+    );
     const stepOrder = Array.isArray(st.media_order) && st.media_order.length > 0
       ? st.media_order.map((k) => String(k).toLowerCase())
       : null;
