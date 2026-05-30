@@ -1304,6 +1304,48 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_flow_audit_log: {
+        Row: {
+          action: string
+          after: Json | null
+          before: Json | null
+          consultant_id: string | null
+          created_at: string
+          flow_id: string
+          id: string
+          source: string
+          step_id: string | null
+          summary: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          after?: Json | null
+          before?: Json | null
+          consultant_id?: string | null
+          created_at?: string
+          flow_id: string
+          id?: string
+          source?: string
+          step_id?: string | null
+          summary?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          after?: Json | null
+          before?: Json | null
+          consultant_id?: string | null
+          created_at?: string
+          flow_id?: string
+          id?: string
+          source?: string
+          step_id?: string | null
+          summary?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       bot_flow_qa: {
         Row: {
           created_at: string
