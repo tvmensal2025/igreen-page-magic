@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      _deleted_customers_backup: {
+        Row: {
+          customer_row: Json | null
+          deleted_at: string | null
+          flow_state_row: Json | null
+          reason: string | null
+        }
+        Insert: {
+          customer_row?: Json | null
+          deleted_at?: string | null
+          flow_state_row?: Json | null
+          reason?: string | null
+        }
+        Update: {
+          customer_row?: Json | null
+          deleted_at?: string | null
+          flow_state_row?: Json | null
+          reason?: string | null
+        }
+        Relationships: []
+      }
       ad_account_managers: {
         Row: {
           consultant_id: string
