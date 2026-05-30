@@ -187,21 +187,18 @@ function Inner(props: FlowDiagramV2Props) {
   );
 
   // Decora edges com highlight/dim
-  const decoratedEdges = useMemo(() => {
+  const decoratedEdges = useMemo<Edge[]>(() => {
     const focus = hoveredId ?? selectedId;
     if (!focus) return baseEdges;
-    return baseEdges.map((e) => {
-      const isHighlighted = highlightedEdges.has(e.id);
-      return {
-        ...e,
-        animated: isHighlighted,
-        style: {
-          ...(e.style as any),
-          opacity: isHighlighted ? 1 : 0.2,
-          strokeWidth: isHighlighted ? 2.5 : (e.style as any)?.strokeWidth ?? 1.5,
-        },
-      };
-    });
+    return baseEdges.map((e) => ({
+      ...e,
+      animated: highlightedEdges.has(e.id),
+      style: {
+        ...(e.style as any),
+        opacity: highlightedEdges.has(e.id) ? 1 : 0.2,
+        strokeWidth: highlightedEdges.has(e.id) ? 2.5 : (e.style as any)?.strokeWidth ?? 1.5,
+      },
+    }));
   }, [baseEdges, highlightedEdges, hoveredId, selectedId]);
 
   const handleNodesChange = useCallback(
