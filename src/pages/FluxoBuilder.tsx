@@ -126,6 +126,7 @@ export default function FluxoBuilder() {
   const [existingVariants, setExistingVariants] = useState<Variant[]>(["A"]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspectorId, setInspectorId] = useState<string | null>(null);
+  const [pulseStepId, setPulseStepId] = useState<string | null>(null);
   const [showConnections, setShowConnections] = useState(true);
   const [mediaCounts, setMediaCounts] = useState<Record<string, { audio: number; image: number; video: number }>>({});
   const [templatesOpen, setTemplatesOpen] = useState(false);
