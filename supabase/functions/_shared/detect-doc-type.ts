@@ -196,6 +196,7 @@ async function callGemini(prompt: string, imagePart: any, apiKey: string, model:
 /** Versão estruturada que retorna tipo + confiança + origem da decisão. */
 export async function detectDocumentTypeDetailed(input: DetectInput): Promise<DetectResult> {
   if (!input.geminiApiKey) {
+    // Sem Gemini não dá para classificar — mantém comportamento legado (rg_antigo) para não travar.
     return { tipo: "rg_antigo", confianca: 0, source: "fallback" };
   }
   const imagePart = await fetchImagePart(input);
