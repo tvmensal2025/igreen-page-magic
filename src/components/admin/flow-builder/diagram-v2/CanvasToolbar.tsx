@@ -1,9 +1,11 @@
-// Toolbar do Diagrama v2: layout, expandir, navegação, compactar, busca.
+// Toolbar do Diagrama v2.
+// PR5: adicionados toggle "esconder painel direito" e botão fullscreen.
 
 import { Button } from "@/components/ui/button";
 import {
   Maximize2, Minimize2, Wand2, Plus, AlertTriangle,
   Maximize, Home, ZoomIn, Search, LayoutGrid, Layers,
+  PanelRightClose, PanelRightOpen, Expand, Shrink,
 } from "lucide-react";
 
 type Props = {
@@ -19,6 +21,10 @@ type Props = {
   onOpenSearch: () => void;
   compact: boolean;
   onToggleCompact: () => void;
+  panelHidden: boolean;
+  onTogglePanel: () => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
 };
 
 export function CanvasToolbar({
@@ -30,6 +36,8 @@ export function CanvasToolbar({
   onAutoFix,
   onFit, onZoom100, onGoHome, onOpenSearch,
   compact, onToggleCompact,
+  panelHidden, onTogglePanel,
+  isFullscreen, onToggleFullscreen,
 }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur">
@@ -58,6 +66,23 @@ export function CanvasToolbar({
       </Button>
       <Button size="sm" variant="ghost" onClick={onOpenSearch} title="Buscar passo (/)">
         <Search className="h-3.5 w-3.5" />
+      </Button>
+      <div className="mx-1 h-5 w-px bg-border" />
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={onTogglePanel}
+        title={panelHidden ? "Mostrar painel lateral (\\)" : "Esconder painel lateral (\\)"}
+      >
+        {panelHidden ? <PanelRightOpen className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={onToggleFullscreen}
+        title={isFullscreen ? "Sair de tela cheia (Esc)" : "Tela cheia (Shift+F)"}
+      >
+        {isFullscreen ? <Shrink className="h-3.5 w-3.5" /> : <Expand className="h-3.5 w-3.5" />}
       </Button>
       <div className="mx-1 h-5 w-px bg-border" />
       <Button size="sm" variant="default" onClick={onAddStep}>

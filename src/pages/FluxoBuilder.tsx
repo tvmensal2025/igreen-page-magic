@@ -173,6 +173,19 @@ export default function FluxoBuilder() {
     } catch { /* noop */ }
   }, []);
 
+  // PR5 — esconde o painel direito (WhatsApp preview) para dar largura
+  // total ao canvas no modo diagrama. Persistido em localStorage.
+  const [panelHidden, setPanelHiddenState] = useState<boolean>(() => {
+    try { return window.localStorage.getItem("flow-panel-hidden") === "1"; } catch { return false; }
+  });
+  const togglePanelHidden = useCallback(() => {
+    setPanelHiddenState((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem("flow-panel-hidden", next ? "1" : "0"); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
   // task 12.1 — modo somente leitura do `Modo_Diagrama` derivado da viewport
   // atual (R15.2). `isNarrow` (<768px) força `readOnly={true}` no
   // `<FlowDiagram>`; `isMedium` (768-1023px) sinaliza ao `<ViewToggle>` para
@@ -627,7 +640,7 @@ export default function FluxoBuilder() {
         `selectedId` e `inspectorId` (R1.6) vivem no `FluxoBuilder` e são
         naturalmente preservados.
       */}
-      <main className="mx-auto grid max-w-7xl gap-4 px-4 py-6 lg:grid-cols-[1fr_400px]">
+      <main className={`mx-auto grid gap-4 px-4 py-6 ${viewMode === "diagrama" && panelHidden ? "max-w-none lg:grid-cols-1" : "max-w-7xl lg:grid-cols-[1fr_400px]"}`}>
         {/* Coluna esquerda — Modo_Lista (mantida montada) */}
         <section
           className={viewMode === "diagrama" ? "hidden" : "space-y-3"}
@@ -764,6 +777,8 @@ export default function FluxoBuilder() {
                     mediaCounts={mediaCounts}
                     validation={validation}
                     readOnly={diagramReadOnly}
+                    panelHidden={panelHidden}
+                    onTogglePanel={togglePanelHidden}
                     onSelectStep={setSelectedId}
                     onOpenInspector={(id) => {
                       setSelectedId(id);
@@ -823,10 +838,12 @@ export default function FluxoBuilder() {
         )}
 
         {/* Coluna direita — preview WhatsApp + preferências de IA */}
-        <aside className="hidden space-y-3 lg:block">
-          <WhatsAppPreview step={selected} steps={steps} consultantName={consultantName} />
-          {userId && <AiPreferencesCard consultantId={userId} />}
-        </aside>
+        {!(viewMode === "diagrama" && panelHidden) && (
+          <aside className="hidden space-y-3 lg:block">
+            <WhatsAppPreview step={selected} steps={steps} consultantName={consultantName} />
+            {userId && <AiPreferencesCard consultantId={userId} />}
+          </aside>
+        )}
       </main>
 
       {/* Inspector */}
