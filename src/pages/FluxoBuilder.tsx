@@ -887,14 +887,51 @@ export default function FluxoBuilder() {
           </section>
         )}
 
+        {/* Modo_Planilha — tabela densa só-leitura com revisão IA GPT-5.5 */}
+        {viewMode === "planilha" && (
+          <section className="w-full" aria-label="Editor de fluxo em planilha">
+            <Suspense fallback={
+              <div className="grid h-64 place-items-center text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            }>
+              <FlowSpreadsheet
+                steps={steps}
+                flowId={flowId}
+                variant={editingVariant}
+                mediaCounts={mediaCounts}
+                onOpenStep={(id) => { setSelectedId(id); setInspectorId(id); }}
+                onReviewAll={() => runReview("global")}
+                onSuggestForStep={(id) => runReview("step", id)}
+                reviewing={reviewLoading}
+                suggestingStepId={suggestingStepId}
+              />
+            </Suspense>
+          </section>
+        )}
+
         {/* Coluna direita — preview WhatsApp + preferências de IA */}
-        {!(viewMode === "diagrama" && panelHidden) && (
+        {!(viewMode === "diagrama" && panelHidden) && viewMode !== "planilha" && (
           <aside className="hidden space-y-3 lg:block">
             <WhatsAppPreview step={selected} steps={steps} consultantName={consultantName} />
             {userId && <AiPreferencesCard consultantId={userId} />}
           </aside>
         )}
       </main>
+
+      {/* Painel lateral de revisão IA */}
+      <FlowReviewPanel
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        result={reviewResult}
+        loading={reviewLoading}
+        error={reviewError}
+        steps={steps}
+        flowId={flowId}
+        consultantId={userId}
+        onApplied={() => userId && reload(userId, editingVariant)}
+        onJumpToStep={(id) => { setSelectedId(id); setInspectorId(id); }}
+      />
 
       {/* Inspector */}
       {userId && (
