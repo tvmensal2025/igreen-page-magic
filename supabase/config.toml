@@ -115,3 +115,6 @@ verify_jwt = false
 
 [functions.migrate-engine-v3]
 verify_jwt = false
+
+[functions.flow-spreadsheet-review]
+verify_jwt = true
