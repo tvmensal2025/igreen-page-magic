@@ -350,7 +350,7 @@ function Inner(props: FlowDiagramV2Props) {
   }, [fit, zoom100, goHome, toggleFullscreen, onTogglePanel]);
 
   return (
-    <>
+    <div ref={containerRef} className="h-full w-full bg-background">
       <ReactFlow
         nodes={decoratedNodes}
         edges={decoratedEdges}
@@ -372,7 +372,18 @@ function Inner(props: FlowDiagramV2Props) {
         proOptions={{ hideAttribution: true }}
         onlyRenderVisibleElements
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+        <Background
+          variant={BackgroundVariant.Lines}
+          gap={28}
+          size={1}
+          color="hsl(var(--primary) / 0.06)"
+        />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={28}
+          size={1}
+          color="hsl(var(--primary) / 0.18)"
+        />
         <Controls showInteractive={false} />
         <MiniMap
           pannable
@@ -398,6 +409,10 @@ function Inner(props: FlowDiagramV2Props) {
             onOpenSearch={() => setSearchOpen(true)}
             compact={compact}
             onToggleCompact={() => setCompact(!compact)}
+            panelHidden={!!panelHidden}
+            onTogglePanel={() => onTogglePanel?.()}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={() => void toggleFullscreen()}
           />
         </Panel>
         {steps.length === 0 && (
@@ -437,17 +452,14 @@ function Inner(props: FlowDiagramV2Props) {
           </CommandGroup>
         </CommandList>
       </CommandDialog>
-    </>
+    </div>
   );
 }
 
 export default function FlowDiagramV2(props: FlowDiagramV2Props) {
-  const ref = useRef<HTMLDivElement>(null);
   return (
-    <div ref={ref} className="h-full w-full">
-      <ReactFlowProvider>
-        <Inner {...props} />
-      </ReactFlowProvider>
-    </div>
+    <ReactFlowProvider>
+      <Inner {...props} />
+    </ReactFlowProvider>
   );
 }
