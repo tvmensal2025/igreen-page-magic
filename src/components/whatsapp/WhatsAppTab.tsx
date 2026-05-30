@@ -188,7 +188,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
             <button
               onClick={() => {
                 setActiveSubTab("conversas");
-                if (connectionStatus === "disconnected") createAndConnect();
+                if (hasInstance && connectionStatus === "disconnected") createAndConnect();
               }}
               disabled={isLoading}
               className="text-[10px] text-primary hover:underline font-medium shrink-0"
