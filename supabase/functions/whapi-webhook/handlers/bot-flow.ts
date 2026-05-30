@@ -3944,9 +3944,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
       const mime = imageMessage?.mimetype || documentMessage?.mimetype || "image/jpeg";
-      let detectedType: "cnh" | "rg_novo" | "rg_antigo" = "rg_antigo";
+      let detectedType: "cnh" | "rg_novo" | "rg_antigo" | "outro" = "rg_antigo";
       let detectConfidence = 0;
       let detectSource: string = "fallback";
+      let detectMotivo: string | undefined;
 
       // 🚫 Mock OCR doc removido (2026-05-25): simulador roda detect-doc-type +
       // ocrDocumentoFrenteVerso REAIS (Gemini), igual ao fluxo de produção.
@@ -3961,10 +3962,26 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         detectedType = det.tipo;
         detectConfidence = det.confianca;
         detectSource = det.source;
-        console.log(`🤖 [doc-auto] tipo=${detectedType} conf=${detectConfidence.toFixed(2)} source=${detectSource}`);
+        detectMotivo = det.motivo;
+        console.log(`🤖 [doc-auto] tipo=${detectedType} conf=${detectConfidence.toFixed(2)} source=${detectSource} motivo=${detectMotivo || "-"}`);
       } catch (e) {
         console.warn(`⚠️ [doc-auto] falha detectando tipo:`, (e as Error).message);
       }
+
+      // 🚫 FIX 2026-05-30 (caso 5511971254913): rejeita arquivos que NÃO são
+      // RG/CNH (conta de energia, selfie, boleto, print). Sem isso o handler
+      // salvava como frente do RG e pedia "envie o VERSO do RG" para uma conta
+      // de luz. Mantém o cliente em aguardando_doc_auto e pede o documento certo.
+      if (detectedType === "outro") {
+        const motivoTxt = detectMotivo ? ` (parece *${detectMotivo}*)` : "";
+        console.log(`🚫 [doc-auto] rejeitado: não é RG/CNH${motivoTxt}`);
+        reply = `❌ Esse arquivo não parece ser um *RG* ou *CNH*${motivoTxt}.\n\n` +
+                `📸 Por favor, me envia uma foto/PDF da *frente do seu RG* ou da sua *CNH*.\n\n` +
+                `Formatos aceitos: JPG, PNG ou PDF.`;
+        // NÃO atualiza document_front_url, NÃO avança conversation_step.
+        break;
+      }
+
 
       // Salva a frente recebida (sempre — independente da confiança da detecção).
       if (fileBase64) {
