@@ -9,6 +9,8 @@
 // IMPORTANTE: este arquivo é espelhado em
 // `supabase/functions/_shared/portalValidation.ts` (mesma lógica, Deno).
 // Se mudar aqui, mude lá também.
+import { isValidDistribuidora, isHoldingName, suggestDistribuidoras } from "./distribuidoras";
+
 
 export type FieldKey =
   | "name" | "cpf" | "data_nascimento"
@@ -78,12 +80,22 @@ export interface InvalidIssue {
   suggestion?: string | number;
 }
 
+export interface PendingItem {
+  kind: "missing" | "invalid";
+  field: string;
+  label: string;
+  reason?: string;
+}
+
 export interface ValidationResult {
   ok: boolean;
   missing: FieldDef[];
   invalid: InvalidIssue[];
   filledCount: number;
   totalFields: number;
+  /** Lista unificada de pendências (faltantes + inválidos) pra UI mostrar
+   *  exatamente o que está bloqueando o CADASTRAR, sem desencontro. */
+  pendingItems: PendingItem[];
 }
 
 // Faixa esperada R$/kWh — regra de negócio do cliente: ≈ R$1/kWh.
