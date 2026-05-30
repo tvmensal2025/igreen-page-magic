@@ -126,30 +126,24 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const billConfirmed = !billHasData || !!(customer as any)?.bill_data_confirmed_at;
   const docConfirmed = !docHasData || !!(customer as any)?.doc_data_confirmed_at;
   const allConfirmed = billConfirmed && docConfirmed;
-  const canSubmit = filledCount === totalFields && allConfirmed;
+  // canSubmit usa a validação canônica do Portal — bloqueia tanto faltantes
+  // quanto inválidos (CPF errado, R$/kWh fora da faixa, etc.). Antes era só
+  // "filledCount === totalFields", o que deixava media_consumo passar com
+  // valor zero/null e o portal rejeitava silenciosamente.
+  const canSubmit = !!validation?.ok && allConfirmed;
   const phrase = MOTIVATIONAL_PHRASES[filledCount] || `Faltam ${totalFields - filledCount} dados 💪`;
-  const nextMissing = CAPTURE_FIELDS.find((f) => {
-    const v = (customer as any)?.[f.key];
-    if (v === null || v === undefined) return true;
-    if (typeof v === "string" && !v.trim()) return true;
-    if (f.key === "electricity_bill_value" && Number(v) <= 0) return true;
-    return false;
-  });
+  const nextMissing = validation?.missing?.[0]
+    ? { key: validation.missing[0].key, label: validation.missing[0].label }
+    : null;
 
-  // Lista descritiva do que falta (texto mostrado no tooltip do botão final).
-  // Antes só dizia "N campos", o que confundia o consultor — agora aponta os
-  // labels exatos pra ele localizar na ficha.
-  const missingFieldLabels = CAPTURE_FIELDS.filter((f) => {
-    const v = (customer as any)?.[f.key];
-    if (v === null || v === undefined) return true;
-    if (typeof v === "string" && !v.trim()) return true;
-    if (f.key === "electricity_bill_value" && Number(v) <= 0) return true;
-    return false;
-  }).map((f) => f.label);
+  // Lista descritiva do que falta/está errado pro tooltip do botão final.
+  const missingFieldLabels = (validation?.missing || []).map((m) => m.label);
+  const invalidLabels = (validation?.invalid || []).map((i) => `${i.label}: ${i.reason}`);
   const submitTooltip = canSubmit
     ? "Enviar pro portal (VPS + OTP)"
     : [
-        missingFieldLabels.length > 0 ? `Faltam: ${missingFieldLabels.join(", ")}` : "",
+        missingFieldLabels.length > 0 ? `Faltam: ${missingFieldLabels.slice(0, 3).join(", ")}${missingFieldLabels.length > 3 ? "…" : ""}` : "",
+        invalidLabels.length > 0 ? `Inválido: ${invalidLabels.slice(0, 2).join(" · ")}` : "",
         !billConfirmed ? "Confirmar dados da conta de luz" : "",
         !docConfirmed ? "Confirmar dados do documento" : "",
       ].filter(Boolean).join(" · ");
