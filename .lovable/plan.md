@@ -1,55 +1,40 @@
-# Fluxo D público e padrão para todos os consultores
+Plano para melhorar as mensagens e o comportamento fora do fluxo sem quebrar o que já existe:
 
-## Objetivo
+1. Revisar as fontes reais de mensagens
+   - Auditar os textos hardcoded em `supabase/functions/whapi-webhook/handlers/bot-flow.ts`.
+   - Auditar os fallbacks de templates em `handlers/conversational/templates.ts` para Whapi e Evolution.
+   - Verificar seeds/migrations de mensagens de fallback para não corrigir só texto “morto”.
+   - Se houver mensagens ativas em `bot_messages`, preparar uma correção segura via migration/update controlado, preservando variantes e mídias.
 
-O Fluxo D do superadmin (`Fluxo Whapi (botões)` — id `320bf22c-e383-4f53-a3c0-b88b89b02558`) passa a ser um **template vivo compartilhado**: todos os consultores executam exatamente esse fluxo, em tempo real, sem cópia. Edições feitas pelo superadmin refletem imediatamente em todos. Todo lead novo, de qualquer consultor, começa na variante D.
+2. Padronizar gramática e tom de voz
+   - Corrigir pontuação, concordância e frases repetidas.
+   - Trocar informalidades excessivas por um tom WhatsApp profissional e humano, sem deixar robótico.
+   - Padronizar chamadas como “envie”, “aguarde”, “em breve alguém responde aqui” e mensagens de handoff humano.
+   - Manter emojis úteis, mas reduzir redundância e frases como “já já”, “pra”, “a gente tava”, “instantinho”, quando prejudicarem a clareza.
 
-## Passo 1 — Migration (schema + dados)
+3. Melhorar perguntas fora do fluxo
+   - Preservar o comportamento atual do `respondAndReentry`: responder dúvida via FAQ/IA/fallback e depois voltar ao mesmo passo.
+   - Ajustar a mensagem de retorno para ficar mais clara, por exemplo: resposta da dúvida + “Voltando ao cadastro: [pergunta pendente]”.
+   - Garantir que perguntas em etapas de coleta (`ask_email`, `ask_cep`, `aguardando_conta`, documento etc.) não avancem o fluxo por engano.
+   - Manter o limite de muitas dúvidas para chamar humano, apenas melhorando o texto enviado ao cliente.
 
-1. Adicionar coluna `is_public BOOLEAN NOT NULL DEFAULT false` em `public.bot_flows`.
-2. Marcar `is_public = true` no fluxo D do superadmin (`320bf22c-…`).
-3. Garantir unicidade: índice parcial único `(variant) WHERE is_public = true` — só pode existir UM fluxo público por variante.
-4. Atualizar `active_variants` de todos os 13 consultores não-superadmin para `ARRAY['D']` (hoje estão em `{A}`). O trigger `assign_flow_variant_on_insert` já trata corretamente arrays de 1 item, então novos leads cairão automaticamente em `flow_variant='D'`.
-5. Atualização opcional de leads existentes não será feita — só vale para leads novos. (Se quiser migrar os atuais, diga depois.)
+4. Garantir captura de informações mesmo fora da ordem
+   - Revisar o extrator multi-campo já existente, que tenta capturar nome, CEP, valor, CPF, e-mail e telefone em mensagens livres.
+   - Fortalecer sem mudar a regra central: se o lead responder uma informação útil fora do passo atual, salvar o dado quando for seguro, mas continuar conduzindo para a pergunta pendente.
+   - Evitar sobrescrever dados fortes de OCR/manual com texto fraco do cliente.
 
-## Passo 2 — Resolver flow_id nos webhooks (fallback público)
+5. Cobrir Whapi e Evolution sem alterar a arquitetura
+   - Aplicar os mesmos ajustes de texto nos templates equivalentes dos dois canais quando houver paridade.
+   - Não reescrever a máquina de estados nem a integração com OCR, Portal Worker, MinIO ou OTP.
+   - Não mudar passos, IDs, triggers ou estrutura de banco além do necessário para textos ativos.
 
-Hoje, em `supabase/functions/whapi-webhook/handlers/bot-flow.ts` e `…/evolution-webhook/handlers/bot-flow.ts`, todas as queries fazem:
+6. Validar o fluxo principal e os desvios
+   - Testar cenários essenciais: pergunta fora do fluxo durante coleta, retorno ao passo correto, envio de dado válido depois do desvio, handoff por muitas dúvidas e textos de confirmação.
+   - Conferir que `conversation_step` permanece igual durante dúvidas e só avança quando a resposta esperada chega.
+   - Validar que mensagens corrigidas não quebram markdown do WhatsApp, variáveis como `{{nome}}`/`{{representante}}` e botões/opções numeradas.
 
-```ts
-bot_flows.select('id').eq('consultant_id', X).eq('is_active', true).eq('variant', V)
-```
-
-Vamos centralizar em um helper único:
-
-```ts
-// resolveFlowId(supabase, consultantId, variant)
-// 1) tenta fluxo do próprio consultor (consultant_id=X, variant=V, is_active=true)
-// 2) se não achar, retorna o fluxo público dessa variant (is_public=true, is_active=true, variant=V)
-```
-
-E substituir todas as ~12 ocorrências dentro dos dois `handlers/bot-flow.ts` (e em `findNextActiveFlowStep`) por esse helper. Os steps (`bot_flow_steps`), QA (`bot_flow_qa`) e mídias continuam sendo lidos por `flow_id` — como o `flow_id` resolvido será o do superadmin, todos os consultores executam exatamente os mesmos steps/QA/mídia em tempo real.
-
-Arquivos editados:
-- `supabase/functions/_shared/resolve-flow.ts` (novo helper)
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
-
-## Passo 3 — UI do FluxoBuilder (somente leitura para não-superadmin)
-
-Como o fluxo é compartilhado, consultores comuns **não podem editar** o template público. No `src/pages/FluxoBuilder.tsx`:
-- Se o fluxo carregado tem `is_public=true` e o usuário não é superadmin → modo read-only (desabilita botões de salvar/adicionar/excluir step e mostra banner "Fluxo padrão da plataforma — somente leitura").
-- Superadmin continua editando normalmente.
-
-## Passo 4 — Validação
-
-- Após a migration: verificar `SELECT variant, count(*) FROM bot_flows WHERE is_public` retorna `D=1`.
-- Verificar que novos leads inseridos via webhook recebem `flow_variant='D'`.
-- Simular uma conversa de teste em um consultor não-superadmin e confirmar que o webhook resolve o `flow_id` do superadmin e dispara os steps do Fluxo D.
-
-## Detalhes técnicos
-
-- O trigger `assign_flow_variant_on_insert` já existe e funciona para arrays de 1 elemento — sem alteração.
-- Nenhuma alteração em RLS: `bot_flows` continua só visível ao próprio consultor + superadmin; o webhook usa `service_role` e ignora RLS.
-- O helper resolve em **uma query** com `or(consultant_id.eq.X,is_public.eq.true)` + ordenação para priorizar o do consultor, evitando 2 round-trips.
-- Nada muda em `bot_flow_qa` / `bot_flow_steps` / `bot_flow_qa_media` — todos referenciam `flow_id`, então o template público "carrega" todo seu conteúdo automaticamente.
+Resultado esperado:
+- Mensagens com português mais correto e consistente.
+- Lead pode perguntar algo fora do fluxo, receber resposta e voltar naturalmente ao cadastro.
+- Informações úteis enviadas fora da ordem continuam sendo aproveitadas quando seguro.
+- O fluxo existente permanece preservado, sem mudanças arriscadas na lógica principal.

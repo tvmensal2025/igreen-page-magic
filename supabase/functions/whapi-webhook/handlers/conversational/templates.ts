@@ -5,11 +5,11 @@ const FALLBACK: Record<string, string> = {
   "menu_inicial:reforco": "{{nome}}, ainda quer entender como funciona o desconto?",
   "qualificacao:pergunta_conta": "Qual o valor médio da sua conta de luz hoje?",
   "pos_video:checkin": "E aí, {{nome}}, ficou alguma dúvida?",
-  "checkin_pos_video:reforco_checkin": "{{nome}}, ficou alguma dúvida ou já partimos pro cadastro?",
+  "checkin_pos_video:reforco_checkin": "{{nome}}, ficou alguma dúvida ou podemos ir para o cadastro?",
   "checkin_pos_video:pedir_conta": "Perfeito! Me manda uma foto ou PDF da sua conta de luz 📸",
   "pitch_conexao_club:apresentar": "Olha que legal, {{nome}} — vou te mostrar 👇",
   "duvidas_pos_club:pode_perguntar": "Pode perguntar à vontade, {{nome}} 🤝",
-  "duvidas_pos_club:rumo_cadastro": "Show! Me envia uma foto da sua conta de luz 📸",
+  "duvidas_pos_club:rumo_cadastro": "Ótimo! Envie uma foto da sua conta de luz 📸",
   "aguardando_humano:avisado": "Já avisei o {{representante}}. Em breve te chama 👍",
   "fallback:nao_entendi": "Desculpa, não captei. Pode reformular?",
 };

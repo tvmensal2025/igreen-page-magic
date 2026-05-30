@@ -651,7 +651,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // 3) Fallback genérico (nunca silêncio)
     if (!answer) {
-      answer = "Boa pergunta! Te explico melhor já já 💬";
+      answer = "Boa pergunta! Já explico melhor 💬";
       source = "fallback";
     }
 
@@ -663,7 +663,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       patch.bot_paused = true;
       patch.bot_paused_reason = "muitas_duvidas";
       patch.bot_paused_at = new Date().toISOString();
-      courtesyTail = "\n\n🙌 Vou chamar alguém do time pra te atender pessoalmente — já já alguém responde por aqui.";
+      courtesyTail = "\n\n🙌 Vou chamar alguém do time para te atender pessoalmente — em instantes alguém responde por aqui.";
       try {
         await supabase.from("bot_handoff_alerts").insert({
           customer_id: customer.id,
@@ -1056,7 +1056,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           if (!answerText) {
             answerText = firstName
               ? `${firstName}, pode mandar sua dúvida que eu te explico tudo agora 😊`
-              : "Pode mandar sua dúvida que eu te explico tudo agora 😊";
+              : "Pode mandar sua dúvida, que eu explico tudo agora 😊";
           }
 
           await sendText(remoteJid, answerText);
@@ -1916,7 +1916,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     const positive = isPositiveCheckinIntent(txt);
     if (Number.isFinite(billValue) && billValue >= 100) {
       return {
-        reply: `Boa! Com R$ ${billValue.toFixed(0)} já dá pra calcular sua economia. Me envia uma *foto* ou PDF da conta de luz pra eu confirmar os dados 📸`,
+        reply: `Ótimo! Com R$ ${billValue.toFixed(0)} já consigo calcular sua economia. Envie uma *foto* ou PDF da conta de luz para eu confirmar os dados 📸`,
         updates: { electricity_bill_value: billValue, sales_phase: "fechamento", conversation_step: "aguardando_conta" },
       };
     }
@@ -1957,7 +1957,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
     if (/\?|cancel|cancela|taxa|fidelidade|seguro|pagar|custa|club|clube|funciona/i.test(txt)) {
       return {
-        reply: "Pode ficar tranquilo: não tem obra, não muda instalação e você pode pedir suporte se tiver qualquer dúvida. O Conexão Club é um benefício extra de descontos/cashback em parceiros; o principal aqui é reduzir sua conta de luz.\n\nSe estiver tudo certo, me responde *pode seguir* que eu peço seu RG ou CNH pra finalizar.",
+        reply: "Pode ficar tranquilo: não tem obra, não muda instalação e você pode pedir suporte se tiver qualquer dúvida. O Conexão Club é um benefício extra de descontos/cashback em parceiros; o principal aqui é reduzir sua conta de luz.\n\nSe estiver tudo certo, responda *pode seguir* e eu solicito seu RG ou CNH para finalizar.",
         updates: { conversation_step: "duvidas_pos_club" },
       };
     }
@@ -2059,7 +2059,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           }
           if (tool === "request_handoff") {
             updates.conversation_step = "aguardando_humano";
-            reply = `🧑 Vou chamar o ${nomeRepresentante} aqui pra te atender pessoalmente, ok?`;
+            reply = `🧑 Vou chamar ${nomeRepresentante} para te atender pessoalmente. 👍`;
             return { reply, updates };
           }
           if (tool === "schedule_followup") {
@@ -2392,7 +2392,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             if (nextCustom?.__special) {
               const sp = String(nextCustom.__special).toLowerCase().trim();
               if (sp === "humano") {
-                return { reply: `Tranquilo! Vou chamar ${nomeRepresentante || "um consultor"} pra te ajudar por aqui 🙌`, updates: { conversation_step: "aguardando_humano", bot_paused: true, bot_paused_reason: "flow_button_humano", bot_paused_at: new Date().toISOString(), __inline_sent: emittedCurrent || undefined } as any };
+                return { reply: `Tudo bem! Vou chamar ${nomeRepresentante || "um consultor"} para te ajudar por aqui 🙌`, updates: { conversation_step: "aguardando_humano", bot_paused: true, bot_paused_reason: "flow_button_humano", bot_paused_at: new Date().toISOString(), __inline_sent: emittedCurrent || undefined } as any };
               }
               if (sp === "cadastro") {
                 return { reply: "", updates: { conversation_step: "aguardando_conta", sales_phase: "fechamento", __inline_sent: emittedCurrent || undefined } as any };
@@ -2436,7 +2436,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                   ).catch((e) => console.warn("[notify-handoff] falhou:", (e as Error).message));
                 } catch (_) { /* notify opcional */ }
                 return {
-                  reply: "Vou chamar um consultor humano pra te ajudar agora, tá bom? Em instantes alguém responde por aqui. 👋",
+                  reply: "Vou chamar um consultor para te ajudar agora. Em instantes alguém responde por aqui. 👋",
                   updates: {
                     bot_paused: true,
                     bot_paused_reason: "custom_step_no_match_retries_exhausted",
@@ -2660,7 +2660,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (Number.isFinite(billValue) && billValue >= 30) {
           updates.electricity_bill_value = billValue;
           updates.sales_phase = "fechamento";
-          reply = `Show! Com R$ ${billValue.toFixed(0)} dá pra calcular sua economia. Me envia uma *foto* (ou PDF) da sua conta de luz pra eu confirmar os dados 📸`;
+          reply = `Ótimo! Com R$ ${billValue.toFixed(0)} já consigo calcular sua economia. Envie uma *foto* (ou PDF) da sua conta de luz para eu confirmar os dados 📸`;
           updates.conversation_step = "aguardando_conta";
           break;
         }
@@ -2859,7 +2859,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             updates.ocr_conta_attempts = tries;
             if (tries < 2) {
               updates.conversation_step = "aguardando_conta";
-              reply = "⚠️ Recebi a conta mas não consegui extrair os dados principais.\n\n📸 Envie uma *foto mais nítida* mostrando claramente:\n• Seu nome\n• Endereço\n• Distribuidora\n• Valor da conta";
+              reply = "⚠️ Recebi a conta, mas não consegui extrair os dados principais.\n\n📸 Envie uma *foto mais nítida* mostrando claramente:\n• Seu nome\n• Endereço\n• Distribuidora\n• Valor da conta";
             } else {
               updates.conversation_step = "ask_name";
               reply = "⚠️ Tive dificuldade em ler sua conta. Vou perguntar os dados manualmente.\n\nQual é o seu *nome completo*?";
@@ -3265,7 +3265,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const msg = String(dispatchErr?.message || dispatchErr).slice(0, 200);
           console.error(`[post-confirm-conta] ❌ DISPATCH FALHOU customer=${customer.id} err=${msg}`, dispatchErr);
           try {
-            const fallbackTxt = "✅ Recebido! Já preparo os próximos passos do seu cadastro. Aguarda só um instantinho 🙏";
+            const fallbackTxt = "✅ Recebido! Estou preparando os próximos passos do seu cadastro. Aguarde um instante 🙏";
             await sendText(remoteJid, fallbackTxt);
             await supabase.from("conversations").insert({
               customer_id: customer.id, message_direction: "outbound",
@@ -3332,7 +3332,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = "";
       } else {
         // Resposta de fallback se a IA não tiver pegado a dúvida acima.
-        reply = "Pode mandar sua dúvida que eu te explico 😊 ou diga *pode seguir* pra avançar pro cadastro.";
+        reply = "Pode mandar sua dúvida, que eu explico 😊 — ou diga *pode seguir* para avançar para o cadastro.";
       }
       break;
     }
@@ -3865,7 +3865,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const merged = { ...customer, ...updates };
         const next = await autoResolveCepIfNeeded(merged, updates);
         updates.conversation_step = next;
-        reply = "Entendido — a conta é em nome de outra pessoa. Vou registrar isso pro consultor revisar na hora do cadastro. ✅\n\n" + getReplyForStep(next, merged);
+        reply = "Entendido — a conta está em nome de outra pessoa. Vou registrar isso para o consultor revisar na hora do cadastro. ✅\n\n" + getReplyForStep(next, merged);
       } else if (resp === "titular_corrigir" || /corrigir|errado|edit/i.test(resp)) {
         updates.conversation_step = "editing_doc_menu";
         reply = "✏️ O que deseja corrigir?\n\n1️⃣ Nome\n2️⃣ CPF\n3️⃣ RG\n4️⃣ Data de Nascimento\n0️⃣ Cancelar";
@@ -4740,7 +4740,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             metadata: { errors: validation.errors, redirects: redirectCount },
           });
         } catch (e) { console.warn("[anti-loop] handoff alert falhou:", (e as Error).message); }
-        reply = "Vou te passar pra um consultor humano agora pra gente finalizar com calma, ok? Em instantes alguém te responde por aqui. 👋";
+        reply = "Vou te encaminhar para um consultor humano para finalizarmos com calma. Em instantes alguém te responde por aqui. 👋";
         return { reply, updates };
       } else {
         updates.rescue_attempts = redirectCount + 1;
