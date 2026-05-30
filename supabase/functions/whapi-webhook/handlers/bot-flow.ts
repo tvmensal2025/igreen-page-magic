@@ -44,7 +44,7 @@ import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-fie
 import { detectFlowSwitch } from "../../_shared/flow-router.ts";
 import { ocrContaEnergia, ocrDocumentoFrenteVerso } from "../../_shared/ocr.ts";
 import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/document-type.ts";
-import { detectDocumentType } from "../../_shared/detect-doc-type.ts";
+import { detectDocumentType, detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
 import { uploadMediaToMinio, OCR_CONFIDENCE_THRESHOLD } from "../_helpers.ts";
 import { jsonLog } from "../../_shared/audit.ts";
 import { isMockMode, isCustomerSandbox, shouldBypassQuietHours, shouldUseFastClock } from "../../_shared/test-mode.ts";
@@ -214,6 +214,30 @@ function isPositiveCheckinIntent(text: string): boolean {
 
 function isClubProgressIntent(text: string): boolean {
   return isPositiveCheckinIntent(text) || /^(pode seguir|sem duvida|nenhuma|nao tenho|não tenho|nao|não|tudo certo|partiu|segue)\b/i.test(text) || /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(text);
+}
+
+function isComoFuncionaStep(row: any): boolean {
+  return /(?:^|[_\s-])como[_\s-]*funciona|d_como_funciona/i.test(`${row?.step_key || ""} ${row?.slot_key || ""} ${row?.title || ""}`);
+}
+
+function isConfidentDocDetection(det: any): boolean {
+  if (!det || det.source === "fallback") return false;
+  const conf = Number(det.confianca || 0);
+  const tipo = String(det.tipo || "").toLowerCase();
+  if (tipo === "cnh") return conf >= 0.62;
+  return conf >= 0.78;
+}
+
+function buildMissingDocPrompt(label: string, merged: any): string {
+  const missing = [
+    !String(merged?.cpf || "").replace(/\D/g, "") ? "CPF" : "",
+    !String(merged?.rg || "").trim() ? (label === "CNH" ? "RG/registro da CNH" : "RG") : "",
+    !String(merged?.data_nascimento || "").trim() ? "data de nascimento" : "",
+  ].filter(Boolean);
+  if (missing.length <= 1 && missing[0] === "CPF") {
+    return `Não consegui ler o CPF na ${label}. Digite os *11 números do CPF* para continuar:`;
+  }
+  return `Consegui ler o documento, mas alguns dados ficaram ilegíveis.\n\nMe envie em uma única mensagem:\n${missing.map((m) => `• ${m}`).join("\n")}`;
 }
 
 function normalizeLeadName(rawText: string | null | undefined): string | null {
@@ -3174,8 +3198,25 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = `${v}me manda uma *foto* (ou PDF) da sua conta de luz, por favor 📸\n\nSe estiver sem a conta agora, é só me dizer o valor médio que você paga que eu já te calculo a economia.`;
         break;
       }
+      const inboundMime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
+      try {
+        const detDocAsBill = await detectDocumentTypeDetailed({
+          base64: fileBase64 || undefined,
+          mimeType: inboundMime,
+          imageUrl: fileUrl?.startsWith("http") ? fileUrl : undefined,
+          geminiApiKey,
+        });
+        if (isConfidentDocDetection(detDocAsBill)) {
+          console.warn(`[aguardando_conta] arquivo parece documento (${detDocAsBill.tipo}/${detDocAsBill.confianca}) — não salvar como conta`);
+          updates.conversation_step = "aguardando_conta";
+          reply = "Esse arquivo parece ser um documento. Agora eu preciso primeiro da *conta de luz* para calcular sua economia.\n\nMe envie uma foto ou PDF da fatura de energia, por favor 📸";
+          break;
+        }
+      } catch (e) {
+        console.warn("[aguardando_conta] preflight documento falhou — seguindo OCR conta:", (e as Error).message);
+      }
       if (fileBase64) {
-        const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
+        const mime = inboundMime;
         updates.electricity_bill_photo_url = `data:${mime};base64,${fileBase64}`;
         updates.bill_base64 = fileBase64;
         updates.bill_message_id = messageId || null;
@@ -3514,9 +3555,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 .from("bot_flow_steps").select("*")
                 .eq("id", _successId).eq("is_active", true).maybeSingle();
               if (_target) {
-                nextCustom = _target;
+                if (isComoFuncionaStep(_target)) {
+                  const { data: _resultado } = await supabase
+                    .from("bot_flow_steps").select("*")
+                    .eq("flow_id", (_flowRowSuccess as any).id).eq("is_active", true)
+                    .or("step_key.eq.d_resultado,message_text.ilike.%economia%,message_text.ilike.%valor_conta%")
+                    .order("position", { ascending: true }).limit(1).maybeSingle();
+                  if (_resultado) {
+                    console.log(`[post-confirm-conta] pulando ${(_target as any).step_key} pós-conta → ${(_resultado as any).step_key}`);
+                    nextCustom = _resultado;
+                  } else {
+                    nextCustom = _target;
+                  }
+                } else {
+                  nextCustom = _target;
+                }
                 _hasExplicitSuccessGoto = true;
-                console.log(`[post-confirm-conta] success_goto_step_id=${_successId} → ${(_target as any).step_key} (CHAIN amplo será pulado)`);
+                console.log(`[post-confirm-conta] success_goto_step_id=${_successId} → ${(nextCustom as any).step_key} (CHAIN amplo será pulado)`);
               }
             }
           }
@@ -3621,7 +3676,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               const messagesBetween = _stopIdx >= 0
                 ? stepsAfter.slice(0, _stopIdx)
                 : stepsAfter;
-              const messagesOnly = messagesBetween.filter((s) => s.step_type === "message");
+              const messagesOnly = messagesBetween.filter((s) => s.step_type === "message" && !isComoFuncionaStep(s));
               for (const m of messagesOnly) {
                 console.log(`[post-confirm-conta] persistindo step ${m.step_key} ANTES de dispatchar`);
                 // 🛡️ HANDOFF: persiste step do passo CORRENTE antes de
@@ -3876,7 +3931,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // ocrDocumentoFrenteVerso REAIS (Gemini), igual ao fluxo de produção.
 
       try {
-        const det = await (await import("../../_shared/detect-doc-type.ts")).detectDocumentTypeDetailed({
+        const det = await detectDocumentTypeDetailed({
           base64: fileBase64 || undefined,
           mimeType: mime,
           imageUrl: fileUrl?.startsWith("http") ? fileUrl : undefined,
@@ -3890,9 +3945,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         console.warn(`⚠️ [doc-auto] falha detectando tipo:`, (e as Error).message);
       }
 
-      // Se a detecção realmente falhou (fallback puro), salva a frente e pergunta ao usuário.
-      if (detectSource === "fallback" && detectConfidence === 0) {
-        console.warn(`⚠️ [doc-auto] detecção falhou — perguntando RG/CNH ao lead`);
+      // Se a detecção falhou ou ficou pouco confiável, NÃO chutar RG e pedir verso.
+      if (!isConfidentDocDetection({ tipo: detectedType, confianca: detectConfidence, source: detectSource })) {
+        console.warn(`⚠️ [doc-auto] detecção ambígua (${detectedType}/${detectConfidence}/${detectSource}) — perguntando RG/CNH ao lead`);
         if (fileBase64) {
           updates.document_front_url = `data:${mime};base64,${fileBase64}`;
           updates.document_front_base64 = fileBase64;

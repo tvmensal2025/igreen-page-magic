@@ -12,12 +12,16 @@ export interface MultiFieldResult {
   cep?: string;
   valor_conta?: number;
   cpf?: string;
+  rg?: string;
+  data_nascimento?: string;
   email?: string;
   telefone?: string;
 }
 
 const CEP_RX = /\b(\d{5})-?(\d{3})\b/;
 const EMAIL_RX = /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b/;
+const DATE_RX = /\b(\d{2})\/(\d{2})\/(\d{4})\b/;
+const RG_RX = /\b(?:rg|registro(?:\s+geral)?|identidade|registro\s+da\s+cnh)\s*[:\-]?\s*([0-9.\-]{7,14}[xX]?)\b/i;
 
 export function extractCEP(text: string): string | null {
   if (!text) return null;
@@ -35,6 +39,26 @@ export function extractEmail(text: string): string | null {
   return m ? m[0].toLowerCase() : null;
 }
 
+export function extractRG(text: string): string | null {
+  if (!text) return null;
+  const m = text.match(RG_RX);
+  if (!m) return null;
+  const clean = m[1].replace(/[^\dXx]/g, "").toUpperCase();
+  return clean.length >= 7 && clean.length <= 12 ? clean : null;
+}
+
+export function extractBirthDate(text: string): string | null {
+  if (!text) return null;
+  const m = text.match(DATE_RX);
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yy = Number(m[3]);
+  const max = new Date().getFullYear() - 17;
+  if (dd < 1 || dd > 31 || mm < 1 || mm > 12 || yy < 1920 || yy > max) return null;
+  return `${m[1]}/${m[2]}/${m[3]}`;
+}
+
 export function extractMultiField(text: string): MultiFieldResult {
   const out: MultiFieldResult = {};
   if (!text || typeof text !== "string") return out;
@@ -43,6 +67,8 @@ export function extractMultiField(text: string): MultiFieldResult {
   try { const v = extractCEP(text); if (v) out.cep = v; } catch {}
   try { const v = extractValor(text); if (v != null) out.valor_conta = v; } catch {}
   try { const v = extractCPF(text); if (v) out.cpf = v; } catch {}
+  try { const v = extractRG(text); if (v) out.rg = v; } catch {}
+  try { const v = extractBirthDate(text); if (v) out.data_nascimento = v; } catch {}
   try { const v = extractEmail(text); if (v) out.email = v; } catch {}
   try { const v = extractTelefone(text); if (v) out.telefone = v; } catch {}
 
@@ -79,6 +105,8 @@ export function buildMultiFieldPatch(
     patch.electricity_bill_value = multi.valor_conta;
   }
   if (multi.cpf && !customer.cpf) patch.cpf = multi.cpf;
+  if (multi.rg && !customer.rg) patch.rg = multi.rg;
+  if (multi.data_nascimento && !customer.data_nascimento) patch.data_nascimento = multi.data_nascimento;
   if (multi.email && !customer.email) patch.email = multi.email;
   if (multi.telefone && !customer.phone_landline && customer.phone_whatsapp) {
     const wDigits = String(customer.phone_whatsapp).replace(/\D/g, "");
