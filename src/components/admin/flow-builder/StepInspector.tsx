@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, Trash2, ChevronDown, ChevronRight, ScanLine, Sparkles, Maximize2, Minimize2 } from "lucide-react";
+import { Plus, Trash2, ScanLine, Sparkles, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import StepMediaPanel from "@/components/admin/fluxo/StepMediaPanel";
 import StepSuggestions from "./StepSuggestions";
