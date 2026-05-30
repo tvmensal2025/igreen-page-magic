@@ -2,6 +2,7 @@ import { fetchWithTimeout, withRetry, TIMEOUT_FETCH_IMAGE, TIMEOUT_GEMINI } from
 import { normalizarRG, validarDataNascimento, validarNomeOCR, validarCPFDigitos } from "./conversation-helpers.ts";
 import { captureError } from "./sentry.ts";
 import { isMockMode, mockBillOcr, mockDocOcr, shouldForceOcrFail, isTestMode } from "./test-mode.ts";
+import { normalizeDistribuidora, isHoldingName } from "./distribuidoras.ts";
 
 // ─── Baixar imagem (Evolution API ou URL direta) ────────────────────
 export async function baixarImagem(
@@ -124,7 +125,7 @@ Extraia:
 5. CEP (8 dígitos)
 6. CIDADE
 7. ESTADO (sigla UF, ex: SP, MG, RJ)
-8. DISTRIBUIDORA (nome da empresa de energia)
+8. DISTRIBUIDORA (nome REGIONAL da concessionária — NUNCA o grupo holding. Use: CPFL PIRATININGA, CPFL PAULISTA, CPFL SANTA CRUZ, RGE, ENEL SP, ENEL RJ, EDP SP, EDP ES, LIGHT, CEMIG, COPEL, CELESC, COELBA, CELPE, COSERN, COELCE, EQUATORIAL GO/PA/MA/PI/AL, CEB, ENERGISA <UF>, AMAZONAS ENERGIA, RORAIMA ENERGIA, ELEKTRO etc. NÃO escreva apenas "CPFL ENERGIA", "ENEL", "EDP", "ENERGISA" ou "EQUATORIAL" sozinhos)
 9. NÚMERO DA INSTALAÇÃO (campo "Seu Código" na CPFL, "Nº do Cliente" na Enel, geralmente 7-12 dígitos)
 10. VALOR TOTAL A PAGAR (em reais)
 
@@ -189,6 +190,20 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
       }
       const v = parseFloat(raw);
       dados.valorConta = (!isNaN(v) && v > 0) ? v.toFixed(2) : "";
+    }
+
+
+    // Normaliza distribuidora — resolve holdings (CPFL ENERGIA → CPFL PIRATININGA via cidade)
+    if (dados.distribuidora) {
+      const original = String(dados.distribuidora);
+      const normalized = normalizeDistribuidora(original, dados.estado, dados.cidade);
+      if (normalized && normalized !== original) {
+        console.log(`🔧 OCR distribuidora normalizada: "${original}" → "${normalized}" (uf=${dados.estado} cidade=${dados.cidade})`);
+      } else if (!normalized && isHoldingName(original)) {
+        console.warn(`⚠️ OCR distribuidora holding sem cidade conhecida: "${original}" (uf=${dados.estado} cidade=${dados.cidade}) — exigirá correção manual`);
+      }
+      dados.distribuidora = normalized;
+      dados.distribuidora_needs_review = !normalized;
     }
 
     // Score de confiança: % de campos críticos preenchidos.
