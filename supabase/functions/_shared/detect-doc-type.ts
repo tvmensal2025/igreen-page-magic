@@ -248,4 +248,3 @@ export async function detectDocumentType(input: DetectInput): Promise<DocumentTy
   const r = await detectDocumentTypeDetailed(input);
   return r.tipo === "outro" ? "rg_antigo" : r.tipo;
 }
-}
