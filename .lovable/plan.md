@@ -1,84 +1,87 @@
-# Diagnóstico
+## Análise do que aconteceu com o BRUNO (5511971254913, flow_id=320bf22c, variant D)
 
-Hoje `finalize-capture` valida só 10 campos genéricos (incluindo `rg` que o Portal 2 nem usa) e **não valida** os campos que o portal realmente exige: `numero_instalacao`, `address_street`, `address_neighborhood`, `address_city`, `address_state`, `distribuidora`, `media_consumo`. Resultado: lead chega no portal sem `media_consumo`, worker recebe 0 kWh, `/bonus/rules` devolve 404 e o lead "volta" silenciosamente.
-
-Regra de negócio do cliente: **R$/kWh ≈ 1,0** (faixa aceitável 0,7–1,5). Se valor da conta ÷ consumo cair fora dessa faixa, é OCR errado e **não pode ir pro portal**.
-
-# Plano
-
-## 1. Novo validador único — `src/lib/captacao/portalValidation.ts`
-
-Função pura `validateForPortal(customer): { ok, missing[], invalid[], suggestions{} }` com a lista REAL do Portal 2:
-
-**Identificação**
-- `name` (≥ 3 chars, 2 palavras)
-- `cpf` (11 dígitos válidos)
-- `data_nascimento` (formato `DD/MM/YYYY`, idade 18–100)
-
-**Contato**
-- `phone_whatsapp` (10–11 dígitos com DDD)
-- `email` (regex válido)
-
-**Endereço (todos obrigatórios — portal exige)**
-- `cep` (8 dígitos)
-- `address_street`, `address_number`, `address_neighborhood`, `address_city`, `address_state` (UF de 2 letras)
-
-**Conta de luz**
-- `distribuidora` (não vazio)
-- `numero_instalacao` (≥ 6 dígitos)
-- `electricity_bill_value` > 0
-- `media_consumo` > 0
-- **Cruzamento R$/kWh**: `ratio = electricity_bill_value / media_consumo`; precisa estar em **[0.7, 1.5]**. Fora disso → `invalid: 'consumo_vs_valor'` com sugestão `Math.round(electricity_bill_value / 1.0)` kWh.
-
-**Documentos**
-- `document_front_url`, `document_back_url` (ou `nao_aplicavel` p/ CNH), `electricity_bill_photo_url`
-
-**Bloqueios extras**
-- `name_mismatch_flag` sem `name_mismatch_acknowledged_at`
-
-Retorna `missing` (faltando) e `invalid` (preenchido mas errado, com `reason` + `suggestion` quando aplicável).
-
-## 2. `finalize-capture` usa o mesmo validador no servidor
-
-Reescrever a checagem do edge function pra:
-- Importar o validador (mesma lógica duplicada em TS Deno — copiar pra `supabase/functions/_shared/portalValidation.ts`).
-- Se `missing.length || invalid.length` → retornar `{ ok:false, error:'incomplete', missing, invalid }` **com status 400** (já é o padrão).
-- **Nunca** marcar `portal_submitting` nem chamar o worker se algo estiver inválido.
-
-Adicionar também: revalidar `media_consumo`/`electricity_bill_value` mesmo se "preenchidos" (o caso do lead atual onde `media_consumo=NULL`).
-
-## 3. Card de captação mostra exatamente o que falta/está errado
-
-Hoje a barra "PROGRESSO DO CADASTRO 10/10" e o botão CADASTRAR ficam verdes mesmo com `media_consumo=NULL` e `numero_instalacao` vazio porque a lista de campos do frontend não bate com a do portal.
-
-Alterações:
-
-- **`src/components/captacao/CaptureSheet.tsx`** e **`CaptureLeadCard.tsx`**: substituir a lista hardcoded de campos pela lista canônica do validador. O contador "X/Y" e os checkmarks passam a refletir a verdade.
-- Adicionar `media_consumo` e `numero_instalacao` como campos editáveis (input numérico) na ficha do lead.
-- Quando `invalid: 'consumo_vs_valor'`: mostrar banner amarelo no card:
-  > ⚠️ Valor R$ {valor} ÷ consumo {kwh} kWh = R${ratio}/kWh — fora da faixa esperada (≈R$1/kWh). Confirme o consumo correto.
-  > [Usar sugestão: {suggestion} kWh]
-- Botão **CADASTRAR** fica **desabilitado** enquanto `!validation.ok`, com tooltip listando os 3 primeiros itens pendentes.
-
-## 4. Auto-estimar `media_consumo` na captura, mas como **sugestão** (não envio cego)
-
-Quando o OCR da conta extrair `electricity_bill_value` e não tiver `consumomedio`, preencher `media_consumo` com `Math.round(valor / 1.0)` clampado [50, 3000] **mas marcar `media_consumo_estimated=true`** (nova coluna boolean). No card aparece etiqueta "estimado — confira" e o consultor precisa confirmar (clicar no campo e salvar) antes do botão CADASTRAR liberar.
-
-Migração:
-```sql
-ALTER TABLE customers ADD COLUMN media_consumo_estimated boolean DEFAULT false;
+### Timeline real (SP)
+```
+21:41:52  bot → d_welcome
+21:41:57  user → "Quero simular"
+21:42:04  bot → d_pedir_conta (capture_conta) ✅
+21:42:39  user → "Eu gasto 300 reais por mes" (re-tentativa)
+21:43:39  user → [PDF da conta]
+21:43:50  bot → OCR rodou + enviou botões "✅ SIM / ❌ NÃO / ✏️ Editar"
+21:43:57  user → "✅ SIM"   ← último evento "normal"
+─── 4 min de silêncio ───
+21:48:08  bot → d_como_funciona [audio]  (tag "(manual)")
+21:48:43  bot → d_como_funciona [video]  (tag "(manual)")
+21:48:44  bot → d_como_funciona [texto]  (tag "(manual)")
+21:49:31  user → clicou de novo "📸 Quero simular"  ← loop
 ```
 
-## 5. Banner de erro do portal continua, mas vira raro
+### Fluxo D canônico (`bot_flow_steps` ordenados)
+```
+1  d_welcome           message
+2  d_pedir_conta       capture_conta
+3  d_como_funciona     message  ← entre captures
+4  d_resultado         message  ← entre captures
+5  d_pedir_documento   capture_documento
+6  d_pedir_email       capture_email
+7  d_confirmar_telefone confirm_phone
+8  d_duvidas           message
+9  d_handoff           message
+10 d_finalizar         finalizar_cadastro
+```
 
-Mantém o `PortalStatusTracker` atual; com as guardas acima, só apareceria pra falhas reais do worker (offline, duplicate phone/cpf que o portal só pega no POST final). Adicionar no `friendlyPortalError` o caso "Consumo médio não informado" → instrução "Edite o consumo no card e reenvie".
+Depois do "✅ SIM" o esperado é: dispara `d_como_funciona` → `d_resultado` → avança pro capture `d_pedir_documento`. Isso é exatamente o que `dispatchPostBillConfirm` (em `src/lib/captacao/postBillConfirm.ts` + espelho Deno) faz.
 
-## Fora de escopo
-- OCR de `consumomedio` direto do PDF (separado — depende do `capture-extract`/`extract-pdf-text`).
-- Pré-checar duplicate phone via API iGreen (endpoint não existe).
-- Mexer no worker remoto.
+### O que de fato aconteceu
+1. Handler do botão SIM **não chamou** `dispatchPostBillConfirm` (ou chamou e morreu antes da primeira mensagem) — 4 min de silêncio total.
+2. 4 min depois alguém (Rafael ou cron) disparou **só** `d_como_funciona` via `manual-step-send` (todas as 3 mensagens carregam tag `(manual)`).
+3. `d_resultado` (posição 4) **nunca** foi enviado.
+4. `d_pedir_documento` (próximo capture) **nunca** foi disparado → cliente ficou sem próxima instrução e clicou no botão antigo do welcome.
 
-## Validação pós-implementação
-1. Lead `482c0262…`: abrir card → barra mostra "8/12" com `media_consumo`, `numero_instalacao`, etc. faltando → botão CADASTRAR desabilitado.
-2. Preencher consumo = 1500 kWh, valor = 200 → banner amarelo (ratio 0,13) → bloqueia envio.
-3. Ajustar consumo = 200 kWh → 10/12 → 12/12 → CADASTRAR libera → worker recebe payload completo → cadastro segue.
+### Causa provável (a investigar)
+O caminho que processa `ButtonsV3:sim_conta` mora em `supabase/functions/whapi-webhook/handlers/bot-flow.ts`. Alterações recentes em volta de `portalValidation` / `distribuidoras` podem ter introduzido um throw silencioso *antes* do dispatch do próximo passo (provável suspeita: import novo ou normalize quebrando quando `customer.distribuidora="CPFL ENERGIA"`, já que era esse o valor gravado no momento do SIM).
+
+---
+
+## Plano de correção
+
+### 1. Confirmar a causa (10 min, read-only)
+- Ler `supabase/functions/whapi-webhook/handlers/bot-flow.ts` e localizar o handler do `sim_conta` (`confirmando_dados_conta`).
+- Verificar se ele chama `dispatchPostBillConfirm` direto, ou se passa por algum validador novo.
+- Comparar com `supabase/functions/_shared/pipeline-cadastro/registry.ts` se for o orquestrador real.
+- Confirmar nos `edge-function-logs` (`whapi-webhook` filtrando por `customer=b5bbc2c2`) o que rodou entre 00:43:57 e 00:48:08 UTC.
+
+### 2. Blindar o dispatch pós-SIM
+Em **`supabase/functions/whapi-webhook/handlers/bot-flow.ts`** (handler do SIM):
+- Envolver todo o bloco "marca bill_data_confirmed_at → dispatchPostBillConfirm" em try/catch que **sempre** loga `console.error("[sim_conta] dispatch falhou", err)` e **dispara fallback**: marcar `customers.error_message = "post_bill_dispatch_failed: <msg>"` e enviar texto simples "✅ Recebido! Já passo os próximos passos." pra não deixar o cliente mudo.
+- Garantir que `normalizeDistribuidora` / `isHoldingName` (importados no OCR) **não** estão sendo chamados nesse caminho. Se estiverem, isolar atrás de try/catch — esses módulos não podem quebrar dispatch.
+
+### 3. Replicar pro espelho Evolution
+**`supabase/functions/evolution-webhook/handlers/bot-flow.ts`** tem o mesmo SIM handler — aplicar a mesma blindagem.
+
+### 4. Resiliência no `dispatchPostBillConfirm` (`supabase/functions/_shared/...` + `src/lib/captacao/postBillConfirm.ts`)
+- O `try` externo hoje engole erro do "advance flow" e não loga o customer_id — adicionar `console.error("[post-bill-confirm] customer=%s next=%s err=%s", customer.id, nextCaptureKey, err.message)`.
+- Se nenhum `manual-step-send` retornou ok (entre + nextCapture), gravar `customers.error_message="post_bill_confirm_no_dispatch"` pra alerta do watchdog acordar.
+
+### 5. Verificação manual
+1. Refazer o fluxo no 5511971254913 com lead novo até "✅ SIM" → conferir nos logs:
+   - `[post-bill-confirm] msg-step d_como_funciona ok`
+   - `[post-bill-confirm] msg-step d_resultado ok`
+   - `manual-step-send d_pedir_documento ok`
+2. Forçar erro (renomear flow step) → confirmar que o fallback "Já passo os próximos passos" sai e o `error_message` no `customers` é populado.
+3. Conferir que o card de captação no /admin do BRUNO mostra o `error_message` novo (já é exibido pelo `CaptureLeadCard`).
+
+### Fora de escopo
+- Reescrita do orquestrador de variantes.
+- Mudança no `bot_flow_steps` do consultor (a ordem está correta).
+- Re-OCR ou mexer no Portal 2 worker.
+
+### Detalhes técnicos
+- Arquivos a editar:
+  - `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (handler `sim_conta`)
+  - `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (mesmo handler, paridade)
+  - `supabase/functions/_shared/...` (logging do `dispatchPostBillConfirm` — se o helper morar lá; senão o `src/lib/captacao/postBillConfirm.ts`)
+- Nada de migração de banco.
+- Nada de mudar `flow_variant=D` do customer.
+
+> Aviso: o diretório `.lovable/` está no `.gitignore` do projeto. Este plano vive em `.lovable/plan.md` e **vai sumir no próximo snapshot** — se quiser preservar, remova `.lovable/` do `.gitignore`.
