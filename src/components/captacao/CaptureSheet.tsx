@@ -3,10 +3,21 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CaptureStepsList } from "./CaptureStepsList";
 import { CaptureLeadCard } from "./CaptureLeadCard";
 import { CaptureProgressBar } from "./CaptureProgressBar";
 import { SendSequenceDialog, type SequenceStep } from "./SendSequenceDialog";
+import { PortalStatusTracker } from "./PortalStatusTracker";
 import { useCaptureSession, CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { useCaptureScoreboard } from "@/hooks/useCaptureScoreboard";
 import { useCaptureCombo } from "@/hooks/useCaptureCombo";
@@ -60,6 +71,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const [expanded, setExpanded] = useState(false);
   const [allSteps, setAllSteps] = useState<SequenceStep[]>([]);
   const [seqOpen, setSeqOpen] = useState(false);
+  const [askNotice, setAskNotice] = useState(false);
   const lastCountRef = useRef(0);
 
   // No mobile o painel abre minimizado (pílula no rodapé) pra não tampar o teclado/composer.
@@ -142,14 +154,21 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         !docConfirmed ? "Confirmar dados do documento" : "",
       ].filter(Boolean).join(" · ");
 
-  const handleSubmit = async () => {
+  const runFinalize = async (sendNotice: boolean) => {
     if (!customer || !canSubmit) return;
     setSubmitting(true);
     try {
-      // Mantém capture_mode='manual' — captação fica sempre ligada por padrão para todos os leads.
-      await supabase.from("customers").update({
-        conversation_step: "finalizando",
-      }).eq("id", customer.id);
+      const { data, error } = await supabase.functions.invoke("finalize-capture", {
+        body: { customerId: customer.id, consultantId, sendNotice },
+      });
+      if (error) throw new Error(error.message || "Falha ao enviar ao portal");
+      const res = (data as any) || {};
+      if (res.error && res.mode !== "queued_offline") {
+        const msg = res.error === "incomplete"
+          ? `Faltam dados: ${(res.missing || []).join(", ")}`
+          : String(res.error);
+        throw new Error(msg);
+      }
 
       // 🏆 Cadastro completo — 5 efeitos combinados:
       //   1. Confetti aleatório (já existia)
@@ -165,14 +184,28 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
       xpFloater.show(100 + c.bonusXp, c.level >= 2 ? `COMBO x${c.level}` : undefined);
       await bump();
 
-      toast({ title: "🎉 Cadastro enviado!", description: "Portal Worker concluindo…", duration: 3500 });
-      onOpenChange(false);
+      if (res.already) {
+        toast({ title: "Lead já está em processamento no portal.", duration: 3000 });
+      } else if (res.mode === "queued_offline") {
+        toast({ title: "Portal com falha", description: "O erro vai aparecer no painel para reenviar.", variant: "destructive", duration: 5000 });
+      } else {
+        toast({ title: "🎉 Cadastro enviado!", description: "Portal Worker concluindo…", duration: 3500 });
+      }
     } catch (e: any) {
       haptics.error();
       toast({ title: "Erro", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = () => {
+    if (!customer || !canSubmit || submitting) return;
+    if ((customer.capture_mode || "manual") === "manual" && !!customer.bot_paused) {
+      setAskNotice(true);
+      return;
+    }
+    void runFinalize(true);
   };
 
   const disableCapture = async () => {
@@ -361,6 +394,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         </Tabs>
 
         <footer className="border-t border-border/60 bg-card/80 backdrop-blur sticky bottom-0 z-20 p-2 space-y-1.5">
+          <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
           {customer?.conversation_step && ["finalizando", "portal_submitting", "aguardando_otp", "validando_otp"].includes(customer.conversation_step) && (
             <p className="text-[10px] text-center text-primary font-semibold animate-pulse">
               🚀 Portal: {customer.conversation_step.replace("_", " ")}…
@@ -404,6 +438,12 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           variant={(((customer as any)?.flow_variant || "A").toUpperCase()) as "A" | "B" | "C" | "D" | "E"}
           onStepSent={(key) => setSentSteps((s) => new Set(s).add(key))}
           onAskName={handleAskName}
+        />
+        <FinalizeNoticeDialog
+          open={askNotice}
+          onOpenChange={setAskNotice}
+          onWithoutNotice={() => void runFinalize(false)}
+          onWithNotice={() => void runFinalize(true)}
         />
       </aside>
     );
@@ -576,6 +616,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           className={`border-t border-border/60 bg-card/80 backdrop-blur sticky bottom-0 z-20 ${expanded ? "p-3 space-y-2" : "px-2 py-1"}`}
           style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom, 0px))" }}
         >
+          <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
           {customer?.conversation_step && ["finalizando", "portal_submitting", "aguardando_otp", "validando_otp"].includes(customer.conversation_step) && (
             <p className="text-[10px] text-center text-primary font-semibold animate-pulse">
               🚀 Portal: {customer.conversation_step.replace("_", " ")}…
@@ -624,7 +665,58 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         onStepSent={(key) => setSentSteps((s) => new Set(s).add(key))}
         onAskName={handleAskName}
       />
+      <FinalizeNoticeDialog
+        open={askNotice}
+        onOpenChange={setAskNotice}
+        onWithoutNotice={() => void runFinalize(false)}
+        onWithNotice={() => void runFinalize(true)}
+      />
     </Sheet>
+  );
+}
+
+function FinalizeNoticeDialog({
+  open,
+  onOpenChange,
+  onWithoutNotice,
+  onWithNotice,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onWithoutNotice: () => void;
+  onWithNotice: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Avisar o cliente no WhatsApp?</AlertDialogTitle>
+          <AlertDialogDescription>
+            O bot está desligado para este lead. Você pode cadastrar no portal sem enviar nada ao cliente, ou enviar a mensagem agora.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              onOpenChange(false);
+              onWithoutNotice();
+            }}
+            className="bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          >
+            Cadastrar sem avisar
+          </AlertDialogAction>
+          <AlertDialogAction
+            onClick={() => {
+              onOpenChange(false);
+              onWithNotice();
+            }}
+          >
+            Enviar mensagem e cadastrar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
