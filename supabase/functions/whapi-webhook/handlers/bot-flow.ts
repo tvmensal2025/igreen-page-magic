@@ -3354,6 +3354,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const resp = isButton ? buttonId : messageText.toLowerCase().trim();
       console.log(`[post-confirm-conta] ENTER resp="${resp}" customer=${customer.id}`);
       if (resp === "sim_conta" || resp === "sim" || resp === "s" || resp === "1" || resp === "ok" || resp === "correto" || resp === "✅") {
+        // 🛡️ SAFETY: todo o dispatch pós-SIM roda em try/catch. Se qualquer
+        // passo (CHAIN, success_goto, finalizar) lançar, o lead recebe um
+        // texto de continuidade em vez de ficar mudo, e gravamos error_message
+        // no customer pra o watchdog/CRM enxergar.
+        try {
         // FIX 2: garantir que o nome confirmado é o do TITULAR DA CONTA (OCR),
         // não o nome digitado pelo lead no boas-vindas.
         const _billHolder = String((customer as any).bill_holder_name || (updates as any).bill_holder_name || "").trim();
