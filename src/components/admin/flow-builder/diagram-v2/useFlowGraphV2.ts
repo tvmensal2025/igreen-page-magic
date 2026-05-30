@@ -83,7 +83,6 @@ export function useFlowGraphV2(
           source: step.id,
           target: next.id,
           type: "smoothstep",
-          pathOptions: { borderRadius: 12, offset: 20 } as any,
           style: edgeStyle(kind),
           markerEnd: { type: MarkerType.ArrowClosed, color: FG, width: 14, height: 14 },
           data: { label: "ordem", intent: "order", missing: false, transitionIdx: -1, kind } satisfies V2EdgeData,
@@ -112,7 +111,6 @@ export function useFlowGraphV2(
           source: step.id,
           target: t.goto_step_id,
           type: "smoothstep",
-          pathOptions: { borderRadius: 12 } as any,
           style: st,
           markerEnd: {
             type: MarkerType.ArrowClosed,
