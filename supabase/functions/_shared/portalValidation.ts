@@ -1,6 +1,9 @@
 // Espelho Deno de src/lib/captacao/portalValidation.ts — mantém finalize-capture
 // rejeitando o lead com EXATAMENTE a mesma régua que o frontend mostra ao consultor.
 // Se mudar a lógica aqui, atualize o arquivo do src também.
+import { isValidDistribuidora, isHoldingName, suggestDistribuidoras } from "./distribuidoras.ts";
+
+
 
 export type FieldKey =
   | "name" | "cpf" | "data_nascimento"
@@ -124,6 +127,29 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
   }
   if (isStrFilled(c.numero_instalacao) && digits(c.numero_instalacao).length < 6) {
     invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação parece curto demais" });
+  }
+
+  // Distribuidora — bloqueia holding genérica + nome fora da allow-list por UF
+  if (isStrFilled(c.distribuidora)) {
+    if (isHoldingName(c.distribuidora)) {
+      const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
+      invalid.push({
+        field: "distribuidora",
+        label: "Distribuidora",
+        reason: `"${c.distribuidora}" é o grupo holding, não a concessionária. Use a regional${opts ? `: ${opts}` : ""}.`,
+        suggestion: opts || undefined,
+      });
+    } else if (!isValidDistribuidora(c.distribuidora, c.address_state)) {
+      const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
+      if (opts) {
+        invalid.push({
+          field: "distribuidora",
+          label: "Distribuidora",
+          reason: `"${c.distribuidora}" não é uma concessionária válida em ${c.address_state}. Opções: ${opts}.`,
+          suggestion: opts,
+        });
+      }
+    }
   }
 
   const valor = Number(c.electricity_bill_value || 0);

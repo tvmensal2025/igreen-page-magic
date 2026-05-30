@@ -99,24 +99,24 @@ export function useCaptureSession(customerId: string | null) {
     return () => { void supabase.removeChannel(ch); };
   }, [customerId]);
 
-  const filledCount = useMemo(
-    () => CAPTURE_FIELDS.filter((f) => isFieldFilled(customer, f.key)).length,
-    [customer]
-  );
-  const totalFields = CAPTURE_FIELDS.length;
-  const progress = Math.round((filledCount / totalFields) * 100);
-
-  // Validação canônica do Portal (mesma lógica usada no edge finalize-capture).
-  // Cobre faltantes + inválidos (CPF errado, ratio R$/kWh fora da faixa, etc.)
+  // Validação canônica do Portal — fonte ÚNICA de verdade pra "X/Y" e
+  // "Faltam N". Antes tinha dois contadores (card vs ficha) que divergiam
+  // porque o card só olhava presença e a ficha somava inválidos também.
   const validation: ValidationResult = useMemo(() => validateForPortal(customer as any), [customer]);
 
-  const missing = useMemo(() => {
-    const list: string[] = validation.missing.map((m) => m.label);
-    if (!customer?.document_back_url) list.push("RG verso");
-    if (!customer?.electricity_bill_photo_url) list.push("Conta de luz");
-    if (customer?.name_mismatch_flag && !customer?.name_mismatch_acknowledged_at) list.push("Confirmar titularidade");
-    return list;
-  }, [customer, validation]);
+  const totalFields = validation.totalFields;
+  const filledCount = Math.max(0, totalFields - validation.pendingItems.length);
+  const progress = Math.round((filledCount / totalFields) * 100);
+
+  // Lista descritiva pra UI: presença + inválidos no mesmo array, mesma ordem
+  // que aparece pro consultor — sem desencontro entre card e sheet.
+  const missing = useMemo(
+    () =>
+      validation.pendingItems.map((p) =>
+        p.kind === "invalid" && p.reason ? `${p.label} (${p.reason.slice(0, 60)}${p.reason.length > 60 ? "…" : ""})` : p.label,
+      ),
+    [validation],
+  );
 
   const isComplete = validation.ok && !!customer;
 
