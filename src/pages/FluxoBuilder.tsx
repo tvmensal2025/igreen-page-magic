@@ -137,6 +137,39 @@ export default function FluxoBuilder() {
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
 
+  // Revisão IA da planilha (GPT-5.5)
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [suggestingStepId, setSuggestingStepId] = useState<string | null>(null);
+
+  const runReview = useCallback(async (mode: "global" | "step", stepId?: string) => {
+    if (!flowId) return;
+    setReviewError(null);
+    setReviewResult(null);
+    setReviewOpen(true);
+    if (mode === "global") setReviewLoading(true);
+    else setSuggestingStepId(stepId ?? null);
+    try {
+      const { data, error } = await supabase.functions.invoke("flow-spreadsheet-review", {
+        body: { mode, flowId, stepId },
+      });
+      if (error) throw new Error(error.message ?? "Erro na revisão IA");
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setReviewResult({
+        summary: (data as any).summary ?? "",
+        issues: (data as any).issues ?? [],
+      });
+    } catch (e: any) {
+      setReviewError(e?.message ?? "Erro desconhecido");
+    } finally {
+      setReviewLoading(false);
+      setSuggestingStepId(null);
+    }
+  }, [flowId]);
+
+
   // PR4 — busca/filtro/colapso da lista de steps
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
