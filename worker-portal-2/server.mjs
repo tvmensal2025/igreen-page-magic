@@ -397,6 +397,32 @@ app.post('/submit-lead', authRequired, async (req, res) => {
   if (!dados?.idconsultor) return res.status(400).json({ ok: false, error: 'dados.idconsultor obrigatório (ou customer_id válido)' });
   if (!dados?.cpf) return res.status(400).json({ ok: false, error: 'dados.cpf obrigatório' });
 
+  // Blindagem: chamadas antigas do webhook podem enviar `dados` completo com
+  // consumoMedio=0. Antes de enfileirar, corrige a partir do customer/valor para
+  // o job não repetir 3x falhando em /bonus/rules por consumo ausente.
+  if ((!Number(dados.consumoMedio) || Number(dados.consumoMedio) < 50) && customer_id) {
+    const valorPayload = Number(dados.electricityBillValue || dados.electricity_bill_value || 0);
+    let valorConta = Number.isFinite(valorPayload) ? valorPayload : 0;
+    let mediaBanco = 0;
+    if (supabase) {
+      const { data: c } = await supabase
+        .from('customers')
+        .select('media_consumo, electricity_bill_value')
+        .eq('id', customer_id)
+        .maybeSingle();
+      mediaBanco = Number(c?.media_consumo || 0);
+      valorConta = valorConta || Number(c?.electricity_bill_value || 0);
+    }
+    if (mediaBanco >= 50) dados.consumoMedio = Math.round(mediaBanco);
+    else if (valorConta >= 30) dados.consumoMedio = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+    else dados.consumoMedio = 350;
+    console.warn(`  ⚠ consumoMedio corrigido antes da fila: ${dados.consumoMedio} kWh customer=${customer_id}`);
+    if (supabase && Number(dados.consumoMedio) >= 50) {
+      await supabase.from('customers').update({ media_consumo: Number(dados.consumoMedio) }).eq('id', customer_id)
+        .then(() => {}, () => {});
+    }
+  }
+
   try {
     if (queueAvailable) {
       const job = await queue.add('cadastrar', { customer_id, dados }, {
