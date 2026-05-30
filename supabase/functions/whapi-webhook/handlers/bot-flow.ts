@@ -44,7 +44,7 @@ import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-fie
 import { detectFlowSwitch } from "../../_shared/flow-router.ts";
 import { ocrContaEnergia, ocrDocumentoFrenteVerso } from "../../_shared/ocr.ts";
 import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/document-type.ts";
-import { detectDocumentType, detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
+import { detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
 import { uploadMediaToMinio, OCR_CONFIDENCE_THRESHOLD } from "../_helpers.ts";
 import { jsonLog } from "../../_shared/audit.ts";
 import { isMockMode, isCustomerSandbox, shouldBypassQuietHours, shouldUseFastClock } from "../../_shared/test-mode.ts";
@@ -3217,22 +3217,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
       const inboundMime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
-      try {
-        const detDocAsBill = await detectDocumentTypeDetailed({
-          base64: fileBase64 || undefined,
-          mimeType: inboundMime,
-          imageUrl: fileUrl?.startsWith("http") ? fileUrl : undefined,
-          geminiApiKey,
-        });
-        if (isConfidentDocDetection(detDocAsBill)) {
-          console.warn(`[aguardando_conta] arquivo parece documento (${detDocAsBill.tipo}/${detDocAsBill.confianca}) — não salvar como conta`);
-          updates.conversation_step = "aguardando_conta";
-          reply = "Esse arquivo parece ser um documento. Agora eu preciso primeiro da *conta de luz* para calcular sua economia.\n\nMe envie uma foto ou PDF da fatura de energia, por favor 📸";
-          break;
-        }
-      } catch (e) {
-        console.warn("[aguardando_conta] preflight documento falhou — seguindo OCR conta:", (e as Error).message);
-      }
+      // ⚠️ FIX 2026-05-30: removido o "preflight" que chamava
+      // detectDocumentTypeDetailed (classificador RG/CNH) para rejeitar a conta.
+      // Esse classificador SÓ conhece rg/cnh — ele nunca tem a opção "conta de
+      // luz", então forçava um tipo de documento e BLOQUEAVA contas legítimas
+      // (caso real: número 11971254913 teve a conta recusada 2x como "parece um
+      // documento"). A blindagem correta já existe DEPOIS, no processando_ocr_conta:
+      // o ocrContaEnergia (Gemini) tenta extrair nome/valor/distribuidora e, se
+      // não encontrar os campos da conta, aí sim pede reenvio. Confiamos no OCR
+      // real da conta em vez de um pré-classificador frágil.
       if (fileBase64) {
         const mime = inboundMime;
         updates.electricity_bill_photo_url = `data:${mime};base64,${fileBase64}`;
@@ -3973,62 +3966,50 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         console.warn(`⚠️ [doc-auto] falha detectando tipo:`, (e as Error).message);
       }
 
-      // Se a detecção falhou ou ficou pouco confiável, NÃO chutar RG e pedir verso.
-      if (!isConfidentDocDetection({ tipo: detectedType, confianca: detectConfidence, source: detectSource })) {
-        console.warn(`⚠️ [doc-auto] detecção ambígua (${detectedType}/${detectConfidence}/${detectSource}) — perguntando RG/CNH ao lead`);
-        if (fileBase64) {
-          updates.document_front_url = `data:${mime};base64,${fileBase64}`;
-          updates.document_front_base64 = fileBase64;
-          updates.media_message_id = messageId || null;
-          updates.media_storage = "inline";
-        } else if (fileUrl) {
-          updates.document_front_url = fileUrl.startsWith("http") ? fileUrl : "evolution-media:pending";
-        }
-        updates.conversation_step = "ask_tipo_documento";
-        await sendOptions(remoteJid, "✅ Foto recebida! Só pra confirmar — esse documento é:", [
-          { id: "rg", title: "🪪 RG" },
-          { id: "cnh", title: "🚗 CNH" },
-        ]);
-        reply = "";
-        break;
-      }
-
-      updates.document_type = detectedType;
-      // Reaproveita o handler clássico: marca o passo como aguardando_doc_frente
-      // e encaminha o processamento para o case já existente abaixo.
-      // Aqui só salvamos o tipo + step e devolvemos confirmação curta;
-      // a próxima mensagem (ou a mesma se for re-entrada) cai em aguardando_doc_frente.
-      // PORÉM: o lead JÁ enviou a foto agora — então processamos imediatamente
-      // chamando a mesma lógica do aguardando_doc_frente inline.
-      updates.conversation_step = "aguardando_doc_frente";
-      // Falha controlada: deixa o switch re-executar via fall-through manual
-      // setando step e reescrevendo a lógica seria ruim. Em vez disso, devolvemos
-      // uma mensagem curta e aguardamos o próximo evento. Para não perder a foto
-      // que já chegou, salvamos a frente aqui mesmo:
+      // Salva a frente recebida (sempre — independente da confiança da detecção).
       if (fileBase64) {
         updates.document_front_url = `data:${mime};base64,${fileBase64}`;
         updates.document_front_base64 = fileBase64;
         updates.media_message_id = messageId || null;
         updates.media_storage = "inline";
+        const _custId = customer.id;
+        uploadMediaToMinio({
+          fileBase64, mimeType: mime, consultantFolder: consultorId, consultantName: nomeRepresentante,
+          customerName: customer.name || "cliente", customerBirth: customer.data_nascimento, kind: "doc_frente",
+        }).then(async (minioUrl) => {
+          if (minioUrl) {
+            await supabase.from("customers").update({ document_front_url: minioUrl, media_storage: "minio" }).eq("id", _custId);
+          }
+        }).catch((e) => console.warn(`📦⚠️ [BG] MinIO doc_frente falhou: ${e?.message}`));
       } else if (fileUrl) {
         updates.document_front_url = fileUrl.startsWith("http") ? fileUrl : "evolution-media:pending";
       }
-      // Se for CNH, marca verso "não aplicável" para o pipeline pular o passo.
-      // IMPORTANTE: nunca dizemos ao cliente "RG Novo" ou "RG Antigo" — essa
-      // distinção é só interna pra decidir se precisa pedir o verso.
-      if (detectedType === "cnh") {
+
+      // ⚠️ FIX 2026-05-30: NÃO perguntar "RG ou CNH" quando a confiança da
+      // CLASSIFICAÇÃO é baixa. O Gemini lê os DADOS do documento com perfeição
+      // mesmo quando fica na dúvida entre rg_novo/rg_antigo (distinção que só
+      // serve internamente pra decidir se pede verso). Antes, confiança < 0.78
+      // travava o fluxo, perguntava RG/CNH e descartava a foto já enviada
+      // (caso real 11971254913). Agora rodamos o OCR DIRETO. O tipo só define
+      // se pede verso: se a detecção achou CNH com razoável confiança, trata
+      // como CNH (sem verso); senão assume RG e pede verso. Se o OCR extrair
+      // tudo, nem o verso trava.
+      const treatAsCnh = detectedType === "cnh" && detectConfidence >= 0.55;
+      updates.document_type = treatAsCnh ? "cnh" : (detectedType === "rg_novo" ? "rg_novo" : "rg_antigo");
+      updates.conversation_step = "aguardando_doc_frente";
+      if (treatAsCnh) {
         updates.document_back_url = "nao_aplicavel";
         await sendText(remoteJid, "✅ Documento recebido! ⏳ Analisando os dados...");
       } else {
-        await sendText(remoteJid, `✅ Documento recebido! ⏳ Analisando a frente...\n\nDepois vou te pedir o *verso*.`);
+        await sendText(remoteJid, `✅ Documento recebido! ⏳ Analisando a frente...`);
       }
       // Roda OCR da frente já agora (mesma lógica do aguardando_doc_frente)
       try {
         const docFrenteUrl = fileUrl || updates.document_front_url || "evolution-media:pending";
         const ocrData = await ocrDocumentoFrenteVerso(
           docFrenteUrl,
-          detectedType === "cnh" ? "nao_aplicavel" : (customer.document_back_url || ""),
-          detectedType === "cnh" ? "CNH" : (detectedType === "rg_novo" ? "RG_NOVO" : "RG_ANTIGO"),
+          treatAsCnh ? "nao_aplicavel" : (customer.document_back_url || ""),
+          treatAsCnh ? "CNH" : (detectedType === "rg_novo" ? "RG_NOVO" : "RG_ANTIGO"),
           geminiApiKey,
           fileBase64 || undefined,
           documentMessage || imageMessage,
@@ -4038,9 +4019,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const d = ocrData.dados;
           { if (d.nome) updates.doc_holder_name = String(d.nome).trim(); const _safe = safeAssignName(customer.name, (customer as any).name_source, d.nome); if (_safe) { updates.name = _safe; updates.name_source = "ocr_doc"; } const _bill = customer.bill_holder_name || updates.bill_holder_name; if (_bill && d.nome) { const _chk = checkHolderMatch(_bill, d.nome); if (!_chk.match) { updates.name_mismatch_flag = true; updates.name_mismatch_reason = `bill="${_bill}" doc="${d.nome}" ${_chk.reason}`; } else { updates.name_mismatch_flag = false; updates.name_mismatch_reason = null; } } }
           if (d.cpf) updates.cpf = d.cpf.replace(/\D/g, "");
-          if (d.rg) updates.rg = d.rg;
+          // ⚠️ FIX: RG só é gravado se for DIFERENTE do CPF. O OCR às vezes
+          // devolve o CPF no campo RG (RG novo/CIN tem CPF impresso). Sem isso,
+          // rg ficava == cpf (caso real 11971254913: rg=cpf=43728802867).
+          if (d.rg) {
+            const _rgDigits = String(d.rg).replace(/\D/g, "");
+            const _cpfDigits = String(d.cpf || updates.cpf || "").replace(/\D/g, "");
+            if (_rgDigits && _rgDigits !== _cpfDigits) updates.rg = d.rg;
+          }
           const dataConf = String(d.dataNascimentoConfianca || "").toLowerCase();
-          if (d.dataNascimento && (detectedType !== "cnh" || dataConf === "alta")) {
+          if (d.dataNascimento && (!treatAsCnh || dataConf === "alta")) {
             updates.data_nascimento = d.dataNascimento;
           }
           if (d.nomePai) updates.nome_pai = d.nomePai;
@@ -4050,7 +4038,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         console.warn(`[doc-auto] OCR falhou:`, (e as Error).message);
       }
       // CNH → vai direto pra confirmação (ou ask_cpf se faltar CPF). RG → pede verso.
-      if (detectedType === "cnh") {
+      if (treatAsCnh) {
         const _cpfOcr = String(updates.cpf || customer.cpf || "").replace(/\D/g, "");
         if (_cpfOcr.length !== 11) {
           updates.conversation_step = "ask_cpf";
@@ -4086,12 +4074,76 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (isFile) {
         updates.conversation_step = "aguardando_doc_auto";
         reply = "";
-        // Não dá break — re-emite o evento? Não dá. Mas como acabamos de salvar o step,
-        // o próximo evento (a foto chegou junto) cai em aguardando_doc_auto.
-        // Como atalho: já avisa que recebeu.
         await sendText(remoteJid, "📄 Recebi a foto, analisando agora...");
         break;
       }
+
+      // ⚠️ FIX 2026-05-30: o cliente clicou RG/CNH (botão). Se a frente do
+      // documento JÁ foi enviada antes (salva em document_front_url), NÃO pedir
+      // a foto de novo — rodar o OCR imediatamente reaproveitando a foto.
+      // Antes, o handler descartava a foto e pedia tudo de novo (caso real
+      // 11971254913: cliente mandou doc, escolheu CNH, e o bot pediu a frente
+      // outra vez → depois caiu em "CPF inválido").
+      const _choice = (isButton ? String(buttonId ?? "") : messageText.toLowerCase().trim());
+      const _isCnh = /cnh|habilita|^2$/i.test(_choice);
+      const _frenteSalva = String((customer as any).document_front_url || "").trim();
+      const _temFrente = _frenteSalva && _frenteSalva !== "evolution-media:pending";
+      if (_temFrente) {
+        updates.document_type = _isCnh ? "cnh" : "rg_antigo";
+        if (_isCnh) updates.document_back_url = "nao_aplicavel";
+        await sendText(remoteJid, _isCnh ? "✅ CNH recebida! ⏳ Analisando os dados..." : "✅ Documento recebido! ⏳ Analisando a frente...");
+        try {
+          const _b64 = (customer as any).document_front_base64 || undefined;
+          const _frenteUrl = _frenteSalva.startsWith("http") ? _frenteSalva : (_b64 ? "inline" : _frenteSalva);
+          const ocrData = await ocrDocumentoFrenteVerso(
+            _frenteUrl,
+            _isCnh ? "nao_aplicavel" : (customer.document_back_url || ""),
+            _isCnh ? "CNH" : "RG_ANTIGO",
+            geminiApiKey,
+            _b64,
+            undefined,
+            undefined,
+          );
+          if (ocrData.sucesso && ocrData.dados) {
+            const d = ocrData.dados;
+            { if (d.nome) updates.doc_holder_name = String(d.nome).trim(); const _safe = safeAssignName(customer.name, (customer as any).name_source, d.nome); if (_safe) { updates.name = _safe; updates.name_source = "ocr_doc"; } const _bill = customer.bill_holder_name || updates.bill_holder_name; if (_bill && d.nome) { const _chk = checkHolderMatch(_bill, d.nome); if (!_chk.match) { updates.name_mismatch_flag = true; updates.name_mismatch_reason = `bill="${_bill}" doc="${d.nome}" ${_chk.reason}`; } else { updates.name_mismatch_flag = false; updates.name_mismatch_reason = null; } } }
+            if (d.cpf) updates.cpf = d.cpf.replace(/\D/g, "");
+            if (d.rg) {
+              const _rgDigits = String(d.rg).replace(/\D/g, "");
+              const _cpfDigits = String(d.cpf || updates.cpf || "").replace(/\D/g, "");
+              if (_rgDigits && _rgDigits !== _cpfDigits) updates.rg = d.rg;
+            }
+            const dataConf = String(d.dataNascimentoConfianca || "").toLowerCase();
+            if (d.dataNascimento && (!_isCnh || dataConf === "alta")) updates.data_nascimento = d.dataNascimento;
+            if (d.nomePai) updates.nome_pai = d.nomePai;
+            if (d.nomeMae) updates.nome_mae = d.nomeMae;
+          }
+        } catch (e) {
+          console.warn(`[ask_tipo_documento] OCR reaproveitando frente falhou:`, (e as Error).message);
+        }
+        if (_isCnh) {
+          const _cpfOcr = String(updates.cpf || customer.cpf || "").replace(/\D/g, "");
+          if (_cpfOcr.length !== 11) {
+            updates.conversation_step = "ask_cpf";
+            const _nome = updates.name || customer.name || "";
+            reply = `📋 Consegui ler sua CNH${_nome ? `:\n\n👤 Nome: *${_nome}*` : ""}\n\nSó preciso do seu *CPF* pra continuar (apenas números):`;
+            break;
+          }
+          updates.conversation_step = "confirmando_dados_doc";
+          const merged = { ...customer, ...updates };
+          await sendOptions(remoteJid, buildConfirmacaoDoc(merged), [
+            { id: "sim_doc", title: "✅ SIM" }, { id: "nao_doc", title: "❌ NÃO" }, { id: "editar_doc", title: "✏️ EDITAR" },
+          ]);
+          reply = "";
+          break;
+        }
+        // RG → pede verso
+        updates.conversation_step = "aguardando_doc_verso";
+        reply = "✅ Frente recebida!\n\n📸 Agora envie o *VERSO do RG*.\n\nFormatos: JPG, PNG ou PDF";
+        break;
+      }
+
+      // Sem foto prévia → aí sim pede a foto.
       reply = `Me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
       updates.conversation_step = "aguardando_doc_auto";
       break;
@@ -4142,7 +4194,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             const d = ocrData.dados;
             { if (d.nome) updates.doc_holder_name = String(d.nome).trim(); const _safe = safeAssignName(customer.name, (customer as any).name_source, d.nome); if (_safe) { updates.name = _safe; updates.name_source = "ocr_doc"; } const _bill = customer.bill_holder_name || updates.bill_holder_name; if (_bill && d.nome) { const _chk = checkHolderMatch(_bill, d.nome); if (!_chk.match) { updates.name_mismatch_flag = true; updates.name_mismatch_reason = `bill="${_bill}" doc="${d.nome}" ${_chk.reason}`; } else { updates.name_mismatch_flag = false; updates.name_mismatch_reason = null; } } }
             if (d.cpf) updates.cpf = d.cpf.replace(/\D/g, "");
-            if (d.rg) updates.rg = d.rg;
+            if (d.rg) {
+              const _rgDigits = String(d.rg).replace(/\D/g, "");
+              const _cpfDigits = String(d.cpf || updates.cpf || "").replace(/\D/g, "");
+              if (_rgDigits && _rgDigits !== _cpfDigits) updates.rg = d.rg;
+            }
             const dataConf = String(d.dataNascimentoConfianca || "").toLowerCase();
             if (d.dataNascimento && dataConf === "alta") {
               updates.data_nascimento = d.dataNascimento;
@@ -4229,7 +4285,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const d = ocrData.dados;
           { if (d.nome) updates.doc_holder_name = String(d.nome).trim(); const _safe = safeAssignName(customer.name, (customer as any).name_source, d.nome); if (_safe) { updates.name = _safe; updates.name_source = "ocr_doc"; } const _bill = customer.bill_holder_name || updates.bill_holder_name; if (_bill && d.nome) { const _chk = checkHolderMatch(_bill, d.nome); if (!_chk.match) { updates.name_mismatch_flag = true; updates.name_mismatch_reason = `bill="${_bill}" doc="${d.nome}" ${_chk.reason}`; } else { updates.name_mismatch_flag = false; updates.name_mismatch_reason = null; } } }
           if (d.cpf) updates.cpf = d.cpf.replace(/\D/g, "");
-          if (d.rg) updates.rg = d.rg;
+          if (d.rg) {
+            const _rgDigits = String(d.rg).replace(/\D/g, "");
+            const _cpfDigits = String(d.cpf || updates.cpf || "").replace(/\D/g, "");
+            if (_rgDigits && _rgDigits !== _cpfDigits) updates.rg = d.rg;
+          }
           if (d.dataNascimento) updates.data_nascimento = d.dataNascimento;
           if (d.nomePai) updates.nome_pai = d.nomePai;
           if (d.nomeMae) updates.nome_mae = d.nomeMae;
