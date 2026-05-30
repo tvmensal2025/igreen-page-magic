@@ -4599,6 +4599,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       updates.status = "portal_submitting";
       updates.conversation_step = "portal_submitting";
 
+      // Blindagem final: se o OCR/revisão não gravou consumo médio, estima pelo
+      // valor da conta antes de montar o payload do Portal 2.
+      {
+        const mediaAtual = Number((updates as any).media_consumo ?? (customer as any).media_consumo ?? 0);
+        const valorConta = Number((updates as any).electricity_bill_value ?? (customer as any).electricity_bill_value ?? 0);
+        if ((!Number.isFinite(mediaAtual) || mediaAtual < 50) && Number.isFinite(valorConta) && valorConta >= 30) {
+          updates.media_consumo = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+          console.log(`⚡ media_consumo final estimado=${updates.media_consumo} kWh (valor=R$${valorConta})`);
+        }
+      }
+
       if (isTestMode()) {
         reply = "✅ *Teste concluído:* todos os dados foram coletados e o lead chegou ao ponto de envio para o portal.";
         return { reply, updates };
