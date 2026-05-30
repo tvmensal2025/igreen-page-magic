@@ -209,7 +209,12 @@ export type AskField =
   | "phone_landline"
   | "email"
   | "cep"
-  | "electricity_bill_value";
+  | "address_number"
+  | "address_complement"
+  | "numero_instalacao"
+  | "electricity_bill_value"
+  | "document_front"
+  | "document_back";
 
 export function shouldSkipAsk(field: AskField, customer: any): boolean {
   if (!customer) return false;
@@ -219,7 +224,7 @@ export function shouldSkipAsk(field: AskField, customer: any): boolean {
       if (v.length < 2) return false;
       const src = String(customer.name_source || "");
       // Só pula se a fonte for confiável (evita pular por nome herdado/lixo).
-      return TRUSTED_NAME_SOURCES.has(src) || src === "manual";
+      return TRUSTED_NAME_SOURCES.has(src) || src === "manual" || src === "user_confirmed" || src === "ocr_conta" || src === "ocr_doc";
     }
     case "cpf": {
       const v = String(customer.cpf || "").replace(/\D/g, "");
@@ -245,15 +250,71 @@ export function shouldSkipAsk(field: AskField, customer: any): boolean {
     }
     case "cep": {
       const v = String(customer.cep || "").replace(/\D/g, "");
-      return v.length === 8 && !/000$/.test(v);
+      // Pula só quando CEP é válido E temos endereço+cidade+UF (OCR completo / ViaCEP resolvido).
+      const hasAddr = !!(customer.address_street && customer.address_city && customer.address_state);
+      return v.length === 8 && !/000$/.test(v) && hasAddr;
+    }
+    case "address_number": {
+      const v = String(customer.address_number || "").trim();
+      return v.length >= 1;
+    }
+    case "address_complement": {
+      // Complemento é opcional: respondido se já está setado (mesmo vazio "").
+      return customer.address_complement !== null && customer.address_complement !== undefined;
+    }
+    case "numero_instalacao": {
+      const v = String(customer.numero_instalacao || "").replace(/\D/g, "");
+      return v.length >= 7;
     }
     case "electricity_bill_value": {
       const v = Number(customer.electricity_bill_value || 0);
       return v >= 30;
     }
+    case "document_front": {
+      const v = String(customer.document_front_url || "").trim();
+      return v.length > 0 && v !== "evolution-media:pending";
+    }
+    case "document_back": {
+      const dt = String(customer.document_type || "").toLowerCase();
+      if (/cnh|habilita/.test(dt)) return true; // CNH não precisa verso
+      const v = String(customer.document_back_url || "").trim();
+      return v.length > 0 && v !== "evolution-media:pending" && v !== "nao_aplicavel";
+    }
     default:
       return false;
   }
+}
+
+// Mapeia step "ask_*" / "aguardando_doc_*" → campo correspondente.
+const ASK_STEP_TO_FIELD: Record<string, AskField> = {
+  "ask_name": "name",
+  "ask_cpf": "cpf",
+  "ask_rg": "rg",
+  "ask_birth_date": "data_nascimento",
+  "ask_phone": "phone_landline",
+  "ask_phone_confirm": "phone_landline",
+  "ask_email": "email",
+  "ask_cep": "cep",
+  "ask_number": "address_number",
+  "ask_complement": "address_complement",
+  "ask_installation_number": "numero_instalacao",
+  "ask_bill_value": "electricity_bill_value",
+  "ask_doc_frente_manual": "document_front",
+  "ask_doc_verso_manual": "document_back",
+  "aguardando_doc_auto": "document_front",
+  "aguardando_doc_frente": "document_front",
+  "aguardando_doc_verso": "document_back",
+};
+
+/**
+ * Retorna true se este step pode ser pulado porque o dado já existe e é válido.
+ * Usar como guard ANTES de enviar a pergunta — evita reperguntar dados já
+ * coletados via OCR, edição manual, ou passos anteriores.
+ */
+export function shouldSkipAskStep(step: string, customer: any): boolean {
+  const field = ASK_STEP_TO_FIELD[step];
+  if (!field) return false;
+  return shouldSkipAsk(field, customer);
 }
 
 // ─── detectQuestionIntent ───────────────────────────────────────────────
