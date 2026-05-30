@@ -3354,6 +3354,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const resp = isButton ? buttonId : messageText.toLowerCase().trim();
       console.log(`[post-confirm-conta] ENTER resp="${resp}" customer=${customer.id}`);
       if (resp === "sim_conta" || resp === "sim" || resp === "s" || resp === "1" || resp === "ok" || resp === "correto" || resp === "✅") {
+        // 🛡️ SAFETY: todo o dispatch pós-SIM roda em try/catch. Se qualquer
+        // passo (CHAIN, success_goto, finalizar) lançar, o lead recebe um
+        // texto de continuidade em vez de ficar mudo, e gravamos error_message
+        // no customer pra o watchdog/CRM enxergar.
+        try {
         // FIX 2: garantir que o nome confirmado é o do TITULAR DA CONTA (OCR),
         // não o nome digitado pelo lead no boas-vindas.
         const _billHolder = String((customer as any).bill_holder_name || (updates as any).bill_holder_name || "").trim();
@@ -3684,6 +3689,28 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
         (updates as any).__inline_sent = true;
         reply = "";
+        } catch (dispatchErr: any) {
+          const msg = String(dispatchErr?.message || dispatchErr).slice(0, 200);
+          console.error(`[post-confirm-conta] ❌ DISPATCH FALHOU customer=${customer.id} err=${msg}`, dispatchErr);
+          // Fallback: não deixa o lead mudo + sinaliza pro watchdog.
+          try {
+            const fallbackTxt = "✅ Recebido! Já preparo os próximos passos do seu cadastro. Aguarda só um instantinho 🙏";
+            await sendText(remoteJid, fallbackTxt);
+            await supabase.from("conversations").insert({
+              customer_id: customer.id, message_direction: "outbound",
+              message_text: fallbackTxt, message_type: "text",
+              conversation_step: "post_confirm_dispatch_fallback",
+            });
+          } catch (_) { /* best-effort */ }
+          try {
+            await supabase.from("customers")
+              .update({ error_message: `post_bill_dispatch_failed: ${msg}`, updated_at: new Date().toISOString() })
+              .eq("id", customer.id);
+          } catch (_) { /* best-effort */ }
+          (updates as any).__inline_sent = true;
+          updates.conversation_step = "ask_quero_cadastrar";
+          reply = "";
+        }
       } else if (resp === "nao_conta" || resp === "nao" || resp === "não" || resp === "n" || resp === "2" || resp === "errado" || resp === "❌") {
         updates.conversation_step = "aguardando_conta";
         reply = "📸 Ok! Envie novamente a *FOTO da conta de energia* com melhor qualidade.";
