@@ -174,15 +174,15 @@ ${JSON.stringify(flowTable.filter((x) => Math.abs(x.pos - (focusStep?.position ?
       },
     }];
 
-    const reqBody = {
-      model: "openai/gpt-5.5",
+    const reqBody: Record<string, any> = {
+      model: "openai/gpt-5",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       tools,
       tool_choice: { type: "function", function: { name: "report_flow_issues" } },
-      reasoning: { effort: body.mode === "global" ? "high" : "medium" },
+      reasoning_effort: body.mode === "global" ? "high" : "medium",
     };
 
     const resp = await fetch(GATEWAY_URL, {
