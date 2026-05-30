@@ -9,7 +9,35 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { __test } from "./bot-flow.ts";
 
-const { sleepForMedia, fetchUrlToBase64, trigramSim } = __test;
+const { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId } = __test;
+
+// ─────────────────────────────────────────────────────────────────────
+// resolvePostBillNextStepId — destino pós-SIM da conta (anti-duplicação)
+// Regressão do bug 2026-05-30: handler ignorava fallback.goto_step_id.
+// ─────────────────────────────────────────────────────────────────────
+Deno.test("resolvePostBillNextStepId: honra fallback.goto_step_id (mode goto)", () => {
+  assertEquals(
+    resolvePostBillNextStepId({ mode: "goto", goto_step_id: "d_resultado_id" }),
+    "d_resultado_id",
+  );
+});
+
+Deno.test("resolvePostBillNextStepId: success_goto_step_id tem prioridade", () => {
+  assertEquals(
+    resolvePostBillNextStepId({ mode: "goto", goto_step_id: "x", success_goto_step_id: "y" }),
+    "y",
+  );
+});
+
+Deno.test("resolvePostBillNextStepId: ignora goto_step_id quando mode != goto", () => {
+  assertEquals(resolvePostBillNextStepId({ mode: "repeat", goto_step_id: "x" }), null);
+});
+
+Deno.test("resolvePostBillNextStepId: null/sem destino → null", () => {
+  assertEquals(resolvePostBillNextStepId(null), null);
+  assertEquals(resolvePostBillNextStepId(undefined), null);
+  assertEquals(resolvePostBillNextStepId({}), null);
+});
 
 // ─────────────────────────────────────────────────────────────────────
 // trigramSim — usado pelo Q&A configurado e pelo anti-loop

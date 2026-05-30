@@ -85,6 +85,18 @@ async function sleepForMedia(kind: string, durationSec?: number | null): Promise
   await new Promise((r) => setTimeout(r, 1500));
 }
 
+// ── Resolve o destino EXPLÍCITO configurado no capture_conta após o SIM ──
+// PURE. Espelha whapi-webhook/handlers/bot-flow.ts. Ver bug 2026-05-30.
+// PRIORIDADE: success_goto_step_id → goto_step_id (quando mode === "goto").
+function resolvePostBillNextStepId(
+  fallback: { mode?: string | null; goto_step_id?: string | null; success_goto_step_id?: string | null } | null | undefined,
+): string | null {
+  const fb = fallback || {};
+  if (fb.success_goto_step_id) return String(fb.success_goto_step_id);
+  if (fb.mode === "goto" && fb.goto_step_id) return String(fb.goto_step_id);
+  return null;
+}
+
 // ── Fetch URL → base64 (for OCR when proxy didn't deliver bytes) ──
 async function fetchUrlToBase64(url: string, timeoutMs = 15_000): Promise<{ base64: string; mime: string } | null> {
   try {
@@ -3110,9 +3122,47 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           console.warn(`[post-confirm-conta] falha ao localizar capture_conta: ${(e as any)?.message || e}`);
         }
         console.log(`[post-confirm-conta] capture_conta_pos=${_captureContaPos || "not_found"}`);
-        let nextCustom = _captureContaPos > 0
-          ? await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant, afterPosition: _captureContaPos })
-          : null;
+        // 🔑 Honra o destino configurado pelo consultor no capture_conta antes
+        // de cair na busca por posição. PRIORIDADE: fallback.success_goto_step_id
+        // → fallback.goto_step_id (quando fallback.mode === "goto", que é o que
+        // o FlowBuilder grava em "Plano B: ir para passo X"). Sem isso o handler
+        // avançava por posição e podia despachar o passo errado (ex.:
+        // d_como_funciona em vez de d_resultado) após confirmar a conta.
+        let nextCustom: any = null;
+        try {
+          const { data: _flowRowSuccess } = await supabase
+            .from("bot_flows").select("id")
+            .eq("consultant_id", customer.consultant_id).eq("is_active", true)
+            .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+          if (_flowRowSuccess?.id) {
+            const { data: _captureStep } = await supabase
+              .from("bot_flow_steps").select("fallback")
+              .eq("flow_id", (_flowRowSuccess as any).id).eq("is_active", true)
+              .eq("step_type", "capture_conta")
+              .order("position", { ascending: true }).limit(1).maybeSingle();
+            const _fb = (_captureStep as any)?.fallback || {};
+            const _successId = resolvePostBillNextStepId(_fb);
+            const _successSource = _fb.success_goto_step_id ? "success_goto_step_id" : "fallback.goto_step_id";
+            if (_successId) {
+              const { data: _target } = await supabase
+                .from("bot_flow_steps").select("*")
+                .eq("id", _successId).eq("is_active", true).maybeSingle();
+              if (_target) {
+                nextCustom = _target;
+                console.log(`[post-confirm-conta] ${_successSource}=${_successId} → ${(_target as any).step_key}`);
+              }
+            }
+          }
+        } catch (_e) { /* best-effort */ }
+        if (!nextCustom) {
+          nextCustom = _captureContaPos > 0
+            ? await findNextActiveFlowStep(supabase, customer.consultant_id, { variant: (customer as any).flow_variant, afterPosition: _captureContaPos })
+            : null;
+        }
+        // 🛡️ Rede de segurança: se a resolução (por goto OU por posição) caiu no
+        // passo "como funciona", pula para o passo de simulação/resultado — o
+        // "como funciona" só deve sair quando o lead clica no botão respectivo,
+        // nunca após confirmar a conta.
         if (nextCustom && isComoFuncionaStep(nextCustom)) {
           const { data: _flowRowResultado } = await supabase
             .from("bot_flows").select("id")
@@ -4861,5 +4911,5 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 }
 
 // ── Test-only re-exports (não alteram comportamento) ──
-export const __test = { sleepForMedia, fetchUrlToBase64, trigramSim, resolveOcrFallback };
+export const __test = { sleepForMedia, fetchUrlToBase64, trigramSim, resolveOcrFallback, resolvePostBillNextStepId };
 

@@ -93,6 +93,24 @@ async function sleepForMedia(kind: string, durationSec?: number | null): Promise
   await new Promise((r) => setTimeout(r, 1500));
 }
 
+// ── Resolve o destino EXPLÍCITO configurado no capture_conta após o SIM ──
+// PURE. Dado o `fallback` do step capture_conta, retorna o step_id que o
+// consultor configurou para rodar após confirmar a conta (a simulação), ou
+// null quando não há destino explícito (aí o handler busca por posição).
+//
+// PRIORIDADE: success_goto_step_id → goto_step_id (quando mode === "goto").
+// Esta é a regra que impede o CHAIN amplo de despachar TODOS os passos
+// `message` entre o capture_conta e o próximo capture (causa da duplicação
+// d_como_funciona + d_resultado). Ver bug 2026-05-30 (número 11971254913).
+function resolvePostBillNextStepId(
+  fallback: { mode?: string | null; goto_step_id?: string | null; success_goto_step_id?: string | null } | null | undefined,
+): string | null {
+  const fb = fallback || {};
+  if (fb.success_goto_step_id) return String(fb.success_goto_step_id);
+  if (fb.mode === "goto" && fb.goto_step_id) return String(fb.goto_step_id);
+  return null;
+}
+
 // ── Fetch URL → base64 (for OCR when proxy didn't deliver bytes) ──
 async function fetchUrlToBase64(url: string, timeoutMs = 15_000): Promise<{ base64: string; mime: string } | null> {
   try {
@@ -3549,7 +3567,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               .eq("flow_id", (_flowRowSuccess as any).id).eq("is_active", true)
               .eq("step_type", "capture_conta")
               .order("position", { ascending: true }).limit(1).maybeSingle();
-            const _successId = (_captureStep as any)?.fallback?.success_goto_step_id;
+            // 🔑 Honra o destino configurado pelo consultor no capture_conta.
+            // PRIORIDADE: fallback.success_goto_step_id (override pós-sucesso
+            // explícito) → fallback.goto_step_id quando fallback.mode === "goto".
+            // O segundo caso é o configurado pelo FlowBuilder ("Plano B: ir para
+            // passo X") e é o que o consultor realmente usa. Sem ele o handler
+            // caía no CHAIN amplo e despachava TODOS os `message` entre o
+            // capture_conta e o próximo capture — duplicando d_como_funciona +
+            // d_resultado quando o consultor só queria d_resultado.
+            const _fb = (_captureStep as any)?.fallback || {};
+            const _successId = resolvePostBillNextStepId(_fb);
+            const _successSource = _fb.success_goto_step_id ? "success_goto_step_id" : "fallback.goto_step_id";
             if (_successId) {
               const { data: _target } = await supabase
                 .from("bot_flow_steps").select("*")
@@ -3571,7 +3599,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                   nextCustom = _target;
                 }
                 _hasExplicitSuccessGoto = true;
-                console.log(`[post-confirm-conta] success_goto_step_id=${_successId} → ${(nextCustom as any).step_key} (CHAIN amplo será pulado)`);
+                console.log(`[post-confirm-conta] ${_successSource}=${_successId} → ${(nextCustom as any).step_key} (CHAIN amplo será pulado)`);
               }
             }
           }
@@ -5494,5 +5522,5 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 }
 
 // ── Test-only re-exports (não alteram comportamento) ──
-export const __test = { sleepForMedia, fetchUrlToBase64, trigramSim };
+export const __test = { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId };
 
