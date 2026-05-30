@@ -42,6 +42,7 @@ interface UseWhatsAppReturn {
   operationalHealth: OperationalHealth;
   consecutiveTimeouts: number;
   isWhapi: boolean;
+  hasInstance: boolean;
   createAndConnect: () => Promise<void>;
   disconnect: () => Promise<void>;
   reconnect: () => Promise<void>;
@@ -55,6 +56,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [qrGeneratedAt, setQrGeneratedAt] = useState<number | null>(null);
   const [isWhapi, setIsWhapi] = useState(false);
+  const [hasInstance, setHasInstance] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,10 +159,12 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     if (!instanceSavedRef.current) {
       try {
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
+        setHasInstance(true);
         ensureWebhook(name);
       } catch { /* non-critical */ }
     }
+    setHasInstance(true);
     fetchAndSaveConnectedPhone(name).catch(() => {/* non-critical */});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addLog, ensureWebhook, fetchAndSaveConnectedPhone, saveInstance, setHealth, setStatus]);
@@ -360,7 +364,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         if (qrAttempt.qr) {
           health.resetRecoveryCounter();
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setQrCode(qrAttempt.qr);
           setQrGeneratedAt(Date.now());
           setStatus("connecting");
@@ -371,7 +375,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         }
 
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
         setStatus("connecting");
         addLog("⏳ Aguardando QR Code...");
         startPolling(name);
@@ -389,7 +393,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         if (!mountedRef.current) return;
 
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
         const qr = response?.qrcode?.base64 || null;
 
         if (qr) {
@@ -411,7 +415,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (msg.includes("already") || msg.includes("403") || msg.includes("409") || msg.includes("exists")) {
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setStatus("connecting");
           addLog("⏳ Instância já existe. Conectando...");
           startPolling(name);
@@ -420,7 +424,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (isRecoverableConnectionError(msg)) {
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setStatus("connecting");
           setError(null);
           setHealth("degraded");
@@ -505,6 +509,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       await deleteInstanceDb();
 
       setStatus("disconnected");
+      setHasInstance(false);
       setInstanceName(null);
       setQrCode(null);
       setQrGeneratedAt(null);
@@ -559,7 +564,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       try {
         const response = await withTimeout(createInstance(name), 20000);
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
 
         const qr = response?.qrcode?.base64 || null;
         if (qr) {
@@ -583,7 +588,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (msg.includes("already") || msg.includes("exists") || msg.includes("403") || msg.includes("409")) {
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setStatus("connecting");
           setHealth("recovering");
           addLog("⏳ Instância recuperada. Aguardando QR Code...");
@@ -664,6 +669,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (isSuperAdmin) {
           setIsWhapi(true);
+          setHasInstance(true);
           setStatus("connected");
           setError(null);
           setIsLoading(false);
@@ -678,6 +684,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           const email = user?.email?.toLowerCase().trim();
           if (email === "rafael.ids@icloud.com" && user?.id === consultantId) {
             setIsWhapi(true);
+            setHasInstance(true);
             setStatus("connected");
             setPhoneNumber("+55 11 99009-2401");
             setError(null);
@@ -699,11 +706,13 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         if (cancelled) return;
 
         if (!instanceRecord) {
+          setHasInstance(false);
           setStatus("disconnected");
           setError(null);
           setIsLoading(false);
           return;
         }
+        setHasInstance(true);
 
         const state = await withTimeout(checks.checkState(name), 15000);
         if (cancelled) return;
@@ -773,6 +782,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     operationalHealth,
     consecutiveTimeouts,
     isWhapi,
+    hasInstance,
     createAndConnect,
     disconnect,
     reconnect,

@@ -58,6 +58,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     operationalHealth,
     consecutiveTimeouts,
     isWhapi,
+    hasInstance,
     createAndConnect,
     disconnect,
     reconnect,
@@ -187,7 +188,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
             <button
               onClick={() => {
                 setActiveSubTab("conversas");
-                if (connectionStatus === "disconnected") createAndConnect();
+                if (hasInstance && connectionStatus === "disconnected") createAndConnect();
               }}
               disabled={isLoading}
               className="text-[10px] text-primary hover:underline font-medium shrink-0"
@@ -238,7 +239,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
           // o `connectionStatus` ainda estiver `"connecting"` ou `"disconnected"`
           // (Evolution API lenta / instabilidade). O painel de QR Code só aparece
           // quando NÃO existe instância configurada (consultor novo).
-          instanceName ? (
+          hasInstance ? (
             <div className="flex flex-col h-full min-h-0">
               {!isConnected && (
                 <div className="px-3 py-1 bg-amber-500/10 border-b border-amber-500/20 text-[11px] text-amber-200 flex items-center gap-2 shrink-0">
