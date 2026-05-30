@@ -159,7 +159,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     if (!instanceSavedRef.current) {
       try {
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
         setHasInstance(true);
         ensureWebhook(name);
       } catch { /* non-critical */ }
@@ -364,7 +364,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         if (qrAttempt.qr) {
           health.resetRecoveryCounter();
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setQrCode(qrAttempt.qr);
           setQrGeneratedAt(Date.now());
           setStatus("connecting");
@@ -375,7 +375,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         }
 
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
         setStatus("connecting");
         addLog("⏳ Aguardando QR Code...");
         startPolling(name);
@@ -393,7 +393,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         if (!mountedRef.current) return;
 
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
         const qr = response?.qrcode?.base64 || null;
 
         if (qr) {
@@ -415,7 +415,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (msg.includes("already") || msg.includes("403") || msg.includes("409") || msg.includes("exists")) {
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setStatus("connecting");
           addLog("⏳ Instância já existe. Conectando...");
           startPolling(name);
@@ -424,7 +424,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (isRecoverableConnectionError(msg)) {
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setStatus("connecting");
           setError(null);
           setHealth("degraded");
@@ -563,7 +563,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       try {
         const response = await withTimeout(createInstance(name), 20000);
         await saveInstance(name);
-        instanceSavedRef.current = true;
+        instanceSavedRef.current = true; setHasInstance(true);
 
         const qr = response?.qrcode?.base64 || null;
         if (qr) {
@@ -587,7 +587,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (msg.includes("already") || msg.includes("exists") || msg.includes("403") || msg.includes("409")) {
           await saveInstance(name);
-          instanceSavedRef.current = true;
+          instanceSavedRef.current = true; setHasInstance(true);
           setStatus("connecting");
           setHealth("recovering");
           addLog("⏳ Instância recuperada. Aguardando QR Code...");
