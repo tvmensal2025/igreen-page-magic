@@ -17,6 +17,7 @@ import {
 
 import StepCard from "@/components/admin/flow-builder/StepCard";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
+import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import AiCopilotDrawer from "@/components/admin/flow-builder/AiCopilotDrawer";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
 import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDialog";
@@ -27,8 +28,10 @@ import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
   Step, Variant, ALL_VARIANTS, VARIANT_LABEL,
+  STEP_TYPE_OPTIONS,
   parseTransitions, parseCaptures, parseFallback,
 } from "@/components/admin/flow-builder/flowTypes";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import ViewToggle, { type ViewMode } from "@/components/admin/flow-builder/ViewToggle";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 
