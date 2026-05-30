@@ -1,8 +1,7 @@
 // Nó expansível do Diagrama v2.
-// Colapsado: título + tipo + badges (botões/regras/warnings).
-// Expandido: + preview da mensagem + lista de botões/regras + ✨ IA.
+// PR4: modo compacto (default), expand on-hover, destaque do passo inicial.
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   ChevronDown,
@@ -11,6 +10,7 @@ import {
   Sparkles,
   Plus,
   Pencil,
+  Play,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,20 +26,32 @@ import type { V2NodeData } from "./useFlowGraphV2";
 
 function ExpandableNodeImpl({ data, selected }: NodeProps) {
   const d = data as unknown as V2NodeData;
-  const { step, expanded, hasWarning } = d;
+  const { step, expanded, hasWarning, compact, dimmed, highlighted, isStart } = d as V2NodeData & {
+    compact?: boolean; dimmed?: boolean; highlighted?: boolean; isStart?: boolean;
+  };
+  const [hovered, setHovered] = useState(false);
   const color = getStepTypeColor(step.step_type);
   const buttons = getButtons(step);
   const rules = step.transitions.filter((t) => t.trigger_intent !== "default");
   const preview = renderVarsPreview(step.message_text || "");
 
+  const showCompact = compact && !expanded;
+  const showHoverPreview = showCompact && hovered && preview;
+  const width = showCompact ? 220 : expanded ? 360 : 320;
+
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className={cn(
-        "group relative w-[320px] rounded-xl border-2 bg-background shadow-sm transition-all",
+        "group relative rounded-xl border-2 bg-background shadow-sm transition-all",
         selected ? "border-primary shadow-lg ring-2 ring-primary/30" : "border-border",
+        highlighted && !selected && "border-primary/60 shadow-md",
+        dimmed && "opacity-40",
+        isStart && !selected && "border-primary/70 ring-2 ring-primary/20",
         !step.is_active && "opacity-60",
-        expanded && "w-[360px]",
       )}
+      style={{ width }}
     >
       {/* Stripe lateral por tipo */}
       <div className={cn("absolute left-0 top-0 h-full w-1 rounded-l-lg", color.stripe)} />
@@ -61,10 +73,17 @@ function ExpandableNodeImpl({ data, selected }: NodeProps) {
           <span className={cn("text-sm", color.accentText)}>#{step.position}</span>
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{step.title || "Sem título"}</div>
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            {color.shortLabel}
+          <div className="flex items-center gap-1">
+            {isStart && (
+              <Play className="h-3 w-3 shrink-0 fill-primary text-primary" aria-label="Início" />
+            )}
+            <div className="truncate text-sm font-semibold">{step.title || "Sem título"}</div>
           </div>
+          {!showCompact && (
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {color.shortLabel}
+            </div>
+          )}
         </div>
         {hasWarning && (
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-label="alerta" />
@@ -82,19 +101,28 @@ function ExpandableNodeImpl({ data, selected }: NodeProps) {
         </button>
       </div>
 
-      {/* Badges colapsadas */}
-      {!expanded && (
+      {/* Badges colapsadas (sempre mostra) */}
+      {!expanded && (buttons.length > 0 || rules.length > 0) && (
         <div className="flex flex-wrap gap-1 px-3 pb-2">
           {buttons.length > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {buttons.length} botão{buttons.length > 1 ? "ões" : ""}
+              {buttons.length}b
             </Badge>
           )}
           {rules.length > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {rules.length} regra{rules.length > 1 ? "s" : ""}
+              {rules.length}r
             </Badge>
           )}
+        </div>
+      )}
+
+      {/* Hover preview no modo compacto */}
+      {showHoverPreview && (
+        <div className="border-t bg-muted/30 px-3 py-1.5">
+          <div className="line-clamp-2 text-[11px] leading-snug text-foreground/70">
+            {preview.slice(0, 120)}{preview.length > 120 ? "…" : ""}
+          </div>
         </div>
       )}
 
