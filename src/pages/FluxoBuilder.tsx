@@ -17,6 +17,7 @@ import {
 
 import StepCard from "@/components/admin/flow-builder/StepCard";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
+import AiCopilotDrawer from "@/components/admin/flow-builder/AiCopilotDrawer";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
 import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDialog";
 import CreateFlowFromTemplateDialog from "@/components/admin/flow-builder/CreateFlowFromTemplateDialog";
