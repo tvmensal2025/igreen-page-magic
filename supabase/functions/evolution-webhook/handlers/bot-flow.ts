@@ -3359,7 +3359,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       let detectConfidence = 0;
       let detectSource: string = "fallback";
       try {
-        const det = await (await import("../../_shared/detect-doc-type.ts")).detectDocumentTypeDetailed({
+        const det = await detectDocumentTypeDetailed({
           base64: fileBase64 || undefined,
           mimeType: mime,
           imageUrl: fileUrl?.startsWith("http") ? fileUrl : undefined,
@@ -3373,9 +3373,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         console.warn(`⚠️ [doc-auto] falha detectando tipo:`, (e as Error).message);
       }
 
-      // Se a detecção realmente falhou (fallback puro), salva a frente e pergunta ao usuário.
-      if (detectSource === "fallback" && detectConfidence === 0) {
-        console.warn(`⚠️ [doc-auto] detecção falhou — perguntando RG/CNH ao lead`);
+      // Se a detecção falhou ou ficou pouco confiável, NÃO chutar RG e pedir verso.
+      if (!isConfidentDocDetection({ tipo: detectedType, confianca: detectConfidence, source: detectSource })) {
+        console.warn(`⚠️ [doc-auto] detecção ambígua (${detectedType}/${detectConfidence}/${detectSource}) — perguntando RG/CNH ao lead`);
         if (fileBase64) {
           updates.document_front_url = `data:${mime};base64,${fileBase64}`;
           updates.document_front_base64 = fileBase64;
