@@ -160,7 +160,7 @@ async function runOrchestratorBrain(input: OrchestratorInput): Promise<{
     const r = await aiChatCascade({
       model: input.forceModel?.orchestrator || ORCH_MODEL,
       temperature: 0.4,
-      maxTokens: 500,
+      maxTokens: 800,
       jsonSchema: ORCH_SCHEMA,
       messages: [
         { role: "system", content: buildOrchSystem(persona) },
