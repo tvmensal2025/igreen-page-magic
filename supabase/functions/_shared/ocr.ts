@@ -192,6 +192,12 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
       const v = parseFloat(raw);
       dados.valorConta = (!isNaN(v) && v > 0) ? v.toFixed(2) : "";
     }
+    // Consumo médio em kWh — só dígitos, aceita faixa 50..5000.
+    if (dados.consumoMedio) {
+      const raw = String(dados.consumoMedio).replace(/[^\d]/g, "");
+      const n = parseInt(raw, 10);
+      dados.consumoMedio = (!isNaN(n) && n >= 50 && n <= 5000) ? String(n) : "";
+    }
 
 
     // Normaliza distribuidora — resolve holdings (CPFL ENERGIA → CPFL PIRATININGA via cidade)
