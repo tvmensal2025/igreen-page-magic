@@ -3198,8 +3198,25 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = `${v}me manda uma *foto* (ou PDF) da sua conta de luz, por favor 📸\n\nSe estiver sem a conta agora, é só me dizer o valor médio que você paga que eu já te calculo a economia.`;
         break;
       }
+      const inboundMime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
+      try {
+        const detDocAsBill = await detectDocumentTypeDetailed({
+          base64: fileBase64 || undefined,
+          mimeType: inboundMime,
+          imageUrl: fileUrl?.startsWith("http") ? fileUrl : undefined,
+          geminiApiKey,
+        });
+        if (isConfidentDocDetection(detDocAsBill)) {
+          console.warn(`[aguardando_conta] arquivo parece documento (${detDocAsBill.tipo}/${detDocAsBill.confianca}) — não salvar como conta`);
+          updates.conversation_step = "aguardando_conta";
+          reply = "Esse arquivo parece ser um documento. Agora eu preciso primeiro da *conta de luz* para calcular sua economia.\n\nMe envie uma foto ou PDF da fatura de energia, por favor 📸";
+          break;
+        }
+      } catch (e) {
+        console.warn("[aguardando_conta] preflight documento falhou — seguindo OCR conta:", (e as Error).message);
+      }
       if (fileBase64) {
-        const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
+        const mime = inboundMime;
         updates.electricity_bill_photo_url = `data:${mime};base64,${fileBase64}`;
         updates.bill_base64 = fileBase64;
         updates.bill_message_id = messageId || null;
