@@ -22,11 +22,14 @@ interface DetectInput {
   geminiApiKey: string | undefined;
 }
 
+export type DetectedDocType = DocumentTypeCanonical | "outro";
+
 interface DetectResult {
-  tipo: DocumentTypeCanonical;
+  tipo: DetectedDocType;
   confianca: number; // 0..1
   source: "gemini_pass1" | "gemini_pass2" | "gemini_pass3" | "fallback";
   sinais?: string[];
+  motivo?: string; // descrição curta quando tipo === "outro" (ex.: "conta de energia")
 }
 
 const CHECKLIST = `

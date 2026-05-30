@@ -1,61 +1,62 @@
-## Diagnóstico
+## Diagnóstico do caso 5511971254913
 
-A UI do `/admin/fluxos` grava a ordem em `consultants.flow_step_media_order` indexada por **step_key** (ex.: `d_como_funciona`). Mas a maioria dos passos do fluxo D tem **slot_key compartilhado com o fluxo A** (ex.: `slot_key="como_funciona"`).
-
-Exemplo real do consultor Rafael (`0c2711ad-...`):
+Sequência real nos logs:
 
 ```text
-flow_step_media_order:
-  como_funciona:    [text, audio, video, image]   ← config antiga (A)
-  d_como_funciona:  [audio, video, text, image]   ← config nova (D) ✅ correta
-
-bot_flow_steps:
-  step_key=d_como_funciona, slot_key=como_funciona
+19:33:55  cliente envia "conta-completa-22.pdf"  (conta de energia)
+19:34:13  Gemini OCR doc: nome="" cpf="" confiança=0
+19:34:28  bot responde: "✅ Frente recebida! Agora envie o VERSO do RG"  ← BUG
+19:35:14  cliente envia "CNH-e.pdf-16.pdf" (CNH real) como "verso"
+19:35:29  OCR pega só o nome BRUNO MANOEL DOS SANTOS, sem CPF → trava em ask_cpf
 ```
 
-No envio, o handler `whapi-webhook/handlers/conversational/index.ts` (e o irmão em `evolution-webhook/...`) calcula:
+Causa raiz: o classificador `detectDocumentTypeDetailed` (`supabase/functions/_shared/detect-doc-type.ts`) só retorna `cnh | rg_novo | rg_antigo`. Quando o cliente manda uma **conta de energia, screenshot, selfie ou qualquer outro arquivo**, ele é forçado em `rg_antigo` com confiança baixa, e o handler `aguardando_doc_auto` (`bot-flow.ts` em whapi-webhook e evolution-webhook) salva como frente do RG e segue para `aguardando_doc_verso`.
+
+## Correção (cirúrgica, sem mexer no fluxo nem nas regras)
+
+### 1) Extender o classificador com a opção `outro`
+
+Em `supabase/functions/_shared/detect-doc-type.ts`:
+
+- Trocar `DetectResult.tipo` para `DocumentTypeCanonical | "outro"`.
+- Adicionar campo opcional `motivo?: string` (ex.: `"conta de energia"`, `"selfie"`).
+- Atualizar `PROMPT_PASS1`, `PROMPT_PASS2` e `PROMPT_PASS3` para incluir explicitamente a regra:
+  - "Se a imagem NÃO for RG/CIN/CNH (ex.: conta de luz, comprovante de residência, selfie, recibo, captura de tela, foto aleatória, página em branco) → responda `tipo: "outro"` e em `motivo` descreva curto (`"conta de energia"`, `"selfie"`, etc.). Confiança alta (≥0.85)."
+- Ajustar `parseDetectJson` para aceitar `tipo === "outro"` sem normalizar para RG.
+- Atualizar `normalizeDocumentType` para preservar `"outro"` (ou criar parser local no detector).
+- Quando as três passadas falharem em decidir e a melhor estimativa tiver confiança < 0.30, retornar `tipo: "outro"` com `motivo: "não identificado"` em vez de cair em `rg_antigo`.
+
+### 2) Rejeitar no handler `aguardando_doc_auto`
+
+Em `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (linhas ~3946-3966) e `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (linhas ~3395-3410), **antes** do bloco que salva `document_front_url`:
 
 ```ts
-const slotKey = step.slot_key || step.step_key || step.id;       // = "como_funciona"
-const uiOrder = await getStepMediaOrder(supabase, consultantId, slotKey); // pega ordem do A
+if (detectedType === "outro" || (detectConfidence > 0 && detectConfidence < 0.30)) {
+  const motivo = (det as any).motivo ? ` (parece *${(det as any).motivo}*)` : "";
+  reply = `❌ Esse arquivo não parece ser um *RG* ou *CNH*${motivo}.\n\n` +
+          `📸 Me envia uma foto/PDF da *frente do seu RG* ou da sua *CNH*.\n\nFormatos: JPG, PNG ou PDF.`;
+  // NÃO atualiza document_front_url, NÃO avança conversation_step.
+  // Permanece em "aguardando_doc_auto" para o cliente reenviar.
+  break;
+}
 ```
 
-Resultado: o fluxo D recebe `[text, audio, video, image]` (config do A) em vez de `[audio, video, text, image]` (config do D).
+Nada mais é alterado: o fluxo, os steps, e a transição RG→verso continuam idênticos para documentos válidos.
 
-Comparação: o handler legado `bot-flow.ts` já faz certo — passa `[stepKey, slotKey]` para o helper, então o `step_key` ganha precedência. Só o `conversational` está errado.
+### 3) Log de auditoria
 
-## Correção (mínima e cirúrgica)
+Manter `console.log("🚫 [doc-auto] rejeitado tipo=outro motivo=...")` para o consultor enxergar a rejeição nos logs da edge function.
 
-Trocar **todas** as chamadas de `getStepMediaOrder` no handler conversational para passar um array com `step_key` primeiro, idêntico ao padrão já usado em `bot-flow.ts`:
+## Validação
 
-```ts
-const uiOrder = await getStepMediaOrder(
-  ctx.supabase,
-  consultantId,
-  [step.step_key, step.slot_key].filter(Boolean) as string[],
-);
-```
-
-### Arquivos a editar
-
-1. `supabase/functions/whapi-webhook/handlers/conversational/index.ts`
-   - Linha ~385 (envio principal `sendStepMedia`)
-   - Linha ~1266 (slot virtual `__qa__` — manter `"__qa__"` como única chave, sem mudança)
-   - Linha ~1724 (segunda chamada `sendStepMedia` em path de retomada)
-
-2. `supabase/functions/evolution-webhook/handlers/conversational/index.ts`
-   - Mesmas 2-3 chamadas equivalentes (linhas ~385 e ~1103 visíveis no grep).
-
-Nenhuma alteração em: `_shared/step-media-order.ts` (já aceita array), `_shared/engine/loader.ts` (v3 já trata candidatos corretamente), variants `a.ts`/`d.ts`, ou em `bot-flow.ts` (já corretos).
-
-### Validação
-
-1. Deploy das duas funções (`whapi-webhook`, `evolution-webhook`).
-2. Consulta de sanidade em `engine_logs`/console: enviar mensagem para lead do Rafael (fluxo D) no step `d_como_funciona` e confirmar que a sequência sai `audio → video → text → image`.
-3. Conferir os demais steps D do consultor (`d_welcome`, `d_resultado`, `d_pedir_*`, `d_finalizar`) — todos têm entrada própria com prefixo `d_` em `flow_step_media_order`, então o fix resolve todos de uma vez.
-4. Regressão fluxo A/B: como o helper tenta `step_key` e cai para `slot_key`, passos sem entrada `d_*` continuam pegando a config antiga sem mudança de comportamento.
+1. Deploy de `whapi-webhook` e `evolution-webhook`.
+2. Teste manual no número 5511971254913 (ou outro número de teste do Rafael) enviando a mesma `conta-completa-22.pdf` — esperado: bot responde "Esse arquivo não parece ser RG ou CNH (parece conta de energia)…" e permanece em `aguardando_doc_auto`.
+3. Reenviar um RG/CNH válido — esperado: fluxo segue normal (OCR + pede verso se for RG, ou confirma se for CNH).
+4. Regressão: enviar um RG real conhecido — `det.tipo` continua sendo `rg_antigo`/`rg_novo`/`cnh`, sem rejeição.
 
 ## Fora de escopo
 
-- Não mexer em UI, em `bot_flow_steps.media_order` (já é fallback secundário), no engine v3 (que está em dark) nem em qualquer lógica de negócio.
-- Não alterar o helper compartilhado.
+- Não mexer no passo `aguardando_doc_verso` nem em `ask_tipo_documento` (legado).
+- Não mudar o `bot_flow_steps` nem regras de transição na UI.
+- Não tocar no OCR (`ocrDocumentoFrenteVerso`) — a rejeição acontece antes dele rodar.
+- Não alterar o `document_type` canônico nem o portal worker.
