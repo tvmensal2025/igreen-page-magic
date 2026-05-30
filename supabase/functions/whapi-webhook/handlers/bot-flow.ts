@@ -3538,9 +3538,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 .from("bot_flow_steps").select("*")
                 .eq("id", _successId).eq("is_active", true).maybeSingle();
               if (_target) {
-                nextCustom = _target;
+                if (isComoFuncionaStep(_target)) {
+                  const { data: _resultado } = await supabase
+                    .from("bot_flow_steps").select("*")
+                    .eq("flow_id", (_flowRowSuccess as any).id).eq("is_active", true)
+                    .or("step_key.eq.d_resultado,message_text.ilike.%economia%,message_text.ilike.%valor_conta%")
+                    .order("position", { ascending: true }).limit(1).maybeSingle();
+                  if (_resultado) {
+                    console.log(`[post-confirm-conta] pulando ${(_target as any).step_key} pós-conta → ${(_resultado as any).step_key}`);
+                    nextCustom = _resultado;
+                  } else {
+                    nextCustom = _target;
+                  }
+                } else {
+                  nextCustom = _target;
+                }
                 _hasExplicitSuccessGoto = true;
-                console.log(`[post-confirm-conta] success_goto_step_id=${_successId} → ${(_target as any).step_key} (CHAIN amplo será pulado)`);
+                console.log(`[post-confirm-conta] success_goto_step_id=${_successId} → ${(nextCustom as any).step_key} (CHAIN amplo será pulado)`);
               }
             }
           }
@@ -3645,7 +3659,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               const messagesBetween = _stopIdx >= 0
                 ? stepsAfter.slice(0, _stopIdx)
                 : stepsAfter;
-              const messagesOnly = messagesBetween.filter((s) => s.step_type === "message");
+              const messagesOnly = messagesBetween.filter((s) => s.step_type === "message" && !isComoFuncionaStep(s));
               for (const m of messagesOnly) {
                 console.log(`[post-confirm-conta] persistindo step ${m.step_key} ANTES de dispatchar`);
                 // 🛡️ HANDOFF: persiste step do passo CORRENTE antes de
