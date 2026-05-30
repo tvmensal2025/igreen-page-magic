@@ -2605,6 +2605,28 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           else if (stype === "confirm_phone") step = "ask_phone_confirm";
           else if (stype === "finalizar_cadastro") step = "finalizando";
 
+          // 🛡️ Guarda ordem do funil: NUNCA pedir documento antes da conta+simulação.
+          // Se o flow tentar dispatch de capture_documento mas o cliente ainda não
+          // enviou a conta de luz, redireciona para o capture_conta do mesmo flow.
+          if ((stype === "capture_documento" || stype === "capture_doc") && !hasBillData(customer)) {
+            try {
+              const { data: contaStep } = await supabase
+                .from("bot_flow_steps")
+                .select("step_key,position")
+                .eq("flow_id", stepRow.flow_id)
+                .eq("step_type", "capture_conta")
+                .eq("is_active", true)
+                .order("position", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+              if (contaStep?.step_key) {
+                console.log(`[custom-step-resolver] 🛡️ block doc-before-bill → redirect ${stepRow.step_key} → ${contaStep.step_key}`);
+                step = "aguardando_conta";
+                stepRow = { ...stepRow, step_key: contaStep.step_key, step_type: "capture_conta" } as any;
+              }
+            } catch (_e) { /* fallback silencioso */ }
+          }
+
           // 🛡️ Skip-guard global: se o passo determinístico mapeado já tem o dado
           // preenchido (OCR, edição manual, passo anterior), avança para o próximo
           // realmente faltante. Evita reperguntar documento/email/telefone/etc.
