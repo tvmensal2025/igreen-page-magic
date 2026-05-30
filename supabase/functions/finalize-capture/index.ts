@@ -1,20 +1,19 @@
 // finalize-capture: chamado pelo botão "Finalizar Cadastro" do Modo Captação.
-// Valida no servidor, marca portal_submitting, regenera igreen_link, avisa o cliente
-// no WhatsApp e dispara o Portal Worker (VPS) via helper compartilhado.
+// Valida no servidor com o MESMO validador do frontend (portalValidation.ts).
+// Se faltar campo ou houver inválido (CPF errado, R$/kWh fora da faixa, etc.),
+// REJEITA antes de qualquer dispatch — nada de chegar no portal e voltar.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchPortalWorker } from "../_shared/portal-worker.ts";
+import { validateForPortal, PORTAL_FIELDS } from "../_shared/portalValidation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const REQUIRED_FIELDS = [
-  "name", "cpf", "rg", "data_nascimento",
-  "phone_landline", "email", "cep", "address_number",
-  "electricity_bill_value", "document_front_url",
-];
+const SELECT_FIELDS = PORTAL_FIELDS.map((f) => f.key).join(", ") +
+  ", name_mismatch_flag, name_mismatch_acknowledged_at";
 
 const TERMINAL = new Set([
   "portal_submitting", "awaiting_otp", "validating_otp",
