@@ -134,21 +134,27 @@ async function callLovableGateway(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    const reasoning = /^(openai\/)?(gpt-5|o[134])/i.test(fullModel);
+    const body: Record<string, any> = {
+      model: fullModel,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userText },
+      ],
+    };
+    if (reasoning) {
+      body.max_completion_tokens = 2000;
+    } else {
+      body.max_tokens = 400;
+      body.temperature = 0.4;
+    }
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: fullModel,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userText },
-        ],
-        max_tokens: 200,
-        temperature: 0.4,
-      }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     });
     clearTimeout(t);
