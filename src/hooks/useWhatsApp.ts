@@ -705,11 +705,13 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         if (cancelled) return;
 
         if (!instanceRecord) {
+          setHasInstance(false);
           setStatus("disconnected");
           setError(null);
           setIsLoading(false);
           return;
         }
+        setHasInstance(true);
 
         const state = await withTimeout(checks.checkState(name), 15000);
         if (cancelled) return;
