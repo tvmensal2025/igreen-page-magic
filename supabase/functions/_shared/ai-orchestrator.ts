@@ -92,7 +92,7 @@ async function runTriage(input: OrchestratorInput): Promise<TriageOut> {
     const r = await aiChatCascade({
       model: input.forceModel?.triage || TRIAGE_MODEL,
       temperature: 0.1,
-      maxTokens: 200,
+      maxTokens: 400,
       jsonSchema: TRIAGE_SCHEMA,
       messages: [
         { role: "system", content: TRIAGE_SYSTEM },
