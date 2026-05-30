@@ -1,50 +1,36 @@
-# Fix: OCR não captura consumo médio (kWh) → worker-portal-2 falha com `/bonus/rules 404`
-
 ## Diagnóstico
 
-Rastreei o lead `146137eb-8c3b-4bd8-b014-7e2d4f3e30a8` (BRUNO MANOEL):
+O erro do job 12 ainda tem uma causa diferente do ajuste anterior:
 
-- Banco hoje: `media_consumo = NULL`, `electricity_bill_value = 1576.34`, `distribuidora = "CPFL PIRATININGA"`, `address_state = SP`, `address_city = SALTO`, conta PDF salva inline.
-- Logs do whapi mostram que o fluxo conversacional rodou inteiro, `ocrContaEnergia` (Gemini) executou e gravou nome, endereço, CEP, distribuidora, valor, número da instalação.
-- **Mas a função `ocrContaEnergia` (`supabase/functions/_shared/ocr.ts:95`) não extrai o campo `consumoMedio` (kWh)** — o prompt pede 10 campos e nenhum deles é o consumo.
-- Por isso o worker-portal-2 recebe `c.media_consumo = NULL`. Ele tenta chamar `/bonus/rules` da iGreen com `consumo_medio=0`, a API rejeita com 404 “Consumo médio não informado. Regras de UF=SP, concessionária=CPFL PIRATININGA exigem consumo mínimo de 100 kWh”.
-- O `worker-portal-2/server.mjs` tem fallback (OCR via `/extractor/extract-receipt` ou estimativa `valor/1,10`), mas no log do job 11 não aparece a linha `📄 OCR fatura: chamando…` — o build em produção no Easypanel está sem o fallback (deploy antigo). Como esse repo é deployado fora do Lovable, a solução robusta é alimentar `media_consumo` ANTES de disparar o worker.
+- O lead `bd64e790-fc71-4c0a-81d7-e285004b105d` está com `electricity_bill_value = 1576.34`, distribuidora e instalação salvas, mas `media_consumo = NULL`.
+- O webhook marcou o lead como completo e enviou ao `worker-portal-2` com `consumoMedio: 0`.
+- Como o helper `_shared/portal-worker.ts` envia um payload completo em `dados`, o `worker-portal-2` não busca o customer no Supabase e, por isso, não usa o fallback interno dele que estimaria o consumo pelo valor da conta.
+- Resultado: `/bonus/rules` recebe consumo zero/nulo e a iGreen rejeita com “Consumo médio não informado”.
+- A repetição aconteceu porque o worker colocou o job em retry 3 vezes no BullMQ, mas o lead já estava em `portal_submitting`; o bot não recebeu um estado claro de falha recuperável nem uma ação automática para corrigir o consumo antes de reenviar.
 
-## Mudanças
+## Plano de correção
 
-### 1. `supabase/functions/_shared/ocr.ts` — `ocrContaEnergia`
+1. Corrigir o payload do Portal 2 no helper compartilhado
+   - Em `supabase/functions/_shared/portal-worker.ts`, calcular `consumoMedio` com esta prioridade:
+     - `customers.media_consumo`, se válido.
+     - estimativa por `electricity_bill_value / 1.10`, com clamp `100..2000`.
+     - fallback seguro `350` somente se não houver valor.
+   - Incluir `electricity_bill_value` no select do customer para permitir essa estimativa.
+   - Assim, mesmo que o OCR não tenha preenchido `media_consumo`, o worker nunca recebe `consumoMedio: 0`.
 
-- Adicionar campo `11. CONSUMO MÉDIO em kWh` ao prompt (instruir o Gemini a buscar “Consumo medido (kWh)”, “Média kWh”, “Histórico de consumo — média”, “Consumo do mês (kWh)” — comum na CPFL/Enel/Light).
-- Atualizar o JSON de saída para incluir `"consumoMedio":""`.
-- Sanitizar: extrair só dígitos, aceitar 50–5000 kWh; valores fora da faixa viram `""`.
+2. Blindar o finalizador do fluxo antes de disparar o worker
+   - No `whapi-webhook` e no `evolution-webhook`, antes de salvar `portal_submitting`, garantir que `media_consumo` seja preenchido quando houver valor da conta.
+   - Isso evita que leads que já passaram pelo OCR, edição manual ou revisão cheguem incompletos no envio final.
 
-### 2. `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (bloco do OCR da conta, ~linha 3243-3257)
+3. Melhorar tratamento de falha do worker Portal 2
+   - Quando o dispatch/worker falhar com “Consumo médio não informado”, salvar um estado acionável no customer (`portal2_status`/`error_message`) e manter o lead pronto para retry, sem fazer o bot voltar a perguntar a mesma coisa ao cliente.
+   - O sistema deve corrigir automaticamente via estimativa quando houver valor da conta, em vez de depender do cliente.
 
-- Após `updates.electricity_bill_value = …`, gravar `updates.media_consumo = parseInt(d.consumoMedio) || null`.
-- Se o OCR não trouxer kWh mas houver `electricity_bill_value ≥ 30`, calcular fallback `Math.round(valor / 1.10)` clampeado em 100–2000 e gravar em `media_consumo` (mesma heurística do worker-portal-2). Marcar `media_consumo_source = 'estimated_from_value'` (campo novo? — apenas se já existir; senão omitir).
-- Não bloquear o fluxo se `consumoMedio` faltar: é tolerância, não validação obrigatória.
+4. Reparar o lead atual
+   - Atualizar o lead `bd64e790-fc71-4c0a-81d7-e285004b105d` com `media_consumo = 1433` calculado por `1576.34 / 1.10`.
+   - Depois disso, reenviar/reprocessar o lead para o Portal 2.
 
-### 3. Paridade Evolution
-
-O `supabase/functions/evolution-webhook/handlers/bot-flow.ts` provavelmente tem o mesmo bloco OCR — aplicar o mesmo patch lá (verificar antes; se for o mesmo arquivo compartilhado, apenas um patch).
-
-### 4. Backfill do lead atual
-
-Migration única para resolver o BRUNO já encalhado:
-```sql
-UPDATE public.customers
-SET media_consumo = GREATEST(100, LEAST(2000, ROUND(electricity_bill_value / 1.10)))
-WHERE id = '146137eb-8c3b-4bd8-b014-7e2d4f3e30a8' AND media_consumo IS NULL;
-```
-Isso destrava o reenvio do job 11 sem precisar do worker-portal-2 redeployado.
-
-## Fora de escopo
-
-- Redeploy do `worker-portal-2`: não rodamos esse repo pelo Lovable. Fica como TODO operacional separado (subir o build atual no Easypanel pra ter o fallback `/extractor/extract-receipt` também).
-- Mudar UI dos botões do passo #3 ou tokens da IA — foi tudo na rodada anterior, segue intacto.
-
-## Detalhes técnicos
-
-- Não toco em RLS, schema (exceto UPDATE do backfill) nem em qualquer regra de negócio do desconto.
-- O parser de kWh respeita formato BR (“1.234 kWh” → 1234) e ignora valores absurdos (>5000 ou <50) — protege contra alucinação do Gemini.
-- Edge functions `whapi-webhook` e `evolution-webhook` são redeployadas automaticamente.
+5. Validar
+   - Conferir no banco se o lead ficou com `media_consumo` preenchido.
+   - Verificar logs do `whapi-webhook` para confirmar que o payload enviado ao worker contém consumo maior que 100.
+   - Confirmar que o próximo job não cai mais no `/bonus/rules` por consumo ausente.
