@@ -513,6 +513,17 @@ export default function FluxoBuilder() {
               Templates
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCopilotOpen(true)}
+              disabled={!flowId || steps.length === 0}
+              className="border-purple-500/40 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700"
+              title="Conversa com IA sobre este fluxo"
+            >
+              <Sparkles className="mr-1 h-3 w-3" />
+              Copiloto IA
+            </Button>
+            <Button
               variant="default"
               size="sm"
               onClick={() => setCreateFromTemplateOpen(true)}
