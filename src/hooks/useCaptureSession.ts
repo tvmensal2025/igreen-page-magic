@@ -1,21 +1,20 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { PORTAL_FIELDS, validateForPortal, type ValidationResult } from "@/lib/captacao/portalValidation";
 
-/** 10 campos que contam pra barra XP */
-export const CAPTURE_FIELDS = [
-  { key: "name", label: "Nome completo" },
-  { key: "cpf", label: "CPF" },
-  { key: "rg", label: "RG" },
-  { key: "data_nascimento", label: "Nascimento" },
-  { key: "phone_landline", label: "Telefone" },
-  { key: "email", label: "E-mail" },
-  { key: "cep", label: "CEP" },
-  { key: "address_number", label: "Número" },
-  { key: "electricity_bill_value", label: "Valor da conta" },
-  { key: "document_front_url", label: "Documento" },
-] as const;
+/**
+ * Lista canônica usada pela ficha + barra de progresso.
+ * É a MESMA lista que o portal iGreen exige no POST /customers — não tem
+ * mais "RG" nem "Telefone fixo" inventados que sempre ficavam vermelhos.
+ * Inclui media_consumo e numero_instalacao, que antes ficavam ocultos e
+ * causavam falha silenciosa no worker (404 em /bonus/rules).
+ */
+export const CAPTURE_FIELDS = PORTAL_FIELDS
+  // Documentos (uploads) ficam num módulo separado (CaptureDocumentTiles)
+  .filter((f) => f.group !== "docs")
+  .map((f) => ({ key: f.key, label: f.label } as const));
 
-export type CaptureFieldKey = typeof CAPTURE_FIELDS[number]["key"];
+export type CaptureFieldKey = typeof PORTAL_FIELDS[number]["key"];
 
 export interface CaptureCustomer {
   id: string;
@@ -32,6 +31,7 @@ export interface CaptureCustomer {
   address_number: string | null;
   address_complement: string | null;
   electricity_bill_value: number | null;
+  media_consumo?: number | null;
   document_front_url: string | null;
   document_back_url: string | null;
   electricity_bill_photo_url: string | null;
@@ -66,7 +66,7 @@ function isFieldFilled(c: CaptureCustomer | null | undefined, key: CaptureFieldK
   const v = (c as any)[key];
   if (v === null || v === undefined) return false;
   if (typeof v === "string" && !v.trim()) return false;
-  if (key === "electricity_bill_value" && Number(v) <= 0) return false;
+  if ((key === "electricity_bill_value" || key === "media_consumo") && Number(v) <= 0) return false;
   return true;
 }
 
@@ -79,7 +79,7 @@ export function useCaptureSession(customerId: string | null) {
     setLoading(true);
     const { data } = await supabase
       .from("customers")
-      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, created_at")
+      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, created_at")
       .eq("id", customerId)
       .maybeSingle();
     setCustomer((data as CaptureCustomer) || null);
@@ -106,16 +106,19 @@ export function useCaptureSession(customerId: string | null) {
   const totalFields = CAPTURE_FIELDS.length;
   const progress = Math.round((filledCount / totalFields) * 100);
 
+  // Validação canônica do Portal (mesma lógica usada no edge finalize-capture).
+  // Cobre faltantes + inválidos (CPF errado, ratio R$/kWh fora da faixa, etc.)
+  const validation: ValidationResult = useMemo(() => validateForPortal(customer as any), [customer]);
+
   const missing = useMemo(() => {
-    const list: string[] = [];
-    CAPTURE_FIELDS.forEach((f) => { if (!isFieldFilled(customer, f.key)) list.push(f.label); });
+    const list: string[] = validation.missing.map((m) => m.label);
     if (!customer?.document_back_url) list.push("RG verso");
     if (!customer?.electricity_bill_photo_url) list.push("Conta de luz");
     if (customer?.name_mismatch_flag && !customer?.name_mismatch_acknowledged_at) list.push("Confirmar titularidade");
     return list;
-  }, [customer]);
+  }, [customer, validation]);
 
-  const isComplete = missing.length === 0 && !!customer;
+  const isComplete = validation.ok && !!customer;
 
   const updateField = useCallback(async (field: CaptureFieldKey, value: any) => {
     if (!customerId || !customer) return;
@@ -144,5 +147,5 @@ export function useCaptureSession(customerId: string | null) {
     }
   }, [customerId, customer]);
 
-  return { customer, loading, filledCount, totalFields, progress, missing, isComplete, updateField, reload: load };
+  return { customer, loading, filledCount, totalFields, progress, missing, isComplete, validation, updateField, reload: load };
 }

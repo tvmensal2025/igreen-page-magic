@@ -18,6 +18,7 @@ import { CaptureLeadCard } from "./CaptureLeadCard";
 import { CaptureProgressBar } from "./CaptureProgressBar";
 import { SendSequenceDialog, type SequenceStep } from "./SendSequenceDialog";
 import { PortalStatusTracker } from "./PortalStatusTracker";
+import { ValidationWarnings } from "./ValidationWarnings";
 import { useCaptureSession, CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { useCaptureScoreboard } from "@/hooks/useCaptureScoreboard";
 import { useCaptureCombo } from "@/hooks/useCaptureCombo";
@@ -57,7 +58,7 @@ export function CaptureSheet(props: Props) {
 }
 
 function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, customerName, phoneNumber, inline = false }: Props) {
-  const { customer, filledCount, totalFields, progress } = useCaptureSession(customerId);
+  const { customer, filledCount, totalFields, progress, validation } = useCaptureSession(customerId);
   const { bump } = useCaptureScoreboard(consultantId);
   const combo = useCaptureCombo();
   const xpFloater = useXpFloater();
@@ -126,30 +127,24 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const billConfirmed = !billHasData || !!(customer as any)?.bill_data_confirmed_at;
   const docConfirmed = !docHasData || !!(customer as any)?.doc_data_confirmed_at;
   const allConfirmed = billConfirmed && docConfirmed;
-  const canSubmit = filledCount === totalFields && allConfirmed;
+  // canSubmit usa a validação canônica do Portal — bloqueia tanto faltantes
+  // quanto inválidos (CPF errado, R$/kWh fora da faixa, etc.). Antes era só
+  // "filledCount === totalFields", o que deixava media_consumo passar com
+  // valor zero/null e o portal rejeitava silenciosamente.
+  const canSubmit = !!validation?.ok && allConfirmed;
   const phrase = MOTIVATIONAL_PHRASES[filledCount] || `Faltam ${totalFields - filledCount} dados 💪`;
-  const nextMissing = CAPTURE_FIELDS.find((f) => {
-    const v = (customer as any)?.[f.key];
-    if (v === null || v === undefined) return true;
-    if (typeof v === "string" && !v.trim()) return true;
-    if (f.key === "electricity_bill_value" && Number(v) <= 0) return true;
-    return false;
-  });
+  const nextMissing = validation?.missing?.[0]
+    ? { key: validation.missing[0].key, label: validation.missing[0].label }
+    : null;
 
-  // Lista descritiva do que falta (texto mostrado no tooltip do botão final).
-  // Antes só dizia "N campos", o que confundia o consultor — agora aponta os
-  // labels exatos pra ele localizar na ficha.
-  const missingFieldLabels = CAPTURE_FIELDS.filter((f) => {
-    const v = (customer as any)?.[f.key];
-    if (v === null || v === undefined) return true;
-    if (typeof v === "string" && !v.trim()) return true;
-    if (f.key === "electricity_bill_value" && Number(v) <= 0) return true;
-    return false;
-  }).map((f) => f.label);
+  // Lista descritiva do que falta/está errado pro tooltip do botão final.
+  const missingFieldLabels = (validation?.missing || []).map((m) => m.label);
+  const invalidLabels = (validation?.invalid || []).map((i) => `${i.label}: ${i.reason}`);
   const submitTooltip = canSubmit
     ? "Enviar pro portal (VPS + OTP)"
     : [
-        missingFieldLabels.length > 0 ? `Faltam: ${missingFieldLabels.join(", ")}` : "",
+        missingFieldLabels.length > 0 ? `Faltam: ${missingFieldLabels.slice(0, 3).join(", ")}${missingFieldLabels.length > 3 ? "…" : ""}` : "",
+        invalidLabels.length > 0 ? `Inválido: ${invalidLabels.slice(0, 2).join(" · ")}` : "",
         !billConfirmed ? "Confirmar dados da conta de luz" : "",
         !docConfirmed ? "Confirmar dados do documento" : "",
       ].filter(Boolean).join(" · ");
@@ -164,10 +159,12 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
       if (error) throw new Error(error.message || "Falha ao enviar ao portal");
       const res = (data as any) || {};
       if (res.error && res.mode !== "queued_offline") {
-        const msg = res.error === "incomplete"
-          ? `Faltam dados: ${(res.missing || []).join(", ")}`
-          : String(res.error);
-        throw new Error(msg);
+        const parts: string[] = [];
+        if (res.error === "incomplete") {
+          if (res.missing?.length) parts.push(`Faltam: ${res.missing.join(", ")}`);
+          if (res.invalid?.length) parts.push(res.invalid.map((i: any) => `${i.label}: ${i.reason}`).join(" · "));
+        }
+        throw new Error(parts.join(" · ") || String(res.error));
       }
 
       // 🏆 Cadastro completo — 5 efeitos combinados:
@@ -212,6 +209,14 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
     // Apenas fecha o painel — modo Captação fica ligado para todos os leads.
     toast({ title: "Painel fechado", description: "A captação continua ativa em segundo plano." });
     onOpenChange(false);
+  };
+
+  // Aplica a sugestão de um campo inválido (ex: consumo estimado a partir do valor)
+  const applySuggestion = async (field: string, value: any) => {
+    if (!customer) return;
+    const { error } = await supabase.from("customers").update({ [field]: value }).eq("id", customer.id);
+    if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
+    else toast({ title: `${field} atualizado`, description: `Valor: ${value}`, duration: 2000 });
   };
 
   const [askingName, setAskingName] = useState(false);
@@ -400,6 +405,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               🚀 Portal: {customer.conversation_step.replace("_", " ")}…
             </p>
           )}
+          <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
@@ -622,6 +628,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               🚀 Portal: {customer.conversation_step.replace("_", " ")}…
             </p>
           )}
+          <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
