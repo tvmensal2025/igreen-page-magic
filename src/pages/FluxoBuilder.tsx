@@ -18,7 +18,6 @@ import {
 import StepTimelineItem from "@/components/admin/flow-builder/StepTimelineItem";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
 import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
-import AiCopilotDrawer from "@/components/admin/flow-builder/AiCopilotDrawer";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
 import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDialog";
 import CreateFlowFromTemplateDialog from "@/components/admin/flow-builder/CreateFlowFromTemplateDialog";
@@ -133,7 +132,6 @@ export default function FluxoBuilder() {
   const [showConnections, setShowConnections] = useState(true);
   const [mediaCounts, setMediaCounts] = useState<Record<string, { audio: number; image: number; video: number }>>({});
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [copilotOpen, setCopilotOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
 
@@ -631,17 +629,6 @@ export default function FluxoBuilder() {
               Templates
             </Button>
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCopilotOpen(true)}
-              disabled={!flowId || steps.length === 0}
-              className="border-purple-500/40 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700"
-              title="Conversa com IA sobre este fluxo"
-            >
-              <Sparkles className="mr-1 h-3 w-3" />
-              Copiloto IA
-            </Button>
-            <Button
               variant="default"
               size="sm"
               onClick={() => setCreateFromTemplateOpen(true)}
@@ -958,14 +945,6 @@ export default function FluxoBuilder() {
           onApplied={() => reload(userId, editingVariant)}
         />
       )}
-
-      {/* Copiloto IA drawer */}
-      <AiCopilotDrawer
-        open={copilotOpen}
-        onOpenChange={setCopilotOpen}
-        flowId={flowId}
-        steps={steps}
-      />
 
       {/* Criar fluxo do zero a partir de blocos prontos */}
       {userId && (
