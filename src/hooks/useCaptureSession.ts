@@ -65,7 +65,7 @@ function isFieldFilled(c: CaptureCustomer | null | undefined, key: CaptureFieldK
   const v = (c as any)[key];
   if (v === null || v === undefined) return false;
   if (typeof v === "string" && !v.trim()) return false;
-  if (key === "electricity_bill_value" && Number(v) <= 0) return false;
+  if ((key === "electricity_bill_value" || key === "media_consumo") && Number(v) <= 0) return false;
   return true;
 }
 
