@@ -18,6 +18,7 @@ import { CaptureLeadCard } from "./CaptureLeadCard";
 import { CaptureProgressBar } from "./CaptureProgressBar";
 import { SendSequenceDialog, type SequenceStep } from "./SendSequenceDialog";
 import { PortalStatusTracker } from "./PortalStatusTracker";
+import { ValidationWarnings } from "./ValidationWarnings";
 import { useCaptureSession, CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { useCaptureScoreboard } from "@/hooks/useCaptureScoreboard";
 import { useCaptureCombo } from "@/hooks/useCaptureCombo";
