@@ -751,6 +751,14 @@ export default function FluxoBuilder() {
         />
       )}
 
+      {/* Copiloto IA drawer */}
+      <AiCopilotDrawer
+        open={copilotOpen}
+        onOpenChange={setCopilotOpen}
+        flowId={flowId}
+        steps={steps}
+      />
+
       {/* Criar fluxo do zero a partir de blocos prontos */}
       {userId && (
         <CreateFlowFromTemplateDialog
