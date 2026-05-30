@@ -3255,6 +3255,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           updates.ocr_confianca = confianca;
           const valorParsed = d.valorConta ? parseFloat(d.valorConta) : 0;
           updates.electricity_bill_value = (valorParsed >= 30) ? valorParsed : 0;
+          // Consumo médio (kWh) — usa OCR se disponível; senão estima pelo valor
+          // (tarifa B1 ~R$1,10/kWh, clamp 100..2000). Garante que o
+          // worker-portal-2 nunca receba media_consumo=NULL.
+          {
+            const kwhOcr = parseInt(String(d.consumoMedio || "").replace(/\D/g, ""), 10);
+            if (!isNaN(kwhOcr) && kwhOcr >= 50 && kwhOcr <= 5000) {
+              updates.media_consumo = kwhOcr;
+            } else if (updates.electricity_bill_value >= 30) {
+              const est = Math.round(updates.electricity_bill_value / 1.10);
+              updates.media_consumo = Math.max(100, Math.min(2000, est));
+              console.log(`⚡ media_consumo estimado=${updates.media_consumo} kWh (valor=R$${updates.electricity_bill_value})`);
+            }
+          }
           // CEP: só aceita se tiver 8 dígitos
           if (updates.cep) {
             const cepClean = String(updates.cep).replace(/\D/g, "");
