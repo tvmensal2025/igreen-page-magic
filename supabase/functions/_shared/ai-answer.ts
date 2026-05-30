@@ -84,22 +84,29 @@ async function callOpenAI(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    const reasoning = /^(gpt-5|o[134])/i.test(model);
+    const body: Record<string, any> = {
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userText },
+      ],
+    };
+    if (reasoning) {
+      // Reasoning models precisam de muito mais tokens — parte é gasta em
+      // tokens internos de raciocínio antes do conteúdo da resposta.
+      body.max_completion_tokens = 2000;
+    } else {
+      body.max_tokens = 400;
+      body.temperature = 0.4;
+    }
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userText },
-        ],
-        max_tokens: 200,
-        // Modelos GPT-5+ rejeitam temperature !== 1 em algumas APIs
-        ...(model.startsWith("gpt-5") || model.startsWith("gpt-6") ? {} : { temperature: 0.4 }),
-      }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     });
     clearTimeout(t);
