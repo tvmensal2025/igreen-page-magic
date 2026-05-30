@@ -5,8 +5,8 @@
 // Behavior is identical to the previous inline version. Only structural change:
 // the closure variables are now properties of `ctx`.
 
-import {
 import { resolveFlowId } from "../../_shared/resolve-flow.ts";
+import {
   validateCustomerForPortal,
   isPlaceholderEmail,
   isValidEmailFormat,
