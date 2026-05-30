@@ -44,7 +44,7 @@ import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-fie
 import { detectFlowSwitch } from "../../_shared/flow-router.ts";
 import { ocrContaEnergia, ocrDocumentoFrenteVerso } from "../../_shared/ocr.ts";
 import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/document-type.ts";
-import { detectDocumentType } from "../../_shared/detect-doc-type.ts";
+import { detectDocumentType, detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
 import { uploadMediaToMinio, OCR_CONFIDENCE_THRESHOLD } from "../_helpers.ts";
 import { jsonLog } from "../../_shared/audit.ts";
 import { isMockMode, isCustomerSandbox, shouldBypassQuietHours, shouldUseFastClock } from "../../_shared/test-mode.ts";
@@ -214,6 +214,30 @@ function isPositiveCheckinIntent(text: string): boolean {
 
 function isClubProgressIntent(text: string): boolean {
   return isPositiveCheckinIntent(text) || /^(pode seguir|sem duvida|nenhuma|nao tenho|não tenho|nao|não|tudo certo|partiu|segue)\b/i.test(text) || /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(text);
+}
+
+function isComoFuncionaStep(row: any): boolean {
+  return /(?:^|[_\s-])como[_\s-]*funciona|d_como_funciona/i.test(`${row?.step_key || ""} ${row?.slot_key || ""} ${row?.title || ""}`);
+}
+
+function isConfidentDocDetection(det: any): boolean {
+  if (!det || det.source === "fallback") return false;
+  const conf = Number(det.confianca || 0);
+  const tipo = String(det.tipo || "").toLowerCase();
+  if (tipo === "cnh") return conf >= 0.62;
+  return conf >= 0.78;
+}
+
+function buildMissingDocPrompt(label: string, merged: any): string {
+  const missing = [
+    !String(merged?.cpf || "").replace(/\D/g, "") ? "CPF" : "",
+    !String(merged?.rg || "").trim() ? (label === "CNH" ? "RG/registro da CNH" : "RG") : "",
+    !String(merged?.data_nascimento || "").trim() ? "data de nascimento" : "",
+  ].filter(Boolean);
+  if (missing.length <= 1 && missing[0] === "CPF") {
+    return `Não consegui ler o CPF na ${label}. Digite os *11 números do CPF* para continuar:`;
+  }
+  return `Consegui ler o documento, mas alguns dados ficaram ilegíveis.\n\nMe envie em uma única mensagem:\n${missing.map((m) => `• ${m}`).join("\n")}`;
 }
 
 function normalizeLeadName(rawText: string | null | undefined): string | null {
