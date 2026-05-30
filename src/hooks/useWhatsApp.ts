@@ -509,6 +509,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       await deleteInstanceDb();
 
       setStatus("disconnected");
+      setHasInstance(false);
       setInstanceName(null);
       setQrCode(null);
       setQrGeneratedAt(null);
