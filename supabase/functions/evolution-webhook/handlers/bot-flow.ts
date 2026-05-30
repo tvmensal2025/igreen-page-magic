@@ -4261,6 +4261,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const triggers = ["btn_quero_cadastrar", "quero_cadastrar", "sim_cadastrar", "cadastrar", "btn_cadastrar", "quero_simular", "btn_simular", "simular", "btn_quero_simular", "1", "sim", "s", "quero", "bora", "vamos", "vamo", "pode", "ok", "blz", "beleza"];
       const wants = triggers.includes(resp) || /^(sim|quero|bora|vamos|pode|ok)\b/i.test(resp);
       if (wants) {
+        // 🛡️ Se o documento JÁ foi enviado, não pedir de novo.
+        if (shouldSkipAskStep("aguardando_doc_auto", customer) && shouldSkipAskStep("aguardando_doc_verso", customer)) {
+          console.log("[ask_quero_cadastrar] skip — documento já enviado, avançando direto");
+          const merged = { ...customer };
+          const next = await autoResolveCepIfNeeded(merged, updates);
+          updates.conversation_step = next === "ask_finalizar" ? "finalizando" : next;
+          reply = next === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(next, merged);
+          break;
+        }
         try {
           const { data: _flowRow } = await supabase
             .from("bot_flows").select("id")
