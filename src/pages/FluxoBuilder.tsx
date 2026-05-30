@@ -777,6 +777,8 @@ export default function FluxoBuilder() {
                     mediaCounts={mediaCounts}
                     validation={validation}
                     readOnly={diagramReadOnly}
+                    panelHidden={panelHidden}
+                    onTogglePanel={togglePanelHidden}
                     onSelectStep={setSelectedId}
                     onOpenInspector={(id) => {
                       setSelectedId(id);
