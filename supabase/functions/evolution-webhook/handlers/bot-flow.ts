@@ -5,6 +5,7 @@
 // Behavior is identical to the previous inline version. Only structural change:
 // the closure variables are now properties of `ctx`.
 
+import { resolveFlowId } from "../../_shared/resolve-flow.ts";
 import {
   validateCustomerForPortal,
   isPlaceholderEmail,
@@ -381,9 +382,7 @@ async function findNextActiveFlowStep(
     if (!flowId) {
       if (!consultantId) return null;
       const variant = opts.variant || "A";
-      const { data: flow } = await supabase
-        .from("bot_flows").select("id")
-        .eq("consultant_id", consultantId).eq("is_active", true).eq("variant", variant).maybeSingle();
+      const flow = await resolveFlowId(supabase, consultantId, variant);
       if (!flow?.id) {
         console.warn(`[findNextActiveFlowStep] sem fluxo ativo consultant=${consultantId} variant=${variant}`);
         return null;
@@ -607,10 +606,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // 1) FAQ
     try {
-      const { data: flowRow } = await supabase
-        .from("bot_flows").select("id")
-        .eq("consultant_id", customer.consultant_id)
-        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+      const flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (flowRow?.id) {
         const qa = await matchQA(supabase, (flowRow as any).id, customer.consultant_id, questionText);
         if (qa && (qa.text || qa.mediaUrls.length)) {
@@ -895,10 +891,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       messageText && !isFile && !isButton &&
       detectQuestionIntent(messageText)
     ) {
-      const { data: flowRow } = await supabase
-        .from("bot_flows").select("id")
-        .eq("consultant_id", customer.consultant_id)
-        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+      const flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (flowRow?.id) {
         const qa = await matchQA(supabase, (flowRow as any).id, customer.consultant_id, messageText);
         if (qa && (qa.text || qa.mediaUrls.length)) {
@@ -1000,12 +993,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
       } catch (_e) { /* ignora — anti-rep é best-effort */ }
 
-      const { data: flow } = await supabase
-        .from("bot_flows")
-        .select("id")
-        .eq("consultant_id", customer.consultant_id)
-        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
-        .maybeSingle();
+      const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (!flow?.id) return false;
 
       const { data: stepRow } = await supabase
@@ -1311,12 +1299,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     // precisa extrair o valor e avançar pra aguardando_conta.
     if (!opts?.force && step === "qualificacao" && /\d{2,5}/.test(normalizedText)) return null;
 
-    const { data: activeFlow } = await supabase
-      .from("bot_flows")
-      .select("id")
-      .eq("consultant_id", customer.consultant_id)
-      .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
-      .maybeSingle();
+    const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
     if (!activeFlow) return null;
 
     const { data: qaRows } = await supabase
@@ -1538,12 +1521,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // (bot_flow_qa.is_opening). O motor dinâmico (runConversationalFlow) é
       // a única fonte de verdade. Esse caminho só serve para consultores que
       // ainda não migraram para o Flow Builder.
-      const { data: hasDynamicFlow } = await supabase
-        .from("bot_flows")
-        .select("id")
-        .eq("consultant_id", customer.consultant_id)
-        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
-        .maybeSingle();
+      const hasDynamicFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (hasDynamicFlow?.id) {
         console.log(`[opening-flow] pulado — consultor tem Fluxo da Camila ativo (${(hasDynamicFlow as any).id})`);
         // segue o switch normal
@@ -1556,12 +1534,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const isFirstContact = (outboundCount || 0) === 0;
 
       if (isFirstContact) {
-        const { data: activeFlow } = await supabase
-          .from("bot_flows")
-          .select("id")
-          .eq("consultant_id", customer.consultant_id)
-          .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A")
-          .maybeSingle();
+        const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
 
         if (activeFlow) {
           const { data: openingQa } = await supabase
@@ -2266,10 +2239,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
   if (customer.consultant_id && (stepIsUuid || stepIsCustom)) {
     try {
-      const { data: flow } = await supabase
-        .from("bot_flows").select("id")
-        .eq("consultant_id", customer.consultant_id)
-        .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+      const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (flow?.id) {
         let stepRow: any = null;
         if (stepIsUuid) {
@@ -3094,9 +3064,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         // porque isso retorna o primeiro passo ativo (geralmente "Nome do cliente").
         let _captureContaPos = 0;
         try {
-          const { data: _flowRow } = await supabase
-            .from("bot_flows").select("id")
-            .eq("consultant_id", customer.consultant_id).eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+          const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
           if (_flowRow?.id) {
             const { data: _captureRow } = await supabase
               .from("bot_flow_steps").select("position")
@@ -3117,10 +3085,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         // d_como_funciona em vez de d_resultado) após confirmar a conta.
         let nextCustom: any = null;
         try {
-          const { data: _flowRowSuccess } = await supabase
-            .from("bot_flows").select("id")
-            .eq("consultant_id", customer.consultant_id).eq("is_active", true)
-            .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+          const _flowRowSuccess = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
           if (_flowRowSuccess?.id) {
             const { data: _captureStep } = await supabase
               .from("bot_flow_steps").select("fallback")
@@ -3151,10 +3116,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         // "como funciona" só deve sair quando o lead clica no botão respectivo,
         // nunca após confirmar a conta.
         if (nextCustom && isComoFuncionaStep(nextCustom)) {
-          const { data: _flowRowResultado } = await supabase
-            .from("bot_flows").select("id")
-            .eq("consultant_id", customer.consultant_id).eq("is_active", true)
-            .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+          const _flowRowResultado = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
           if (_flowRowResultado?.id) {
             const { data: _resultado } = await supabase
               .from("bot_flow_steps").select("*")
@@ -4487,10 +4449,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           break;
         }
         try {
-          const { data: _flowRow } = await supabase
-            .from("bot_flows").select("id")
-            .eq("consultant_id", customer.consultant_id).eq("is_active", true)
-            .eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+          const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
           if (_flowRow?.id) {
             const { data: _docStep } = await supabase
               .from("bot_flow_steps")
@@ -4656,11 +4615,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // no FluxoCamila. Se tiver, usa o message_text do passo dela.
       let parabens = "✅ Seus dados já foram registrados! Se precisar de algo, um consultor entrará em contato. ☀️";
       try {
-        const { data: flow } = await supabase
-          .from("bot_flows").select("id")
-          .eq("consultant_id", customer.consultant_id || consultorId)
-          .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").order("created_at", { ascending: true })
-          .limit(1).maybeSingle();
+        const flow = await resolveFlowId(supabase, customer.consultant_id || consultorId, (customer as any)?.flow_variant || "A");
         if (flow?.id) {
           const { data: passo } = await supabase
             .from("bot_flow_steps")
@@ -4693,10 +4648,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       } else {
         let hasCustomFlow = false;
         try {
-          const { data: flow } = await supabase
-            .from("bot_flows").select("id")
-            .eq("consultant_id", customer.consultant_id)
-            .eq("is_active", true).eq("variant", (customer as any)?.flow_variant || "A").maybeSingle();
+          const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
           hasCustomFlow = !!flow?.id;
         } catch (_) { /* noop */ }
 
