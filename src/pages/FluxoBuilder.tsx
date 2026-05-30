@@ -133,6 +133,34 @@ export default function FluxoBuilder() {
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
 
+  // PR4 — busca/filtro/colapso da lista de steps
+  const [listQuery, setListQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    try {
+      const raw = window.localStorage.getItem("flow-list-collapsed");
+      if (raw) return new Set(JSON.parse(raw));
+    } catch { /* noop */ }
+    return new Set();
+  });
+  const toggleTypeFilter = useCallback((t: string) => {
+    setTypeFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  }, []);
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try { window.localStorage.setItem("flow-list-collapsed", JSON.stringify([...next])); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
   // task 10.2 — `viewMode` controla a alternância Lista ↔ Diagrama (R1.1).
   // Valor inicial vem do `localStorage` (chave `flow-view-mode`) com
   // fallbacks de R1.5 e R1.7 aplicados em `readInitialViewMode()`.
