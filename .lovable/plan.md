@@ -1,110 +1,64 @@
+# PR4 — Lista + Diagrama mais fáceis de usar
 
-# Recriação do Painel de Fluxos (`/admin/fluxos`)
+Foco em reduzir atrito sem mexer em regras de negócio. Tudo frontend.
 
-## Diagnóstico do que está ruim hoje
-- `FlowDiagram.tsx` tem **2.250 linhas** num único arquivo — virou monolito difícil de evoluir, nós não expandem inline, zoom/pan engasga.
-- `StepInspector.tsx` (705 linhas) mistura Básico/Mídias/Botões/Regras/Avançado num drawer estreito — regras e botões ficam escondidos em abas.
-- IA (`flow-step-suggest`) existe mas só aparece como botão isolado em `StepSuggestions.tsx`. Sem copiloto, sem inline, sem auto-fix.
-- Conexões entre passos não são editáveis arrastando — só via select no inspector.
+## Parte A — Lista de steps
 
-## Visão da nova UX
+**1. Barra de busca + filtros (sticky no topo da coluna)**
+- Campo de busca por título, conteúdo da mensagem e botões.
+- Chips de filtro por tipo de step (mensagem, pergunta, condição, ação, etc.) — multi-seleção.
+- Contador "X de Y passos" + botão "Limpar".
+- Atalho `/` foca a busca; `Esc` limpa.
 
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Header: nome fluxo | toggle ativo | warnings | [✨ IA Copiloto] [+] │
-├──────────────┬──────────────────────────────────────┬───────────────┤
-│              │                                      │               │
-│  Mini-mapa   │         CANVAS React Flow            │  Inspector    │
-│  + Lista     │  (zoom/pan/auto-layout/expand)       │  do passo     │
-│  filtro      │                                      │  selecionado  │
-│  passos      │  • Nós expansíveis (colapsado vs    │               │
-│  (220px)     │    expandido com preview + botões)   │  Tabs claras: │
-│              │  • Arrastar handle → cria regra      │  Conteúdo     │
-│              │  • Edge clicável edita transição     │  Regras+IA    │
-│              │  • Atalho ✨ em cada nó              │  Mídia        │
-│              │                                      │  Avançado     │
-│              │                                      │  (480px)      │
-└──────────────┴──────────────────────────────────────┴───────────────┘
-                                                       Painel IA flutuante
-                                                       (drawer direita,
-                                                        sobrepõe inspector)
-```
+**2. Agrupamento e colapso**
+- Agrupar steps por seção (usar tag/categoria existente; se não houver, derivar do tipo).
+- Cabeçalhos de grupo colapsáveis, com contagem e ação rápida "Adicionar passo neste grupo".
+- Estado de colapso persistido em `localStorage` por fluxo.
 
-## Escopo da reconstrução
+**3. Preview de conteúdo no card**
+- Mostrar 1ª linha da mensagem (truncada) + ícones para mídia/botões/regras.
+- Badge do step inicial e dos steps "órfãos" (sem entrada).
+- Ícone clicável que abre o inspector direto na aba relevante.
 
-### 1. Canvas (React Flow v12 já instalado)
-- **Quebrar `FlowDiagram.tsx`** em módulos por responsabilidade: `useFlowGraph` (estado nodes/edges), `useAutoLayout` (dagre/elk), `useNodeInteractions` (drag/connect/expand), `CanvasShell` (Provider + Controls + MiniMap + Background).
-- **Nó expansível**: dois modos — *colapsado* (título + tipo + badges) e *expandido* (preview da mensagem + botões + regras inline + ✨). Toggle por clique no header.
-- **Auto-layout** com `dagre`: botão "Organizar" no toolbar + ao adicionar passo. Vertical top-down por `position`.
-- **Conectar arrastando**: handle inferior do nó → handle superior de outro nó cria transition (`trigger_intent: "default"` ou pergunta intent).
-- **Editar edge**: clique na seta abre popover compacto (intent, condição, label) — já existe `TransitionPopover`, integrar melhor.
-- **Controls customizados**: zoom in/out, fit-view, organizar, exportar PNG, toggle mini-mapa.
-- **Performance**: virtualizar nós fora do viewport via React Flow nativo (`onlyRenderVisibleElements`).
+**4. Reordenar mais claro**
+- Handle de arraste dedicado (ícone à esquerda) em vez de arrastar o card inteiro.
+- Linha-guia azul indicando posição de drop.
+- Suporte a teclado: `↑/↓` com handle focado move o item.
+- Manter `@dnd-kit` já em uso.
 
-### 2. Inspector lateral (reorganizado)
-Reduzir abas de 5 para **4 com hierarquia mais clara**:
-- **Conteúdo** — mensagem, tipo de passo, capture target, próximo passo (já adicionado).
-- **Regras + Botões** — unificado: botão presets no topo (✅/❌/📸/👤) cria botão + regra atômica; lista de regras abaixo com edição inline; cada regra tem ✨ "sugerir resposta da IA".
-- **Mídia** — reusa `StepMediaPanel`.
-- **Avançado** — fallback, delay, condições, captures custom, JSON raw.
+## Parte B — Diagrama (FlowDiagramV2)
 
-Drawer aumenta para **480px** (hoje aperta tudo num sheet padrão), com toggle "expandir tela cheia" para edição pesada.
+**1. Nós mais compactos**
+- Modo padrão "compacto": só ícone + título + badges (mídia/botões/regras).
+- Expandir on-hover mostrando preview da mensagem; clique abre inspector.
+- Toggle global "Compacto / Detalhado" na `CanvasToolbar`.
 
-### 3. IA integrada (3 superfícies)
-- **Inline ✨ em campos** (Textarea de mensagem, título de botão, label de regra): popover com "reescrever / encurtar / mais formal / traduzir / gerar do zero". Edge function nova: `flow-ai-rewrite` chamando Lovable AI Gateway (`google/gemini-3-flash-preview`).
-- **✨ por nó no canvas**: usa `flow-step-suggest` existente (já retorna 3 próximos passos). Botão flutuante no canto do nó expandido.
-- **Copiloto lateral** (novo drawer à direita, toggle no header): chat com contexto do fluxo inteiro. Capaz de:
-  - "Onde tem regra quebrada?" → lista warnings com botão "corrigir".
-  - "Adiciona um passo de objeção depois do #5" → propõe diff (criar passo + regra) com preview antes de aplicar.
-  - "Resume o que esse fluxo faz" → walkthrough textual.
-  - Edge function nova: `flow-copilot` (streaming SSE, tool-calling pra `create_step`, `update_step`, `add_rule`, `fix_warning`).
+**2. Conexões mais limpas**
+- Arestas com roteamento `smoothstep` + offset por handle para evitar sobreposição.
+- Cor/estilo por tipo de transição (default, condicional, fallback).
+- Highlight do caminho ao passar o mouse num nó (in/out edges destacadas, demais esmaecidas).
 
-### 4. Não muda
-- Schema do banco (`bot_flow_steps`, `transitions`, `captures`, `fallback`).
-- Runtime (`whapi-webhook`, `evolution-webhook`) — segue lendo o mesmo JSON.
-- `WhatsAppPreview`, `FlowSimulator`, templates.
-- Legacy `/admin/fluxos-legado` continua disponível pra rollback.
+**3. Navegação**
+- MiniMap (já existe no React Flow) habilitado no canto.
+- Botões na toolbar: `Fit`, `Zoom 100%`, `Centralizar no início`, `Centralizar no selecionado`.
+- Atalhos: `F` = fit, `0` = 100%, `H` = ir ao início, `/` = abrir busca de nó com lista filtrável (pula e seleciona).
 
-## Plano de execução (4 PRs sequenciais)
+**4. Ponto de partida visível**
+- Nó inicial com anel/badge "Início" e cor de destaque.
+- Realçar o "caminho principal" (mais provável) com traço mais grosso; ramificações secundárias em traço fino.
+- Ao abrir o diagrama pela 1ª vez, auto `fitView` + leve pan para o início.
 
-### PR 1 — Canvas novo
-- Criar `src/components/admin/flow-builder/diagram-v2/` com `useFlowGraph.ts`, `useAutoLayout.ts`, `CanvasShell.tsx`, `ExpandableNode.tsx`, `EditableEdge.tsx`, `CanvasToolbar.tsx`.
-- Instalar `dagre` (`bun add dagre @types/dagre`).
-- Feature flag: toggle "Diagrama v2" no header do `FluxoBuilder` que troca `FlowDiagram` → `FlowDiagramV2`.
-- Manter `FlowDiagram.tsx` legado intacto.
+## Arquivos afetados
 
-### PR 2 — Inspector reorganizado
-- Refatorar `StepInspector.tsx` em sub-componentes por aba (`tabs/ContentTab.tsx`, `tabs/RulesButtonsTab.tsx`, `tabs/MediaTab.tsx`, `tabs/AdvancedTab.tsx`).
-- Aumentar largura do Sheet para 480px com modo fullscreen.
-- Unificar regras+botões com presets no topo.
+- `src/pages/FluxoBuilder.tsx` — barra de busca/filtros, grupos colapsáveis na lista, persistência.
+- `src/components/admin/flow-builder/StepCard.tsx` — handle de drag, preview, badges, ícones de atalho.
+- `src/components/admin/flow-builder/diagram-v2/ExpandableNode.tsx` — modo compacto + hover preview + destaque do início.
+- `src/components/admin/flow-builder/diagram-v2/FlowDiagramV2.tsx` — minimap, highlight de caminho ao hover, fitView inicial, busca de nó.
+- `src/components/admin/flow-builder/diagram-v2/CanvasToolbar.tsx` — toggle compacto/detalhado, botões Fit/100%/Início, atalhos.
+- Novo: `src/components/admin/flow-builder/StepListToolbar.tsx` — busca + chips de filtro reutilizáveis.
 
-### PR 3 — IA copiloto
-- Edge function `flow-ai-rewrite` (inline ✨).
-- Edge function `flow-copilot` (chat streaming + tool-calling).
-- Componente `<AiCopilotDrawer />` no `FluxoBuilder`.
-- Componente `<InlineAiButton />` reusável em todos os Textarea/Input do inspector.
-- Botão ✨ flutuante no `ExpandableNode` (canvas).
+## Fora de escopo
+- Remover `FlowDiagram` legado (fica para PR de cleanup).
+- Mudanças em edge functions / banco / regras de IA.
 
-### PR 4 — Polimento e remoção do legado
-- Validar com fluxos reais (Fluxo D, Fluxo Camila).
-- Promover Diagrama v2 como default; remover flag.
-- Arquivar `FlowDiagram.tsx` antigo.
-- Atualizar `mem/features/flow-editor-redesign.md`.
-
-## Detalhes técnicos
-
-**Stack adicionada:**
-- `dagre` (auto-layout grafo).
-- Nada de novo pesado — React Flow v12 já está no projeto.
-
-**Edge functions novas:**
-- `supabase/functions/flow-ai-rewrite/index.ts` — POST `{text, action: "rewrite"|"shorten"|"formal"|"generate", context?}` → texto reescrito.
-- `supabase/functions/flow-copilot/index.ts` — SSE streaming, recebe `{flowId, messages, userId}`, tem tools `propose_step`, `propose_rule_fix`, `explain_flow`. Aplicação de mudanças passa por confirmação visual no drawer (diff preview), nunca escreve direto.
-
-**Compatibilidade:** todas as escritas seguem o schema atual (`bot_flow_steps`, `transitions` jsonb, etc.). Nenhuma migração de banco necessária.
-
-**Fora de escopo:**
-- Mudar engine de runtime.
-- Mudar schema do banco.
-- Reescrever templates de fluxo.
-- Mexer no `FlowSimulator`.
+Quer que eu siga assim ou ajustar alguma parte?

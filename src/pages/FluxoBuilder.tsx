@@ -17,6 +17,7 @@ import {
 
 import StepCard from "@/components/admin/flow-builder/StepCard";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
+import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import AiCopilotDrawer from "@/components/admin/flow-builder/AiCopilotDrawer";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
 import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDialog";
@@ -27,8 +28,10 @@ import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
   Step, Variant, ALL_VARIANTS, VARIANT_LABEL,
+  STEP_TYPE_OPTIONS,
   parseTransitions, parseCaptures, parseFallback,
 } from "@/components/admin/flow-builder/flowTypes";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import ViewToggle, { type ViewMode } from "@/components/admin/flow-builder/ViewToggle";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 
@@ -129,6 +132,34 @@ export default function FluxoBuilder() {
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
+
+  // PR4 — busca/filtro/colapso da lista de steps
+  const [listQuery, setListQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    try {
+      const raw = window.localStorage.getItem("flow-list-collapsed");
+      if (raw) return new Set(JSON.parse(raw));
+    } catch { /* noop */ }
+    return new Set();
+  });
+  const toggleTypeFilter = useCallback((t: string) => {
+    setTypeFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  }, []);
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try { window.localStorage.setItem("flow-list-collapsed", JSON.stringify([...next])); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
 
   // task 10.2 — `viewMode` controla a alternância Lista ↔ Diagrama (R1.1).
   // Valor inicial vem do `localStorage` (chave `flow-view-mode`) com
@@ -283,6 +314,41 @@ export default function FluxoBuilder() {
 
   const selected = useMemo(() => steps.find((s) => s.id === selectedId) ?? null, [steps, selectedId]);
   const inspectorStep = useMemo(() => steps.find((s) => s.id === inspectorId) ?? null, [steps, inspectorId]);
+
+  // PR4 — filtragem + agrupamento da lista
+  const filteredSteps = useMemo(() => {
+    const q = listQuery.trim().toLowerCase();
+    return steps.filter((s) => {
+      if (typeFilter.size > 0 && !typeFilter.has(s.step_type)) return false;
+      if (!q) return true;
+      const haystack = [
+        s.title, s.message_text, s.step_key, s.summary,
+        ...(s.transitions ?? []).flatMap((t) => [t.trigger_intent, ...(t.trigger_phrases || [])]),
+      ].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [steps, listQuery, typeFilter]);
+
+  const groupedSteps = useMemo(() => {
+    const groups = new Map<string, { type: string; label: string; emoji: string; items: Step[] }>();
+    for (const s of filteredSteps) {
+      const meta = STEP_TYPE_OPTIONS.find((o) => o.value === s.step_type);
+      const key = s.step_type || "outros";
+      if (!groups.has(key)) {
+        groups.set(key, {
+          type: key,
+          label: meta?.label ?? "Outros",
+          emoji: meta?.emoji ?? "📄",
+          items: [],
+        });
+      }
+      groups.get(key)!.items.push(s);
+    }
+    // ordena grupos pela posição mínima do item (mantém fluxo lógico)
+    return [...groups.values()].sort(
+      (a, b) => Math.min(...a.items.map((s) => s.position)) - Math.min(...b.items.map((s) => s.position)),
+    );
+  }, [filteredSteps]);
 
   const validation = useFlowValidation(steps);
   const flowWarnings = validation.total;
@@ -580,33 +646,71 @@ export default function FluxoBuilder() {
               </p>
             </div>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-2">
-                  {steps.map((s) => (
-                    <StepCard
-                      key={s.id}
-                      step={s}
-                      steps={steps}
-                      selected={selectedId === s.id}
-                      mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
-                      showConnections={true}
-                      onSelect={() => setSelectedId(s.id)}
-                      onEdit={() => { setSelectedId(s.id); setInspectorId(s.id); }}
-                      onDelete={() => deleteStep(s.id)}
-                      onDuplicate={() => duplicateStep(s.id)}
-                      onJumpTo={(targetId) => {
-                        setSelectedId(targetId);
-                        // Scroll suave até o card destino
-                        setTimeout(() => {
-                          document.getElementById(`step-card-${targetId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                        }, 50);
-                      }}
-                    />
-                  ))}
+            <>
+              <StepListToolbar
+                query={listQuery}
+                onQueryChange={setListQuery}
+                typeFilter={typeFilter}
+                onToggleType={toggleTypeFilter}
+                onClear={() => { setListQuery(""); setTypeFilter(new Set()); }}
+                total={steps.length}
+                visible={filteredSteps.length}
+              />
+
+              {filteredSteps.length === 0 ? (
+                <div className="rounded-lg border border-dashed bg-muted/10 p-6 text-center text-xs text-muted-foreground">
+                  Nenhum passo corresponde à busca.
                 </div>
-              </SortableContext>
-            </DndContext>
+              ) : (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={filteredSteps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-3">
+                      {groupedSteps.map((g) => {
+                        const collapsed = collapsedGroups.has(g.type);
+                        return (
+                          <div key={g.type} className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroup(g.type)}
+                              className="flex w-full items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-left text-xs font-medium hover:bg-muted/60"
+                            >
+                              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              <span>{g.emoji}</span>
+                              <span className="flex-1 truncate">{g.label}</span>
+                              <span className="text-muted-foreground">{g.items.length}</span>
+                            </button>
+                            {!collapsed && (
+                              <div className="space-y-2 pl-1">
+                                {g.items.map((s) => (
+                                  <StepCard
+                                    key={s.id}
+                                    step={s}
+                                    steps={steps}
+                                    selected={selectedId === s.id}
+                                    mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
+                                    showConnections={true}
+                                    onSelect={() => setSelectedId(s.id)}
+                                    onEdit={() => { setSelectedId(s.id); setInspectorId(s.id); }}
+                                    onDelete={() => deleteStep(s.id)}
+                                    onDuplicate={() => duplicateStep(s.id)}
+                                    onJumpTo={(targetId) => {
+                                      setSelectedId(targetId);
+                                      setTimeout(() => {
+                                        document.getElementById(`step-card-${targetId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      }, 50);
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              )}
+            </>
           )}
 
           <Button variant="outline" className="w-full" onClick={() => { void addStep(); }}>

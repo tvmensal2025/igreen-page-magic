@@ -11,6 +11,10 @@ export type V2NodeData = {
   step: Step;
   expanded: boolean;
   hasWarning: boolean;
+  compact?: boolean;
+  dimmed?: boolean;
+  highlighted?: boolean;
+  isStart?: boolean;
   onToggleExpand: (id: string) => void;
   onOpenInspector: (id: string) => void;
   onAddRule: (id: string) => void;
