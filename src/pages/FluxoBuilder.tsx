@@ -38,6 +38,19 @@ import { useViewportWidth } from "@/hooks/useViewportWidth";
 const FlowDiagram = React.lazy(
   () => import("@/components/admin/flow-builder/FlowDiagram"),
 );
+const FlowDiagramV2 = React.lazy(
+  () => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"),
+);
+
+function readUseV2(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const v = window.localStorage.getItem("flow-diagram-v2");
+    return v === null ? true : v === "1";
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Lê o valor inicial de `viewMode` do `localStorage` aplicando os fallbacks
@@ -119,6 +132,13 @@ export default function FluxoBuilder() {
   // Valor inicial vem do `localStorage` (chave `flow-view-mode`) com
   // fallbacks de R1.5 e R1.7 aplicados em `readInitialViewMode()`.
   const [viewMode, setViewModeState] = useState<ViewMode>(readInitialViewMode);
+  const [useV2, setUseV2State] = useState<boolean>(readUseV2);
+  const setUseV2 = useCallback((next: boolean) => {
+    setUseV2State(next);
+    try {
+      window.localStorage.setItem("flow-diagram-v2", next ? "1" : "0");
+    } catch { /* noop */ }
+  }, []);
 
   // task 12.1 — modo somente leitura do `Modo_Diagrama` derivado da viewport
   // atual (R15.2). `isNarrow` (<768px) força `readOnly={true}` no
@@ -606,39 +626,81 @@ export default function FluxoBuilder() {
                 </div>
               }
             >
-              <FlowDiagram
-                steps={steps}
-                selectedId={selectedId}
-                consultantId={userId}
-                consultantName={consultantName}
-                consultantSlug={consultantSlug}
-                flowId={flowId}
-                editingVariant={editingVariant}
-                mediaCounts={mediaCounts}
-                validation={validation}
-                // task 12.1 — modo somente leitura quando viewport <768px
-                // (R15.2). A faixa intermediária (768-1023px) mantém o canvas
-                // editável; o `ViewToggle` mostra o tooltip "Melhor
-                // visualização em desktop" (R15.1) via `diagramHint`.
-                readOnly={diagramReadOnly}
-                onSelectStep={setSelectedId}
-                onOpenInspector={(id) => {
-                  setSelectedId(id);
-                  setInspectorId(id);
-                }}
-                onPatchStep={patchStep}
-                onAddStep={addStep}
-                onDuplicateStep={duplicateStep}
-                onDeleteStep={deleteStep}
-                onAutoFixAll={autoFixAll}
-                onCreateFromTemplate={() => setCreateFromTemplateOpen(true)}
-                // task 10.10 — recarrega `steps` após `autoLayoutAll`
-                // zerar `bot_flow_steps.layout` para manter a fonte
-                // única de verdade alinhada com o banco.
-                onReloadAfterAutoLayout={() =>
-                  userId ? reload(userId, editingVariant) : Promise.resolve()
-                }
-              />
+              {useV2 ? (
+                <div className="relative h-full w-full">
+                  <button
+                    type="button"
+                    onClick={() => setUseV2(false)}
+                    className="absolute right-3 top-3 z-10 rounded-md border bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow hover:bg-muted"
+                    title="Voltar para o diagrama clássico"
+                  >
+                    Diagrama v2 · clássico
+                  </button>
+                  <FlowDiagramV2
+                    steps={steps}
+                    selectedId={selectedId}
+                    consultantId={userId}
+                    consultantName={consultantName}
+                    consultantSlug={consultantSlug}
+                    flowId={flowId}
+                    editingVariant={editingVariant}
+                    mediaCounts={mediaCounts}
+                    validation={validation}
+                    readOnly={diagramReadOnly}
+                    onSelectStep={setSelectedId}
+                    onOpenInspector={(id) => {
+                      setSelectedId(id);
+                      setInspectorId(id);
+                    }}
+                    onPatchStep={patchStep}
+                    onAddStep={addStep}
+                    onDuplicateStep={duplicateStep}
+                    onDeleteStep={deleteStep}
+                    onAutoFixAll={autoFixAll}
+                    onCreateFromTemplate={() => setCreateFromTemplateOpen(true)}
+                    onReloadAfterAutoLayout={() =>
+                      userId ? reload(userId, editingVariant) : Promise.resolve()
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="relative h-full w-full">
+                  <button
+                    type="button"
+                    onClick={() => setUseV2(true)}
+                    className="absolute right-3 top-3 z-10 rounded-md border bg-primary/90 px-2 py-1 text-[10px] text-primary-foreground shadow hover:bg-primary"
+                    title="Experimentar novo diagrama"
+                  >
+                    ✨ Diagrama v2
+                  </button>
+                  <FlowDiagram
+                    steps={steps}
+                    selectedId={selectedId}
+                    consultantId={userId}
+                    consultantName={consultantName}
+                    consultantSlug={consultantSlug}
+                    flowId={flowId}
+                    editingVariant={editingVariant}
+                    mediaCounts={mediaCounts}
+                    validation={validation}
+                    readOnly={diagramReadOnly}
+                    onSelectStep={setSelectedId}
+                    onOpenInspector={(id) => {
+                      setSelectedId(id);
+                      setInspectorId(id);
+                    }}
+                    onPatchStep={patchStep}
+                    onAddStep={addStep}
+                    onDuplicateStep={duplicateStep}
+                    onDeleteStep={deleteStep}
+                    onAutoFixAll={autoFixAll}
+                    onCreateFromTemplate={() => setCreateFromTemplateOpen(true)}
+                    onReloadAfterAutoLayout={() =>
+                      userId ? reload(userId, editingVariant) : Promise.resolve()
+                    }
+                  />
+                </div>
+              )}
             </Suspense>
           </section>
         )}
