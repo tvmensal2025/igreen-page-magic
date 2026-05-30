@@ -18,14 +18,19 @@ const INTENTS: Intent[] = [
 ];
 
 // Cheap deterministic regex pre-pass — handles ~70% of cases without LLM cost.
+// Inclui os TÍTULOS reais dos botões do fluxo (whapi/evolution variante D) para
+// que cliques que chegam como TEXTO (ex.: "Quero simular", "Falar com Rafael")
+// sejam classificados de forma DETERMINÍSTICA (conf 0.95 → execute) em vez de
+// caírem no fallback "outro/0.6" (repeat). Validado via ai_decisions: 33% das
+// classificações caíam em fallback, quase todas títulos de botão. (2026-05-30)
 const RX = {
-  quer_cadastrar: /\b(cadastr\w*|quero (me )?(cadastrar|participar)|vamos l[áa]|bora|simbora|inscrever|me cadastra|fechado|aceito)\b/i,
-  quer_humano: /\b(humano|atendente|pessoa real|operador|consultor de verdade|falar com algu[eé]m)\b/i,
+  quer_cadastrar: /\b(cadastr\w*|quero (me )?(cadastrar|participar)|quero simular|simular|simula[cç][ãa]o|fazer simula|vamos l[áa]|bora|simbora|inscrever|me cadastra|fechado|aceito|quero o desconto|quero economizar)\b/i,
+  quer_humano: /\b(humano|atendente|pessoa real|operador|consultor de verdade|falar com algu[eé]m|falar com (o |a )?\w+|falar com rafael|chamar (o |a )?\w+|atendimento)\b/i,
   saudacao: /^(oi+|ol[áa]|bom dia|boa tarde|boa noite|hey|opa)\b/i,
   ja_assistiu_video: /\b(j[áa]? ?vi|assisti|terminei|acabei de ver|vi sim)\b/i,
   afirmacao: /^(sim|s|claro|pode|quero|positivo|👍|✅|1️⃣?|^1$)\b/i,
   negacao: /^(n[ãa]o|n|nao|negativo|👎|❌|2️⃣?|^2$)\b/i,
-  tem_duvida: /\?|\b(d[úu]vida|como funciona|quanto|quanto custa|seguro|confi[áa]vel|golpe)\b/i,
+  tem_duvida: /\?|\b(d[úu]vida|d[úu]vidas|tenho d[úu]vida|ainda tenho d[úu]vida|como funciona|como que funciona|quanto|quanto custa|seguro|confi[áa]vel|golpe)\b/i,
   nao_quer: /\b(n[ãa]o quero|depois|mais tarde|agora n[ãa]o|deixa pra l[áa])\b/i,
 };
 

@@ -1362,6 +1362,27 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   if (cls.action === "handoff" && cls.intent !== "tem_duvida") {
     console.log(`[conversational] 🤝 baixa confiança (conf=${cls.confidence}) — tentando recuperar ao invés de pausar mudo`);
 
+    // 🛡️ GUARDA DETERMINÍSTICA (2026-05-30): antes de pausar/desviar por baixa
+    // confiança da IA, checa se o input casa com uma transição CONFIGURADA pelo
+    // consultor (clique de botão, frase-gatilho, intent de regex ou captura).
+    // Se casar, o fluxo é determinístico e a IA NÃO tem direito de veto — segue
+    // o que o consultor desenhou. Sem isso, "Quero simular"/"Falar com Rafael"
+    // que caíam em fallback/0.6 podiam abortar o fluxo de forma não-determinística.
+    // Regra de ouro: consultor configurou → fluxo segue; IA é só último recurso.
+    try {
+      const _guardIntents = [cls.intent, ...detectRegexIntents(ctx.messageText || ""), ...captureIntents];
+      const _guardTransition = matchTransitionShared({
+        transitions: currentStep.transitions ?? [],
+        buttonId: ctx.buttonId,
+        messageText: ctx.messageText,
+        buttons: extractStepButtons(currentStep),
+        intents: _guardIntents,
+      });
+      if (_guardTransition || hasCapture) {
+        console.log(`[conversational] ✋ handoff IGNORADO — input casa transição/captura configurada (${_guardTransition ? "transition" : "capture"}). Fluxo determinístico assume.`);
+        // não retorna: deixa o fluxo normal (matchTransition logo abaixo) seguir
+      } else {
+
     const stepButtons = extractStepButtons(currentStep);
     const stepType = String(currentStep.step_type || "message");
     const isCaptureStep = stepType.startsWith("capture_") || stepType === "confirm_phone";
@@ -1469,6 +1490,10 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       });
     }
     // ctx.buttonId foi injetado pela IA → não retorna; deixa fluxo normal seguir
+      } // fecha o else da guarda determinística
+    } catch (_guardErr) {
+      console.warn("[conversational] guarda determinística falhou — seguindo fluxo:", (_guardErr as Error)?.message);
+    }
   }
   // Nota: action="repeat" (confiança média) é tratado implicitamente — se
   // nenhuma transição casar, o fluxo default já é repetir o passo atual.

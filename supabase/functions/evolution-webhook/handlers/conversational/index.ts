@@ -1206,17 +1206,36 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
   // Sprint 1.5: honra threshold de handoff (conf < 0.5) — pausa bot, consultor assume.
   if (cls.action === "handoff" && cls.intent !== "tem_duvida" && !ctx.buttonId) {
-    console.log(`[conversational/evo] 🤝 handoff por baixa confiança (conf=${cls.confidence})`);
-    return _finalize(stepKey, {
-      reply: "",
-      updates: {
-        conversation_step: stepKey,
-        bot_paused: true,
-        bot_paused_reason: "low_confidence_handoff",
-        bot_paused_at: new Date().toISOString(),
-        ...restoreDetourUpdates,
-      },
-    });
+    // 🛡️ GUARDA DETERMINÍSTICA (2026-05-30): se o texto casa uma transição
+    // configurada (frase-gatilho/intent de regex) ou produziu captura, NÃO
+    // pausa por baixa confiança — o fluxo determinístico assume. Espelha whapi.
+    let _guardMatch = false;
+    try {
+      const _gi = [cls.intent, ...detectRegexIntents(ctx.messageText || ""), ...captureIntents];
+      const _gt = matchTransitionShared({
+        transitions: currentStep.transitions ?? [],
+        buttonId: ctx.buttonId,
+        messageText: ctx.messageText,
+        buttons: extractStepButtons(currentStep),
+        intents: _gi,
+      });
+      _guardMatch = !!_gt || hasCapture;
+    } catch (_e) { /* fail-open: segue para handoff */ }
+
+    if (!_guardMatch) {
+      console.log(`[conversational/evo] 🤝 handoff por baixa confiança (conf=${cls.confidence})`);
+      return _finalize(stepKey, {
+        reply: "",
+        updates: {
+          conversation_step: stepKey,
+          bot_paused: true,
+          bot_paused_reason: "low_confidence_handoff",
+          bot_paused_at: new Date().toISOString(),
+          ...restoreDetourUpdates,
+        },
+      });
+    }
+    console.log(`[conversational/evo] ✋ handoff IGNORADO — input casa transição/captura configurada. Fluxo determinístico assume.`);
   }
 
   // ─── AI FAQ Answerer (Lovable AI) ──────────────────────────────────
