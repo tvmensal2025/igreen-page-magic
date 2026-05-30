@@ -72,10 +72,9 @@ function readInitialViewMode(): ViewMode {
   if (typeof window === "undefined") return "lista";
   try {
     const v = window.localStorage.getItem("flow-view-mode");
-    return v === "diagrama" ? "diagrama" : "lista";
+    if (v === "diagrama" || v === "planilha" || v === "lista") return v;
+    return "lista";
   } catch {
-    // Falha silenciosa (R1.7) — `try` cobre QuotaExceededError, modo
-    // privado e ambientes onde `localStorage` é bloqueado pelo browser.
     return "lista";
   }
 }
