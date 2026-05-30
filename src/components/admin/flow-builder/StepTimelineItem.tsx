@@ -52,21 +52,23 @@ export default function StepTimelineItem({
   const warnings = buildWarnings(step, steps);
 
   // Destinos (transitions + fallback goto + próximo por posição)
-  const targets = step.transitions
+  type Target = { stepId: string; dest: Step | undefined; trigger: string; kind: "rule" | "fallback" };
+  const targets: Target[] = step.transitions
     .filter((t) => t.goto_step_id)
-    .map((t) => {
+    .map((t): Target => {
       const dest = steps.find((s) => s.id === t.goto_step_id);
       const trigger = t.trigger_phrases[0] || t.trigger_intent || "→";
-      return { stepId: t.goto_step_id!, dest, trigger, kind: "rule" as const };
+      return { stepId: t.goto_step_id!, dest, trigger, kind: "rule" };
     })
     .filter((c, i, arr) => arr.findIndex((x) => x.stepId === c.stepId) === i);
 
   if (step.fallback?.mode === "goto" && step.fallback.goto_step_id) {
     const dest = steps.find((s) => s.id === step.fallback!.goto_step_id);
     if (dest && !targets.some((t) => t.stepId === dest.id)) {
-      targets.push({ stepId: dest.id, dest, trigger: "fallback", kind: "fallback" as any });
+      targets.push({ stepId: dest.id, dest, trigger: "fallback", kind: "fallback" });
     }
   }
+
 
   return (
     <div ref={setNodeRef} style={style} id={`step-card-${step.id}`} className="relative flex gap-3">
