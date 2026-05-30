@@ -23,6 +23,7 @@ import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDi
 import CreateFlowFromTemplateDialog from "@/components/admin/flow-builder/CreateFlowFromTemplateDialog";
 import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard";
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
+import FlowAbControl from "@/components/admin/flow-builder/FlowAbControl";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
@@ -651,6 +652,11 @@ export default function FluxoBuilder() {
             onChanged={() => userId && reload(userId, editingVariant)}
           />
         )}
+
+        {/* Teste A/B: qual fluxo (A ou D) cada lead novo recebe + kill-switch */}
+        <div className="mx-auto w-full max-w-7xl px-4 pb-2">
+          <FlowAbControl />
+        </div>
       </header>
 
       {/*

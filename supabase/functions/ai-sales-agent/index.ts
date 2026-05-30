@@ -443,7 +443,7 @@ async function loadContext(supabase: any, customerId: string) {
   return {
     customer,
     history: (history || []).reverse(),
-    persona: agentCfg?.persona_name || "Camila",
+    persona: agentCfg?.persona_name || "Rafael",
     tone: agentCfg?.tone || "humano, breve, cordial",
     customPrompt: agentCfg?.system_prompt || "",
     summaryFresh,

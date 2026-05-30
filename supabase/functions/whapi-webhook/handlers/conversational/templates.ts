@@ -1,7 +1,7 @@
 // Template loader — reads bot_messages from DB with hardcoded fallback.
 
 const FALLBACK: Record<string, string> = {
-  "welcome:saudacao": "Oi! Aqui é a Camila, assistente do {{representante}} 👋",
+  "welcome:saudacao": "Oi! Aqui é o Rafael, da {{representante}} 👋",
   "menu_inicial:reforco": "{{nome}}, ainda quer entender como funciona o desconto?",
   "qualificacao:pergunta_conta": "Qual o valor médio da sua conta de luz hoje?",
   "pos_video:checkin": "E aí, {{nome}}, ficou alguma dúvida?",
@@ -22,11 +22,32 @@ export interface TemplateVars {
   cpf?: string | null;
 }
 
-function fmtValor(v: number | string | null | undefined): string {
-  if (v === null || v === undefined || v === "") return "";
+function parseValor(v: number | string | null | undefined): number | null {
+  if (v === null || v === undefined || v === "") return null;
   const n = typeof v === "number" ? v : Number(String(v).replace(/[^\d.,-]/g, "").replace(",", "."));
-  if (!Number.isFinite(n)) return String(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmtValor(v: number | string | null | undefined): string {
+  const n = parseValor(v);
+  if (n === null) return typeof v === "string" ? v : "";
   return `R$ ${n.toFixed(2).replace(".", ",")}`;
+}
+
+// Economia anual estimada = valor da conta × 20% × 12 meses (desconto até 20%).
+// Usada na mensagem de simulação personalizada do Fluxo A/D ({{economia_anual}}
+// e {{economia_mensal}}). Retorna "" quando o valor é desconhecido — o template
+// deve ser escrito para fazer sentido mesmo sem o número.
+const DESCONTO_PCT = 0.20;
+function fmtEconomiaMensal(v: number | string | null | undefined): string {
+  const n = parseValor(v);
+  if (n === null || n <= 0) return "";
+  return `R$ ${(n * DESCONTO_PCT).toFixed(2).replace(".", ",")}`;
+}
+function fmtEconomiaAnual(v: number | string | null | undefined): string {
+  const n = parseValor(v);
+  if (n === null || n <= 0) return "";
+  return `R$ ${(n * DESCONTO_PCT * 12).toFixed(2).replace(".", ",")}`;
 }
 
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
@@ -38,6 +59,8 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   // renderizado como "do  " (espaço duplo + asterisco órfão limpo abaixo).
   const rep = (String(vars.representante || "").trim()) || "iGreen Energy";
   const valor = fmtValor(vars.valor_conta);
+  const econMensal = fmtEconomiaMensal(vars.valor_conta);
+  const econAnual = fmtEconomiaAnual(vars.valor_conta);
   const tel = vars.telefone || "";
   const cpf = vars.cpf || "";
   // Substituição tolerante a espaços: {{ nome }}, {{nome}}, {{  nome  }}
@@ -47,6 +70,8 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   out = replaceVar(out, "nome", nome);
   out = replaceVar(out, "representante", rep);
   out = replaceVar(out, "valor_conta", valor);
+  out = replaceVar(out, "economia_mensal", econMensal);
+  out = replaceVar(out, "economia_anual", econAnual);
   out = replaceVar(out, "telefone", tel);
   out = replaceVar(out, "cpf", cpf);
   // Limpa artefatos quando uma variável ficou vazia (sem nome conhecido etc):
