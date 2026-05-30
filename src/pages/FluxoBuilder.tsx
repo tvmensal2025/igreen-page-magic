@@ -678,8 +678,11 @@ export default function FluxoBuilder() {
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={filteredSteps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-3">
-                      {groupedSteps.map((g) => {
+                      {groupedSteps.map((g, gi) => {
                         const collapsed = collapsedGroups.has(g.type);
+                        const startId = steps.length
+                          ? steps.filter((s) => s.is_active).reduce((a, b) => (a.position <= b.position ? a : b), steps[0]).id
+                          : null;
                         return (
                           <div key={g.type} className="space-y-2">
                             <button
@@ -693,24 +696,29 @@ export default function FluxoBuilder() {
                               <span className="text-muted-foreground">{g.items.length}</span>
                             </button>
                             {!collapsed && (
-                              <div className="space-y-2 pl-1">
-                                {g.items.map((s) => (
-                                  <StepCard
+                              <div className="pl-1">
+                                {g.items.map((s, i) => (
+                                  <StepTimelineItem
                                     key={s.id}
                                     step={s}
                                     steps={steps}
                                     selected={selectedId === s.id}
+                                    isStart={s.id === startId}
+                                    isLast={i === g.items.length - 1 && gi === groupedSteps.length - 1}
+                                    pulse={pulseStepId === s.id}
                                     mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
-                                    showConnections={true}
                                     onSelect={() => setSelectedId(s.id)}
                                     onEdit={() => { setSelectedId(s.id); setInspectorId(s.id); }}
                                     onDelete={() => deleteStep(s.id)}
                                     onDuplicate={() => duplicateStep(s.id)}
                                     onJumpTo={(targetId) => {
                                       setSelectedId(targetId);
+                                      setPulseStepId(targetId);
                                       setTimeout(() => {
-                                        document.getElementById(`step-card-${targetId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                        document.getElementById(`step-card-${targetId}`)
+                                          ?.scrollIntoView({ behavior: "smooth", block: "center" });
                                       }, 50);
+                                      setTimeout(() => setPulseStepId((cur) => (cur === targetId ? null : cur)), 1100);
                                     }}
                                   />
                                 ))}
@@ -723,6 +731,7 @@ export default function FluxoBuilder() {
                   </SortableContext>
                 </DndContext>
               )}
+
             </>
           )}
 
