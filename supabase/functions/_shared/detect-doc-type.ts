@@ -207,8 +207,8 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
   const raw1 = await callGemini(PROMPT_PASS1, imagePart, input.geminiApiKey, "gemini-2.5-flash");
   const parsed1 = parseDetectJson(raw1);
   if (parsed1 && parsed1.confianca >= 0.80) {
-    console.log(`🤖 [detectDoc] pass1 confiante: ${parsed1.tipo} (${parsed1.confianca.toFixed(2)}) sinais=${JSON.stringify(parsed1.sinais)}`);
-    return { tipo: parsed1.tipo, confianca: parsed1.confianca, source: "gemini_pass1", sinais: parsed1.sinais };
+    console.log(`🤖 [detectDoc] pass1 confiante: ${parsed1.tipo} (${parsed1.confianca.toFixed(2)}) motivo=${parsed1.motivo || "-"} sinais=${JSON.stringify(parsed1.sinais)}`);
+    return { tipo: parsed1.tipo, confianca: parsed1.confianca, source: "gemini_pass1", sinais: parsed1.sinais, motivo: parsed1.motivo };
   }
 
   if (!parsed1) console.warn(`[detectDoc] pass1 raw vazio/inválido: "${raw1.substring(0, 300)}"`);
@@ -218,8 +218,8 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
   const raw2 = await callGemini(PROMPT_PASS2, imagePart, input.geminiApiKey, "gemini-2.5-pro");
   const parsed2 = parseDetectJson(raw2);
   if (parsed2 && parsed2.confianca >= 0.60) {
-    console.log(`🤖 [detectDoc] pass2 decidiu: ${parsed2.tipo} (${parsed2.confianca.toFixed(2)}) sinais=${JSON.stringify(parsed2.sinais)}`);
-    return { tipo: parsed2.tipo, confianca: parsed2.confianca, source: "gemini_pass2", sinais: parsed2.sinais };
+    console.log(`🤖 [detectDoc] pass2 decidiu: ${parsed2.tipo} (${parsed2.confianca.toFixed(2)}) motivo=${parsed2.motivo || "-"} sinais=${JSON.stringify(parsed2.sinais)}`);
+    return { tipo: parsed2.tipo, confianca: parsed2.confianca, source: "gemini_pass2", sinais: parsed2.sinais, motivo: parsed2.motivo };
   }
   if (!parsed2) console.warn(`[detectDoc] pass2 raw vazio/inválido: "${raw2.substring(0, 300)}"`);
 
@@ -228,8 +228,8 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
   const raw3 = await callGemini(PROMPT_PASS3, imagePart, input.geminiApiKey, "gemini-2.5-flash");
   const parsed3 = parseDetectJson(raw3);
   if (parsed3) {
-    console.log(`🤖 [detectDoc] pass3 decidiu: ${parsed3.tipo} (${parsed3.confianca.toFixed(2)}) sinais=${JSON.stringify(parsed3.sinais)}`);
-    return { tipo: parsed3.tipo, confianca: parsed3.confianca, source: "gemini_pass3", sinais: parsed3.sinais };
+    console.log(`🤖 [detectDoc] pass3 decidiu: ${parsed3.tipo} (${parsed3.confianca.toFixed(2)}) motivo=${parsed3.motivo || "-"} sinais=${JSON.stringify(parsed3.sinais)}`);
+    return { tipo: parsed3.tipo, confianca: parsed3.confianca, source: "gemini_pass3", sinais: parsed3.sinais, motivo: parsed3.motivo };
   }
   console.warn(`[detectDoc] pass3 raw vazio/inválido: "${raw3.substring(0, 300)}"`);
 
@@ -237,14 +237,15 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
   const best = parsed2 || parsed1;
   if (best) {
     console.log(`🤖 [detectDoc] usando melhor estimativa: ${best.tipo} (${best.confianca.toFixed(2)})`);
-    return { tipo: best.tipo, confianca: best.confianca, source: "gemini_pass2", sinais: best.sinais };
+    return { tipo: best.tipo, confianca: best.confianca, source: "gemini_pass2", sinais: best.sinais, motivo: best.motivo };
   }
-  console.warn(`⚠️ [detectDoc] sem parse nas 3 passadas — retornando fallback (handler deve perguntar ao usuário)`);
-  return { tipo: "rg_antigo", confianca: 0, source: "fallback" };
+  console.warn(`⚠️ [detectDoc] sem parse nas 3 passadas — retornando "outro" para o handler rejeitar e pedir RG/CNH de novo`);
+  return { tipo: "outro", confianca: 0, source: "fallback", motivo: "não identificado" };
 }
 
-/** API compatível com o código antigo. */
+/** API compatível com o código antigo. Mapeia "outro" para "rg_antigo" (default histórico). */
 export async function detectDocumentType(input: DetectInput): Promise<DocumentTypeCanonical> {
   const r = await detectDocumentTypeDetailed(input);
-  return r.tipo;
+  return r.tipo === "outro" ? "rg_antigo" : r.tipo;
+}
 }
