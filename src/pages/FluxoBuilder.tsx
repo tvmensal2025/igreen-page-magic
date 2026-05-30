@@ -15,7 +15,7 @@ import {
   SortableContext, verticalListSortingStrategy, arrayMove,
 } from "@dnd-kit/sortable";
 
-import StepCard from "@/components/admin/flow-builder/StepCard";
+import StepTimelineItem from "@/components/admin/flow-builder/StepTimelineItem";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
 import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import AiCopilotDrawer from "@/components/admin/flow-builder/AiCopilotDrawer";
