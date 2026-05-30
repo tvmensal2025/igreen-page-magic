@@ -58,6 +58,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     operationalHealth,
     consecutiveTimeouts,
     isWhapi,
+    hasInstance,
     createAndConnect,
     disconnect,
     reconnect,
