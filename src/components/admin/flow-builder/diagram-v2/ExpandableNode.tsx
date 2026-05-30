@@ -1,5 +1,6 @@
-// Nó expansível do Diagrama v2.
-// PR4: modo compacto (default), expand on-hover, destaque do passo inicial.
+// Nó do Diagrama v2 — estilo "blueprint técnico" (n8n/Retool).
+// PR5: header colorido sólido por tipo, corpo neutro, handles laterais
+// grandes, badge "INÍCIO" e tipografia mais técnica.
 
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
@@ -10,7 +11,6 @@ import {
   Sparkles,
   Plus,
   Pencil,
-  Play,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -37,89 +37,100 @@ function ExpandableNodeImpl({ data, selected }: NodeProps) {
 
   const showCompact = compact && !expanded;
   const showHoverPreview = showCompact && hovered && preview;
-  const width = showCompact ? 220 : expanded ? 360 : 320;
+  const width = showCompact ? 240 : expanded ? 380 : 320;
 
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
-        "group relative rounded-xl border-2 bg-background shadow-sm transition-all",
-        selected ? "border-primary shadow-lg ring-2 ring-primary/30" : "border-border",
-        highlighted && !selected && "border-primary/60 shadow-md",
+        "group relative overflow-hidden rounded-lg border bg-card shadow-sm transition-all",
+        selected
+          ? "border-primary shadow-lg ring-2 ring-primary/40"
+          : highlighted
+          ? "border-primary/50 shadow-md"
+          : "border-border",
         dimmed && "opacity-40",
-        isStart && !selected && "border-primary/70 ring-2 ring-primary/20",
         !step.is_active && "opacity-60",
       )}
       style={{ width }}
     >
-      {/* Stripe lateral por tipo */}
-      <div className={cn("absolute left-0 top-0 h-full w-1 rounded-l-lg", color.stripe)} />
-
-      {/* Header */}
-      <div className="flex items-start gap-2 px-3 py-2">
+      {/* HEADER colorido sólido (estilo n8n) */}
+      <div
+        className={cn(
+          "flex items-center gap-2 px-2.5 py-1.5",
+          color.accentBg,
+          "border-b border-border/50",
+        )}
+      >
         <button
           type="button"
-          className="mt-0.5 rounded p-0.5 text-muted-foreground hover:bg-muted"
+          className={cn(
+            "rounded p-0.5 hover:bg-background/30",
+            color.accentText,
+          )}
           onClick={(e) => {
             e.stopPropagation();
             d.onToggleExpand(step.id);
           }}
           aria-label={expanded ? "Recolher" : "Expandir"}
         >
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </button>
-        <div className={cn("rounded-md p-1.5", color.accentBg)}>
-          <span className={cn("text-sm", color.accentText)}>#{step.position}</span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            {isStart && (
-              <Play className="h-3 w-3 shrink-0 fill-primary text-primary" aria-label="Início" />
-            )}
-            <div className="truncate text-sm font-semibold">{step.title || "Sem título"}</div>
-          </div>
-          {!showCompact && (
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              {color.shortLabel}
-            </div>
-          )}
-        </div>
+        <span className={cn("font-mono text-[10px] font-bold", color.accentText)}>
+          #{step.position}
+        </span>
+        <span className={cn("flex-1 truncate text-[13px] font-semibold", color.accentText)}>
+          {step.title || "Sem título"}
+        </span>
+        {isStart && (
+          <span className="rounded-sm bg-primary px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
+            início
+          </span>
+        )}
         {hasWarning && (
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-label="alerta" />
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="alerta" />
         )}
         <button
           type="button"
-          className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+          className={cn(
+            "rounded p-0.5 opacity-0 transition-opacity hover:bg-background/30 group-hover:opacity-100",
+            color.accentText,
+          )}
           onClick={(e) => {
             e.stopPropagation();
             d.onOpenInspector(step.id);
           }}
           aria-label="Editar"
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <Pencil className="h-3 w-3" />
         </button>
       </div>
 
-      {/* Badges colapsadas (sempre mostra) */}
-      {!expanded && (buttons.length > 0 || rules.length > 0) && (
-        <div className="flex flex-wrap gap-1 px-3 pb-2">
-          {buttons.length > 0 && (
-            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {buttons.length}b
-            </Badge>
-          )}
-          {rules.length > 0 && (
-            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {rules.length}r
-            </Badge>
-          )}
+      {/* Tipo + badges em linha sutil */}
+      {!expanded && (
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+          <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+            {color.shortLabel}
+          </span>
+          <div className="ml-auto flex gap-1">
+            {buttons.length > 0 && (
+              <Badge variant="outline" className="h-4 px-1 font-mono text-[9px]">
+                {buttons.length}b
+              </Badge>
+            )}
+            {rules.length > 0 && (
+              <Badge variant="outline" className="h-4 px-1 font-mono text-[9px]">
+                {rules.length}r
+              </Badge>
+            )}
+          </div>
         </div>
       )}
 
       {/* Hover preview no modo compacto */}
       {showHoverPreview && (
-        <div className="border-t bg-muted/30 px-3 py-1.5">
+        <div className="border-t border-border/50 bg-muted/40 px-2.5 py-1.5">
           <div className="line-clamp-2 text-[11px] leading-snug text-foreground/70">
             {preview.slice(0, 120)}{preview.length > 120 ? "…" : ""}
           </div>
@@ -128,16 +139,16 @@ function ExpandableNodeImpl({ data, selected }: NodeProps) {
 
       {/* Conteúdo expandido */}
       {expanded && (
-        <div className="space-y-2 border-t bg-muted/30 px-3 py-2">
+        <div className="space-y-2 px-2.5 py-2">
           {preview && (
-            <div className="rounded-md bg-background px-2 py-1.5 text-xs leading-snug text-foreground/80">
-              {preview.length > 140 ? preview.slice(0, 140) + "…" : preview}
+            <div className="rounded border border-border/50 bg-muted/30 px-2 py-1.5 text-xs leading-snug text-foreground/85">
+              {preview.length > 160 ? preview.slice(0, 160) + "…" : preview}
             </div>
           )}
 
           {buttons.length > 0 && (
             <div>
-              <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+              <div className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
                 Botões
               </div>
               <div className="flex flex-wrap gap-1">
@@ -152,7 +163,7 @@ function ExpandableNodeImpl({ data, selected }: NodeProps) {
 
           {rules.length > 0 && (
             <div>
-              <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+              <div className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
                 Regras
               </div>
               <div className="space-y-0.5">
@@ -207,8 +218,17 @@ function ExpandableNodeImpl({ data, selected }: NodeProps) {
         </div>
       )}
 
-      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-primary/60" />
-      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-primary/60" />
+      {/* Handles laterais — fluxo esquerda → direita (estilo n8n) */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-3 !w-3 !border-2 !border-background !bg-foreground/70"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-3 !w-3 !border-2 !border-background !bg-foreground/70"
+      />
     </div>
   );
 }

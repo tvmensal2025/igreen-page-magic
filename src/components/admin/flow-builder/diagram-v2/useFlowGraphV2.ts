@@ -1,9 +1,9 @@
 // Converte `Step[]` em `nodes/edges` do React Flow.
-// Responsabilidade única: mapping puro de dados → grafo. Não toca em layout
-// (delegado para `useAutoLayout`) nem em interações (drag, connect, etc.).
+// PR5: edges monocromáticos (foreground) com peso/opacidade variando por
+// importância da conexão. Único caso colorido: edge "missing" (destructive).
 
 import { useMemo } from "react";
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type { Step } from "../flowTypes";
 import { getButtons, resolveGotoLabel } from "../flowTypes";
 
@@ -26,7 +26,26 @@ export type V2EdgeData = {
   intent: string;
   missing: boolean;
   transitionIdx: number;
+  kind: "order" | "default" | "rule" | "button" | "missing";
 };
+
+const FG = "hsl(var(--foreground))";
+const DESTRUCTIVE = "hsl(var(--destructive))";
+
+function edgeStyle(kind: V2EdgeData["kind"]) {
+  switch (kind) {
+    case "order":
+      return { stroke: FG, strokeWidth: 1, opacity: 0.22, strokeDasharray: "4 4" };
+    case "default":
+      return { stroke: FG, strokeWidth: 1.5, opacity: 0.5 };
+    case "rule":
+      return { stroke: FG, strokeWidth: 2, opacity: 0.75 };
+    case "button":
+      return { stroke: FG, strokeWidth: 2.5, opacity: 1 };
+    case "missing":
+      return { stroke: DESTRUCTIVE, strokeWidth: 2, opacity: 1, strokeDasharray: "6 4" };
+  }
+}
 
 export function useFlowGraphV2(
   steps: Step[],
@@ -52,60 +71,66 @@ export function useFlowGraphV2(
 
     const edges: Edge[] = [];
     steps.forEach((step) => {
-      // Edge implícito: passo → próximo por position (sempre desenhado em
-      // cinza claro pra mostrar a ordem default da lista).
+      // Edge implícito de ordem (fluxo natural por position)
       const sorted = steps
         .filter((s) => s.is_active && s.position > step.position)
         .sort((a, b) => a.position - b.position);
       const next = sorted[0];
       if (next) {
+        const kind: V2EdgeData["kind"] = "order";
         edges.push({
           id: `${step.id}->order->${next.id}`,
           source: step.id,
           target: next.id,
           type: "smoothstep",
-          animated: false,
-          style: { stroke: "hsl(var(--muted-foreground) / 0.3)", strokeDasharray: "4 4" },
-          label: "ordem",
-          labelStyle: { fontSize: 10, fill: "hsl(var(--muted-foreground))" },
-          labelBgStyle: { fill: "hsl(var(--background))" },
+          pathOptions: { borderRadius: 12 } as any,
+          style: edgeStyle(kind),
+          markerEnd: { type: MarkerType.ArrowClosed, color: FG, width: 14, height: 14 },
+          data: { label: "ordem", intent: "order", missing: false, transitionIdx: -1, kind } satisfies V2EdgeData,
         });
       }
 
       // Edges explícitos a partir de transitions
       step.transitions.forEach((t, idx) => {
-        if (t.goto_special && t.goto_special !== "repeat") {
-          // Terminal node virtual — desenhamos com label, sem target real.
-          return;
-        }
+        if (t.goto_special && t.goto_special !== "repeat") return;
         if (!t.goto_step_id) return;
         const resolved = resolveGotoLabel(steps, t);
         const buttons = getButtons(step);
         const isButton =
           t.trigger_phrases?.some((p) => buttons.some((b) => b.id === p || b.title === p)) ?? false;
+        const isDefault = t.trigger_intent === "default";
+        const kind: V2EdgeData["kind"] = resolved.missing
+          ? "missing"
+          : isButton
+          ? "button"
+          : isDefault
+          ? "default"
+          : "rule";
+        const st = edgeStyle(kind);
         edges.push({
           id: `${step.id}->t${idx}->${t.goto_step_id}`,
           source: step.id,
           target: t.goto_step_id,
           type: "smoothstep",
-          animated: !resolved.missing,
-          style: {
-            stroke: resolved.missing
-              ? "hsl(var(--destructive))"
-              : isButton
-              ? "hsl(var(--primary))"
-              : "hsl(var(--foreground) / 0.5)",
-            strokeWidth: 2,
+          pathOptions: { borderRadius: 12 } as any,
+          style: st,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: kind === "missing" ? DESTRUCTIVE : FG,
+            width: 16,
+            height: 16,
           },
-          label: t.trigger_intent === "default" ? "padrão" : t.trigger_intent || "regra",
-          labelStyle: { fontSize: 11, fontWeight: 500 },
-          labelBgStyle: { fill: "hsl(var(--background))" },
-          labelBgPadding: [4, 2] as [number, number],
+          label: isDefault ? undefined : t.trigger_intent || "regra",
+          labelStyle: { fontSize: 10, fontWeight: 500, fill: "hsl(var(--foreground))" },
+          labelBgStyle: { fill: "hsl(var(--background))", stroke: "hsl(var(--border))", strokeWidth: 1 },
+          labelBgPadding: [6, 3] as [number, number],
+          labelBgBorderRadius: 4,
           data: {
             label: resolved.label,
             intent: t.trigger_intent,
             missing: resolved.missing,
             transitionIdx: idx,
+            kind,
           } satisfies V2EdgeData,
         });
       });
