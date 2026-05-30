@@ -79,10 +79,10 @@ const PROMPT_PASS1 = `Você é um especialista em documentos de identidade brasi
 
 ${CHECKLIST}
 
-Classifique a foto como UM destes três tipos: "cnh", "rg_novo" ou "rg_antigo".
+Classifique a foto como UM destes quatro tipos: "cnh", "rg_novo", "rg_antigo" ou "outro".
 
 Responda APENAS com JSON válido (sem markdown):
-{"tipo":"cnh"|"rg_novo"|"rg_antigo","confianca":0.0-1.0,"sinais":["sinal1","sinal2"]}
+{"tipo":"cnh"|"rg_novo"|"rg_antigo"|"outro","confianca":0.0-1.0,"sinais":["sinal1","sinal2"],"motivo":"breve (obrigatório se tipo=outro)"}
 
 Os "sinais" devem citar 2-4 evidências concretas que você viu na foto.`;
 
@@ -95,10 +95,11 @@ Etapas obrigatórias:
 2) Procure CATEGORIA/VALIDADE → se achar, é CNH.
 3) Procure QR code GRANDE + CPF impresso → se achar, é RG_NOVO.
 4) Avalie material (policarbonato brilhante vs papel laminado amarelado).
-5) Se ainda em dúvida, prefira o tipo cuja maioria dos sinais bate.
+5) Se NÃO for nenhum dos três (ex.: conta, boleto, selfie, print) → "outro" com motivo curto.
+6) Se ainda em dúvida entre os RGs/CNH, prefira o tipo cuja maioria dos sinais bate.
 
 Responda APENAS JSON:
-{"tipo":"cnh"|"rg_novo"|"rg_antigo","confianca":0.0-1.0,"sinais":["..."],"motivo":"breve"}`;
+{"tipo":"cnh"|"rg_novo"|"rg_antigo"|"outro","confianca":0.0-1.0,"sinais":["..."],"motivo":"breve"}`;
 
 const PROMPT_PASS3 = `Última análise. Use estas REGRAS DE DESEMPATE:
 
@@ -106,12 +107,13 @@ R1) Tem texto "CATEGORIA" ou "VALIDADE" ou "HABILITAÇÃO"? → cnh
 R2) Tem QR code claramente grande E CPF impresso na frente? → rg_novo
 R3) Tem cabeçalho "CARTEIRA DE IDENTIDADE NACIONAL" ou "CIN"? → rg_novo
 R4) Aparência de papel laminado antigo, layout vertical, sem QR grande? → rg_antigo
-R5) Em qualquer outra dúvida → escolha o tipo mais provável mas devolva confianca: 0.3 (o handler vai perguntar ao usuário se for o caso). NUNCA chute "rg_antigo" só por segurança.
+R5) Conta de luz/água/telefone, boleto, comprovante, selfie, print, foto aleatória? → "outro" (motivo curto, confianca 0.9)
+R6) Em qualquer outra dúvida entre RG/CNH → escolha o tipo mais provável mas devolva confianca: 0.3. NUNCA chute "rg_antigo" só por segurança.
 
 ${CHECKLIST}
 
 Responda APENAS JSON:
-{"tipo":"cnh"|"rg_novo"|"rg_antigo","confianca":0.0-1.0,"sinais":["..."]}`;
+{"tipo":"cnh"|"rg_novo"|"rg_antigo"|"outro","confianca":0.0-1.0,"sinais":["..."],"motivo":"breve se outro"}`;
 
 async function fetchImagePart(input: DetectInput): Promise<any | null> {
   if (input.base64 && input.base64.length > 100) {
