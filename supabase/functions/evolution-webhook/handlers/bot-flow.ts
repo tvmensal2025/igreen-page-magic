@@ -4182,6 +4182,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "ask_bill_value": {
+      // 🛡️ Se já temos valor (via OCR da conta), NÃO sobrescrever — apenas avança.
+      const existingVal = Number((customer as any).electricity_bill_value || 0);
+      if (existingVal >= 30) {
+        console.log(`[ask_bill_value] skip — valor já existe (R$ ${existingVal})`);
+        const merged = { ...customer };
+        const next = await autoResolveCepIfNeeded(merged, updates);
+        updates.conversation_step = next;
+        reply = getReplyForStep(next, merged);
+        break;
+      }
       const val = parseFloat(messageText.replace(/[^\d.,]/g, "").replace(",", "."));
       if (isNaN(val) || val <= 0) { reply = "❌ Valor inválido. Digite um número (ex: 350):"; break; }
       updates.electricity_bill_value = val;
