@@ -1,60 +1,73 @@
-# O que aconteceu com 5511971254913 (customer `bf89171d…`, variant D)
+## Diagnóstico do erro no lead 11971254913
 
-Reconstrução pelos logs do `whapi-webhook` (09:28:59 → 09:29:18):
+O reset criou um customer novo (`42d4821f...`) e o fluxo voltou a andar, mas o erro continuou por outro motivo:
 
-1. Bot estava em `d_pedir_documento` (variant D, fluxo `320bf22c…`) e enviou corretamente: *"Show, BRUNO! 🙌 Agora preciso de mais uma foto…"*
-2. Logo em seguida o chain-resolver chamou `findNextActiveFlowStep(...)` como fallback (o `d_pedir_documento` está com `transitions: []`).
-3. **Bug:** `findNextActiveFlowStep` está com `.eq("variant", "A")` **hardcoded** (linha 340 do `whapi-webhook/handlers/bot-flow.ts`, idem `evolution-webhook` linha ~347). Resultado: para um lead variant **D**, a função foi buscar o "próximo passo" no fluxo errado (**Fluxo Padrão**, `66a19db4…`) e devolveu `passo_mpagqq3g` (UUID `bdc7ebb3…`, position 6 de outro flow).
-4. `conversation_step` foi gravado como `bdc7ebb3…` — um passo que **não existe** no fluxo da variant D do consultor.
-5. O lead respondeu mandando a CNH (PDF). O webhook acionou o **step-mismatch-cure**, viu que `bdc7ebb3…` não pertence à variant D e resetou para `welcome`.
-6. O handler conversational viu "📸 arquivo recebido em step=welcome" e redirecionou para `aguardando_conta` (conta de luz) — caminho errado, o bot estava pedindo documento.
-7. O dispatcher tentou re-emitir `d_pedir_conta` e `d_resultado`, mas o anti-rep (10 min) bloqueou ambos. Resultado: **o PDF do CNH não foi processado, nenhuma resposta foi enviada → travou**. E o usuário viu o funil "voltar" da etapa de documento para conta de luz → percepção de **duplicação**.
+1. A conta de luz foi recebida em `aguardando_conta`, mas os dados de conta ficaram vazios (`electricity_bill_value = null`, `bill_base64 = false`). Mesmo assim o fluxo avançou e enviou `d_resultado` com variáveis não preenchidas: `R$`  e `{{economia_range}}`.
+2. Ao clicar em “Cadastrar agora”, o bot entrou em `d_pedir_documento`.
+3. O documento/CNH foi recebido e o handler processou como `aguardando_doc_auto`, porém logo depois o resolver custom re-emitiu `d_pedir_documento` e, por fallback de posição, avançou para `d_pedir_email`.
+4. Resultado: o lead recebeu pedido de documento duplicado e depois pedido de e-mail; quando enviou o e-mail, o bot já estava tentando validar CPF (`ask_cpf`) porque o OCR da CNH não extraiu CPF. Por isso saiu “CPF inválido”.
 
-A ordem que você definiu (conta de luz → simulação → documento) está correta no `bot_flow_steps`. O problema foi puramente o leak entre flows causado pelo `variant="A"` fixo.
+Ou seja: não é mais o bug antigo do `variant='A'`. Agora são dois problemas no motor:
 
-# Correções
+- `capture_documento` está sendo tratado como se fosse passo de mensagem e avança para e-mail logo após reemitir o prompt.
+- `capture_conta` permitiu avançar para simulação mesmo sem dados OCR/valor válidos.
 
-## 1. `findNextActiveFlowStep` — usar a variant real do lead
+## Plano de correção
 
-Em `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (≈l.331) e `evolution-webhook/handlers/bot-flow.ts` (≈l.338):
+### 1. Impedir que `capture_*` avance como mensagem
 
-- Adicionar parâmetro `variant?: string` no `opts`.
-- Substituir `.eq("variant", "A")` por `.eq("variant", opts.variant || "A")`.
-- Alternativa mais robusta: aceitar `flowId?: string` direto e, quando presente, pular o lookup em `bot_flows` (filtra `bot_flow_steps.flow_id = flowId`). Isso impede qualquer cross-flow mesmo se a variant for desconhecida.
+Nos dois webhooks:
 
-## 2. Atualizar todas as call sites
+- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
+- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
 
-Nos 2 webhooks (whapi + evolution), todos os 5 pontos que chamam `findNextActiveFlowStep` devem passar `variant: customer.flow_variant` (e/ou `flowId` quando o `stepRow.flow_id` já é conhecido pelo resolver). Pontos identificados:
+Ajustar o resolver de `bot_flow_steps` para que, quando o step custom for `capture_conta`, `capture_documento`, `capture_email` ou `confirm_phone`, ele apenas roteie para o handler legacy correto e pare ali.
 
-- `whapi-webhook/handlers/bot-flow.ts`: l.2819, l.2872, l.3504, l.3512
-- `evolution-webhook/handlers/bot-flow.ts`: l.2450, l.2483, l.3051, l.3058, l.3082
+Comportamento esperado:
 
-## 3. Cura inteligente do `step-mismatch-cure`
+- `d_pedir_documento` emite o texto uma vez e fica em `aguardando_doc_auto`.
+- Quando o lead manda CNH/RG, o documento é processado.
+- O fluxo só avança para `d_pedir_email` depois do handler de documento concluir e decidir o próximo passo.
 
-Em `whapi-webhook/index.ts` (≈l.1388) e `evolution-webhook/index.ts` (≈l.1258):
+### 2. Bloquear simulação se a conta não foi lida
 
-Hoje, quando o step é estranho à variant, reseta para `welcome`. Trocar por:
+No processamento de conta (`aguardando_conta`):
 
-1. Olhar `customers.last_custom_prompt_at` + log do último prompt; se o último step disparado for um `capture_*`, snap `conversation_step` para esse step (em vez de `welcome`).
-2. Senão, snap para o primeiro step ativo da variant correta (mantém comportamento atual).
+- Se OCR/extração não preencher valor/nome/conta mínima, manter o lead em `aguardando_conta` ou no campo de edição necessário.
+- Não permitir `d_resultado` com `R$`  vazio ou `{{economia_range}}` cru.
 
-Isso garante que um PDF chegando depois do bot pedir documento entre em `capture_documento` (não `capture_conta`).
+### 3. Corrigir avanço pós-CNH sem CPF
 
-## 4. Recuperação imediata do lead `bf89171d…`
+No handler `aguardando_doc_auto`:
 
-Migration única (manual, pontual):
+- Se CNH/RG foi recebido, salvar `document_front_url/base64` e tentar OCR imediatamente.
+- Se o OCR não extrair CPF, pedir CPF com uma mensagem correta (“Não consegui ler o CPF no documento, digite os 11 números”), sem tratar e-mail como CPF.
+- Se extrair CPF, seguir para e-mail/telefone conforme faltantes.
 
-- `UPDATE customers SET conversation_step = '58f0a7e2-16ce-4ee2-ad07-1466ce7e9f1f' WHERE id = 'bf89171d-d4ef-484b-b3a8-80e201b5c83c'` — coloca de volta em `d_pedir_documento`.
-- Não mexer em `electricity_bill_*` (simulação já tinha sido feita antes).
-- O lead pode reenviar a CNH e o fluxo segue normalmente.
+### 4. Anti-duplicação pontual para prompt custom
 
-## 5. Validação pós-deploy
+Garantir que `last_custom_prompt_at` seja gravado também quando um `capture_*` custom é emitido, para o handler legacy não re-pedir a mesma coisa nos próximos minutos.
 
-- Lead novo variant D → conta de luz → simulação → documento → email → telefone → finalizar (sem leak para `passo_mpagqq3g`).
-- Mesmo teste em variant A (Fluxo Padrão) continua usando o fluxo correto.
-- Logs não mostram mais `passo_mpagqq3g` em chains de variant D.
+### 5. Recuperação do lead 11971254913
 
-# Fora de escopo
+Criar uma migration pontual para recolocar o customer ativo (`42d4821f...`) em um estado coerente:
 
-- Reescrever transitions de `d_pedir_documento` (adicionar default → `d_pedir_email`) — vale como hardening separado, mas a correção do `findNextActiveFlowStep` já basta porque `getNextMissingStep` lida com o "depois do documento".
-- OCR/classificação automática de mídia inbound.
+- Se documento foi salvo, colocar em `ask_cpf` com mensagem correta no próximo inbound.
+- Se não foi salvo, voltar para `aguardando_doc_auto`/`d_pedir_documento` e pedir para reenviar a CNH.
+
+Pelos dados atuais, `document_front_url` e `document_front_base64` estão vazios, então a recuperação segura é voltar para `aguardando_doc_auto` e pedir reenvio do documento.
+
+### 6. Validação
+
+Após implementar:
+
+- Testar nos logs/DB que `11971254913` não recebe mais `d_pedir_documento` duplicado.
+- Confirmar que `d_resultado` só aparece com valor/economia preenchidos.
+- Confirmar que CNH PDF em `aguardando_doc_auto` salva documento e avança para CPF/e-mail sem pular etapas.
+
+## Arquivos afetados
+
+- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
+- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
+- resetar o 11971254913 para iniciar do 0 o fluxo
+- &nbsp;
