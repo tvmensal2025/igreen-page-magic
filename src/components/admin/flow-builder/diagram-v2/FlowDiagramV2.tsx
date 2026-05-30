@@ -31,7 +31,7 @@ import { useFlowGraphV2 } from "./useFlowGraphV2";
 import { autoLayout } from "./useAutoLayout";
 import type { Step, Variant } from "../flowTypes";
 import type { FlowValidation } from "../useFlowValidation";
-import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 export interface FlowDiagramV2Props {
   steps: Step[];
