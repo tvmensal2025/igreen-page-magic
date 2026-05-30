@@ -65,6 +65,14 @@ CHECKLIST VISUAL — analise os sinais antes de decidir:
 ⚠️ A foto pode estar rotacionada (90°, 180°, 270°) ou ligeiramente torta — considere isso.
 ⚠️ Se enxergar QR code grande + CPF impresso na frente = é RG_NOVO, mesmo que pareça antigo.
 ⚠️ Se enxergar CATEGORIA + VALIDADE = é CNH, sem dúvida.
+
+🚫 OUTRO (NÃO é documento de identidade):
+- Conta de luz / energia / água / gás / telefone / internet (cabeçalho de concessionária, código de barras, valor a pagar)
+- Comprovante de residência, boleto, recibo, nota fiscal
+- Selfie, foto pessoal, paisagem, animal, print de tela / WhatsApp
+- Página em branco, documento ilegível, foto totalmente borrada/escura
+- Qualquer coisa que NÃO seja CNH, RG ou CIN
+→ devolva tipo:"outro", confianca:0.9, e em "motivo" descreva curto (ex.: "conta de energia", "selfie", "boleto", "print de tela").
 `;
 
 const PROMPT_PASS1 = `Você é um especialista em documentos de identidade brasileiros.
