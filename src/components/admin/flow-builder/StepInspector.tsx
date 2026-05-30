@@ -231,7 +231,14 @@ export default function StepInspector({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="msg">Mensagem de texto</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="msg">Mensagem de texto</Label>
+                <InlineAiButton
+                  text={step.message_text ?? ""}
+                  context={`Mensagem do passo "${step.title}" (tipo ${step.step_type})`}
+                  onResult={(next) => onPatch({ message_text: next })}
+                />
+              </div>
               <Textarea
                 id="msg"
                 value={step.message_text ?? ""}
@@ -246,6 +253,7 @@ export default function StepInspector({
                 <code className="rounded bg-muted px-1">{"{{representante}}"}</code>
               </p>
             </div>
+
 
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
