@@ -38,6 +38,19 @@ import { useViewportWidth } from "@/hooks/useViewportWidth";
 const FlowDiagram = React.lazy(
   () => import("@/components/admin/flow-builder/FlowDiagram"),
 );
+const FlowDiagramV2 = React.lazy(
+  () => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"),
+);
+
+function readUseV2(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const v = window.localStorage.getItem("flow-diagram-v2");
+    return v === null ? true : v === "1";
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Lê o valor inicial de `viewMode` do `localStorage` aplicando os fallbacks
