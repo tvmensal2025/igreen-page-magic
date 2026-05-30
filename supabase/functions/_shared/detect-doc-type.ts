@@ -135,19 +135,22 @@ async function fetchImagePart(input: DetectInput): Promise<any | null> {
   return null;
 }
 
-function parseDetectJson(raw: string): { tipo: DocumentTypeCanonical; confianca: number; sinais?: string[] } | null {
+function parseDetectJson(raw: string): { tipo: DetectedDocType; confianca: number; sinais?: string[]; motivo?: string } | null {
   try {
     const clean = raw.replace(/```json|```/gi, "").trim();
-    // Match JSON object that may contain arrays (no greedy needed but tolerate nesting)
     const match = clean.match(/\{[\s\S]*\}/);
     if (!match) return null;
     const obj = JSON.parse(match[0]);
-    const tipo = normalizeDocumentType(obj?.tipo);
+    const rawTipo = String(obj?.tipo || "").trim().toLowerCase();
+    const tipo: DetectedDocType = rawTipo === "outro"
+      ? "outro"
+      : normalizeDocumentType(obj?.tipo);
     const confianca = typeof obj?.confianca === "number"
       ? Math.max(0, Math.min(1, obj.confianca))
       : 0.5;
     const sinais = Array.isArray(obj?.sinais) ? obj.sinais.map((s: any) => String(s)).slice(0, 6) : undefined;
-    return { tipo, confianca, sinais };
+    const motivo = typeof obj?.motivo === "string" ? String(obj.motivo).trim().slice(0, 80) : undefined;
+    return { tipo, confianca, sinais, motivo };
   } catch {
     return null;
   }
