@@ -269,5 +269,12 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     pendingItems,
   };
 }
+
+// Sugestão de consumo a partir do valor da conta (≈ R$1/kWh).
+// Usada pelo CaptureLeadCard pra "auto-preencher" quando OCR não trouxer.
+export function estimateConsumoFromValor(valor: number | null | undefined): number | null {
+  const v = Number(valor || 0);
+  if (v <= 0) return null;
   return Math.max(50, Math.min(3000, Math.round(v / 1.0)));
 }
+
