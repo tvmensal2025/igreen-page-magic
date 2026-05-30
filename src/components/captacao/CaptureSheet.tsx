@@ -405,6 +405,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               🚀 Portal: {customer.conversation_step.replace("_", " ")}…
             </p>
           )}
+          <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
