@@ -106,16 +106,19 @@ export function useCaptureSession(customerId: string | null) {
   const totalFields = CAPTURE_FIELDS.length;
   const progress = Math.round((filledCount / totalFields) * 100);
 
+  // Validação canônica do Portal (mesma lógica usada no edge finalize-capture).
+  // Cobre faltantes + inválidos (CPF errado, ratio R$/kWh fora da faixa, etc.)
+  const validation: ValidationResult = useMemo(() => validateForPortal(customer as any), [customer]);
+
   const missing = useMemo(() => {
-    const list: string[] = [];
-    CAPTURE_FIELDS.forEach((f) => { if (!isFieldFilled(customer, f.key)) list.push(f.label); });
+    const list: string[] = validation.missing.map((m) => m.label);
     if (!customer?.document_back_url) list.push("RG verso");
     if (!customer?.electricity_bill_photo_url) list.push("Conta de luz");
     if (customer?.name_mismatch_flag && !customer?.name_mismatch_acknowledged_at) list.push("Confirmar titularidade");
     return list;
-  }, [customer]);
+  }, [customer, validation]);
 
-  const isComplete = missing.length === 0 && !!customer;
+  const isComplete = validation.ok && !!customer;
 
   const updateField = useCallback(async (field: CaptureFieldKey, value: any) => {
     if (!customerId || !customer) return;
