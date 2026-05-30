@@ -12,12 +12,6 @@ name: Deploy Edge Functions
 # Requer secret: SUPABASE_ACCESS_TOKEN no repositório.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/functions/**'
-      - 'supabase/config.toml'
-      - '.github/workflows/deploy-edge-functions.yml'
   workflow_dispatch:
     inputs:
       function_name:

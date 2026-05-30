@@ -1,10 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 # Concurrency: cancela build anterior do mesmo branch quando um novo é pushed.
 concurrency:
