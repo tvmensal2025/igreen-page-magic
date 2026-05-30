@@ -382,7 +382,13 @@ async function sendStepMedia(
   }
 
   // Precedência: UI (consultants.flow_step_media_order) → step.media_order → default.
-  const uiOrder = await getStepMediaOrder(ctx.supabase, consultantId, slotKey);
+  // Precedência de chaves: step_key (ex.: `d_como_funciona`) > slot_key (ex.: `como_funciona`).
+  // Sem isso, fluxo D herda a ordem do fluxo A quando ambos compartilham `slot_key`.
+  const uiOrder = await getStepMediaOrder(
+    ctx.supabase,
+    consultantId,
+    [step.step_key, step.slot_key, slotKey].filter(Boolean) as string[],
+  );
   const stepOrder = Array.isArray(step.media_order) && step.media_order.length > 0
     ? step.media_order.map((k) => String(k).toLowerCase())
     : null;
@@ -1472,7 +1478,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // Quando é reply final, o texto vai como reply (não inline). Quando é cascade
     // ou quando o consultor pediu texto antes da mídia, mandamos tudo inline aqui.
     const slotKey = st.slot_key || st.step_key || st.id;
-    const uiOrder = await getStepMediaOrder(ctx.supabase, consultantId, slotKey);
+    const uiOrder = await getStepMediaOrder(
+      ctx.supabase,
+      consultantId,
+      [st.step_key, st.slot_key, slotKey].filter(Boolean) as string[],
+    );
     const stepOrder = Array.isArray(st.media_order) && st.media_order.length > 0
       ? st.media_order.map((k) => String(k).toLowerCase())
       : null;
