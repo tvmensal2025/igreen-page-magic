@@ -171,14 +171,22 @@ Deno.serve(async (req) => {
               Array.from(new Set(row.actions.map((a: any) => a.action_type))).join(","));
             loggedActions = true;
           }
-          const leads = sumActions(row.actions, LEAD_ACTIONS);
+          const leadsDirect = sumActions(row.actions, LEAD_ACTIONS);
           const conv = sumActions(row.actions, CONV_ACTIONS);
           const regs = (row.actions || []).find((a: any) => a.action_type === "complete_registration")?.value || 0;
           const spend = Math.round(parseFloat(row.spend || "0") * 100);
-          // Para CTWA: se não há lead direto, conversa iniciada vira o denominador do CPL.
-          const cplBase = leads > 0 ? leads : conv;
+          // CTWA: a maioria das campanhas WhatsApp NÃO reporta action_type="lead",
+          // só "messaging_conversation_started". Sem isso, leads ficava sempre 0 e
+          // o CPL/painéis apareciam zerados. Tratamos conversa iniciada como lead
+          // quando não há lead direto (fallback), pra popular o número.
+          const leads = leadsDirect > 0 ? leadsDirect : conv;
+          // Denominador do CPL = leads (já inclui o fallback de conversa).
+          const cplBase = leads;
           const cpl = cplBase > 0 ? Math.round(spend / cplBase) : 0;
-          totalSpend += spend; totalLeads += Number(leads); totalConv += Number(conv);
+          // Totais usam os sinais CRUS (leadsDirect e conv separados) pra não
+          // duplicar conversas no leads_count / auto-pause. A coluna persistida
+          // "leads" é que recebe o fallback de conversa.
+          totalSpend += spend; totalLeads += Number(leadsDirect); totalConv += Number(conv);
           maxFreq = Math.max(maxFreq, parseFloat(row.frequency || "0"));
 
           // Lê linha existente pra calcular delta de gasto + atividade incremental no período
