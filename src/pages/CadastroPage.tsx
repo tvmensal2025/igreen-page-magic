@@ -8,6 +8,8 @@ import { Smartphone, Camera, FileText, CheckCircle2, Zap, Shield, Clock, Users, 
 import LoadingScreen from "@/components/LoadingScreen";
 import SEOHead from "@/components/SEOHead";
 import PixelInjector from "@/components/PixelInjector";
+import PageStatus from "@/components/common/PageStatus";
+import BrandLogo from "@/components/common/BrandLogo";
 import { SolarPanelSVG, SunRaysSVG } from "@/components/SolarPanelDecoration";
 
 const G_LOGO_DATA_URI = `data:image/svg+xml,${encodeURIComponent(
@@ -52,13 +54,10 @@ const CadastroPage = () => {
 
   if (!consultant) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-center px-4">
-        <div>
-          <img src="/images/logo-colorida-igreen.png" alt="iGreen" className="w-32 mx-auto mb-6 opacity-50" />
-          <h1 className="text-3xl font-bold font-heading text-foreground mb-4">Consultor não encontrado</h1>
-          <p className="text-muted-foreground">Verifique o link e tente novamente.</p>
-        </div>
-      </div>
+      <PageStatus
+        title="Consultor não encontrado"
+        description="Verifique o link e tente novamente."
+      />
     );
   }
 
@@ -199,18 +198,14 @@ const CadastroPage = () => {
         description={`Cadastre-se e tenha de 8% a 20% de desconto na conta de luz. Cadastro rápido em 3 minutos via WhatsApp com ${consultant.name}.`}
       />
 
-      <div className="min-h-screen bg-[#0a0a0a]">
+      <div className="min-h-screen bg-background">
         {/* Header */}
-        <header className="border-b border-white/10 bg-black/50 backdrop-blur-sm sticky top-0 z-50">
+        <header className="border-b border-border bg-card/70 backdrop-blur-md sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-            <img 
-              src="/images/logo-colorida-igreen.png" 
-              alt="iGreen Energy" 
-              className="h-10 md:h-12"
-            />
+            <BrandLogo className="h-10 md:h-12" />
             <div className="text-right">
-              <p className="text-sm text-white/60">Seu consultor</p>
-              <p className="font-bold text-white">{consultant.name}</p>
+              <p className="text-sm text-muted-foreground">Seu consultor</p>
+              <p className="font-bold text-foreground sensitive-name">{consultant.name}</p>
             </div>
           </div>
         </header>
@@ -259,7 +254,7 @@ const CadastroPage = () => {
 
             {/* Logo */}
             <div className="flex justify-center mb-6">
-              <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" className="h-16 md:h-20" />
+              <BrandLogo className="h-16 md:h-20" />
             </div>
 
             {/* Title */}
@@ -393,12 +388,12 @@ const CadastroPage = () => {
         </section>
 
         {/* Benefits Section */}
-        <section className="py-16 md:py-20 bg-[#0f0f0f]">
+        <section className="py-16 md:py-20 section-gradient">
           <div className="container mx-auto px-4">
-            <h2 className="text-2xl md:text-4xl font-black text-white text-center mb-3 font-heading">
+            <h2 className="text-2xl md:text-4xl font-black text-foreground text-center mb-3 font-heading">
               Por que fazer seu cadastro agora?
             </h2>
-            <p className="text-white/50 text-center text-base mb-12 max-w-2xl mx-auto">
+            <p className="text-muted-foreground text-center text-base mb-12 max-w-2xl mx-auto">
               Junte-se a mais de 600 mil clientes que já economizam na conta de luz
             </p>
 
@@ -409,12 +404,12 @@ const CadastroPage = () => {
                 { icon: Shield, title: "100% Seguro", desc: "Dados protegidos com criptografia de ponta" },
                 { icon: Users, title: "600mil+ Clientes", desc: "Maior rede de energia solar do Brasil" },
               ].map((b) => (
-                <div key={b.title} className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:border-emerald-500/30 hover:bg-white/[0.07] transition-all group">
-                  <div className="w-14 h-14 rounded-xl bg-emerald-500/15 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <b.icon className="w-7 h-7 text-emerald-400" />
+                <div key={b.title} className="glass-card group hover:border-primary/30 transition-all">
+                  <div className="w-14 h-14 rounded-xl bg-primary/15 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <b.icon className="w-7 h-7 text-primary" />
                   </div>
-                  <h3 className="font-bold text-white text-lg mb-2">{b.title}</h3>
-                  <p className="text-white/50 text-sm">{b.desc}</p>
+                  <h3 className="font-bold text-foreground text-lg mb-2">{b.title}</h3>
+                  <p className="text-muted-foreground text-sm">{b.desc}</p>
                 </div>
               ))}
             </div>
@@ -422,12 +417,12 @@ const CadastroPage = () => {
         </section>
 
         {/* How it works - detailed steps */}
-        <section className="py-16 md:py-20 bg-[#0a0a0a]">
+        <section className="py-16 md:py-20 bg-background">
           <div className="container mx-auto px-4">
-            <h2 className="text-2xl md:text-4xl font-black text-white text-center mb-3 font-heading">
+            <h2 className="text-2xl md:text-4xl font-black text-foreground text-center mb-3 font-heading">
               Como funciona o processo?
             </h2>
-            <p className="text-white/50 text-center text-base mb-12 max-w-2xl mx-auto">
+            <p className="text-muted-foreground text-center text-base mb-12 max-w-2xl mx-auto">
               Passo a passo do seu cadastro
             </p>
 
@@ -440,13 +435,13 @@ const CadastroPage = () => {
                 { step: "5", title: "Confirme os Dados", description: "Revise as informações extraídas e confirme." },
                 { step: "6", title: "Receba o Link", description: "Em minutos você recebe o link para assinar e ativar seu desconto!" },
               ].map((item) => (
-                <div key={item.step} className="flex gap-4 items-start bg-white/5 backdrop-blur-sm rounded-xl p-5 border border-white/10 hover:border-emerald-500/20 transition-colors">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-lg">
+                <div key={item.step} className="flex gap-4 items-start premium-card hover:border-primary/20 transition-colors">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg">
                     {item.step}
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-base mb-1">{item.title}</h3>
-                    <p className="text-white/50 text-sm">{item.description}</p>
+                    <h3 className="font-bold text-foreground text-base mb-1">{item.title}</h3>
+                    <p className="text-muted-foreground text-sm">{item.description}</p>
                   </div>
                 </div>
               ))}
@@ -487,18 +482,14 @@ const CadastroPage = () => {
         </section>
 
         {/* Footer */}
-        <footer className="bg-[#050505] py-10 text-center border-t border-white/5">
-          <img 
-            src="/images/logo-colorida-igreen.png" 
-            alt="iGreen Energy" 
-            className="mx-auto mb-4 w-36" 
-          />
-          <p className="text-white/40 text-sm tracking-wider">
+        <footer className="bg-card py-10 text-center border-t border-border">
+          <BrandLogo className="mx-auto mb-4 w-36" />
+          <p className="text-muted-foreground text-sm tracking-wider sensitive-name">
             {consultant.name.toUpperCase()} | CONSULTOR(A) IGREEN ENERGY
             {consultant.igreen_id && ` ID ${consultant.igreen_id}`}
           </p>
-          <p className="text-white/20 text-xs mt-2">
-            © 2026 iGreen Energy. Todos os direitos reservados.
+          <p className="text-muted-foreground/60 text-xs mt-2">
+            © {new Date().getFullYear()} iGreen Energy. Todos os direitos reservados.
           </p>
         </footer>
       </div>

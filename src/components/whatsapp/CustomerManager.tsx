@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { PaginatedList } from "@/components/ui/PaginatedList";
 import {
-  UserPlus, Users, Search, Loader2, RefreshCw, Filter, Smartphone, Zap,
+  UserPlus, Users, Search, Loader2, RefreshCw, Filter, Smartphone, Zap, MoreVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getProfilePicture } from "@/services/evolutionApi";
@@ -246,21 +247,30 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:flex sm:items-center sm:flex-wrap gap-2 w-full sm:w-auto">
-            <Button onClick={handleSyncIgreen} size="sm" variant="outline" className="gap-1.5 rounded-xl font-semibold h-9 px-3 text-xs sm:text-sm border-green-500/20 text-green-600 hover:bg-green-500/10 col-span-2 sm:col-span-1" disabled={syncing || syncCooldown > 0}>
-              {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{syncing ? "Sincronizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Sincronizar iGreen"}</span>
-              <span className="sm:hidden">{syncing ? "Sincronizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Sincronizar iGreen"}</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button onClick={() => setShowAddDialog(true)} size="sm" className="gap-1.5 rounded-xl font-semibold shadow-lg shadow-primary/15 h-9 px-3.5 text-sm">
+              <UserPlus className="w-4 h-4" /> <span>Novo</span><span className="hidden sm:inline">&nbsp;cliente</span>
             </Button>
-            <CustomerImportExport
-              customers={customers}
-              filtered={filtered}
-              consultantId={consultantId}
-              onCustomersChange={onCustomersChange}
-            />
-            <Button onClick={() => setShowAddDialog(true)} size="sm" className="gap-1.5 rounded-xl font-semibold shadow-lg shadow-primary/15 h-9 px-3 text-xs sm:text-sm">
-              <UserPlus className="w-3.5 h-3.5" /> <span>Novo</span><span className="hidden sm:inline">&nbsp;Cliente</span>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 w-9 p-0 rounded-xl" aria-label="Mais ações">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (!syncing && syncCooldown === 0) handleSyncIgreen(); }} disabled={syncing || syncCooldown > 0}>
+                  {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  {syncing ? "Sincronizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Sincronizar iGreen"}
+                </DropdownMenuItem>
+                <CustomerImportExport
+                  asMenuItems
+                  customers={customers}
+                  filtered={filtered}
+                  consultantId={consultantId}
+                  onCustomersChange={onCustomersChange}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -274,7 +284,7 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
             </div>
 
             {/* Tipo produto toggle */}
-            <div className="flex gap-1.5 bg-secondary/20 rounded-2xl p-1.5 border border-border/30">
+            <div className="inline-flex gap-1 bg-secondary/30 rounded-lg p-1 border border-border/40 w-fit">
               {([
                 ["all", "Todos", "📊"],
                 ["energia", "Energia", "⚡"],
@@ -283,13 +293,13 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
                 <button
                   key={val}
                   onClick={() => setSelectedTipo(val as any)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 text-xs sm:text-sm font-semibold rounded-xl py-2 px-2 sm:px-3 transition-all duration-200 ${
+                  className={`inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-1.5 px-3 transition-all duration-200 ${
                     selectedTipo === val
-                      ? "bg-gradient-to-br from-primary to-primary/80 text-white shadow-lg shadow-primary/25"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+                      ? "bg-primary text-white shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
                   }`}
                 >
-                  <span className="text-sm sm:text-base">{icon}</span>
+                  <span className="text-sm">{icon}</span>
                   <span>{label}</span>
                 </button>
               ))}
@@ -343,30 +353,31 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
         </div>
 
         {/* Clickable Status Filters */}
-        <div className="flex gap-1.5 sm:gap-2 px-4 sm:px-5 pb-2 sm:pb-3 overflow-x-auto no-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex gap-2 px-4 sm:px-5 pb-3 sm:pb-4 overflow-x-auto no-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
           {filterButtons.map((f) => (
             <button
               key={f.key}
               onClick={() => setStatusFilter(f.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all border shrink-0 ${
                 statusFilter === f.key
-                  ? "border-primary/40 bg-primary/10 text-primary shadow-sm"
-                  : "border-border/30 bg-secondary/20 hover:bg-secondary/40 text-muted-foreground hover:text-foreground"
+                  ? "border-primary/50 bg-primary/10 text-foreground shadow-sm"
+                  : "border-border bg-secondary/30 hover:bg-secondary/60 text-muted-foreground hover:text-foreground"
               }`}
             >
-              <span className={`text-sm font-bold ${statusFilter === f.key ? "text-primary" : f.color}`}>{f.count}</span>
+              <span className={`text-base font-bold tabular-nums ${statusFilter === f.key ? "text-primary" : f.color}`}>{f.count}</span>
               <span>{f.label}</span>
             </button>
           ))}
         </div>
 
         {/* List with pagination */}
-        <div className="px-5 pb-5">
+        <div className="px-4 sm:px-5 pb-5">
           <PaginatedList
             items={filtered}
-            pageSize={50}
+            pageSize={20}
+            flow
             renderEmpty={() => (
-              <div className="text-center py-12">
+              <div className="text-center py-16">
                 <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mx-auto mb-3">
                   <Users className="w-7 h-7 text-muted-foreground/30" />
                 </div>

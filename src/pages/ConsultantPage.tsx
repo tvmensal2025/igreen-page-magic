@@ -17,6 +17,7 @@ import WhatsAppFloat from "@/components/WhatsAppFloat";
 import LoadingScreen from "@/components/LoadingScreen";
 import SEOHead from "@/components/SEOHead";
 import PixelInjector from "@/components/PixelInjector";
+import PageStatus from "@/components/common/PageStatus";
 import { useInstancePhone } from "@/hooks/useInstancePhone";
 
 const ConsultantPage = () => {
@@ -37,13 +38,10 @@ const ConsultantPage = () => {
 
   if (!consultant) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-center px-4">
-        <div>
-          <img src="/images/logo-colorida-igreen.png" alt="iGreen" className="w-32 mx-auto mb-6 opacity-50" />
-          <h1 className="text-3xl font-bold font-heading text-foreground mb-4">Consultor não encontrado</h1>
-          <p className="text-muted-foreground">Verifique o link e tente novamente.</p>
-        </div>
-      </div>
+      <PageStatus
+        title="Consultor não encontrado"
+        description="Verifique o link e tente novamente."
+      />
     );
   }
 

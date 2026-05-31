@@ -1,5 +1,8 @@
 import { trackClickEvent } from "@/hooks/useTrackEvent";
-import { useEffect, useRef, useState } from "react";
+import AnimatedCounter from "@/components/common/AnimatedCounter";
+import AmbientGlow from "@/components/common/AmbientGlow";
+import LandingNav from "@/components/common/LandingNav";
+import { ArrowRight } from "lucide-react";
 
 interface LicHeroSectionProps {
   cadastroUrl?: string;
@@ -10,64 +13,6 @@ interface LicHeroSectionProps {
 const DEFAULT_CADASTRO = "https://digital.igreenenergy.com.br/?sendcontract=true";
 const DEFAULT_WHATSAPP = "https://wa.me/5500000000000?text=Ol%C3%A1,%20gostaria%20de%20mais%20informa%C3%A7%C3%B5es%20sobre%20a%20oportunidade%20de%20Licenciado%20iGreen%20Energy";
 
-const AnimatedCounter = ({ target, suffix = "" }: { target: number; suffix?: string }) => {
-  const [count, setCount] = useState(0);
-  const ref = useRef<HTMLDivElement>(null);
-  const hasAnimatedRef = useRef(false);
-
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-
-    const isMobileViewport = window.matchMedia("(max-width: 767px)").matches;
-
-    const startAnimation = () => {
-      if (hasAnimatedRef.current) return;
-      hasAnimatedRef.current = true;
-
-      if (isMobileViewport) {
-        setCount(target);
-        return;
-      }
-
-      let start = 0;
-      const duration = 2000;
-      const step = (timestamp: number) => {
-        if (!start) start = timestamp;
-        const progress = Math.min((timestamp - start) / duration, 1);
-        setCount(Math.floor(progress * target));
-        if (progress < 1) requestAnimationFrame(step);
-      };
-
-      requestAnimationFrame(step);
-    };
-
-    if (typeof IntersectionObserver === "undefined" || isMobileViewport) {
-      startAnimation();
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          startAnimation();
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1, rootMargin: "0px 0px -10% 0px" }
-    );
-
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [target]);
-
-  return (
-    <div ref={ref} className="stat-block">
-      <div className="stat-number">{count.toLocaleString("pt-BR")}{suffix}</div>
-    </div>
-  );
-};
-
 const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSectionProps) => {
   const CADASTRO = cadastroUrl || DEFAULT_CADASTRO;
   const WHATSAPP = whatsappUrl || DEFAULT_WHATSAPP;
@@ -77,69 +22,73 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
   };
 
   return (
-    <section className="relative overflow-hidden" style={{ background: 'var(--gradient-hero)' }}>
+    <section id="top" className="relative overflow-hidden pt-28 md:pt-36 pb-16 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
+      <LandingNav
+        ctaLabel="Quero ser Licenciado"
+        ctaHref={WHATSAPP}
+        onCtaClick={() => handleClick("whatsapp")}
+      />
       {/* Decorative background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full opacity-[0.07]" style={{ background: 'radial-gradient(circle, hsl(130, 100%, 36%), transparent 70%)' }} />
-        <div className="absolute -bottom-60 -left-40 w-[600px] h-[600px] rounded-full opacity-[0.05]" style={{ background: 'radial-gradient(circle, hsl(130, 100%, 36%), transparent 70%)' }} />
-      </div>
+      <AmbientGlow variant="hero" />
+      <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
 
-      <div className="section-container text-center py-4 sm:py-6 md:py-12 relative z-10">
-        {/* Badge + Logo compact on mobile */}
-        <div className="flex items-center justify-center gap-3 mb-2 md:mb-4 md:flex-col md:gap-0">
-          <div className="badge-green animate-fade-in md:mb-4 !py-1 !px-3 md:!py-2 md:!px-4">
+      <div className="relative z-10 mx-auto w-full max-w-[1180px] px-5 sm:px-8 lg:px-10">
+        <div className="flex flex-col items-center text-center">
+          {/* Badge */}
+          <div className="badge-green animate-fade-in mb-6">
             <span className="glow-dot" />
-            <span className="text-[10px] md:text-xs">Oportunidade exclusiva</span>
+            <span>Oportunidade exclusiva</span>
           </div>
-          <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy Logo" className="w-20 md:w-56 animate-fade-in" />
+
+          {/* Title */}
+          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[2.1rem] sm:text-5xl md:text-6xl lg:text-[3.9rem] max-w-[20ch] mx-auto text-foreground">
+            Seja Licenciado iGreen e receba <span className="text-gradient-green">comissões vitalícias</span> todo mês
+          </h1>
+
+          {/* Subtitle */}
+          <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            O mercado de energia solar está explodindo no Brasil. Quem está aproveitando agora já está faturando — <strong className="text-foreground">esse é o seu momento.</strong>
+          </p>
+
+          {/* CTA */}
+          <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
+            <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => handleClick("whatsapp")}>
+              Quero ser Licenciado <ArrowRight className="w-5 h-5" />
+            </a>
+            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-whatsapp" onClick={() => handleClick("cadastro")}>
+              Fazer cadastro
+            </a>
+          </div>
         </div>
 
-        {/* Title - compact on mobile */}
-        <h1 className="font-heading font-black mb-2 md:mb-3 text-lg sm:text-2xl md:text-4xl lg:text-[3.2rem] leading-[1.15] max-w-5xl mx-auto text-foreground px-2">
-          Seja um Licenciado iGreen Energy e receba{" "}
-           <span className="relative inline" style={{ color: 'hsl(var(--primary))' }}>
-             comissões recorrentes e vitalícias
-           </span>{" "}
-          todos os meses
-        </h1>
-
-        {/* Subtitle - hidden on mobile to save space */}
-        <p className="hidden sm:block text-foreground/70 text-base md:text-xl max-w-3xl mx-auto mb-4 leading-relaxed">
-          O mercado de energia solar está explodindo no Brasil. Quem está aproveitando agora já está faturando — <strong className="text-foreground">esse é o seu momento.</strong>
-        </p>
-
-        {/* Video - priority on mobile */}
-        <div className="max-w-4xl mx-auto mb-3 md:mb-4 rounded-xl md:rounded-2xl overflow-hidden relative" style={{ boxShadow: 'var(--shadow-green-lg)' }}>
-          <div className="absolute inset-0 rounded-xl md:rounded-2xl border border-primary/20 z-10 pointer-events-none" />
-          <video controls playsInline autoPlay muted preload="auto" className="w-full aspect-video relative z-0">
-            <source src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/imagine-licenciado.mp4" type="video/mp4" />
-          </video>
+        {/* Video mockup */}
+        <div className="relative mt-14 md:mt-20 max-w-4xl mx-auto">
+          <div className="mockup-window">
+            <div className="mockup-bar">
+              <span className="mockup-dot bg-red-400/70" />
+              <span className="mockup-dot bg-yellow-400/70" />
+              <span className="mockup-dot bg-green-400/70" />
+              <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
+            </div>
+            <video controls playsInline autoPlay muted preload="auto" className="w-full aspect-video block">
+              <source src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/imagine-licenciado.mp4" type="video/mp4" />
+            </video>
+          </div>
         </div>
-
-        {/* CTA */}
-        <a
-          href={WHATSAPP}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-cta-lg animate-pulse-green !py-2.5 sm:!py-3 !px-5 sm:!px-8 !text-sm sm:!text-base inline-block"
-          onClick={() => handleClick("whatsapp")}
-        >
-          🚀 Quero ser Licenciado
-        </a>
 
         {/* Social proof stats */}
-        <div className="grid grid-cols-3 gap-4 md:gap-12 max-w-3xl mx-auto mt-6 md:mt-8 pt-4 md:pt-6 border-t border-border">
-          <div>
+        <div className="grid grid-cols-3 gap-4 md:gap-12 max-w-3xl mx-auto mt-16 md:mt-20 pt-10 border-t border-border">
+          <div className="text-center">
             <AnimatedCounter target={600} suffix="mil+" />
-            <p className="stat-label text-[10px] md:text-sm mt-1 md:mt-2 text-muted-foreground uppercase tracking-wider font-heading">Clientes ativos</p>
+            <p className="text-[10px] md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading">Clientes ativos</p>
           </div>
-          <div>
+          <div className="text-center">
             <AnimatedCounter target={500} suffix="+" />
-            <p className="stat-label text-[10px] md:text-sm mt-1 md:mt-2 text-muted-foreground uppercase tracking-wider font-heading">Usinas solares</p>
+            <p className="text-[10px] md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading">Usinas solares</p>
           </div>
-          <div>
+          <div className="text-center">
             <AnimatedCounter target={27} />
-            <p className="stat-label text-[10px] md:text-sm mt-1 md:mt-2 text-muted-foreground uppercase tracking-wider font-heading">Estados</p>
+            <p className="text-[10px] md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading">Estados</p>
           </div>
         </div>
       </div>

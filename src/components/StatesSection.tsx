@@ -9,7 +9,7 @@ const StatesSection = () => (
       </p>
 
       <div className="relative group max-w-lg mx-auto mb-10">
-        <div className="absolute -inset-6 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'radial-gradient(circle, hsl(130 100% 36% / 0.1), transparent 70%)' }} />
+        <div className="media-glow !-inset-6" />
         <img
           src="/images/imagem-3.jpeg"
           alt="Mapa do Brasil - Estados atendidos pela iGreen Energy"

@@ -68,7 +68,7 @@ export function CpcPanel({ data = [], totalCtaClicks = 0 }: Props) {
         </table>
       )}
       <footer className="px-4 py-2 border-t border-[#1a2e1a] font-mono text-[9px] text-zinc-600 tracking-wider">
-        CPC requer integração de gasto (Meta Ads). Sem dados de gasto → "—".
+        CPC = gasto de anúncio ÷ cliques CTA (blended). Sem gasto Meta no período → "—".
       </footer>
     </section>
   );

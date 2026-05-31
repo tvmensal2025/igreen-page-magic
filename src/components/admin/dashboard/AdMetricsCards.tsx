@@ -28,18 +28,30 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
 
   const cards = [
     { icon: DollarSign, label: "Gasto Ads", value: fmtBRL(data?.spendCents ?? 0), tone: "text-emerald-400" },
-    { icon: Users, label: "Leads WhatsApp", value: fmtNum(data?.leads ?? 0), tone: "text-primary" },
+    { icon: Users, label: "Leads de anúncio", value: fmtNum(data?.leads ?? 0), tone: "text-primary" },
     { icon: Target, label: "CPL", value: data?.cplCents != null ? fmtBRL(data.cplCents) : "—", tone: "text-amber-400" },
     { icon: Eye, label: "Impressões", value: fmtNum(data?.impressions ?? 0), tone: "text-sky-400" },
     { icon: MousePointerClick, label: "Cliques", value: fmtNum(data?.clicks ?? 0), tone: "text-fuchsia-400" },
     { icon: TrendingUp, label: "CTR", value: data?.ctr != null ? `${(data.ctr * 100).toFixed(2)}%` : "—", tone: "text-primary" },
   ];
 
+  const noData = (data?.spendCents ?? 0) === 0 && (data?.impressions ?? 0) === 0;
+
   return (
     <div className="space-y-2">
-      {!data?.hasConnection && (data?.spendCents ?? 0) === 0 && (
+      {!data?.hasConnection && noData && (
         <div className="text-[11px] text-muted-foreground/70 px-1">
           Sem conexão Meta Ads — conecte sua conta para popular gasto, impressões e CPL.
+        </div>
+      )}
+      {data?.hasConnection && !data?.hasCampaigns && (
+        <div className="text-[11px] text-muted-foreground/70 px-1">
+          Conta Meta conectada, mas ainda sem campanhas. Publique um modelo na Galeria para começar a ver números.
+        </div>
+      )}
+      {data?.hasCampaigns && noData && (
+        <div className="text-[11px] text-muted-foreground/70 px-1">
+          Aguardando o primeiro sync de métricas do Meta (roda a cada 30 min).
         </div>
       )}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">

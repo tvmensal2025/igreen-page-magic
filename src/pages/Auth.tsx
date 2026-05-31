@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, ArrowRight, Zap } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import BrandLogo from "@/components/common/BrandLogo";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -96,7 +97,7 @@ const Auth = () => {
         <div className="text-center">
           <div className="flex justify-center mb-6">
             <div className="relative">
-              <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" className="w-44 drop-shadow-lg" />
+              <BrandLogo className="w-44 drop-shadow-lg" alt="iGreen Energy" />
               <div className="absolute -inset-4 bg-primary/10 rounded-3xl blur-2xl -z-10" />
             </div>
           </div>

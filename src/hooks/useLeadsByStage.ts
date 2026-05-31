@@ -9,14 +9,17 @@ export interface StageBreakdownRow {
 
 const STAGE_LABELS: Record<string, string> = {
   novo_lead: "Novo Lead",
-  qualificado: "Qualificado",
-  enviado_proposta: "Proposta",
-  negociacao: "Negociação",
-  aguardando_documento: "Aguardando Docs",
-  cadastrado: "Cadastrado",
+  qualificando: "Em qualificação",
+  valor_conta: "Valor da conta",
+  conta_enviada: "Conta enviada",
+  doc_enviado: "Documento enviado",
+  finalizando: "Finalizando cadastro",
   aprovado: "Aprovado",
-  devolutiva: "Devolutiva",
-  perdido: "Perdido",
+  reprovado: "Reprovado",
+  "30_dias": "30 dias",
+  "60_dias": "60 dias",
+  "90_dias": "90 dias",
+  "120_dias": "120 dias",
 };
 
 export function useLeadsByStage(consultantId: string | undefined | null, periodDays: number) {

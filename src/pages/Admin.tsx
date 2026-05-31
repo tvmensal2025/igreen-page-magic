@@ -15,6 +15,9 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useConsultantForm } from "@/hooks/useConsultantForm";
 import { useConsultantPresence } from "@/hooks/useConsultantPresence";
 import { OcrReviewBanner } from "@/components/captacao/OcrReviewBanner";
+import AppHeader from "@/components/layout/AppHeader";
+import AmbientGlow from "@/components/common/AmbientGlow";
+import PageStatus from "@/components/common/PageStatus";
 
 // Heavy panels — lazy load on demand
 const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCodeSVG })));
@@ -188,26 +191,19 @@ const AdminContent = () => {
 
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background">
-        <img src="/images/logo-colorida-igreen.png" alt="iGreen" className="w-32 animate-pulse" />
-        <p className="text-muted-foreground">Carregando painel...</p>
-      </div>
-    );
+    return <PageStatus title="Carregando painel..." pulse />;
   }
 
   if (!approved) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-6 bg-background px-4">
-        <img src="/images/logo-colorida-igreen.png" alt="iGreen" className="w-32" />
-        <div className="text-center space-y-2">
-          <h1 className="text-xl font-bold font-heading text-foreground">Aguardando Aprovação</h1>
-          <p className="text-muted-foreground text-sm max-w-md">Sua conta está sendo analisada pelo administrador. Você receberá acesso assim que for aprovado.</p>
-        </div>
+      <PageStatus
+        title="Aguardando Aprovação"
+        description="Sua conta está sendo analisada pelo administrador. Você receberá acesso assim que for aprovado."
+      >
         <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground gap-2">
           <LogOut className="w-4 h-4" /> Sair
         </Button>
-      </div>
+      </PageStatus>
     );
   }
 
@@ -216,22 +212,14 @@ const AdminContent = () => {
   return (
     <div className="h-[100dvh] bg-background relative overflow-hidden flex flex-col">
       {/* Ambient gradient for ultrawide screens — evita fundo preto vazio nas laterais */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 opacity-60">
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-primary/10 blur-[120px]" />
-        <div className="absolute top-1/3 -right-40 w-[700px] h-[700px] rounded-full bg-emerald-500/[0.06] blur-[140px]" />
-        <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] rounded-full bg-green-500/[0.05] blur-[120px]" />
-      </div>
+      <AmbientGlow variant="panel" className="fixed" />
       {/* Header */}
-      <header className="shrink-0 z-50 border-b border-border bg-card/80 backdrop-blur-xl">
-        <div className="max-w-[1760px] mx-auto px-3 sm:px-5 lg:px-6 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src="/images/logo-colorida-igreen.png" alt="iGreen" className="w-20 sm:w-24" />
-            <div className="hidden sm:block">
-              <h1 className="text-base font-bold font-heading text-foreground leading-tight">Painel do Consultor</h1>
-              <p className="text-xs text-muted-foreground sensitive-name">{form.name || "Bem-vindo"}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-0.5 sm:gap-1">
+      <AppHeader
+        title="Painel do Consultor"
+        subtitle={form.name || "Bem-vindo"}
+        subtitleSensitive
+        actions={
+          <>
             <button
               onClick={togglePrivacy}
               className={`relative p-1.5 sm:p-2 rounded-xl transition-all duration-200 ${privacyMode ? 'text-primary bg-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}
@@ -277,15 +265,15 @@ const AdminContent = () => {
               <LogOut className="w-4 h-4" />
               <span className="hidden sm:inline">Sair</span>
             </Button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSave}>
 
       {/* Tab Navigation */}
       <nav className="shrink-0 border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="max-w-[1760px] mx-auto px-2 sm:px-5 lg:px-6">
+        <div className="max-w-[1920px] mx-auto px-2 sm:px-5 lg:px-8">
           <div className="flex overflow-x-auto no-scrollbar -mx-2 sm:mx-0" style={{ WebkitOverflowScrolling: 'touch' }}>
             {tabs.map((tab) => {
               const Icon = tab.icon;
@@ -317,7 +305,7 @@ const AdminContent = () => {
       {/* Content */}
       <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm"
         ? "w-full flex-1 min-h-0 px-1 sm:px-1.5 lg:px-2 py-1 overflow-hidden flex flex-col gap-1"
-        : "flex-1 min-h-0 overflow-y-auto max-w-[1760px] mx-auto px-3 sm:px-6 lg:px-8 xl:px-12 py-4 sm:py-6 space-y-6 overflow-x-hidden"}>
+        : "flex-1 min-h-0 overflow-y-auto max-w-[1920px] mx-auto w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6 sm:py-8 space-y-6 overflow-x-hidden"}>
         {/* OCR Review Banner — aparece quando há leads aguardando o consultor
             decidir entre "Eu confirmo" / "Pedir ao cliente" os dados extraídos
             da conta de luz ou do documento. Sempre no topo, em qualquer aba. */}

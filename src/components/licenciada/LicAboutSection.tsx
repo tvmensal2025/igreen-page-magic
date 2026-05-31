@@ -14,7 +14,7 @@ const LicAboutSection = () => (
       <h2 className="section-heading mb-14">Somos a iGreen Energy</h2>
       <div className="grid md:grid-cols-2 gap-12 items-center">
         <div className="relative group">
-          <div className="absolute -inset-4 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'radial-gradient(circle, hsl(130 100% 36% / 0.1), transparent 70%)' }} />
+          <div className="media-glow" />
           <img
             src="/images/feed-10.jpeg"
             alt="Usina Solar iGreen Energy"

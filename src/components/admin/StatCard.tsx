@@ -9,34 +9,24 @@ interface StatCardProps {
 }
 
 export function StatCard({ icon, label, value, color, subtitle }: StatCardProps) {
-  const gradientClass = color === "primary"
-    ? "from-primary/15 to-primary/5 dark:from-primary/20 dark:to-primary/5"
-    : "from-accent/15 to-accent/5 dark:from-accent/20 dark:to-accent/5";
   const iconBg = color === "primary"
     ? "bg-primary/10 text-primary ring-1 ring-primary/20"
     : "bg-accent/10 text-accent ring-1 ring-accent/20";
-  const glowClass = color === "primary"
-    ? "group-hover:shadow-[0_0_30px_hsl(130,100%,36%,0.08)]"
-    : "group-hover:shadow-[0_0_30px_hsl(30,100%,50%,0.08)]";
 
   return (
-    <div className={`group relative rounded-2xl border border-border bg-card p-2.5 sm:p-5 flex items-center gap-2 sm:gap-4 
-      transition-all duration-300 hover:border-primary/20 overflow-hidden ${glowClass}`}>
-      {/* Subtle gradient overlay */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradientClass} opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
-
-      <div className={`relative w-8 h-8 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 ${iconBg} transition-transform duration-300 group-hover:scale-110 [&>svg]:w-3.5 [&>svg]:h-3.5 sm:[&>svg]:w-5 sm:[&>svg]:h-5`}>
+    <div className="feature-card group !p-4 sm:!p-6 flex items-center gap-3 sm:gap-5">
+      <div className={`relative w-11 h-11 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shrink-0 ${iconBg} transition-transform duration-300 group-hover:scale-110 [&>svg]:w-4 [&>svg]:h-4 sm:[&>svg]:w-6 sm:[&>svg]:h-6`}>
         {icon}
       </div>
       <div className="relative min-w-0 flex-1">
         <p
-          className="text-sm sm:text-2xl font-bold font-heading text-foreground truncate tracking-tight tabular-nums"
+          className="text-xl sm:text-3xl font-black font-heading text-foreground truncate tracking-tight tabular-nums leading-none"
           title={typeof value === "number" ? value.toLocaleString("pt-BR") : String(value)}
         >
           {typeof value === "number" ? value.toLocaleString("pt-BR") : value}
         </p>
-        <p className="text-[10px] sm:text-xs text-muted-foreground font-medium leading-tight truncate">{label}</p>
-        {subtitle && <p className="text-[9px] sm:text-[10px] text-muted-foreground/60 mt-0.5 leading-tight truncate">{subtitle}</p>}
+        <p className="text-[11px] sm:text-sm text-muted-foreground font-medium leading-tight truncate mt-1.5">{label}</p>
+        {subtitle && <p className="text-[9px] sm:text-[11px] text-muted-foreground/60 mt-0.5 leading-tight truncate">{subtitle}</p>}
       </div>
     </div>
   );

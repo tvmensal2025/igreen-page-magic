@@ -35,7 +35,7 @@ const LicConsultantSection = ({
 
         <div className="grid md:grid-cols-2 gap-12 items-center max-w-4xl mx-auto">
           <div className="relative group">
-            <div className="absolute -inset-4 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'radial-gradient(circle, hsl(130 100% 36% / 0.15), transparent 70%)' }} />
+            <div className="media-glow" />
             <img
               src={photo}
               alt={`${name} - Licenciado iGreen Energy`}

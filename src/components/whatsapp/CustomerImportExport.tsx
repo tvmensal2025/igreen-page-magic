@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -25,9 +26,11 @@ interface CustomerImportExportProps {
   filtered: Customer[];
   consultantId: string;
   onCustomersChange: () => void;
+  /** Quando true, renderiza Exportar/Importar como itens de menu (dropdown). */
+  asMenuItems?: boolean;
 }
 
-export function CustomerImportExport({ customers, filtered, consultantId, onCustomersChange }: CustomerImportExportProps) {
+export function CustomerImportExport({ customers, filtered, consultantId, onCustomersChange, asMenuItems = false }: CustomerImportExportProps) {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, newCount: 0, updatedCount: 0, errorCount: 0 });
   const [showImportResult, setShowImportResult] = useState(false);
@@ -221,15 +224,29 @@ export function CustomerImportExport({ customers, filtered, consultantId, onCust
 
   return (
     <>
-      {/* Header buttons */}
-      <Button onClick={handleExport} size="sm" variant="outline" className="gap-2 rounded-xl font-semibold h-9 px-4 border-accent/20 text-accent-foreground hover:bg-accent/10" disabled={filtered.length === 0}>
-        <FileSpreadsheet className="w-4 h-4" />
-        Exportar
-      </Button>
-      <Button onClick={() => fileInputRef.current?.click()} size="sm" variant="outline" className="gap-2 rounded-xl font-semibold h-9 px-4 border-primary/20 text-primary hover:bg-primary/10" disabled={importing || parsing}>
-        {(importing || parsing) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-        Importar Excel
-      </Button>
+      {/* Triggers — botões ou itens de menu */}
+      {asMenuItems ? (
+        <>
+          <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (filtered.length > 0) handleExport(); }} disabled={filtered.length === 0}>
+            <FileSpreadsheet className="w-4 h-4" /> Exportar Excel
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={(e) => { e.preventDefault(); fileInputRef.current?.click(); }} disabled={importing || parsing}>
+            {(importing || parsing) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Importar Excel
+          </DropdownMenuItem>
+        </>
+      ) : (
+        <>
+          <Button onClick={handleExport} size="sm" variant="outline" className="gap-2 rounded-xl font-semibold h-9 px-4 border-accent/20 text-accent-foreground hover:bg-accent/10" disabled={filtered.length === 0}>
+            <FileSpreadsheet className="w-4 h-4" />
+            Exportar
+          </Button>
+          <Button onClick={() => fileInputRef.current?.click()} size="sm" variant="outline" className="gap-2 rounded-xl font-semibold h-9 px-4 border-primary/20 text-primary hover:bg-primary/10" disabled={importing || parsing}>
+            {(importing || parsing) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Importar Excel
+          </Button>
+        </>
+      )}
       <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleFileSelected(file); }} />
 
       {/* Import Progress (rendered via portal-like pattern — parent places these) */}

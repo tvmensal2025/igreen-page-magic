@@ -80,7 +80,7 @@ export function useAnalytics(
       const applyScope = <T extends { in: any; eq: any }>(q: T): T =>
         useTeam ? q.in("consultant_id", teamIds!) : q.eq("consultant_id", consultantId!);
 
-      const [viewsRes, eventsRes, dealsRes] = await Promise.all([
+      const [viewsRes, eventsRes, dealsRes, campsRes] = await Promise.all([
         applyScope(
           supabase
             .from("page_views")
@@ -94,6 +94,9 @@ export function useAnalytics(
         applyScope(
           supabase.from("crm_deals").select("customer_id") as any,
         ),
+        applyScope(
+          supabase.from("facebook_campaigns").select("id") as any,
+        ),
       ]);
 
       if (viewsRes.error) throw viewsRes.error;
@@ -102,6 +105,18 @@ export function useAnalytics(
 
       const views = viewsRes.data;
       const events = eventsRes.data;
+
+      // Gasto real de anúncio no período (para CPC blended do painel "Custo por clique")
+      const campaignIds = ((campsRes.data ?? []) as any[]).map((c) => c.id as string);
+      let adSpendCents = 0;
+      if (campaignIds.length) {
+        const { data: spendRows } = await supabase
+          .from("facebook_metrics_daily")
+          .select("spend_cents")
+          .in("campaign_id", campaignIds)
+          .gte("date", since.slice(0, 10));
+        adSpendCents = ((spendRows ?? []) as any[]).reduce((s, r) => s + Number(r.spend_cents ?? 0), 0);
+      }
 
       // Fetch ALL customers with pagination
       const allCustomers: any[] = [];
@@ -403,17 +418,26 @@ export function useAnalytics(
           created_at: e.created_at,
         }));
 
-      // === CPC POR CTA — share + (placeholder de gasto) ===
+      // === CPC POR CTA — share + CPC blended quando há gasto de anúncio ===
       const totalCtaClicks = Object.entries(clicksByTarget)
         .filter(([t]) => t.includes("whatsapp") || t.includes("cadastro"))
         .reduce((s, [, n]) => s + n, 0);
+      // CPC blended (R$) = gasto real de anúncio ÷ total de cliques CTA do período.
+      // É uma aproximação: distribui o gasto igualmente entre os cliques de conversão.
+      const blendedCpc = adSpendCents > 0 && totalCtaClicks > 0
+        ? adSpendCents / 100 / totalCtaClicks
+        : null;
       const cpcByTarget = Object.entries(clicksByTarget)
-        .map(([target, clicks]) => ({
-          target,
-          clicks,
-          share: totalCtaClicks > 0 ? (clicks / totalCtaClicks) * 100 : 0,
-          cpc: null as number | null,
-        }))
+        .map(([target, clicks]) => {
+          const isCta = target.includes("whatsapp") || target.includes("cadastro");
+          return {
+            target,
+            clicks,
+            share: totalCtaClicks > 0 ? (clicks / totalCtaClicks) * 100 : 0,
+            // Só CTAs recebem CPC (o gasto de anúncio busca conversa/cadastro).
+            cpc: isCta ? blendedCpc : null,
+          };
+        })
         .sort((a, b) => b.clicks - a.clicks);
 
       // === DAILY MAIN SERIES — visitas + cliques CTA + novos leads ===

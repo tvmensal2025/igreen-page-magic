@@ -6,7 +6,7 @@ const SolarPlantsSection = () => (
 
       <div className="max-w-4xl mx-auto">
         <div className="relative group mb-12">
-          <div className="absolute -inset-4 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'radial-gradient(circle, hsl(130 100% 36% / 0.08), transparent 70%)' }} />
+          <div className="media-glow" />
           <img
             src="/images/feed-1.jpeg"
             alt="Usinas Solares iGreen"

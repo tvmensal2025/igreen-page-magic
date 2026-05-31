@@ -1,11 +1,10 @@
 import { useState } from "react";
 import {
-  Trash2, Phone, Mail, MapPin, Zap, ChevronDown, ChevronUp, Pencil,
+  Trash2, Phone, Mail, MapPin, Zap, ChevronDown, Pencil,
   CreditCard, User, MessageCircle, Building2, AlertTriangle, FileText, ClipboardCopy, Users,
-  Download, FileDown, Loader2,
+  Download, FileDown, Loader2, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -14,34 +13,40 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   type Customer, formatPhoneDisplay, formatCpfDisplay, getInitials,
-  getStatusBadge, getStageDotsForCustomer, isDevolutiva, buildWhatsAppMessage,
+  getStatusBadge, getStageDotsForCustomer, isDevolutiva,
 } from "./customerUtils";
 
-function SectionLabel({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
-  return (
-    <div className="flex items-center gap-2 col-span-2 mt-2 mb-1">
-      <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center">
-        <Icon className="h-3 w-3 text-primary" />
-      </div>
-      <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider">{title}</span>
-      <div className="flex-1 h-px bg-border" />
-    </div>
-  );
-}
-
+/* ── Linha de detalhe (label em cima, valor embaixo) ── */
 function DetailItem({ icon: Icon, label, value, sensitiveClass }: { icon: React.ElementType; label: string; value: string; sensitiveClass?: string }) {
   return (
-    <div className="flex items-start gap-2">
-      <Icon className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
-      <div>
-        <p className="text-[9px] text-muted-foreground uppercase tracking-wider">{label}</p>
-        <p className={`text-xs text-foreground ${sensitiveClass || ""}`}>{value}</p>
+    <div className="flex items-start gap-2.5">
+      <div className="mt-0.5 h-7 w-7 rounded-lg bg-secondary/60 flex items-center justify-center shrink-0">
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] text-muted-foreground uppercase tracking-wide leading-tight">{label}</p>
+        <p className={`text-sm text-foreground font-medium break-words ${sensitiveClass || ""}`}>{value}</p>
       </div>
     </div>
   );
 }
 
-function DocumentDownloadSection({ customerId, customerName }: { customerId: string; customerName: string | null }) {
+/* ── Barra de progresso de estágios (legível, substitui as bolinhas) ── */
+function StageTracker({ stageDots }: { stageDots: ReturnType<typeof getStageDotsForCustomer> }) {
+  if (!stageDots.length) return null;
+  return (
+    <div className="flex items-center gap-1.5">
+      {stageDots.map((dot) => (
+        <div key={dot.key} className="flex flex-col items-center gap-1" title={`${dot.label}: ${dot.reached ? "concluído" : "pendente"}`}>
+          <div className={`h-1.5 w-7 sm:w-10 rounded-full transition-all ${dot.reached ? dot.color : "bg-muted/40"}`} />
+          <span className={`text-[9px] leading-none ${dot.reached ? "text-foreground/70" : "text-muted-foreground/50"}`}>{dot.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DocumentDownloadSection({ customerId }: { customerId: string }) {
   const [loading, setLoading] = useState(false);
   const [docs, setDocs] = useState<Array<{ type: string; url: string }> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,12 +60,12 @@ function DocumentDownloadSection({ customerId, customerName }: { customerId: str
       });
       if (fnError) throw fnError;
       if (data?.uploads?.length > 0) {
-        setDocs(data.uploads.filter((u: any) => u.success));
+        setDocs(data.uploads.filter((u: { success: boolean }) => u.success));
       } else {
         setError("Nenhum documento encontrado");
       }
-    } catch (e: any) {
-      setError(e.message || "Erro ao buscar documentos");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao buscar documentos");
     } finally {
       setLoading(false);
     }
@@ -68,43 +73,25 @@ function DocumentDownloadSection({ customerId, customerName }: { customerId: str
 
   const docLabel: Record<string, string> = {
     conta: "Conta de Energia",
-    doc_frente: "Doc Frente",
-    doc_verso: "Doc Verso",
+    doc_frente: "Documento (frente)",
+    doc_verso: "Documento (verso)",
   };
 
   return (
-    <div className="mt-3 pt-3 border-t border-border/20">
-      <div className="flex items-center gap-2 mb-2">
-        <div className="h-6 w-6 rounded-md bg-blue-500/10 flex items-center justify-center">
-          <FileDown className="h-3 w-3 text-blue-400" />
-        </div>
-        <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Documentos</span>
-        <div className="flex-1 h-px bg-border" />
-      </div>
-
+    <div>
       {!docs && !error && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-[10px] gap-1 text-blue-400 border-blue-500/20 hover:bg-blue-500/10"
-          onClick={handleFetchDocs}
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-          {loading ? "Preparando..." : "Baixar Documentos"}
+        <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg" onClick={handleFetchDocs} disabled={loading}>
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+          {loading ? "Preparando documentos..." : "Baixar documentos"}
         </Button>
       )}
-
-      {error && (
-        <p className="text-[10px] text-muted-foreground">{error}</p>
-      )}
-
+      {error && <p className="text-sm text-muted-foreground">{error}</p>}
       {docs && docs.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {docs.map((doc) => (
-            <a key={doc.type} href={doc.url} target="_blank" rel="noopener noreferrer" className="inline-flex">
-              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 text-green-400 border-green-500/20 hover:bg-green-500/10">
-                <Download className="w-3 h-3" /> {docLabel[doc.type] || doc.type}
+            <a key={doc.type} href={doc.url} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg text-primary border-primary/30 hover:bg-primary/10">
+                <Download className="w-4 h-4" /> {docLabel[doc.type] || doc.type}
               </Button>
             </a>
           ))}
@@ -133,183 +120,185 @@ export function CustomerListItem({
   const status = getStatusBadge(c.status);
   const hasDevolutiva = isDevolutiva(c);
   const stageDots = getStageDotsForCustomer(c.status, deal);
-  const reachedStageLabels = stageDots.filter((dot) => dot.reached).map((dot) => dot.label);
+
+  // Resumo de localização e contato para a linha principal
+  const location = [c.address_city, c.address_state].filter(Boolean).join(" / ");
 
   return (
-    <div className={`rounded-xl border transition-all duration-200 ${isExpanded ? "border-primary/20 bg-primary/[0.02] shadow-md shadow-primary/5" : hasDevolutiva ? "border-red-500/20 bg-red-500/[0.02] hover:border-red-500/30" : "border-border/40 bg-secondary/10 hover:border-border/60 hover:bg-secondary/20"}`}>
-      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={onToggleExpand}>
-        <div className="flex items-center gap-2 shrink-0">
-          <Avatar className="h-10 w-10 shrink-0 border border-primary/10">
-            <AvatarImage src={profilePic} />
-            <AvatarFallback className="bg-gradient-to-br from-primary/15 to-primary/5 text-xs font-bold text-primary">
-              {getInitials(c.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col gap-1.5 min-w-[20px]">
-            {stageDots.map((dot) => (
-              <div
-                key={dot.key}
-                title={`${dot.label} ${dot.reached ? "✓ Enviado" : "– Falta avisar"}`}
-                className={`h-2.5 w-2.5 rounded-full border transition-all ${dot.reached ? `${dot.color} border-transparent` : "bg-muted/30 border-border/50"}`}
-              />
-            ))}
-          </div>
-        </div>
+    <div
+      className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+        isExpanded
+          ? "border-primary/30 bg-card shadow-lg shadow-primary/5"
+          : hasDevolutiva
+          ? "border-red-500/25 bg-card hover:border-red-500/40"
+          : "border-border bg-card hover:border-primary/25 hover:shadow-md"
+      }`}
+    >
+      {/* ─── Linha principal (sempre visível) ─── */}
+      <button
+        type="button"
+        className="w-full flex items-center gap-4 p-4 text-left"
+        onClick={onToggleExpand}
+        aria-expanded={isExpanded}
+      >
+        {/* Avatar */}
+        <Avatar className="h-12 w-12 shrink-0 border border-border">
+          <AvatarImage src={profilePic} />
+          <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/5 text-sm font-bold text-primary">
+            {getInitials(c.name)}
+          </AvatarFallback>
+        </Avatar>
 
+        {/* Nome + badges + contato resumido */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-sm font-semibold text-foreground truncate sensitive-name min-w-0 max-w-full">{c.name || "Sem nome"}</p>
-            <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 shrink-0 ${status.className}`}>{status.label}</Badge>
-            {(c.tipo_produto === "telefonia") && (
-              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 shrink-0 bg-purple-500/15 text-purple-400 border-purple-500/20">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-base font-bold text-foreground truncate sensitive-name max-w-[260px]">
+              {c.name || "Sem nome"}
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${status.className}`}>
+              {status.label}
+            </span>
+            {c.tipo_produto === "telefonia" && (
+              <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-purple-500/15 text-purple-400 border-purple-500/25">
                 📱 Telecom
-              </Badge>
+              </span>
             )}
             {hasDevolutiva && status.label !== "Devolutiva" && (
-              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 shrink-0 bg-red-500/15 text-red-400 border-red-500/20">
+              <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-red-500/15 text-red-400 border-red-500/25">
                 ⚠️ Devolutiva
-              </Badge>
+              </span>
             )}
           </div>
-          <div className="hidden sm:flex items-center gap-2 mt-1 flex-wrap">
-            <span className="text-[10px] text-muted-foreground">CRM:</span>
-            {reachedStageLabels.length > 0 ? (
-              <span className="text-[10px] text-muted-foreground">{reachedStageLabels.join(" • ")}</span>
-            ) : (
-              <span className="text-[10px] text-muted-foreground">Sem aviso enviado</span>
-            )}
-          </div>
-          <div className="flex items-center gap-x-3 gap-y-0.5 mt-1 flex-wrap">
-            <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-              <Phone className="h-2.5 w-2.5 shrink-0" />
+          <div className="flex items-center gap-x-4 gap-y-1 mt-1.5 flex-wrap text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <Phone className="h-3.5 w-3.5 shrink-0" />
               <span className="sensitive-phone">{formatPhoneDisplay(c.phone_whatsapp)}</span>
             </span>
             {c.distribuidora && (
-              <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap max-w-[140px] truncate">
-                <Building2 className="h-2.5 w-2.5 shrink-0" />
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap max-w-[180px] truncate">
+                <Building2 className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{c.distribuidora}</span>
               </span>
             )}
-            {c.address_city && (
-              <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 whitespace-nowrap">
-                <MapPin className="h-2.5 w-2.5 shrink-0" />
-                {c.address_city}{c.address_state ? `/${c.address_state}` : ""}
-              </span>
-            )}
-            {c.registered_by_name && (
-              <span className="hidden sm:inline-flex text-[11px] text-muted-foreground items-center gap-1 whitespace-nowrap max-w-[140px] truncate">
-                <User className="h-2.5 w-2.5 shrink-0" />
-                <span className="truncate">{c.registered_by_name}</span>
-              </span>
-            )}
-            {c.customer_referred_by_name && (
-              <span className="hidden sm:inline-flex text-[11px] text-blue-400 items-center gap-1 whitespace-nowrap">
-                <Users className="h-2.5 w-2.5 shrink-0" />
-                Ind: <span className="sensitive-name truncate max-w-[100px]">{c.customer_referred_by_name}</span>
-              </span>
-            )}
-            {c.cashback && (
-              <span className="hidden sm:inline-flex text-[11px] text-emerald-400 items-center gap-1 whitespace-nowrap">
-                <CreditCard className="h-2.5 w-2.5 shrink-0" />
-                CB: {c.cashback}
+            {location && (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                {location}
               </span>
             )}
           </div>
         </div>
 
-
-        <div className="flex items-center gap-3 shrink-0">
-          {c.electricity_bill_value != null && c.electricity_bill_value > 0 && (
-            <div className="text-right">
-              <p className="text-xs font-bold text-primary">R${c.electricity_bill_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-              <p className="text-[9px] text-muted-foreground">consumo</p>
-            </div>
-          )}
-          {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground/50" />}
+        {/* Stage tracker (desktop) + valor + chevron */}
+        <div className="hidden lg:block shrink-0">
+          <StageTracker stageDots={stageDots} />
         </div>
+        {c.electricity_bill_value != null && c.electricity_bill_value > 0 && (
+          <div className="text-right shrink-0 hidden sm:block">
+            <p className="text-base font-bold text-primary tabular-nums">
+              R$ {c.electricity_bill_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+            </p>
+            <p className="text-[11px] text-muted-foreground">conta de luz</p>
+          </div>
+        )}
+        <ChevronDown className={`h-5 w-5 text-muted-foreground shrink-0 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
+      </button>
+
+      {/* Stage tracker no mobile (linha separada) */}
+      <div className="lg:hidden px-4 pb-3 -mt-1">
+        <StageTracker stageDots={stageDots} />
       </div>
 
+      {/* ─── Conteúdo expandido ─── */}
       {isExpanded && (
-        <div className="px-4 pb-4 pt-1 border-t border-border/30">
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 mt-2">
-            {c.igreen_code && <DetailItem icon={FileText} label="Código iGreen" value={c.igreen_code} />}
-            {c.cpf && <DetailItem icon={CreditCard} label="CPF" value={formatCpfDisplay(c.cpf)} sensitiveClass="sensitive-cpf" />}
-            {c.email && <DetailItem icon={Mail} label="Email" value={c.email} sensitiveClass="sensitive-email" />}
-            <DetailItem icon={Phone} label="WhatsApp" value={formatPhoneDisplay(c.phone_whatsapp)} sensitiveClass="sensitive-phone" />
-            {c.data_nascimento && <DetailItem icon={User} label="Nascimento" value={c.data_nascimento} sensitiveClass="sensitive-data" />}
-            {c.distribuidora && <DetailItem icon={Building2} label="Distribuidora" value={c.distribuidora} />}
-            {c.registered_by_name && <DetailItem icon={User} label="Licenciado" value={`${c.registered_by_name}${c.registered_by_igreen_id ? ` (${c.registered_by_igreen_id})` : ""}`} />}
-            {c.customer_referred_by_name && <DetailItem icon={User} label="Indicado por" value={`${c.customer_referred_by_name}${c.customer_referred_by_phone ? ` (${c.customer_referred_by_phone})` : ""}`} sensitiveClass="sensitive-name" />}
-            {c.nivel_licenciado && <DetailItem icon={User} label="Nível" value={c.nivel_licenciado} />}
-            {c.andamento_igreen && <DetailItem icon={FileText} label="Andamento iGreen" value={c.andamento_igreen} />}
-            {c.status_financeiro && <DetailItem icon={CreditCard} label="Status Financeiro" value={c.status_financeiro} />}
-            {c.media_consumo != null && <DetailItem icon={Zap} label="Consumo Médio" value={`${c.media_consumo} kWh`} />}
-            {c.desconto_cliente != null && <DetailItem icon={Zap} label="Desconto" value={`${c.desconto_cliente}%`} />}
-            {c.cashback && <DetailItem icon={Zap} label="Cashback" value={c.cashback} />}
-            {(c.address_city || c.address_state) && <DetailItem icon={MapPin} label="Localidade" value={`${c.address_city || ""}${c.address_state ? ` / ${c.address_state}` : ""}`} />}
-            {c.address_street && <DetailItem icon={MapPin} label="Endereço" value={`${c.address_street}${c.address_number ? `, ${c.address_number}` : ""}`} />}
-            {c.numero_instalacao && <DetailItem icon={Zap} label="Nº Instalação" value={c.numero_instalacao} />}
-            {c.electricity_bill_value != null && <DetailItem icon={Zap} label="Valor Conta" value={`R$ ${c.electricity_bill_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />}
-            {c.assinatura_cliente && <DetailItem icon={FileText} label="Assinatura Cliente" value={c.assinatura_cliente} />}
-            {c.assinatura_igreen && <DetailItem icon={FileText} label="Assinatura iGreen" value={c.assinatura_igreen} />}
-            {c.data_cadastro && <DetailItem icon={User} label="Data Cadastro" value={c.data_cadastro} />}
-            {c.data_ativo && <DetailItem icon={User} label="Data Ativo" value={c.data_ativo} />}
-            {c.data_validado && <DetailItem icon={User} label="Data Validado" value={c.data_validado} />}
-            {c.created_at && <DetailItem icon={User} label="Cadastrado Sistema" value={new Date(c.created_at).toLocaleDateString("pt-BR")} />}
-            {c.link_assinatura && (
-              <div className="flex items-start gap-2">
-                <FileText className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[9px] text-muted-foreground uppercase tracking-wider">Link Assinatura</p>
-                  <a href={c.link_assinatura} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate block max-w-[200px]">Abrir link</a>
-                </div>
-              </div>
-            )}
-          </div>
-
+        <div className="border-t border-border bg-secondary/20 p-5 space-y-5">
+          {/* Devolutiva / Observação em destaque no topo */}
           {(c.devolutiva || c.observacao) && (
-            <div className="mt-3 space-y-2">
+            <div className="space-y-2.5">
               {c.devolutiva && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <AlertTriangle className="h-3 w-3 text-red-400" />
-                    <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">Devolutiva</span>
+                <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle className="h-4 w-4 text-red-400" />
+                    <span className="text-xs font-bold text-red-400 uppercase tracking-wide">Devolutiva</span>
                   </div>
-                  <p className="text-xs text-foreground">{c.devolutiva}</p>
+                  <p className="text-sm text-foreground">{c.devolutiva}</p>
                 </div>
               )}
               {c.observacao && (
-                <div className="rounded-lg border border-border/30 bg-secondary/20 px-3 py-2">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <FileText className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Observação</span>
+                <div className="rounded-xl border border-border bg-card px-4 py-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Observação</span>
                   </div>
-                  <p className="text-xs text-foreground">{c.observacao}</p>
+                  <p className="text-sm text-foreground">{c.observacao}</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* ── Documentos para download via MinIO ── */}
-          <DocumentDownloadSection customerId={c.id} customerName={c.name} />
+          {/* Grupos de informação */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
+            {c.cpf && <DetailItem icon={CreditCard} label="CPF" value={formatCpfDisplay(c.cpf)} sensitiveClass="sensitive-cpf" />}
+            {c.email && <DetailItem icon={Mail} label="E-mail" value={c.email} sensitiveClass="sensitive-email" />}
+            <DetailItem icon={Phone} label="WhatsApp" value={formatPhoneDisplay(c.phone_whatsapp)} sensitiveClass="sensitive-phone" />
+            {c.data_nascimento && <DetailItem icon={User} label="Nascimento" value={c.data_nascimento} sensitiveClass="sensitive-data" />}
+            {c.distribuidora && <DetailItem icon={Building2} label="Distribuidora" value={c.distribuidora} />}
+            {c.media_consumo != null && <DetailItem icon={Zap} label="Consumo médio" value={`${c.media_consumo} kWh`} />}
+            {c.desconto_cliente != null && <DetailItem icon={Zap} label="Desconto" value={`${c.desconto_cliente}%`} />}
+            {c.electricity_bill_value != null && c.electricity_bill_value > 0 && (
+              <DetailItem icon={CreditCard} label="Valor da conta" value={`R$ ${c.electricity_bill_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} />
+            )}
+            {(c.address_street || location) && (
+              <DetailItem
+                icon={MapPin}
+                label="Endereço"
+                value={[c.address_street, c.address_number, location].filter(Boolean).join(", ")}
+              />
+            )}
+            {c.numero_instalacao && <DetailItem icon={Zap} label="Nº instalação" value={c.numero_instalacao} />}
+            {c.igreen_code && <DetailItem icon={FileText} label="Código iGreen" value={c.igreen_code} />}
+            {c.andamento_igreen && <DetailItem icon={FileText} label="Andamento iGreen" value={c.andamento_igreen} />}
+            {c.status_financeiro && <DetailItem icon={CreditCard} label="Status financeiro" value={c.status_financeiro} />}
+            {c.cashback && <DetailItem icon={CreditCard} label="Cashback" value={c.cashback} />}
+            {c.registered_by_name && (
+              <DetailItem icon={User} label="Licenciado" value={`${c.registered_by_name}${c.registered_by_igreen_id ? ` (${c.registered_by_igreen_id})` : ""}`} />
+            )}
+            {c.customer_referred_by_name && (
+              <DetailItem icon={Users} label="Indicado por" value={c.customer_referred_by_name} sensitiveClass="sensitive-name" />
+            )}
+            {c.created_at && <DetailItem icon={FileText} label="Cadastrado no sistema" value={new Date(c.created_at).toLocaleDateString("pt-BR")} />}
+          </div>
 
-          <div className="flex justify-between gap-2 mt-3 pt-3 border-t border-border/20">
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 text-green-400 border-green-500/20 hover:bg-green-500/10" onClick={onOpenWhatsApp}>
-                <MessageCircle className="w-3 h-3" /> Enviar WhatsApp
+          {c.link_assinatura && (
+            <a href={c.link_assinatura} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm text-primary hover:underline font-medium">
+              <ExternalLink className="h-4 w-4" /> Abrir link de assinatura
+            </a>
+          )}
+
+          {/* Documentos */}
+          <div className="pt-1">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">Documentos</p>
+            <DocumentDownloadSection customerId={c.id} />
+          </div>
+
+          {/* Ações */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-border">
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" className="h-9 gap-2 rounded-lg bg-green-600 hover:bg-green-700 text-white" onClick={onOpenWhatsApp}>
+                <MessageCircle className="w-4 h-4" /> Enviar WhatsApp
               </Button>
-              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 text-muted-foreground border-border/30 hover:bg-secondary/30" onClick={onCopyMessage}>
-                <ClipboardCopy className="w-3 h-3" /> Copiar Msg
+              <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg" onClick={onCopyMessage}>
+                <ClipboardCopy className="w-4 h-4" /> Copiar mensagem
               </Button>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 text-primary border-primary/20 hover:bg-primary/10" onClick={onEdit}>
-                <Pencil className="w-3 h-3" /> Editar
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg text-primary border-primary/30 hover:bg-primary/10" onClick={onEdit}>
+                <Pencil className="w-4 h-4" /> Editar
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 text-destructive border-destructive/20 hover:bg-destructive/10">
-                    <Trash2 className="w-3 h-3" /> Remover
+                  <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg text-destructive border-destructive/30 hover:bg-destructive/10">
+                    <Trash2 className="w-4 h-4" /> Remover
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>

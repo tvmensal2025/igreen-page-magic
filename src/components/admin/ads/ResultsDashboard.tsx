@@ -37,6 +37,17 @@ interface DailyMetric {
 
 const TICKET_MEDIO_MENSAL = 30; // R$ estimado de comissão por cliente ativo/mês (ajustável)
 
+/** Extrai o valor textual de customers.lead_source (jsonb que guarda "meta_ads"). */
+function leadSourceValue(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    if (typeof o.utm_source === "string") return o.utm_source;
+  }
+  return null;
+}
+
 export function ResultsDashboard({
   consultantId,
   onCreateClick,
@@ -84,24 +95,33 @@ export function ResultsDashboard({
         setMetrics([]);
       }
 
-      // Leads de ANÚNCIO no período (lead_source = "meta_ads")
-      const { count: leadsCount } = await supabase
+      // Leads de ANÚNCIO no período (lead_source = "meta_ads").
+      // lead_source é jsonb → .eq() falha no PostgREST; filtramos no cliente.
+      const { data: leadRows } = await supabase
         .from("customers")
-        .select("id", { count: "exact", head: true })
+        .select("id, lead_source")
         .eq("consultant_id", consultantId)
-        .eq("lead_source", "meta_ads")
-        .gte("created_at", since);
-      setRealLeads(leadsCount || 0);
+        .not("lead_source", "is", null)
+        .gte("created_at", since)
+        .limit(10000);
+      const adLeads = (leadRows || []).filter(
+        (c: any) => leadSourceValue(c.lead_source) === "meta_ads",
+      );
+      setRealLeads(adLeads.length);
 
-      // Aprovados que vieram de anúncio: deals 'aprovado' cujo customer tem lead_source='meta_ads'
-      const { count: approvedCount } = await supabase
+      // Aprovados que vieram de anúncio: deals no estágio "aprovado" cujo customer
+      // veio de anúncio. Filtra lead_source no cliente (jsonb).
+      const { data: approvedRows } = await supabase
         .from("crm_deals")
-        .select("id, customers!inner(lead_source)", { count: "exact", head: true })
+        .select("id, customers!inner(lead_source)")
         .eq("consultant_id", consultantId)
         .eq("stage", "aprovado")
-        .eq("customers.lead_source", "meta_ads")
-        .gte("created_at", since);
-      setAcquired(approvedCount || 0);
+        .gte("created_at", since)
+        .limit(10000);
+      const adApproved = (approvedRows || []).filter(
+        (d: any) => leadSourceValue(d.customers?.lead_source) === "meta_ads",
+      );
+      setAcquired(adApproved.length);
 
       setLoading(false);
     })();

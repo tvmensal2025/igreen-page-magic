@@ -3,6 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { captureLeadSource } from "@/lib/fbclid";
 import { Volume2 } from "lucide-react";
 import WhatsAppFloat from "@/components/WhatsAppFloat";
+import AnimatedCounter from "@/components/common/AnimatedCounter";
+import AmbientGlow from "@/components/common/AmbientGlow";
+import LandingNav from "@/components/common/LandingNav";
+import BrandLogo from "@/components/common/BrandLogo";
 import { useCrmPageView, trackCrmClick } from "@/hooks/useCrmTracking";
 import {
   MessageSquare,
@@ -14,47 +18,17 @@ import {
   Zap,
   Shield,
   Headphones,
-  ChevronRight,
-  Play,
+  ArrowRight,
   CheckCircle2,
 } from "lucide-react";
 
 const WHATSAPP_CTA = "https://wa.me/5511989000650?text=Ol%C3%A1,%20quero%20conhecer%20o%20CRM%20iGreen";
 
-/* ── Animated Counter ── */
-const AnimatedCounter = ({ target, suffix = "" }: { target: number; suffix?: string }) => {
-  const [count, setCount] = useState(0);
-  const ref = useRef<HTMLDivElement>(null);
-  const hasAnimated = useRef(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const isMobile = window.matchMedia("(max-width: 767px)").matches;
-
-    const start = () => {
-      if (hasAnimated.current) return;
-      hasAnimated.current = true;
-      if (isMobile) { setCount(target); return; }
-      let s = 0;
-      const dur = 2000;
-      const step = (ts: number) => {
-        if (!s) s = ts;
-        const p = Math.min((ts - s) / dur, 1);
-        setCount(Math.floor(p * target));
-        if (p < 1) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    };
-
-    if (typeof IntersectionObserver === "undefined" || isMobile) { start(); return; }
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { start(); obs.disconnect(); } }, { threshold: 0.1 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [target]);
-
-  return <div ref={ref}><span className="stat-number">{count.toLocaleString("pt-BR")}{suffix}</span></div>;
-};
+const NAV_ITEMS = [
+  { label: "Funcionalidades", href: "#section-funcionalidades" },
+  { label: "Como funciona", href: "#section-como-funciona" },
+  { label: "Diferenciais", href: "#section-diferenciais" },
+];
 
 /* ── Feature data ── */
 const features = [
@@ -226,58 +200,93 @@ const CRMLandingPage = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div id="top" className="min-h-screen bg-background text-foreground">
+      <LandingNav
+        items={NAV_ITEMS}
+        ctaLabel="Falar no WhatsApp"
+        ctaHref={WHATSAPP_CTA}
+        onCtaClick={() => trackCrmClick("nav_cta")}
+      />
+
       {/* ═══ HERO ═══ */}
-      <section className="relative overflow-hidden" style={{ background: "var(--gradient-hero)" }}>
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full opacity-[0.07]" style={{ background: "radial-gradient(circle, hsl(130,100%,36%), transparent 70%)" }} />
-          <div className="absolute -bottom-60 -left-40 w-[600px] h-[600px] rounded-full opacity-[0.05]" style={{ background: "radial-gradient(circle, hsl(130,100%,36%), transparent 70%)" }} />
-        </div>
+      <section className="relative overflow-hidden pt-28 md:pt-36 pb-16 md:pb-24" style={{ background: "var(--gradient-hero)" }}>
+        <AmbientGlow variant="hero" />
+        <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
 
-        <div className="section-container text-center py-10 md:py-20 relative z-10">
-          <div className="flex flex-col items-center gap-3 mb-6 md:mb-8">
-            <div className="badge-green animate-fade-in !py-1.5 !px-4">
+        <div className="relative z-10 mx-auto w-full max-w-[1180px] px-5 sm:px-8 lg:px-10">
+          {/* Coluna de texto centralizada + mockup grande abaixo (estilo Linear/Vercel) */}
+          <div className="flex flex-col items-center text-center">
+            <div className="badge-green animate-fade-in mb-6">
               <span className="glow-dot" />
-              <span className="text-xs">CRM iGreen Energy</span>
+              <span>CRM iGreen Energy</span>
             </div>
-            <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy Logo" width={300} height={92} className="w-32 md:w-56 animate-fade-in" />
+
+            <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[2.4rem] sm:text-5xl md:text-6xl lg:text-[4.25rem] max-w-[16ch] mx-auto">
+              Venda mais com o CRM que <span className="text-gradient-green">trabalha por você</span>
+            </h1>
+
+            <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+              WhatsApp integrado, Kanban de vendas, mensagens automáticas e dashboard de métricas — tudo em um só lugar, sem custo extra para o licenciado iGreen.
+            </p>
+
+            <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
+              <a href={WHATSAPP_CTA} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => trackCrmClick("hero_cta")}>
+                Quero conhecer o CRM <ArrowRight className="w-5 h-5" />
+              </a>
+              <a href="#section-funcionalidades" className="btn-whatsapp">
+                Ver funcionalidades
+              </a>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+              <span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-primary" /> Sem cartão de crédito</span>
+              <span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-primary" /> Setup em minutos</span>
+              <span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-primary" /> Suporte incluso</span>
+            </div>
           </div>
 
-          <h1 className="font-heading font-black mb-4 md:mb-6 text-[1.5rem] sm:text-3xl md:text-4xl lg:text-[3rem] leading-[1.15] max-w-5xl mx-auto px-4">
-            Gerencie seus clientes, automatize vendas e{" "}
-            <span className="relative inline" style={{ color: "hsl(var(--primary))" }}>feche mais negócios</span>
-          </h1>
+          {/* Mockup grande do produto (vídeo dentro de janela de navegador) */}
+          <div className="relative mt-14 md:mt-20 max-w-5xl mx-auto">
+            {/* chips flutuantes de prova social */}
+            <div className="floating-chip -left-4 top-8 hidden lg:flex animate-float">
+              <div className="w-9 h-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center"><MessageSquare size={18} /></div>
+              <div className="text-left">
+                <p className="text-xs text-muted-foreground leading-none">Conversas hoje</p>
+                <p className="text-sm font-bold text-foreground">+128</p>
+              </div>
+            </div>
+            <div className="floating-chip -right-4 bottom-16 hidden lg:flex animate-float" style={{ animationDelay: "1.2s" }}>
+              <div className="w-9 h-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center"><BarChart3 size={18} /></div>
+              <div className="text-left">
+                <p className="text-xs text-muted-foreground leading-none">Conversão</p>
+                <p className="text-sm font-bold text-foreground">+32%</p>
+              </div>
+            </div>
 
-          <p className="hidden sm:block text-foreground/70 text-lg md:text-xl max-w-3xl mx-auto mb-8 md:mb-12 leading-relaxed">
-            O CRM completo com WhatsApp integrado, Kanban de vendas, mensagens automáticas e dashboard de métricas — tudo em um só lugar.
-          </p>
-
-          {/* Video */}
-          <div className="max-w-4xl mx-auto mb-8 md:mb-12 rounded-xl md:rounded-2xl overflow-hidden relative" style={{ boxShadow: "var(--shadow-green-lg)" }}>
-            <div className="absolute inset-0 rounded-xl md:rounded-2xl border border-primary/20 z-10 pointer-events-none" />
-            <video
-              controls
-              playsInline
-              className="w-full aspect-video relative z-0"
-              poster=""
-              onPlay={() => trackCrmClick("video_play")}
-              onPause={() => trackCrmClick("video_pause")}
-              onEnded={() => trackCrmClick("video_completed")}
-            >
-              <source src="https://igreen-minio.d9v63q.easypanel.host/igreen/Video%20para%20venda%20do%20crm.mp4" type="video/mp4" />
-              Seu navegador não suporta vídeos.
-            </video>
+            <div className="mockup-window">
+              <div className="mockup-bar">
+                <span className="mockup-dot bg-red-400/70" />
+                <span className="mockup-dot bg-yellow-400/70" />
+                <span className="mockup-dot bg-green-400/70" />
+                <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
+              </div>
+              <video
+                controls
+                playsInline
+                className="w-full aspect-video block"
+                poster=""
+                onPlay={() => trackCrmClick("video_play")}
+                onPause={() => trackCrmClick("video_pause")}
+                onEnded={() => trackCrmClick("video_completed")}
+              >
+                <source src="https://igreen-minio.d9v63q.easypanel.host/igreen/Video%20para%20venda%20do%20crm.mp4" type="video/mp4" />
+                Seu navegador não suporta vídeos.
+              </video>
+            </div>
           </div>
 
-          {/* CTA */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-center px-4">
-            <a href={WHATSAPP_CTA} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green !py-3 sm:!py-4 !px-8 !text-base sm:!text-lg" onClick={() => trackCrmClick("hero_cta")}>
-              ⚡ Quero conhecer o CRM
-            </a>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 sm:gap-8 max-w-3xl mx-auto mt-12 md:mt-16 pt-8 border-t border-border">
+          {/* Stats em faixa */}
+          <div className="grid grid-cols-3 gap-4 sm:gap-8 max-w-3xl mx-auto mt-16 md:mt-20 pt-10 border-t border-border">
             <div className="text-center">
               <AnimatedCounter target={6} suffix="+" />
               <p className="text-[11px] sm:text-xs mt-2 text-muted-foreground uppercase tracking-wider font-heading">Módulos integrados</p>
@@ -296,24 +305,24 @@ const CRMLandingPage = () => {
 
       {/* ═══ FUNCIONALIDADES ═══ */}
       <section id="section-funcionalidades" className="section-gradient">
-        <div className="section-container">
+        <div className="section-container-wide">
           <div className="text-center mb-12 md:mb-16">
-            <div className="badge-green mx-auto mb-4">
+            <div className="section-eyebrow mb-4">
               <span className="glow-dot" />
-              <span className="text-xs">Funcionalidades</span>
+              Funcionalidades
             </div>
-            <h2 className="section-heading !text-2xl sm:!text-3xl md:!text-4xl">
-              Tudo que você precisa para vender mais
+            <h2 className="section-heading">
+              Tudo que você precisa para <span className="text-gradient-green">vender mais</span>
             </h2>
-            <p className="text-muted-foreground mt-4 max-w-2xl mx-auto">
+            <p className="text-muted-foreground mt-4 max-w-2xl mx-auto text-base md:text-lg">
               Cada módulo foi pensado para simplificar sua rotina e aumentar suas conversões.
             </p>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
             {features.map((f) => (
-              <div key={f.title} className="glass-card group cursor-default">
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-primary/15 text-primary group-hover:bg-primary/25 transition-colors">
+              <div key={f.title} className="feature-card group cursor-default">
+                <div className="feature-icon">
                   <f.icon size={24} />
                 </div>
                 <h3 className="font-heading font-bold text-lg text-foreground mb-2">{f.title}</h3>
@@ -329,14 +338,14 @@ const CRMLandingPage = () => {
         <section id="section-templates">
           <div className="section-container">
             <div className="text-center mb-12 md:mb-16">
-              <div className="badge-green mx-auto mb-4">
+              <div className="section-eyebrow mb-4">
                 <span className="glow-dot" />
-                <span className="text-xs">Templates prontos</span>
+                Templates prontos
               </div>
-              <h2 className="section-heading !text-2xl sm:!text-3xl md:!text-4xl">
-                Áudios profissionais inclusos
+              <h2 className="section-heading">
+                Áudios profissionais <span className="text-gradient-green">inclusos</span>
               </h2>
-              <p className="text-muted-foreground mt-4 max-w-2xl mx-auto">
+              <p className="text-muted-foreground mt-4 max-w-2xl mx-auto text-base md:text-lg">
                 Utilize templates de áudio prontos para cada etapa do funil. Envie com um clique direto pelo CRM.
               </p>
             </div>
@@ -362,26 +371,24 @@ const CRMLandingPage = () => {
       <section id="section-como-funciona">
         <div className="section-container">
           <div className="text-center mb-12 md:mb-16">
-            <div className="badge-green mx-auto mb-4">
+            <div className="section-eyebrow mb-4 justify-center">
               <span className="glow-dot" />
-              <span className="text-xs">Como funciona</span>
+              Como funciona
             </div>
-            <h2 className="section-heading !text-2xl sm:!text-3xl md:!text-4xl">
-              Comece em 3 passos simples
+            <h2 className="section-heading">
+              Comece em <span className="text-gradient-green">3 passos</span> simples
             </h2>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 md:gap-8 max-w-4xl mx-auto">
-            {steps.map((s, i) => (
-              <div key={s.num} className="relative text-center">
-                <div className="product-number mx-auto mb-5 text-2xl">{s.num}</div>
-                {i < steps.length - 1 && (
-                  <div className="hidden md:block absolute top-6 left-[60%] w-[80%]">
-                    <div className="border-t-2 border-dashed border-primary/30" />
-                  </div>
-                )}
+          <div className="grid md:grid-cols-3 gap-5 md:gap-6 max-w-5xl mx-auto">
+            {steps.map((s) => (
+              <div key={s.num} className="feature-card group">
+                <div className="flex items-center gap-4 mb-4">
+                  <span className="font-heading font-black text-5xl leading-none text-gradient-green">{s.num}</span>
+                  <div className="h-px flex-1 bg-gradient-to-r from-primary/40 to-transparent" />
+                </div>
                 <h3 className="font-heading font-bold text-lg mb-2">{s.title}</h3>
-                <p className="text-sm text-muted-foreground">{s.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{s.desc}</p>
               </div>
             ))}
           </div>
@@ -392,23 +399,23 @@ const CRMLandingPage = () => {
       <section id="section-diferenciais" className="section-gradient">
         <div className="section-container">
           <div className="text-center mb-12 md:mb-16">
-            <div className="badge-green mx-auto mb-4">
+            <div className="section-eyebrow mb-4">
               <span className="glow-dot" />
-              <span className="text-xs">Diferenciais</span>
+              Diferenciais
             </div>
-            <h2 className="section-heading !text-2xl sm:!text-3xl md:!text-4xl">
-              Por que escolher o CRM iGreen?
+            <h2 className="section-heading">
+              Por que escolher o <span className="text-gradient-green">CRM iGreen?</span>
             </h2>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {differentials.map((d) => (
-              <div key={d.title} className="glass-card text-center">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5 bg-primary/15 text-primary">
+              <div key={d.title} className="feature-card text-center group">
+                <div className="feature-icon mx-auto !w-14 !h-14 !rounded-2xl">
                   <d.icon size={28} />
                 </div>
                 <h3 className="font-heading font-bold text-lg mb-2">{d.title}</h3>
-                <p className="text-sm text-muted-foreground">{d.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{d.desc}</p>
               </div>
             ))}
           </div>
@@ -416,17 +423,17 @@ const CRMLandingPage = () => {
       </section>
 
       {/* ═══ CTA FINAL ═══ */}
-      <section id="section-cta-final" className="relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse at center, hsl(130 100% 36% / 0.08), transparent 70%)" }} />
+      <section id="section-cta-final" className="cta-band relative overflow-hidden border-t border-border">
+        <div className="absolute inset-0 bg-dots pointer-events-none" aria-hidden />
         <div className="section-container text-center relative z-10">
-          <h2 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl mb-4">
-            Pronto para transformar suas vendas?
+          <h2 className="section-heading mb-4">
+            Pronto para <span className="text-gradient-green">transformar suas vendas?</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto mb-8 text-lg">
             Junte-se aos consultores que já estão fechando mais negócios com o CRM iGreen Energy.
           </p>
-          <a href={WHATSAPP_CTA} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green !py-4 !px-10 !text-lg" onClick={() => trackCrmClick("footer_cta")}>
-            Quero contratar o CRM
+          <a href={WHATSAPP_CTA} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => trackCrmClick("footer_cta")}>
+            Quero contratar o CRM <ArrowRight className="w-5 h-5" />
           </a>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 mt-8 text-sm text-muted-foreground">
@@ -438,9 +445,23 @@ const CRMLandingPage = () => {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border py-8">
-        <div className="max-w-6xl mx-auto px-4 text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} iGreen Energy — Todos os direitos reservados.
+      <footer className="border-t border-border bg-card/40">
+        <div className="mx-auto w-full max-w-[1280px] px-5 sm:px-8 lg:px-10 py-12">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex flex-col items-center md:items-start gap-3">
+              <BrandLogo className="w-28" />
+              <p className="text-sm text-muted-foreground max-w-xs text-center md:text-left">
+                CRM completo para licenciados iGreen Energy venderem mais.
+              </p>
+            </div>
+            <a href={WHATSAPP_CTA} target="_blank" rel="noopener noreferrer" className="btn-whatsapp" onClick={() => trackCrmClick("footer_whatsapp")}>
+              Falar com a equipe
+            </a>
+          </div>
+          <div className="hr-glow my-8" />
+          <p className="text-center text-xs text-muted-foreground">
+            © {new Date().getFullYear()} iGreen Energy — Todos os direitos reservados.
+          </p>
         </div>
       </footer>
 
