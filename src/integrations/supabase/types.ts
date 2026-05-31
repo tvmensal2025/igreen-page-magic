@@ -1006,6 +1006,7 @@ export type Database = {
       }
       ai_knowledge_sections: {
         Row: {
+          consultant_id: string | null
           content: string
           created_at: string
           id: string
@@ -1018,6 +1019,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          consultant_id?: string | null
           content: string
           created_at?: string
           id?: string
@@ -1030,6 +1032,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          consultant_id?: string | null
           content?: string
           created_at?: string
           id?: string
@@ -2636,11 +2639,13 @@ export type Database = {
           cashback: string | null
           cep: string | null
           chat_cleared_at: string | null
+          commission_rate: number | null
           consultant_id: string | null
           conta_pdf_protegida: boolean | null
           conversation_step: string | null
           conversation_summary: string | null
           conversational_flow_enabled: boolean | null
+          converted_at: string | null
           cpf: string | null
           created_at: string
           ctwa_clid: string | null
@@ -2663,6 +2668,7 @@ export type Database = {
           doc_data_confirmation_by: string | null
           doc_data_confirmed_at: string | null
           doc_holder_name: string | null
+          document_back_base64: string | null
           document_back_url: string | null
           document_front_base64: string | null
           document_front_url: string | null
@@ -2682,6 +2688,7 @@ export type Database = {
           igreen_code: string | null
           igreen_link: string | null
           intent_signals: Json | null
+          is_converted: boolean
           is_sandbox: boolean
           is_test_lead: boolean
           last_bot_interaction_at: string | null
@@ -2807,11 +2814,13 @@ export type Database = {
           cashback?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
+          commission_rate?: number | null
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
           conversation_step?: string | null
           conversation_summary?: string | null
           conversational_flow_enabled?: boolean | null
+          converted_at?: string | null
           cpf?: string | null
           created_at?: string
           ctwa_clid?: string | null
@@ -2834,6 +2843,7 @@ export type Database = {
           doc_data_confirmation_by?: string | null
           doc_data_confirmed_at?: string | null
           doc_holder_name?: string | null
+          document_back_base64?: string | null
           document_back_url?: string | null
           document_front_base64?: string | null
           document_front_url?: string | null
@@ -2853,6 +2863,7 @@ export type Database = {
           igreen_code?: string | null
           igreen_link?: string | null
           intent_signals?: Json | null
+          is_converted?: boolean
           is_sandbox?: boolean
           is_test_lead?: boolean
           last_bot_interaction_at?: string | null
@@ -2978,11 +2989,13 @@ export type Database = {
           cashback?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
+          commission_rate?: number | null
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
           conversation_step?: string | null
           conversation_summary?: string | null
           conversational_flow_enabled?: boolean | null
+          converted_at?: string | null
           cpf?: string | null
           created_at?: string
           ctwa_clid?: string | null
@@ -3005,6 +3018,7 @@ export type Database = {
           doc_data_confirmation_by?: string | null
           doc_data_confirmed_at?: string | null
           doc_holder_name?: string | null
+          document_back_base64?: string | null
           document_back_url?: string | null
           document_front_base64?: string | null
           document_front_url?: string | null
@@ -3024,6 +3038,7 @@ export type Database = {
           igreen_code?: string | null
           igreen_link?: string | null
           intent_signals?: Json | null
+          is_converted?: boolean
           is_sandbox?: boolean
           is_test_lead?: boolean
           last_bot_interaction_at?: string | null
@@ -3309,6 +3324,7 @@ export type Database = {
           age_max: number
           age_min: number
           cities: Json
+          commission_rate: number | null
           consultant_id: string
           created_at: string
           creative_pack_id: string | null
@@ -3336,6 +3352,7 @@ export type Database = {
           age_max?: number
           age_min?: number
           cities?: Json
+          commission_rate?: number | null
           consultant_id: string
           created_at?: string
           creative_pack_id?: string | null
@@ -3363,6 +3380,7 @@ export type Database = {
           age_max?: number
           age_min?: number
           cities?: Json
+          commission_rate?: number | null
           consultant_id?: string
           created_at?: string
           creative_pack_id?: string | null
@@ -5753,10 +5771,7 @@ export type Database = {
         Returns: string
       }
       seed_flow_d: { Args: { _consultant_id: string }; Returns: Json }
-      seed_igreen_faq_pack: {
-        Args: { _flow_id: string }
-        Returns: number
-      }
+      seed_igreen_faq_pack: { Args: { _flow_id: string }; Returns: number }
       seed_objection_shortcut: {
         Args: {
           _flow_id: string
