@@ -1,0 +1,1 @@
+UPDATE public.consultants SET approved = true WHERE id = '0c2711ad-4836-41e6-afba-edd94f698ae3';
