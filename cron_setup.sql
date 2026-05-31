@@ -8,9 +8,9 @@
 --   4. A última query (SELECT * FROM cron.job) mostra os 3 jobs ativos
 -- ============================================================================
 
--- 1) Extensões necessárias
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
+-- 1) Extensões necessárias (instaladas no schema "extensions" do Supabase)
+CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pg_net  WITH SCHEMA extensions;
 
 -- 2) Remove jobs antigos (defensivo, ignora erro se não existirem)
 DO $$
