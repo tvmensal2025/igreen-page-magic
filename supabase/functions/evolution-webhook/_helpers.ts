@@ -54,4 +54,40 @@ export function canReconnect(instance: string): boolean {
   return true;
 }
 
+// ── Disconnect reason classification (Baileys / WhatsApp) ────────────
+// O `statusReason` que chega no CONNECTION_UPDATE.close vem do
+// DisconnectReason do Baileys (mapeado de códigos HTTP do WhatsApp Web).
+// Reconectar automaticamente uma sessão derrubada por logout/ban/conflito
+// é o que ACELERA e consolida o banimento do número: cada tentativa de
+// repareamento é interpretada como comportamento abusivo pelo WhatsApp.
+//
+// Por isso só reconectamos em motivos transitórios (queda de rede, restart
+// do servidor, timeout). Em motivos fatais a instância é marcada como
+// `needs_reconnect` e exige um NOVO QR Code escaneado manualmente.
+//
+// Referência dos códigos Baileys DisconnectReason:
+//   401 loggedOut          → aparelho desvinculou a sessão (fatal)
+//   403 forbidden/banned   → número bloqueado pelo WhatsApp (fatal)
+//   405 / 409 / 411 etc.   → conflito de credenciais (fatal)
+//   440 connectionReplaced → sessão aberta em outro lugar (fatal)
+//   428 connectionClosed   → queda transitória (reconectar)
+//   408 timedOut           → timeout transitório (reconectar)
+//   500 badSession / 515 restartRequired → reinício de stream (reconectar)
+export type DisconnectClass = "fatal" | "transient";
+
+// Motivos que NÃO devem disparar reconexão automática.
+const FATAL_DISCONNECT_REASONS = new Set<number>([
+  401, // loggedOut — sessão encerrada pelo aparelho
+  403, // forbidden — número banido/bloqueado pelo WhatsApp
+  405, // bad credentials / not authorized
+  409, // conflict — outra sessão assumiu
+  411, // multi-device mismatch
+  440, // connectionReplaced — conectado em outro lugar
+]);
+
+export function classifyDisconnect(statusReason: number | null | undefined): DisconnectClass {
+  const code = Number(statusReason) || 0;
+  return FATAL_DISCONNECT_REASONS.has(code) ? "fatal" : "transient";
+}
+
 export const OCR_CONFIDENCE_THRESHOLD = 70;
