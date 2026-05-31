@@ -4216,6 +4216,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (fileBase64) {
         const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
         updates.document_back_url = `data:${mime};base64,${fileBase64}`;
+        updates.document_back_base64 = fileBase64;
         const custId = customer.id;
         uploadMediaToMinio({
           fileBase64, mimeType: mime, consultantFolder: consultorId, consultantName: nomeRepresentante,
@@ -5011,6 +5012,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           customerName: customer.name || "cliente", customerBirth: customer.data_nascimento, kind: "doc_verso",
         });
         updates.document_back_url = minioUrl || (fileUrl?.startsWith("http") ? fileUrl : "evolution-media:pending");
+        updates.document_back_base64 = fileBase64;
       } else {
         updates.document_back_url = fileUrl?.startsWith("http") ? fileUrl : "evolution-media:pending";
       }

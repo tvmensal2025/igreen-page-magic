@@ -759,8 +759,21 @@ export class Portal2Client {
   async cadastrarCliente(dados) {
     let idsolcontratovalidacao = dados.idsolcontratovalidacao || null;
 
-    // Só roda initValidation se ainda não tem idsol e tem algum arquivo pra subir
-    if (!idsolcontratovalidacao && (dados.docFile || dados.billFile)) {
+    // GATE FINAL (defesa em profundidade): nunca cria cliente sem conta + doc.
+    // O server.mjs já valida/anexa, mas chamadas diretas ao client também
+    // precisam respeitar a regra. CNH (sem verso) é aceita via dados.isCnh.
+    const faltando = [];
+    if (!dados.billFile) faltando.push('conta de energia');
+    if (!dados.docFile) faltando.push('documento (frente)');
+    if (!dados.isCnh && !dados.docBackFile) faltando.push('documento (verso)');
+    if (faltando.length) {
+      const err = new Error(`Documentos obrigatórios ausentes: ${faltando.join(', ')}`);
+      err.code = 'MISSING_DOCUMENTS';
+      throw err;
+    }
+
+    // Roda initValidation quando ainda não tem idsol (sempre teremos arquivos aqui)
+    if (!idsolcontratovalidacao) {
       const init = await this.initValidation();
       idsolcontratovalidacao = init?.idsolcontratovalidacao || null;
     }
@@ -779,7 +792,24 @@ export class Portal2Client {
         }
       }
     }
-    if (dados.billFile) {
+    // Verso do RG — segundo extractDocument no mesmo idsol. CNH não tem verso.
+    if (dados.docBackFile) {
+      try {
+        await this.extractDocument({
+          fileBuffer: dados.docBackFile.buffer,
+          filename: dados.docBackFile.filename || 'doc-verso.jpg',
+          mime: dados.docBackFile.mime || 'image/jpeg',
+          idsolcontratovalidacao,
+        });
+      } catch (e) {
+        if (idsolcontratovalidacao) {
+          await this.manualFallback({ idsolcontratovalidacao, originStep: 'document_back', lastError: e.message }).catch(() => {});
+        }
+      }
+    }
+    // extractReceipt só se ainda não rodou (billAlreadyExtracted=true significa
+    // que o server.mjs já fez o OCR da fatura pra extrair consumo — não repete).
+    if (dados.billFile && !dados.billAlreadyExtracted) {
       try {
         await this.extractReceipt({
           fileBuffer: dados.billFile.buffer,

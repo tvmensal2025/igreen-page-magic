@@ -107,6 +107,16 @@ const KWH_MAX_RATIO = 1.6;
 function isStrFilled(v: any): boolean {
   return v !== null && v !== undefined && typeof v === "string" && v.trim().length > 0;
 }
+// Presença REAL de arquivo: rejeita placeholders de mídia ainda não persistida
+// ("evolution-media:pending"/"collected"). Aceita URL http, data URL ou base64.
+// `allowNaoAplicavel` cobre o verso de CNH (gravado como "nao_aplicavel").
+function isFileReady(v: any, allowNaoAplicavel = false): boolean {
+  if (!isStrFilled(v)) return false;
+  const s = String(v).trim();
+  if (s === "evolution-media:pending" || s === "collected") return false;
+  if (s === "nao_aplicavel") return allowNaoAplicavel;
+  return true;
+}
 function digits(v: any): string {
   return String(v ?? "").replace(/\D/g, "");
 }
@@ -162,7 +172,12 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     }
     if (f.key === "document_back_url") {
       // CNH não precisa de verso — frontend grava "nao_aplicavel"
-      if (!isStrFilled(v)) missing.push(f);
+      if (!isFileReady(v, true)) missing.push(f);
+      continue;
+    }
+    if (f.key === "document_front_url" || f.key === "electricity_bill_photo_url") {
+      // Conta de luz e frente do doc precisam ser arquivo REAL (não placeholder)
+      if (!isFileReady(v)) missing.push(f);
       continue;
     }
     if (!isStrFilled(v)) missing.push(f);

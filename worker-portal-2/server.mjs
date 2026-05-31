@@ -423,6 +423,26 @@ app.post('/submit-lead', authRequired, async (req, res) => {
     }
   }
 
+  // REGRA: nenhum cadastro sobe sem conta de energia + documento (frente/verso
+  // pra RG; só frente pra CNH). Quando `dados` veio do payload da edge function
+  // (sem os arquivos), aqui é onde resolvemos/anexamos do MinIO/Supabase. Se algo
+  // obrigatório faltar, recusa com 422 e marca o lead — nunca enfileira incompleto.
+  try {
+    await ensureDocumentsAttachedAndGate(dados, customer_id);
+  } catch (e) {
+    if (e.code === 'MISSING_DOCUMENTS') {
+      console.warn(`  ⛔ submit recusado customer=${customer_id}: ${e.message}`);
+      if (supabase && customer_id) {
+        await supabase.from('customers').update({
+          portal2_status: 'blocked_missing_documents',
+          portal2_error: e.message.slice(0, 500),
+        }).eq('id', customer_id).then(() => {}, () => {});
+      }
+      return res.status(422).json({ ok: false, error: e.message, code: 'MISSING_DOCUMENTS' });
+    }
+    return res.status(500).json({ ok: false, error: `falha ao validar documentos: ${e.message}` });
+  }
+
   try {
     if (queueAvailable) {
       const job = await queue.add('cadastrar', { customer_id, dados }, {
@@ -508,29 +528,137 @@ function _valorFromReceiptResponse(resp) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-// Decodifica bill_base64 (pode vir como data URL ou base64 puro) em Buffer + mime.
-function _decodeBillBase64(b64) {
+// Resolve extensão a partir do mime.
+function _extFromMime(mime) {
+  return mime === 'application/pdf' ? 'pdf'
+       : mime === 'image/png' ? 'png'
+       : mime === 'image/jpeg' ? 'jpg'
+       : 'bin';
+}
+
+// Sniffa o mime real a partir dos magic bytes (fallback quando não há data URL
+// ou o content-type vem genérico como application/octet-stream).
+function _sniffMime(buffer, fallback = 'application/pdf') {
+  const head = buffer.slice(0, 4).toString('hex').toLowerCase();
+  if (head.startsWith('ffd8')) return 'image/jpeg';
+  if (head.startsWith('8950')) return 'image/png';
+  if (head.startsWith('2550')) return 'application/pdf';
+  return fallback;
+}
+
+// Decodifica base64 (data URL ou base64 puro) em { buffer, mime, filename }.
+// `label` define o nome do arquivo (conta / doc-frente / doc-verso).
+function _decodeBillBase64(b64, label = 'conta') {
   if (!b64 || typeof b64 !== 'string') return null;
   let mime = 'application/pdf';
   let payload = b64;
   const m = b64.match(/^data:([^;]+);base64,(.+)$/);
   if (m) { mime = m[1]; payload = m[2]; }
-  // sniff: se base64 puro mas começa com /9j/ é JPEG, iVBOR é PNG, JVBE é PDF
   try {
     const buffer = Buffer.from(payload, 'base64');
     if (buffer.length < 100) return null;
-    if (!m) {
-      const head = buffer.slice(0, 4).toString('hex').toLowerCase();
-      if (head.startsWith('ffd8')) mime = 'image/jpeg';
-      else if (head.startsWith('8950')) mime = 'image/png';
-      else if (head.startsWith('2550')) mime = 'application/pdf';
-    }
-    const ext = mime === 'application/pdf' ? 'pdf'
-              : mime === 'image/png' ? 'png'
-              : mime === 'image/jpeg' ? 'jpg'
-              : 'bin';
-    return { buffer, mime, filename: `conta.${ext}` };
+    if (!m) mime = _sniffMime(buffer);
+    return { buffer, mime, filename: `${label}.${_extFromMime(mime)}` };
   } catch { return null; }
+}
+
+// Baixa um arquivo de uma URL http(s) (MinIO/Supabase) em { buffer, mime, filename }.
+// Usa fetch nativo (Node 20). Retorna null em falha (caller decide o gate).
+async function _downloadToFile(url, label = 'doc') {
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) return null;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) {
+      console.warn(`  ⚠ download ${label} HTTP ${r.status}: ${url.slice(0, 80)}`);
+      return null;
+    }
+    const buffer = Buffer.from(await r.arrayBuffer());
+    if (buffer.length < 100) return null;
+    let mime = (r.headers.get('content-type') || '').split(';')[0].trim();
+    if (!/^(image\/(jpeg|png)|application\/pdf)$/.test(mime)) mime = _sniffMime(buffer);
+    return { buffer, mime, filename: `${label}.${_extFromMime(mime)}` };
+  } catch (e) {
+    console.warn(`  ⚠ download ${label} falhou: ${e.message}`);
+    return null;
+  }
+}
+
+// Resolve um anexo do customer: prioriza base64 inline / data URL; senão baixa
+// da URL http (MinIO/Supabase). Retorna { buffer, mime, filename } ou null.
+async function _resolveCustomerFile(b64Col, url, label) {
+  const inline = _decodeBillBase64(
+    b64Col || (typeof url === 'string' && url.startsWith('data:') ? url : null),
+    label,
+  );
+  if (inline) return inline;
+  return _downloadToFile(url, label);
+}
+
+// CNH dispensa verso (frente já tem todos os dados). RG exige frente + verso.
+function _isCnhCustomer(c) {
+  if (!c) return false;
+  if (String(c.document_back_url || '') === 'nao_aplicavel') return true;
+  return String(c.document_type || '').toLowerCase().includes('cnh');
+}
+
+/**
+ * REGRA DE NEGÓCIO: nenhum cadastro sobe ao Portal 2 sem a conta de energia
+ * E o documento (frente + verso pra RG; só frente pra CNH).
+ *
+ * Anexa os arquivos faltantes em `dados` (resolvendo base64 inline ou baixando
+ * do MinIO/Supabase) e aplica o gate. Lança Error com `.code='MISSING_DOCUMENTS'`
+ * quando algum obrigatório não puder ser resolvido.
+ */
+async function ensureDocumentsAttachedAndGate(dados, customerId) {
+  if (!supabase || !customerId) {
+    // Sem Supabase não dá pra resolver/validar anexos — exige que já venham no payload.
+    const missing = [];
+    if (!dados.billFile) missing.push('conta de energia');
+    if (!dados.docFile) missing.push('documento (frente)');
+    if (missing.length) {
+      const err = new Error(`Documentos obrigatórios ausentes: ${missing.join(', ')}`);
+      err.code = 'MISSING_DOCUMENTS';
+      throw err;
+    }
+    return;
+  }
+
+  const { data: c, error } = await supabase
+    .from('customers')
+    .select(`
+      document_type,
+      electricity_bill_photo_url, bill_base64,
+      document_front_url, document_front_base64,
+      document_back_url, document_back_base64
+    `)
+    .eq('id', customerId)
+    .maybeSingle();
+  if (error) throw new Error(`falha ao carregar anexos do customer: ${error.message}`);
+  if (!c) throw new Error('customer não encontrado para validação de documentos');
+
+  const isCnh = _isCnhCustomer(c);
+  dados.isCnh = isCnh;
+
+  if (!dados.billFile) {
+    dados.billFile = await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
+  }
+  if (!dados.docFile) {
+    dados.docFile = await _resolveCustomerFile(c.document_front_base64, c.document_front_url, 'doc-frente');
+  }
+  if (!dados.docBackFile && !isCnh) {
+    dados.docBackFile = await _resolveCustomerFile(c.document_back_base64, c.document_back_url, 'doc-verso');
+  }
+
+  const missing = [];
+  if (!dados.billFile) missing.push('conta de energia');
+  if (!dados.docFile) missing.push('documento (frente)');
+  if (!isCnh && !dados.docBackFile) missing.push('documento (verso)');
+  if (missing.length) {
+    const err = new Error(`Documentos obrigatórios ausentes: ${missing.join(', ')}`);
+    err.code = 'MISSING_DOCUMENTS';
+    throw err;
+  }
+  console.log(`  📎 anexos OK customer=${customerId}: conta+doc${isCnh ? ' (CNH só frente)' : '+verso'}`);
 }
 
 // ─── Helper: monta payload a partir do customers do Supabase ─────────────────
@@ -547,8 +675,10 @@ async function fetchDadosFromSupabase(customerId) {
       address_neighborhood, address_city, address_state,
       numero_instalacao, media_consumo, electricity_bill_value,
       distribuidora, debitos_aberto, possui_procurador,
+      document_type,
       bill_base64, electricity_bill_photo_url,
       document_front_base64, document_front_url,
+      document_back_base64, document_back_url,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
       referral_partners:referral_partner_id(cli)
@@ -562,17 +692,14 @@ async function fetchDadosFromSupabase(customerId) {
   const igreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
   if (!igreenId) return null;
 
-  // ── Decodifica anexos do customer ───────────────────────────────────────
-  // bill_base64 / document_front_base64 podem vir como data URL ou base64 puro.
-  // O *_url também pode ser data URL (fallback inline quando MinIO está off).
-  const billRaw = c.bill_base64
-    || (typeof c.electricity_bill_photo_url === 'string' && c.electricity_bill_photo_url.startsWith('data:')
-        ? c.electricity_bill_photo_url : null);
-  const docRaw = c.document_front_base64
-    || (typeof c.document_front_url === 'string' && c.document_front_url.startsWith('data:')
-        ? c.document_front_url : null);
-  const billFile = _decodeBillBase64(billRaw);
-  const docFile = _decodeBillBase64(docRaw);
+  // ── Resolve anexos do customer (conta + doc frente + doc verso) ──────────
+  // Prioriza base64 inline / data URL; senão baixa do MinIO/Supabase via URL.
+  // CNH dispensa verso. O gate de obrigatoriedade roda em
+  // ensureDocumentsAttachedAndGate antes de enfileirar.
+  const isCnh = _isCnhCustomer(c);
+  const billFile = await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
+  const docFile = await _resolveCustomerFile(c.document_front_base64, c.document_front_url, 'doc-frente');
+  const docBackFile = isCnh ? null : await _resolveCustomerFile(c.document_back_base64, c.document_back_url, 'doc-verso');
 
   // ── Distribuidora — prioridade: ──────────────────────────────────────────
   //   1. CEP → ViaCEP → CITY_HINT/UF_DEFAULT (mais confiável; sem OCR)
@@ -693,7 +820,7 @@ async function fetchDadosFromSupabase(customerId) {
   }
 
   return _buildDadosObject(c, consultant, partner, igreenId,
-    consumoMedio, distribuidora, billFile, docFile,
+    consumoMedio, distribuidora, billFile, docFile, docBackFile,
     ocrIdsol, ocrBillExtracted);
 }
 
@@ -701,7 +828,7 @@ async function fetchDadosFromSupabase(customerId) {
 // cadastrarCliente reaproveita o idsolcontratovalidacao e pula extractReceipt.
 function _buildDadosObject(c, consultant, partner, igreenId,
                             consumoMedio, distribuidora,
-                            billFile, docFile,
+                            billFile, docFile, docBackFile,
                             idsolcontratovalidacao, billAlreadyExtracted) {
   return {
     idconsultor: igreenId,
@@ -721,11 +848,14 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     numeroInstalacao: c.numero_instalacao || '',
     consumoMedio,
     concessionaria: distribuidora || '',
-    // Anexos pra reaproveitar dentro de cadastrarCliente. Quando
-    // billAlreadyExtracted=true, o cliente sabe que já fizemos extractReceipt
-    // (evita upload + OCR redundantes).
-    billFile: billFile && !billAlreadyExtracted ? billFile : undefined,
+    // Anexos pra reaproveitar dentro de cadastrarCliente. Mantemos o billFile
+    // SEMPRE presente (prova pro gate de documentos); a flag billAlreadyExtracted
+    // sinaliza ao client que extractReceipt já rodou (evita OCR redundante).
+    billFile: billFile || undefined,
+    billAlreadyExtracted: !!billAlreadyExtracted,
     docFile: docFile || undefined,
+    docBackFile: docBackFile || undefined,
+    isCnh: _isCnhCustomer(c),
     idsolcontratovalidacao: idsolcontratovalidacao || undefined,
     possuiPlacas: false,
     sendcontract: true,

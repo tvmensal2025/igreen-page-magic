@@ -88,6 +88,50 @@ async function resolveWorker(supabase: any, customerId: string): Promise<Resolve
  * `{customer_id}` e busca o resto do banco; o worker-2 espera `{customer_id, dados}`
  * com o payload completo do cadastro.
  */
+/**
+ * REGRA: nenhum lead sobe ao Portal 2 sem conta de energia + documento
+ * (frente + verso pra RG; só frente pra CNH). Confere a PRESENÇA dos anexos
+ * (URL http/MinIO, data URL ou base64 inline) no customer. Os bytes em si são
+ * resolvidos/anexados no worker-portal-2; aqui é só um gate de pré-despacho
+ * pros caminhos que não passam pelo finalize-capture (bot auto-complete,
+ * retry, ai-agent-router).
+ *
+ * Retorna { ok: true } ou { ok: false, missing: string[] }.
+ */
+async function checkDocsPresentForPortal2(supabase: any, customerId: string): Promise<{ ok: boolean; missing: string[] }> {
+  const { data: c } = await supabase
+    .from("customers")
+    .select(`
+      document_type,
+      electricity_bill_photo_url, bill_base64,
+      document_front_url, document_front_base64,
+      document_back_url, document_back_base64
+    `)
+    .eq("id", customerId)
+    .maybeSingle();
+
+  if (!c) return { ok: false, missing: ["customer não encontrado"] };
+
+  const hasFile = (v: any) =>
+    typeof v === "string" &&
+    v.trim() !== "" &&
+    v !== "evolution-media:pending" &&
+    v !== "collected" &&
+    v !== "nao_aplicavel" &&
+    (v.startsWith("http") || v.startsWith("data:") || v.length > 200);
+
+  const isCnh =
+    String(c.document_back_url || "") === "nao_aplicavel" ||
+    String(c.document_type || "").toLowerCase().includes("cnh");
+
+  const missing: string[] = [];
+  if (!hasFile(c.electricity_bill_photo_url) && !hasFile(c.bill_base64)) missing.push("conta de energia");
+  if (!hasFile(c.document_front_url) && !hasFile(c.document_front_base64)) missing.push("documento (frente)");
+  if (!isCnh && !hasFile(c.document_back_url) && !hasFile(c.document_back_base64)) missing.push("documento (verso)");
+
+  return { ok: missing.length === 0, missing };
+}
+
 async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
   customer_id: string;
   dados: Record<string, unknown>;
@@ -202,6 +246,18 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
   // Body depende do kind
   let body: string;
   if (kind === "autoconexao") {
+    // REGRA: bloqueia despacho sem conta de energia + documento (frente/verso
+    // pra RG; só frente pra CNH). Protege caminhos fora do finalize-capture.
+    const docs = await checkDocsPresentForPortal2(supabase, customerId);
+    if (!docs.ok) {
+      const msg = `Documentos obrigatórios ausentes: ${docs.missing.join(", ")}`;
+      console.warn(`[portal-worker] customer=${customerId} despacho bloqueado — ${msg}`);
+      await supabase.from("customers").update({
+        status: "missing_documents",
+        error_message: msg,
+      }).eq("id", customerId);
+      return { ok: false, mode: "queued_offline", error: "missing_documents", worker: kind };
+    }
     const payload = await buildPortal2Payload(supabase, customerId);
     if (!payload) {
       return { ok: false, mode: "queued_offline", error: "missing_consultant_or_data", worker: kind };

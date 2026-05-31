@@ -81,6 +81,7 @@ Deno.serve(async (req) => {
         document_back_url: null,
         document_type: null,
         document_front_base64: null,
+        document_back_base64: null,
         bill_base64: null,
         bill_message_id: null,
         name_mismatch_flag: false,

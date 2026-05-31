@@ -173,6 +173,7 @@ export async function resetLeadIdentity(
     document_front_url: null,
     document_back_url: null,
     document_front_base64: null,
+    document_back_base64: null,
     document_type: null,
     cpf: null,
     rg: null,

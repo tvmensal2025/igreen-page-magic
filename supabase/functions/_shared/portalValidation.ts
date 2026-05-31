@@ -54,6 +54,15 @@ const KWH_MIN_RATIO = 0.6;
 const KWH_MAX_RATIO = 1.6;
 
 const isStrFilled = (v: any) => v !== null && v !== undefined && typeof v === "string" && v.trim().length > 0;
+// Presença REAL de arquivo: rejeita placeholders de mídia ainda não persistida.
+// `allowNaoAplicavel` cobre o verso de CNH (gravado como "nao_aplicavel").
+const isFileReady = (v: any, allowNaoAplicavel = false) => {
+  if (!isStrFilled(v)) return false;
+  const s = String(v).trim();
+  if (s === "evolution-media:pending" || s === "collected") return false;
+  if (s === "nao_aplicavel") return allowNaoAplicavel;
+  return true;
+};
 const digits = (v: any) => String(v ?? "").replace(/\D/g, "");
 
 function cpfValid(raw: string): boolean {
@@ -93,6 +102,16 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
     const v = (c as any)[f.key];
     if (f.key === "electricity_bill_value" || f.key === "media_consumo") {
       if (v === null || v === undefined || Number(v) <= 0) missing.push({ key: f.key, label: f.label });
+      continue;
+    }
+    if (f.key === "document_back_url") {
+      // CNH não precisa de verso — gravado como "nao_aplicavel"
+      if (!isFileReady(v, true)) missing.push({ key: f.key, label: f.label });
+      continue;
+    }
+    if (f.key === "document_front_url" || f.key === "electricity_bill_photo_url") {
+      // Conta de luz e frente do doc precisam ser arquivo REAL (não placeholder)
+      if (!isFileReady(v)) missing.push({ key: f.key, label: f.label });
       continue;
     }
     if (!isStrFilled(v)) missing.push({ key: f.key, label: f.label });
