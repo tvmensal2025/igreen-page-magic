@@ -78,19 +78,30 @@ ou test name) ou a razão pela qual ainda está pendente.
 | Dashboard saude-bot consumindo bot-health-intel | ✅ | `src/pages/SaudeBot.tsx` renderiza `<BotHealthIntel consultantId={userId} />` |
 | Aceite: derrubar Whapi 2min, alerta + UI amarela | ❌ | não testado |
 
-## Mudanças pendentes nesta sessão (commit ainda não feito)
+## Aplicadas em 31/mai (deploy concluído)
 
-| Arquivo | Tipo | Linhas |
+| Arquivo | Tipo | Status |
 |---------|------|--------|
-| `supabase/functions/_shared/gemini.ts` | edit | +78 (GeminiQuotaExhausted + consume_gemini_token wrapper) |
-| `supabase/functions/ai-agent-router/index.ts` | edit | +26 (catch GeminiQuotaExhausted, audit log row) |
-| `supabase/functions/evolution-webhook/index.ts` | edit | +60 (bloco 6.0 SIM/OK manual capture) |
-| `supabase/migrations/20260522180100_flow_reliability_v2_rollout.sql` | new | +120 (ON em todos consultores + bucket seed + trigger novo consultor) |
+| `supabase/functions/_shared/gemini.ts` | edit (+78) | ✅ deployado via ai-agent-router + evolution-webhook |
+| `supabase/functions/ai-agent-router/index.ts` | edit (+26) | ✅ deployado — catch `GeminiQuotaExhausted` ativo |
+| `supabase/functions/evolution-webhook/index.ts` | edit (+60) | ✅ deployado — bloco 6.0 SIM/OK manual capture (paridade Whapi) |
+| `supabase/migrations/20260522180100_flow_reliability_v2_rollout.sql` | **deletada** | ❌ obsoleta — `flow-engine-rollout-cron` (autopilot) é dono autoritativo das flags `flow_reliability_v2`/`flow_engine_v3` desde 24/mai. Aplicar brigaria com o autopilot. |
 
 Verificações executadas:
-- `deno check` → 15 erros pré-existentes (confirmado via `git stash` no upstream); nenhum erro novo introduzido.
-- `deno test` (149 testes em 9 suítes) → ✅ todos passando.
+- `deno check` → 15 erros pré-existentes; nenhum novo.
+- `deno test` (149 testes) → ✅ todos passando.
 - `npm run build` → ✅ 36s, sem warnings.
+- Deploy edge functions → ✅ sem boot error.
+
+### Achado em aberto (fora desta sessão — spec própria se quiser ativar v2)
+
+`v_flow_engine_health` calcula `paused_total / turns_24h` misturando janelas (all-time ÷ 24h),
+o que mantém `pausedRatio`/`delegatedRatio` permanentemente acima do gate verde mesmo com
+`green_max_*_ratio=0.99`. Resultado: autopilot fica preso no ciclo `dark → off → dark` e
+nenhum consultor é promovido a `on`. **Não bloqueia produção** (path antigo segue ativo;
+fixes desta sessão estão no dispatcher, fora do flag), apenas impede ativar o path v2
+grounded. Investigar em spec dedicada se for prioridade promover.
+
 
 ## Plano de rollback (1 comando, propaga em ~30s)
 
