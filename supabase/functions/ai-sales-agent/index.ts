@@ -8,6 +8,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { geminiGenerate, type GeminiTool } from "../_shared/gemini.ts";
 import { shouldSkipShortCircuit } from "../_shared/bot/orchestrator-gate.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -504,6 +505,16 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // 🔒 IDOR guard (REQ 5): autentica o chamador (JWT ou segredo de serviço) e
+    // verifica posse do recurso ANTES de qualquer leitura/gravação/efeito colateral.
+    // Chamadas internas (ex.: evolution-webhook → ai-agent-router → ai-sales-agent)
+    // usam x-service-secret e resolvem como modo "service" (dispensa posse).
+    const caller = await resolveCaller(req, supabase);
+    if (caller instanceof Response) return caller;
+    const deny = await assertOwnership(caller, { customerId: customer_id }, supabase);
+    if (deny) return deny;
+
     const ctx = await loadContext(supabase, customer_id);
     if (!ctx) {
       return new Response(JSON.stringify({ error: "customer not found" }), {

@@ -1,5 +1,6 @@
 // capture-extract: IA sugere preenchimento de campos da Ficha (Modo Captação)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,10 +27,20 @@ function isEmpty(v: any, key: string) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { customer_id, source_message_id } = await req.json();
-    if (!customer_id) return new Response(JSON.stringify({ error: "customer_id required" }), { status: 400, headers: corsHeaders });
-
+    // Client service_role (bypass RLS) — usado também como `admin` na guarda de autorização.
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+    // Parse do corpo uma única vez; reutilizado pela guarda e pelo fluxo abaixo.
+    const body = await req.json();
+    const { customer_id, source_message_id } = body ?? {};
+
+    // ─── Guarda de autenticação/posse (IDOR) — ANTES de qualquer efeito colateral ───
+    const caller = await resolveCaller(req, sb);
+    if (caller instanceof Response) return caller; // 401
+    const deny = await assertOwnership(caller, { customerId: customer_id }, sb);
+    if (deny) return deny; // 400/403
+
+    if (!customer_id) return new Response(JSON.stringify({ error: "customer_id required" }), { status: 400, headers: corsHeaders });
 
     const { data: customer } = await sb.from("customers")
       .select("id, consultant_id, capture_mode, name, cpf, rg, data_nascimento, phone_landline, email, cep, address_number, electricity_bill_value")

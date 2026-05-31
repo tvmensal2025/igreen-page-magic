@@ -2,6 +2,7 @@
 // Pode ser chamado por outras edge functions (lead, contact) ou diretamente.
 import { adminClient, fbFetch, FB_GRAPH, sha256Hex } from "../_shared/fb-graph.ts";
 import { decryptToken } from "../_shared/fb-crypto.ts";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 
@@ -45,6 +46,19 @@ Deno.serve(async (req) => {
     }
 
     const admin = adminClient();
+
+    // Guarda IDOR (REQ 5): resolve o chamador e verifica posse ANTES de qualquer
+    // leitura/gravação ou outbound à Meta CAPI. Modo `service` (x-service-secret)
+    // dispensa posse; JWT não-admin precisa ser dono do recurso-alvo.
+    // Prefere customerId quando presente; senão usa consultantId (sempre presente aqui).
+    const caller = await resolveCaller(req, admin);
+    if (caller instanceof Response) return caller;
+    const deny = await assertOwnership(
+      caller,
+      body.customer_id ? { customerId: body.customer_id } : { consultantId: body.consultant_id },
+      admin,
+    );
+    if (deny) return deny;
 
     // Modelo centralizado: TODOS os consultores enviam para o Pixel global da plataforma (igreen-app-oficial).
     // Token + Pixel globais têm prioridade sobre OAuth individual.

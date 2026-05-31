@@ -16,6 +16,7 @@
 // }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 import { geminiGenerate, GeminiQuotaExhausted } from "../_shared/gemini.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import {
@@ -150,6 +151,15 @@ Deno.serve(async (req) => {
     if (!customer_id || !instance_name || !remote_jid) {
       return new Response(JSON.stringify({ error: "customer_id, instance_name, remote_jid required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
+    // ─── Guarda de autenticação/posse (IDOR) — ANTES de qualquer efeito colateral ───
+    // A chamada interna do evolution-webhook envia `x-service-secret` → resolve
+    // como `mode: "service"` e dispensa a verificação de posse (mantém o caminho
+    // interno funcionando). Chamadas via JWT precisam ser donas do `customer_id`.
+    const caller = await resolveCaller(req, supabase as any);
+    if (caller instanceof Response) return caller; // 401
+    const deny = await assertOwnership(caller, { customerId: customer_id }, supabase as any);
+    if (deny) return deny; // 400/403
 
     // 1) Carregar cliente
     const { data: customer } = await supabase.from("customers").select("*").eq("id", customer_id).single();

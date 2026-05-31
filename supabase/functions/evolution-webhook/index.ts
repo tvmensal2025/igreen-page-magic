@@ -30,6 +30,7 @@ import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead } from "../_shared/notify-consultant.ts";
 import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
+import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import {
   getFlowReliabilityV2,
@@ -46,6 +47,10 @@ const corsHeaders = {
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY") || "";
 const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL") || "";
 const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") || "";
+// Segredo de serviço para chamadas internas entre edge functions (header `x-service-secret`).
+// A guarda IDOR do `ai-agent-router` (REQ 5) resolve este header como `mode: "service"` e
+// dispensa a verificação de posse para a invocação interna do webhook.
+const SERVICE_SHARED_SECRET = Deno.env.get("SERVICE_SHARED_SECRET") || "";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -70,6 +75,21 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
     lockSupabaseRef = supabase;
+
+    // Kill switch global (Fase 0 auditoria). Fail-open: erros = habilitado.
+    // Espelha whapi-webhook/index.ts (~linha 62): silencia globalmente todas as
+    // respostas automáticas quando bot_global_enabled=false, com zero outbound e
+    // resposta neutra 200 (nunca 5xx, para o provedor não reenviar o evento).
+    // Fica ANTES da guarda por-consultor `isConsultantAIDisabled` (esta é global).
+    // `as any`: helper compartilhado pina @supabase/supabase-js@2.49.4 enquanto este
+    // arquivo pina @2; runtime idêntico mas TS vê duas shapes diferentes (mesmo
+    // workaround já usado em isConsultantAIDisabled).
+    if (!(await isBotGloballyEnabled(supabase as any))) {
+      console.log("[evolution-webhook] bot_global_enabled=false → silenciado");
+      return new Response(JSON.stringify({ ok: true, msg: "bot_globally_disabled" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const body = await req.json();
     console.log("Evolution webhook received:", JSON.stringify(body).substring(0, 500));
@@ -1048,12 +1068,19 @@ Deno.serve(async (req) => {
       currentStep === "welcome" || currentStep === "menu_inicial" || !customer.conversation_step;
     if (isOpeningTurn) {
       try {
-        const { data: activeFlow } = await supabase
+        // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
+        // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
+        // nunca lança para 0/1/N fluxos ativos (substitui .maybeSingle()).
+        const variant = (customer as any)?.flow_variant || "A";
+        const { data: activeFlows } = await supabase
           .from("bot_flows")
           .select("id")
           .eq("consultant_id", instanceData.consultant_id)
           .eq("is_active", true)
-          .maybeSingle();
+          .eq("variant", variant)
+          .order("created_at", { ascending: true })
+          .limit(1);
+        const activeFlow = activeFlows?.[0] || null;
         const flowId = (activeFlow as any)?.id ?? null;
         if (flowId) {
           // (a) primeiro step ativo da sequência (`bot_flow_steps`)
@@ -1168,6 +1195,7 @@ Deno.serve(async (req) => {
             "Content-Type": "application/json",
             Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
             apikey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+            "x-service-secret": SERVICE_SHARED_SECRET,
           },
           body: JSON.stringify({
             customer_id: customer.id,
@@ -1296,12 +1324,19 @@ Deno.serve(async (req) => {
       const isCadastroStep = CADASTRO_STEPS.has(currentStepRaw);
       if (engine === "sys" && !isCadastroStep && consultantFlag && customerOverride !== false) {
         try {
-          const { data: activeFlow } = await supabase
+          // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
+          // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
+          // nunca lança para 0/1/N fluxos ativos (substitui .maybeSingle()).
+          const variant = (customer as any)?.flow_variant || "A";
+          const { data: activeFlows } = await supabase
             .from("bot_flows")
             .select("id")
             .eq("consultant_id", instanceData.consultant_id)
             .eq("is_active", true)
-            .maybeSingle();
+            .eq("variant", variant)
+            .order("created_at", { ascending: true })
+            .limit(1);
+          const activeFlow = activeFlows?.[0] || null;
           if ((activeFlow as any)?.id) {
             const { count } = await supabase
               .from("bot_flow_steps")

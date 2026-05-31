@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -198,6 +199,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // ── Guarda IDOR (REQ 5): parse do corpo uma vez + auth/posse ANTES de qualquer efeito colateral ──
+    const { customer_id } = await req.json();
+
+    const caller = await resolveCaller(req, supabase as any);
+    if (caller instanceof Response) return caller;
+    const deny = await assertOwnership(caller, { customerId: customer_id }, supabase as any);
+    if (deny) return deny;
+
     const minioUrl = Deno.env.get("MINIO_SERVER_URL") || "";
     const minioUser = Deno.env.get("MINIO_ROOT_USER") || "";
     const minioPass = Deno.env.get("MINIO_ROOT_PASSWORD") || "";
@@ -210,8 +219,6 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const { customer_id } = await req.json();
 
     if (!customer_id) {
       return new Response(
