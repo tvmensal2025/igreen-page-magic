@@ -15,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Check, MessageCircle, Edit2, X, Loader2, AlertCircle, FileText, IdCard, Clock } from "lucide-react";
 import { haptics } from "@/lib/haptics";
-import { dispatchPostBillConfirm } from "@/lib/captacao/postBillConfirm";
+
 
 type FieldDef = { key: string; label: string };
 
