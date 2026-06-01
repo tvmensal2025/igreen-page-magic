@@ -34,6 +34,21 @@ export function CaptureDocumentTiles({ customerId, customer, onUploaded, compact
     electricity_bill_photo_url: null,
   });
 
+  const triggerOcr = async (key: DocKey) => {
+    // bill OU doc — reprocessa OCR sobre a URL já salva e preenche campos do customer.
+    const kind = key === "electricity_bill_photo_url" ? "bill" : "doc";
+    try {
+      const { error } = await supabase.functions.invoke("reprocess-capture", {
+        body: { customerId, kind },
+      });
+      if (error) throw error;
+      toast({ title: "🤖 Dados capturados", description: "Confira na lateral", duration: 2000 });
+    } catch (e: any) {
+      console.warn("[reprocess-capture] falhou:", e?.message || e);
+      // silencioso — upload já foi salvo, OCR é best-effort.
+    }
+  };
+
   const handleFile = async (key: DocKey, file: File) => {
     setBusy(key);
     try {
@@ -47,6 +62,8 @@ export function CaptureDocumentTiles({ customerId, customer, onUploaded, compact
       await onUploaded(key, pub.publicUrl);
       fireRandomCelebration();
       toast({ title: "📎 Documento anexado", duration: 1500 });
+      // Dispara OCR automático em background — preenche valor/CEP/endereço/nome.
+      void triggerOcr(key);
     } catch (e: any) {
       toast({ title: "Erro no upload", description: e?.message || String(e), variant: "destructive" });
     } finally {
