@@ -720,6 +720,7 @@ Deno.serve(async (req) => {
         }
       } catch (e) {
         console.warn("[keyword-match] falhou:", (e as Error).message);
+      }
     }
 
     // ─── Auto-capture: extrai nome/email/CEP/valor/CPF de TODA inbound de texto ───
