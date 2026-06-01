@@ -281,10 +281,19 @@ PERGUNTA DO LEAD: "${q.slice(0, 600)}"`;
       return { text: "", confidence: 0, shouldHandoff: true, source: "skipped" };
     }
 
+    const answer = String(parsed.text).trim().slice(0, 1200);
+    // CTA curto pra voltar pro fluxo: se a resposta não termina pedindo ação,
+    // anexa um lembrete dos botões do passo atual (que continuam válidos).
+    const handoff = !!parsed.shouldHandoff;
+    const hasCta = /\?\s*$/.test(answer) || /👇|clique|toque|botã/i.test(answer);
+    const withCta = handoff || hasCta
+      ? answer
+      : `${answer}\n\n👇 Posso seguir com você — é só tocar numa das opções acima.`;
+
     return {
-      text: String(parsed.text).trim().slice(0, 1200),
+      text: withCta,
       confidence: Number(parsed.confidence) || 0,
-      shouldHandoff: !!parsed.shouldHandoff,
+      shouldHandoff: handoff,
       source: "ai",
     };
   } catch (e) {
