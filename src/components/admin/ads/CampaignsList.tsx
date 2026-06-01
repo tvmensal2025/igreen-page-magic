@@ -3,11 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook } from "lucide-react";
+import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { CampaignHealthCheck } from "./CampaignHealthCheck";
 import { useUserRole } from "@/hooks/useUserRole";
 import { startFacebookOAuth } from "@/services/facebookAds";
+import { ExtendCampaignDialog } from "./ExtendCampaignDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -17,6 +18,7 @@ interface Campaign {
   id: string; name: string; status: string; cities: any[];
   daily_budget_cents: number; fb_campaign_id: string | null;
   created_at: string; rejection_reason: string | null;
+  ended_at: string | null;
 }
 interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }
 
@@ -88,6 +90,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [deleting, setDeleting] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Campaign | null>(null);
+  const [extending, setExtending] = useState<Campaign | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const { isSuperAdmin } = useUserRole(authUserId);
   const { toast } = useToast();
@@ -102,7 +105,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       const [campsRes, settingsRes] = await Promise.all([
         supabase
           .from("facebook_campaigns")
-          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason")
+          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at")
           .eq("consultant_id", consultantId)
           .order("created_at", { ascending: false }),
         supabase
@@ -278,6 +281,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     </div>
                   );
                 })()}
+                {!c.rejection_reason && c.ended_at && new Date(c.ended_at).getTime() < Date.now() && c.fb_campaign_id && (
+                  <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs space-y-1.5">
+                    <div className="font-bold text-amber-500 flex items-center gap-1.5">
+                      <CalendarClock className="w-3.5 h-3.5" /> Campanha encerrou em {new Date(c.ended_at).toLocaleDateString("pt-BR")}
+                    </div>
+                    <div className="text-muted-foreground">Adicione mais dias e/ou ajuste o orçamento para continuar rodando.</div>
+                    <Button size="sm" onClick={() => setExtending(c)} className="h-7 text-xs gap-1">
+                      <CalendarClock className="w-3 h-3" /> Estender campanha
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {(c.status === "active" || c.status === "paused") && c.fb_campaign_id && (
@@ -292,6 +306,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     {toggling === c.id
                       ? <Loader2 className="w-4 h-4 animate-spin" />
                       : c.status === "active" ? <Pause className="w-4 h-4 text-amber-400" /> : <Play className="w-4 h-4 text-emerald-400" />}
+                  </Button>
+                )}
+                {c.fb_campaign_id && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setExtending(c)}
+                    title="Estender prazo / mudar orçamento"
+                  >
+                    <CalendarClock className="w-4 h-4 text-primary" />
                   </Button>
                 )}
                 {isSuperAdmin && (
@@ -347,6 +372,20 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ExtendCampaignDialog
+        open={!!extending}
+        onOpenChange={(o) => !o && setExtending(null)}
+        campaign={extending}
+        onUpdated={(patch) => {
+          setItems((prev) => prev.map((x) => x.id === patch.id ? {
+            ...x,
+            status: patch.status ?? x.status,
+            daily_budget_cents: patch.daily_budget_cents ?? x.daily_budget_cents,
+            ended_at: patch.ended_at ?? x.ended_at,
+          } : x));
+        }}
+      />
     </div>
   );
 }
