@@ -33,6 +33,27 @@ export const ERROR_KINDS = Object.freeze({
   unknown:                { recoverable: false },
 });
 
+// ─── Loop de correção: step + mensagem proativa por classe (Req 7.1) ─────────
+// Espelha o CORRECTION_MAP de `_shared/portal-correction.ts` (bot). O worker usa
+// isto para, ao rotear `awaiting_correction`, abrir o `conversation_step` certo
+// e ENVIAR a pergunta proativamente ao cliente (antes era só reativo — o lead
+// ficava parado esperando um OTP que nunca chegava). `missing_consumo` é
+// auto-corrigido inline pelo bot (step portal_submitting), não tem step próprio.
+export const CORRECTION_PROMPTS = Object.freeze({
+  duplicate_phone: {
+    step: 'corrigir_celular_portal',
+    prompt: 'Esse celular já consta no sistema. Me envia outro número de celular (com DDD) pra concluir.',
+  },
+  duplicate_email: {
+    step: 'corrigir_email_portal',
+    prompt: 'Esse e-mail já está cadastrado. Me envia um e-mail diferente.',
+  },
+  duplicate_installation: {
+    step: 'corrigir_instalacao_portal',
+    prompt: 'O número de instalação não foi aceito. Confere na conta e me envia de novo (7+ dígitos).',
+  },
+});
+
 // ─── Utilitários internos ────────────────────────────────────────────────────
 const isObject = v => v != null && typeof v === 'object' && !Array.isArray(v);
 

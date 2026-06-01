@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 
 import { Portal2Client, fileFromPath, closeBrowser } from './portal2-api-client.mjs';
 import { runAuditPipeline, getAuditCount, sanitize } from './ai-audit.mjs';
-import { classifyPortalError } from './portal-errors.mjs';
+import { classifyPortalError, CORRECTION_PROMPTS } from './portal-errors.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '.env') });
@@ -107,6 +107,19 @@ async function sendFacialLinkToCustomer(customerId, link) {
     `📸 Abre o link no celular e segue as instruções (basicamente uma selfie):\n` +
     `${link}\n\n` +
     `Quando terminar, me responde aqui *PRONTO* que eu fecho seu cadastro. 💚`,
+  );
+}
+
+/**
+ * Loop de correção (Req 7.1): quando o Portal 2 rejeita um dado recuperável,
+ * o worker abre o `conversation_step` de correção e PERGUNTA proativamente ao
+ * cliente o dado novo. Sem isto o lead ficava parado em `portal_submitting`
+ * esperando um OTP que nunca chegava (o bot só re-perguntava se o cliente
+ * mandasse mensagem espontânea). Best-effort: erro de envio só loga.
+ */
+async function sendCorrectionRequestToCustomer(customerId, prompt) {
+  return _sendMessageToCustomer(customerId, ({ firstName }) =>
+    `${firstName}, quase lá! 🙌\n\n${prompt}`,
   );
 }
 
@@ -336,6 +349,15 @@ async function processLead(job) {
         portal2_error: String(e.message ?? '').slice(0, 2000), // Req 6.8
         portal2_error_kind: kind,                              // Req 6.1
       };
+      // Loop de correção (Req 7.1): se vamos pedir correção, abre o
+      // `conversation_step` certo AQUI para que a próxima mensagem do cliente
+      // caia direto no handler corrigir_* (e não re-pergunte). A pergunta é
+      // enviada proativamente logo após persistir (correctionToSend).
+      let correctionToSend = null;
+      if (nextStatus === 'awaiting_correction' && CORRECTION_PROMPTS[kind]) {
+        updates.conversation_step = CORRECTION_PROMPTS[kind].step;
+        correctionToSend = CORRECTION_PROMPTS[kind].prompt;
+      }
       // Modo_Extração mesmo em falha (Req 3.3 — antes do estado terminal).
       if (e.extraction) {
         updates.portal2_extraction_mode = e.extraction.mode ?? null;
@@ -347,6 +369,15 @@ async function processLead(job) {
         () => {},
         (err) => console.warn(`  ⚠ persistência erro/extração falhou: ${err.message}`),
       );
+
+      // Pergunta proativa ao cliente (Req 7.1). Best-effort: só após a
+      // persistência do step, para a resposta do cliente cair no handler certo.
+      if (correctionToSend) {
+        await sendCorrectionRequestToCustomer(customer_id, correctionToSend).then(
+          (r) => console.log(`  📲 correção solicitada ao cliente (${kind}): ${JSON.stringify(r)}`),
+          (err) => console.warn(`  ⚠ envio da correção falhou: ${err.message}`),
+        );
+      }
     }
 
     // Auditoria IA também na falha — esses são os mais valiosos pra revisar
