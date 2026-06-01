@@ -25,11 +25,18 @@ export interface AIChatResult {
   raw: any;
 }
 
-// Modelos "reasoning" (gpt-5*, o1/o3/o4) rejeitam `max_tokens` e `temperature`!=1
-// no Lovable AI Gateway / OpenAI. Usam `max_completion_tokens` e consomem parte
-// do orçamento em reasoning tokens invisíveis, então o teto precisa ser bem maior.
+// Modelos "reasoning"/"thinking" consomem parte do orçamento de tokens em
+// reasoning invisível, então o teto precisa ser bem maior para não cortar a
+// resposta final. OpenAI gpt-5*/o[134]* também rejeitam `max_tokens` e
+// `temperature`!=1, usando `max_completion_tokens` no lugar.
+// Gemini 3.x Pro é thinking model mas aceita `max_tokens` e temperature normais
+// — só precisa do multiplicador para evitar truncamento.
 function isReasoningModel(model: string): boolean {
   return /^(openai\/)?(gpt-5|o[134])/i.test(model);
+}
+function isThinkingModel(model: string): boolean {
+  return isReasoningModel(model)
+    || /^google\/gemini-3(\.\d+)?-pro/i.test(model);
 }
 
 export async function aiChat(opts: AIChatOptions): Promise<AIChatResult> {
@@ -38,14 +45,16 @@ export async function aiChat(opts: AIChatOptions): Promise<AIChatResult> {
 
   const model = opts.model || "google/gemini-3-flash-preview";
   const reasoning = isReasoningModel(model);
+  const thinking = isThinkingModel(model);
   const body: Record<string, any> = {
     model,
     messages: opts.messages,
   };
   if (!reasoning) body.temperature = opts.temperature ?? 0.4;
   if (opts.maxTokens) {
-    // Reasoning models gastam tokens "ocultos"; dá folga para a resposta final.
-    const tokens = reasoning ? Math.max(opts.maxTokens * 8, 2000) : opts.maxTokens;
+    // Thinking/reasoning models gastam tokens "ocultos"; dá folga (×8, mín 2000)
+    // para a resposta final não ser truncada no meio do JSON.
+    const tokens = thinking ? Math.max(opts.maxTokens * 8, 2000) : opts.maxTokens;
     if (reasoning) body.max_completion_tokens = tokens;
     else body.max_tokens = tokens;
   }
