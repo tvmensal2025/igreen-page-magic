@@ -4927,10 +4927,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         customer_id: customer.id, step: "finalizando", errors: validation.errors,
       });
       
-      // ── ANTI-LOOP: Se já redirecionou 1+ vez, forçar finalização (evita ping-pong ask_email⇄ask_finalizar) ──
-      // Usa rescue_attempts como contador (coluna já existente) para não depender de coluna nova
+      // ── ANTI-LOOP: Só escala para humano após 3+ redirecionamentos (era 1) ──
+      // Com threshold 1, qualquer dado faltante (ex.: complemento nunca perguntado)
+      // gerava handoff prematuro. 3+ garante que demos chance real ao lead de completar.
       const redirectCount = customer.rescue_attempts || 0;
-      if (redirectCount >= 1) {
+      if (redirectCount >= 3) {
         console.warn(`⚠️ [ANTI-LOOP] ${customer.id} já foi redirecionado ${redirectCount}x. Escalando para humano.`);
         logStructured("warn", "force_finalize_after_redirects", {
           customer_id: customer.id, errors: validation.errors, redirects: redirectCount,
