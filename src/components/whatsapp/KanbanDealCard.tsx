@@ -50,6 +50,11 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
                   iG
                 </span>
               )}
+              {isTest && (
+                <span className="text-[8px] px-1 py-0.5 rounded bg-muted text-muted-foreground border border-border shrink-0" title="Lead marcado como teste/sandbox">
+                  TESTE
+                </span>
+              )}
             </div>
           )}
           <span className="text-[10px] text-muted-foreground truncate block sensitive-phone">
