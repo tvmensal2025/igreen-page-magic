@@ -1,99 +1,38 @@
-# Ajustar fluxo de boas-vindas e simulação
+# Corrigir botão "Quero simular" da etapa de dúvidas
 
-Vou reorganizar o fluxo do bot do WhatsApp para voltar ao formato original de boas-vindas com 3 botões, adicionando uma etapa intermediária quando o lead escolher simular.
+Análise completa concluída — todos os caminhos do fluxo levam ao final (cadastro completo em `d_finalizar` ou handoff humano em `d_handoff`). Apenas **um botão está incoerente** e precisa de ajuste.
 
-## Estrutura final do fluxo
+## Problema
+
+Na etapa `d_duvidas`, o botão **"Quero simular"** leva para `d_pedir_conta` (foto da conta), exatamente o mesmo destino do botão "Quero cadastrar". Quem clica em "Quero simular" espera escolher entre simulação rápida e completa, não ir direto pra envio de foto.
+
+## Correção
+
+Atualizar a transição do `d_duvidas` (id `38c0d101-6492-4b1e-8229-c676c804161a`):
+
+- Frases gatilho `Quero simular`, `simular` → passam a apontar para `d_escolher_simulacao` (id `b1a53333-3333-4333-8333-000000000003`), em vez de `d_pedir_conta`.
+
+Demais transições permanecem inalteradas:
+- `Quero cadastrar`, `cadastrar` → `d_pedir_conta` (mantém)
+- `Falar com Rafael`, `humano`, `atendente` → especial `humano` (mantém)
+- IA livre para perguntas em texto livre (mantém)
+
+## Ponto 2 confirmado pelo usuário
+
+Mantém o fluxo atual em `d_simular_resultado` → "Continuar Cadastro" → `d_pedir_conta`. Nenhuma mudança aqui.
+
+## Resumo dos demais botões (todos OK)
 
 ```
-d_welcome (3 botões)
- ├── Quero simular ──► d_escolher_simulacao (NOVA, 2 botões)
- │                       ├── Simulação completa ──► d_pedir_conta (foto da conta)
- │                       └── Simulação rápida   ──► d_simular_valor (digita valor)
- │                                                     └─► d_simular_resultado (3 botões)
- │                                                           ├── Continuar Cadastro ──► d_pedir_conta
- │                                                           ├── Ainda tenho dúvida  ──► (dúvidas)
- │                                                           └── Falar com Rafael    ──► humano
- ├── Como funciona ──► d_como_funciona (inalterado)
- └── Falar com Rafael ──► humano
+d_welcome              → 3 botões coerentes
+d_escolher_simulacao   → 2 botões coerentes
+d_resultado            → 3 botões coerentes
+d_simular_resultado    → 3 botões coerentes
+d_como_funciona        → 3 botões coerentes
+d_duvidas              → 1 botão a corrigir (acima)
 ```
-
-## Mudanças
-
-### 1. `d_welcome` — voltar ao original com 3 botões
-
-Texto:
-
-> Olá, seja muito *Bem-Vindo(a)*! 😊
->
-> Sou a assistente virtual do *{{representante}}* e vou te mostrar se a sua conta de luz tem perfil pra *economizar todo mês* com a iGreen 💚
->
-> Como posso te ajudar?
-
-Botões:
-
-- 💚 Quero simular
-- 🤔 Como funciona
-- 👨‍💼 Falar com Rafael
-
-### 2. Nova etapa `d_escolher_simulacao` (intermediária)
-
-Texto:
-
-> Show! 🙌 Você prefere qual tipo de simulação?
->
-> 📸 *Simulação completa* — me manda a foto da conta de luz e eu calculo o valor exato.
->
-> 💡 *Simulação rápida* — me diz só o valor médio da conta e eu já te dou uma prévia.
-
-Botões:
-
-- 📸 Simulação completa → `d_pedir_conta`
-- 💡 Simulação rápida → `d_simular_valor`
-
-### 3. `d_simular_resultado` — trocar para os mesmos 3 botões do `d_como_funciona`
-
-Texto (novo): mudar igual o outro calculando
-
-> Olha que ótimo! 👀✨🎉 
->
-> 💡 Sua conta hoje: *R$ {{valor_conta}}*
->
-> 💚 Economia estimada: *{{economia_range}}* por mês
->
-> E o melhor:
->
-> ✅ Sem investimento
->
-> ✅ Sem obra
->
-> ✅ Sem instalação
->
-> ✅ *Mesma* distribuidora 
->
-> Bora cadastrar? É *gratuito* e *sem fidelidade*.🚀
-
-Botões (iguais ao d_como_funciona):
-
-- Continuar Cadastro → `d_pedir_conta`
-- Ainda tenho dúvida → mesma etapa de dúvidas usada hoje pelo `d_como_funciona`
-- Falar com Rafael → humano
-
-### 4. `d_simular_valor` — sem alteração de texto/captura
-
-Apenas continua redirecionando para `d_simular_resultado`.
 
 ## Detalhes técnicos
 
-- Migração SQL única em `bot_flow_steps` usando `INSERT ... ON CONFLICT (id) DO UPDATE` para `d_welcome`, `d_simular_resultado` e a nova `d_escolher_simulacao`.
-- Nova etapa recebe um UUID fixo (ex.: `b1a53333-3333-4333-8333-000000000003`) para ser referenciada nas transições do `d_welcome`.
-- Transições do `d_welcome` passam a ser:
-  - `simular|quero simular|simulação` → `d_escolher_simulacao`
-  - `como|como funciona` → `d_como_funciona` (mantido)
-  - `humano|rafael|atendente|falar` → especial `humano` (mantido)
-- Transições do `d_escolher_simulacao`:
-  - `completa|foto|conta` → `d_pedir_conta`
-  - `rapida|rápida|valor|só o valor` → `d_simular_valor`
-- Transições do `d_simular_resultado` passam a espelhar as do `d_como_funciona` (`cadastrar` / `duvida` / `humano`).
-- Sem mudanças em código frontend ou edge functions.
-
-> Observação: o diretório `.lovable/` está no `.gitignore` do projeto, então este plano não será versionado. Se quiser que os planos persistam, remova essa entrada do `.gitignore`.
+- Uma única atualização em `bot_flow_steps` no campo `transitions` do registro com `step_key = 'd_duvidas'`.
+- Sem mudança de schema, código frontend ou edge function.
