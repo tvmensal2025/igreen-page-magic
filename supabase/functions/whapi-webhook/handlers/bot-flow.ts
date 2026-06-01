@@ -4904,7 +4904,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "ask_email": {
-      const txt = (messageText || "").trim();
+      // Sanitiza ANTES de validar: WhatsApp costuma mandar "fulano@gmail.com. br"
+      // (com espaço) quando o usuário separa o sobrenome por engano. Sem isso,
+      // o tail vazava para address_complement e o consultor-check podia confundir
+      // com o email do dono. Pegamos só o primeiro token e limpamos pontuação no fim.
+      const rawText = (messageText || "").trim();
+      const txt = rawText
+        .split(/\s+/)[0]
+        .replace(/[.,;]+$/, "")
+        .trim();
       const lower = txt.toLowerCase();
       // ⚠️ Email é OBRIGATÓRIO no portal iGreen. Não aceitar PULAR.
       if (["pular", "skip", "não tenho", "nao tenho", "sem email", "sem e-mail", "n", "não", "nao"].includes(lower)) {
@@ -4919,7 +4927,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = "❌ Esse e-mail parece de teste. Me manda o seu *de verdade*:";
         break;
       }
-      // Bloquear email do consultor dono
+      // Bloquear email do consultor dono — NÃO grava nada antes desse check.
       try {
         const { data: cons } = await supabase
           .from("consultants")
@@ -4931,7 +4939,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           break;
         }
       } catch (_) { /* segue */ }
-      updates.email = txt.toLowerCase();
+      updates.email = lower;
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
       // 🚀 Atalho (2026-05-28): se email foi o último dado e o sistema iria
@@ -4948,6 +4956,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           reply = getReplyForStep(next, merged);
         }
       }
+
       break;
     }
 
