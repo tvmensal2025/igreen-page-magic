@@ -32,6 +32,7 @@ import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
+import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import {
   getFlowReliabilityV2,
   isV2Active,
