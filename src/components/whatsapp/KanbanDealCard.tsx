@@ -1,4 +1,4 @@
-import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, Building2 } from "lucide-react";
+import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, Building2, ShieldCheck } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { KanbanSlaIndicator } from "./KanbanSlaIndicator";
 import type { Tables } from "@/integrations/supabase/types";
@@ -12,9 +12,12 @@ interface KanbanDealCardProps {
   onDragStart: (id: string) => void;
   onEdit: (deal: CrmDealRow) => void;
   onDelete: (id: string) => void;
+  onReclassify?: (deal: CrmDealRow) => void;
 }
 
-export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete }: KanbanDealCardProps) {
+export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, onReclassify }: KanbanDealCardProps) {
+  const isTest = (deal as any).is_test_lead || (deal as any).is_sandbox;
+  const isSynthetic = (deal as any).__synthetic;
   const lastAdvanced = (deal as any).last_step_advanced_at || deal.updated_at || deal.created_at;
   const hoursStuck = lastAdvanced ? (Date.now() - new Date(lastAdvanced).getTime()) / 36e5 : 0;
   const isIgreenClient = (deal as any).customer_origin === "igreen_sync";
