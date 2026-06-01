@@ -546,36 +546,33 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ─── Self-intro: captura nome/CEP/valor da PRIMEIRA mensagem do lead ───
-    // Ex: "Oi me chamo Paula", "Sou João, conta 250" — evita re-perguntar o nome.
-    // Source `freeform_multi` sobrescreve `whatsapp_profile`.
-    // Self-intro roda mesmo em chats zerados manualmente — não reaproveita pushName,
-    // mas extrai dados que o lead escreveu explicitamente nas primeiras mensagens.
+    // ─── Auto-capture: extrai nome/email/CEP/valor/CPF de TODA inbound de texto ───
+    // Roda independente de capture_mode, fluxo ativo (D), ou IA ligada/desligada.
+    // Idempotente: `buildMultiFieldPatch` só preenche slots vazios e respeita
+    // hierarquia de `name_source` (nunca sobrescreve manual/ocr/user_confirmed).
+    // Nas 2 primeiras inbound (ou em step de pedir nome), promove `name_source`
+    // pra `self_introduced` (mais forte que freeform_multi).
     if (messageText && !isFile && customer) {
       try {
-        const { count: inboundCount } = await supabase
-          .from("conversations")
-          .select("id", { count: "exact", head: true })
-          .eq("customer_id", customer.id)
-          .eq("message_direction", "inbound");
-        const currentNameSource = inferNameSource((customer as any).name, (customer as any).name_source);
-        const needsTrustedName = ["unknown", "whatsapp_profile", "freeform_multi", ""].includes(currentNameSource);
-        const isEarly = (inboundCount ?? 0) <= 2; // 1ª ou 2ª inbound
-        const isNameCaptureStep = ["ask_name", "aguardando_nome"].includes(stripPrefix((customer as any).conversation_step || ""));
-        const manualMode = (customer as any)?.capture_mode === "manual";
-        if ((manualMode ? (isEarly || isNameCaptureStep) : (isEarly || needsTrustedName || isNameCaptureStep))) {
-          const multi = extractMultiField(messageText);
-          const patch = buildMultiFieldPatch(customer, multi);
-          if (Object.keys(patch).length > 0) {
-            // Promove name_source para self_introduced (mais forte que freeform_multi)
-            if (patch.name) patch.name_source = "self_introduced";
-            await supabase.from("customers").update(patch).eq("id", customer.id);
-            Object.assign(customer as any, patch);
-            console.log(`[self-intro] customer=${customer.id} fields=${Object.keys(patch).join(",")} name="${patch.name || ""}"`);
+        const multi = extractMultiField(messageText);
+        const patch = buildMultiFieldPatch(customer, multi);
+        if (Object.keys(patch).length > 0) {
+          if (patch.name) {
+            const { count: inboundCount } = await supabase
+              .from("conversations")
+              .select("id", { count: "exact", head: true })
+              .eq("customer_id", customer.id)
+              .eq("message_direction", "inbound");
+            const isEarly = (inboundCount ?? 0) <= 2;
+            const isNameCaptureStep = ["ask_name", "aguardando_nome"].includes(stripPrefix((customer as any).conversation_step || ""));
+            if (isEarly || isNameCaptureStep) patch.name_source = "self_introduced";
           }
+          await supabase.from("customers").update(patch).eq("id", customer.id);
+          Object.assign(customer as any, patch);
+          console.log(`[auto-capture] customer=${customer.id} fields=${Object.keys(patch).join(",")} name="${patch.name || ""}"`);
         }
       } catch (e) {
-        console.warn("[self-intro] falhou:", (e as Error).message);
+        console.warn("[auto-capture] falhou:", (e as Error).message);
       }
     }
 
