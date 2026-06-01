@@ -101,33 +101,26 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
     }
   };
 
-  /** Consultor confirma os dados e libera o bot pra avançar pro próximo passo. */
+  /**
+   * Confirmação interna do consultor — apenas marca como confirmado no banco.
+   * NÃO dispara nenhuma mensagem no WhatsApp do cliente nem avança o fluxo do bot.
+   * O fluxo do WhatsApp só avança quando o próprio cliente confirma (via `askClient`).
+   */
   const confirmSelf = async () => {
     setBusy("self");
     try {
-      // Cast para any: campos `ocr_review_*` são criados pela migração
-      // 20260522180000 e ainda não estão nos tipos gerados.
+      const nowIso = new Date().toISOString();
       const updatePayload: any = {
-        [kind === "bill" ? "bill_data_confirmed_at" : "doc_data_confirmed_at"]: new Date().toISOString(),
+        [kind === "bill" ? "bill_data_confirmed_at" : "doc_data_confirmed_at"]: nowIso,
         [kind === "bill" ? "bill_data_confirmation_by" : "doc_data_confirmation_by"]: "consultant",
         ocr_review_pending: null,
-        ocr_review_decided_at: new Date().toISOString(),
+        ocr_review_decided_at: nowIso,
         ocr_review_decided_by: "consultant",
       };
       await supabase.from("customers").update(updatePayload).eq("id", customer.id);
 
-      // Avança o fluxo (passos intermediários `message` + fallback de simulação
-      // + próximo capture) via helper compartilhado.
-      try {
-        await dispatchPostBillConfirm({ customer, kind, continueFlowOnNextCapture: true });
-      } catch (advErr: any) {
-        console.warn("[ocr-review] advance flow failed:", advErr?.message);
-      }
-
-
-
       haptics.success();
-      toast({ title: "✓ Você confirmou", description: "Bot avançando para o próximo passo…", duration: 2000 });
+      toast({ title: "✓ Dados confirmados", description: "Salvo internamente — nada foi enviado ao cliente", duration: 2200 });
       onDecided?.();
     } catch (e: any) {
       haptics.error();
