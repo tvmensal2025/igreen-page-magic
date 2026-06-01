@@ -1,15 +1,18 @@
 import { useState, useCallback, useEffect } from "react";
-import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy } from "lucide-react";
+import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy, Paperclip, Sparkles, IdCard, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SaveMessageAsTemplateDialog } from "./SaveMessageAsTemplateDialog";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/useMessages";
+import type { CaptureDocKey } from "@/hooks/useCaptureAttach";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   onLoadMedia?: (messageId: string) => Promise<string | null>;
   consultantId?: string;
+  customerId?: string | null;
+  onAttachToCapture?: (message: ChatMessage, key: CaptureDocKey, loadedUrl: string) => Promise<void> | void;
   onTemplateSaved?: () => void;
 }
 
@@ -194,12 +197,14 @@ function VideoPlayer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
   );
 }
 
-function DocumentViewer({ message, onLoadMedia }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null> }) {
+function DocumentViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null>; onLoaded?: (url: string) => void }) {
   const [docSrc, setDocSrc] = useState<string | null>(
     isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null
   );
   const [loading, setLoading] = useState(false);
   const isPdf = message.mediaMimetype?.includes("pdf") || message.fileName?.endsWith(".pdf");
+
+  useEffect(() => { if (docSrc) onLoaded?.(docSrc); }, [docSrc]);
 
   const handleLoad = useCallback(async () => {
     if (docSrc || !onLoadMedia) return;
@@ -303,15 +308,36 @@ function LinkifiedText({ text }: { text: string }) {
   );
 }
 
-export function MessageBubble({ message, onLoadMedia, consultantId, onTemplateSaved }: MessageBubbleProps) {
+export function MessageBubble({ message, onLoadMedia, consultantId, customerId, onAttachToCapture, onTemplateSaved }: MessageBubbleProps) {
   const { fromMe, text, timestamp, status, mediaType } = message;
   const showText = text && mediaType !== "audio" && mediaType !== "sticker";
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogFocus, setDialogFocus] = useState<"name" | "shortcut">("name");
+  const [attaching, setAttaching] = useState<CaptureDocKey | null>(null);
 
   const canSaveAsTemplate = !!consultantId && (mediaType === "audio" || mediaType === "video" || mediaType === "image");
   const canCopy = !!text;
+  const canAttachToCapture = !!customerId && !!onAttachToCapture && !fromMe && (mediaType === "document" || mediaType === "image");
+
+  const handleAttach = useCallback(async (key: CaptureDocKey) => {
+    if (!onAttachToCapture) return;
+    let src = loadedUrl;
+    if (!src && onLoadMedia) {
+      src = await onLoadMedia(message.id);
+      if (src) setLoadedUrl(src);
+    }
+    if (!src) {
+      toast.error("Não consegui carregar a mídia");
+      return;
+    }
+    setAttaching(key);
+    try {
+      await onAttachToCapture(message, key, src);
+    } finally {
+      setAttaching(null);
+    }
+  }, [loadedUrl, onLoadMedia, message, onAttachToCapture]);
 
   return (
     <div className={`group flex ${fromMe ? "justify-end" : "justify-start"} mb-1`}>
@@ -322,17 +348,34 @@ export function MessageBubble({ message, onLoadMedia, consultantId, onTemplateSa
             : "bg-secondary text-foreground rounded-bl-none"
         }`}
       >
-        {(canSaveAsTemplate || canCopy) && (
+        {(canSaveAsTemplate || canCopy || canAttachToCapture) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-background/90 border border-border/60 shadow opacity-0 group-hover:opacity-100 focus:opacity-100 data-[state=open]:opacity-100 flex items-center justify-center transition-opacity"
                 aria-label="Mais opções"
               >
-                <MoreVertical className="w-3.5 h-3.5" />
+                {attaching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MoreVertical className="w-3.5 h-3.5" />}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-60">
+              {canAttachToCapture && (
+                <>
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Anexar à captação
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => handleAttach("electricity_bill_photo_url")}>
+                    <Zap className="w-4 h-4 mr-2 text-primary" /> Usar como Conta de Energia
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleAttach("document_front_url")}>
+                    <IdCard className="w-4 h-4 mr-2" /> Usar como RG/CNH (Frente)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleAttach("document_back_url")}>
+                    <IdCard className="w-4 h-4 mr-2" /> Usar como RG/CNH (Verso)
+                  </DropdownMenuItem>
+                  {(canSaveAsTemplate || canCopy) && <DropdownMenuSeparator />}
+                </>
+              )}
               {canSaveAsTemplate && (
                 <>
                   <DropdownMenuItem onClick={() => { setDialogFocus("name"); setDialogOpen(true); }}>
@@ -355,7 +398,7 @@ export function MessageBubble({ message, onLoadMedia, consultantId, onTemplateSa
         {mediaType === "image" && <ImageViewer message={message} onLoadMedia={onLoadMedia} onLoaded={setLoadedUrl} />}
         {mediaType === "video" && <VideoPlayer message={message} onLoadMedia={onLoadMedia} onLoaded={setLoadedUrl} />}
         {mediaType === "audio" && <AudioPlayer message={message} onLoadMedia={onLoadMedia} onLoaded={setLoadedUrl} />}
-        {mediaType === "document" && <DocumentViewer message={message} onLoadMedia={onLoadMedia} />}
+        {mediaType === "document" && <DocumentViewer message={message} onLoadMedia={onLoadMedia} onLoaded={setLoadedUrl} />}
         {mediaType === "sticker" && <StickerViewer message={message} onLoadMedia={onLoadMedia} />}
 
         {showText && <LinkifiedText text={text} />}

@@ -15,6 +15,7 @@ import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -67,6 +68,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     } catch {}
   }, []);
   const { customer: captureCustomer, filledCount, totalFields } = useCaptureSession(customerId);
+  const { attachMediaToCapture } = useCaptureAttach();
   // Captação é SEMPRE manual (default global) — incompleto = pendente.
   const captureIncomplete = !!captureCustomer && !(captureCustomer.name && captureCustomer.cpf && captureCustomer.email && Number(captureCustomer.electricity_bill_value || 0) > 0);
   const captureActive = captureOpen || captureIncomplete;
@@ -535,7 +537,20 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         )}
         {messages.map((msg, index) => (
           <div key={`${msg.id}-${index}`} data-msg-bubble>
-            <MessageBubble message={msg} onLoadMedia={loadMedia} consultantId={consultantId} />
+            <MessageBubble
+              message={msg}
+              onLoadMedia={loadMedia}
+              consultantId={consultantId}
+              customerId={customerId}
+              onAttachToCapture={customerId ? async (m, key, loaded) => {
+                await attachMediaToCapture({
+                  customerId,
+                  key,
+                  sourceUrl: loaded,
+                  fileName: m.fileName,
+                });
+              } : undefined}
+            />
           </div>
         ))}
         <div ref={bottomRef} aria-hidden className="h-2" />

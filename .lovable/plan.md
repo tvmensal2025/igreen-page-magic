@@ -1,62 +1,45 @@
-# CRM — "estão faltando pessoas"
+# Menu "⋯" no PDF/imagem do chat → anexar à lateral + extrair dados
 
-## Diagnóstico (banco real, agora)
+## O que o usuário quer
 
-Consultor Rafael (`0c2711ad-…`):
+Hoje quando um lead manda um PDF (ou foto) no chat, o bubble só mostra "Baixar" / preview iframe. Não tem como mandar aquele documento direto pra coluna da captação (`electricity_bill_photo_url`, `document_front_url`, `document_back_url`) nem pra rodar o OCR sem baixar manualmente e fazer upload de novo no painel lateral.
 
-- **105 deals** no Kanban (94 em `novo_lead`, 6 em `valor_conta`, 5 em `finalizando`, 4 em `doc_enviado`, 3 em `conta_enviada`, 7 reprovado, 6 aprovado, 8/9/10/11 em 30/60/90/120 dias, 1 qualificando).
-- **19 deals criados hoje** (01/jun).
-- Todos os stages dos deals existem em `kanban_stages` → nenhum card "órfão" sumindo de coluna.
-- `consultant_id` do deal bate 100% com o do customer (0 mismatches).
+Solução: adicionar no menu de 3 pontos (⋯) que já existe no MessageBubble novas ações específicas para documentos/imagens:
 
-Customers **sem deal** (137 leads totais, 33 sem deal):
+- **📎 Usar como Conta de Energia**
+- **📎 Usar como RG/CNH (Frente)**
+- **📎 Usar como RG/CNH (Verso)**
+- **🤖 Extrair dados agora** (só aparece se já estiver anexado naquele slot)
 
-| categoria | qtd | exemplo |
-|---|---|---|
-| `is_test_lead = true` | 25 | "Test1"…"Test15", "JornadaTest", "FinalTest", "Lead Real Simulado" |
-| `is_sandbox = true` | 8 | "Maria Silva" / "TestVariantB" / "Test_D_Mapping" (telefones `550000…`) |
-| **leads reais sem deal** | **0** | — |
+Tudo isso já dispara o OCR (`reprocess-capture`) em background, igual ao tile da lateral — então em ~5s os campos (valor, CEP, endereço, nome) aparecem preenchidos no card do lead.
 
-Conclusão objetiva: **não há lead real fora do CRM**. O trigger novo está pegando 100% dos leads que entram. Os 33 "ausentes" são exatamente os testes que o filtro deve esconder.
+## Como funciona por trás
 
-## Hipóteses do que você está vendo
+1. Clica numa ação → `onLoadMedia(message.id)` baixa o blob da mensagem (já existe).
+2. Reupload para `whatsapp-media/captacao/{customerId}/{key}-{ts}.{ext}` (mesmo bucket/path do `CaptureDocumentTiles`).
+3. `UPDATE customers SET {key}=url WHERE id=customerId` (já existe via onUploaded handler que vou expor).
+4. `supabase.functions.invoke("reprocess-capture", { body: { customerId, kind } })`.
+5. Toast: "📎 Anexado como Conta de Energia · Extraindo dados…".
+6. A lateral (`useCaptureSession`) já escuta updates → recarrega sozinha.
 
-1. **Filtro do Kanban escondendo cards** — barra de busca preenchida ou "Parou no passo" ≠ "Todos os passos" filtra os 94 da coluna `novo_lead`. Solução: limpar filtros (canto superior direito do CRM).
-2. **Leads reais marcados como `is_test_lead`/`is_sandbox` por engano** — preciso de 1 nome/telefone concreto pra confirmar.
-3. **Espera ver leads de outros consultores** — Kanban só mostra do consultor logado.
+## Arquivos a alterar
 
-## Plano
+| arquivo | mudança |
+|---|---|
+| `src/components/whatsapp/MessageBubble.tsx` | menu ⋯ ganha grupo "Anexar à captação" quando `mediaType` é `document` ou `image` e há `customerId`; chama nova prop `onAttachToCapture(message, key)` |
+| `src/components/whatsapp/ChatView.tsx` | passa `customerId` + handler `onAttachToCapture` ao `MessageBubble`. Handler reaproveita lógica de upload/OCR (extraída para hook). |
+| `src/hooks/useCaptureAttach.ts` (novo) | função `attachMediaToCapture({ customerId, blob, ext, key })` que faz upload+update+OCR. Reutilizada pelos tiles da lateral também (refactor leve, opcional). |
 
-### A. Toggle "Mostrar testes/sandbox" no Kanban (5 min, frontend-only)
+Nenhuma migração de banco, nenhum novo edge function, nenhuma mudança em fluxo D / engine / orquestrador IA.
 
-Adiciono na header do `KanbanBoard.tsx` um pequeno switch ao lado do "Configurar Colunas":
+## Fora de escopo
 
-- OFF (default): comportamento atual.
-- ON: `useKanbanDeals` busca também leads `is_sandbox=true`/`is_test_lead=true` do mesmo consultor e os marca visualmente (badge cinza "TESTE") no card.
-
-Permite você ver os 33 sem precisar abrir SQL e identificar se algum era real.
-
-### B. Botão "Reclassificar como lead real" no card de teste
-
-No `KanbanDealCard.tsx`, se `is_test_lead` ou `is_sandbox` estiver true, mostra ação rápida que faz:
-
-```sql
-UPDATE customers SET is_test_lead=false, is_sandbox=false WHERE id=…
-INSERT INTO crm_deals … (mesma lógica do trigger, idempotente)
-```
-
-Para o caso (raro) de um lead real ter caído como teste.
-
-### C. Nada no backend
-
-Trigger e backfill continuam exatamente como estão. Sem nova migration.
-
-## Fora do escopo
-
-- Não mexer em fluxo D, engine V3, OCR, captação.
-- Não criar deal para `igreen_sync`.
-- Não relaxar o trigger para incluir sandbox/test (mantém Kanban limpo por padrão).
+- Drag-and-drop do PDF pra coluna lateral (versão futura).
+- Detectar automaticamente "isso é conta" vs "isso é RG" sem o usuário escolher.
+- Mexer em mensagens enviadas pelo bot (`fromMe`).
 
 ## Validação
 
-Após implementação, ligando o toggle você verá os 33 cards de teste; nenhum deve parecer um cliente real. Se um parecer, clica em "Reclassificar" e ele entra no funil normal.
+1. Lead manda PDF → consultor abre menu ⋯ → "Usar como Conta de Energia" → tile da lateral fica verde com ícone PDF em <2s; em 5-10s campos `electricity_value`, `cep`, `address` preenchidos.
+2. Mesma coisa para foto JPG/PNG → tile vira thumbnail.
+3. Documento já anexado: menu mostra "🤖 Extrair dados agora" que só roda OCR de novo, sem reupload.
