@@ -308,6 +308,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                       : c.status === "active" ? <Pause className="w-4 h-4 text-amber-400" /> : <Play className="w-4 h-4 text-emerald-400" />}
                   </Button>
                 )}
+                {c.fb_campaign_id && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setExtending(c)}
+                    title="Estender prazo / mudar orçamento"
+                  >
+                    <CalendarClock className="w-4 h-4 text-primary" />
+                  </Button>
+                )}
                 {isSuperAdmin && (
                   <Button
                     size="icon"
