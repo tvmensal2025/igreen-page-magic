@@ -246,7 +246,7 @@ PERGUNTA DO LEAD: "${q.slice(0, 600)}"`;
     const res = await aiChatCascade({
       model: opts.model || "google/gemini-3.1-pro-preview",
       temperature: 0.35,
-      maxTokens: 500,
+      maxTokens: 1500,
       jsonSchema: {
         name: "faq_answer",
         schema: {
