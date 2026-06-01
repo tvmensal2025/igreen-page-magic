@@ -45,14 +45,16 @@ export async function aiChat(opts: AIChatOptions): Promise<AIChatResult> {
 
   const model = opts.model || "google/gemini-3-flash-preview";
   const reasoning = isReasoningModel(model);
+  const thinking = isThinkingModel(model);
   const body: Record<string, any> = {
     model,
     messages: opts.messages,
   };
   if (!reasoning) body.temperature = opts.temperature ?? 0.4;
   if (opts.maxTokens) {
-    // Reasoning models gastam tokens "ocultos"; dá folga para a resposta final.
-    const tokens = reasoning ? Math.max(opts.maxTokens * 8, 2000) : opts.maxTokens;
+    // Thinking/reasoning models gastam tokens "ocultos"; dá folga (×8, mín 2000)
+    // para a resposta final não ser truncada no meio do JSON.
+    const tokens = thinking ? Math.max(opts.maxTokens * 8, 2000) : opts.maxTokens;
     if (reasoning) body.max_completion_tokens = tokens;
     else body.max_tokens = tokens;
   }
