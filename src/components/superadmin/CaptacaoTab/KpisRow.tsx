@@ -27,7 +27,7 @@ export function KpisRow({ kpis }: Props) {
             <c.icon className={`w-4 h-4 ${c.color}`} />
             <Activity className="w-3 h-3 text-muted-foreground/30" />
           </div>
-          <p className="text-2xl font-black text-foreground tabular-nums tracking-tight">{c.value}</p>
+          <p className="text-xl font-bold text-foreground tabular-nums tracking-tight">{c.value}</p>
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1 font-semibold">{c.label}</p>
         </div>
       ))}
