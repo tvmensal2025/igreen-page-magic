@@ -281,6 +281,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     </div>
                   );
                 })()}
+                {!c.rejection_reason && c.ended_at && new Date(c.ended_at).getTime() < Date.now() && c.fb_campaign_id && (
+                  <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs space-y-1.5">
+                    <div className="font-bold text-amber-500 flex items-center gap-1.5">
+                      <CalendarClock className="w-3.5 h-3.5" /> Campanha encerrou em {new Date(c.ended_at).toLocaleDateString("pt-BR")}
+                    </div>
+                    <div className="text-muted-foreground">Adicione mais dias e/ou ajuste o orçamento para continuar rodando.</div>
+                    <Button size="sm" onClick={() => setExtending(c)} className="h-7 text-xs gap-1">
+                      <CalendarClock className="w-3 h-3" /> Estender campanha
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {(c.status === "active" || c.status === "paused") && c.fb_campaign_id && (
