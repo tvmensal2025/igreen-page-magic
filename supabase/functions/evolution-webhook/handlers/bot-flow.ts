@@ -12,6 +12,16 @@ import {
   isValidEmailFormat,
   isSameContact,
 } from "../../_shared/validators.ts";
+import {
+  decideCorrection,
+  isValidCelular,
+  isValidCorrectionEmail,
+  isValidInstallation,
+  isSameNormalized,
+  incrementAttempts,
+  maskCorrectionValueForLog,
+  type CorrectionKind,
+} from "../../_shared/portal-correction.ts";
 import { isResolverStrictMode } from "../../_shared/bot/global-flag.ts";
 import {
   fetchWithTimeout,
@@ -431,11 +441,15 @@ function isExpectedShape(step: string, text: string): boolean {
     case "ask_phone":
     case "ask_phone_confirm":
       return digits.length >= 10;
+    case "corrigir_celular_portal":
+      return digits.length >= 10;
     case "ask_bill_value":
     case "editing_conta_valor":
       return /^[r\$\s]*\d{2,6}([\.,]\d{1,2})?\s*$/i.test(t);
     case "ask_installation_number":
     case "editing_conta_instalacao":
+      return digits.length >= 7;
+    case "corrigir_instalacao_portal":
       return digits.length >= 7;
     case "ask_name":
     case "editing_conta_nome":
@@ -449,6 +463,10 @@ function isExpectedShape(step: string, text: string): boolean {
       return t.length >= 3 && !/\?/.test(t);
     case "ask_email":
       return /@/.test(t);
+    case "corrigir_email_portal": {
+      const _at = t.indexOf("@");
+      return _at >= 1 && _at < t.length - 1;
+    }
     case "ask_number":
       return digits.length >= 1 && t.length <= 10;
     case "ask_complement":
@@ -483,6 +501,9 @@ function getReentryPromptForStep(step: string, customer: any): string {
     "ask_number": `${v}qual o *número* da sua casa?`,
     "ask_complement": `${v}tem *complemento* no endereço? (apto, bloco) — ou *PULAR* / *NÃO TEM*.`,
     "ask_installation_number": `${v}qual o *número da instalação* da conta?`,
+    "corrigir_celular_portal": `${v}me envia um *número de celular* diferente (com DDD) pra concluir o cadastro.`,
+    "corrigir_email_portal": `${v}me envia um *e-mail diferente* pra concluir o cadastro.`,
+    "corrigir_instalacao_portal": `${v}confere o *número de instalação* na conta e me envia de novo (7+ dígitos).`,
     "ask_bill_value": `${v}qual a *média* da sua conta de luz? (ex: 350,50)`,
     "ask_tipo_documento": `Me manda só uma foto da *frente do seu documento* (RG ou CNH — eu identifico sozinho).`,
     "aguardando_conta": `${v}me envia uma *foto ou PDF da conta de luz* pra eu seguir 📸`,
@@ -520,6 +541,8 @@ const NO_QA_STEPS = new Set([
   "ask_doc_frente_manual", "ask_doc_verso_manual", "ask_finalizar",
   "finalizando", "portal_submitting", "aguardando_otp", "validando_otp", "otp_falhou",
   "aguardando_assinatura", "complete", "aguardando_humano",
+  // Loop de correção Portal 2 — steps determinísticos, QA semântico não dispara.
+  "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal",
   "editing_conta_menu", "editing_conta_nome", "editing_conta_endereco",
   "editing_conta_cep", "editing_conta_distribuidora", "editing_conta_instalacao", "editing_conta_valor",
   "editing_doc_menu", "editing_doc_nome", "editing_doc_cpf", "editing_doc_rg",
@@ -1509,6 +1532,39 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   const updates: Record<string, any> = {};
 
   // ═══════════════════════════════════════════════════════════════════
+  // 🔁 persistAndRedispatch — Portal 2 correction loop (Req 9.3/9.4, 7.4).
+  // Espelha o caso de auto-correção de consumo do step `portal_submitting`:
+  // grava o campo corrigido (já setado em `updates` pelo caller), incrementa
+  // o contador por classe, reabre `portal_submitting` em `retry_ready`, limpa
+  // o erro e re-despacha via o Despachante existente. Best-effort: falha de
+  // dispatch não derruba a conversa. Logs sempre com PII mascarada (Req 12.4).
+  // ═══════════════════════════════════════════════════════════════════
+  async function persistAndRedispatch(kind: CorrectionKind, maskedValue: string): Promise<void> {
+    // Req 9.3/9.4 — incrementa Tentativas_por_Classe (jsonb {kind:int}).
+    updates.portal2_correction_attempts = incrementAttempts(
+      (customer as any).portal2_correction_attempts,
+      kind,
+    );
+    // Reabre o submit (marcador transitório `retry_ready` p/ o painel) e limpa
+    // o erro anterior. conversation_step volta a `portal_submitting`.
+    updates.portal2_status = "retry_ready";
+    updates.portal2_error = null;
+    updates.conversation_step = "portal_submitting";
+    const attemptN = (updates.portal2_correction_attempts as Record<string, number>)[kind];
+    console.log(`[portal-correction] redispatch kind=${kind} attempt=${attemptN} value=${maskedValue}`);
+    try {
+      const { dispatchPortalWorker } = await import("../../_shared/portal-worker.ts");
+      await supabase.from("customers").update(updates).eq("id", customer.id);
+      await dispatchPortalWorker(supabase, customer.id);
+    } catch (e: any) {
+      console.warn(`[portal-correction] redispatch falhou kind=${kind}:`, e?.message);
+    }
+    // O caller já enviou a confirmação inline? Não — deixamos o outbound padrão
+    // enviar `reply` (espelha o caso do consumo: __inline_sent=false).
+    (updates as any).__inline_sent = false;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // 🎙️  OPENING DO BOT_FLOW — envia o áudio de abertura (slot) configurado
   // pelo consultor no Flow Builder ANTES de qualquer texto/IA.
   // Dispara apenas no PRIMEIRO contato (zero outbound prévio para este lead).
@@ -2232,6 +2288,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     "finalizando", "finalizar_cadastro", "complete", "valor_baixo",
     "cadastro_em_analise", "aguardando_facial", "otp_falhou",
     "aguardando_humano",
+    // Loop de correção Portal 2: steps que pedem o dado rejeitado ao cliente.
+    "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal",
   ]);
   const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const stepIsUuid = UUID_RX.test(step);
@@ -4517,9 +4575,103 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           break;
         }
       }
+
+      // ── Loop de correção genérico (Req 7.1, 9.5, 10.1/10.4) ──
+      // Generaliza o caso do consumo: se o worker marcou o cadastro como
+      // `awaiting_correction` (Classe_de_Erro recuperável, tentativas < 3),
+      // abre o step de correção e pede ao cliente APENAS o dado rejeitado.
+      // Guarda (Req 10.4): classe não-recuperável ou limite esgotado →
+      // mantém `needs_human` e NÃO pede correção.
+      const _portalStatus = String((customer as any).portal2_status || "");
+      if (_portalStatus === "awaiting_correction" || _portalStatus === "needs_human") {
+        const decision = decideCorrection(
+          (customer as any).portal2_error_kind,
+          (customer as any).portal2_correction_attempts,
+        );
+        if (decision.action === "open") {
+          updates.conversation_step = decision.spec.step;
+          reply = decision.spec.prompt;
+          console.log(`[portal-correction] abrindo step=${decision.spec.step} kind=${decision.kind}`);
+          break;
+        }
+        if (decision.action === "needs_human") {
+          if (_portalStatus !== "needs_human") updates.portal2_status = "needs_human";
+          console.log(`[portal-correction] guarda needs_human reason=${decision.reason} kind=${(customer as any).portal2_error_kind}`);
+          reply = "Recebi seu cadastro aqui! Esse caso específico vou encaminhar para um de nossos consultores finalizar com você — em breve alguém te chama por aqui 👍";
+          break;
+        }
+        // decision.action === "none" (ex.: missing_consumo sem valor) → segue
+        // para a mensagem padrão de processamento abaixo.
+      }
+
       reply = "⏳ Estamos processando seu cadastro no portal...\n\n📱 Em breve você receberá um *código de verificação no WhatsApp*. Quando receber, *digite aqui*!\n\nAguarde alguns instantes...";
       break;
     }
+
+    // ─── LOOP DE CORREÇÃO PORTAL 2 (Req 7, 8, 9) ───────────────────────
+    // Steps abertos pelo `portal_submitting` quando o Portal 2 rejeita um dado
+    // recuperável. Cada um valida o formato, recusa repetição do valor
+    // anteriormente rejeitado (normalizado) e, no sucesso, persiste o campo +
+    // re-despacha via `persistAndRedispatch`. NUNCA tocam `phone_whatsapp`.
+    case "corrigir_celular_portal": {
+      // Req 8.1/8.3 + 9.2: ≥10 dígitos, ≠ phone_whatsapp, ≠ valor já rejeitado.
+      if (!isValidCelular(messageText)) {
+        reply = "❌ Número inválido. Me envia um *celular com DDD* (pelo menos 10 dígitos), ex: 11999998888:";
+        break;
+      }
+      if (isSameNormalized("duplicate_phone", messageText, (customer as any).phone_whatsapp)) {
+        reply = "Esse é o mesmo número que você já usa aqui no WhatsApp. Me envia um *número diferente* (com DDD) pra concluir:";
+        break;
+      }
+      if (isSameNormalized("duplicate_phone", messageText, (customer as any).portal2_celular_alt)) {
+        reply = "Esse número já tentamos e não foi aceito. Me envia *outro* número de celular (com DDD):";
+        break;
+      }
+      const _celDigits = messageText.replace(/\D/g, "");
+      // ⚠️ NUNCA grava phone_whatsapp (chave única da conversa) — só o campo
+      // alternativo do Portal 2 (Req 8.2/8.6, Property 2).
+      updates.portal2_celular_alt = _celDigits;
+      reply = "Perfeito! Atualizei o número e estou reenviando seu cadastro para o portal. Pode aguardar alguns instantes ✅";
+      await persistAndRedispatch("duplicate_phone", maskCorrectionValueForLog("duplicate_phone", _celDigits));
+      break;
+    }
+
+    case "corrigir_email_portal": {
+      const _emailTxt = (messageText || "").trim();
+      // Req 7.2: 1+ char antes e depois de `@`.
+      if (!isValidCorrectionEmail(_emailTxt)) {
+        reply = "❌ E-mail inválido. Confere o *@* e o domínio (ex: seunome@gmail.com) e me envia de novo:";
+        break;
+      }
+      // Req 9.2: diferente do e-mail anteriormente rejeitado (trim + lowercase).
+      if (isSameNormalized("duplicate_email", _emailTxt, (customer as any).email)) {
+        reply = "Esse e-mail é o mesmo que já tentamos e não foi aceito. Me envia um *e-mail diferente*:";
+        break;
+      }
+      updates.email = _emailTxt.toLowerCase();
+      reply = "Show! Atualizei seu e-mail e estou reenviando seu cadastro para o portal. Pode aguardar alguns instantes ✅";
+      await persistAndRedispatch("duplicate_email", maskCorrectionValueForLog("duplicate_email", _emailTxt));
+      break;
+    }
+
+    case "corrigir_instalacao_portal": {
+      // Req 7.7: número de instalação com ≥7 dígitos.
+      if (!isValidInstallation(messageText)) {
+        reply = "❌ Número inválido. O número de instalação tem pelo menos *7 dígitos* — confere na conta e me envia de novo:";
+        break;
+      }
+      // Req 9.2: diferente do número anteriormente rejeitado (só dígitos).
+      if (isSameNormalized("duplicate_installation", messageText, (customer as any).numero_instalacao)) {
+        reply = "Esse número de instalação é o mesmo que já tentamos. Confere na conta e me envia um *número diferente* (7+ dígitos):";
+        break;
+      }
+      const _instDigits = messageText.replace(/\D/g, "");
+      updates.numero_instalacao = _instDigits;
+      reply = "Perfeito! Atualizei o número de instalação e estou reenviando seu cadastro para o portal. Pode aguardar alguns instantes ✅";
+      await persistAndRedispatch("duplicate_installation", maskCorrectionValueForLog("duplicate_installation", _instDigits));
+      break;
+    }
+
 
     case "aguardando_otp": {
       const otpCode = messageText.replace(/\D/g, "");

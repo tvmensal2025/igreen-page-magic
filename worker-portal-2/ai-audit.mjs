@@ -92,13 +92,33 @@ export function sanitize(obj, depth = 0) {
 export async function runAuditPipeline({
   supabase, supabaseUrl, workerSecret,
   customer_id, job_id, idconsultor,
-  status, trace, input, result, error, duration_ms,
+  status, trace, input, result, error, extraction, duration_ms,
 }) {
+  // `extraction` (Req 4.4) — Modo_Extração + resultado por extractor; entra no
+  // payload da IA e é dobrado no `result` persistido, sempre sanitizado (Req
+  // 12: CPF/documento → 4 últimos dígitos, buffers/base64 omitidos).
+  const sanitizedExtraction = extraction
+    ? sanitize({ mode: extraction.mode, doc: extraction.doc, bill: extraction.bill })
+    : null;
+
   const sanitized = {
     input: sanitize(input),
     result: sanitize(result),
     trace: sanitize(trace),
+    extraction: sanitizedExtraction,
   };
+
+  // Resultado persistido em `portal2_audit_traces.result` — inclui o resumo da
+  // extração (modo + motivo do manual) quando disponível, mantendo a coluna
+  // existente como portadora (não há coluna dedicada).
+  const persistedResult = sanitizedExtraction
+    ? {
+        ...(sanitized.result && typeof sanitized.result === 'object' && !Array.isArray(sanitized.result)
+          ? sanitized.result
+          : { value: sanitized.result ?? null }),
+        extraction: sanitizedExtraction,
+      }
+    : sanitized.result;
 
   let ai = null;
   let aiError = null;
@@ -123,7 +143,7 @@ export async function runAuditPipeline({
         status,
         trace: sanitized.trace,
         input_summary: sanitized.input,
-        result: sanitized.result,
+        result: persistedResult,
         error: error || null,
         ai_summary: ai?.summary || (aiError ? `[ai_error] ${aiError}` : null),
         ai_findings: ai?.findings || null,

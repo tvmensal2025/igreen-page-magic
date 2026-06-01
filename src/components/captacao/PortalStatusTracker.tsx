@@ -10,6 +10,16 @@ interface Props {
   onRetry?: () => void;
 }
 
+// Resultado de extração persistido pelo worker (já sanitizado/mascarado — Req 4/12).
+// Lemos apenas campos não-PII; NUNCA reconstruímos o dado em claro (Req 5.9, 12.3).
+type OcrResult = {
+  success?: boolean | null;
+  mode?: string | null;
+  error?: string | null;
+  rejection_reason?: string | null;
+  [k: string]: unknown;
+} | null;
+
 interface Row {
   status: string | null;
   conversation_step: string | null;
@@ -18,6 +28,14 @@ interface Row {
   igreen_code: string | null;
   error_message: string | null;
   finalized_at: string | null;
+  // Portal 2 OCR feedback loop (Req 5, 10)
+  portal2_status: string | null;
+  portal2_extraction_mode: string | null;
+  portal2_error_kind: string | null;
+  ocr_done: boolean | null;
+  ocr_confianca: number | null;
+  portal2_ocr_doc_result: OcrResult;
+  portal2_ocr_bill_result: OcrResult;
 }
 
 interface PortalTrace {
@@ -33,6 +51,24 @@ const ACTIVE_STEPS = new Set([
   "cadastro_concluido", "registered_igreen",
   "worker_offline", "automation_failed",
 ]);
+
+// Tradução por Classe_de_Erro (portal2_error_kind) — mais robusta que o match
+// textual, usada no banner de intervenção humana (Req 10.3, design §6).
+const ERROR_KIND_LABELS: Record<string, string> = {
+  duplicate_phone: "Celular já cadastrado no iGreen — pedido número alternativo ao cliente.",
+  duplicate_email: "E-mail já cadastrado — pedida correção ao cliente.",
+  duplicate_installation: "Nº de instalação recusado — pedida correção ao cliente.",
+  duplicate_document: "❌ CPF já cadastrado no iGreen — requer ação manual.",
+  no_coverage: "❌ Sem cobertura ativa para a região — requer ação manual.",
+  missing_consumo: "Consumo médio não informado — pedida correção ao cliente.",
+  unknown: "❌ Falha não classificada — requer ação manual.",
+};
+
+// Tradução por Classe_de_Erro; cai no texto cru quando a classe é desconhecida.
+function friendlyErrorKind(kind: string | null | undefined): string | null {
+  if (!kind) return null;
+  return ERROR_KIND_LABELS[kind] ?? null;
+}
 
 // Tradução amigável para erros conhecidos do portal iGreen
 function friendlyPortalError(raw: string): string {
@@ -64,7 +100,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
       const [{ data: cust }, { data: traces }] = await Promise.all([
         supabase
           .from("customers")
-          .select("status, conversation_step, otp_code, link_assinatura, igreen_code, error_message, finalized_at")
+          .select("status, conversation_step, otp_code, link_assinatura, igreen_code, error_message, finalized_at, portal2_status, portal2_extraction_mode, portal2_error_kind, ocr_done, ocr_confianca, portal2_ocr_doc_result, portal2_ocr_bill_result")
           .eq("id", customerId).maybeSingle(),
         supabase
           .from("portal2_audit_traces")
@@ -93,10 +129,12 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   }, [customerId]);
 
   const step = String(row?.conversation_step || row?.status || "").toLowerCase();
+  const needsHuman = row?.portal2_status === "needs_human";
   const hasPortalError =
     (trace?.status === "failed" && !!trace?.error) ||
     step === "worker_offline" ||
     step === "automation_failed" ||
+    needsHuman ||
     (!!row?.error_message && step !== "cadastro_concluido" && step !== "registered_igreen");
 
   const visible = !!row?.finalized_at || ACTIVE_STEPS.has(step) || hasPortalError;
@@ -114,7 +152,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   let icon = <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />;
   let title = "Abrindo portal no navegador da VPS…";
   let tone = "border-yellow-500/40 bg-yellow-500/10 text-yellow-100";
-  if (showError) { icon = <XCircle className="w-4 h-4 text-red-300" />; title = "Cadastro recusado pelo portal iGreen"; tone = "border-red-500/50 bg-red-500/15 text-red-100"; }
+  if (showError) { icon = <XCircle className="w-4 h-4 text-red-300" />; title = needsHuman ? "Cadastro precisa de ação manual" : "Cadastro recusado pelo portal iGreen"; tone = "border-red-500/50 bg-red-500/15 text-red-100"; }
   else if (isOtp) { icon = <KeyRound className="w-4 h-4 text-orange-300" />; title = "Código enviado ao WhatsApp do cliente — aguardando digitar"; tone = "border-orange-500/40 bg-orange-500/10 text-orange-100"; }
   else if (isValidating) { icon = <Loader2 className="w-4 h-4 animate-spin text-blue-300" />; title = "Validando código no portal…"; tone = "border-blue-500/40 bg-blue-500/10 text-blue-100"; }
   else if (isSign) { icon = <ScanFace className="w-4 h-4 text-purple-300" />; title = "Link de selfie enviado ao cliente"; tone = "border-purple-500/40 bg-purple-500/10 text-purple-100"; }
@@ -138,9 +176,43 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
     try { await navigator.clipboard.writeText(txt); sonnerToast.success(`${label} copiado`); } catch {}
   };
 
-  // Texto detalhado do erro: prefere trace.error, fallback para row.error_message
+  // Texto detalhado do erro: para needs_human, prioriza a tradução por
+  // Classe_de_Erro (portal2_error_kind); senão usa trace.error / error_message.
   const rawError = (trace?.status === "failed" ? trace?.error : null) || row?.error_message || "";
-  const errorText = rawError ? friendlyPortalError(rawError) : "";
+  const kindLabel = friendlyErrorKind(row?.portal2_error_kind);
+  const errorText = needsHuman
+    ? (kindLabel || (rawError ? friendlyPortalError(rawError) : "Necessária ação manual no portal."))
+    : (rawError ? friendlyPortalError(rawError) : "");
+
+  // ── Badge de extração auto/manual (Req 5.1/5.2/5.3) ──
+  const extractionMode = row?.portal2_extraction_mode;
+  const extractionBadge =
+    extractionMode === "auto"
+      ? { label: "✅ Extração automática (IA do portal)", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200" }
+      : extractionMode === "manual"
+        ? { label: "✋ Preenchimento manual", cls: "border-amber-500/40 bg-amber-500/10 text-amber-200" }
+        : { label: "⏳ Extração não determinada", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-300" };
+
+  // ── Badge IA_Gemini (Req 5.4/5.5) ──
+  const geminiBadge = row?.ocr_done
+    ? {
+        label:
+          typeof row?.ocr_confianca === "number"
+            ? `🤖 IA analisou (confiança ${row.ocr_confianca}%)`
+            : "🤖 IA analisou (confiança indisponível)",
+        cls: "border-sky-500/40 bg-sky-500/10 text-sky-200",
+      }
+    : { label: "🤖 IA não analisou", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-300" };
+
+  // ── Motivo da queda em manual (Req 5.7/5.8) ──
+  // Lê apenas campos já sanitizados pelo worker; nunca reconstrói PII (Req 5.9/12.3).
+  const manualReason =
+    extractionMode === "manual"
+      ? (row?.portal2_ocr_bill_result?.rejection_reason ||
+         row?.portal2_ocr_bill_result?.error ||
+         row?.portal2_ocr_doc_result?.error ||
+         "motivo não disponível")
+      : null;
 
   return (
     <div className={`mx-3 mt-2 rounded-md border px-3 py-2 text-[11px] ${tone}`}>
@@ -175,6 +247,21 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
       )}
       {!showError && isOffline && row?.error_message && (
         <p className="mt-1 opacity-80">{row.error_message}</p>
+      )}
+
+      {/* Extração auto/manual + IA Gemini (Req 5) */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${extractionBadge.cls}`}>
+          {extractionBadge.label}
+        </span>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${geminiBadge.cls}`}>
+          {geminiBadge.label}
+        </span>
+      </div>
+      {manualReason && (
+        <p className="mt-1 opacity-80 leading-snug">
+          <span className="font-semibold">Motivo do manual:</span> {manualReason}
+        </p>
       )}
     </div>
   );

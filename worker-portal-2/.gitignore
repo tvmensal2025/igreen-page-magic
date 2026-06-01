@@ -5,3 +5,9 @@ node_modules
 fixtures/screenshots
 .DS_Store
 package-lock.json
+
+# Probe de sondagem do extractor — contém PII (CNH/conta de energia). Nunca commitar.
+probe-extractor-result.json
+probe-extractor-*.json
+
+probe-doc-field-result.json

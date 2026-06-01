@@ -54,6 +54,12 @@ export const CADASTRO_STEPS: ReadonlySet<string> = new Set([
   "ask_finalizar",
   "finalizando",
   "portal_submitting",
+  // Loop de correção Portal 2 (portal2-ocr-feedback-loop): steps que pedem o
+  // dado rejeitado ao cliente. Precisam ficar no engine sys (determinístico),
+  // espelhando portal_submitting — senão o router trocaria pro engine flow.
+  "corrigir_celular_portal",
+  "corrigir_email_portal",
+  "corrigir_instalacao_portal",
   "aguardando_otp",
   "validando_otp",
   "aguardando_facial",

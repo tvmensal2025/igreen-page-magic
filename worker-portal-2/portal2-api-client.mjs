@@ -21,6 +21,7 @@
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright-chromium';
+import { buildExtractionResult } from './portal-errors.mjs';
 
 const BASE_URL = 'https://api-green-connection.igreenenergy.com.br';
 const PORTAL_LANDING = 'https://green.igreenenergy.com.br/autoconexao/';
@@ -92,6 +93,17 @@ const formatPhone = c => {
   return c;
 };
 function safeJson(s) { try { return JSON.parse(s); } catch { return null; } }
+
+// Envelopa uma promise com timeout (Req 1.4/2.4 — 30s p/ extractor). Em estouro,
+// rejeita com Error timeout; o chamador trata como erro de transporte (manual).
+function withTimeout(promise, ms, label = 'operation') {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timeout após ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+const EXTRACTOR_TIMEOUT_MS = 30000;
 
 // ─── Tabelas de mapeamento ──────────────────────────────────────────────────
 //
@@ -380,7 +392,7 @@ export class Portal2Client {
    * Upload com multipart — usa fetch dentro da page com FormData/Blob construídos lá.
    * fileBuffer: Buffer ou Uint8Array (vamos converter pra base64 e remontar no browser).
    */
-  async _fetchMultipart(method, path, { fields = {}, file } = {}) {
+  async _fetchMultipart(method, path, { fields = {}, file, fileField = 'file' } = {}) {
     const t0 = Date.now();
     const page = await _ensurePage(this.idconsultor);
     const url = new URL(this.baseUrl + path);
@@ -393,7 +405,7 @@ export class Portal2Client {
       fileB64 = Buffer.from(file.buffer).toString('base64');
     }
 
-    const result = await page.evaluate(async ({ url, method, headers, fields, fileB64, fileName, fileMime }) => {
+    const result = await page.evaluate(async ({ url, method, headers, fields, fileB64, fileName, fileMime, fileField }) => {
       try {
         const fd = new FormData();
         for (const [k, v] of Object.entries(fields || {})) {
@@ -404,7 +416,10 @@ export class Portal2Client {
           const bin = atob(fileB64);
           const arr = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-          fd.append('file', new Blob([arr], { type: fileMime || 'image/jpeg' }), fileName || 'file.jpg');
+          // ⚠️ O nome do campo varia por endpoint: /extract-receipt espera
+          // `file`; /extract-document espera `files` (multer .array). Enviar o
+          // nome errado retorna 400 "Unexpected field" e a IA deles nem analisa.
+          fd.append(fileField || 'file', new Blob([arr], { type: fileMime || 'image/jpeg' }), fileName || 'file.jpg');
         }
         const res = await fetch(url, { method, headers, body: fd });
         const text = await res.text();
@@ -412,7 +427,7 @@ export class Portal2Client {
       } catch (e) { return { err: String(e) }; }
     }, {
       url: url.toString(), method, headers, fields,
-      fileB64, fileName: file?.filename, fileMime: file?.mime,
+      fileB64, fileName: file?.filename, fileMime: file?.mime, fileField,
     });
 
     const duration_ms = Date.now() - t0;
@@ -714,7 +729,10 @@ export class Portal2Client {
         ...(idsolcontratovalidacao && { idsolcontratovalidacao: String(idsolcontratovalidacao) }),
         ...(pdfPassword && { pdf_password: pdfPassword }),
       },
+      // /extract-document usa multer .array → campo `files` (não `file`).
+      // Com `file` a API responde 400 "Unexpected field - file" e a IA não lê o doc.
       file: { buffer: fileBuffer, filename, mime },
+      fileField: 'files',
     });
   }
   extractReceipt({ fileBuffer, filename, mime = 'image/jpeg', idsolcontratovalidacao, pdfPassword }) {
@@ -749,8 +767,11 @@ export class Portal2Client {
 
   // ─── Fluxo completo ────────────────────────────────────────────────────────
   /**
-   * Cadastro end-to-end. Retorna { idcliente, idsolcontratovalidacao }.
+   * Cadastro end-to-end. Retorna { idcliente, idsolcontratovalidacao, extraction }.
    * Veja docs/portal-api/PORTAL2_API_COMPLETO.md pro schema do `dados`.
+   *
+   * `extraction` (Req 1/2/3) = { mode: 'auto'|'manual', doc, bill } derivado dos
+   * retornos dos extractors — OBSERVACIONAL, nunca bloqueia o cadastro.
    *
    * Se `dados.idsolcontratovalidacao` já vier preenchido, reaproveita
    * (significa que initValidation/extractReceipt já rodaram externamente,
@@ -778,15 +799,24 @@ export class Portal2Client {
       idsolcontratovalidacao = init?.idsolcontratovalidacao || null;
     }
 
+    // ─── Extração (OBSERVACIONAL — nunca bloqueia o cadastro) ────────────────
+    // Capturamos o retorno dos extractors em vez de descartá-lo, pra derivar o
+    // Modo_Extração (auto/manual). Erro de transporte/HTTP/timeout 30s → marca
+    // __transport_error e dispara manualFallback (Req 1.4/2.4).
+    let docResp = null;
+    let docBackResp = null;
+    let billResp = null;
+
     if (dados.docFile) {
       try {
-        await this.extractDocument({
+        docResp = await withTimeout(this.extractDocument({
           fileBuffer: dados.docFile.buffer,
           filename: dados.docFile.filename || 'doc.jpg',
           mime: dados.docFile.mime || 'image/jpeg',
           idsolcontratovalidacao,
-        });
+        }), EXTRACTOR_TIMEOUT_MS, 'extract-document');
       } catch (e) {
+        docResp = { __transport_error: e.message };
         if (idsolcontratovalidacao) {
           await this.manualFallback({ idsolcontratovalidacao, originStep: 'document', lastError: e.message }).catch(() => {});
         }
@@ -795,35 +825,51 @@ export class Portal2Client {
     // Verso do RG — segundo extractDocument no mesmo idsol. CNH não tem verso.
     if (dados.docBackFile) {
       try {
-        await this.extractDocument({
+        docBackResp = await withTimeout(this.extractDocument({
           fileBuffer: dados.docBackFile.buffer,
           filename: dados.docBackFile.filename || 'doc-verso.jpg',
           mime: dados.docBackFile.mime || 'image/jpeg',
           idsolcontratovalidacao,
-        });
+        }), EXTRACTOR_TIMEOUT_MS, 'extract-document(verso)');
       } catch (e) {
+        docBackResp = { __transport_error: e.message };
         if (idsolcontratovalidacao) {
           await this.manualFallback({ idsolcontratovalidacao, originStep: 'document_back', lastError: e.message }).catch(() => {});
         }
       }
     }
     // extractReceipt só se ainda não rodou (billAlreadyExtracted=true significa
-    // que o server.mjs já fez o OCR da fatura pra extrair consumo — não repete).
+    // que o server.mjs já fez o OCR da fatura pra extrair consumo — não repete,
+    // preserva o resultado já registrado — Req 2.5).
     if (dados.billFile && !dados.billAlreadyExtracted) {
       try {
-        await this.extractReceipt({
+        billResp = await withTimeout(this.extractReceipt({
           fileBuffer: dados.billFile.buffer,
           filename: dados.billFile.filename || 'conta.jpg',
           mime: dados.billFile.mime || 'image/jpeg',
           idsolcontratovalidacao,
           pdfPassword: dados.billPdfPassword,
-        });
+        }), EXTRACTOR_TIMEOUT_MS, 'extract-receipt');
       } catch (e) {
+        billResp = { __transport_error: e.message };
         if (idsolcontratovalidacao) {
           await this.manualFallback({ idsolcontratovalidacao, originStep: 'invoice', lastError: e.message }).catch(() => {});
         }
       }
+    } else if (dados.billAlreadyExtracted) {
+      // Preserva o resultado já registrado externamente (server.mjs); pode vir
+      // em dados.billExtractionResult quando o chamador o repassa.
+      billResp = dados.billExtractionResult ?? null;
     }
+
+    // Deriva o Modo_Extração consolidado (auto/manual) — observacional (Req 3).
+    const extraction = buildExtractionResult({
+      docResp,
+      docBackResp,
+      billResp,
+      isCnh: dados.isCnh,
+      billAlreadyExtracted: !!dados.billAlreadyExtracted,
+    });
 
     const exists = await this.checkCustomerExists({
       email: dados.email,
@@ -909,6 +955,9 @@ export class Portal2Client {
           : JSON.stringify(detail).slice(0, 600);
         e.message = `${e.message} | detail=${msg}`;
       }
+      // Carrega o resultado da extração no erro pra o processLead persistir o
+      // modo mesmo em falha (Req 3.3 — antes do estado terminal).
+      e.extraction = extraction;
       throw e;
     });
     const idcliente = created?.idcliente;
@@ -916,7 +965,7 @@ export class Portal2Client {
 
     await this.acceptTerms(idcliente).catch(() => {});
 
-    return { idcliente, idsolcontratovalidacao };
+    return { idcliente, idsolcontratovalidacao, extraction };
   }
 
   montarPayloadCadastro(d) {

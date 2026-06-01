@@ -19,7 +19,8 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { Portal2Client, fileFromPath, closeBrowser } from './portal2-api-client.mjs';
-import { runAuditPipeline, getAuditCount } from './ai-audit.mjs';
+import { runAuditPipeline, getAuditCount, sanitize } from './ai-audit.mjs';
+import { classifyPortalError } from './portal-errors.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '.env') });
@@ -233,6 +234,22 @@ async function processLead(job) {
         () => {},
         (e) => console.warn(`  ⚠ supabase update falhou: ${e.message}`),
       );
+
+      // Modo_Extração + resultados dos extractors (Req 3/4) — OBSERVACIONAL.
+      // Gravação SEPARADA e best-effort (Req 3.6/4.5): nunca altera o idcliente
+      // já criado acima nem aborta o job. PII mascarada via `sanitize`
+      // (CPF/documento → 4 últimos dígitos; buffers/base64 omitidos — Req 12).
+      const extraction = cadastroResult.extraction;
+      if (extraction) {
+        await supabase.from('customers').update({
+          portal2_extraction_mode: extraction.mode,
+          portal2_ocr_doc_result: sanitize(extraction.doc),
+          portal2_ocr_bill_result: sanitize(extraction.bill),
+        }).eq('id', customer_id).then(
+          () => {},
+          (e) => console.warn(`  ⚠ persistência extração (sucesso) falhou: ${e.message}`),
+        );
+      }
     }
 
     // Disparar geração de OTP (a iGreen manda WhatsApp pro cliente com o código)
@@ -267,7 +284,7 @@ async function processLead(job) {
         supabase, supabaseUrl: SUPABASE_URL, workerSecret: SECRET,
         customer_id, job_id: job.id, idconsultor: dados.idconsultor,
         status: 'success', trace, input: dados, result: finalResult,
-        duration_ms: Date.now() - t0,
+        extraction: cadastroResult.extraction, duration_ms: Date.now() - t0,
       }).then(ai => {
         if (ai?.summary) console.log(`  🔍 IA: ${ai.summary}`);
         if (ai?.findings?.length) {
@@ -282,11 +299,54 @@ async function processLead(job) {
   } catch (e) {
     cadastroError = e;
     console.error(`✗ [job ${job.id}] customer=${customer_id} erro: ${e.message}`);
+
+    // Classifica a rejeição numa Classe_de_Erro estável (Req 6). `unknown`
+    // (sem match textual) é tratado como instabilidade/transporte e mantém o
+    // retry do BullMQ; classes determinísticas NÃO re-lançam (payload errado
+    // não deve ser reenviado — Req 9.1).
+    const { kind, recoverable } = classifyPortalError(e.message);
+
     if (supabase && customer_id) {
-      await supabase.from('customers').update({
-        portal2_status: 'failed',
-        portal2_error: e.message.slice(0, 500),
-      }).eq('id', customer_id).then(() => {}, () => {});
+      // Lê o contador de tentativas por classe pra decidir o roteamento do
+      // status (Req 9.5/9.6 + 10.1/10.2). Best-effort: se a leitura falhar,
+      // assume 0 tentativas.
+      let attempts = 0;
+      try {
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('portal2_correction_attempts')
+          .eq('id', customer_id)
+          .maybeSingle();
+        attempts = Number(cust?.portal2_correction_attempts?.[kind] ?? 0);
+      } catch {}
+
+      // Roteamento do status terminal:
+      //   - não-recuperável → needs_human (Req 10.1)
+      //   - recuperável com limite esgotado (>=3) → needs_human (Req 9.5/10.2)
+      //   - recuperável com tentativas < 3 → awaiting_correction (loop do bot)
+      let nextStatus;
+      if (!recoverable) {
+        nextStatus = 'needs_human';
+      } else {
+        nextStatus = attempts >= 3 ? 'needs_human' : 'awaiting_correction';
+      }
+
+      const updates = {
+        portal2_status: nextStatus,
+        portal2_error: String(e.message ?? '').slice(0, 2000), // Req 6.8
+        portal2_error_kind: kind,                              // Req 6.1
+      };
+      // Modo_Extração mesmo em falha (Req 3.3 — antes do estado terminal).
+      if (e.extraction) {
+        updates.portal2_extraction_mode = e.extraction.mode ?? null;
+        updates.portal2_ocr_doc_result = sanitize(e.extraction.doc);
+        updates.portal2_ocr_bill_result = sanitize(e.extraction.bill);
+      }
+      // Best-effort (Req 3.6/4.5): falha de persistência não aborta o job.
+      await supabase.from('customers').update(updates).eq('id', customer_id).then(
+        () => {},
+        (err) => console.warn(`  ⚠ persistência erro/extração falhou: ${err.message}`),
+      );
     }
 
     // Auditoria IA também na falha — esses são os mais valiosos pra revisar
@@ -296,7 +356,7 @@ async function processLead(job) {
         customer_id, job_id: job.id, idconsultor: dados.idconsultor,
         status: 'failed', trace, input: dados,
         result: e.body ? { error_body: e.body } : null,
-        error: e.message, duration_ms: Date.now() - t0,
+        extraction: e.extraction, error: e.message, duration_ms: Date.now() - t0,
       }).then(ai => {
         if (ai?.summary) console.log(`  🔍 IA: ${ai.summary}`);
         if (ai?.findings?.length) {
@@ -311,7 +371,16 @@ async function processLead(job) {
       }, () => {});
     }
 
-    throw e; // bullmq faz retry
+    // Decisão de retry do BullMQ (Req 9.1):
+    //   - erro classificado determinístico (≠ unknown) → NÃO re-lança; o
+    //     re-despacho passa a ser do loop de correção / intervenção humana.
+    //   - `unknown` (transporte/worker_offline/instabilidade) → re-lança pra o
+    //     BullMQ tentar de novo (retry é útil aqui).
+    if (kind === 'unknown') {
+      throw e; // bullmq faz retry
+    }
+    console.log(`  ↪ erro classificado (${kind}) — sem retry BullMQ; roteado pelo status`);
+    return { success: false, error_kind: kind, recoverable, message: String(e.message ?? '').slice(0, 2000) };
   }
 }
 
@@ -670,6 +739,7 @@ async function fetchDadosFromSupabase(customerId) {
       cpf, name, doc_holder_name, bill_holder_name,
       data_nascimento,
       phone_whatsapp,
+      portal2_celular_alt,
       email,
       cep, address_street, address_number, address_complement,
       address_neighborhood, address_city, address_state,
@@ -836,7 +906,9 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     cpf: c.cpf || '',
     nome: c.doc_holder_name || c.name || '',
     dataNascimento: c.data_nascimento || '',
-    whatsapp: c.phone_whatsapp || '',
+    // Req 8.3/8.4/8.5: prioriza o celular alternativo do Portal 2 quando
+    // presente; phone_whatsapp é apenas lido, nunca alterado.
+    whatsapp: c.portal2_celular_alt || c.phone_whatsapp || '',
     email: c.email || '',
     cep: c.cep || '',
     endereco: c.address_street || '',

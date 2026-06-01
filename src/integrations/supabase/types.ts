@@ -2748,11 +2748,17 @@ export type Database = {
           portal_last_retry_at: string | null
           portal_retry_count: number
           portal_submitted_at: string | null
+          portal2_celular_alt: string | null
           portal2_contract_link: string | null
+          portal2_correction_attempts: Json
           portal2_created_at: string | null
           portal2_error: string | null
+          portal2_error_kind: string | null
+          portal2_extraction_mode: string | null
           portal2_idcliente: number | null
           portal2_idsolcontratovalidacao: number | null
+          portal2_ocr_bill_result: Json | null
+          portal2_ocr_doc_result: Json | null
           portal2_otp_sent_at: string | null
           portal2_otp_validated_at: string | null
           portal2_status: string | null
@@ -2923,11 +2929,17 @@ export type Database = {
           portal_last_retry_at?: string | null
           portal_retry_count?: number
           portal_submitted_at?: string | null
+          portal2_celular_alt?: string | null
           portal2_contract_link?: string | null
+          portal2_correction_attempts?: Json
           portal2_created_at?: string | null
           portal2_error?: string | null
+          portal2_error_kind?: string | null
+          portal2_extraction_mode?: string | null
           portal2_idcliente?: number | null
           portal2_idsolcontratovalidacao?: number | null
+          portal2_ocr_bill_result?: Json | null
+          portal2_ocr_doc_result?: Json | null
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
@@ -3098,11 +3110,17 @@ export type Database = {
           portal_last_retry_at?: string | null
           portal_retry_count?: number
           portal_submitted_at?: string | null
+          portal2_celular_alt?: string | null
           portal2_contract_link?: string | null
+          portal2_correction_attempts?: Json
           portal2_created_at?: string | null
           portal2_error?: string | null
+          portal2_error_kind?: string | null
+          portal2_extraction_mode?: string | null
           portal2_idcliente?: number | null
           portal2_idsolcontratovalidacao?: number | null
+          portal2_ocr_bill_result?: Json | null
+          portal2_ocr_doc_result?: Json | null
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null

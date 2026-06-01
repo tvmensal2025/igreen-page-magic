@@ -143,6 +143,7 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
       cpf, name, doc_holder_name, bill_holder_name,
       data_nascimento,
       phone_whatsapp,
+      portal2_celular_alt,
       email,
       cep, address_street, address_number, address_complement,
       address_neighborhood, address_city, address_state,
@@ -190,7 +191,9 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
       cpf: c.cpf || "",
       nome: c.doc_holder_name || c.name || "",
       dataNascimento: c.data_nascimento || "",
-      whatsapp: c.phone_whatsapp || "",
+      // Req 8.3/8.4/8.5: prioriza o celular alternativo do Portal 2 quando
+      // presente; phone_whatsapp é apenas lido, nunca alterado.
+      whatsapp: c.portal2_celular_alt || c.phone_whatsapp || "",
       email: c.email || "",
       cep: c.cep || "",
       endereco: c.address_street || "",

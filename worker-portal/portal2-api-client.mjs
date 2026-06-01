@@ -136,7 +136,7 @@ export class Portal2Client {
    * Upload com multipart — usa fetch dentro da page com FormData/Blob construídos lá.
    * fileBuffer: Buffer ou Uint8Array (vamos converter pra base64 e remontar no browser).
    */
-  async _fetchMultipart(method, path, { fields = {}, file } = {}) {
+  async _fetchMultipart(method, path, { fields = {}, file, fileField = 'file' } = {}) {
     const page = await _ensurePage(this.idconsultor);
     const url = new URL(this.baseUrl + path);
     const pathname = url.pathname;
@@ -148,7 +148,7 @@ export class Portal2Client {
       fileB64 = Buffer.from(file.buffer).toString('base64');
     }
 
-    const result = await page.evaluate(async ({ url, method, headers, fields, fileB64, fileName, fileMime }) => {
+    const result = await page.evaluate(async ({ url, method, headers, fields, fileB64, fileName, fileMime, fileField }) => {
       try {
         const fd = new FormData();
         for (const [k, v] of Object.entries(fields || {})) {
@@ -159,7 +159,8 @@ export class Portal2Client {
           const bin = atob(fileB64);
           const arr = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-          fd.append('file', new Blob([arr], { type: fileMime || 'image/jpeg' }), fileName || 'file.jpg');
+          // /extract-receipt espera `file`; /extract-document espera `files`.
+          fd.append(fileField || 'file', new Blob([arr], { type: fileMime || 'image/jpeg' }), fileName || 'file.jpg');
         }
         const res = await fetch(url, { method, headers, body: fd });
         const text = await res.text();
@@ -167,7 +168,7 @@ export class Portal2Client {
       } catch (e) { return { err: String(e) }; }
     }, {
       url: url.toString(), method, headers, fields,
-      fileB64, fileName: file?.filename, fileMime: file?.mime,
+      fileB64, fileName: file?.filename, fileMime: file?.mime, fileField,
     });
 
     if (result.err) throw new Error(`upload in-page falhou: ${result.err}`);
@@ -249,7 +250,9 @@ export class Portal2Client {
         ...(idsolcontratovalidacao && { idsolcontratovalidacao: String(idsolcontratovalidacao) }),
         ...(pdfPassword && { pdf_password: pdfPassword }),
       },
+      // /extract-document usa campo `files` (não `file`) — senão 400 e a IA não lê.
       file: { buffer: fileBuffer, filename, mime },
+      fileField: 'files',
     });
   }
   extractReceipt({ fileBuffer, filename, mime = 'image/jpeg', idsolcontratovalidacao, pdfPassword }) {
