@@ -2727,6 +2727,8 @@ export type Database = {
           numero_instalacao: string | null
           observacao: string | null
           ocr_confianca: number | null
+          ocr_consumo_original: number | null
+          ocr_consumo_rejeitado: boolean | null
           ocr_conta_attempts: number
           ocr_doc_attempts: number
           ocr_done: boolean
@@ -2908,6 +2910,8 @@ export type Database = {
           numero_instalacao?: string | null
           observacao?: string | null
           ocr_confianca?: number | null
+          ocr_consumo_original?: number | null
+          ocr_consumo_rejeitado?: boolean | null
           ocr_conta_attempts?: number
           ocr_doc_attempts?: number
           ocr_done?: boolean
@@ -3089,6 +3093,8 @@ export type Database = {
           numero_instalacao?: string | null
           observacao?: string | null
           ocr_confianca?: number | null
+          ocr_consumo_original?: number | null
+          ocr_consumo_rejeitado?: boolean | null
           ocr_conta_attempts?: number
           ocr_doc_attempts?: number
           ocr_done?: boolean

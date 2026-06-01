@@ -3428,14 +3428,26 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           // Consumo médio (kWh) — usa OCR se disponível; senão estima pelo valor
           // (tarifa B1 ~R$1,10/kWh, clamp 100..2000). Garante que o
           // worker-portal-2 nunca receba media_consumo=NULL.
+          // Sanity-check: rejeita OCR se R$/kWh ficar fora de [0.70 .. 1.60].
           {
             const kwhOcr = parseInt(String(d.consumoMedio || "").replace(/\D/g, ""), 10);
-            if (!isNaN(kwhOcr) && kwhOcr >= 50 && kwhOcr <= 5000) {
+            const valor = Number(updates.electricity_bill_value || 0);
+            let ratioOk = true;
+            if (!isNaN(kwhOcr) && kwhOcr >= 50 && valor >= 30) {
+              const ratio = valor / kwhOcr;
+              ratioOk = ratio >= 0.70 && ratio <= 1.60;
+              if (!ratioOk) {
+                console.warn(`⚡ [sanity] OCR consumo=${kwhOcr} kWh valor=R$${valor} ratio=${ratio.toFixed(2)} fora de [0.70..1.60] — rejeitado`);
+                (updates as any).ocr_consumo_rejeitado = true;
+                (updates as any).ocr_consumo_original = kwhOcr;
+              }
+            }
+            if (ratioOk && !isNaN(kwhOcr) && kwhOcr >= 50 && kwhOcr <= 5000) {
               updates.media_consumo = kwhOcr;
-            } else if (updates.electricity_bill_value >= 30) {
-              const est = Math.round(updates.electricity_bill_value / 1.10);
+            } else if (valor >= 30) {
+              const est = Math.round(valor / 1.10);
               updates.media_consumo = Math.max(100, Math.min(2000, est));
-              console.log(`⚡ media_consumo estimado=${updates.media_consumo} kWh (valor=R$${updates.electricity_bill_value})`);
+              console.log(`⚡ media_consumo estimado=${updates.media_consumo} kWh (valor=R$${valor})`);
             }
           }
           // CEP: só aceita se tiver 8 dígitos

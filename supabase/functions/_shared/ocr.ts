@@ -130,6 +130,9 @@ Extraia:
 10. VALOR TOTAL A PAGAR (em reais)
 11. CONSUMO MÉDIO em kWh — procure por "Consumo medido (kWh)", "Consumo do mês (kWh)", "Média kWh", "Histórico de Consumo - Média", "Consumo Faturado kWh". Quando houver histórico mensal, calcule a média dos últimos 12 meses. Se só houver o consumo do mês atual, devolva esse valor. Retorne APENAS o número inteiro em kWh (sem unidade).
 
+⚠️ VALIDAÇÃO OBRIGATÓRIA do consumo (R$/kWh): a tarifa B1 residencial no Brasil é de R$ 0,80 a R$ 1,50 por kWh. Antes de devolver, calcule valorConta ÷ consumoMedio. Se cair FORA da faixa [0.70 .. 1.60], você escolheu o campo errado — procure outro número no histórico ou na tabela de faturamento.
+NÃO use: demanda contratada (kW), consumo de fase isolada (Fase A/B/C), consumo de mês específico fora da média, energia injetada/compensada, ou qualquer valor em kW (sem o "h"). Use SEMPRE a média kWh dos últimos 12 meses ou o consumo total faturado do mês.
+
 Retorne APENAS JSON válido:
 {"nome":"","endereco":"","numero":"","bairro":"","cep":"","cidade":"","estado":"","distribuidora":"","numeroInstalacao":"","valorConta":"","consumoMedio":""}
 
@@ -197,6 +200,23 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
       const raw = String(dados.consumoMedio).replace(/[^\d]/g, "");
       const n = parseInt(raw, 10);
       dados.consumoMedio = (!isNaN(n) && n >= 50 && n <= 5000) ? String(n) : "";
+    }
+    // Sanity-check secundário: R$/kWh tem que ficar em [0.70 .. 1.60] (B1 BR).
+    // Se o Gemini extraiu um número fora dessa faixa (ex.: pegou demanda em kW
+    // ou consumo isolado de uma fase), descarta o OCR e estima pelo valor.
+    {
+      const valor = parseFloat(String(dados.valorConta || "0"));
+      const consumo = parseInt(String(dados.consumoMedio || "0"), 10);
+      if (valor >= 30 && consumo >= 50) {
+        const ratio = valor / consumo;
+        if (ratio < 0.70 || ratio > 1.60) {
+          const fallback = Math.max(100, Math.min(2000, Math.round(valor / 1.10)));
+          console.warn(`[ocr][sanity] rejeitado consumo=${consumo} kWh valor=R$${valor} ratio=${ratio.toFixed(2)} → fallback=${fallback} kWh`);
+          dados.consumoMedio = String(fallback);
+          dados.consumo_rejeitado_motivo = `ratio=${ratio.toFixed(2)} fora de [0.70..1.60]`;
+          dados.consumo_original_ocr = consumo;
+        }
+      }
     }
 
 
