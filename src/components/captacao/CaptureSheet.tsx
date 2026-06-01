@@ -133,7 +133,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const canSubmit = !!validation?.ok;
   const hasUnconfirmedOcr = !billConfirmed || !docConfirmed;
   const isRegistered =
-    customer?.status === "registered_igreen" ||
+    (customer as any)?.status === "registered_igreen" ||
     customer?.conversation_step === "cadastro_concluido" ||
     customer?.conversation_step === "registered_igreen" ||
     !!(customer as any)?.finalized_at;
