@@ -1,4 +1,4 @@
-import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, Building2 } from "lucide-react";
+import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, Building2, ShieldCheck } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { KanbanSlaIndicator } from "./KanbanSlaIndicator";
 import type { Tables } from "@/integrations/supabase/types";
@@ -12,9 +12,12 @@ interface KanbanDealCardProps {
   onDragStart: (id: string) => void;
   onEdit: (deal: CrmDealRow) => void;
   onDelete: (id: string) => void;
+  onReclassify?: (deal: CrmDealRow) => void;
 }
 
-export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete }: KanbanDealCardProps) {
+export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, onReclassify }: KanbanDealCardProps) {
+  const isTest = (deal as any).is_test_lead || (deal as any).is_sandbox;
+  const isSynthetic = (deal as any).__synthetic;
   const lastAdvanced = (deal as any).last_step_advanced_at || deal.updated_at || deal.created_at;
   const hoursStuck = lastAdvanced ? (Date.now() - new Date(lastAdvanced).getTime()) / 36e5 : 0;
   const isIgreenClient = (deal as any).customer_origin === "igreen_sync";
@@ -29,7 +32,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete }
     <div
       draggable
       onDragStart={() => onDragStart(deal.id)}
-      className="p-3 cursor-grab active:cursor-grabbing rounded-xl bg-card border border-border/50 hover:border-primary/25 hover:shadow-sm transition-all group"
+      className={`p-3 cursor-grab active:cursor-grabbing rounded-xl bg-card border hover:shadow-sm transition-all group ${isTest ? "border-dashed border-muted-foreground/30 opacity-70 grayscale" : "border-border/50 hover:border-primary/25"}`}
     >
       <div className="flex items-start gap-2">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 mt-0.5 shrink-0 group-hover:text-muted-foreground transition-colors" />
@@ -45,6 +48,11 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete }
               {isIgreenClient && (
                 <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0" title="Cliente importado do iGreen">
                   iG
+                </span>
+              )}
+              {isTest && (
+                <span className="text-[8px] px-1 py-0.5 rounded bg-muted text-muted-foreground border border-border shrink-0" title="Lead marcado como teste/sandbox">
+                  TESTE
                 </span>
               )}
             </div>
@@ -88,12 +96,19 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete }
               <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-36">
-            <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onEdit(deal); }}>
-              <Pencil className="h-3 w-3" /> Editar
-            </DropdownMenuItem>
+          <DropdownMenuContent align="end" className="w-44">
+            {isTest && onReclassify && (
+              <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-primary focus:text-primary" onClick={(e) => { e.stopPropagation(); onReclassify(deal); }}>
+                <ShieldCheck className="h-3 w-3" /> Reclassificar como real
+              </DropdownMenuItem>
+            )}
+            {!isSynthetic && (
+              <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onEdit(deal); }}>
+                <Pencil className="h-3 w-3" /> Editar
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-destructive focus:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(deal.id); }}>
-              <Trash2 className="h-3 w-3" /> Excluir
+              <Trash2 className="h-3 w-3" /> {isSynthetic ? "Ocultar" : "Excluir"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

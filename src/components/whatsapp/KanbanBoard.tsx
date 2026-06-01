@@ -32,7 +32,8 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
   const { stages, fetchStages, addStage, updateStage, deleteStage, saveAutoMessage, toggleAutoMessage, reorderStages } = useKanbanStages(consultantId);
-  const { deals, fetchDeals, resolveNames, moveDeal, editDeal, deleteDeal } = useKanbanDeals(consultantId);
+  const [showTests, setShowTests] = useState(false);
+  const { deals, fetchDeals, resolveNames, moveDeal, editDeal, deleteDeal, reclassifyAsReal } = useKanbanDeals(consultantId, { includeTests: showTests });
   const { customStepMap, stepOptions } = useFlowSteps(consultantId);
 
   const [stepFilter, setStepFilter] = useState<string>("all");
@@ -194,6 +195,10 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
               ))}
             </SelectContent>
           </Select>
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none" title="Mostrar leads marcados como teste/sandbox (cards cinza)">
+            <Switch checked={showTests} onCheckedChange={setShowTests} className="h-4 w-7 data-[state=checked]:bg-primary" />
+            Mostrar testes
+          </label>
           <AddLeadDialog consultantId={consultantId} stages={stages.map((s) => ({ stage_key: s.stage_key, label: s.label, color: s.color }))} onLeadAdded={fetchDeals} />
           <Dialog open={showSettings} onOpenChange={setShowSettings}>
             <DialogTrigger asChild>
@@ -259,7 +264,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       <div className="flex-1 min-h-0 flex gap-2 overflow-x-auto pb-2 items-stretch" data-resize-scope style={{ "--kanban-col-w": "248px" } as React.CSSProperties}>
         <DragResizer storageKey="kanban-col" cssVar="kanban-col-w" defaultPx={248} minPx={200} maxPx={480} />
         {stages.map((s) => (
-          <KanbanColumn key={s.id} stage={s} deals={deals} searchQuery={searchQuery} stepFilter={stepFilter} customStepMap={customStepMap} onDrop={handleDrop} onDragStart={setDraggedId} onEditDeal={openEditDeal} onDeleteDeal={setDeletingDealId} />
+          <KanbanColumn key={s.id} stage={s} deals={deals} searchQuery={searchQuery} stepFilter={stepFilter} customStepMap={customStepMap} onDrop={handleDrop} onDragStart={setDraggedId} onEditDeal={openEditDeal} onDeleteDeal={setDeletingDealId} onReclassify={reclassifyAsReal} />
         ))}
       </div>
 

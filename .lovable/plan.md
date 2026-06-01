@@ -1,59 +1,62 @@
-# Leads do WhatsApp não entram no CRM — diagnóstico e correção
+# CRM — "estão faltando pessoas"
 
-## Diagnóstico (confirmado no banco)
+## Diagnóstico (banco real, agora)
 
-- 16 leads `customer_origin='whatsapp_lead'` criados nas últimas 24h. **Nenhum** tem linha em `crm_deals`.
-- `crm_deals` tem só 6 linhas no total e o último registro é de **19/maio**. Quebrou há ~2 semanas.
-- Kanban (`useKanbanDeals`) lê `crm_deals` — sem deal o lead nunca aparece.
-- Nenhum trigger cria deal em `customers INSERT`. Nenhum webhook (whapi/evolution) faz `insert` em `crm_deals`. O único código que toca em `crm_deals` é `syncDealStageFromStep` que **só faz UPDATE** de deals existentes; se não existe deal, não cria nada.
-- Triggers que existem em `crm_deals` (`prevent_non_lead_deals`, `skip_insert_if_sandbox_customer`) deixam passar `whatsapp_lead`/`manual` não-sandbox.
+Consultor Rafael (`0c2711ad-…`):
 
-Causa raiz: a criação do deal no `novo_lead` ficou sem dono. Provavelmente vinha do `runBotFlow` legado e sumiu na migração para o engine V3 / conversational. Não há ninguém criando o registro.
+- **105 deals** no Kanban (94 em `novo_lead`, 6 em `valor_conta`, 5 em `finalizando`, 4 em `doc_enviado`, 3 em `conta_enviada`, 7 reprovado, 6 aprovado, 8/9/10/11 em 30/60/90/120 dias, 1 qualificando).
+- **19 deals criados hoje** (01/jun).
+- Todos os stages dos deals existem em `kanban_stages` → nenhum card "órfão" sumindo de coluna.
+- `consultant_id` do deal bate 100% com o do customer (0 mismatches).
 
-## Correção
+Customers **sem deal** (137 leads totais, 33 sem deal):
 
-### 1. Trigger `AFTER INSERT ON customers` (única fonte de verdade)
+| categoria | qtd | exemplo |
+|---|---|---|
+| `is_test_lead = true` | 25 | "Test1"…"Test15", "JornadaTest", "FinalTest", "Lead Real Simulado" |
+| `is_sandbox = true` | 8 | "Maria Silva" / "TestVariantB" / "Test_D_Mapping" (telefones `550000…`) |
+| **leads reais sem deal** | **0** | — |
 
-Cria automaticamente um `crm_deals` em `stage='novo_lead'` sempre que:
-- `customer_origin IN ('whatsapp_lead','manual')` (NULL também conta como lead, igual ao filtro do `useKanbanDeals`),
-- `is_sandbox` não é `true`,
-- `is_test_lead` não é `true`,
-- ainda não existe deal para esse `customer_id` (idempotente — proteção contra reinstalação).
+Conclusão objetiva: **não há lead real fora do CRM**. O trigger novo está pegando 100% dos leads que entram. Os 33 "ausentes" são exatamente os testes que o filtro deve esconder.
 
-Campos: `consultant_id`, `customer_id`, `remote_jid = phone_whatsapp || '@s.whatsapp.net'`, `stage='novo_lead'`, `deal_origin='whatsapp'`.
+## Hipóteses do que você está vendo
 
-A `prevent_non_lead_deals` continua ativa (defesa em profundidade contra `igreen_sync`).
+1. **Filtro do Kanban escondendo cards** — barra de busca preenchida ou "Parou no passo" ≠ "Todos os passos" filtra os 94 da coluna `novo_lead`. Solução: limpar filtros (canto superior direito do CRM).
+2. **Leads reais marcados como `is_test_lead`/`is_sandbox` por engano** — preciso de 1 nome/telefone concreto pra confirmar.
+3. **Espera ver leads de outros consultores** — Kanban só mostra do consultor logado.
 
-### 2. Backfill
+## Plano
 
-`INSERT … SELECT` cria deal para todo `customers` que:
-- é lead (`whatsapp_lead`/`manual`/NULL), não-sandbox, não-test,
-- não tem deal por `customer_id` nem por `remote_jid` no mesmo consultor,
-- foi criado nos últimos 90 dias (evita ressurreição de leads muito antigos).
+### A. Toggle "Mostrar testes/sandbox" no Kanban (5 min, frontend-only)
 
-Stage do backfill: derivado de `conversation_step` via mesma tabela que `syncDealStageFromStep` (fallback `novo_lead`). Implementação simples no SQL: `novo_lead` para todos e deixar o `crm-auto-progress`/sync subsequente promover se necessário — mas como muitos já estão em passos avançados, faço um `CASE` inline com os mapeamentos do `LEGACY_STEP_TO_STAGE` e prefixo `flow:`.
+Adiciono na header do `KanbanBoard.tsx` um pequeno switch ao lado do "Configurar Colunas":
 
-### 3. Sem mudança de código de aplicação
+- OFF (default): comportamento atual.
+- ON: `useKanbanDeals` busca também leads `is_sandbox=true`/`is_test_lead=true` do mesmo consultor e os marca visualmente (badge cinza "TESTE") no card.
 
-Webhooks, engine, kanban hooks, RLS — nada muda. A trigger resolve.
+Permite você ver os 33 sem precisar abrir SQL e identificar se algum era real.
 
-## Detalhes técnicos
+### B. Botão "Reclassificar como lead real" no card de teste
 
-Migration única com:
-1. `CREATE OR REPLACE FUNCTION public.create_lead_deal_on_customer_insert()` (SECURITY DEFINER, `search_path=public`)
-2. `CREATE TRIGGER trg_create_lead_deal AFTER INSERT ON public.customers ...`
-3. Backfill `INSERT … SELECT … ON CONFLICT DO NOTHING` (via `NOT EXISTS`, já que não há unique constraint em customer_id de `crm_deals`).
+No `KanbanDealCard.tsx`, se `is_test_lead` ou `is_sandbox` estiver true, mostra ação rápida que faz:
 
-Sem alteração de schema em `crm_deals`, sem novas colunas, sem mexer em RLS (trigger é SECURITY DEFINER).
+```sql
+UPDATE customers SET is_test_lead=false, is_sandbox=false WHERE id=…
+INSERT INTO crm_deals … (mesma lógica do trigger, idempotente)
+```
 
-## Validação pós-deploy
+Para o caso (raro) de um lead real ter caído como teste.
 
-- `SELECT count(*) FROM crm_deals WHERE created_at >= now()-interval '1 day'` ≥ 16.
-- Os 16 leads de hoje aparecem no Kanban do Rafael (`0c2711ad-...`).
-- Próximo lead WhatsApp novo cria deal em <1s.
+### C. Nada no backend
 
-## Fora de escopo
+Trigger e backfill continuam exatamente como estão. Sem nova migration.
 
-- Não toca em fluxo D, engine V3, conversational, OCR, auto-captura.
-- Não cria deals para `igreen_sync` (permanece bloqueado).
-- Não mexe em deals históricos já aprovados/reprovados.
+## Fora do escopo
+
+- Não mexer em fluxo D, engine V3, OCR, captação.
+- Não criar deal para `igreen_sync`.
+- Não relaxar o trigger para incluir sandbox/test (mantém Kanban limpo por padrão).
+
+## Validação
+
+Após implementação, ligando o toggle você verá os 33 cards de teste; nenhum deve parecer um cliente real. Se um parecer, clica em "Reclassificar" e ele entra no funil normal.
