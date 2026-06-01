@@ -140,8 +140,8 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
         <Icon className="w-3 h-3 text-amber-500" />
         <span className="text-[10px] font-bold uppercase tracking-wide truncate">{title}</span>
         {isConfirmed && (
-          <span className="ml-auto text-[8px] px-1 py-px rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold">
-            ✓
+          <span className="ml-auto text-[9px] px-1.5 py-px rounded-full bg-emerald-500 text-white font-bold shadow-sm">
+            Confirmado ✓
           </span>
         )}
         {!isConfirmed && awaiting && (
