@@ -119,6 +119,43 @@ async function loadFlow(supabase: any, consultantId: string, variant: string = "
 const _norm = (s: string) =>
   String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
+/**
+ * Stopwords curtas que NUNCA devem disparar FAQ sozinhas — casam em quase
+ * toda mensagem e gerariam falsos positivos ("não", "sim", "ok"...).
+ */
+const QA_STOPWORDS: ReadonlySet<string> = new Set([
+  "nao", "sim", "ok", "oi", "ola", "eai", "opa", "e", "a", "o", "de", "da", "do",
+]);
+
+/**
+ * Decide se uma `phrase` (gatilho de FAQ) casa com a `message` do lead.
+ * Função pura e testável — espelha `whapi-webhook`. Ambos os argumentos
+ * devem vir já normalizados (`_norm`).
+ *
+ * Regras (em ordem):
+ *   1. Igualdade exata.
+ *   2. Gatilho de UMA palavra → casa por LIMITE DE PALAVRA (resolve gatilhos
+ *      curtos legítimos como "golpe", "multa", "aneel", "cnpj", "lgpd" sem o
+ *      falso positivo de substring; stopwords são ignoradas).
+ *   3. Gatilho com VÁRIAS palavras (≥ 6 chars) → substring contígua.
+ *   4. Mensagem curta (≤ 8 chars) contida no gatilho.
+ */
+export function phraseMatchesMessage(phrase: string, message: string): boolean {
+  if (!phrase || phrase.length < 2) return false;
+  if (!message) return false;
+  if (message === phrase) return true;
+  const isSingleWord = !phrase.includes(" ");
+  if (isSingleWord) {
+    if (QA_STOPWORDS.has(phrase)) return false;
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i");
+    return rx.test(message);
+  }
+  if (phrase.length >= 6 && message.includes(phrase)) return true;
+  if (message.length <= 8 && phrase.includes(message)) return true;
+  return false;
+}
+
 export async function matchQA(
   supabase: any,
   flowId: string,
@@ -142,19 +179,7 @@ export async function matchQA(
       .in("qa_id", qaIds);
     const hit = ((triggers as any[]) || []).find((t) => {
       const phrase = _norm(t.phrase);
-      if (!phrase || phrase.length < 2) return false;
-      // Matching preciso: evita que frases curtas como "não" ou "sim" disparem
-      // FAQ em qualquer mensagem que as contenha. Regras:
-      //   1. Igualdade exata (mais confiável)
-      //   2. Frase longa (≥ 6 chars): verifica se a mensagem contém a frase
-      //   3. Mensagem curta (≤ 8 chars): verifica se a frase contém a mensagem
-      //      (ex: lead manda "simular" e a phrase é "quero simular")
-      // A condição `phrase.includes(normalized)` foi removida pois causava
-      // falsos positivos com frases curtas como "não", "sim", "ok".
-      if (normalized === phrase) return true;
-      if (phrase.length >= 6 && normalized.includes(phrase)) return true;
-      if (normalized.length <= 8 && phrase.includes(normalized)) return true;
-      return false;
+      return phraseMatchesMessage(phrase, normalized);
     });
     if (!hit) return null;
 

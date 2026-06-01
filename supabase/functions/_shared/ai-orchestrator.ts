@@ -11,6 +11,7 @@
 import { aiChatCascade } from "./ai-gateway.ts";
 import { trackAIUsage, logAIDecision, type AIPhase } from "./ai-cost-tracker.ts";
 import { answerFaqWithAI } from "./ai-faq-answerer.ts";
+import { formatReply } from "./format-reply.ts";
 
 export type OrchestratorRoute =
   | "deterministic"  // botão/mídia — fluxo determinístico cuida
@@ -267,6 +268,11 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     }
   }
 
+  // Embeleza a resposta final (negrito em termos-chave, espaçamento limpo,
+  // capitalização de frases, corte por frase sem truncar no meio). Cobre tanto
+  // a reply do cérebro quanto a do RAG.
+  const prettyReply = formatReply(finalReply);
+
   void logAIDecision({
     supabase: input.supabase,
     customerId: input.customer?.id,
@@ -274,17 +280,17 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     phase, toolCalled: tool,
     model: brain.modelUsed,
     userInput: input.message,
-    aiOutput: finalReply,
+    aiOutput: prettyReply,
     intentDetected: triage.intent,
     confidence: brain.confidence,
     latencyMs: Date.now() - t0,
     stepBefore: input.step || null,
-    replySent: !!finalReply,
+    replySent: !!prettyReply,
     reasoning: brain.reason,
   });
 
   return {
-    reply: finalReply,
+    reply: prettyReply,
     route: brain.action as OrchestratorRoute,
     intent: triage.intent,
     confidence: brain.confidence,

@@ -13,6 +13,7 @@
 
 import { sanitizeHumanReply, type GroundingContext } from "./grounding.ts";
 import { pickModel, type AiProfile, type AiProvider } from "./ai-config.ts";
+import { formatReply } from "./format-reply.ts";
 
 export interface GenerateAiAnswerInput {
   // deno-lint-ignore no-explicit-any
@@ -237,5 +238,8 @@ export async function generateAiAnswer(
     allowedDomains: ["igreen.energy", "igreenclub.com.br"],
   };
   const sanitized = sanitizeHumanReply(answer, groundingCtx);
-  return sanitized || answer.slice(0, 280);
+  // Embeleza a resposta final: corta por frase (nunca no meio), normaliza
+  // espaçamento, capitaliza início de frases e destaca termos-chave. Substitui
+  // o antigo `slice(280)` cego que truncava no meio de uma palavra.
+  return formatReply(sanitized || answer);
 }
