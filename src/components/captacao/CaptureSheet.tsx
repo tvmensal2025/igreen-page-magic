@@ -127,12 +127,19 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const billConfirmed = !billHasData || !!(customer as any)?.bill_data_confirmed_at;
   const docConfirmed = !docHasData || !!(customer as any)?.doc_data_confirmed_at;
   const allConfirmed = billConfirmed && docConfirmed;
-  // canSubmit usa a validação canônica do Portal — bloqueia tanto faltantes
-  // quanto inválidos (CPF errado, R$/kWh fora da faixa, etc.). Antes era só
-  // "filledCount === totalFields", o que deixava media_consumo passar com
-  // valor zero/null e o portal rejeitava silenciosamente.
-  const canSubmit = !!validation?.ok && allConfirmed;
-  const phrase = MOTIVATIONAL_PHRASES[filledCount] || `Faltam ${totalFields - filledCount} dados 💪`;
+  // canSubmit usa apenas a validação canônica do Portal (18/18 + formatos).
+  // A confirmação dos cards de OCR (bill/doc) deixou de ser bloqueio — vira
+  // só um aviso visual, porque o consultor já pode ter conferido fora do card.
+  const canSubmit = !!validation?.ok;
+  const hasUnconfirmedOcr = !billConfirmed || !docConfirmed;
+  const isRegistered =
+    customer?.status === "registered_igreen" ||
+    customer?.conversation_step === "cadastro_concluido" ||
+    customer?.conversation_step === "registered_igreen" ||
+    !!(customer as any)?.finalized_at;
+  const phrase = filledCount === totalFields
+    ? "Ficha completa! 🏆"
+    : (MOTIVATIONAL_PHRASES[filledCount] || `Faltam ${totalFields - filledCount} dados 💪`);
   const nextMissing = validation?.missing?.[0]
     ? { key: validation.missing[0].key, label: validation.missing[0].label }
     : null;
@@ -140,13 +147,14 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   // Lista descritiva do que falta/está errado pro tooltip do botão final.
   const missingFieldLabels = (validation?.missing || []).map((m) => m.label);
   const invalidLabels = (validation?.invalid || []).map((i) => `${i.label}: ${i.reason}`);
+  const ocrWarnLabel = hasUnconfirmedOcr
+    ? `⚠️ ${!billConfirmed ? "conta" : ""}${!billConfirmed && !docConfirmed ? "/" : ""}${!docConfirmed ? "doc" : ""} sem confirmação (envio mesmo assim)`
+    : "";
   const submitTooltip = canSubmit
-    ? "Enviar pro portal (VPS + OTP)"
+    ? (hasUnconfirmedOcr ? `Enviar pro portal — ${ocrWarnLabel}` : "Enviar pro portal (VPS + OTP)")
     : [
         missingFieldLabels.length > 0 ? `Faltam: ${missingFieldLabels.slice(0, 3).join(", ")}${missingFieldLabels.length > 3 ? "…" : ""}` : "",
         invalidLabels.length > 0 ? `Inválido: ${invalidLabels.slice(0, 2).join(" · ")}` : "",
-        !billConfirmed ? "Confirmar dados da conta de luz" : "",
-        !docConfirmed ? "Confirmar dados do documento" : "",
       ].filter(Boolean).join(" · ");
 
   const runFinalize = async (sendNotice: boolean) => {
