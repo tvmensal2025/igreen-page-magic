@@ -1,15 +1,18 @@
 import { useState, useCallback, useEffect } from "react";
-import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy } from "lucide-react";
+import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy, Paperclip, Sparkles, IdCard, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SaveMessageAsTemplateDialog } from "./SaveMessageAsTemplateDialog";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/useMessages";
+import type { CaptureDocKey } from "@/hooks/useCaptureAttach";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   onLoadMedia?: (messageId: string) => Promise<string | null>;
   consultantId?: string;
+  customerId?: string | null;
+  onAttachToCapture?: (message: ChatMessage, key: CaptureDocKey, loadedUrl: string) => Promise<void> | void;
   onTemplateSaved?: () => void;
 }
 
