@@ -80,6 +80,8 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   out = replaceVar(out, "valor_conta", valor);
   out = replaceVar(out, "economia_mensal", econMensal);
   out = replaceVar(out, "economia_anual", econAnual);
+  out = replaceVar(out, "economia_range", fmtEconomiaRange(vars.valor_conta));
+  out = replaceVar(out, "economia_faixa", fmtEconomiaRange(vars.valor_conta));
   out = replaceVar(out, "telefone", tel);
   out = replaceVar(out, "cpf", cpf);
   // Limpa artefatos quando uma variável ficou vazia (sem nome conhecido etc):
