@@ -4904,7 +4904,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "ask_email": {
-      const txt = (messageText || "").trim();
+      // Sanitiza ANTES de validar: WhatsApp costuma mandar "fulano@gmail.com. br"
+      // (com espaço) quando o usuário separa o sobrenome por engano. Sem isso,
+      // o tail vazava para address_complement e o consultor-check podia confundir
+      // com o email do dono. Pegamos só o primeiro token e limpamos pontuação no fim.
+      const rawText = (messageText || "").trim();
+      const txt = rawText
+        .split(/\s+/)[0]
+        .replace(/[.,;]+$/, "")
+        .trim();
       const lower = txt.toLowerCase();
       // ⚠️ Email é OBRIGATÓRIO no portal iGreen. Não aceitar PULAR.
       if (["pular", "skip", "não tenho", "nao tenho", "sem email", "sem e-mail", "n", "não", "nao"].includes(lower)) {
@@ -4919,7 +4927,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = "❌ Esse e-mail parece de teste. Me manda o seu *de verdade*:";
         break;
       }
-      // Bloquear email do consultor dono
+      // Bloquear email do consultor dono — NÃO grava nada antes desse check.
       try {
         const { data: cons } = await supabase
           .from("consultants")
@@ -4931,7 +4939,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           break;
         }
       } catch (_) { /* segue */ }
-      updates.email = txt.toLowerCase();
+      updates.email = lower;
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
       // 🚀 Atalho (2026-05-28): se email foi o último dado e o sistema iria
@@ -4948,6 +4956,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           reply = getReplyForStep(next, merged);
         }
       }
+
       break;
     }
 
@@ -5540,10 +5549,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         customer_id: customer.id, step: "finalizando", errors: validation.errors,
       });
       
-      // ── ANTI-LOOP: Se já redirecionou 1+ vez, forçar finalização (evita ping-pong ask_email⇄ask_finalizar) ──
-      // Usa rescue_attempts como contador (coluna já existente) para não depender de coluna nova
+      // ── ANTI-LOOP: Só escala para humano após 3+ redirecionamentos (era 1) ──
+      // Com threshold 1, qualquer dado faltante (ex.: complemento nunca perguntado)
+      // gerava handoff prematuro. 3+ garante que demos chance real ao lead de completar.
       const redirectCount = customer.rescue_attempts || 0;
-      if (redirectCount >= 1) {
+      if (redirectCount >= 3) {
         console.warn(`⚠️ [ANTI-LOOP] ${customer.id} já foi redirecionado ${redirectCount}x. Escalando para humano.`);
         logStructured("warn", "force_finalize_after_redirects", {
           customer_id: customer.id, errors: validation.errors, redirects: redirectCount,

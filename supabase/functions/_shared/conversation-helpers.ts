@@ -51,8 +51,16 @@ export function validarCPFDigitos(cpf: string): boolean {
 /**
  * Determina o próximo passo baseado nos dados que faltam.
  * Ordem: nome → cpf → rg → nascimento → telefone → email → cep → número → complemento → instalação → valor → finalizar
+ *
+ * `opts.consultorEmail` — quando informado, trata `customer.email` igual ao
+ * email do consultor como "não preenchido" e devolve `ask_email`. Sem isso,
+ * o bot considerava o cadastro "completo" com lixo herdado e tentava finalizar
+ * direto, caindo em loop até virar handoff.
  */
-export function getNextMissingStep(c: any): string {
+export function getNextMissingStep(
+  c: any,
+  opts?: { consultorEmail?: string | null },
+): string {
   if (!c.name) return "ask_name";
   if (!c.cpf) return "ask_cpf";
   // CPF com dígitos verificadores inválidos → pedir novamente
@@ -62,14 +70,17 @@ export function getNextMissingStep(c: any): string {
   if (!c.data_nascimento || /^2000-01-01/.test(String(c.data_nascimento))) return "ask_birth_date";
   // Telefone só vale se foi CONFIRMADO pelo cliente (não basta existir phone_landline herdado)
   if (!c.phone_landline || c.phone_contact_confirmed !== true) return "ask_phone_confirm";
-  // Email vazio, placeholder ou de teste → pedir
+  // Email vazio, placeholder, do consultor ou de teste → pedir
+  const emailNormalized = String(c.email || "").trim().toLowerCase();
+  const consultorEmailNormalized = String(opts?.consultorEmail || "").trim().toLowerCase();
   if (
-    !c.email ||
-    /@lead\.igreen$/i.test(c.email) ||
-    /@teste/i.test(c.email) ||
-    /^teste@/i.test(c.email) ||
-    /^noreply@/i.test(c.email) ||
-    /^sem_email/i.test(c.email)
+    !emailNormalized ||
+    /@lead\.igreen$/i.test(emailNormalized) ||
+    /@teste/i.test(emailNormalized) ||
+    /^teste@/i.test(emailNormalized) ||
+    /^noreply@/i.test(emailNormalized) ||
+    /^sem_email/i.test(emailNormalized) ||
+    (consultorEmailNormalized && emailNormalized === consultorEmailNormalized)
   ) return "ask_email";
   if (!c.cep) return "ask_cep";
   // CEP genérico (termina em 000) → pedir manualmente
