@@ -95,23 +95,37 @@ function resolveOrderDest(step: Step, steps: Step[]): ResolvedDest {
   return { destKind: "end", destLabel: "🏁 Fim do fluxo", missing: false };
 }
 
-/** Conjunto de chaves que identificam transitions pertencentes a um botão. */
-function buttonKeySet(buttons: { id: string; title: string }[]): Set<string> {
-  return new Set(
-    buttons.flatMap((b) => [b.id, b.title, b.title.replace(/^\S+\s/, "").trim()]),
-  );
-}
-
-/** Encontra a transition que materializa o destino de um botão. */
-function findButtonTransition(step: Step, b: { id: string; title: string }) {
+/**
+ * Índice da transition que materializa o destino de um botão.
+ *
+ * Resolve o desempate de botões com títulos parecidos ("Sim" / "Sim, quero")
+ * de duas formas:
+ *   1) prioriza o casamento mais específico — `trigger_intent === id` antes de
+ *      `id` em `trigger_phrases`, antes do título, antes do título sem emoji;
+ *   2) ignora transitions já reivindicadas por um botão anterior (`consumed`),
+ *      garantindo que cada transition pertença a no máximo um botão.
+ *
+ * Retorna `-1` quando nenhuma transition livre casa.
+ */
+function findButtonTransitionIndex(
+  step: Step,
+  b: { id: string; title: string },
+  consumed: ReadonlySet<number>,
+): number {
   const titleNoEmoji = b.title.replace(/^\S+\s/, "").trim();
-  return step.transitions.find(
-    (t) =>
-      t.trigger_intent === b.id ||
-      t.trigger_phrases.includes(b.id) ||
-      t.trigger_phrases.includes(b.title) ||
-      t.trigger_phrases.includes(titleNoEmoji),
-  );
+  const matchers: Array<(t: Step["transitions"][number]) => boolean> = [
+    (t) => t.trigger_intent === b.id,
+    (t) => t.trigger_phrases.includes(b.id),
+    (t) => t.trigger_phrases.includes(b.title),
+    (t) => t.trigger_phrases.includes(titleNoEmoji),
+  ];
+  for (const match of matchers) {
+    for (let i = 0; i < step.transitions.length; i++) {
+      if (consumed.has(i)) continue;
+      if (match(step.transitions[i])) return i;
+    }
+  }
+  return -1;
 }
 
 /**
@@ -164,22 +178,28 @@ function resolveDefaultExit(step: Step, steps: Step[]): StepExit {
 export function getStepExits(step: Step, steps: Step[]): StepExit[] {
   const exits: StepExit[] = [];
   const buttons = getButtons(step);
-  const keys = buttonKeySet(buttons);
 
-  // (1) Botões — cada botão é uma saída explícita.
+  // Transitions reivindicadas por um botão — não devem reaparecer como
+  // palavra-chave (cada transition pertence a no máximo um botão).
+  const consumed = new Set<number>();
+
+  // (1) Botões — cada botão é uma saída explícita, com desempate por
+  // especificidade e consumo (ver `findButtonTransitionIndex`).
   for (const b of buttons) {
-    const t = findButtonTransition(step, b);
+    const idx = findButtonTransitionIndex(step, b, consumed);
+    const t = idx >= 0 ? step.transitions[idx] : null;
+    if (idx >= 0) consumed.add(idx);
     const d: ResolvedDest = t
       ? resolveDest(steps, t)
       : { destKind: "none", destLabel: "⚠ Sem destino", missing: true };
     exits.push({ id: `button:${b.id}`, kind: "button", label: b.title, ...d });
   }
 
-  // (2) Palavras-chave — transitions não-`default` que não pertencem a botão.
+  // (2) Palavras-chave — transitions não-`default` ainda não consumidas por
+  // um botão acima.
   step.transitions.forEach((t, idx) => {
+    if (consumed.has(idx)) return;
     if (t.trigger_intent === "default") return;
-    if (t.trigger_phrases.some((p) => keys.has(p))) return;
-    if (keys.has(t.trigger_intent)) return;
     const label = t.trigger_phrases.filter(Boolean).join(", ") || t.trigger_intent || "palavra-chave";
     exits.push({ id: `rule:${idx}`, kind: "keyword", label, ...resolveDest(steps, t) });
   });

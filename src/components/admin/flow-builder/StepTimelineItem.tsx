@@ -7,7 +7,7 @@
 // As saídas vêm de `getStepExits` (flowExits.ts), que junta o que antes
 // estava espalhado em `captures._buttons` + `transitions` + `fallback`.
 
-import { CSSProperties } from "react";
+import { CSSProperties, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import {
   Pencil, Trash2, Copy, AlertTriangle, ArrowRight, CornerDownRight,
   Mic, Image as ImageIcon, Video, MessageSquare, ScanLine, Sparkles, MousePointerClick, Hash,
+  ChevronUp, ChevronDown,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -191,7 +192,14 @@ export default function StepTimelineItem({
  * Bloco "Saídas" — lista unificada de para onde o passo pode ir. Mostra o
  * gatilho (o que o lead faz) → o destino resolvido. Clicar numa saída que
  * leva a outro passo navega até ele; o botão de lápis abre o editor de regras.
+ *
+ * Quando há muitas saídas (botões + palavras-chave), colapsa as excedentes
+ * atrás de um "ver mais" para a lista não virar uma parede de linhas em
+ * fluxos grandes. A saída "padrão" fica SEMPRE visível (é o caminho garantido
+ * quando nada casa), independente do colapso.
  */
+const EXITS_COLLAPSE_THRESHOLD = 5;
+
 function ExitsBlock({
   exits, onJumpTo, onEditExits,
 }: {
@@ -199,6 +207,18 @@ function ExitsBlock({
   onJumpTo?: (stepId: string) => void;
   onEditExits: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Separa a saída padrão (sempre visível) das demais (botões/palavras-chave).
+  const defaultExit = exits.find((e) => e.kind === "default");
+  const branchExits = exits.filter((e) => e.kind !== "default");
+
+  const collapsible = branchExits.length > EXITS_COLLAPSE_THRESHOLD;
+  const visibleBranches = expanded || !collapsible
+    ? branchExits
+    : branchExits.slice(0, EXITS_COLLAPSE_THRESHOLD);
+  const hiddenCount = branchExits.length - visibleBranches.length;
+
   return (
     <div className="ml-2 mt-1 space-y-0.5 border-l border-dashed border-border/60 pl-2.5">
       <div className="flex items-center justify-between">
@@ -213,9 +233,30 @@ function ExitsBlock({
           editar
         </button>
       </div>
-      {exits.map((exit) => (
+      {visibleBranches.map((exit) => (
         <ExitRow key={exit.id} exit={exit} onJumpTo={onJumpTo} />
       ))}
+      {collapsible && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+          className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[10px] text-muted-foreground/70 hover:bg-primary/5 hover:text-primary"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+              ver menos
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+              ver mais {hiddenCount} {hiddenCount === 1 ? "saída" : "saídas"}
+            </>
+          )}
+        </button>
+      )}
+      {/* A saída padrão fica sempre visível, abaixo das ramificações. */}
+      {defaultExit && <ExitRow key={defaultExit.id} exit={defaultExit} onJumpTo={onJumpTo} />}
     </div>
   );
 }

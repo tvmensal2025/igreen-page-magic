@@ -164,6 +164,42 @@ describe("getStepExits — botões", () => {
     const btn = exits.find((e) => e.kind === "button");
     expect(btn?.destKind).toBe("humano");
   });
+
+  it("desempata botões com títulos parecidos — cada transition pertence a um botão", () => {
+    // "Sim" e "Sim, quero" têm títulos que se sobrepõem. Cada botão deve
+    // reivindicar sua própria transition (por id), sem roubar a do outro.
+    const a = makeStep({
+      id: "a",
+      position: 1,
+      captures: [buttonsCapture([
+        { id: "sim", title: "Sim" },
+        { id: "sim_quero", title: "Sim, quero" },
+      ])],
+      transitions: [
+        {
+          trigger_intent: "sim",
+          trigger_phrases: ["Sim", "sim"],
+          goto_step_id: "b",
+          goto_special: null,
+        },
+        {
+          trigger_intent: "sim_quero",
+          trigger_phrases: ["Sim, quero", "sim_quero"],
+          goto_step_id: "c",
+          goto_special: null,
+        },
+      ],
+    });
+    const b = makeStep({ id: "b", position: 2, title: "Destino Sim" });
+    const c = makeStep({ id: "c", position: 3, title: "Destino Sim quero" });
+    const exits = getStepExits(a, [a, b, c]);
+    const buttons = exits.filter((e) => e.kind === "button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons.find((e) => e.label === "Sim")?.destStep?.id).toBe("b");
+    expect(buttons.find((e) => e.label === "Sim, quero")?.destStep?.id).toBe("c");
+    // E nenhuma das transitions deve sobrar como palavra-chave.
+    expect(exits.some((e) => e.kind === "keyword")).toBe(false);
+  });
 });
 
 describe("getStepExits — palavras-chave", () => {
