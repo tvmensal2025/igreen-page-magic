@@ -49,6 +49,14 @@ function fmtEconomiaAnual(v: number | string | null | undefined): string {
   if (n === null || n <= 0) return "";
   return `R$ ${(n * DESCONTO_PCT * 12).toFixed(2).replace(".", ",")}`;
 }
+// Faixa de economia "R$ {min} a R$ {max}" — mesma fórmula de _shared/render-vars.ts
+function fmtEconomiaRange(v: number | string | null | undefined): string {
+  const n = parseValor(v);
+  if (n === null || n <= 0) return "";
+  const min = Math.max(1, Math.floor(n * 0.08));
+  const max = Math.max(min + 1, Math.ceil(n * DESCONTO_PCT));
+  return `R$ ${min} a R$ ${max}`;
+}
 
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
   // Sem nome conhecido: deixa vazio (template deve omitir vírgula/saudação sozinho)
