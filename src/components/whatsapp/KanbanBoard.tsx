@@ -32,7 +32,8 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
   const { stages, fetchStages, addStage, updateStage, deleteStage, saveAutoMessage, toggleAutoMessage, reorderStages } = useKanbanStages(consultantId);
-  const { deals, fetchDeals, resolveNames, moveDeal, editDeal, deleteDeal } = useKanbanDeals(consultantId);
+  const [showTests, setShowTests] = useState(false);
+  const { deals, fetchDeals, resolveNames, moveDeal, editDeal, deleteDeal, reclassifyAsReal } = useKanbanDeals(consultantId, { includeTests: showTests });
   const { customStepMap, stepOptions } = useFlowSteps(consultantId);
 
   const [stepFilter, setStepFilter] = useState<string>("all");
