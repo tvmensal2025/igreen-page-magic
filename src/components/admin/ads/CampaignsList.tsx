@@ -372,6 +372,20 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ExtendCampaignDialog
+        open={!!extending}
+        onOpenChange={(o) => !o && setExtending(null)}
+        campaign={extending}
+        onUpdated={(patch) => {
+          setItems((prev) => prev.map((x) => x.id === patch.id ? {
+            ...x,
+            status: patch.status ?? x.status,
+            daily_budget_cents: patch.daily_budget_cents ?? x.daily_budget_cents,
+            ended_at: patch.ended_at ?? x.ended_at,
+          } : x));
+        }}
+      />
     </div>
   );
 }
