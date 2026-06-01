@@ -32,7 +32,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
     <div
       draggable
       onDragStart={() => onDragStart(deal.id)}
-      className="p-3 cursor-grab active:cursor-grabbing rounded-xl bg-card border border-border/50 hover:border-primary/25 hover:shadow-sm transition-all group"
+      className={`p-3 cursor-grab active:cursor-grabbing rounded-xl bg-card border hover:shadow-sm transition-all group ${isTest ? "border-dashed border-muted-foreground/30 opacity-70 grayscale" : "border-border/50 hover:border-primary/25"}`}
     >
       <div className="flex items-start gap-2">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 mt-0.5 shrink-0 group-hover:text-muted-foreground transition-colors" />
