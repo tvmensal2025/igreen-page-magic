@@ -197,12 +197,14 @@ function VideoPlayer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
   );
 }
 
-function DocumentViewer({ message, onLoadMedia }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null> }) {
+function DocumentViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null>; onLoaded?: (url: string) => void }) {
   const [docSrc, setDocSrc] = useState<string | null>(
     isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null
   );
   const [loading, setLoading] = useState(false);
   const isPdf = message.mediaMimetype?.includes("pdf") || message.fileName?.endsWith(".pdf");
+
+  useEffect(() => { if (docSrc) onLoaded?.(docSrc); }, [docSrc]);
 
   const handleLoad = useCallback(async () => {
     if (docSrc || !onLoadMedia) return;
