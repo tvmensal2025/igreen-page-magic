@@ -32,6 +32,7 @@ import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
+import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import {
   getFlowReliabilityV2,
   isV2Active,
@@ -721,6 +722,33 @@ Deno.serve(async (req) => {
         console.warn("[keyword-match] falhou:", (e as Error).message);
       }
     }
+
+    // ─── Auto-capture: extrai nome/email/CEP/valor/CPF de TODA inbound de texto ───
+    // Paridade com whapi-webhook. Idempotente — só preenche slots vazios.
+    if (messageText && !isFile && customer) {
+      try {
+        const multi = extractMultiField(messageText);
+        const patch = buildMultiFieldPatch(customer, multi);
+        if (Object.keys(patch).length > 0) {
+          if (patch.name) {
+            const { count: inboundCount } = await supabase
+              .from("conversations")
+              .select("id", { count: "exact", head: true })
+              .eq("customer_id", customer.id)
+              .eq("message_direction", "inbound");
+            const isEarly = (inboundCount ?? 0) <= 2;
+            const isNameCaptureStep = ["ask_name", "aguardando_nome"].includes(stripPrefix((customer as any).conversation_step || ""));
+            if (isEarly || isNameCaptureStep) patch.name_source = "self_introduced";
+          }
+          await supabase.from("customers").update(patch).eq("id", customer.id);
+          Object.assign(customer as any, patch);
+          console.log(`[auto-capture] customer=${customer.id} fields=${Object.keys(patch).join(",")} name="${patch.name || ""}"`);
+        }
+      } catch (e) {
+        console.warn("[auto-capture] falhou:", (e as Error).message);
+      }
+    }
+
 
     // ─── 6) Log inbound ────────────────────────────────────────────────
     await supabase.from("conversations").insert({
