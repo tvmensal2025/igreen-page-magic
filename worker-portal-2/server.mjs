@@ -920,6 +920,31 @@ async function fetchDadosFromSupabase(customerId) {
     }
   }
 
+  // ── 🛡️ SANITY-CHECK PRIMÁRIO (worker oficial) ──────────────────────────
+  // Validador-de-última-linha: independente do que bot/OCR salvou no DB, se
+  // R$/kWh ficar fora da faixa B1 [0.70 .. 1.60], sobrescreve com estimativa
+  // (R$ / 1.10) e marca ocr_consumo_rejeitado. O worker-portal-2 é a fonte
+  // oficial do cadastro — nenhum lead sobe ao portal iGreen com consumo
+  // incoerente.
+  {
+    const valorConta = Number(c.electricity_bill_value || 0);
+    if (valorConta >= 30 && consumoMedio >= 50) {
+      const ratio = valorConta / consumoMedio;
+      if (ratio < 0.70 || ratio > 1.60) {
+        const corrigido = Math.max(100, Math.min(2000, Math.round(valorConta / 1.10)));
+        console.warn(`  🛡️ [portal2][sanity] customer=${customerId} valor=R$${valorConta} consumo=${consumoMedio} ratio=${ratio.toFixed(2)} → corrigido=${corrigido} kWh`);
+        if (supabase) {
+          await supabase.from('customers').update({
+            media_consumo: corrigido,
+            ocr_consumo_rejeitado: true,
+            ocr_consumo_original: consumoMedio,
+          }).eq('id', customerId).then(() => {}, () => {});
+        }
+        consumoMedio = corrigido;
+      }
+    }
+  }
+
   return _buildDadosObject(c, consultant, partner, igreenId,
     consumoMedio, distribuidora, billFile, docFile, docBackFile,
     ocrIdsol, ocrBillExtracted);
