@@ -60,6 +60,7 @@ const CADASTRO_STEPS: ReadonlySet<string> = new Set([
   "confirmando_dados_doc", "confirmar_titularidade", "ask_name", "ask_cpf", "ask_rg", "ask_birth_date",
   "ask_phone_confirm", "ask_phone", "ask_email", "ask_cep", "ask_number",
   "ask_complement", "ask_installation_number", "ask_bill_value",
+  "ask_distribuidora",
   "ask_doc_frente_manual", "ask_doc_verso_manual", "ask_finalizar",
   "finalizando", "portal_submitting", "aguardando_otp", "validando_otp",
   "aguardando_facial", "aguardando_assinatura", "cadastro_em_analise", "complete", "aguardando_humano",

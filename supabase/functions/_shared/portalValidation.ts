@@ -144,8 +144,8 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
   if (isStrFilled(c.address_state) && String(c.address_state).trim().length !== 2) {
     invalid.push({ field: "address_state", label: "UF", reason: "UF precisa ter 2 letras" });
   }
-  if (isStrFilled(c.numero_instalacao) && digits(c.numero_instalacao).length < 6) {
-    invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação parece curto demais" });
+  if (isStrFilled(c.numero_instalacao) && digits(c.numero_instalacao).length < 7) {
+    invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação precisa ter ao menos 7 dígitos" });
   }
 
   // Distribuidora — bloqueia holding genérica + nome fora da allow-list por UF

@@ -137,6 +137,11 @@ export function validateCustomerForPortal(customer: any): ValidationResult {
     ? parseFloat(customer.electricity_bill_value)
     : customer.electricity_bill_value;
   if (isNaN(billValue) || billValue <= 0) errors.push("Valor da conta inválido");
+  // Distribuidora e Nº de instalação são exigidos pelo Portal 2. Normalmente
+  // vêm do OCR da conta; quando faltam, o bot pede por texto (ask_distribuidora
+  // / ask_installation_number) em vez de travar o lead.
+  if (!customer.distribuidora || String(customer.distribuidora).trim().length < 2) errors.push("Distribuidora é obrigatória");
+  if (String(customer.numero_instalacao || "").replace(/\D/g, "").length < 7) errors.push("Número de instalação é obrigatório (7+ dígitos)");
   if (!customer.electricity_bill_photo_url || customer.electricity_bill_photo_url.trim().length === 0) errors.push("Foto da conta de luz é obrigatória");
   if (!customer.document_front_url || customer.document_front_url.trim().length === 0) errors.push("Documento (frente) é obrigatório");
   // CNH não tem verso — só exigir para RG (uso normalizado para evitar variações de caixa/texto)

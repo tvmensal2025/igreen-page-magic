@@ -43,6 +43,7 @@ export const CADASTRO_STEPS: ReadonlySet<string> = new Set([
   "ask_number",
   "ask_complement",
   "ask_installation_number",
+  "ask_distribuidora",
   "ask_bill_value",
   "ask_doc_frente_manual",
   "ask_doc_verso_manual",

@@ -38,6 +38,7 @@ const RESCUABLE_STEPS = new Set([
   "ask_phone_confirm", "ask_phone", "ask_email",
   "ask_cep", "ask_number", "ask_complement",
   "ask_installation_number", "ask_bill_value",
+  "ask_distribuidora",
   "ask_doc_frente_manual", "ask_doc_verso_manual",
   "ask_finalizar",
   "editing_conta_menu", "editing_conta_nome", "editing_conta_endereco",

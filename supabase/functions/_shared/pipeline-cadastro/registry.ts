@@ -62,6 +62,7 @@ export const CADASTRO_STEP_REGISTRY: Record<string, CadastroStepCategory> = {
   ask_number: "cadastro-only",
   ask_complement: "cadastro-only",
   ask_installation_number: "cadastro-only",
+  ask_distribuidora: "cadastro-only",
   ask_bill_value: "cadastro-only",
 
   // Portal + OTP + facial + assinatura + fechamento (7)

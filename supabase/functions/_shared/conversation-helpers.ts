@@ -77,8 +77,12 @@ export function getNextMissingStep(c: any): string {
   if (!c.address_number) return "ask_number";
   // complemento é opcional, mas perguntar uma vez
   if (c.address_complement === null || c.address_complement === undefined) return "ask_complement";
-  // Nº de instalação NÃO é pedido por texto: já vem da conta de luz (OCR).
-  // Se faltar, o portal-worker resolve com a foto da conta; não bloqueamos o lead aqui.
+  // Distribuidora e Nº de instalação normalmente vêm da conta de luz (OCR).
+  // Quando o OCR falha em lê-los, o lead ficava "completo" pro bot mas TRAVADO
+  // na ficha (que exige ambos). Agora pedimos por texto como fallback — só
+  // dispara quando realmente faltam (shouldSkipAsk pula quem já tem do OCR).
+  if (!c.distribuidora || String(c.distribuidora).trim().length < 2) return "ask_distribuidora";
+  if (!c.numero_instalacao || String(c.numero_instalacao).replace(/\D/g, "").length < 7) return "ask_installation_number";
   // Valor da conta: ausente ou suspeito (< 30)
   if (!c.electricity_bill_value || c.electricity_bill_value <= 0 || c.electricity_bill_value < 30) return "ask_bill_value";
   // Documentos (frente/verso) já foram coletados no fluxo principal
@@ -115,6 +119,7 @@ export function getReplyForStep(step: string, c: any): string {
     case "ask_cep": return "Qual o seu *CEP*? (8 dígitos)";
     case "ask_number": return `📍 Endereço: *${c.address_street || ""}*\n\nQual o *número* da residência?`;
     case "ask_complement": return "🏠 *Tem complemento no endereço?*\n_Apto, bloco, casa, fundos, etc._";
+    case "ask_distribuidora": return "Qual a sua *distribuidora de energia*?\n(É a concessionária que aparece na sua conta de luz — ex: CPFL, Enel, Cemig, Light, Coelba…)";
     case "ask_installation_number": return "Qual o *número da instalação* de energia?\n(Campo \"Seu Código\" na conta de luz)";
     case "ask_bill_value": return "Qual o *valor médio* da sua conta de luz? (ex: 350)";
     case "ask_doc_frente_manual": return "📸 Envie a *FRENTE do seu documento* (RG ou CNH)";
@@ -212,6 +217,7 @@ export type AskField =
   | "cep"
   | "address_number"
   | "address_complement"
+  | "distribuidora"
   | "numero_instalacao"
   | "electricity_bill_value"
   | "document_front"
@@ -263,6 +269,11 @@ export function shouldSkipAsk(field: AskField, customer: any): boolean {
       // Complemento é opcional: respondido se já está setado (mesmo vazio "").
       return customer.address_complement !== null && customer.address_complement !== undefined;
     }
+    case "distribuidora": {
+      // Pula quando já temos uma distribuidora preenchida (do OCR da conta).
+      // A validação de concessionária válida por UF é feita na ficha/portal.
+      return String(customer.distribuidora || "").trim().length >= 2;
+    }
     case "numero_instalacao": {
       const v = String(customer.numero_instalacao || "").replace(/\D/g, "");
       return v.length >= 7;
@@ -298,6 +309,7 @@ const ASK_STEP_TO_FIELD: Record<string, AskField> = {
   "ask_cep": "cep",
   "ask_number": "address_number",
   "ask_complement": "address_complement",
+  "ask_distribuidora": "distribuidora",
   "ask_installation_number": "numero_instalacao",
   "ask_bill_value": "electricity_bill_value",
   "ask_doc_frente_manual": "document_front",

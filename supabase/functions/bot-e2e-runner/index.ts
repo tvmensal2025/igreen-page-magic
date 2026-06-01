@@ -133,6 +133,7 @@ function nextReply(
   if (s === "ask_number") return { kind: "text", text: "123" };
   if (s === "ask_complement") return { kind: "text", text: "não" };
   if (s === "ask_installation_number" || s === "editing_conta_instalacao") return { kind: "text", text: "9876543210" };
+  if (s === "ask_distribuidora" || s === "editing_conta_distribuidora") return { kind: "text", text: "CPFL" };
   if (s === "ask_bill_value" || s === "editing_conta_valor") return { kind: "text", text: "350" };
   if (s === "editing_conta_menu" || s === "editing_doc_menu") return { kind: "text", text: "0" };
   if (s === "ask_finalizar") return { kind: "text", text: "finalizar" };

@@ -216,8 +216,8 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
   if (isStrFilled(c.address_state) && c.address_state!.trim().length !== 2) {
     invalid.push({ field: "address_state", label: "UF", reason: "UF precisa ter 2 letras (ex: SP)" });
   }
-  if (isStrFilled(c.numero_instalacao) && digits(c.numero_instalacao).length < 6) {
-    invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação parece curto demais" });
+  if (isStrFilled(c.numero_instalacao) && digits(c.numero_instalacao).length < 7) {
+    invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação precisa ter ao menos 7 dígitos" });
   }
 
   // 3) Distribuidora — bloqueia holding genérica ("CPFL ENERGIA", "ENEL BRASIL"

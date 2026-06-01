@@ -440,6 +440,8 @@ function isExpectedShape(step: string, text: string): boolean {
     case "ask_installation_number":
     case "editing_conta_instalacao":
       return digits.length >= 7;
+    case "ask_distribuidora":
+      return t.length >= 2 && !/\?/.test(t);
     case "corrigir_instalacao_portal":
       return digits.length >= 7;
     case "ask_name":
@@ -492,6 +494,7 @@ function getReentryPromptForStep(step: string, customer: any): string {
     "ask_number": `${v}qual o *número* da sua casa?`,
     "ask_complement": `${v}tem *complemento* no endereço? (apto, bloco) — ou *PULAR* / *NÃO TEM*.`,
     "ask_installation_number": `${v}qual o *número da instalação* da conta?`,
+    "ask_distribuidora": `${v}qual a *distribuidora* da sua conta de luz? (ex: CPFL, Enel, Cemig)`,
     "corrigir_celular_portal": `${v}me envia um *número de celular* diferente (com DDD) pra concluir o cadastro.`,
     "corrigir_email_portal": `${v}me envia um *e-mail diferente* pra concluir o cadastro.`,
     "corrigir_instalacao_portal": `${v}confere o *número de instalação* na conta e me envia de novo (7+ dígitos).`,
@@ -528,7 +531,7 @@ const NO_QA_STEPS = new Set([
   "confirmando_dados_doc", "confirmar_titularidade", "ask_tipo_documento",
   "ask_name", "ask_cpf", "ask_rg", "ask_birth_date", "ask_phone", "ask_phone_confirm",
   "ask_email", "ask_cep", "ask_number", "ask_complement",
-  "ask_installation_number", "ask_bill_value",
+  "ask_installation_number", "ask_distribuidora", "ask_bill_value",
   "ask_doc_frente_manual", "ask_doc_verso_manual", "ask_finalizar",
   "finalizando", "portal_submitting", "aguardando_otp", "validando_otp", "otp_falhou",
   "aguardando_assinatura", "complete", "aguardando_humano",
@@ -2524,7 +2527,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     "editing_doc_rg", "editing_doc_cpf", "editing_doc_nascimento",
     "ask_name", "ask_cpf", "ask_birth_date", "ask_phone", "ask_phone_confirm",
     "ask_bill_value", "ask_installation_number", "ask_cep", "ask_number",
-    "ask_complement", "ask_email", "ask_rg", "ask_finalizar",
+    "ask_complement", "ask_email", "ask_rg", "ask_finalizar", "ask_distribuidora",
     "confirmar_titularidade", "validacao_facial", "pos_video",
     "finalizando", "finalizar_cadastro", "complete", "valor_baixo",
     "cadastro_em_analise", "aguardando_facial", "otp_falhou",
@@ -5008,6 +5011,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       break;
     }
 
+    case "ask_distribuidora": {
+      const v = messageText.trim();
+      if (v.length < 2) { reply = "❌ Nome muito curto. Qual a *distribuidora* da sua conta de luz? (ex: CPFL, Enel, Cemig)"; break; }
+      updates.distribuidora = v;
+      const merged = { ...customer, ...updates };
+      const next = await autoResolveCepIfNeeded(merged, updates);
+      updates.conversation_step = next;
+      reply = getReplyForStep(next, merged);
+      break;
+    }
+
     case "ask_installation_number": {
       const instClean = messageText.replace(/\D/g, "");
       if (instClean.length < 7) { reply = "❌ Número inválido. Digite pelo menos 7 dígitos:"; break; }
@@ -5546,6 +5560,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (err.includes("Cidade")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nInforme o *CEP* correto para completar a cidade:`; redirected = true; break; }
         if (err.includes("Estado")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nInforme o *CEP* correto:`; redirected = true; break; }
         if (err.includes("Valor")) { updates.conversation_step = "ask_bill_value"; reply = `⚠️ ${err}\n\nQual o *valor* da sua conta de luz?`; redirected = true; break; }
+        if (err.includes("Distribuidora")) { updates.conversation_step = "ask_distribuidora"; reply = `⚠️ ${err}\n\nQual a *distribuidora* da sua conta de luz? (ex: CPFL, Enel, Cemig)`; redirected = true; break; }
+        if (err.includes("instalação") || err.includes("instalacao")) { updates.conversation_step = "ask_installation_number"; reply = `⚠️ ${err}\n\nQual o *número da instalação* da conta? (Campo "Seu Código", 7+ dígitos)`; redirected = true; break; }
         if (err.includes("Foto da conta")) { updates.conversation_step = "aguardando_conta"; reply = `⚠️ ${err}\n\n📸 Envie a foto da conta de energia:`; redirected = true; break; }
         if (err.includes("Documento") && err.includes("frente")) { updates.conversation_step = "ask_doc_frente_manual"; reply = `⚠️ ${err}\n\n📸 Envie a frente do documento:`; redirected = true; break; }
         if (err.includes("Documento") && err.includes("verso")) { updates.conversation_step = "ask_doc_verso_manual"; reply = `⚠️ ${err}\n\n📸 Envie o verso do documento:`; redirected = true; break; }
