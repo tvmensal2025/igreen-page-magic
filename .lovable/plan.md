@@ -1,24 +1,15 @@
-## Configurar cron jobs do super-admin
+## Problema
+Os números nos cards de estatísticas do dashboard do consultor estão muito grandes (`text-xl sm:text-3xl font-black`), ocupando espaço excessivo e ficando visualmente gritantes.
 
-Gerar um arquivo `cron_setup.sql` com os comandos prontos para colar no SQL Editor do Supabase, agendando os 3 jobs críticos via `pg_cron` + `pg_net`.
+## Solução
+Reduzir o tamanho da fonte nos componentes de KPI para uma escala mais proporcional:
 
-### Jobs a agendar
+1. **src/components/admin/StatCard.tsx**
+   - Alterar `text-xl sm:text-3xl font-black` → `text-lg sm:text-2xl font-bold`
+   - Mantém legibilidade e hierarquia visual sem exagerar no tamanho
 
-| Nome | Frequência | Edge function |
-|------|-----------|---------------|
-| `minio-quota-check` | a cada 15 min | `/functions/v1/minio-quota-check` |
-| `super-admin-alerts` | a cada 5 min | `/functions/v1/super-admin-alerts` |
-| `instance-health-cron` | a cada 10 min | `/functions/v1/instance-health-cron` |
+2. **src/components/superadmin/CaptacaoTab/KpisRow.tsx** (consistência)
+   - Alterar `text-2xl font-black` → `text-xl font-bold`
 
-### O que o SQL faz
-
-1. `CREATE EXTENSION IF NOT EXISTS pg_cron;` e `pg_net;`
-2. `cron.unschedule(...)` defensivo (caso já existam jobs com o mesmo nome)
-3. `cron.schedule(...)` para cada um dos 3 jobs, chamando `net.http_post` com a URL completa do projeto (`https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/...`) e o anon key no header `apikey`
-4. `SELECT * FROM cron.job;` no final para o usuário confirmar que os 3 jobs ficaram registrados
-
-### Entregável
-
-Arquivo `cron_setup.sql` na raiz do projeto, com cabeçalho explicando: "Cole tudo no SQL Editor (https://supabase.com/dashboard/project/zlzasfhcxcznaprrragl/sql/new) e clique em Run."
-
-Não roda migration — é SQL one-shot que o usuário executa manualmente (contém anon key específico do projeto e não deve ir para `supabase/migrations/`).
+## Resultado esperado
+Cards de KPI com números menores e mais equilibrados visualmente, melhor aproveitamento do espaço do card.

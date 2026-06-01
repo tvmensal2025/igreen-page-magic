@@ -20,7 +20,7 @@ export function StatCard({ icon, label, value, color, subtitle }: StatCardProps)
       </div>
       <div className="relative min-w-0 flex-1">
         <p
-          className="text-xl sm:text-3xl font-black font-heading text-foreground truncate tracking-tight tabular-nums leading-none"
+          className="text-lg sm:text-2xl font-bold font-heading text-foreground truncate tracking-tight tabular-nums leading-none"
           title={typeof value === "number" ? value.toLocaleString("pt-BR") : String(value)}
         >
           {typeof value === "number" ? value.toLocaleString("pt-BR") : value}
