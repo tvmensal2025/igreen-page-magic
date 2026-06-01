@@ -96,12 +96,19 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
               <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-36">
-            <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onEdit(deal); }}>
-              <Pencil className="h-3 w-3" /> Editar
-            </DropdownMenuItem>
+          <DropdownMenuContent align="end" className="w-44">
+            {isTest && onReclassify && (
+              <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-primary focus:text-primary" onClick={(e) => { e.stopPropagation(); onReclassify(deal); }}>
+                <ShieldCheck className="h-3 w-3" /> Reclassificar como real
+              </DropdownMenuItem>
+            )}
+            {!isSynthetic && (
+              <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onEdit(deal); }}>
+                <Pencil className="h-3 w-3" /> Editar
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-destructive focus:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(deal.id); }}>
-              <Trash2 className="h-3 w-3" /> Excluir
+              <Trash2 className="h-3 w-3" /> {isSynthetic ? "Ocultar" : "Excluir"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
