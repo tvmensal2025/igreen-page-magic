@@ -1,38 +1,43 @@
-# Corrigir botão "Quero simular" da etapa de dúvidas
+# Atualizar mensagem do passo 16 (d_simular_resultado)
 
-Análise completa concluída — todos os caminhos do fluxo levam ao final (cadastro completo em `d_finalizar` ou handoff humano em `d_handoff`). Apenas **um botão está incoerente** e precisa de ajuste.
+## Contexto
+O passo 16 do fluxo D (`d_simular_resultado`, simulação rápida) precisa ter sua mensagem atualizada para o novo copy fornecido pelo usuário.
 
-## Problema
+## Mudança
 
-Na etapa `d_duvidas`, o botão **"Quero simular"** leva para `d_pedir_conta` (foto da conta), exatamente o mesmo destino do botão "Quero cadastrar". Quem clica em "Quero simular" espera escolher entre simulação rápida e completa, não ir direto pra envio de foto.
+1. **Criar migration** para atualizar o campo `message_text` do step `d_simular_resultado` (id `b1a52222-2222-4222-8222-000000000002`) no fluxo `320bf22c-e383-4f53-a3c0-b88b89b02558`.
 
-## Correção
-
-Atualizar a transição do `d_duvidas` (id `38c0d101-6492-4b1e-8229-c676c804161a`):
-
-- Frases gatilho `Quero simular`, `simular` → passam a apontar para `d_escolher_simulacao` (id `b1a53333-3333-4333-8333-000000000003`), em vez de `d_pedir_conta`.
-
-Demais transições permanecem inalteradas:
-- `Quero cadastrar`, `cadastrar` → `d_pedir_conta` (mantém)
-- `Falar com Rafael`, `humano`, `atendente` → especial `humano` (mantém)
-- IA livre para perguntas em texto livre (mantém)
-
-## Ponto 2 confirmado pelo usuário
-
-Mantém o fluxo atual em `d_simular_resultado` → "Continuar Cadastro" → `d_pedir_conta`. Nenhuma mudança aqui.
-
-## Resumo dos demais botões (todos OK)
-
+2. **Novo texto:**
 ```
-d_welcome              → 3 botões coerentes
-d_escolher_simulacao   → 2 botões coerentes
-d_resultado            → 3 botões coerentes
-d_simular_resultado    → 3 botões coerentes
-d_como_funciona        → 3 botões coerentes
-d_duvidas              → 1 botão a corrigir (acima)
+Olha que ótimo! ✨🎉
+
+💡 Sua conta hoje: *R$ {{valor_conta}}*
+
+💚 Economia estimada: *{{economia_range}}* por mês
+
+E o melhor:
+
+✅ Sem investimento
+
+✅ Sem obra
+
+✅ Sem instalação
+
+✅ *Mesma* distribuidora
+
+Bora fazer seu *cadastro agora*? 🚀
 ```
+
+3. **Diferenças em relação ao texto atual:**
+   - Remove o emoji 👀 do início.
+   - Cada item ✅ fica em linha própria com quebra de linha entre eles.
+   - CTA final muda de "Bora cadastrar? É *gratuito* e *sem fidelidade*. 🚀" para "Bora fazer seu *cadastro agora*? 🚀".
+
+4. **Variáveis já suportadas:** `{{valor_conta}}` e `{{economia_range}}` — ambas são processadas pelo `renderTemplateVars` em `render-vars.ts` (linhas 93-96 e 110-113).
+
+5. **Botões permanecem inalterados:** "Continuar Cadastro", "Ainda tenho dúvida", "Falar com Rafael".
 
 ## Detalhes técnicos
-
-- Uma única atualização em `bot_flow_steps` no campo `transitions` do registro com `step_key = 'd_duvidas'`.
+- Uma única instrução `UPDATE` na tabela `public.bot_flow_steps`.
 - Sem mudança de schema, código frontend ou edge function.
+- A variável `{{economia_range}}` gera o formato "R$ {min} a R$ {max}" com base no valor da conta (8% a 20%).
