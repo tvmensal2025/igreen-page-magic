@@ -3032,6 +3032,35 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // 🛟 GUARDA DE CORREÇÃO (Req 7.1) — defesa independente do worker.
+  // Se o Portal 2 rejeitou um dado recuperável (portal2_status=
+  // 'awaiting_correction'), FORÇA o roteamento para o step de correção
+  // correto — não importa em que conversation_step o worker deixou o lead
+  // (bug observado: worker deixava em 'cadastro_em_analise' e a resposta do
+  // cliente com o número novo era ignorada). Assim a próxima mensagem do
+  // cliente cai no handler corrigir_* e o dado é re-despachado ao portal.
+  // Guarda: classe não-recuperável ou limite esgotado → needs_human (não pede).
+  // ═══════════════════════════════════════════════════════════════════
+  if (
+    String((customer as any).portal2_status || "") === "awaiting_correction" &&
+    !["corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal", "portal_submitting"].includes(step)
+  ) {
+    const _decision = decideCorrection(
+      (customer as any).portal2_error_kind,
+      (customer as any).portal2_correction_attempts,
+    );
+    if (_decision.action === "open") {
+      console.log(`[portal-correction:guard] forçando step=${_decision.spec.step} (era ${step}) kind=${_decision.kind}`);
+      step = _decision.spec.step;
+      (customer as any).conversation_step = _decision.spec.step;
+    } else if (_decision.action === "needs_human") {
+      updates.portal2_status = "needs_human";
+      reply = "Recebi seu cadastro aqui! Esse caso específico vou encaminhar para um de nossos consultores finalizar com você — em breve alguém te chama por aqui 👍";
+      return { reply, updates };
+    }
+  }
+
   switch (step) {
     // ─── 1. BOAS-VINDAS ────────────────────
     case "welcome": {

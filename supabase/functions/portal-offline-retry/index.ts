@@ -24,7 +24,8 @@ Deno.serve(async (req) => {
 
   const cutoff = new Date(Date.now() - LOOKBACK_HOURS * 3600_000).toISOString();
 
-  const { data: leads, error } = await supabase
+  // 1) Leads parados em worker_offline (caminho original).
+  const { data: offlineLeads, error } = await supabase
     .from("customers")
     .select("id, name, portal_retry_count, finalized_at, portal_last_retry_at")
     .eq("status", "worker_offline")
@@ -38,6 +39,29 @@ Deno.serve(async (req) => {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  // 2) Leads do loop de correção do Portal 2 cujo re-despacho NÃO confirmou
+  //    (portal2_status='retry_ready' parado): o cliente corrigiu o dado mas o
+  //    dispatchPortalWorker falhou (worker offline no momento) e nenhum outro
+  //    caminho re-tenta. Sem isto o dado corrigido fica salvo mas nunca volta
+  //    ao portal. Reprocessamos do mesmo jeito (dispatchPortalWorker).
+  const retryCutoff = new Date(Date.now() - 2 * 60_000).toISOString(); // 2 min de "carência" pós-correção
+  const { data: retryReadyLeads } = await supabase
+    .from("customers")
+    .select("id, name, portal_retry_count, finalized_at, portal_last_retry_at")
+    .eq("portal2_status", "retry_ready")
+    .lte("updated_at", retryCutoff)
+    .order("portal_last_retry_at", { ascending: true, nullsFirst: true })
+    .limit(MAX_PER_RUN);
+
+  // Une as duas listas sem duplicar (offline tem prioridade).
+  const seen = new Set<string>();
+  const leads: any[] = [];
+  for (const l of [...(offlineLeads || []), ...(retryReadyLeads || [])]) {
+    if (seen.has(l.id)) continue;
+    seen.add(l.id);
+    leads.push(l);
   }
 
   const results: any[] = [];
@@ -54,10 +78,12 @@ Deno.serve(async (req) => {
     }
 
     const dispatch = await dispatchPortalWorker(supabase, lead.id);
+    // Em sucesso: marca submitting. Para leads retry_ready, limpa o marcador
+    // para não reprocessar em loop (o worker agora tem o job de novo).
     await supabase.from("customers").update({
       portal_retry_count: tries,
       portal_last_retry_at: new Date().toISOString(),
-      ...(dispatch.ok ? { status: "portal_submitting" } : {}),
+      ...(dispatch.ok ? { status: "portal_submitting", portal2_status: "submitting" } : {}),
     }).eq("id", lead.id);
 
     results.push({
