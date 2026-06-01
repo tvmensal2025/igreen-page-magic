@@ -45,6 +45,14 @@ function fmtEconomiaAnual(v: number | string | null | undefined): string {
   if (n === null || n <= 0) return "";
   return `R$ ${(n * DESCONTO_PCT * 12).toFixed(2).replace(".", ",")}`;
 }
+// Faixa de economia "R$ {min} a R$ {max}" — mesma fórmula de _shared/render-vars.ts
+function fmtEconomiaRange(v: number | string | null | undefined): string {
+  const n = parseValorNum(v);
+  if (n === null || n <= 0) return "";
+  const min = Math.max(1, Math.floor(n * 0.08));
+  const max = Math.max(min + 1, Math.ceil(n * DESCONTO_PCT));
+  return `R$ ${min} a R$ ${max}`;
+}
 
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
   // Sem nome conhecido: deixa vazio (template deve omitir vírgula/saudação sozinho)
@@ -53,6 +61,7 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   const valor = fmtValor(vars.valor_conta);
   const econMensal = fmtEconomiaMensal(vars.valor_conta);
   const econAnual = fmtEconomiaAnual(vars.valor_conta);
+  const econRange = fmtEconomiaRange(vars.valor_conta);
   const tel = vars.telefone || "";
   const cpf = vars.cpf || "";
   // Substituição tolerante a espaços: {{ nome }}, {{nome}}, {{  nome  }}
@@ -64,6 +73,8 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   out = replaceVar(out, "valor_conta", valor);
   out = replaceVar(out, "economia_mensal", econMensal);
   out = replaceVar(out, "economia_anual", econAnual);
+  out = replaceVar(out, "economia_range", econRange);
+  out = replaceVar(out, "economia_faixa", econRange);
   out = replaceVar(out, "telefone", tel);
   out = replaceVar(out, "cpf", cpf);
   // Limpa artefatos quando uma variável ficou vazia (sem nome conhecido etc):
