@@ -1171,6 +1171,43 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             conversation_step: stepKey,
           });
 
+          // 🔁 Reemite os botões do passo após a resposta da IA, para o lead
+          // ter caminho clicável de volta ao fluxo (senão o CTA "toque numa
+          // das opções" fica órfão e o lead trava).
+          // Skip quando: handoff acionado, muitos follow-ups (anti-loop),
+          // ou o passo não tem _buttons configurados.
+          try {
+            const followups = Number((customer as any).ai_followups_count || 0);
+            if (!orch.shouldHandoff && followups < 2) {
+              const caps = Array.isArray((stepRow as any).captures) ? (stepRow as any).captures : [];
+              const btnCap = caps.find((c: any) => c?.field === "_buttons" && c?.enabled !== false);
+              const rawButtons = Array.isArray(btnCap?.value) ? btnCap.value : [];
+              const renderedButtons = rawButtons
+                .map((b: any) => ({
+                  id: String(b?.id || "").trim(),
+                  title: String(b?.title || "").trim().slice(0, 20),
+                }))
+                .filter((b: any) => b.id && b.title)
+                .slice(0, 3);
+              if (renderedButtons.length > 0) {
+                if (!isMockMode() && !isFlowInstantMode()) await new Promise((r) => setTimeout(r, 600));
+                const promptText = "👇 *Escolha uma opção:*";
+                await sendButtons(remoteJid, promptText, renderedButtons);
+                await supabase.from("conversations").insert({
+                  customer_id: customer.id,
+                  message_direction: "outbound",
+                  message_text: promptText,
+                  message_type: "buttons",
+                  conversation_step: stepKey,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn(`[dispatch:${stepKey}] reemissão de botões pós-IA falhou:`, (e as Error).message);
+          }
+
+
+
           if (orch.shouldHandoff) {
             try {
               await supabase
