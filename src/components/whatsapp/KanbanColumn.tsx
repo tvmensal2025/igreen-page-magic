@@ -76,6 +76,7 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
               onDragStart={onDragStart}
               onEdit={onEditDeal}
               onDelete={onDeleteDeal}
+              onReclassify={onReclassify}
             />
           ))}
           {stageDeals.length === 0 && (
