@@ -1,40 +1,50 @@
-# Problema
+## Objetivo
 
-Quando o consultor clica em **"Eu confirmo"** nos cards de revisão (conta e documento), o sistema:
-1. Dispara `dispatchPostBillConfirm()` que **envia mensagem de simulação no WhatsApp do cliente** e despacha o próximo capture step.
-2. Visualmente o card some/muda mas não fica nítido o "✓ Confirmado com sucesso".
+Permitir, dentro do card de cada campanha em **Central de Anúncios → Campanhas**, estender o prazo (adicionar mais dias) e alterar o valor do orçamento diário — sem precisar criar nova campanha. Hoje, quando vence (`end_time` no Meta), a campanha pausa e não há como retomar pelo painel.
 
-O usuário quer: **quando o consultor confirma, é confirmação interna — não pode mandar nada pro WhatsApp do cliente**. O fluxo do WhatsApp só deve avançar quando for o próprio cliente quem confirma (via botão "Pedir cliente").
+## Como vai funcionar (visão do usuário)
 
-## Arquivos afetados
+No card da campanha (`CampaignsList.tsx`), ao lado dos botões de pausar/apagar, aparece um botão **"Estender / Editar"** (ícone calendário). Para campanhas pausadas por vencimento, o card mostra também um aviso amarelo: *"Campanha encerrou em DD/MM. Adicione dias para continuar rodando."* com CTA direto para o mesmo diálogo.
 
-- `src/components/captacao/OcrReviewCard.tsx` — função `confirmSelf` (linhas 105–138)
-- `src/components/captacao/CaptureDataConfirmCard.tsx` — função `confirmSelf` (linhas 71–99)
+O diálogo abre com 2 campos:
 
-## Mudanças
+1. **Adicionar dias** — slider/input (1–60 dias). Mostra preview: *"Nova data fim: 15/06/2026"*.
+2. **Novo orçamento diário (R$)** — input com valor atual pré-preenchido. Mostra preview: *"Gasto estimado no período: R$ X"* (dias × valor).
 
-### 1. `OcrReviewCard.tsx` → `confirmSelf`
-- **Remover** a chamada a `dispatchPostBillConfirm({ customer, kind, continueFlowOnNextCapture: true })`.
-- Manter o UPDATE no banco (`bill_data_confirmed_at` / `doc_data_confirmed_at` + `*_confirmation_by = "consultant"` + limpa `ocr_review_pending`).
-- Atualizar toast: **"✓ Dados confirmados"** / **"Salvo — bot não foi acionado"** (sem o texto "Bot avançando…").
-- Remover import de `dispatchPostBillConfirm` se ficar sem uso.
+Botão **"Aplicar e reativar"**:
+- Atualiza o `end_time` e `daily_budget` no Meta (adset).
+- Se a campanha estiver `paused` por vencimento, reativa (`ACTIVE`).
+- Atualiza `duration_days`, `daily_budget_cents`, `ended_at` e `status` no banco.
+- Toast de sucesso e refresh da lista.
 
-### 2. `CaptureDataConfirmCard.tsx` → `confirmSelf`
-- **Remover** a chamada a `dispatchPostBillConfirm(...)` (linhas 87–91).
-- Manter UPDATE no banco igual ao acima.
-- Atualizar toast: **"✓ Confirmado"** / **"Dados salvos — sem envio ao cliente"**.
-- Após confirmar, o card já mostra o badge ✓ (linha 149) e esconde os botões (linha 197), comportamento atual já correto. Vou só reforçar o visual do badge: aumentar pra `text-[10px]` + texto **"Confirmado ✓"** em vez de só ✓, com fundo emerald mais sólido.
+## Implementação técnica
 
-### 3. Botão "Pedir cliente" (`askClient`)
-- **Não mexer.** Continua despachando `manual-step-send` para o cliente confirmar via WhatsApp — esse é o único caminho que pode mandar mensagem.
+**Nova edge function** `facebook-extend-campaign` (`supabase/functions/facebook-extend-campaign/index.ts`):
+
+- Input: `{ campaign_id, add_days?: number, new_daily_budget_cents?: number, reactivate?: boolean }`.
+- Carrega campanha, valida ownership (consultor dono ou super admin).
+- Para cada `fb_adset_id` em `fb_adset_ids`:
+  - `POST /{adset_id}` com `end_time` recalculado (atual `ended_at` ou `now` + `add_days`) e/ou `daily_budget` (em centavos como o Meta exige).
+  - Se `reactivate=true`, `POST /{adset_id}` com `status=ACTIVE` e `POST /{campaign_id}` com `status=ACTIVE`.
+- Atualiza `facebook_campaigns`: `duration_days += add_days`, `daily_budget_cents`, `ended_at`, `status='active'`, limpa `rejection_reason` se aplicável.
+- Usa o mesmo padrão de token da `facebook-toggle-campaign` (token da plataforma).
+
+**Frontend**:
+
+- Novo componente `src/components/admin/ads/ExtendCampaignDialog.tsx` (Dialog do shadcn com os 2 campos + preview).
+- Em `CampaignsList.tsx`:
+  - Adicionar estado `extending: Campaign | null`.
+  - Botão calendário no grupo de ações do card (entre toggle e delete).
+  - Banner amarelo "Campanha encerrou" quando `c.status === 'paused'` e `ended_at < now()` (precisa adicionar `ended_at` ao SELECT atual).
+  - Após sucesso, atualizar o item localmente (status, daily_budget_cents) e disparar refresh.
 
 ## O que NÃO muda
 
-- Lógica do bot/edge functions (`postBillConfirm.ts`, `manual-step-send`, `whapi-proxy`) permanece igual — o helper continua existindo, só não é chamado na confirmação interna do consultor.
-- Fluxo do cliente confirmando no WhatsApp (que dispara simulação + próximo step) **continua funcionando normalmente**.
-- Validação 18/18, botão CADASTRAR, PortalStatusTracker — nada disso muda.
+- `CreateCampaignWizard`, lógica de criação, métricas, comissões — intactos.
+- Outros status (`rejected`, `pending_review`) continuam tratados pelos fluxos existentes (reativar / reconectar Facebook).
 
-## Resultado esperado
+## Arquivos afetados
 
-- Consultor clica "Eu confirmo" → card vira verde com "Confirmado ✓", **zero mensagens** no WhatsApp do cliente, `bill_data_confirmed_at` / `doc_data_confirmed_at` preenchido.
-- Consultor clica "Pedir cliente" → mensagem com botões SIM/NÃO/EDITAR vai pro WhatsApp (comportamento atual mantido).
+- `supabase/functions/facebook-extend-campaign/index.ts` (novo)
+- `src/components/admin/ads/ExtendCampaignDialog.tsx` (novo)
+- `src/components/admin/ads/CampaignsList.tsx` (editado: SELECT + botão + banner + integração com o diálogo)
