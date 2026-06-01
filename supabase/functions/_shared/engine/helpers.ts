@@ -47,7 +47,12 @@ import { variantD } from "./variants/d.ts";
  * (`A1`–`A4`, `B1`–`B2`, see Task 31).
  */
 function norm(s: string | null | undefined): string {
-  return typeof s === "string" ? s.toLowerCase().trim() : "";
+  // Lowercase + trim + strip diacritics (NFD) — espelha o `_norm` em
+  // `_shared/flow-router.ts` para que botões com acento (ex.
+  // `💡 Simulação rápida`) casem com phrases cadastradas sem acento.
+  return typeof s === "string"
+    ? s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+    : "";
 }
 
 /**
