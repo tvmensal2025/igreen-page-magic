@@ -199,7 +199,17 @@ export interface MatchTransitionInput {
 }
 
 function _norm(s: string | null | undefined): string {
-  return (s ?? "").toLowerCase().trim();
+  // Lowercase + trim + strip diacritics (NFD) para que "rápida" == "rapida".
+  // Sem isso, botões com acento (`💡 Simulação rápida`) não casam com
+  // phrases cadastradas sem acento (e vice-versa) e o lead cai no fallback
+  // default — bug que jogava leads em `d_como_funciona` no passo
+  // `d_escolher_simulacao`.
+  return (s ?? "")
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }
 
 /**
