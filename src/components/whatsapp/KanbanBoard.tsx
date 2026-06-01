@@ -195,6 +195,10 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
               ))}
             </SelectContent>
           </Select>
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none" title="Mostrar leads marcados como teste/sandbox (cards cinza)">
+            <Switch checked={showTests} onCheckedChange={setShowTests} className="h-4 w-7 data-[state=checked]:bg-primary" />
+            Mostrar testes
+          </label>
           <AddLeadDialog consultantId={consultantId} stages={stages.map((s) => ({ stage_key: s.stage_key, label: s.label, color: s.color }))} onLeadAdded={fetchDeals} />
           <Dialog open={showSettings} onOpenChange={setShowSettings}>
             <DialogTrigger asChild>
