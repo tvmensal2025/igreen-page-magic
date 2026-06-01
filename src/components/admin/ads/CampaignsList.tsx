@@ -90,6 +90,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [deleting, setDeleting] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Campaign | null>(null);
+  const [extending, setExtending] = useState<Campaign | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const { isSuperAdmin } = useUserRole(authUserId);
   const { toast } = useToast();
