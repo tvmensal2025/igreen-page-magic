@@ -25,11 +25,18 @@ export interface AIChatResult {
   raw: any;
 }
 
-// Modelos "reasoning" (gpt-5*, o1/o3/o4) rejeitam `max_tokens` e `temperature`!=1
-// no Lovable AI Gateway / OpenAI. Usam `max_completion_tokens` e consomem parte
-// do orçamento em reasoning tokens invisíveis, então o teto precisa ser bem maior.
+// Modelos "reasoning"/"thinking" consomem parte do orçamento de tokens em
+// reasoning invisível, então o teto precisa ser bem maior para não cortar a
+// resposta final. OpenAI gpt-5*/o[134]* também rejeitam `max_tokens` e
+// `temperature`!=1, usando `max_completion_tokens` no lugar.
+// Gemini 3.x Pro é thinking model mas aceita `max_tokens` e temperature normais
+// — só precisa do multiplicador para evitar truncamento.
 function isReasoningModel(model: string): boolean {
   return /^(openai\/)?(gpt-5|o[134])/i.test(model);
+}
+function isThinkingModel(model: string): boolean {
+  return isReasoningModel(model)
+    || /^google\/gemini-3(\.\d+)?-pro/i.test(model);
 }
 
 export async function aiChat(opts: AIChatOptions): Promise<AIChatResult> {
