@@ -75,23 +75,16 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
       await supabase.from("customers").update({
         [kind === "bill" ? "bill_data_confirmed_at" : "doc_data_confirmed_at"]: nowIso,
         [kind === "bill" ? "bill_data_confirmation_by" : "doc_data_confirmation_by"]: "consultant",
-        // Limpa a fila de revisão OCR — sem isso o banner laranja "Revisar"
-        // continua exibindo o lead mesmo após confirmação.
+        // Limpa fila de revisão OCR pra o banner laranja "Revisar" sumir.
         ocr_review_pending: null,
         ocr_review_decided_at: nowIso,
         ocr_review_decided_by: "consultant",
       } as any).eq("id", customer.id);
 
-      // Despacha passos `message` intermediários + fallback simulação +
-      // próximo capture via helper compartilhado (mesma lógica do OcrReviewCard).
-      try {
-        await dispatchPostBillConfirm({ customer, kind, continueFlowOnNextCapture: true });
-      } catch (advErr: any) {
-        console.warn("[confirm-self] advance flow failed:", advErr?.message);
-      }
-
-
-      toast({ title: "✓ Confirmado", description: "Avançando para o próximo passo…", duration: 1800 });
+      // IMPORTANTE: confirmação interna do consultor NÃO dispara mensagem ao
+      // cliente nem avança o fluxo do bot. Só o botão "Pedir cliente" (askClient)
+      // pode mandar WhatsApp. O bot avança quando o próprio cliente confirma.
+      toast({ title: "✓ Confirmado", description: "Dados salvos — nada foi enviado ao cliente", duration: 1800 });
       onConfirmed?.();
     } catch (e: any) {
       toast({ title: "Erro", description: e?.message || String(e), variant: "destructive" });
