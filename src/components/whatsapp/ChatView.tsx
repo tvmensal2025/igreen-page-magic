@@ -536,7 +536,20 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         )}
         {messages.map((msg, index) => (
           <div key={`${msg.id}-${index}`} data-msg-bubble>
-            <MessageBubble message={msg} onLoadMedia={loadMedia} consultantId={consultantId} />
+            <MessageBubble
+              message={msg}
+              onLoadMedia={loadMedia}
+              consultantId={consultantId}
+              customerId={customerId}
+              onAttachToCapture={customerId ? async (m, key, loaded) => {
+                await attachMediaToCapture({
+                  customerId,
+                  key,
+                  sourceUrl: loaded,
+                  fileName: m.fileName,
+                });
+              } : undefined}
+            />
           </div>
         ))}
         <div ref={bottomRef} aria-hidden className="h-2" />
