@@ -68,6 +68,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     } catch {}
   }, []);
   const { customer: captureCustomer, filledCount, totalFields } = useCaptureSession(customerId);
+  const { attachMediaToCapture } = useCaptureAttach();
   // Captação é SEMPRE manual (default global) — incompleto = pendente.
   const captureIncomplete = !!captureCustomer && !(captureCustomer.name && captureCustomer.cpf && captureCustomer.email && Number(captureCustomer.electricity_bill_value || 0) > 0);
   const captureActive = captureOpen || captureIncomplete;
