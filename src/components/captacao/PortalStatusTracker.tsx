@@ -214,6 +214,34 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
          "motivo não disponível")
       : null;
 
+  // ── Estado de sucesso: card grande e celebrativo ──
+  if (isDone) {
+    return (
+      <div className="mx-3 mt-2 rounded-lg border-2 border-emerald-400/60 bg-gradient-to-br from-emerald-500/25 via-emerald-500/15 to-lime-500/20 px-4 py-3 shadow-[0_0_36px_hsl(142_70%_45%/0.45)]">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="w-6 h-6 text-emerald-300 animate-pulse" />
+          <div className="flex-1">
+            <p className="text-sm font-black text-emerald-100 tracking-wide leading-tight">🎉 Cadastro aprovado pela iGreen!</p>
+            <p className="text-[11px] text-emerald-200/90 leading-tight">Lead já está ativo no portal oficial.</p>
+          </div>
+        </div>
+        {row?.igreen_code && (
+          <div className="mt-2 flex items-center gap-2 rounded bg-emerald-950/40 px-2 py-1.5">
+            <span className="text-[10px] text-emerald-200/80 uppercase tracking-wider font-semibold">Código iGreen</span>
+            <code className="font-mono text-sm font-black text-emerald-100 flex-1">{row.igreen_code}</code>
+            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] border-emerald-400/40 text-emerald-100 hover:bg-emerald-500/20" onClick={() => copy(row.igreen_code!, "Código")}>
+              <Copy className="w-3 h-3 mr-1" /> Copiar
+            </Button>
+          </div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${extractionBadge.cls}`}>{extractionBadge.label}</span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${geminiBadge.cls}`}>{geminiBadge.label}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`mx-3 mt-2 rounded-md border px-3 py-2 text-[11px] ${tone}`}>
       <div className="flex items-center gap-2">
@@ -238,9 +266,6 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
           <a href={row.link_assinatura} target="_blank" rel="noreferrer" className="underline truncate">{row.link_assinatura}</a>
           <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => copy(row.link_assinatura!, "Link")}><Copy className="w-3 h-3" /></Button>
         </div>
-      )}
-      {isDone && row?.igreen_code && (
-        <div className="mt-1.5">Código iGreen: <code className="font-mono font-bold">{row.igreen_code}</code></div>
       )}
       {showError && errorText && (
         <p className="mt-1.5 leading-snug whitespace-pre-wrap">{errorText}</p>

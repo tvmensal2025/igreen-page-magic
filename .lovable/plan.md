@@ -1,69 +1,47 @@
-# Corrigir `media_consumo` errado do OCR (BRUNO: 555 kWh → ~1.433 kWh)
+## O que precisa mudar
 
-## Princípio
-**Worker-portal-2 é a fonte oficial e SEMPRE valida primeiro.** O bot/OCR é coadjuvante: se o worker discordar do valor salvo, o valor do worker prevalece e sobrescreve o DB.
+Na barra inferior do painel direito do WhatsApp (CaptureSheet) temos hoje **dois bloqueadores** independentes para o botão verde `CADASTRAR`:
 
-## Mudanças
+1. `validation.ok` (todos os 18 campos válidos)
+2. `allConfirmed` = `billConfirmed && docConfirmed` (consultor clicou "Eu confirmo" nos cards de OCR)
 
-### 1. `worker-portal-2/server.mjs` — validador primário (PRIORIDADE MÁXIMA)
-Antes de enviar ao portal iGreen, sempre roda sanity-check:
+Quando a ficha está **18/18** mas o consultor ainda não clicou nos botões de confirmação dos cards de OCR, o botão fica cinza mostrando `18/18 ·📄` (foi o caso do BRUNO na screenshot). O usuário quer que, com ficha cheia, **o botão SEMPRE esteja liberado** — a confirmação de OCR vira só um aviso, não um bloqueio.
 
-```text
-ratio = electricity_bill_value / media_consumo
-faixa esperada: 0.70 ≤ ratio ≤ 1.60 (R$/kWh realista p/ B1)
+Além disso, o feedback visual de "deu certo" hoje é discreto (toast + banner amarelo→verde do `PortalStatusTracker`). Quer um indicativo claro de sucesso no próprio rodapé.
 
-se fora da faixa:
-  consumo_corrigido = round(electricity_bill_value / 1.10)
-  clamp(100, 2000)
-  → usa consumo_corrigido no POST /customers
-  → UPDATE customers SET media_consumo = consumo_corrigido,
-       ocr_consumo_rejeitado = true,
-       ocr_consumo_original = <valor antigo>
-  → log estruturado: [portal2][sanity] customer=X valor=Y consumo_ocr=Z ratio=W → corrigido=N
-```
+## Mudanças (somente UI/presentation)
 
-Isso garante que **mesmo que o bot já tenha salvo um valor errado**, o cadastro oficial sai certo.
+### 1. `src/components/captacao/CaptureSheet.tsx` — destravar CADASTRAR
 
-### 2. `supabase/functions/_shared/ocr.ts` — validador secundário (defesa em profundidade)
-Em `extractBillData`, após Gemini retornar `consumomedio`:
-- Se `valorConta` presente e `ratio` fora de `[0.70, 1.60]` → descarta OCR e usa `round(valorConta/1.10)`.
-- Loga `[ocr][sanity] rejected=<n> reason=ratio=<r> fallback=<n2>`.
+- `canSubmit` passa a depender só de `validation?.ok` (ficha 18/18).
+- Novo flag `hasUnconfirmedOcr = !billConfirmed || !docConfirmed` apenas para mostrar um aviso discreto acima do botão ("⚠️ Conta/Doc sem confirmação — envie mesmo assim?") sem travar o clique.
+- Tooltip do botão lista a pendência de confirmação como aviso, não como bloqueio.
+- Label do botão: quando `canSubmit && hasUnconfirmedOcr` mostra "CADASTRAR ⚠️" (mesmo estilo verde), quando tudo OK mostra "CADASTRAR 🚀".
 
-### 3. `supabase/functions/whapi-webhook/handlers/bot-flow.ts` + `evolution-webhook/handlers/bot-flow.ts`
-No bloco que persiste `media_consumo` após OCR (linhas ~3432-3439 do whapi):
-- Mesmo sanity-check antes do `UPDATE customers`.
-- Se rejeitado, salva o valor estimado e marca `ocr_consumo_rejeitado=true`.
+### 2. `src/components/captacao/PortalStatusTracker.tsx` — reforçar estado de sucesso
 
-### 4. Melhorar prompt Gemini em `_shared/ocr.ts:131`
-Adicionar:
-- "O valor R$/kWh realista no Brasil B1 é R$ 0,80 a R$ 1,50. Se o consumo dividir o valor total fora dessa faixa, você escolheu o campo errado."
-- "NÃO use: demanda contratada (kW), consumo de fase isolada, ou histórico de meses específicos. Use SEMPRE a média dos últimos 12 meses ou o consumo do mês faturado."
+Quando `isDone` (status = `cadastro_concluido` / `registered_igreen`):
+- Card maior, com gradiente esmeralda + ícone `CheckCircle2` animado (pulse) e borda glow.
+- Título grande "🎉 Cadastro aprovado pela iGreen!" + subtítulo "Código iGreen: XXXX".
+- Botão "Copiar código" em destaque.
+- Mantém os badges (Extração auto / IA analisou) abaixo.
 
-### 5. Migration — adicionar colunas de auditoria + corrigir BRUNO
-```sql
-ALTER TABLE customers
-  ADD COLUMN IF NOT EXISTS ocr_consumo_rejeitado boolean DEFAULT false,
-  ADD COLUMN IF NOT EXISTS ocr_consumo_original integer;
+### 3. `src/components/captacao/CaptureSheet.tsx` — celebração no rodapé
 
--- Reprocessar BRUNO (11971254913): 1576.34/1.10 ≈ 1433
-UPDATE customers
-SET ocr_consumo_original = media_consumo,
-    media_consumo = 1433,
-    ocr_consumo_rejeitado = true
-WHERE phone_whatsapp LIKE '%11971254913%'
-  AND media_consumo = 555;
-```
+- Quando `customer.status === "registered_igreen"` ou `finalized_at`, esconde o par de botões (Enviar tudo / CADASTRAR) e mostra no lugar um bloco verde "✅ Lead cadastrado — código XXXX" com botão secundário "Abrir novo lead".
+- Evita o consultor clicar CADASTRAR de novo num lead já concluído.
 
-> Observação: o cadastro do BRUNO já foi aceito no portal (idcliente=1524093) com 555 kWh. A correção no DB é para histórico/relatórios; **não** vamos re-submeter ao portal (geraria duplicidade). O fluxo correto só vale para próximos leads.
+### 4. (opcional, mesma tela) micro-polimento
 
-## Ordem de execução
-1. Migration (colunas + UPDATE BRUNO).
-2. `_shared/ocr.ts` (validador secundário + prompt melhorado).
-3. `bot-flow.ts` whapi + evolution (sanity antes do UPDATE).
-4. `worker-portal-2/server.mjs` (validador primário — sobrescreve DB se necessário).
-5. Deploy edge functions + redeploy worker-portal-2.
+- Texto "Faltam 0 dados 💪" troca para "Ficha completa! 🏆" quando `filledCount === totalFields`.
+- Barra de progresso ganha cor esmeralda em 100%.
 
-## Não-objetivos
-- Não mexer no worker-portal (Portal 1 / digital).
-- Não re-submeter cadastros já aprovados.
-- Não alterar regras de bonus/desconto (continua `desconto_padrao=true`).
+## O que NÃO muda
+
+- Nada de backend / edge functions / worker.
+- `finalize-capture` continua fazendo a validação de servidor (continua sendo a fonte da verdade — se faltar algo crítico, ele rejeita com `incomplete`).
+- Cards de OCR (`OcrReviewCard`, `CaptureDataConfirmCard`) continuam funcionando igual; só deixam de bloquear o CADASTRAR no front.
+
+## Observação sobre o login solicitado
+
+Você pediu pra eu entrar com `rafael.ids@icloud.com / 10203040` e olhar a tela ao vivo. Não posso digitar credenciais sem sua autorização explícita dentro do preview, e em plan mode não edito nem executo nada. Já tenho a screenshot e o código, então consigo aplicar o fix direto assim que você aprovar. Se quiser que eu valide visualmente depois, faça o login no preview e eu abro pelo browser do sandbox sem precisar de senha.

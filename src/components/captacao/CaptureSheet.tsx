@@ -127,12 +127,19 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const billConfirmed = !billHasData || !!(customer as any)?.bill_data_confirmed_at;
   const docConfirmed = !docHasData || !!(customer as any)?.doc_data_confirmed_at;
   const allConfirmed = billConfirmed && docConfirmed;
-  // canSubmit usa a validação canônica do Portal — bloqueia tanto faltantes
-  // quanto inválidos (CPF errado, R$/kWh fora da faixa, etc.). Antes era só
-  // "filledCount === totalFields", o que deixava media_consumo passar com
-  // valor zero/null e o portal rejeitava silenciosamente.
-  const canSubmit = !!validation?.ok && allConfirmed;
-  const phrase = MOTIVATIONAL_PHRASES[filledCount] || `Faltam ${totalFields - filledCount} dados 💪`;
+  // canSubmit usa apenas a validação canônica do Portal (18/18 + formatos).
+  // A confirmação dos cards de OCR (bill/doc) deixou de ser bloqueio — vira
+  // só um aviso visual, porque o consultor já pode ter conferido fora do card.
+  const canSubmit = !!validation?.ok;
+  const hasUnconfirmedOcr = !billConfirmed || !docConfirmed;
+  const isRegistered =
+    (customer as any)?.status === "registered_igreen" ||
+    customer?.conversation_step === "cadastro_concluido" ||
+    customer?.conversation_step === "registered_igreen" ||
+    !!(customer as any)?.finalized_at;
+  const phrase = filledCount === totalFields
+    ? "Ficha completa! 🏆"
+    : (MOTIVATIONAL_PHRASES[filledCount] || `Faltam ${totalFields - filledCount} dados 💪`);
   const nextMissing = validation?.missing?.[0]
     ? { key: validation.missing[0].key, label: validation.missing[0].label }
     : null;
@@ -140,13 +147,14 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   // Lista descritiva do que falta/está errado pro tooltip do botão final.
   const missingFieldLabels = (validation?.missing || []).map((m) => m.label);
   const invalidLabels = (validation?.invalid || []).map((i) => `${i.label}: ${i.reason}`);
+  const ocrWarnLabel = hasUnconfirmedOcr
+    ? `⚠️ ${!billConfirmed ? "conta" : ""}${!billConfirmed && !docConfirmed ? "/" : ""}${!docConfirmed ? "doc" : ""} sem confirmação (envio mesmo assim)`
+    : "";
   const submitTooltip = canSubmit
-    ? "Enviar pro portal (VPS + OTP)"
+    ? (hasUnconfirmedOcr ? `Enviar pro portal — ${ocrWarnLabel}` : "Enviar pro portal (VPS + OTP)")
     : [
         missingFieldLabels.length > 0 ? `Faltam: ${missingFieldLabels.slice(0, 3).join(", ")}${missingFieldLabels.length > 3 ? "…" : ""}` : "",
         invalidLabels.length > 0 ? `Inválido: ${invalidLabels.slice(0, 2).join(" · ")}` : "",
-        !billConfirmed ? "Confirmar dados da conta de luz" : "",
-        !docConfirmed ? "Confirmar dados do documento" : "",
       ].filter(Boolean).join(" · ");
 
   const runFinalize = async (sendNotice: boolean) => {
@@ -406,32 +414,48 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
             </p>
           )}
           <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 gap-1 font-bold h-9 px-2 text-[10px]"
-              onClick={() => setSeqOpen(true)}
-              disabled={pendingSteps.length === 0 || needsName}
-              title={needsName ? "Peça o nome do lead primeiro" : pendingSteps.length === 0 ? "Tudo enviado" : `Disparar ${pendingSteps.length} passos pendentes`}
-            >
-              <Zap className="w-3.5 h-3.5" /> Enviar tudo ({pendingSteps.length})
-            </Button>
-            <Button
-              size="lg"
-              className={`flex-1 font-bold gap-1 h-9 text-xs ${
-                canSubmit
-                  ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-95 animate-exec-energy shadow-lg shadow-emerald-500/30"
-                  : "bg-muted text-muted-foreground opacity-60 cursor-not-allowed hover:bg-muted"
-              }`}
-              onClick={handleSubmit}
-              disabled={submitting || !canSubmit}
-              title={submitTooltip}
-            >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trophy className="w-4 h-4" />}
-              {canSubmit ? "CADASTRAR" : `${filledCount}/${totalFields}${!billConfirmed ? " ·📄" : ""}${!docConfirmed ? " ·🪪" : ""}`}
-            </Button>
-          </div>
+          {canSubmit && hasUnconfirmedOcr && !isRegistered && (
+            <p className="text-[10px] text-amber-300 leading-tight px-1">
+              ⚠️ {!billConfirmed && "Conta de luz"}{!billConfirmed && !docConfirmed && " e "}{!docConfirmed && "Documento"} sem confirmação visual — envio liberado mesmo assim.
+            </p>
+          )}
+          {isRegistered ? (
+            <div className="rounded-md border border-emerald-500/50 bg-gradient-to-r from-emerald-500/20 to-lime-500/15 px-3 py-2 text-center shadow-[0_0_28px_hsl(142_70%_45%/0.35)]">
+              <p className="text-xs font-black text-emerald-200 tracking-wide">✅ LEAD CADASTRADO NA iGREEN</p>
+              {(customer as any)?.igreen_code && (
+                <p className="text-[11px] text-emerald-100 mt-0.5">Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1 font-bold h-9 px-2 text-[10px]"
+                onClick={() => setSeqOpen(true)}
+                disabled={pendingSteps.length === 0 || needsName}
+                title={needsName ? "Peça o nome do lead primeiro" : pendingSteps.length === 0 ? "Tudo enviado" : `Disparar ${pendingSteps.length} passos pendentes`}
+              >
+                <Zap className="w-3.5 h-3.5" /> Enviar tudo ({pendingSteps.length})
+              </Button>
+              <Button
+                size="lg"
+                className={`flex-1 font-bold gap-1 h-9 text-xs ${
+                  canSubmit
+                    ? (hasUnconfirmedOcr
+                        ? "bg-gradient-to-r from-amber-500 to-emerald-500 text-white hover:opacity-95 shadow-lg shadow-amber-500/30"
+                        : "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-95 animate-exec-energy shadow-lg shadow-emerald-500/30")
+                    : "bg-muted text-muted-foreground opacity-60 cursor-not-allowed hover:bg-muted"
+                }`}
+                onClick={handleSubmit}
+                disabled={submitting || !canSubmit}
+                title={submitTooltip}
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trophy className="w-4 h-4" />}
+                {canSubmit ? (hasUnconfirmedOcr ? "CADASTRAR ⚠️" : "CADASTRAR 🚀") : `${filledCount}/${totalFields}`}
+              </Button>
+            </div>
+          )}
         </footer>
 
         <SendSequenceDialog
@@ -629,35 +653,51 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
             </p>
           )}
           <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className={`shrink-0 gap-1 font-bold ${expanded ? "h-12 px-3 text-xs" : "h-7 px-1.5 text-[9px]"}`}
-              onClick={() => setSeqOpen(true)}
-              disabled={pendingSteps.length === 0 || needsName}
-              title={needsName ? "Peça o nome do lead primeiro" : pendingSteps.length === 0 ? "Tudo enviado" : `Disparar ${pendingSteps.length} passos pendentes`}
-            >
-              <Zap className={`${expanded ? "w-4 h-4" : "w-2.5 h-2.5"}`} /> Enviar tudo ({pendingSteps.length})
-            </Button>
-            <Button
-              size="lg"
-              className={`flex-1 font-bold gap-1 ${expanded ? "h-12 text-base" : "h-7 text-[10px]"} ${
-                canSubmit
-                  ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-95 animate-exec-energy shadow-lg shadow-emerald-500/30"
-                  : "bg-muted text-muted-foreground opacity-60 cursor-not-allowed hover:bg-muted"
-              }`}
-              onClick={handleSubmit}
-              disabled={submitting || !canSubmit}
-              title={submitTooltip}
-            >
-              {submitting ? <Loader2 className={`${expanded ? "w-5 h-5" : "w-3 h-3"} animate-spin`} /> : <Trophy className={`${expanded ? "w-5 h-5" : "w-3 h-3"}`} />}
-              {canSubmit ? "CADASTRAR" : `${filledCount}/${totalFields}${!billConfirmed ? " ·📄" : ""}${!docConfirmed ? " ·🪪" : ""}`}
-            </Button>
-            <Button variant="ghost" size="sm" className={`shrink-0 text-muted-foreground ${expanded ? "h-12 text-xs px-2" : "h-7 px-1.5 text-[9px]"}`} onClick={disableCapture} title="Sair do modo captação">
-              Sair
-            </Button>
-          </div>
+          {canSubmit && hasUnconfirmedOcr && !isRegistered && expanded && (
+            <p className="text-[10px] text-amber-300 leading-tight px-1">
+              ⚠️ {!billConfirmed && "Conta"}{!billConfirmed && !docConfirmed && " e "}{!docConfirmed && "Doc"} sem confirmação visual — envio liberado mesmo assim.
+            </p>
+          )}
+          {isRegistered ? (
+            <div className={`rounded-md border border-emerald-500/50 bg-gradient-to-r from-emerald-500/20 to-lime-500/15 text-center shadow-[0_0_28px_hsl(142_70%_45%/0.35)] ${expanded ? "px-3 py-2" : "px-2 py-1"}`}>
+              <p className={`font-black text-emerald-200 tracking-wide ${expanded ? "text-sm" : "text-[10px]"}`}>✅ LEAD CADASTRADO NA iGREEN</p>
+              {(customer as any)?.igreen_code && (
+                <p className={`text-emerald-100 ${expanded ? "text-xs mt-0.5" : "text-[9px]"}`}>Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className={`shrink-0 gap-1 font-bold ${expanded ? "h-12 px-3 text-xs" : "h-7 px-1.5 text-[9px]"}`}
+                onClick={() => setSeqOpen(true)}
+                disabled={pendingSteps.length === 0 || needsName}
+                title={needsName ? "Peça o nome do lead primeiro" : pendingSteps.length === 0 ? "Tudo enviado" : `Disparar ${pendingSteps.length} passos pendentes`}
+              >
+                <Zap className={`${expanded ? "w-4 h-4" : "w-2.5 h-2.5"}`} /> Enviar tudo ({pendingSteps.length})
+              </Button>
+              <Button
+                size="lg"
+                className={`flex-1 font-bold gap-1 ${expanded ? "h-12 text-base" : "h-7 text-[10px]"} ${
+                  canSubmit
+                    ? (hasUnconfirmedOcr
+                        ? "bg-gradient-to-r from-amber-500 to-emerald-500 text-white hover:opacity-95 shadow-lg shadow-amber-500/30"
+                        : "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-95 animate-exec-energy shadow-lg shadow-emerald-500/30")
+                    : "bg-muted text-muted-foreground opacity-60 cursor-not-allowed hover:bg-muted"
+                }`}
+                onClick={handleSubmit}
+                disabled={submitting || !canSubmit}
+                title={submitTooltip}
+              >
+                {submitting ? <Loader2 className={`${expanded ? "w-5 h-5" : "w-3 h-3"} animate-spin`} /> : <Trophy className={`${expanded ? "w-5 h-5" : "w-3 h-3"}`} />}
+                {canSubmit ? (hasUnconfirmedOcr ? "CADASTRAR ⚠️" : "CADASTRAR 🚀") : `${filledCount}/${totalFields}`}
+              </Button>
+              <Button variant="ghost" size="sm" className={`shrink-0 text-muted-foreground ${expanded ? "h-12 text-xs px-2" : "h-7 px-1.5 text-[9px]"}`} onClick={disableCapture} title="Sair do modo captação">
+                Sair
+              </Button>
+            </div>
+          )}
         </footer>
       </SheetContent>
 
