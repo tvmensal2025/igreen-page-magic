@@ -27,6 +27,8 @@ interface Props {
   variant: "A" | "B" | "C" | "D" | "E";
   flowId?: string | null;
   maxPosition?: number;
+  /** Aba aberta ao montar o inspetor. Default "conteudo". */
+  initialTab?: "conteudo" | "regras" | "midias" | "avancado";
   onClose: () => void;
   onPatch: (patch: Partial<Step>) => void;
   onReload?: () => void;
@@ -37,10 +39,17 @@ interface Props {
  * da aba "Avançado" pra um leigo nunca precisar abrir.
  */
 export default function StepInspector({
-  step, steps, consultantId, variant, flowId, maxPosition, onClose, onPatch, onReload,
+  step, steps, consultantId, variant, flowId, maxPosition, initialTab = "conteudo", onClose, onPatch, onReload,
 }: Props) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // Aba ativa controlada. Re-sincroniza com `initialTab` sempre que o passo
+  // editado muda (ex.: abrir outro passo direto na aba "Regras & Botões"
+  // a partir do link "editar" das Saídas na Lista).
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, step?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +148,7 @@ export default function StepInspector({
           </div>
         </SheetHeader>
 
-        <Tabs defaultValue="conteudo" className="mt-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="conteudo">Conteúdo</TabsTrigger>
             <TabsTrigger value="regras">Regras &amp; Botões</TabsTrigger>

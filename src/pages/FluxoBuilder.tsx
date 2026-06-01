@@ -28,10 +28,8 @@ import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
   Step, Variant, ALL_VARIANTS, VARIANT_LABEL,
-  STEP_TYPE_OPTIONS,
   parseTransitions, parseCaptures, parseFallback,
 } from "@/components/admin/flow-builder/flowTypes";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import ViewToggle, { type ViewMode } from "@/components/admin/flow-builder/ViewToggle";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 
@@ -129,8 +127,10 @@ export default function FluxoBuilder() {
   const [existingVariants, setExistingVariants] = useState<Variant[]>(["A"]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspectorId, setInspectorId] = useState<string | null>(null);
+  // Aba inicial do inspetor ao abrir. O link "editar" das Saídas (Lista) abre
+  // direto em "regras"; demais aberturas usam "conteudo".
+  const [inspectorTab, setInspectorTab] = useState<"conteudo" | "regras" | "midias" | "avancado">("conteudo");
   const [pulseStepId, setPulseStepId] = useState<string | null>(null);
-  const [showConnections, setShowConnections] = useState(true);
   const [mediaCounts, setMediaCounts] = useState<Record<string, { audio: number; image: number; video: number }>>({});
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
@@ -169,30 +169,14 @@ export default function FluxoBuilder() {
   }, [flowId]);
 
 
-  // PR4 — busca/filtro/colapso da lista de steps
+  // PR4 — busca/filtro da lista de steps
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
-    try {
-      const raw = window.localStorage.getItem("flow-list-collapsed");
-      if (raw) return new Set(JSON.parse(raw));
-    } catch { /* noop */ }
-    return new Set();
-  });
   const toggleTypeFilter = useCallback((t: string) => {
     setTypeFilter((prev) => {
       const next = new Set(prev);
       if (next.has(t)) next.delete(t);
       else next.add(t);
-      return next;
-    });
-  }, []);
-  const toggleGroup = useCallback((key: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      try { window.localStorage.setItem("flow-list-collapsed", JSON.stringify([...next])); } catch { /* noop */ }
       return next;
     });
   }, []);
@@ -378,26 +362,20 @@ export default function FluxoBuilder() {
     });
   }, [steps, listQuery, typeFilter]);
 
-  const groupedSteps = useMemo(() => {
-    const groups = new Map<string, { type: string; label: string; emoji: string; items: Step[] }>();
-    for (const s of filteredSteps) {
-      const meta = STEP_TYPE_OPTIONS.find((o) => o.value === s.step_type);
-      const key = s.step_type || "outros";
-      if (!groups.has(key)) {
-        groups.set(key, {
-          type: key,
-          label: meta?.label ?? "Outros",
-          emoji: meta?.emoji ?? "📄",
-          items: [],
-        });
-      }
-      groups.get(key)!.items.push(s);
-    }
-    // ordena grupos pela posição mínima do item (mantém fluxo lógico)
-    return [...groups.values()].sort(
-      (a, b) => Math.min(...a.items.map((s) => s.position)) - Math.min(...b.items.map((s) => s.position)),
-    );
-  }, [filteredSteps]);
+  // Lista em ORDEM DE CONVERSA — os passos filtrados ordenados por `position`
+  // (a sequência real percorrida pelo lead). Substitui o agrupamento por
+  // tipo, que embaralhava a ordem e escondia o roteiro da conversa.
+  const orderedSteps = useMemo(
+    () => [...filteredSteps].sort((a, b) => a.position - b.position),
+    [filteredSteps],
+  );
+
+  // Passo inicial = menor `position` entre os ativos (destacado como "Início").
+  const startStepId = useMemo(() => {
+    const active = steps.filter((s) => s.is_active);
+    if (!active.length) return null;
+    return active.reduce((a, b) => (a.position <= b.position ? a : b)).id;
+  }, [steps]);
 
   const validation = useFlowValidation(steps);
   const flowWarnings = validation.total;
@@ -710,57 +688,42 @@ export default function FluxoBuilder() {
                 </div>
               ) : (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                  <SortableContext items={filteredSteps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-                    <div className="space-y-3">
-                      {groupedSteps.map((g, gi) => {
-                        const collapsed = collapsedGroups.has(g.type);
-                        const startId = steps.length
-                          ? steps.filter((s) => s.is_active).reduce((a, b) => (a.position <= b.position ? a : b), steps[0]).id
-                          : null;
-                        return (
-                          <div key={g.type} className="space-y-2">
-                            <button
-                              type="button"
-                              onClick={() => toggleGroup(g.type)}
-                              className="flex w-full items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-left text-xs font-medium hover:bg-muted/60"
-                            >
-                              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                              <span>{g.emoji}</span>
-                              <span className="flex-1 truncate">{g.label}</span>
-                              <span className="text-muted-foreground">{g.items.length}</span>
-                            </button>
-                            {!collapsed && (
-                              <div className="pl-1">
-                                {g.items.map((s, i) => (
-                                  <StepTimelineItem
-                                    key={s.id}
-                                    step={s}
-                                    steps={steps}
-                                    selected={selectedId === s.id}
-                                    isStart={s.id === startId}
-                                    isLast={i === g.items.length - 1 && gi === groupedSteps.length - 1}
-                                    pulse={pulseStepId === s.id}
-                                    mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
-                                    onSelect={() => setSelectedId(s.id)}
-                                    onEdit={() => { setSelectedId(s.id); setInspectorId(s.id); }}
-                                    onDelete={() => deleteStep(s.id)}
-                                    onDuplicate={() => duplicateStep(s.id)}
-                                    onJumpTo={(targetId) => {
-                                      setSelectedId(targetId);
-                                      setPulseStepId(targetId);
-                                      setTimeout(() => {
-                                        document.getElementById(`step-card-${targetId}`)
-                                          ?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                      }, 50);
-                                      setTimeout(() => setPulseStepId((cur) => (cur === targetId ? null : cur)), 1100);
-                                    }}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                  <SortableContext items={orderedSteps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                    {/*
+                      Lista em ORDEM DE CONVERSA — os passos seguem a mesma
+                      ordem (por `position`) em que o lead os percorre, então
+                      a lista pode ser lida de cima para baixo como o roteiro
+                      real do bot. Cada passo mostra suas saídas inline via
+                      `StepTimelineItem`. (Substitui o agrupamento por tipo,
+                      que misturava a ordem e dificultava o entendimento.)
+                    */}
+                    <div>
+                      {orderedSteps.map((s, i) => (
+                        <StepTimelineItem
+                          key={s.id}
+                          step={s}
+                          steps={steps}
+                          selected={selectedId === s.id}
+                          isStart={s.id === startStepId}
+                          isLast={i === orderedSteps.length - 1}
+                          pulse={pulseStepId === s.id}
+                          mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
+                          onSelect={() => setSelectedId(s.id)}
+                          onEdit={() => { setSelectedId(s.id); setInspectorTab("conteudo"); setInspectorId(s.id); }}
+                          onEditExits={() => { setSelectedId(s.id); setInspectorTab("regras"); setInspectorId(s.id); }}
+                          onDelete={() => deleteStep(s.id)}
+                          onDuplicate={() => duplicateStep(s.id)}
+                          onJumpTo={(targetId) => {
+                            setSelectedId(targetId);
+                            setPulseStepId(targetId);
+                            setTimeout(() => {
+                              document.getElementById(`step-card-${targetId}`)
+                                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            }, 50);
+                            setTimeout(() => setPulseStepId((cur) => (cur === targetId ? null : cur)), 1100);
+                          }}
+                        />
+                      ))}
                     </div>
                   </SortableContext>
                 </DndContext>
@@ -935,6 +898,7 @@ export default function FluxoBuilder() {
           variant={editingVariant}
           flowId={flowId}
           maxPosition={maxPosition}
+          initialTab={inspectorTab}
           onClose={() => setInspectorId(null)}
           onPatch={(patch) => inspectorStep && patchStep(inspectorStep.id, patch)}
           onReload={() => userId && reload(userId, editingVariant)}

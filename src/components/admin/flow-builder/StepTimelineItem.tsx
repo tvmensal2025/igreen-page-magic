@@ -1,7 +1,11 @@
-// Timeline numerada vertical — substitui o StepCard na lista lateral.
-// Cada item = bolinha numerada ancorada num trilho vertical + card médio
-// (3 linhas: título, preview da mensagem, badges) + setas inline clicáveis
-// para os destinos do passo.
+// Timeline numerada vertical — o item da Lista (construtor principal do fluxo).
+// Cada item = bolinha numerada ancorada num trilho vertical + card com a
+// mensagem do passo + um bloco "Saídas" que mostra, de forma unificada e
+// legível, TODAS as ramificações do passo: botões, palavras-chave e o
+// caminho padrão — cada uma com o destino resolvido e clicável.
+//
+// As saídas vêm de `getStepExits` (flowExits.ts), que junta o que antes
+// estava espalhado em `captures._buttons` + `transitions` + `fallback`.
 
 import { CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
@@ -11,13 +15,15 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  Pencil, Trash2, Copy, AlertTriangle, ArrowRight,
-  Mic, Image as ImageIcon, Video, MessageSquare, ScanLine, Sparkles,
+  Pencil, Trash2, Copy, AlertTriangle, ArrowRight, CornerDownRight,
+  Mic, Image as ImageIcon, Video, MessageSquare, ScanLine, Sparkles, MousePointerClick, Hash,
+  type LucideIcon,
 } from "lucide-react";
 import {
   Step, STEP_TYPE_OPTIONS, getButtons, renderVarsPreview,
   isOcrStep, isAiAnswerStep,
 } from "./flowTypes";
+import { getStepExits, type StepExit, type ExitKind } from "./flowExits";
 
 interface Props {
   step: Step;
@@ -32,11 +38,13 @@ interface Props {
   onDelete: () => void;
   onDuplicate: () => void;
   onJumpTo?: (stepId: string) => void;
+  /** Abre o inspetor já na aba "Regras & Botões" para editar as saídas. */
+  onEditExits?: () => void;
 }
 
 export default function StepTimelineItem({
   step, steps, selected, isStart, isLast, pulse, mediaCount,
-  onSelect, onEdit, onDelete, onDuplicate, onJumpTo,
+  onSelect, onEdit, onDelete, onDuplicate, onJumpTo, onEditExits,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
 
@@ -48,27 +56,11 @@ export default function StepTimelineItem({
 
   const typeMeta = STEP_TYPE_OPTIONS.find((t) => t.value === step.step_type) ?? STEP_TYPE_OPTIONS[0];
   const buttons = getButtons(step);
-  const previewText = renderVarsPreview(step.message_text).slice(0, 70);
+  const previewText = renderVarsPreview(step.message_text).slice(0, 90);
   const warnings = buildWarnings(step, steps);
 
-  // Destinos (transitions + fallback goto + próximo por posição)
-  type Target = { stepId: string; dest: Step | undefined; trigger: string; kind: "rule" | "fallback" };
-  const targets: Target[] = step.transitions
-    .filter((t) => t.goto_step_id)
-    .map((t): Target => {
-      const dest = steps.find((s) => s.id === t.goto_step_id);
-      const trigger = t.trigger_phrases[0] || t.trigger_intent || "→";
-      return { stepId: t.goto_step_id!, dest, trigger, kind: "rule" };
-    })
-    .filter((c, i, arr) => arr.findIndex((x) => x.stepId === c.stepId) === i);
-
-  if (step.fallback?.mode === "goto" && step.fallback.goto_step_id) {
-    const dest = steps.find((s) => s.id === step.fallback!.goto_step_id);
-    if (dest && !targets.some((t) => t.stepId === dest.id)) {
-      targets.push({ stepId: dest.id, dest, trigger: "fallback", kind: "fallback" });
-    }
-  }
-
+  // Saídas unificadas (botão / palavra-chave / padrão → destino).
+  const exits = getStepExits(step, steps);
 
   return (
     <div ref={setNodeRef} style={style} id={`step-card-${step.id}`} className="relative flex gap-3">
@@ -130,9 +122,9 @@ export default function StepTimelineItem({
 
           {/* Linha 2: preview da mensagem */}
           {previewText && (
-            <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
               {previewText}
-              {(step.message_text?.length ?? 0) > 70 && "…"}
+              {(step.message_text?.length ?? 0) > 90 && "…"}
             </p>
           )}
 
@@ -147,12 +139,7 @@ export default function StepTimelineItem({
             {mediaCount && mediaCount.audio > 0 && <MiniBadge icon={Mic} label={String(mediaCount.audio)} />}
             {mediaCount && mediaCount.image > 0 && <MiniBadge icon={ImageIcon} label={String(mediaCount.image)} />}
             {mediaCount && mediaCount.video > 0 && <MiniBadge icon={Video} label={String(mediaCount.video)} />}
-            {buttons.length > 0 && <MiniBadge icon={MessageSquare} label={`${buttons.length}`} />}
-            {step.transitions.length > 0 && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
-                {step.transitions.length} regra{step.transitions.length > 1 ? "s" : ""}
-              </span>
-            )}
+            {buttons.length > 0 && <MiniBadge icon={MessageSquare} label={buttons.length === 1 ? "1 botão" : `${buttons.length} botões`} />}
           </div>
 
           {/* Ações (visíveis no hover) */}
@@ -189,41 +176,99 @@ export default function StepTimelineItem({
           </TooltipProvider>
         </div>
 
-        {/* Setas inline para destinos */}
-        {targets.length > 0 && (
-          <div className="ml-2 mt-1 space-y-0.5">
-            {targets.map((t) => (
-              <button
-                key={`${t.kind}-${t.stepId}`}
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onJumpTo?.(t.stepId); }}
-                className={cn(
-                  "flex w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] transition-colors",
-                  "hover:bg-primary/5",
-                  t.dest && !t.dest.is_active && "opacity-50",
-                )}
-                title={t.dest ? `Ir para #${t.dest.position} ${t.dest.title}` : "Destino removido"}
-              >
-                <ArrowRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/60" />
-                <span className="shrink-0 text-muted-foreground">
-                  {t.kind === "fallback" ? "fallback" : `"${t.trigger.slice(0, 14)}${t.trigger.length > 14 ? "…" : ""}"`}
-                </span>
-                <span className={cn(
-                  "truncate font-medium",
-                  !t.dest ? "text-destructive" : "text-foreground/75",
-                )}>
-                  {t.dest ? `→ #${t.dest.position} ${t.dest.title}` : "⚠ removido"}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+        {/* ── Saídas do passo (botão / palavra-chave / padrão → destino) ── */}
+        <ExitsBlock
+          exits={exits}
+          onJumpTo={onJumpTo}
+          onEditExits={onEditExits ?? onEdit}
+        />
       </div>
     </div>
   );
 }
 
-function MiniBadge({ icon: Icon, label, className }: { icon: any; label: string; className?: string }) {
+/**
+ * Bloco "Saídas" — lista unificada de para onde o passo pode ir. Mostra o
+ * gatilho (o que o lead faz) → o destino resolvido. Clicar numa saída que
+ * leva a outro passo navega até ele; o botão de lápis abre o editor de regras.
+ */
+function ExitsBlock({
+  exits, onJumpTo, onEditExits,
+}: {
+  exits: StepExit[];
+  onJumpTo?: (stepId: string) => void;
+  onEditExits: () => void;
+}) {
+  return (
+    <div className="ml-2 mt-1 space-y-0.5 border-l border-dashed border-border/60 pl-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70">
+          Saídas
+        </span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onEditExits(); }}
+          className="text-[9px] text-muted-foreground/60 underline-offset-2 hover:text-primary hover:underline"
+        >
+          editar
+        </button>
+      </div>
+      {exits.map((exit) => (
+        <ExitRow key={exit.id} exit={exit} onJumpTo={onJumpTo} />
+      ))}
+    </div>
+  );
+}
+
+const EXIT_KIND_META: Record<ExitKind, { icon: LucideIcon; tone: string; srLabel: string }> = {
+  button: { icon: MousePointerClick, tone: "text-blue-600 dark:text-blue-300", srLabel: "Botão" },
+  keyword: { icon: Hash, tone: "text-amber-600 dark:text-amber-400", srLabel: "Palavra-chave" },
+  default: { icon: CornerDownRight, tone: "text-muted-foreground", srLabel: "Padrão" },
+};
+
+function ExitRow({ exit, onJumpTo }: { exit: StepExit; onJumpTo?: (stepId: string) => void }) {
+  const meta = EXIT_KIND_META[exit.kind];
+  const Icon = meta.icon;
+  const canJump = !!exit.destStep && !!onJumpTo;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (canJump) onJumpTo!(exit.destStep!.id);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={!canJump}
+      title={
+        exit.kind === "default"
+          ? `Caminho padrão → ${exit.destLabel}`
+          : `${meta.srLabel} "${exit.label}" → ${exit.destLabel}`
+      }
+      className={cn(
+        "flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[10px] leading-tight transition-colors",
+        canJump ? "hover:bg-primary/5" : "cursor-default",
+      )}
+    >
+      <Icon className={cn("h-3 w-3 shrink-0", meta.tone)} aria-hidden="true" />
+      <span className={cn("min-w-0 max-w-[45%] shrink-0 truncate", exit.kind === "default" ? "italic text-muted-foreground" : "text-foreground/80")}>
+        {exit.kind === "default" ? "padrão" : exit.label}
+      </span>
+      <ArrowRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/40" aria-hidden="true" />
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate font-medium",
+          exit.missing ? "text-destructive" : exit.destStep ? "text-foreground/85" : "text-muted-foreground",
+        )}
+      >
+        {exit.destLabel}
+      </span>
+    </button>
+  );
+}
+
+function MiniBadge({ icon: Icon, label, className }: { icon: LucideIcon; label: string; className?: string }) {
   return (
     <span className={cn(
       "inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground",
