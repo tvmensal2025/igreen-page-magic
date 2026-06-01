@@ -1,47 +1,40 @@
-## O que precisa mudar
+# Problema
 
-Na barra inferior do painel direito do WhatsApp (CaptureSheet) temos hoje **dois bloqueadores** independentes para o botão verde `CADASTRAR`:
+Quando o consultor clica em **"Eu confirmo"** nos cards de revisão (conta e documento), o sistema:
+1. Dispara `dispatchPostBillConfirm()` que **envia mensagem de simulação no WhatsApp do cliente** e despacha o próximo capture step.
+2. Visualmente o card some/muda mas não fica nítido o "✓ Confirmado com sucesso".
 
-1. `validation.ok` (todos os 18 campos válidos)
-2. `allConfirmed` = `billConfirmed && docConfirmed` (consultor clicou "Eu confirmo" nos cards de OCR)
+O usuário quer: **quando o consultor confirma, é confirmação interna — não pode mandar nada pro WhatsApp do cliente**. O fluxo do WhatsApp só deve avançar quando for o próprio cliente quem confirma (via botão "Pedir cliente").
 
-Quando a ficha está **18/18** mas o consultor ainda não clicou nos botões de confirmação dos cards de OCR, o botão fica cinza mostrando `18/18 ·📄` (foi o caso do BRUNO na screenshot). O usuário quer que, com ficha cheia, **o botão SEMPRE esteja liberado** — a confirmação de OCR vira só um aviso, não um bloqueio.
+## Arquivos afetados
 
-Além disso, o feedback visual de "deu certo" hoje é discreto (toast + banner amarelo→verde do `PortalStatusTracker`). Quer um indicativo claro de sucesso no próprio rodapé.
+- `src/components/captacao/OcrReviewCard.tsx` — função `confirmSelf` (linhas 105–138)
+- `src/components/captacao/CaptureDataConfirmCard.tsx` — função `confirmSelf` (linhas 71–99)
 
-## Mudanças (somente UI/presentation)
+## Mudanças
 
-### 1. `src/components/captacao/CaptureSheet.tsx` — destravar CADASTRAR
+### 1. `OcrReviewCard.tsx` → `confirmSelf`
+- **Remover** a chamada a `dispatchPostBillConfirm({ customer, kind, continueFlowOnNextCapture: true })`.
+- Manter o UPDATE no banco (`bill_data_confirmed_at` / `doc_data_confirmed_at` + `*_confirmation_by = "consultant"` + limpa `ocr_review_pending`).
+- Atualizar toast: **"✓ Dados confirmados"** / **"Salvo — bot não foi acionado"** (sem o texto "Bot avançando…").
+- Remover import de `dispatchPostBillConfirm` se ficar sem uso.
 
-- `canSubmit` passa a depender só de `validation?.ok` (ficha 18/18).
-- Novo flag `hasUnconfirmedOcr = !billConfirmed || !docConfirmed` apenas para mostrar um aviso discreto acima do botão ("⚠️ Conta/Doc sem confirmação — envie mesmo assim?") sem travar o clique.
-- Tooltip do botão lista a pendência de confirmação como aviso, não como bloqueio.
-- Label do botão: quando `canSubmit && hasUnconfirmedOcr` mostra "CADASTRAR ⚠️" (mesmo estilo verde), quando tudo OK mostra "CADASTRAR 🚀".
+### 2. `CaptureDataConfirmCard.tsx` → `confirmSelf`
+- **Remover** a chamada a `dispatchPostBillConfirm(...)` (linhas 87–91).
+- Manter UPDATE no banco igual ao acima.
+- Atualizar toast: **"✓ Confirmado"** / **"Dados salvos — sem envio ao cliente"**.
+- Após confirmar, o card já mostra o badge ✓ (linha 149) e esconde os botões (linha 197), comportamento atual já correto. Vou só reforçar o visual do badge: aumentar pra `text-[10px]` + texto **"Confirmado ✓"** em vez de só ✓, com fundo emerald mais sólido.
 
-### 2. `src/components/captacao/PortalStatusTracker.tsx` — reforçar estado de sucesso
-
-Quando `isDone` (status = `cadastro_concluido` / `registered_igreen`):
-- Card maior, com gradiente esmeralda + ícone `CheckCircle2` animado (pulse) e borda glow.
-- Título grande "🎉 Cadastro aprovado pela iGreen!" + subtítulo "Código iGreen: XXXX".
-- Botão "Copiar código" em destaque.
-- Mantém os badges (Extração auto / IA analisou) abaixo.
-
-### 3. `src/components/captacao/CaptureSheet.tsx` — celebração no rodapé
-
-- Quando `customer.status === "registered_igreen"` ou `finalized_at`, esconde o par de botões (Enviar tudo / CADASTRAR) e mostra no lugar um bloco verde "✅ Lead cadastrado — código XXXX" com botão secundário "Abrir novo lead".
-- Evita o consultor clicar CADASTRAR de novo num lead já concluído.
-
-### 4. (opcional, mesma tela) micro-polimento
-
-- Texto "Faltam 0 dados 💪" troca para "Ficha completa! 🏆" quando `filledCount === totalFields`.
-- Barra de progresso ganha cor esmeralda em 100%.
+### 3. Botão "Pedir cliente" (`askClient`)
+- **Não mexer.** Continua despachando `manual-step-send` para o cliente confirmar via WhatsApp — esse é o único caminho que pode mandar mensagem.
 
 ## O que NÃO muda
 
-- Nada de backend / edge functions / worker.
-- `finalize-capture` continua fazendo a validação de servidor (continua sendo a fonte da verdade — se faltar algo crítico, ele rejeita com `incomplete`).
-- Cards de OCR (`OcrReviewCard`, `CaptureDataConfirmCard`) continuam funcionando igual; só deixam de bloquear o CADASTRAR no front.
+- Lógica do bot/edge functions (`postBillConfirm.ts`, `manual-step-send`, `whapi-proxy`) permanece igual — o helper continua existindo, só não é chamado na confirmação interna do consultor.
+- Fluxo do cliente confirmando no WhatsApp (que dispara simulação + próximo step) **continua funcionando normalmente**.
+- Validação 18/18, botão CADASTRAR, PortalStatusTracker — nada disso muda.
 
-## Observação sobre o login solicitado
+## Resultado esperado
 
-Você pediu pra eu entrar com `rafael.ids@icloud.com / 10203040` e olhar a tela ao vivo. Não posso digitar credenciais sem sua autorização explícita dentro do preview, e em plan mode não edito nem executo nada. Já tenho a screenshot e o código, então consigo aplicar o fix direto assim que você aprovar. Se quiser que eu valide visualmente depois, faça o login no preview e eu abro pelo browser do sandbox sem precisar de senha.
+- Consultor clica "Eu confirmo" → card vira verde com "Confirmado ✓", **zero mensagens** no WhatsApp do cliente, `bill_data_confirmed_at` / `doc_data_confirmed_at` preenchido.
+- Consultor clica "Pedir cliente" → mensagem com botões SIM/NÃO/EDITAR vai pro WhatsApp (comportamento atual mantido).

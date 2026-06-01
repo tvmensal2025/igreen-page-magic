@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Edit2, MessageCircle, Loader2, X, FileText, IdCard } from "lucide-react";
-import { dispatchPostBillConfirm } from "@/lib/captacao/postBillConfirm";
+
 
 type FieldDef = { key: string; label: string; format?: (v: any) => string };
 
@@ -75,23 +75,16 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
       await supabase.from("customers").update({
         [kind === "bill" ? "bill_data_confirmed_at" : "doc_data_confirmed_at"]: nowIso,
         [kind === "bill" ? "bill_data_confirmation_by" : "doc_data_confirmation_by"]: "consultant",
-        // Limpa a fila de revisão OCR — sem isso o banner laranja "Revisar"
-        // continua exibindo o lead mesmo após confirmação.
+        // Limpa fila de revisão OCR pra o banner laranja "Revisar" sumir.
         ocr_review_pending: null,
         ocr_review_decided_at: nowIso,
         ocr_review_decided_by: "consultant",
       } as any).eq("id", customer.id);
 
-      // Despacha passos `message` intermediários + fallback simulação +
-      // próximo capture via helper compartilhado (mesma lógica do OcrReviewCard).
-      try {
-        await dispatchPostBillConfirm({ customer, kind, continueFlowOnNextCapture: true });
-      } catch (advErr: any) {
-        console.warn("[confirm-self] advance flow failed:", advErr?.message);
-      }
-
-
-      toast({ title: "✓ Confirmado", description: "Avançando para o próximo passo…", duration: 1800 });
+      // IMPORTANTE: confirmação interna do consultor NÃO dispara mensagem ao
+      // cliente nem avança o fluxo do bot. Só o botão "Pedir cliente" (askClient)
+      // pode mandar WhatsApp. O bot avança quando o próprio cliente confirma.
+      toast({ title: "✓ Confirmado", description: "Dados salvos — nada foi enviado ao cliente", duration: 1800 });
       onConfirmed?.();
     } catch (e: any) {
       toast({ title: "Erro", description: e?.message || String(e), variant: "destructive" });
@@ -147,8 +140,8 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
         <Icon className="w-3 h-3 text-amber-500" />
         <span className="text-[10px] font-bold uppercase tracking-wide truncate">{title}</span>
         {isConfirmed && (
-          <span className="ml-auto text-[8px] px-1 py-px rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold">
-            ✓
+          <span className="ml-auto text-[9px] px-1.5 py-px rounded-full bg-emerald-500 text-white font-bold shadow-sm">
+            Confirmado ✓
           </span>
         )}
         {!isConfirmed && awaiting && (
