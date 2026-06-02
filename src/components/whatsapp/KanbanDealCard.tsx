@@ -1,4 +1,4 @@
-import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, Building2, ShieldCheck } from "lucide-react";
+import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, ShieldCheck } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { KanbanSlaIndicator } from "./KanbanSlaIndicator";
 import type { Tables } from "@/integrations/supabase/types";
