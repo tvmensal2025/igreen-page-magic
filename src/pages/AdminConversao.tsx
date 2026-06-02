@@ -516,10 +516,29 @@ export default function AdminConversao() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground">
-                          {ORIGIN_LABEL[origin]}
-                        </span>
+                        {r.customer?.referral_partner_id ? (
+                          (() => {
+                            const p = partnerById.get(r.customer.referral_partner_id);
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded border w-fit ${p ? "border-primary/30 bg-primary/10 text-primary" : "border-border/40 bg-muted/40 text-muted-foreground"}`}>
+                                  {p ? p.nome : "Parceiro removido"}
+                                </span>
+                                {r.customer?.referral_keyword_matched && (
+                                  <span className="text-[9px] text-muted-foreground font-mono truncate max-w-[140px]">
+                                    via {r.customer.referral_keyword_matched}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground">
+                            {ORIGIN_LABEL[origin]}
+                          </span>
+                        )}
                       </td>
+
                       <td className="px-3 py-2.5">
                         {M && Icon ? (
                           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${M.cls}`}>
