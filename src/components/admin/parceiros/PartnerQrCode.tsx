@@ -193,7 +193,7 @@ export function PartnerQrCode({
   };
 
   const updatePosFromClient = useCallback(
-    (clientX: number, clientY: number, what: "qr" | "footer" | "camera") => {
+    (clientX: number, clientY: number, what: "qr" | "footer") => {
       const el = previewRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
@@ -204,17 +204,15 @@ export function PartnerQrCode({
       if (what === "qr") {
         setQrX(cx);
         setQrY(cy);
-      } else if (what === "footer") {
-        setFooterY(cy);
       } else {
-        setCameraPos({ xPct: cx, yPct: cy });
+        setFooterY(cy);
       }
     },
     [],
   );
 
   const handlePointerDown =
-    (what: "qr" | "footer" | "camera") => (e: React.PointerEvent<HTMLDivElement>) => {
+    (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
       e.stopPropagation();
       draggingRef.current = what;
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
