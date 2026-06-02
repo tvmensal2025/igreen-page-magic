@@ -101,8 +101,8 @@ const TEMPLATE_DIMS: Record<
   TemplateId,
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
-  a4: { canvasW: 1024, canvasH: 1536, pdfWmm: 210, pdfHmm: 297 }, // A4 real
-  banner: { canvasW: 1069, canvasH: 1920, pdfWmm: 504, pdfHmm: 940 },
+  a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // A4 real
+  banner: { canvasW: 1008, canvasH: 1880, pdfWmm: 504, pdfHmm: 940 },
 };
 const PREVIEW_W = 320;
 
@@ -342,14 +342,14 @@ export function PartnerQrCode({
       ctx.lineWidth = Math.max(1, line1Size * 0.04);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("APONTE A CÂMERA", cx, topY);
-      ctx.fillStyle = "#22ff44";
+      ctx.fillStyle = "#ffd700";
       ctx.fillText("APONTE A CÂMERA", cx, topY);
 
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
       ctx.lineWidth = Math.max(1, line2Size * 0.04);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#ffd700";
       ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
@@ -361,7 +361,7 @@ export function PartnerQrCode({
       ctx.lineWidth = Math.max(1, arrowH * 0.03);
       ctx.strokeStyle = "#000000";
       ctx.stroke();
-      ctx.fillStyle = "#22ff44";
+      ctx.fillStyle = "#ffd700";
       ctx.fill();
     }
 
