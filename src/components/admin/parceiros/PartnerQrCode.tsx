@@ -93,13 +93,18 @@ function formatPhoneDisplay(phone: string): string {
 }
 
 /**
- * Output canvas dimensions. Keeps the same aspect ratio (~2:3) as the
- * default flyer template (853x1280) so the export looks right.
+ * Dimensões físicas e de canvas por template. O canvas usa a proporção
+ * nativa da arte (sem corte/distorção). O PDF usa o tamanho físico real.
  */
-const CANVAS_W = 1080;
-const CANVAS_H = 1620;
+const TEMPLATE_DIMS: Record<
+  TemplateId,
+  { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
+> = {
+  a4: { canvasW: 1024, canvasH: 1536, pdfWmm: 210, pdfHmm: 297 }, // A4 real
+  banner: { canvasW: 1069, canvasH: 1920, pdfWmm: 504, pdfHmm: 940 },
+};
 const PREVIEW_W = 320;
-const PREVIEW_H = 480;
+
 
 /**
  * Editable flyer with draggable QR + footer band.
