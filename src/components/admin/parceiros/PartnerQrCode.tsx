@@ -567,8 +567,12 @@ export function PartnerQrCode({
           <Button variant="outline" onClick={onClose}>
             Fechar
           </Button>
-          <Button onClick={handleDownload} className="gap-2">
+          <Button variant="outline" onClick={handleDownload} className="gap-2">
             <Download className="h-4 w-4" /> Baixar PNG
+          </Button>
+          <Button onClick={handleDownloadPDF} className="gap-2">
+            <FileText className="h-4 w-4" />
+            Baixar PDF ({TEMPLATE_DIMS[templateId].pdfWmm}×{TEMPLATE_DIMS[templateId].pdfHmm}mm)
           </Button>
         </DialogFooter>
       </DialogContent>
