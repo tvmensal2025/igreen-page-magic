@@ -108,7 +108,7 @@ const TEMPLATE_DIMS: Record<
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
   a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // A4 real
-  banner: { canvasW: 1008, canvasH: 1880, pdfWmm: 504, pdfHmm: 940 },
+  banner: { canvasW: 1008, canvasH: 1808, pdfWmm: 504, pdfHmm: 904 },
 };
 const PREVIEW_W = 320;
 
