@@ -416,7 +416,7 @@ export function PartnerQrCode({
               <div
                 ref={qrSvgWrapperRef}
                 onPointerDown={handlePointerDown("qr")}
-                className="absolute select-none touch-none cursor-move bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10"
+                className={`absolute select-none touch-none bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10 ${locked ? "cursor-not-allowed" : "cursor-move"}`}
                 style={{
                   left: `calc(${qrX}% - ${qrCardPxPreview / 2}px)`,
                   top: `calc(${qrY}% - ${qrCardPxPreview / 2}px)`,
@@ -437,7 +437,7 @@ export function PartnerQrCode({
               {showFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 flex items-center justify-between leading-tight px-2"
+                  className={`absolute left-0 right-0 select-none touch-none bg-emerald-900/95 flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
                   style={{
                     top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
