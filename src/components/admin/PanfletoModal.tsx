@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { Download, Copy, FileText, Loader2 } from "lucide-react";
 
+type Format = "a4" | "banner";
+
 interface PanfletoModalProps {
   open: boolean;
   onClose: () => void;
@@ -17,18 +19,21 @@ interface PanfletoModalProps {
 
 const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
 
-// Background base: public/images/mutirao-lei-14300.png (853 x 1280).
-// Renderizamos em 2x (1706 x 2560) pra ter resolução de gráfica.
-const SCALE = 2;
-const BG_W = 853;
-const BG_H = 1280;
-const W = BG_W * SCALE;
-const H = BG_H * SCALE;
+// ============ FORMATO A4 (sulfite) ============
+// public/images/mutirao-lei-14300-base.jpg (853 x 1280) → render 2x
+const A4_SCALE = 2;
+const A4_BG_W = 853;
+const A4_BG_H = 1280;
+const A4_W = A4_BG_W * A4_SCALE;
+const A4_H = A4_BG_H * A4_SCALE;
+const A4_QR_BOX = { x: 32, y: 855, size: 170 };
 
-// Posições (em coords da imagem original 853x1280) dos overlays.
-// A imagem base agora não tem QR nem faixa de licenciado — desenhamos tudo
-// sobre a área do painel solar (canto inferior esquerdo, fundo escuro).
-const QR_BOX = { x: 32, y: 855, size: 170 };
+// ============ FORMATO BANNER (504mm x 940mm, proporção ~9:16) ============
+// public/images/banner-lei-14300-base.jpg (1069 x 1920) — usamos resolução nativa
+const BANNER_W = 1069;
+const BANNER_H = 1920;
+// Caixa vazia inferior-esquerda já desenhada no banner — só preenchemos com QR.
+const BANNER_QR_BOX = { x: 60, y: 1545, size: 310 };
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -53,7 +58,7 @@ function formatBrPhone(raw?: string): string {
   return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
 }
 
-async function renderPanfleto(
+async function renderA4(
   canvas: HTMLCanvasElement,
   redirectUrl: string,
   nomeConsultor: string,
@@ -62,15 +67,13 @@ async function renderPanfleto(
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-
+  const W = A4_W, H = A4_H, SCALE = A4_SCALE, QR_BOX = A4_QR_BOX;
   canvas.width = W;
   canvas.height = H;
 
-  // 1) Background — panfleto Lei 14.300 (versão limpa, sem QR/licenciado)
   const bg = await loadImage("/images/mutirao-lei-14300-base.jpg");
   ctx.drawImage(bg, 0, 0, W, H);
 
-  // 2) Card branco com borda dourada que comporta QR + nome + telefone
   const qrPad = 8;
   const qrBoxX = (QR_BOX.x - qrPad) * SCALE;
   const qrBoxY = (QR_BOX.y - qrPad) * SCALE;
@@ -81,18 +84,12 @@ async function renderPanfleto(
   ctx.shadowColor = "rgba(0,0,0,0.35)";
   ctx.shadowBlur = 16 * SCALE;
   ctx.shadowOffsetY = 4 * SCALE;
-  ctx.fillStyle = "#d4a017"; // dourado
-  ctx.fillRect(
-    qrBoxX - 4 * SCALE,
-    qrBoxY - 4 * SCALE,
-    qrBoxW + 8 * SCALE,
-    qrBoxH + 8 * SCALE,
-  );
+  ctx.fillStyle = "#d4a017";
+  ctx.fillRect(qrBoxX - 4 * SCALE, qrBoxY - 4 * SCALE, qrBoxW + 8 * SCALE, qrBoxH + 8 * SCALE);
   ctx.restore();
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(qrBoxX, qrBoxY, qrBoxW, qrBoxH);
 
-  // 3) QR personalizado (error correction H pra suportar logo central)
   const qrPx = QR_BOX.size * SCALE;
   const qrDataUrl = await QRCode.toDataURL(redirectUrl, {
     errorCorrectionLevel: "H",
@@ -101,21 +98,14 @@ async function renderPanfleto(
     color: { dark: "#0a0a0a", light: "#ffffff" },
   });
   const qrImg = await loadImage(qrDataUrl);
-  const qrX = QR_BOX.x * SCALE;
-  const qrY = QR_BOX.y * SCALE;
-  ctx.drawImage(qrImg, qrX, qrY, qrPx, qrPx);
+  ctx.drawImage(qrImg, QR_BOX.x * SCALE, QR_BOX.y * SCALE, qrPx, qrPx);
 
-  // 4) Faixa verde escura LOGO ACIMA do CTA "QUER SABER COMO?"
-  //    com LICENCIADO + ID + WHATSAPP
   const STRIPE_Y = 1040;
   const STRIPE_H = 38;
   const stripeY = STRIPE_Y * SCALE;
   const stripeH = STRIPE_H * SCALE;
-
-  // Faixa principal verde escura
   ctx.fillStyle = "#0d3b1f";
   ctx.fillRect(0, stripeY, W, stripeH);
-  // Linha dourada de acento no topo e base
   ctx.fillStyle = "#d4a017";
   ctx.fillRect(0, stripeY, W, 2 * SCALE);
   ctx.fillRect(0, stripeY + stripeH - 2 * SCALE, W, 2 * SCALE);
@@ -126,16 +116,75 @@ async function renderPanfleto(
 
   ctx.textBaseline = "middle";
   const stripeMidY = stripeY + stripeH / 2;
-
-  // Esquerda: LICENCIADO em dourado
   ctx.fillStyle = "#ffd700";
   ctx.font = `900 ${15 * SCALE}px Montserrat, "Arial Black", sans-serif`;
   ctx.textAlign = "left";
   ctx.fillText(`LICENCIADO: ${nomeUpper}${idLabel}`, 28 * SCALE, stripeMidY);
-
-  // Direita: WHATSAPP em dourado
   ctx.textAlign = "right";
   ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, W - 28 * SCALE, stripeMidY);
+}
+
+async function renderBanner(
+  canvas: HTMLCanvasElement,
+  redirectUrl: string,
+  nomeConsultor: string,
+  telefoneConsultor: string,
+  igreenId: string,
+) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  canvas.width = BANNER_W;
+  canvas.height = BANNER_H;
+
+  const bg = await loadImage("/images/banner-lei-14300-base.jpg");
+  ctx.drawImage(bg, 0, 0, BANNER_W, BANNER_H);
+
+  // QR dentro da caixa vazia bordada inferior-esquerda
+  const { x, y, size } = BANNER_QR_BOX;
+  // fundo branco com borda dourada sutil
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(x - 6, y - 6, size + 12, size + 12);
+  ctx.strokeStyle = "#d4a017";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x - 6, y - 6, size + 12, size + 12);
+
+  const qrDataUrl = await QRCode.toDataURL(redirectUrl, {
+    errorCorrectionLevel: "H",
+    margin: 1,
+    width: size,
+    color: { dark: "#0a0a0a", light: "#ffffff" },
+  });
+  const qrImg = await loadImage(qrDataUrl);
+  ctx.drawImage(qrImg, x, y, size, size);
+
+  // Rótulo "APONTE A CÂMERA" acima do QR
+  ctx.fillStyle = "#c8ff3e";
+  ctx.font = `900 28px Montserrat, "Arial Black", sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("APONTE A CÂMERA", x - 6, y - 24);
+
+  // Faixa LICENCIADO + WHATSAPP no rodapé absoluto
+  const stripeH = 70;
+  const stripeY = BANNER_H - stripeH;
+  ctx.fillStyle = "#0d3b1f";
+  ctx.fillRect(0, stripeY, BANNER_W, stripeH);
+  ctx.fillStyle = "#d4a017";
+  ctx.fillRect(0, stripeY, BANNER_W, 3);
+  ctx.fillRect(0, stripeY + stripeH - 3, BANNER_W, 3);
+
+  const nomeUpper = (nomeConsultor || "CONSULTOR IGREEN").toUpperCase();
+  const idLabel = igreenId ? ` • ID ${igreenId}` : "";
+  const phoneFmt = formatBrPhone(telefoneConsultor) || "FALE COMIGO";
+
+  ctx.textBaseline = "middle";
+  const midY = stripeY + stripeH / 2;
+  ctx.fillStyle = "#ffd700";
+  ctx.font = `900 22px Montserrat, "Arial Black", sans-serif`;
+  ctx.textAlign = "left";
+  ctx.fillText(`LICENCIADO: ${nomeUpper}${idLabel}`, 32, midY);
+  ctx.textAlign = "right";
+  ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, BANNER_W - 32, midY);
 }
 
 export function PanfletoModal({
@@ -149,6 +198,7 @@ export function PanfletoModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [rendering, setRendering] = useState(false);
   const [ready, setReady] = useState(false);
+  const [format, setFormat] = useState<Format>("a4");
   const { toast } = useToast();
 
   const redirectUrl = `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
@@ -165,23 +215,24 @@ export function PanfletoModal({
     }
     if (!ready || !canvasRef.current) return;
     setRendering(true);
-    renderPanfleto(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
+    const render = format === "a4" ? renderA4 : renderBanner;
+    render(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
       .catch((e) => {
         console.error("[panfleto] render error", e);
         toast({
-          title: "Erro ao gerar panfleto",
+          title: "Erro ao gerar arte",
           description: String(e?.message || e),
           variant: "destructive",
         });
       })
       .finally(() => setRendering(false));
-  }, [open, ready, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, toast]);
+  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, toast]);
 
   const downloadPNG = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const link = document.createElement("a");
-    link.download = `panfleto-igreen-${licenca}.png`;
+    link.download = `${format === "a4" ? "panfleto-a4" : "banner-504x940"}-igreen-${licenca}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
     toast({ title: "✅ PNG baixado!" });
@@ -190,12 +241,21 @@ export function PanfletoModal({
   const downloadPDF = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // A5: 148 x 210 mm — proporção 1:1.42. Nosso canvas é 853:1280 = 1:1.5.
-    // Usa formato custom proporcional pra não distorcer.
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [148, 222] });
+    let pdf: jsPDF;
+    let wmm: number, hmm: number;
+    if (format === "a4") {
+      // Mantém proporção 148x222 (próximo de A5; sulfite A4 = 210x297 — gera centralizado pro usuário recortar)
+      wmm = 148; hmm = 222;
+      pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
+    } else {
+      // Banner 504mm x 940mm
+      wmm = 504; hmm = 940;
+      pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
+    }
     const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    pdf.addImage(imgData, "JPEG", 0, 0, 148, 222);
-    pdf.save(`panfleto-igreen-${licenca}.pdf`);
+    pdf.addImage(imgData, "JPEG", 0, 0, wmm, hmm);
+    const name = format === "a4" ? "panfleto-a4" : "banner-504x940";
+    pdf.save(`${name}-igreen-${licenca}.pdf`);
     toast({ title: "✅ PDF baixado!" });
   };
 
@@ -204,34 +264,60 @@ export function PanfletoModal({
     toast({ title: "✅ Link do redirect copiado!" });
   };
 
+  const canvasW = format === "a4" ? A4_W : BANNER_W;
+  const canvasH = format === "a4" ? A4_H : BANNER_H;
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <FileText className="w-5 h-5 text-primary" /> Panfleto Mutirão Lei 14.300
+            <FileText className="w-5 h-5 text-primary" /> Arte Mutirão Lei 14.300
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Seletor de formato */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={format === "a4" ? "default" : "outline"}
+              onClick={() => setFormat("a4")}
+              className="gap-2"
+            >
+              Sulfite A4
+            </Button>
+            <Button
+              type="button"
+              variant={format === "banner" ? "default" : "outline"}
+              onClick={() => setFormat("banner")}
+              className="gap-2"
+            >
+              Banner 504×940mm
+            </Button>
+          </div>
+
           <div className="bg-muted/30 rounded-xl p-4 border border-border">
             <p className="text-sm text-muted-foreground">
               QR único da licença <strong className="text-foreground">{licenca}</strong>. Sempre vai pro
-              WhatsApp conectado da sua instância — se trocar de número, o mesmo panfleto continua
-              funcionando. Imprima quantos quiser.
+              WhatsApp conectado da sua instância — se trocar de número, a mesma arte continua
+              funcionando.{" "}
+              {format === "a4"
+                ? "Formato sulfite A4 — imprima quantos quiser."
+                : "Formato banner 504mm × 940mm — pronto pra gráfica em lona/PVC."}
             </p>
           </div>
 
           <div className="relative bg-white rounded-xl border border-border overflow-hidden flex items-center justify-center p-4 min-h-[400px]">
             {rendering && (
               <div className="absolute inset-0 flex items-center justify-center gap-2 text-muted-foreground bg-white/80 z-10">
-                <Loader2 className="w-5 h-5 animate-spin" /> Gerando panfleto…
+                <Loader2 className="w-5 h-5 animate-spin" /> Gerando arte…
               </div>
             )}
             <canvas
               ref={setCanvasRef}
-              width={W}
-              height={H}
+              width={canvasW}
+              height={canvasH}
               className="max-w-full h-auto shadow-lg"
               style={{ maxHeight: "70vh" }}
             />
