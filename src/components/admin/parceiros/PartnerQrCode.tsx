@@ -161,11 +161,8 @@ export function PartnerQrCode({
   const [footerY, setFooterY] = useState(template.footerY);
   const [showFooter, setShowFooter] = useState(true);
 
-  // Bloco "APONTE A CÂMERA" arrastável
-  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 45 });
-
-  // Which element is being dragged ("qr" | "footer" | "camera" | null).
-  const draggingRef = useRef<null | "qr" | "footer" | "camera">(null);
+  // Which element is being dragged ("qr" | "footer" | null).
+  const draggingRef = useRef<null | "qr" | "footer">(null);
 
   const previewRef = useRef<HTMLDivElement>(null);
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
