@@ -2,7 +2,7 @@ import React, { useState, lazy, Suspense } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, BarChart3, LinkIcon, Settings, MessageSquare, LayoutGrid, Users, Copy, Download, X, Sparkles, FolderDown, Network, Eye, EyeOff, Megaphone, ClipboardList, Handshake } from "lucide-react";
+import { LogOut, BarChart3, LinkIcon, Settings, MessageSquare, LayoutGrid, Users, Copy, Download, X, Sparkles, FolderDown, Network, Eye, EyeOff, Megaphone, ClipboardList, Handshake, Flame } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { OnboardingGate } from "@/components/admin/OnboardingGate";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
