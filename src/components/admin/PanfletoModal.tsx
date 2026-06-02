@@ -169,7 +169,7 @@ function drawCameraBlock(
   ctx.lineWidth = Math.max(2, line1Size * 0.09);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("APONTE A CÂMERA", cx, topY);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#fff200";
   ctx.fillText("APONTE A CÂMERA", cx, topY);
 
   // Linha 2: DO SEU CELULAR AQUI (branco com contorno preto forte)
@@ -177,7 +177,7 @@ function drawCameraBlock(
   ctx.lineWidth = Math.max(2, line2Size * 0.09);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#fff200";
   ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
   // Seta pra baixo (branca com contorno preto)
@@ -190,7 +190,7 @@ function drawCameraBlock(
   ctx.lineWidth = Math.max(2, arrowH * 0.08);
   ctx.strokeStyle = "#000000";
   ctx.stroke();
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#fff200";
   ctx.fill();
 }
 
@@ -236,7 +236,7 @@ async function renderBanner(
   );
 
   // Faixa LICENCIADO + WHATSAPP no rodapé — menor
-  const stripeH = 70;
+  const stripeH = 48;
   const stripeY = BANNER_H - stripeH;
   ctx.fillStyle = "#0d3b1f";
   ctx.fillRect(0, stripeY, BANNER_W, stripeH);
@@ -256,8 +256,8 @@ async function renderBanner(
   const gap = 30;
   const sidePad = 40;
   const available = BANNER_W - sidePad * 2 - gap;
-  // Auto-shrink: encontra a maior fonte (até 26px) que caiba ambos os textos
-  let fontSize = 26;
+  // Auto-shrink: encontra uma fonte menor para não pesar na impressão
+  let fontSize = 18;
   while (fontSize > 12) {
     ctx.font = `900 ${fontSize}px Montserrat, "Arial Black", sans-serif`;
     const wL = ctx.measureText(leftText).width;
