@@ -39,6 +39,13 @@ export function PartnerDashboard({
 }: Props) {
   const { data: analytics = [], isLoading: analyticsLoading } =
     usePartnerAnalytics();
+  const [openList, setOpenList] = useState(false);
+
+  const unhealthy = partners.filter((p) => {
+    const a = analytics.find((x) => x.partner_id === p.id);
+    const configured = (p.keywords?.length ?? 0) > 0 || !!p.qr_phrase;
+    return !configured || (a?.leads_30d ?? 0) === 0;
+  }).length;
 
   if (isLoading || analyticsLoading) {
     return (
