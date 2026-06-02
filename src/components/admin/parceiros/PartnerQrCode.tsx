@@ -442,7 +442,7 @@ export function PartnerQrCode({
                 width: PREVIEW_W,
                 height: PREVIEW_H,
                 backgroundImage: bgImage ? `url(${bgImage})` : undefined,
-                backgroundSize: "contain",
+                  backgroundSize: "cover",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
               }}
@@ -497,18 +497,18 @@ export function PartnerQrCode({
                   transform: "translate(-50%, -50%)",
                   width: "55%",
                   lineHeight: 1.05,
-                  WebkitTextStroke: "0.5px #000",
+                  WebkitTextStroke: "1px #000",
                   textShadow: "none",
                 }}
               >
-                <span style={{ color: "#22ff44", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
                   APONTE A CÂMERA
                 </span>
                 <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#22ff44" stroke="#000" strokeWidth="0.5" strokeLinejoin="round" />
+                  <polygon points="0,0 14,0 7,12" fill="#fff" stroke="#000" strokeWidth="1" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
