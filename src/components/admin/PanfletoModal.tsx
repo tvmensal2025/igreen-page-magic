@@ -33,7 +33,7 @@ const A4_QR_BOX = { x: 32, y: 855, size: 170 };
 const BANNER_W = 1069;
 const BANNER_H = 1920;
 // Caixa vazia inferior-esquerda já desenhada no banner — só preenchemos com QR.
-const BANNER_QR_BOX = { x: 60, y: 1545, size: 310 };
+const BANNER_QR_BOX = { x: 60, y: 1480, size: 310 };
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
