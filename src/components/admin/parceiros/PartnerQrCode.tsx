@@ -178,7 +178,6 @@ export function PartnerQrCode({
     setQrSize(t.qrSize);
     setFooterY(t.footerY);
     setShowFooter(true);
-    setCameraPos({ xPct: t.qrX, yPct: Math.max(5, t.qrY - 20) });
   }, [open, templateId]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
