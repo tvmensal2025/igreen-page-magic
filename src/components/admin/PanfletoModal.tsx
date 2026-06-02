@@ -146,7 +146,7 @@ function drawCameraBlock(
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
 
-  ctx.fillStyle = "#ffd700";
+  ctx.fillStyle = "#c8ff3e";
   ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
   ctx.fillText("APONTE A CÂMERA", cx, topY);
 
@@ -154,8 +154,8 @@ function drawCameraBlock(
   ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
   ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
-  // Seta pra baixo
-  ctx.fillStyle = "#ffd700";
+  // Seta pra baixo (verde)
+  ctx.fillStyle = "#c8ff3e";
   const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
   ctx.beginPath();
   ctx.moveTo(cx - arrowW / 2, arrowTop);
