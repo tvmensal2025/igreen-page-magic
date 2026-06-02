@@ -20,19 +20,15 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
   const isSynthetic = (deal as any).__synthetic;
   const lastAdvanced = (deal as any).last_step_advanced_at || deal.updated_at || deal.created_at;
   const hoursStuck = lastAdvanced ? (Date.now() - new Date(lastAdvanced).getTime()) / 36e5 : 0;
-  const isIgreenClient = (deal as any).customer_origin === "igreen_sync";
   const leadSource = (deal as any).lead_source;
   const sourceKey = typeof leadSource === "string" ? leadSource : leadSource?.source;
-  const isMetaAds = !isIgreenClient && sourceKey === "meta_ads";
-  const isPartner = !isIgreenClient && sourceKey === "partner";
-  const isWhatsAppDirect = !isIgreenClient && !isMetaAds && !isPartner;
-  const originBadge = isIgreenClient
-    ? { label: "iG", title: "Cliente iGreen (importado)", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" }
-    : isMetaAds
-      ? { label: "Meta", title: "Lead do Meta Ads (Facebook/Instagram)", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" }
-      : isPartner
-        ? { label: "Parc", title: "Lead vindo de parceiro", cls: "bg-violet-500/15 text-violet-400 border-violet-500/30" }
-        : { label: "WPP", title: "Lead WhatsApp direto", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" };
+  const isMetaAds = sourceKey === "meta_ads";
+  const isPartner = sourceKey === "partner";
+  const originBadge = isMetaAds
+    ? { label: "Meta", title: "Lead do Meta Ads (Facebook/Instagram)", cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" }
+    : isPartner
+      ? { label: "Parc", title: "Lead vindo de parceiro", cls: "bg-violet-500/15 text-violet-400 border-violet-500/30" }
+      : { label: "WPP", title: "Lead WhatsApp direto", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" };
   const stepTone = !stepInfo
     ? "bg-muted/40 text-muted-foreground border-border/40"
     : hoursStuck > 72
