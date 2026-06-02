@@ -169,6 +169,11 @@ export default function AdminConversao() {
     return rows.filter(r => {
       if (tempFilter !== "all" && (r.classified_at === "" || r.temperature !== tempFilter)) return false;
       if (originFilter !== "all" && originOf(r.customer) !== originFilter) return false;
+      if (partnerFilter !== "all") {
+        if (partnerFilter === "none") {
+          if (r.customer?.referral_partner_id) return false;
+        } else if (r.customer?.referral_partner_id !== partnerFilter) return false;
+      }
       if (search.trim()) {
         const s = search.toLowerCase();
         if (!(r.customer?.name ?? "").toLowerCase().includes(s) &&
@@ -176,7 +181,15 @@ export default function AdminConversao() {
       }
       return true;
     });
-  }, [rows, tempFilter, originFilter, search]);
+  }, [rows, tempFilter, originFilter, partnerFilter, search]);
+
+  const handlePartnerFilter = (id: string) => {
+    setPartnerFilter(id);
+    const sp = new URLSearchParams(searchParams);
+    if (id === "all") sp.delete("partner"); else sp.set("partner", id);
+    setSearchParams(sp, { replace: true });
+  };
+
 
   const classifyOne = useCallback(async (customerId: string) => {
     setClassifying(customerId);
