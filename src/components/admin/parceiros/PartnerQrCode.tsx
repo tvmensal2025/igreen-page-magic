@@ -106,6 +106,22 @@ const TEMPLATE_DIMS: Record<
 };
 const PREVIEW_W = 320;
 
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const scale = Math.max(w / img.width, h / img.height);
+  const sw = w / scale;
+  const sh = h / scale;
+  const sx = (img.width - sw) / 2;
+  const sy = (img.height - sh) / 2;
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
 
 /**
  * Editable flyer with draggable QR + footer band.
@@ -242,18 +258,13 @@ export function PartnerQrCode({
     ctx.fillStyle = "#0a3d2c";
     ctx.fillRect(0, 0, CW, CH);
 
-    // 2. Arte de fundo (contain — não corta, não distorce).
+    // 2. Arte de fundo (cover — sem barras; igual ao preview/PDF).
     if (bgImage) {
       await new Promise<void>((resolve) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
-          const ratio = Math.min(CW / img.width, CH / img.height);
-          const w = img.width * ratio;
-          const h = img.height * ratio;
-          const dx = (CW - w) / 2;
-          const dy = (CH - h) / 2;
-          ctx.drawImage(img, dx, dy, w, h);
+          drawImageCover(ctx, img, 0, 0, CW, CH);
           resolve();
         };
         img.onerror = () => resolve();
@@ -321,7 +332,7 @@ export function PartnerQrCode({
       if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
     }
 
-    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo (verde).
+    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo (branco com contorno forte).
     {
       const cx = (cameraPos.xPct / 100) * CW;
       const cy = (cameraPos.yPct / 100) * CH;
@@ -339,17 +350,17 @@ export function PartnerQrCode({
       ctx.miterLimit = 2;
 
       ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(1, line1Size * 0.04);
+      ctx.lineWidth = Math.max(2, line1Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("APONTE A CÂMERA", cx, topY);
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#ffffff";
       ctx.fillText("APONTE A CÂMERA", cx, topY);
 
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(1, line2Size * 0.04);
+      ctx.lineWidth = Math.max(2, line2Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#ffffff";
       ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
@@ -358,10 +369,10 @@ export function PartnerQrCode({
       ctx.lineTo(cx + arrowW / 2, arrowTop);
       ctx.lineTo(cx, arrowTop + arrowH);
       ctx.closePath();
-      ctx.lineWidth = Math.max(1, arrowH * 0.03);
+      ctx.lineWidth = Math.max(2, arrowH * 0.08);
       ctx.strokeStyle = "#000000";
       ctx.stroke();
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#ffffff";
       ctx.fill();
     }
 
