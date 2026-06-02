@@ -9,8 +9,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Download, Upload, Trash2, ImageIcon } from "lucide-react";
+import { Download, Upload, Trash2, ImageIcon, FileText } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import jsPDF from "jspdf";
 
 interface PartnerQrCodeProps {
   open: boolean;
