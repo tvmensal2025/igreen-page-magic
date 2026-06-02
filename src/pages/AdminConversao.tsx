@@ -98,13 +98,13 @@ export default function AdminConversao() {
     const { data, error } = await supabase
       .from("customers" as any)
       .select(`
-        id, name, customer_origin, lead_source, bot_paused, last_inbound_at,
+        id, name, phone_whatsapp, customer_origin, lead_source, bot_paused, last_bot_interaction_at,
         lead_insights ( customer_id, temperature, loss_reason, main_doubt, main_objection,
                          summary, next_action, next_msg_draft, next_msg_template_shortcut,
                          conversion_chance, signals, classified_at, needs_reclassify )
       `)
       .eq("consultant_id", userId)
-      .order("last_inbound_at", { ascending: false, nullsFirst: false })
+      .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
       .limit(300);
 
     if (error) {
@@ -127,7 +127,7 @@ export default function AdminConversao() {
         ...base,
         customer: {
           name: c.name,
-          phone: (c as any).phone ?? null,
+          phone: c.phone_whatsapp ?? null,
           customer_origin: c.customer_origin,
           lead_source: c.lead_source,
           bot_paused: c.bot_paused,

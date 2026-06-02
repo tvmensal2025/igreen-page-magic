@@ -14,13 +14,14 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
   const fetchDeals = useCallback(async () => {
     const { data } = await supabase
       .from("crm_deals")
-      .select("*, customers(name, phone_whatsapp, customer_origin, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox)")
+      .select("*, customers(name, phone_whatsapp, customer_origin, lead_source, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox)")
       .eq("consultant_id", consultantId)
       .order("created_at", { ascending: false });
     const enriched: any[] = (data || []).map((d: any) => ({
       ...d,
       customer_name: d.customers?.name || null,
       customer_origin: d.customers?.customer_origin || null,
+      lead_source: d.customers?.lead_source || null,
       conversation_step: d.customers?.conversation_step || null,
       last_step_advanced_at: d.customers?.last_step_advanced_at || null,
       is_test_lead: d.customers?.is_test_lead || false,
