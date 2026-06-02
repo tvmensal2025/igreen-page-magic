@@ -416,9 +416,13 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
     }
 
     const text = gemData.candidates[0]?.content?.parts?.[0]?.text || "";
-    console.log("🔍 OCR Doc - resposta:", text.substring(0, 350));
+    const finishReason = gemData.candidates[0]?.finishReason;
+    console.log("🔍 OCR Doc - resposta:", text.substring(0, 350), "| finishReason:", finishReason, "| len:", text.length);
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return { sucesso: false, erro: "Não extraiu JSON" };
+    if (!match) {
+      console.error("❌ OCR Doc - JSON incompleto (finishReason=" + finishReason + "). Resposta full:", text.substring(0, 1500));
+      return { sucesso: false, erro: `Não extraiu JSON (finish=${finishReason || "?"})` };
+    }
 
     const dados = JSON.parse(match[0]);
     const cpfLimpo = dados.cpf ? dados.cpf.replace(/\D/g, "") : "";
