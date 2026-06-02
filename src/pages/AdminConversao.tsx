@@ -393,6 +393,45 @@ export default function AdminConversao() {
           })}
         </div>
 
+        {/* Filtro por parceiro */}
+        {partners.length > 0 && (
+          <div className="flex flex-wrap gap-2 items-center bg-card/40 border border-border/40 rounded-lg p-2.5">
+            <span className="text-[10px] uppercase text-muted-foreground mr-1 px-1">Parceiro</span>
+            <button
+              onClick={() => handlePartnerFilter("all")}
+              className={`px-2.5 py-1 rounded-md border text-[11px] transition ${
+                partnerFilter === "all" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border/40 text-muted-foreground hover:border-border"
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => handlePartnerFilter("none")}
+              className={`px-2.5 py-1 rounded-md border text-[11px] transition ${
+                partnerFilter === "none" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border/40 text-muted-foreground hover:border-border"
+              }`}
+            >
+              Sem parceiro <span className="opacity-60">({partnerCounts.none})</span>
+            </button>
+            {partners.map(p => {
+              const active = partnerFilter === p.id;
+              const n = partnerCounts.byId.get(p.id) ?? 0;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => handlePartnerFilter(p.id)}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] transition ${
+                    active ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border/40 text-muted-foreground hover:border-border"
+                  }`}
+                >
+                  {p.nome} <span className="opacity-60">({n})</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+
         {/* Filtros origem + busca */}
         <div className="flex flex-wrap gap-2 items-center bg-card/40 border border-border/40 rounded-lg p-2.5">
           <span className="text-[10px] uppercase text-muted-foreground mr-1 px-1">Origem</span>
