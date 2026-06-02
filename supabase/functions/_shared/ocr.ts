@@ -182,9 +182,13 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
     }
 
     const text = gemData.candidates[0]?.content?.parts?.[0]?.text || "";
-    console.log("🔍 OCR Conta - resposta:", text.substring(0, 300));
+    const finishReason = gemData.candidates[0]?.finishReason;
+    console.log("🔍 OCR Conta - resposta:", text.substring(0, 300), "| finishReason:", finishReason, "| len:", text.length);
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return { sucesso: false, erro: "Não extraiu JSON" };
+    if (!match) {
+      console.error("❌ OCR Conta - JSON incompleto (finishReason=" + finishReason + "). Resposta full:", text.substring(0, 1500));
+      return { sucesso: false, erro: `Não extraiu JSON (finish=${finishReason || "?"})` };
+    }
 
     const dados = JSON.parse(match[0]);
     if (dados.cep) { const c = dados.cep.replace(/\D/g, ""); dados.cep = c.length === 8 ? c : ""; }
