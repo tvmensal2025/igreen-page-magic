@@ -161,11 +161,8 @@ export function PartnerQrCode({
   const [footerY, setFooterY] = useState(template.footerY);
   const [showFooter, setShowFooter] = useState(true);
 
-  // Bloco "APONTE A CÂMERA" arrastável
-  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 45 });
-
-  // Which element is being dragged ("qr" | "footer" | "camera" | null).
-  const draggingRef = useRef<null | "qr" | "footer" | "camera">(null);
+  // Which element is being dragged ("qr" | "footer" | null).
+  const draggingRef = useRef<null | "qr" | "footer">(null);
 
   const previewRef = useRef<HTMLDivElement>(null);
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
@@ -181,7 +178,6 @@ export function PartnerQrCode({
     setQrSize(t.qrSize);
     setFooterY(t.footerY);
     setShowFooter(true);
-    setCameraPos({ xPct: t.qrX, yPct: Math.max(5, t.qrY - 20) });
   }, [open, templateId]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,7 +193,7 @@ export function PartnerQrCode({
   };
 
   const updatePosFromClient = useCallback(
-    (clientX: number, clientY: number, what: "qr" | "footer" | "camera") => {
+    (clientX: number, clientY: number, what: "qr" | "footer") => {
       const el = previewRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
@@ -208,17 +204,15 @@ export function PartnerQrCode({
       if (what === "qr") {
         setQrX(cx);
         setQrY(cy);
-      } else if (what === "footer") {
-        setFooterY(cy);
       } else {
-        setCameraPos({ xPct: cx, yPct: cy });
+        setFooterY(cy);
       }
     },
     [],
   );
 
   const handlePointerDown =
-    (what: "qr" | "footer" | "camera") => (e: React.PointerEvent<HTMLDivElement>) => {
+    (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
       e.stopPropagation();
       draggingRef.current = what;
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -330,50 +324,6 @@ export function PartnerQrCode({
       if (footerLeft) ctx.fillText(footerLeft, sidePad, cyText);
       ctx.textAlign = "right";
       if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
-    }
-
-    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo (branco com contorno forte).
-    {
-      const cx = (cameraPos.xPct / 100) * CW;
-      const cy = (cameraPos.yPct / 100) * CH;
-      const line1Size = Math.round(CW * 0.035);
-      const line2Size = line1Size;
-      const lineGap = Math.round(line1Size * 0.25);
-      const arrowH = Math.round(CW * 0.04);
-      const arrowW = Math.round(arrowH * 1.2);
-      const arrowGap = Math.round(line1Size * 0.4);
-      const totalH = line1Size + lineGap + line2Size + arrowGap + arrowH;
-      const topY = cy - totalH / 2;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.lineJoin = "round";
-      ctx.miterLimit = 2;
-
-      ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(2, line1Size * 0.035);
-      ctx.strokeStyle = "#000000";
-      ctx.strokeText("APONTE A CÂMERA", cx, topY);
-      ctx.fillStyle = "#fff200";
-      ctx.fillText("APONTE A CÂMERA", cx, topY);
-
-      ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(2, line2Size * 0.035);
-      ctx.strokeStyle = "#000000";
-      ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#fff200";
-      ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-
-      const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
-      ctx.beginPath();
-      ctx.moveTo(cx - arrowW / 2, arrowTop);
-      ctx.lineTo(cx + arrowW / 2, arrowTop);
-      ctx.lineTo(cx, arrowTop + arrowH);
-      ctx.closePath();
-      ctx.lineWidth = Math.max(2, arrowH * 0.04);
-      ctx.strokeStyle = "#000000";
-      ctx.stroke();
-      ctx.fillStyle = "#fff200";
-      ctx.fill();
     }
 
     return canvas;
@@ -491,35 +441,9 @@ export function PartnerQrCode({
                   <span className="whitespace-nowrap pl-2">{footerRightPreview}</span>
                 </div>
               )}
-
-              {/* Bloco "APONTE A CÂMERA" arrastável */}
-              <div
-                onPointerDown={handlePointerDown("camera")}
-                className="absolute select-none touch-none cursor-move flex flex-col items-center justify-center text-center px-1"
-                style={{
-                  left: `${cameraPos.xPct}%`,
-                  top: `${cameraPos.yPct}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: "55%",
-                  lineHeight: 1.05,
-                  WebkitTextStroke: "0.4px #000",
-                  textShadow: "none",
-                }}
-              >
-                <span style={{ color: "#fff200", fontWeight: 900, fontSize: 11 }}>
-                  APONTE A CÂMERA
-                </span>
-                <span style={{ color: "#fff200", fontWeight: 900, fontSize: 11 }}>
-                  DO SEU CELULAR AQUI
-                </span>
-                <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#fff200" stroke="#000" strokeWidth="0.5" strokeLinejoin="round" />
-                </svg>
-              </div>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px]">
-              Arraste o QR, a faixa ou a chamada "APONTE A CÂMERA". Use os
-              sliders para ajuste fino.
+              Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste fino.
             </p>
           </div>
 

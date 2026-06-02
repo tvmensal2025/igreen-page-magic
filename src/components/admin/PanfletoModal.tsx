@@ -140,59 +140,8 @@ async function renderA4(
   ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, W - 28 * SCALE, stripeMidY);
 }
 
-// Tamanhos do bloco "APONTE A CÂMERA" desenhado no canvas do banner
-const CAMERA_BLOCK = {
-  line1Size: 36,
-  line2Size: 36,
-  lineGap: 10,
-  arrowH: 30,
-  arrowW: 36,
-  arrowGap: 14,
-};
 
-function drawCameraBlock(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-) {
-  const { line1Size, line2Size, lineGap, arrowH, arrowW, arrowGap } = CAMERA_BLOCK;
-  const totalH = line1Size + lineGap + line2Size + arrowGap + arrowH;
-  const topY = cy - totalH / 2;
 
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.lineJoin = "round";
-  ctx.miterLimit = 2;
-
-  // Linha 1: APONTE A CÂMERA (branco com contorno preto forte)
-  ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(2, line1Size * 0.035);
-  ctx.strokeStyle = "#000000";
-  ctx.strokeText("APONTE A CÂMERA", cx, topY);
-  ctx.fillStyle = "#fff200";
-  ctx.fillText("APONTE A CÂMERA", cx, topY);
-
-  // Linha 2: DO SEU CELULAR AQUI (branco com contorno preto forte)
-  ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(2, line2Size * 0.035);
-  ctx.strokeStyle = "#000000";
-  ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-  ctx.fillStyle = "#fff200";
-  ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-
-  // Seta pra baixo (branca com contorno preto)
-  const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
-  ctx.beginPath();
-  ctx.moveTo(cx - arrowW / 2, arrowTop);
-  ctx.lineTo(cx + arrowW / 2, arrowTop);
-  ctx.lineTo(cx, arrowTop + arrowH);
-  ctx.closePath();
-  ctx.lineWidth = Math.max(2, arrowH * 0.04);
-  ctx.strokeStyle = "#000000";
-  ctx.stroke();
-  ctx.fillStyle = "#fff200";
-  ctx.fill();
-}
 
 async function renderBanner(
   canvas: HTMLCanvasElement,
@@ -200,7 +149,6 @@ async function renderBanner(
   nomeConsultor: string,
   telefoneConsultor: string,
   igreenId: string,
-  cameraPos: { xPct: number; yPct: number },
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -228,12 +176,6 @@ async function renderBanner(
   const qrImg = await loadImage(qrDataUrl);
   ctx.drawImage(qrImg, x, y, size, size);
 
-  // Bloco "APONTE A CÂMERA" arrastável (posição em % do canvas)
-  drawCameraBlock(
-    ctx,
-    (cameraPos.xPct / 100) * BANNER_W,
-    (cameraPos.yPct / 100) * BANNER_H,
-  );
 
   // Faixa LICENCIADO + WHATSAPP no rodapé — menor
   const stripeH = 48;
@@ -284,9 +226,6 @@ export function PanfletoModal({
   const [rendering, setRendering] = useState(false);
   const [ready, setReady] = useState(false);
   const [format, setFormat] = useState<Format>("a4");
-  // Posição do bloco "APONTE A CÂMERA" (banner) — % do canvas
-  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 65 });
-  const draggingCamera = useRef(false);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -307,7 +246,7 @@ export function PanfletoModal({
     const p =
       format === "a4"
         ? renderA4(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
-        : renderBanner(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos);
+        : renderBanner(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId);
     p.catch((e) => {
         console.error("[panfleto] render error", e);
         toast({
@@ -317,7 +256,7 @@ export function PanfletoModal({
         });
       })
       .finally(() => setRendering(false));
-  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos, toast]);
+  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, toast]);
 
   const downloadPNG = () => {
     const canvas = canvasRef.current;
