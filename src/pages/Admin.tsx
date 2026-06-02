@@ -176,17 +176,18 @@ const AdminContent = () => {
   const baseUrl = "igreen.institutodossonhos.com.br";
   const slug = form.license || "sua-licenca";
 
-  const tabs = [
-    { id: "dashboard" as const, label: "Dashboard", icon: BarChart3 },
-    { id: "crm" as const, label: "CRM", icon: LayoutGrid },
-    { id: "clientes" as const, label: "Clientes", icon: Users },
-    { id: "captacao" as const, label: "Captação", icon: ClipboardList },
-    { id: "parceiros" as const, label: "Parceiros", icon: Handshake },
-    { id: "rede" as const, label: "Rede", icon: Network },
-    { id: "whatsapp" as const, label: "WhatsApp", icon: MessageSquare },
-    { id: "central-anuncios" as const, label: "Central de Anúncios", icon: Megaphone },
-    { id: "links" as const, label: "Links", icon: LinkIcon },
-    { id: "materiais" as const, label: "Materiais", icon: FolderDown },
+  const tabs: Array<{ id: string; label: string; icon: any; href?: string; external?: boolean }> = [
+    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+    { id: "crm", label: "CRM", icon: LayoutGrid },
+    { id: "conversao", label: "Conversão", icon: Flame, href: "/admin/conversao" },
+    { id: "clientes", label: "Clientes", icon: Users },
+    { id: "captacao", label: "Captação", icon: ClipboardList },
+    { id: "parceiros", label: "Parceiros", icon: Handshake },
+    { id: "rede", label: "Rede", icon: Network },
+    { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
+    { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
+    { id: "links", label: "Links", icon: LinkIcon },
+    { id: "materiais", label: "Materiais", icon: FolderDown, external: true },
   ];
 
 
