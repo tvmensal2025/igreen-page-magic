@@ -337,12 +337,6 @@ export function PanfletoModal({
             </Button>
           </div>
 
-          {format === "banner" && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border rounded-md px-3 py-2">
-              <Lock className="h-3.5 w-3.5" />
-              Layout do banner travado — bate 1:1 com a impressão.
-            </div>
-          )}
 
 
           <div className="bg-muted/30 rounded-xl p-4 border border-border">
