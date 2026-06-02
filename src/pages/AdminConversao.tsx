@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useReferralPartners } from "@/components/admin/parceiros/hooks/useReferralPartners";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,8 @@ interface InsightRow {
     customer_origin: string | null;
     lead_source: any;
     bot_paused: boolean | null;
+    referral_partner_id: string | null;
+    referral_keyword_matched: string | null;
   };
 }
 
@@ -86,6 +89,9 @@ export default function AdminConversao() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<InsightRow | null>(null);
   const cancelBulkRef = useRef(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [partnerFilter, setPartnerFilter] = useState<string>(searchParams.get("partner") || "all");
+  const { partners } = useReferralPartners();
 
   useEffect(() => {
     let alive = true;
@@ -105,6 +111,7 @@ export default function AdminConversao() {
       .from("customers" as any)
       .select(`
         id, name, phone_whatsapp, customer_origin, lead_source, bot_paused, last_bot_interaction_at,
+        referral_partner_id, referral_keyword_matched,
         lead_insights ( customer_id, temperature, loss_reason, main_doubt, main_objection,
                          summary, next_action, next_msg_draft, next_msg_template_shortcut,
                          conversion_chance, signals, classified_at, needs_reclassify )
@@ -138,6 +145,8 @@ export default function AdminConversao() {
           customer_origin: c.customer_origin,
           lead_source: c.lead_source,
           bot_paused: c.bot_paused,
+          referral_partner_id: c.referral_partner_id ?? null,
+          referral_keyword_matched: c.referral_keyword_matched ?? null,
         },
       };
     });
@@ -160,6 +169,11 @@ export default function AdminConversao() {
     return rows.filter(r => {
       if (tempFilter !== "all" && (r.classified_at === "" || r.temperature !== tempFilter)) return false;
       if (originFilter !== "all" && originOf(r.customer) !== originFilter) return false;
+      if (partnerFilter !== "all") {
+        if (partnerFilter === "none") {
+          if (r.customer?.referral_partner_id) return false;
+        } else if (r.customer?.referral_partner_id !== partnerFilter) return false;
+      }
       if (search.trim()) {
         const s = search.toLowerCase();
         if (!(r.customer?.name ?? "").toLowerCase().includes(s) &&
@@ -167,7 +181,15 @@ export default function AdminConversao() {
       }
       return true;
     });
-  }, [rows, tempFilter, originFilter, search]);
+  }, [rows, tempFilter, originFilter, partnerFilter, search]);
+
+  const handlePartnerFilter = (id: string) => {
+    setPartnerFilter(id);
+    const sp = new URLSearchParams(searchParams);
+    if (id === "all") sp.delete("partner"); else sp.set("partner", id);
+    setSearchParams(sp, { replace: true });
+  };
+
 
   const classifyOne = useCallback(async (customerId: string) => {
     setClassifying(customerId);

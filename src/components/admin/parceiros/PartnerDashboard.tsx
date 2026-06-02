@@ -1,13 +1,22 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus, Sparkles, Handshake, AlertTriangle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { PartnerKpiRow } from "./PartnerKpiRow";
 import { PartnerLeadsBarChart } from "./PartnerLeadsBarChart";
 import { PartnerTrendChart } from "./PartnerTrendChart";
 import { PartnerFunnelChart } from "./PartnerFunnelChart";
 import { PartnerOriginDonut } from "./PartnerOriginDonut";
 import { PartnerRankingTable } from "./PartnerRankingTable";
+import { PartnerQuickCard } from "./PartnerQuickCard";
 import { usePartnerAnalytics } from "./hooks/usePartnerAnalytics";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 
@@ -30,6 +39,13 @@ export function PartnerDashboard({
 }: Props) {
   const { data: analytics = [], isLoading: analyticsLoading } =
     usePartnerAnalytics();
+  const [openList, setOpenList] = useState(false);
+
+  const unhealthy = partners.filter((p) => {
+    const a = analytics.find((x) => x.partner_id === p.id);
+    const configured = (p.keywords?.length ?? 0) > 0 || !!p.qr_phrase;
+    return !configured || (a?.leads_30d ?? 0) === 0;
+  }).length;
 
   if (isLoading || analyticsLoading) {
     return (
@@ -69,7 +85,7 @@ export function PartnerDashboard({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Topo — botão Parceiros (abre popup) + Novo */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight">
@@ -79,10 +95,74 @@ export function PartnerDashboard({
             Performance de indicação, conversão e cashback em tempo real
           </p>
         </div>
-        <Button onClick={onNew} className="gap-2 self-start sm:self-auto">
-          <Plus className="h-4 w-4" /> Novo Parceiro
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            onClick={() => setOpenList(true)}
+            className="gap-2 relative"
+          >
+            <Handshake className="h-4 w-4" />
+            Parceiros ({partners.length})
+            {unhealthy > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-[10px] font-semibold text-white flex items-center justify-center">
+                {unhealthy}
+              </span>
+            )}
+          </Button>
+          <Button onClick={onNew} className="gap-2">
+            <Plus className="h-4 w-4" /> Novo Parceiro
+          </Button>
+        </div>
       </div>
+
+      {/* Popup com cards dos parceiros */}
+      <Dialog open={openList} onOpenChange={setOpenList}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Handshake className="h-5 w-5" /> Meus Parceiros
+            </DialogTitle>
+            <DialogDescription>
+              Clique no card para editar. O selo colorido mostra a saúde da atribuição de leads.
+            </DialogDescription>
+          </DialogHeader>
+
+          {unhealthy > 0 && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <div>
+                <strong>{unhealthy}</strong> parceiro(s) precisam de atenção. Os marcados em vermelho não têm keyword nem frase de QR — então o sistema não consegue atribuir nenhum lead a eles.
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
+            {partners.map((p) => (
+              <PartnerQuickCard
+                key={p.id}
+                partner={p}
+                analytics={analytics.find((a) => a.partner_id === p.id)}
+                onEdit={(partner) => {
+                  setOpenList(false);
+                  onEdit(partner);
+                }}
+                onQrCode={(partner) => {
+                  setOpenList(false);
+                  onQrCode(partner);
+                }}
+                onAfterAction={() => setOpenList(false)}
+              />
+            ))}
+          </div>
+
+          <div className="pt-3 border-t border-border/40">
+            <Button onClick={() => { setOpenList(false); onNew(); }} className="w-full gap-2">
+              <Plus className="h-4 w-4" /> Novo Parceiro
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
       {/* KPIs */}
       <PartnerKpiRow analytics={analytics} activeCount={partners.length} />
