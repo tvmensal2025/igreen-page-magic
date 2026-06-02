@@ -298,7 +298,7 @@ export function PartnerQrCode({
 
     // 4. Faixa de rodapé.
     if (showFooter) {
-      const bandHeight = CH * 0.045;
+      const bandHeight = CH * 0.03;
       const bandY = (footerY / 100) * CH - bandHeight / 2;
       ctx.fillStyle = "#0a3d2c";
       ctx.fillRect(0, bandY, CW, bandHeight);
@@ -310,14 +310,14 @@ export function PartnerQrCode({
         ? `WHATSAPP: ${formatPhoneDisplay(consultantPhone)}`
         : "";
 
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.textBaseline = "middle";
       const cyText = bandY + bandHeight / 2;
       const sidePad = CW * 0.025;
       const gap = CW * 0.02;
       const available = CW - sidePad * 2 - gap;
       // Auto-shrink pra caber nome+id+telefone sem cortar
-      let fSize = Math.round(bandHeight * 0.42);
+      let fSize = Math.round(bandHeight * 0.36);
       while (fSize > 8) {
         ctx.font = `700 ${fSize}px sans-serif`;
         const wL = footerLeft ? ctx.measureText(footerLeft).width : 0;
@@ -353,14 +353,14 @@ export function PartnerQrCode({
       ctx.lineWidth = Math.max(2, line1Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("APONTE A CÂMERA", cx, topY);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.fillText("APONTE A CÂMERA", cx, topY);
 
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
       ctx.lineWidth = Math.max(2, line2Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
@@ -372,7 +372,7 @@ export function PartnerQrCode({
       ctx.lineWidth = Math.max(2, arrowH * 0.08);
       ctx.strokeStyle = "#000000";
       ctx.stroke();
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.fill();
     }
 
