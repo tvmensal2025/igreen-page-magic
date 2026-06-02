@@ -1,43 +1,47 @@
-## Problema
+## Escopo
 
-1. **iGreen importados aparecendo como lead** — A regra do projeto já diz que `customer_origin = 'igreen_sync'` **nunca** entra no funil de leads. Hoje o `KanbanDealCard` ainda mostra um badge "iG", o que sugere visualmente que eles podem virar lead. A `Central de Conversão` (`/admin/conversao`) também carrega esses clientes na lista e oferece "Cliente iGreen" como filtro de origem — isso é errado: a Central é para **leads que não converteram**, não para clientes já fechados.
-2. **Central de Conversão "sumida"** — A rota `/admin/conversao` existe, mas **não há nenhum link/menu** no painel Admin (`src/pages/Admin.tsx` → array `tabs`). Por isso você não acha. Hoje só é alcançada por URL direta.
+Apagar do banco TODOS os leads marcados como teste/warmup/simulador e seus dados relacionados, em **todos os consultores**. Encontrei pelo menos:
 
-## O que vou fazer
+- `is_test_lead = true` → **25 leads**
+- `is_sandbox = true` → **8 leads**
+- nome contém `Test`, `Warmup`, `Simulad`, `Simulator`, `Simular`, `JornadaTest`, `TraceTest`, `FinalTest`, `Lead Real Simulado`, `TestVariantA/B`, etc. → **34 leads**
+- telefone com padrão fake `550000…`, `5555…`, `1111…` → **43 leads**
 
-### 1. Excluir `igreen_sync` da Central de Conversão
+Total único estimado: ~50 customers (há sobreposição entre os filtros). Exemplos confirmados na consulta: `Lead Teste E E`, `TestVariantA #3`, `Maria Silva (sandbox)`, `Test_D_Mapping`, `FinalTest`, `Test1..Test15`, `Simular`, `JornadaTest`, `Lead Real Simulado`.
 
-`src/pages/AdminConversao.tsx`
+## O que vou apagar (migration única, `ON DELETE CASCADE` cuidando do resto)
 
-- No `fetchRows`, adicionar `.or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")` para nunca trazer cliente iGreen importado.
-- Remover `"igreen_sync"` do tipo `OriginFilter`, do array de chips de filtro e do `ORIGIN_LABEL`.
-- Função `originOf` deixa de tratar igreen.
+Definir um `WITH targets AS (...)` que seleciona os `customer_id` que casam com qualquer um dos critérios abaixo, e então `DELETE` em cascata:
 
-### 2. Tirar o badge "iG" do Kanban e blindar o hook
+```sql
+WITH targets AS (
+  SELECT id FROM customers
+  WHERE is_test_lead = true
+     OR is_sandbox   = true
+     OR name ILIKE '%test%'
+     OR name ILIKE '%warmup%'
+     OR name ILIKE '%simulad%'
+     OR name ILIKE '%simulator%'
+     OR name ILIKE '%simular%'
+     OR phone_whatsapp LIKE '550000%'
+     OR phone_whatsapp LIKE '5555%'
+     OR phone_whatsapp LIKE '1111%'
+     OR phone_whatsapp LIKE '0000%'
+)
+DELETE FROM crm_deals      WHERE customer_id IN (SELECT id FROM targets);
+DELETE FROM lead_insights  WHERE customer_id IN (SELECT id FROM targets);
+DELETE FROM whatsapp_messages WHERE customer_id IN (SELECT id FROM targets);   -- se existir
+DELETE FROM customers      WHERE id IN (SELECT id FROM targets);
+```
 
-`src/components/whatsapp/KanbanDealCard.tsx`
+Antes de submeter a migration final, vou listar exatamente quais tabelas referenciam `customers(id)` para incluir todas no DELETE e não deixar órfão.
 
-- Remover a variante `isIgreenClient` do `originBadge` (só sobram **Meta / Parc / WPP**). O ícone `Building2` no nome também sai.
+## Proteções
 
-`src/hooks/useKanbanDeals.ts`
+- A query **NÃO** toca em `customer_origin = 'igreen_sync'` a menos que ele também esteja marcado como teste (`is_test_lead`/`is_sandbox`). Clientes iGreen reais ficam intactos.
+- A query **NÃO** apaga por palavra-chave em telefone real (`+55 11 9...`); só padrões claramente fake (`550000…`, `5555…`, `1111…`, `0000…`).
+- Nada é apagado em `consultants`, `flow_definitions`, `message_templates`, `network_members` etc.
 
-- Na query principal de `crm_deals`, filtrar via `.in("customers.customer_origin", ["whatsapp_lead","manual"])` + or-null, garantindo que nenhum deal de `igreen_sync` apareça mesmo se o trigger falhar.
+## Confirmação que peço
 
-### 3. Adicionar "Conversão" como aba visível no Admin
-
-`src/pages/Admin.tsx`
-
-- No array `tabs` (linha ~179), adicionar `{ id: "conversao", label: "Conversão", icon: Flame }` **logo após "CRM"**.
-- No `setActiveTab`, ao clicar em "conversao", em vez de renderizar inline, fazer `navigate("/admin/conversao")` (é página própria). Mais simples: tornar o item da nav um `<Link to="/admin/conversao">` em vez de um botão de tab.
-- Resultado: aparece na barra superior do Admin entre **CRM** e **Clientes**, com badge "Novo" opcional.
-
-### 4. (Opcional — confirmar com você) limpar deals órfãos
-
-Se existirem `crm_deals` apontando para customer `igreen_sync` (criados antes do trigger), rodo uma migration para deletá-los. Posso só listar primeiro com SELECT e te mostrar a contagem antes de apagar.
-
-## Fora de escopo
-
-- Não mexo no fluxo de sync iGreen nem na aba "Clientes iGreen" — eles continuam intactos lá.
-- Não mexo na classificação por IA, templates ou edge functions.
-
-Confirma que posso seguir? E quer que eu inclua o passo 4 (limpeza de deals órfãos)?SIM
+**Confirma que posso executar?** Vou rodar primeiro um SELECT mostrando a contagem exata por tabela afetada, depois a migration de DELETE.
