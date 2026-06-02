@@ -597,8 +597,10 @@ export default function AdminConversao() {
                 </SheetTitle>
                 <SheetDescription>
                   {ORIGIN_LABEL[originOf(selected.customer)]}
+                  {selected.customer?.referral_partner_id && ` · via ${partnerById.get(selected.customer.referral_partner_id)?.nome ?? "parceiro removido"}`}
                   {selected.conversion_chance != null && ` · ${selected.conversion_chance}% de chance`}
                 </SheetDescription>
+
               </SheetHeader>
 
               <div className="mt-5 space-y-4 text-sm">
