@@ -498,6 +498,7 @@ export function PartnerQrCode({
                   size="sm"
                   onClick={() => fileInputRef.current?.click()}
                   className="gap-2"
+                  disabled={locked}
                 >
                   <Upload className="h-4 w-4" /> Enviar imagem
                 </Button>
@@ -506,11 +507,11 @@ export function PartnerQrCode({
                   size="sm"
                   onClick={() => setBgImage(template.src)}
                   className="gap-2"
-                  disabled={bgImage === template.src}
+                  disabled={locked || bgImage === template.src}
                 >
                   <ImageIcon className="h-4 w-4" /> Usar template padrão
                 </Button>
-                {bgImage && bgImage !== template.src && (
+                {bgImage && bgImage !== template.src && !locked && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -536,6 +537,7 @@ export function PartnerQrCode({
                 min={0}
                 max={100}
                 step={1}
+                disabled={locked}
               />
             </div>
 
@@ -552,6 +554,7 @@ export function PartnerQrCode({
                 min={0}
                 max={100}
                 step={1}
+                disabled={locked}
               />
             </div>
 
@@ -568,6 +571,7 @@ export function PartnerQrCode({
                 min={12}
                 max={45}
                 step={1}
+                disabled={locked}
               />
             </div>
 
@@ -584,14 +588,15 @@ export function PartnerQrCode({
                 min={0}
                 max={100}
                 step={1}
-                disabled={!showFooter}
+                disabled={locked || !showFooter}
               />
-              <label className="flex items-center gap-2 text-xs text-muted-foreground mt-2 cursor-pointer">
+              <label className={`flex items-center gap-2 text-xs text-muted-foreground mt-2 ${locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
                   checked={showFooter}
                   onChange={(e) => setShowFooter(e.target.checked)}
                   className="h-3.5 w-3.5 rounded border-input"
+                  disabled={locked}
                 />
                 Mostrar faixa com nome / ID / WhatsApp
               </label>
