@@ -304,9 +304,9 @@ export function PartnerQrCode({
     await new Promise<void>((resolve) => {
       const img = new Image();
       img.onload = () => {
-        const qrPx = (qrSize / 100) * CW;
-        const cx = (qrX / 100) * CW;
-        const cy = (qrY / 100) * CH;
+        const qrPx = (effQrSize / 100) * CW;
+        const cx = (effQrX / 100) * CW;
+        const cy = (effQrY / 100) * CH;
         const dx = cx - qrPx / 2;
         const dy = cy - qrPx / 2;
         const pad = qrPx * 0.06;
@@ -321,9 +321,9 @@ export function PartnerQrCode({
     });
 
     // 4. Faixa de rodapé.
-    if (showFooter) {
+    if (effShowFooter) {
       const bandHeight = CH * 0.03;
-      const bandY = (footerY / 100) * CH - bandHeight / 2;
+      const bandY = (effFooterY / 100) * CH - bandHeight / 2;
       ctx.fillStyle = "#0a3d2c";
       ctx.fillRect(0, bandY, CW, bandHeight);
 
