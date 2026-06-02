@@ -24,10 +24,42 @@ interface PartnerQrCodeProps {
 }
 
 /**
- * Default flyer template ("Mutirão de Desconto na Fatura de Energia").
- * 853x1280 retrato. Lives in /public so we can fetch with relative URL.
+ * Flyer templates ("Mutirão de Desconto na Fatura de Energia").
+ * Ambos vivem em /public e são servidos via URL relativa.
+ *  - a4:     853x1280  (sulfite A4)
+ *  - banner: 1069x1920 (banner 504×940mm)
  */
-const DEFAULT_TEMPLATE = "/images/mutirao-lei-14300-base.jpg";
+type TemplateId = "a4" | "banner";
+
+const TEMPLATES: Record<
+  TemplateId,
+  {
+    label: string;
+    src: string;
+    qrX: number;
+    qrY: number;
+    qrSize: number;
+    footerY: number;
+  }
+> = {
+  a4: {
+    label: "Sulfite A4",
+    src: "/images/mutirao-lei-14300-base.jpg",
+    qrX: 18,
+    qrY: 60,
+    qrSize: 22,
+    footerY: 82,
+  },
+  banner: {
+    label: "Banner 504×940mm",
+    src: "/images/banner-lei-14300-base.jpg",
+    qrX: 21,
+    qrY: 88,
+    qrSize: 22,
+    footerY: 97,
+  },
+};
+const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
 
 /**
  * Build the wa.me URL with the partner's keyword/phrase pre-filled.
