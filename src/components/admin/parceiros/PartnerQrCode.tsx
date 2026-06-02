@@ -439,8 +439,8 @@ export function PartnerQrCode({
                 onPointerDown={handlePointerDown("qr")}
                 className={`absolute select-none touch-none bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10 ${locked ? "cursor-not-allowed" : "cursor-move"}`}
                 style={{
-                  left: `calc(${qrX}% - ${qrCardPxPreview / 2}px)`,
-                  top: `calc(${qrY}% - ${qrCardPxPreview / 2}px)`,
+                  left: `calc(${effQrX}% - ${qrCardPxPreview / 2}px)`,
+                  top: `calc(${effQrY}% - ${qrCardPxPreview / 2}px)`,
                   width: qrCardPxPreview,
                   height: qrCardPxPreview,
                   padding: qrPadPreview,
