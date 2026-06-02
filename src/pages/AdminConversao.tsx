@@ -92,6 +92,33 @@ export default function AdminConversao() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [partnerFilter, setPartnerFilter] = useState<string>(searchParams.get("partner") || "all");
   const { partners } = useReferralPartners();
+  const partnerById = useMemo(() => {
+    const m = new Map<string, typeof partners[number]>();
+    for (const p of partners) m.set(p.id, p);
+    return m;
+  }, [partners]);
+
+  // se o partner da URL não existe mais, volta para "all"
+  useEffect(() => {
+    if (partnerFilter !== "all" && partnerFilter !== "none" && partners.length > 0 && !partnerById.has(partnerFilter)) {
+      setPartnerFilter("all");
+      const sp = new URLSearchParams(searchParams);
+      sp.delete("partner");
+      setSearchParams(sp, { replace: true });
+    }
+  }, [partnerFilter, partners.length, partnerById, searchParams, setSearchParams]);
+
+  const partnerCounts = useMemo(() => {
+    const c = new Map<string, number>();
+    let none = 0;
+    for (const r of rows) {
+      const id = r.customer?.referral_partner_id;
+      if (id) c.set(id, (c.get(id) ?? 0) + 1);
+      else none += 1;
+    }
+    return { byId: c, none };
+  }, [rows]);
+
 
   useEffect(() => {
     let alive = true;
