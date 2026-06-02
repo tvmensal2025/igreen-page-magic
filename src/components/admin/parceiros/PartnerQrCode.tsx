@@ -475,14 +475,14 @@ export function PartnerQrCode({
                   textShadow: "0 1px 2px rgba(0,0,0,0.6)",
                 }}
               >
-                <span style={{ color: "#ffd700", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#c8ff3e", fontWeight: 900, fontSize: 11 }}>
                   APONTE A CÂMERA
                 </span>
                 <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#ffd700" />
+                  <polygon points="0,0 14,0 7,12" fill="#c8ff3e" />
                 </svg>
               </div>
             </div>
