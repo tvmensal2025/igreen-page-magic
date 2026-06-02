@@ -98,6 +98,15 @@ export function PartnerForm({ open, partner, onClose, onSave }: PartnerFormProps
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {isEdit && keywords.length === 0 && !qrPhrase.trim() && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <div>
+                Este parceiro <strong>não consegue atribuir leads</strong> — sem palavra-chave e sem frase de QR. Adicione pelo menos uma keyword abaixo para que o sistema reconheça quando um lead mencionar este parceiro no WhatsApp.
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="partner-nome">Nome *</Label>
             <Input
