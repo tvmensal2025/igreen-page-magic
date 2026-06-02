@@ -108,12 +108,14 @@ async function classifyOne(sb: any, customerId: string) {
     .maybeSingle();
   if (!customer) return { customer_id: customerId, skipped: "not_found" };
 
-  const { data: msgs } = await sb
+  const { data: msgs, error: msgsErr } = await sb
     .from("conversations")
-    .select("message_direction, message_text, created_at, media_type")
+    .select("message_direction, message_text, created_at, message_type")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
     .limit(30);
+
+  if (msgsErr) return { customer_id: customerId, error: `select_msgs: ${msgsErr.message}` };
 
   const recent = (msgs ?? []).reverse();
   if (recent.length === 0) return { customer_id: customerId, skipped: "no_messages" };
@@ -122,7 +124,7 @@ async function classifyOne(sb: any, customerId: string) {
     .map((m: any) => {
       const who = m.message_direction === "outbound" ? "NÓS" : "LEAD";
       const ts = new Date(m.created_at).toLocaleString("pt-BR");
-      const body = m.media_type && m.media_type !== "text" ? `[${m.media_type}] ${m.message_text ?? ""}` : (m.message_text ?? "");
+      const body = m.message_type && m.message_type !== "text" ? `[${m.message_type}] ${m.message_text ?? ""}` : (m.message_text ?? "");
       return `[${ts}] ${who}: ${body.slice(0, 400)}`;
     })
     .join("\n");
