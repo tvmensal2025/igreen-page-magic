@@ -1,26 +1,32 @@
 ## Objetivo
-Trocar a imagem de fundo padrão do gerador de QR Code de parceiros pela nova arte enviada (família comemorando + fatura iGreen com "Economia na Fatura de Energia – Lei Federal 14.300"), aplicando-a automaticamente para todos os parceiros, novos e existentes.
+Garantir que o fluxo público variante D (Fluxo Whapi - botões) funcione 100% no Evolution, onde não há botões interativos do WhatsApp Business. Hoje as transições só batem por palavra-chave; quando o lead digita `1`, `2` ou `3` (resposta natural sem botão), nenhuma transição é acionada e ele cai no fallback.
 
-## O que muda
+## Solução
+Migração SQL idempotente que percorre todos os steps do fluxo público variante D (super-admin, `is_public=true`, `variant='D'`) e injeta variações numéricas nos `trigger_phrases` de cada transição, na ordem em que aparecem (1ª transição → "1", 2ª → "2", 3ª → "3").
 
-**1. Substituir o arquivo do template padrão**
-- O componente `src/components/admin/parceiros/PartnerQrCode.tsx` já aponta para um único caminho fixo:
-  ```ts
-  const DEFAULT_TEMPLATE = "/images/mutirao-lei-14300-base.jpg";
-  ```
-- Vou sobrescrever esse arquivo (`public/images/mutirao-lei-14300-base.jpg`) com a nova imagem enviada, convertendo o PNG para JPG (mesma dimensão/proporção da arte, ~1024x1536) para manter o nome e o tipo já usados em todo o app.
-- Como o caminho do arquivo continua o mesmo, **todos os parceiros** (atuais e futuros) passam a ver a nova arte automaticamente ao abrir o modal "QR Code — {parceiro}", sem precisar mexer em banco nem em estado salvo.
+Variações adicionadas por posição (mantendo as palavras-chave existentes):
+- Posição 1: `"1"`, `"1)"`, `"1."`, `"um"`, `"primeira"`, `"primeiro"`
+- Posição 2: `"2"`, `"2)"`, `"2."`, `"dois"`, `"segunda"`, `"segundo"`
+- Posição 3: `"3"`, `"3)"`, `"3."`, `"três"`, `"tres"`, `"terceira"`, `"terceiro"`
 
-**2. Nada mais muda**
-- O usuário continua podendo enviar uma imagem própria pelo botão "Enviar imagem" e voltar para o padrão com "Usar padrão".
-- Posição/tamanho do QR, faixa do rodapé e exportação PNG continuam funcionando igual — só o pixel de fundo muda.
+## Regras
+1. Aplica somente ao fluxo público variante D do super-admin (não toca fluxos próprios de consultores nem outras variantes).
+2. Idempotente: se o número já estiver em `trigger_phrases`, não duplica (usa `array(select distinct ...)`).
+3. Preserva todas as palavras-chave atuais (cashback, energia, indicação etc.) — só adiciona.
+4. Só atua em steps com `transitions` não-vazias; não cria transição onde não existe.
+5. Não altera o fallback (4ª+ transição ignorada — se um step tem 4+ saídas, só as 3 primeiras ganham número, padrão WhatsApp).
+
+## Validação pós-migração
+- Query de verificação contando steps atualizados e mostrando 3 exemplos de transitions com os novos `trigger_phrases`.
+- Confirmação de que `runConversationalFlow` (motor já em produção) faz match exato e normalizado (lower/trim) — não precisa mudar código.
 
 ## Detalhes técnicos
-- Arquivo trocado: `public/images/mutirao-lei-14300-base.jpg` (mesma chave usada por `DEFAULT_TEMPLATE` em `PartnerQrCode.tsx:30` e desenhada no canvas de export em `PartnerQrCode.tsx:192`).
-- Conversão: `convert /mnt/user-uploads/file_00000000b834720e80c1a917ac808d31.png -quality 88 public/images/mutirao-lei-14300-base.jpg` via `nix run nixpkgs#imagemagick`.
-- Como o nome do arquivo é o mesmo, navegadores que já têm cache da arte antiga podem mostrar a versão antiga por alguns minutos (hard refresh resolve). Se quiser forçar atualização imediata para todo mundo, posso renomear o arquivo (ex.: `mutirao-lei-14300-base-v2.jpg`) e atualizar a constante — me avise se preferir essa variação.
+- Tabela: `bot_flow_steps` (coluna `transitions jsonb`).
+- Filtro de fluxo: `flow_id IN (select id from bot_flows where is_public=true and variant='D')`.
+- Update com `jsonb_set` em loop por índice de transição usando função PL/pgSQL temporária (ou CTE com `jsonb_agg`).
+- Nenhum schema novo; nenhum código TS alterado; nenhum redeploy de edge function necessário.
 
-## Validação
-1. Abrir `/admin` → Parceiros → clicar em qualquer parceiro → modal "QR Code" abre já com a nova arte de fundo.
-2. Mover o QR e a faixa, depois clicar em "Baixar PNG" — o PNG exportado precisa conter a nova arte.
-3. Clicar em "Enviar imagem" para subir uma imagem própria → "Usar padrão" deve voltar para a nova arte.
+## Fora de escopo
+- Não altera fluxos privados de outros consultores (eles herdam o público).
+- Não altera variantes A/B/C.
+- Não mexe no `evolution-webhook` nem no `whapi-webhook`.
