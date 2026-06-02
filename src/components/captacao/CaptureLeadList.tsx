@@ -35,7 +35,7 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
       .select(cols)
       .eq("consultant_id", consultantId)
       .eq("capture_mode", "manual")
-      .order("capture_started_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
       .limit(100);
     const rows: LeadRow[] = (data || []).map((c: any) => ({
       id: c.id,
