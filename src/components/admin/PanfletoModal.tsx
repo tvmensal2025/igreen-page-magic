@@ -33,7 +33,7 @@ const A4_QR_BOX = { x: 32, y: 855, size: 170 };
 const BANNER_W = 1069;
 const BANNER_H = 1920;
 // Caixa vazia inferior-esquerda já desenhada no banner — só preenchemos com QR.
-const BANNER_QR_BOX = { x: 60, y: 1545, size: 310 };
+const BANNER_QR_BOX = { x: 60, y: 1480, size: 310 };
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -141,12 +141,13 @@ async function renderBanner(
 
   // QR dentro da caixa vazia bordada inferior-esquerda
   const { x, y, size } = BANNER_QR_BOX;
-  // fundo branco com borda dourada sutil
+  // moldura branca + borda dourada espessa
+  const pad = 12;
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(x - 6, y - 6, size + 12, size + 12);
+  ctx.fillRect(x - pad, y - pad, size + pad * 2, size + pad * 2);
   ctx.strokeStyle = "#d4a017";
-  ctx.lineWidth = 4;
-  ctx.strokeRect(x - 6, y - 6, size + 12, size + 12);
+  ctx.lineWidth = 6;
+  ctx.strokeRect(x - pad, y - pad, size + pad * 2, size + pad * 2);
 
   const qrDataUrl = await QRCode.toDataURL(redirectUrl, {
     errorCorrectionLevel: "H",
@@ -157,21 +158,46 @@ async function renderBanner(
   const qrImg = await loadImage(qrDataUrl);
   ctx.drawImage(qrImg, x, y, size, size);
 
-  // Rótulo "APONTE A CÂMERA" acima do QR
-  ctx.fillStyle = "#c8ff3e";
-  ctx.font = `900 28px Montserrat, "Arial Black", sans-serif`;
+  // Bloco de chamada à direita do QR
+  const textX = x + size + 50;
+  const qrCenterY = y + size / 2;
   ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText("APONTE A CÂMERA", x - 6, y - 24);
+  ctx.textBaseline = "middle";
 
-  // Faixa LICENCIADO + WHATSAPP no rodapé absoluto
-  const stripeH = 70;
+  // Linha 1: APONTE A CÂMERA (amarelo ouro)
+  ctx.fillStyle = "#ffd700";
+  ctx.font = `900 56px Montserrat, "Arial Black", sans-serif`;
+  ctx.fillText("APONTE A CÂMERA", textX, qrCenterY - 60);
+
+  // Linha 2: DO SEU CELULAR AQUI (branco)
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `900 56px Montserrat, "Arial Black", sans-serif`;
+  ctx.fillText("DO SEU CELULAR AQUI", textX, qrCenterY + 4);
+
+  // Linha 3: subtítulo verde-limão
+  ctx.fillStyle = "#c8ff3e";
+  ctx.font = `700 30px Montserrat, "Arial Black", sans-serif`;
+  ctx.fillText("e fale comigo agora no WhatsApp", textX, qrCenterY + 68);
+
+  // Seta dourada apontando do texto para o QR
+  ctx.fillStyle = "#d4a017";
+  ctx.beginPath();
+  const arrowX = textX - 12;
+  const arrowY = qrCenterY;
+  ctx.moveTo(arrowX, arrowY - 22);
+  ctx.lineTo(arrowX - 28, arrowY);
+  ctx.lineTo(arrowX, arrowY + 22);
+  ctx.closePath();
+  ctx.fill();
+
+  // Faixa LICENCIADO + WHATSAPP no rodapé absoluto — proporcional ao banner
+  const stripeH = 140;
   const stripeY = BANNER_H - stripeH;
   ctx.fillStyle = "#0d3b1f";
   ctx.fillRect(0, stripeY, BANNER_W, stripeH);
   ctx.fillStyle = "#d4a017";
-  ctx.fillRect(0, stripeY, BANNER_W, 3);
-  ctx.fillRect(0, stripeY + stripeH - 3, BANNER_W, 3);
+  ctx.fillRect(0, stripeY, BANNER_W, 6);
+  ctx.fillRect(0, stripeY + stripeH - 6, BANNER_W, 6);
 
   const nomeUpper = (nomeConsultor || "CONSULTOR IGREEN").toUpperCase();
   const idLabel = igreenId ? ` • ID ${igreenId}` : "";
@@ -180,11 +206,11 @@ async function renderBanner(
   ctx.textBaseline = "middle";
   const midY = stripeY + stripeH / 2;
   ctx.fillStyle = "#ffd700";
-  ctx.font = `900 22px Montserrat, "Arial Black", sans-serif`;
+  ctx.font = `900 44px Montserrat, "Arial Black", sans-serif`;
   ctx.textAlign = "left";
-  ctx.fillText(`LICENCIADO: ${nomeUpper}${idLabel}`, 32, midY);
+  ctx.fillText(`LICENCIADO: ${nomeUpper}${idLabel}`, 60, midY);
   ctx.textAlign = "right";
-  ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, BANNER_W - 32, midY);
+  ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, BANNER_W - 60, midY);
 }
 
 export function PanfletoModal({
