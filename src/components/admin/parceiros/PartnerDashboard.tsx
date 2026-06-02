@@ -1,13 +1,22 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus, Sparkles, Handshake, AlertTriangle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { PartnerKpiRow } from "./PartnerKpiRow";
 import { PartnerLeadsBarChart } from "./PartnerLeadsBarChart";
 import { PartnerTrendChart } from "./PartnerTrendChart";
 import { PartnerFunnelChart } from "./PartnerFunnelChart";
 import { PartnerOriginDonut } from "./PartnerOriginDonut";
 import { PartnerRankingTable } from "./PartnerRankingTable";
+import { PartnerQuickCard } from "./PartnerQuickCard";
 import { usePartnerAnalytics } from "./hooks/usePartnerAnalytics";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 
