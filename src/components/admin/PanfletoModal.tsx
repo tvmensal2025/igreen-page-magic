@@ -241,23 +241,32 @@ export function PanfletoModal({
   const downloadPDF = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    let pdf: jsPDF;
-    let wmm: number, hmm: number;
-    if (format === "a4") {
-      // Mantém proporção 148x222 (próximo de A5; sulfite A4 = 210x297 — gera centralizado pro usuário recortar)
-      wmm = 148; hmm = 222;
-      pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
-    } else {
-      // Banner 504mm x 940mm
-      wmm = 504; hmm = 940;
-      pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
-    }
+    // Tamanho físico real do PDF
+    const wmm = format === "a4" ? 210 : 504;
+    const hmm = format === "a4" ? 297 : 940;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
+
+    // Fundo verde escuro pra letterbox (caso a proporção da arte não bata 100%)
+    const bg = format === "a4" ? "#0d3b1f" : "#0a1f10";
+    pdf.setFillColor(bg);
+    pdf.rect(0, 0, wmm, hmm, "F");
+
+    // Encaixa a arte dentro da página mantendo proporção (contain, sem cortar/esticar)
+    const cw = canvas.width;
+    const ch = canvas.height;
+    const scale = Math.min(wmm / cw, hmm / ch);
+    const drawW = cw * scale;
+    const drawH = ch * scale;
+    const dx = (wmm - drawW) / 2;
+    const dy = (hmm - drawH) / 2;
+
     const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    pdf.addImage(imgData, "JPEG", 0, 0, wmm, hmm);
-    const name = format === "a4" ? "panfleto-a4" : "banner-504x940";
+    pdf.addImage(imgData, "JPEG", dx, dy, drawW, drawH);
+    const name = format === "a4" ? "panfleto-a4-210x297" : "banner-504x940";
     pdf.save(`${name}-igreen-${licenca}.pdf`);
     toast({ title: "✅ PDF baixado!" });
   };
+
 
   const copyLink = () => {
     navigator.clipboard.writeText(redirectUrl);
