@@ -92,6 +92,33 @@ export default function AdminConversao() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [partnerFilter, setPartnerFilter] = useState<string>(searchParams.get("partner") || "all");
   const { partners } = useReferralPartners();
+  const partnerById = useMemo(() => {
+    const m = new Map<string, typeof partners[number]>();
+    for (const p of partners) m.set(p.id, p);
+    return m;
+  }, [partners]);
+
+  // se o partner da URL não existe mais, volta para "all"
+  useEffect(() => {
+    if (partnerFilter !== "all" && partnerFilter !== "none" && partners.length > 0 && !partnerById.has(partnerFilter)) {
+      setPartnerFilter("all");
+      const sp = new URLSearchParams(searchParams);
+      sp.delete("partner");
+      setSearchParams(sp, { replace: true });
+    }
+  }, [partnerFilter, partners.length, partnerById, searchParams, setSearchParams]);
+
+  const partnerCounts = useMemo(() => {
+    const c = new Map<string, number>();
+    let none = 0;
+    for (const r of rows) {
+      const id = r.customer?.referral_partner_id;
+      if (id) c.set(id, (c.get(id) ?? 0) + 1);
+      else none += 1;
+    }
+    return { byId: c, none };
+  }, [rows]);
+
 
   useEffect(() => {
     let alive = true;
@@ -366,6 +393,45 @@ export default function AdminConversao() {
           })}
         </div>
 
+        {/* Filtro por parceiro */}
+        {partners.length > 0 && (
+          <div className="flex flex-wrap gap-2 items-center bg-card/40 border border-border/40 rounded-lg p-2.5">
+            <span className="text-[10px] uppercase text-muted-foreground mr-1 px-1">Parceiro</span>
+            <button
+              onClick={() => handlePartnerFilter("all")}
+              className={`px-2.5 py-1 rounded-md border text-[11px] transition ${
+                partnerFilter === "all" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border/40 text-muted-foreground hover:border-border"
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => handlePartnerFilter("none")}
+              className={`px-2.5 py-1 rounded-md border text-[11px] transition ${
+                partnerFilter === "none" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border/40 text-muted-foreground hover:border-border"
+              }`}
+            >
+              Sem parceiro <span className="opacity-60">({partnerCounts.none})</span>
+            </button>
+            {partners.map(p => {
+              const active = partnerFilter === p.id;
+              const n = partnerCounts.byId.get(p.id) ?? 0;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => handlePartnerFilter(p.id)}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] transition ${
+                    active ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border/40 text-muted-foreground hover:border-border"
+                  }`}
+                >
+                  {p.nome} <span className="opacity-60">({n})</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+
         {/* Filtros origem + busca */}
         <div className="flex flex-wrap gap-2 items-center bg-card/40 border border-border/40 rounded-lg p-2.5">
           <span className="text-[10px] uppercase text-muted-foreground mr-1 px-1">Origem</span>
@@ -450,10 +516,29 @@ export default function AdminConversao() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground">
-                          {ORIGIN_LABEL[origin]}
-                        </span>
+                        {r.customer?.referral_partner_id ? (
+                          (() => {
+                            const p = partnerById.get(r.customer.referral_partner_id);
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded border w-fit ${p ? "border-primary/30 bg-primary/10 text-primary" : "border-border/40 bg-muted/40 text-muted-foreground"}`}>
+                                  {p ? p.nome : "Parceiro removido"}
+                                </span>
+                                {r.customer?.referral_keyword_matched && (
+                                  <span className="text-[9px] text-muted-foreground font-mono truncate max-w-[140px]">
+                                    via {r.customer.referral_keyword_matched}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground">
+                            {ORIGIN_LABEL[origin]}
+                          </span>
+                        )}
                       </td>
+
                       <td className="px-3 py-2.5">
                         {M && Icon ? (
                           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${M.cls}`}>
@@ -512,8 +597,10 @@ export default function AdminConversao() {
                 </SheetTitle>
                 <SheetDescription>
                   {ORIGIN_LABEL[originOf(selected.customer)]}
+                  {selected.customer?.referral_partner_id && ` · via ${partnerById.get(selected.customer.referral_partner_id)?.nome ?? "parceiro removido"}`}
                   {selected.conversion_chance != null && ` · ${selected.conversion_chance}% de chance`}
                 </SheetDescription>
+
               </SheetHeader>
 
               <div className="mt-5 space-y-4 text-sm">
