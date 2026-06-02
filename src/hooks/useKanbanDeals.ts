@@ -14,8 +14,9 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
   const fetchDeals = useCallback(async () => {
     const { data } = await supabase
       .from("crm_deals")
-      .select("*, customers(name, phone_whatsapp, customer_origin, lead_source, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox)")
+      .select("*, customers!inner(name, phone_whatsapp, customer_origin, lead_source, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox)")
       .eq("consultant_id", consultantId)
+      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null", { foreignTable: "customers" })
       .order("created_at", { ascending: false });
     const enriched: any[] = (data || []).map((d: any) => ({
       ...d,
