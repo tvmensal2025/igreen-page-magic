@@ -226,9 +226,6 @@ export function PanfletoModal({
   const [rendering, setRendering] = useState(false);
   const [ready, setReady] = useState(false);
   const [format, setFormat] = useState<Format>("a4");
-  // Posição do bloco "APONTE A CÂMERA" (banner) — % do canvas
-  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 65 });
-  const draggingCamera = useRef(false);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
