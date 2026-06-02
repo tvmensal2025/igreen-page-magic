@@ -450,10 +450,34 @@ export function PartnerQrCode({
                   <span className="truncate ml-2">{footerRightPreview}</span>
                 </div>
               )}
+
+              {/* Bloco "APONTE A CÂMERA" arrastável */}
+              <div
+                onPointerDown={handlePointerDown("camera")}
+                className="absolute select-none touch-none cursor-move flex flex-col items-center justify-center text-center px-1"
+                style={{
+                  left: `${cameraPos.xPct}%`,
+                  top: `${cameraPos.yPct}%`,
+                  transform: "translate(-50%, -50%)",
+                  width: "55%",
+                  lineHeight: 1.05,
+                  textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+                }}
+              >
+                <span style={{ color: "#ffd700", fontWeight: 900, fontSize: 11 }}>
+                  APONTE A CÂMERA
+                </span>
+                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
+                  DO SEU CELULAR AQUI
+                </span>
+                <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
+                  <polygon points="0,0 14,0 7,12" fill="#ffd700" />
+                </svg>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px]">
-              Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste
-              fino.
+              Arraste o QR, a faixa ou a chamada "APONTE A CÂMERA". Use os
+              sliders para ajuste fino.
             </p>
           </div>
 
