@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Download, Upload, Trash2, ImageIcon, FileText } from "lucide-react";
+import { Download, Upload, Trash2, ImageIcon, FileText, Lock } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 
@@ -54,13 +54,19 @@ const TEMPLATES: Record<
   banner: {
     label: "Banner 504×940mm",
     src: "/images/banner-lei-14300-base.jpg",
-    qrX: 21,
-    qrY: 88,
-    qrSize: 22,
-    footerY: 97,
+    qrX: 20,
+    qrY: 87,
+    qrSize: 30,
+    footerY: 99,
   },
 };
 const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
+
+/** Layouts travados (não-editáveis) — garantem que o impresso bate 1:1 com o preview. */
+const LOCKED_TEMPLATES: Record<TemplateId, boolean> = {
+  a4: false,
+  banner: true,
+};
 
 /**
  * Build the wa.me URL with the partner's keyword/phrase pre-filled.
@@ -211,8 +217,11 @@ export function PartnerQrCode({
     [],
   );
 
+  const locked = LOCKED_TEMPLATES[templateId];
+
   const handlePointerDown =
     (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
+      if (locked) return;
       e.stopPropagation();
       draggingRef.current = what;
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
