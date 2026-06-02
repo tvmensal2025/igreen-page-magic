@@ -486,7 +486,8 @@ export function PartnerQrCode({
                   transform: "translate(-50%, -50%)",
                   width: "55%",
                   lineHeight: 1.05,
-                  textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+                  WebkitTextStroke: "1.5px #000",
+                  textShadow: "0 0 2px #000, 0 1px 2px #000",
                 }}
               >
                 <span style={{ color: "#22ff44", fontWeight: 900, fontSize: 11 }}>
@@ -496,7 +497,7 @@ export function PartnerQrCode({
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#22ff44" />
+                  <polygon points="0,0 14,0 7,12" fill="#22ff44" stroke="#000" strokeWidth="1.5" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
