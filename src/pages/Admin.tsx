@@ -1,4 +1,4 @@
-import React, { useState, lazy, Suspense } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -57,14 +57,28 @@ const AdminContent = () => {
     if (typeof window !== "undefined") {
       const tab = new URLSearchParams(window.location.search).get("tab");
       if (tab === "performance" || tab === "anuncios" || tab === "central-anuncios") return "central-anuncios";
-      if (tab === "agente" || tab === "historico") return "whatsapp";
+      if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
+      if (tab === "crm" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros") return tab as any;
     }
     return "dashboard";
   });
-  const [pendingChatPhone, setPendingChatPhone] = useState<string | null>(null);
+  const [pendingChatPhone, setPendingChatPhone] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("phone");
+  });
   const [pendingChatMessage, setPendingChatMessage] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("phone")) {
+      params.delete("phone");
+      const qs = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    }
+  }, []);
   const [qrModal, setQrModal] = useState<{ url: string; label: string } | null>(null);
   const [panfletoOpen, setPanfletoOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);

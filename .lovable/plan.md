@@ -1,35 +1,27 @@
-## Causa
+# Bug: "Abrir chat" não abre o WhatsApp no contato
 
-A função `lead-temperature-classifier` lê uma coluna que **não existe** em `conversations`:
+Em `/admin/conversao`, o botão **Abrir chat** navega para `/admin?tab=whatsapp&phone=553...`. Mas a tela `/admin` ignora os dois parâmetros:
 
-```ts
-.select("message_direction, message_text, created_at, media_type")
-```
-
-A coluna real é `message_type` (verificado no schema). PostgREST devolve erro, o código ignora o `error`, `msgs` vira `null`, e cada lead retorna `skipped: "no_messages"`. Confirmei chamando a função: lead com 12 mensagens retornou `skipped: "no_messages"`. Tabela `lead_insights` está com **0 linhas** apesar dos 50+ POSTs de batch.
-
-O frontend conta `processed = results.length` (inclui skipped), nunca para, roda 50× × 8s ≈ 7 min → "travou".
+1. O inicializador do `activeTab` (linha 56-65 de `src/pages/Admin.tsx`) só reconhece `performance`, `agente`, `historico`, `preview`, `captacao` etc. — **não trata `tab=whatsapp`**, então cai no fallback `"dashboard"`.
+2. O parâmetro `phone` nunca é lido da URL. `pendingChatPhone` só é setado por cliques internos (CRM, clientes), nunca por navegação externa.
 
 ## Correção
 
-### `supabase/functions/lead-temperature-classifier/index.ts`
+**`src/pages/Admin.tsx`** — única alteração necessária:
 
-1. Trocar `media_type` por `message_type` no `.select()` e no `formatted` (`m.message_type && m.message_type !== "text"`).
-2. Capturar o `error` do select e devolver `{ customer_id, error: "..." }` em vez de "no_messages" silencioso.
-3. No batch principal, parar o loop se nenhum lead da rodada teve sucesso real (`effective = results.filter(r => r.temperature).length === 0`).
+1. No initializer do `useState<activeTab>`, adicionar:
+   - `if (tab === "whatsapp") return "whatsapp";`
+   - (manter o restante dos mapeamentos atuais)
 
-### `src/pages/AdminConversao.tsx` — `classifyAllUnclassified`
+2. Logo após os `useState` de `pendingChatPhone` / `pendingChatMessage`, adicionar um `useEffect` que roda uma vez:
+   - Lê `phone` de `window.location.search`.
+   - Se presente, chama `setPendingChatPhone(phone)` e (defensivamente) `setActiveTab("whatsapp")`.
+   - Opcional: limpa o `?phone=` da URL com `window.history.replaceState` para não re-abrir ao trocar de aba.
 
-1. Contar só os efetivos (`r.temperature`) para o `done`; parar quando rodada inteira vier sem sucesso.
-2. No toast de erro, mostrar o primeiro `r.error` da rodada se houver.
+Nada mais muda. O componente filho `WhatsappPanel` (ou equivalente) já consome `pendingChatPhone` corretamente — é o mesmo caminho usado por `handleOpenChatFromCustomer`.
 
-## Fora de escopo
+## Validação
 
-- Schema não muda.
-- Outras páginas não mexem.
-- Visual da página fica igual.
-
-## Arquivos tocados
-
-- `supabase/functions/lead-temperature-classifier/index.ts`
-- `src/pages/AdminConversao.tsx`
+1. Em `/admin/conversao`, abrir um lead no Sheet → clicar **Abrir chat**.
+2. A página `/admin` deve abrir já na aba **WhatsApp** com a conversa daquele telefone aberta.
+3. Trocar para outra aba e voltar não deve re-abrir o chat anterior (graças ao `replaceState`).
