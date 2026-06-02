@@ -310,6 +310,36 @@ export function PartnerQrCode({
       if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
     }
 
+    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo.
+    {
+      const cx = (cameraPos.xPct / 100) * CW;
+      const cy = (cameraPos.yPct / 100) * CH;
+      const line1Size = Math.round(CW * 0.035);
+      const line2Size = line1Size;
+      const lineGap = Math.round(line1Size * 0.25);
+      const arrowH = Math.round(CW * 0.04);
+      const arrowW = Math.round(arrowH * 1.2);
+      const arrowGap = Math.round(line1Size * 0.4);
+      const totalH = line1Size + lineGap + line2Size + arrowGap + arrowH;
+      const topY = cy - totalH / 2;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillStyle = "#ffd700";
+      ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
+      ctx.fillText("APONTE A CÂMERA", cx, topY);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
+      ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
+      ctx.fillStyle = "#ffd700";
+      const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
+      ctx.beginPath();
+      ctx.moveTo(cx - arrowW / 2, arrowTop);
+      ctx.lineTo(cx + arrowW / 2, arrowTop);
+      ctx.lineTo(cx, arrowTop + arrowH);
+      ctx.closePath();
+      ctx.fill();
+    }
+
     return canvas;
   };
 
