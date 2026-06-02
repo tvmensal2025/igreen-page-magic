@@ -140,59 +140,8 @@ async function renderA4(
   ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, W - 28 * SCALE, stripeMidY);
 }
 
-// Tamanhos do bloco "APONTE A CÂMERA" desenhado no canvas do banner
-const CAMERA_BLOCK = {
-  line1Size: 36,
-  line2Size: 36,
-  lineGap: 10,
-  arrowH: 30,
-  arrowW: 36,
-  arrowGap: 14,
-};
 
-function drawCameraBlock(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-) {
-  const { line1Size, line2Size, lineGap, arrowH, arrowW, arrowGap } = CAMERA_BLOCK;
-  const totalH = line1Size + lineGap + line2Size + arrowGap + arrowH;
-  const topY = cy - totalH / 2;
 
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.lineJoin = "round";
-  ctx.miterLimit = 2;
-
-  // Linha 1: APONTE A CÂMERA (branco com contorno preto forte)
-  ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(2, line1Size * 0.035);
-  ctx.strokeStyle = "#000000";
-  ctx.strokeText("APONTE A CÂMERA", cx, topY);
-  ctx.fillStyle = "#fff200";
-  ctx.fillText("APONTE A CÂMERA", cx, topY);
-
-  // Linha 2: DO SEU CELULAR AQUI (branco com contorno preto forte)
-  ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(2, line2Size * 0.035);
-  ctx.strokeStyle = "#000000";
-  ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-  ctx.fillStyle = "#fff200";
-  ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-
-  // Seta pra baixo (branca com contorno preto)
-  const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
-  ctx.beginPath();
-  ctx.moveTo(cx - arrowW / 2, arrowTop);
-  ctx.lineTo(cx + arrowW / 2, arrowTop);
-  ctx.lineTo(cx, arrowTop + arrowH);
-  ctx.closePath();
-  ctx.lineWidth = Math.max(2, arrowH * 0.04);
-  ctx.strokeStyle = "#000000";
-  ctx.stroke();
-  ctx.fillStyle = "#fff200";
-  ctx.fill();
-}
 
 async function renderBanner(
   canvas: HTMLCanvasElement,
