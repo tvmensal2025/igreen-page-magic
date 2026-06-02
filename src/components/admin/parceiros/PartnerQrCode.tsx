@@ -335,13 +335,13 @@ export function PartnerQrCode({
       const topY = cy - totalH / 2;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillStyle = "#c8ff3e";
+      ctx.fillStyle = "#22ff44";
       ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
       ctx.fillText("APONTE A CÂMERA", cx, topY);
       ctx.fillStyle = "#ffffff";
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
       ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#c8ff3e";
+      ctx.fillStyle = "#22ff44";
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
       ctx.beginPath();
       ctx.moveTo(cx - arrowW / 2, arrowTop);
@@ -475,14 +475,14 @@ export function PartnerQrCode({
                   textShadow: "0 1px 2px rgba(0,0,0,0.6)",
                 }}
               >
-                <span style={{ color: "#c8ff3e", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#22ff44", fontWeight: 900, fontSize: 11 }}>
                   APONTE A CÂMERA
                 </span>
                 <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#c8ff3e" />
+                  <polygon points="0,0 14,0 7,12" fill="#22ff44" />
                 </svg>
               </div>
             </div>
