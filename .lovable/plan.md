@@ -1,65 +1,35 @@
-## Problema
+## Causa
 
-A página `/admin/conversao` mostra 97 leads não classificados, mas o botão "Classificar com IA (lote)" só processa até 25 por chamada e usa scope `stale_24h` (limita a 50 candidatos). Por isso a contagem fica travada — clicar uma vez não classifica todos.
-
-Além disso o visual é funcional mas seco: chips pequenos, tabela densa, sem hierarquia clara entre "tem insight" e "vazio".
-
-## O que vou mudar
-
-### 1. Classificar TODOS os 97 (sem ficar clicando)
-
-**Edge function `lead-temperature-classifier`** — adicionar novo scope:
+A função `lead-temperature-classifier` lê uma coluna que **não existe** em `conversations`:
 
 ```ts
-else if (body.consultant_id && body.scope === "all_unclassified") {
-  const { data } = await sb
-    .from("customers")
-    .select("id, lead_insights(classified_at)")
-    .eq("consultant_id", body.consultant_id)
-    .neq("customer_origin", "igreen_sync")
-    .limit(500);
-  ids = (data ?? [])
-    .filter((c: any) => {
-      const li = Array.isArray(c.lead_insights) ? c.lead_insights[0] : c.lead_insights;
-      return !li || !li.classified_at;
-    })
-    .map((c: any) => c.id)
-    .slice(0, 25); // ainda processa 25 por chamada (rate-limit Gemini)
-}
+.select("message_direction, message_text, created_at, media_type")
 ```
 
-**Frontend (`AdminConversao.tsx`)** — trocar o handler `classifyBatch` por um loop que chama a função em lotes de 25 até esvaziar os não-classificados, mostrando progresso "12/97 classificados…" via toast e atualizando a tabela a cada lote. Para no primeiro erro `rate_limited` / `no_credits`.
+A coluna real é `message_type` (verificado no schema). PostgREST devolve erro, o código ignora o `error`, `msgs` vira `null`, e cada lead retorna `skipped: "no_messages"`. Confirmei chamando a função: lead com 12 mensagens retornou `skipped: "no_messages"`. Tabela `lead_insights` está com **0 linhas** apesar dos 50+ POSTs de batch.
 
-Botão fica: **"Classificar 97 não classificados"** (label dinâmico baseado em `unclassified`). Se não houver não-classificados, vira "Reclassificar antigos" (scope antigo `stale_24h`).
+O frontend conta `processed = results.length` (inclui skipped), nunca para, roda 50× × 8s ≈ 7 min → "travou".
 
-### 2. Melhoria visual da página
+## Correção
 
-Mantém estrutura e cores existentes (`hot/warm/cold/dead/objection/rescue`), mas:
+### `supabase/functions/lead-temperature-classifier/index.ts`
 
-- **Header de KPIs**: substituir os chips minúsculos por uma faixa de 6 cards (um por temperatura) com ícone grande, número grande, label, e o card ativo destacado. Card "não classificados" em destaque amarelo no topo enquanto > 0.
-- **Barra de progresso** quando o batch estiver rodando ("Classificando 24/97…").
-- **Tabela**:
-  - Linha do lead com avatar circular com inicial + cor da temperatura
-  - Coluna "Chance" vira mini-barra horizontal (0–100) colorida pelo bucket
-  - Linhas não-classificadas com fundo levemente amarelo + botão "IA" pulsante
-  - Hover mais evidente, padding maior, zebra sutil
-- **Filtros** (origem + busca) numa segunda linha agrupada num bloco com `bg-card/40 rounded-lg p-3`.
-- **Empty state** com ilustração simples (ícone Sparkles grande) + CTA único.
-- **Drawer de detalhe**: títulos de seção com pequena barra colorida à esquerda, botão "Copiar mensagem sugerida" mais proeminente.
+1. Trocar `media_type` por `message_type` no `.select()` e no `formatted` (`m.message_type && m.message_type !== "text"`).
+2. Capturar o `error` do select e devolver `{ customer_id, error: "..." }` em vez de "no_messages" silencioso.
+3. No batch principal, parar o loop se nenhum lead da rodada teve sucesso real (`effective = results.filter(r => r.temperature).length === 0`).
 
-Tudo usando tokens do design system (`bg-card`, `text-foreground`, `border-border`, cores de temperatura já no `TEMP_META`). Sem nova lib, sem mudança de rota.
+### `src/pages/AdminConversao.tsx` — `classifyAllUnclassified`
 
-### 3. Aumentar o universo carregado
-
-O `fetchRows` hoje pega 300 customers. Se o consultor tiver mais que isso, alguns dos 97 não aparecem. Vou subir o `.limit(300)` para `.limit(1000)` (limite do PostgREST) e adicionar nota no topo se vier exatamente 1000.
+1. Contar só os efetivos (`r.temperature`) para o `done`; parar quando rodada inteira vier sem sucesso.
+2. No toast de erro, mostrar o primeiro `r.error` da rodada se houver.
 
 ## Fora de escopo
 
-- Não mudo lógica de scoring/IA, só a forma de disparar e mostrar.
-- Não mudo a tabela `lead_insights` nem o schema.
-- Não mexo em outras páginas admin.
+- Schema não muda.
+- Outras páginas não mexem.
+- Visual da página fica igual.
 
 ## Arquivos tocados
 
-- `supabase/functions/lead-temperature-classifier/index.ts` (novo scope `all_unclassified`)
-- `src/pages/AdminConversao.tsx` (loop de batch + redesign)
+- `supabase/functions/lead-temperature-classifier/index.ts`
+- `src/pages/AdminConversao.tsx`
