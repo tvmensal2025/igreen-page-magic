@@ -174,7 +174,7 @@ function drawCameraBlock(
   ctx.lineWidth = Math.max(1, arrowH * 0.03);
   ctx.strokeStyle = "#000000";
   ctx.stroke();
-  ctx.fillStyle = "#22ff44";
+  ctx.fillStyle = "#ffd700";
   ctx.fill();
 }
 
