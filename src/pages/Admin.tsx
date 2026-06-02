@@ -1,8 +1,9 @@
 import React, { useState, lazy, Suspense } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, BarChart3, LinkIcon, Settings, MessageSquare, LayoutGrid, Users, Copy, Download, X, Sparkles, FolderDown, Network, Eye, EyeOff, Megaphone, ClipboardList, Handshake } from "lucide-react";
+import { LogOut, BarChart3, LinkIcon, Settings, MessageSquare, LayoutGrid, Users, Copy, Download, X, Sparkles, FolderDown, Network, Eye, EyeOff, Megaphone, ClipboardList, Handshake, Flame } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { OnboardingGate } from "@/components/admin/OnboardingGate";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -50,6 +51,7 @@ const AdminContent = () => {
   const { saving, photoPreview: localPhotoPreview, handlePhotoChange, handleSave } = useConsultantForm(userId, form, setForm, setPhotoPreview);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<"materiais" | "dashboard" | "links" | "whatsapp" | "crm" | "clientes" | "rede" | "central-anuncios" | "captacao" | "parceiros">(() => {
     if (typeof window !== "undefined") {
@@ -176,17 +178,18 @@ const AdminContent = () => {
   const baseUrl = "igreen.institutodossonhos.com.br";
   const slug = form.license || "sua-licenca";
 
-  const tabs = [
-    { id: "dashboard" as const, label: "Dashboard", icon: BarChart3 },
-    { id: "crm" as const, label: "CRM", icon: LayoutGrid },
-    { id: "clientes" as const, label: "Clientes", icon: Users },
-    { id: "captacao" as const, label: "Captação", icon: ClipboardList },
-    { id: "parceiros" as const, label: "Parceiros", icon: Handshake },
-    { id: "rede" as const, label: "Rede", icon: Network },
-    { id: "whatsapp" as const, label: "WhatsApp", icon: MessageSquare },
-    { id: "central-anuncios" as const, label: "Central de Anúncios", icon: Megaphone },
-    { id: "links" as const, label: "Links", icon: LinkIcon },
-    { id: "materiais" as const, label: "Materiais", icon: FolderDown },
+  const tabs: Array<{ id: string; label: string; icon: any; href?: string; external?: boolean }> = [
+    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+    { id: "crm", label: "CRM", icon: LayoutGrid },
+    { id: "conversao", label: "Conversão", icon: Flame, href: "/admin/conversao" },
+    { id: "clientes", label: "Clientes", icon: Users },
+    { id: "captacao", label: "Captação", icon: ClipboardList },
+    { id: "parceiros", label: "Parceiros", icon: Handshake },
+    { id: "rede", label: "Rede", icon: Network },
+    { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
+    { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
+    { id: "links", label: "Links", icon: LinkIcon },
+    { id: "materiais", label: "Materiais", icon: FolderDown, external: true },
   ];
 
 
@@ -280,11 +283,12 @@ const AdminContent = () => {
               const isActive = activeTab === tab.id;
               return (
                 <button key={tab.id} onClick={() => {
-                  if (tab.id === "materiais") {
+                  if (tab.external && tab.id === "materiais") {
                     window.open("https://drive.google.com/drive/folders/1KupNLRpZaJwHfgRUgbWV-cGYQenreSfu", "_blank", "noopener,noreferrer");
                     return;
                   }
-                  setActiveTab(tab.id);
+                  if (tab.href) { navigate(tab.href); return; }
+                  setActiveTab(tab.id as any);
                 }}
                   className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-sm font-medium whitespace-nowrap border-b-2 transition-all duration-200 shrink-0 min-w-[56px] sm:min-w-0 ${
                     isActive 
