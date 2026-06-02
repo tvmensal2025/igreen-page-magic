@@ -145,23 +145,36 @@ function drawCameraBlock(
 
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
+  ctx.lineJoin = "round";
+  ctx.miterLimit = 2;
 
-  ctx.fillStyle = "#22ff44";
+  // Linha 1: APONTE A CÂMERA (verde com contorno preto)
   ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
+  ctx.lineWidth = Math.max(4, line1Size * 0.18);
+  ctx.strokeStyle = "#000000";
+  ctx.strokeText("APONTE A CÂMERA", cx, topY);
+  ctx.fillStyle = "#22ff44";
   ctx.fillText("APONTE A CÂMERA", cx, topY);
 
-  ctx.fillStyle = "#ffffff";
+  // Linha 2: DO SEU CELULAR AQUI (branco com contorno preto)
   ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
+  ctx.lineWidth = Math.max(4, line2Size * 0.18);
+  ctx.strokeStyle = "#000000";
+  ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
+  ctx.fillStyle = "#ffffff";
   ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
-  // Seta pra baixo (verde)
-  ctx.fillStyle = "#22ff44";
+  // Seta pra baixo (verde com contorno preto)
   const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
   ctx.beginPath();
   ctx.moveTo(cx - arrowW / 2, arrowTop);
   ctx.lineTo(cx + arrowW / 2, arrowTop);
   ctx.lineTo(cx, arrowTop + arrowH);
   ctx.closePath();
+  ctx.lineWidth = Math.max(3, arrowH * 0.12);
+  ctx.strokeStyle = "#000000";
+  ctx.stroke();
+  ctx.fillStyle = "#22ff44";
   ctx.fill();
 }
 

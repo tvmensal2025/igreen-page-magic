@@ -335,19 +335,33 @@ export function PartnerQrCode({
       const topY = cy - totalH / 2;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillStyle = "#22ff44";
+      ctx.lineJoin = "round";
+      ctx.miterLimit = 2;
+
       ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.fillText("APONTE A CÂMERA", cx, topY);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
+      ctx.lineWidth = Math.max(3, line1Size * 0.18);
+      ctx.strokeStyle = "#000000";
+      ctx.strokeText("APONTE A CÂMERA", cx, topY);
       ctx.fillStyle = "#22ff44";
+      ctx.fillText("APONTE A CÂMERA", cx, topY);
+
+      ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
+      ctx.lineWidth = Math.max(3, line2Size * 0.18);
+      ctx.strokeStyle = "#000000";
+      ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
+
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
       ctx.beginPath();
       ctx.moveTo(cx - arrowW / 2, arrowTop);
       ctx.lineTo(cx + arrowW / 2, arrowTop);
       ctx.lineTo(cx, arrowTop + arrowH);
       ctx.closePath();
+      ctx.lineWidth = Math.max(2, arrowH * 0.12);
+      ctx.strokeStyle = "#000000";
+      ctx.stroke();
+      ctx.fillStyle = "#22ff44";
       ctx.fill();
     }
 
@@ -472,7 +486,8 @@ export function PartnerQrCode({
                   transform: "translate(-50%, -50%)",
                   width: "55%",
                   lineHeight: 1.05,
-                  textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+                  WebkitTextStroke: "1.5px #000",
+                  textShadow: "0 0 2px #000, 0 1px 2px #000",
                 }}
               >
                 <span style={{ color: "#22ff44", fontWeight: 900, fontSize: 11 }}>
@@ -482,7 +497,7 @@ export function PartnerQrCode({
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#22ff44" />
+                  <polygon points="0,0 14,0 7,12" fill="#22ff44" stroke="#000" strokeWidth="1.5" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
