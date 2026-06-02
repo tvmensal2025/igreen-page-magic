@@ -333,7 +333,7 @@ export function PanfletoModal({
               onClick={() => setFormat("banner")}
               className="gap-2"
             >
-              Banner 504×940mm
+              Banner 504×904mm
             </Button>
           </div>
 
@@ -346,7 +346,7 @@ export function PanfletoModal({
               funcionando.{" "}
               {format === "a4"
                 ? "Formato sulfite A4 — imprima quantos quiser."
-                : "Formato banner 504mm × 940mm — pronto pra gráfica em lona/PVC."}
+                : "Formato banner 504mm × 904mm — pronto pra gráfica em lona/PVC."}
             </p>
           </div>
 
