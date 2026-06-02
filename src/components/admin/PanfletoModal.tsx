@@ -149,7 +149,6 @@ async function renderBanner(
   nomeConsultor: string,
   telefoneConsultor: string,
   igreenId: string,
-  cameraPos: { xPct: number; yPct: number },
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -177,12 +176,6 @@ async function renderBanner(
   const qrImg = await loadImage(qrDataUrl);
   ctx.drawImage(qrImg, x, y, size, size);
 
-  // Bloco "APONTE A CÂMERA" arrastável (posição em % do canvas)
-  drawCameraBlock(
-    ctx,
-    (cameraPos.xPct / 100) * BANNER_W,
-    (cameraPos.yPct / 100) * BANNER_H,
-  );
 
   // Faixa LICENCIADO + WHATSAPP no rodapé — menor
   const stripeH = 48;
