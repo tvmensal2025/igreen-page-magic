@@ -391,7 +391,7 @@ export function PartnerQrCode({
   const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
 
   // Preview-space sizes (percentages → pixels).
-  const qrCorePxPreview = (qrSize / 100) * PREVIEW_W;
+  const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W;
   const qrPadPreview = qrCorePxPreview * 0.06;
   const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
   const footerHPreview = PREVIEW_H * 0.03;
