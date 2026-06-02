@@ -556,11 +556,11 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Posição do QR (vertical)</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(qrY)}%
+                  {Math.round(effQrY)}%
                 </span>
               </div>
               <Slider
-                value={[qrY]}
+                value={[effQrY]}
                 onValueChange={([v]) => setQrY(v)}
                 min={0}
                 max={100}
@@ -573,11 +573,11 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Posição do QR (horizontal)</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(qrX)}%
+                  {Math.round(effQrX)}%
                 </span>
               </div>
               <Slider
-                value={[qrX]}
+                value={[effQrX]}
                 onValueChange={([v]) => setQrX(v)}
                 min={0}
                 max={100}
@@ -590,11 +590,11 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Tamanho do QR</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(qrSize)}%
+                  {Math.round(effQrSize)}%
                 </span>
               </div>
               <Slider
-                value={[qrSize]}
+                value={[effQrSize]}
                 onValueChange={([v]) => setQrSize(v)}
                 min={12}
                 max={45}
@@ -607,21 +607,21 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Posição do rodapé (vertical)</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(footerY)}%
+                  {Math.round(effFooterY)}%
                 </span>
               </div>
               <Slider
-                value={[footerY]}
+                value={[effFooterY]}
                 onValueChange={([v]) => setFooterY(v)}
                 min={0}
                 max={100}
                 step={1}
-                disabled={locked || !showFooter}
+                disabled={locked || !effShowFooter}
               />
               <label className={`flex items-center gap-2 text-xs text-muted-foreground mt-2 ${locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
-                  checked={showFooter}
+                  checked={effShowFooter}
                   onChange={(e) => setShowFooter(e.target.checked)}
                   className="h-3.5 w-3.5 rounded border-input"
                   disabled={locked}
