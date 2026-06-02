@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Download, Upload, Trash2, ImageIcon, FileText, Lock } from "lucide-react";
+import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 
@@ -63,9 +63,9 @@ const TEMPLATES: Record<
 const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
 
 /** Layouts travados (não-editáveis) — garantem que o impresso bate 1:1 com o preview. */
-const LOCKED_TEMPLATES: Record<TemplateId, boolean> = {
+const DEFAULT_LOCKED: Record<TemplateId, boolean> = {
   a4: false,
-  banner: false,
+  banner: true,
 };
 
 /**
@@ -217,7 +217,8 @@ export function PartnerQrCode({
     [],
   );
 
-  const locked = LOCKED_TEMPLATES[templateId];
+  const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>({ a4: false, banner: false });
+  const locked = DEFAULT_LOCKED[templateId] && !unlockedMap[templateId];
 
   const handlePointerDown =
     (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
@@ -475,11 +476,18 @@ export function PartnerQrCode({
                   </Button>
                 ))}
               </div>
-              {locked && (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 border border-border rounded-md px-2 py-1.5 mt-1">
-                  <Lock className="h-3.5 w-3.5" />
-                  Layout travado — bate 1:1 com a impressão
-                </div>
+              {DEFAULT_LOCKED[templateId] && (
+                <button
+                  type="button"
+                  onClick={() => setUnlockedMap((m) => ({ ...m, [templateId]: !m[templateId] }))}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 hover:bg-muted border border-border rounded-md px-2 py-1.5 mt-1 transition-colors w-full text-left"
+                  title={locked ? "Clique para destravar e ajustar manualmente" : "Clique para travar novamente"}
+                >
+                  {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5 text-emerald-500" />}
+                  {locked
+                    ? "Layout travado — clique para destravar e ajustar"
+                    : "Layout destravado — clique para travar de novo"}
+                </button>
               )}
             </div>
 
