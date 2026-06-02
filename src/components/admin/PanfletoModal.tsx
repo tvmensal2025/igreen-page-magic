@@ -241,6 +241,10 @@ export function PanfletoModal({
   const [rendering, setRendering] = useState(false);
   const [ready, setReady] = useState(false);
   const [format, setFormat] = useState<Format>("a4");
+  // Posição do bloco "APONTE A CÂMERA" (banner) — % do canvas
+  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 65 });
+  const draggingCamera = useRef(false);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const redirectUrl = `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
@@ -257,9 +261,11 @@ export function PanfletoModal({
     }
     if (!ready || !canvasRef.current) return;
     setRendering(true);
-    const render = format === "a4" ? renderA4 : renderBanner;
-    render(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
-      .catch((e) => {
+    const p =
+      format === "a4"
+        ? renderA4(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
+        : renderBanner(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos);
+    p.catch((e) => {
         console.error("[panfleto] render error", e);
         toast({
           title: "Erro ao gerar arte",
@@ -268,7 +274,7 @@ export function PanfletoModal({
         });
       })
       .finally(() => setRendering(false));
-  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, toast]);
+  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos, toast]);
 
   const downloadPNG = () => {
     const canvas = canvasRef.current;
