@@ -449,16 +449,16 @@ export function PartnerQrCode({
               {showFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex items-center justify-between px-2.5"
+                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex flex-col items-center justify-center leading-tight px-1.5"
                   style={{
                     top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
-                    height: footerHPreview,
-                    fontSize: Math.round(footerHPreview * 0.34),
+                    minHeight: footerHPreview,
+                    fontSize: 8,
                     fontWeight: 700,
                   }}
                 >
-                  <span className="truncate">{footerLeftPreview}</span>
-                  <span className="truncate ml-2">{footerRightPreview}</span>
+                  <span className="whitespace-nowrap">{footerLeftPreview}</span>
+                  <span className="whitespace-nowrap">{footerRightPreview}</span>
                 </div>
               )}
 
