@@ -150,7 +150,7 @@ function drawCameraBlock(
 
   // Linha 1: APONTE A CÂMERA (verde com contorno preto fino)
   ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(2, line1Size * 0.08);
+  ctx.lineWidth = Math.max(1, line1Size * 0.04);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("APONTE A CÂMERA", cx, topY);
   ctx.fillStyle = "#22ff44";
@@ -158,7 +158,7 @@ function drawCameraBlock(
 
   // Linha 2: DO SEU CELULAR AQUI (branco com contorno preto fino)
   ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(2, line2Size * 0.08);
+  ctx.lineWidth = Math.max(1, line2Size * 0.04);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
   ctx.fillStyle = "#ffffff";
@@ -171,7 +171,7 @@ function drawCameraBlock(
   ctx.lineTo(cx + arrowW / 2, arrowTop);
   ctx.lineTo(cx, arrowTop + arrowH);
   ctx.closePath();
-  ctx.lineWidth = Math.max(1.5, arrowH * 0.06);
+  ctx.lineWidth = Math.max(1, arrowH * 0.03);
   ctx.strokeStyle = "#000000";
   ctx.stroke();
   ctx.fillStyle = "#22ff44";
