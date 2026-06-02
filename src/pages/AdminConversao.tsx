@@ -89,6 +89,9 @@ export default function AdminConversao() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<InsightRow | null>(null);
   const cancelBulkRef = useRef(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [partnerFilter, setPartnerFilter] = useState<string>(searchParams.get("partner") || "all");
+  const { partners } = useReferralPartners();
 
   useEffect(() => {
     let alive = true;
