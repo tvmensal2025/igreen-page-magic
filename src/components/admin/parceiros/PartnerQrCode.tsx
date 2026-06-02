@@ -390,6 +390,23 @@ export function PartnerQrCode({
           {/* Controls */}
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
+              <Label className="text-sm">Formato do template</Label>
+              <div className="flex flex-wrap gap-2">
+                {(Object.keys(TEMPLATES) as TemplateId[]).map((id) => (
+                  <Button
+                    key={id}
+                    type="button"
+                    size="sm"
+                    variant={templateId === id ? "default" : "outline"}
+                    onClick={() => setTemplateId(id)}
+                  >
+                    {TEMPLATES[id].label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
               <Label className="text-sm">Imagem de fundo</Label>
               <input
                 ref={fileInputRef}
@@ -410,13 +427,13 @@ export function PartnerQrCode({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setBgImage(DEFAULT_TEMPLATE)}
+                  onClick={() => setBgImage(template.src)}
                   className="gap-2"
-                  disabled={bgImage === DEFAULT_TEMPLATE}
+                  disabled={bgImage === template.src}
                 >
                   <ImageIcon className="h-4 w-4" /> Usar template padrão
                 </Button>
-                {bgImage && bgImage !== DEFAULT_TEMPLATE && (
+                {bgImage && bgImage !== template.src && (
                   <Button
                     variant="ghost"
                     size="sm"
