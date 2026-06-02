@@ -281,11 +281,12 @@ const AdminContent = () => {
               const isActive = activeTab === tab.id;
               return (
                 <button key={tab.id} onClick={() => {
-                  if (tab.id === "materiais") {
+                  if (tab.external && tab.id === "materiais") {
                     window.open("https://drive.google.com/drive/folders/1KupNLRpZaJwHfgRUgbWV-cGYQenreSfu", "_blank", "noopener,noreferrer");
                     return;
                   }
-                  setActiveTab(tab.id);
+                  if (tab.href) { navigate(tab.href); return; }
+                  setActiveTab(tab.id as any);
                 }}
                   className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-sm font-medium whitespace-nowrap border-b-2 transition-all duration-200 shrink-0 min-w-[56px] sm:min-w-0 ${
                     isActive 
