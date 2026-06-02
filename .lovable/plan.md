@@ -1,35 +1,35 @@
 ## O que vou fazer
 
-### 1. Travar o tamanho do banner — em **Parceiro** e em **Meu link**
+Travar o banner (parceiro e meu link pessoal) **exatamente** nos valores do print:
+- QR vertical: **87%**
+- QR horizontal: **20%**
+- Tamanho do QR: **30%**
+- Rodapé vertical: **99%**
+- Faixa mostrar nome/ID/WhatsApp: **ligada**
 
-No "Meu link" (PanfletoModal) já corrigi pra `1008×1880` (proporção exata de 504×940 mm).
-No "Parceiro" (PartnerQrCode) o banner ainda está em `1069×1920` (proporção 0,5568 ≠ 0,5362 do PDF) — vou ajustar pra ficar igual, sem letterbox e idêntico ao preview.
+Os controles ficam visíveis mas **desabilitados** com um pequeno ícone de cadeado 🔒 ao lado do label "Formato do template", explicando que o layout está travado pra garantir que o impresso bata 1:1 com o preview.
 
-**Arquivo:** `src/components/admin/parceiros/PartnerQrCode.tsx`
+### Arquivos
 
-- `TEMPLATE_DIMS.banner`: `canvasW: 1008, canvasH: 1880` (mantém pdfWmm/pdfHmm = 504/940).
-- `TEMPLATE_DIMS.a4`: também ajustar para a proporção real de A4 → `canvasW: 1240, canvasH: 1754` (210/297 ≈ 0,707), pra Sulfite também travar 1:1 com o PDF.
+**1) `src/components/admin/parceiros/PartnerQrCode.tsx`**
+- Atualizar `TEMPLATES.banner` pros valores travados: `qrX:20, qrY:87, qrSize:30, footerY:99`.
+- Adicionar constante `LOCKED_TEMPLATES = { banner: true, a4: false }` (a4 segue editável; só o banner precisa bater impressão).
+- Quando travado:
+  - Desabilitar drag do QR e do rodapé (early-return em `handlePointerDown` e cursor `default`).
+  - Desabilitar os 4 sliders (`disabled` prop) e o checkbox "Mostrar faixa".
+  - Desabilitar botões "Enviar imagem" / "Usar template padrão" / "Remover" (mantém arte oficial).
+  - Mostrar badge `🔒 Layout travado — bate 1:1 com a impressão` logo abaixo do seletor de formato.
+- A4 continua 100% editável como hoje.
 
-Como todos os cálculos de QR, faixa e bloco "APONTE A CÂMERA" usam `% do canvas`, nada mais precisa ser tocado — escala junto.
+**2) `src/components/admin/PanfletoModal.tsx`**
+- Esse modal já não tem sliders (posição é fixa em `BANNER_QR_BOX`). Só adicionar o mesmo badge `🔒 Layout travado` no formato banner, pra UX consistente com o do parceiro.
+- Confirmar que `BANNER_QR_BOX` corresponde aos mesmos 20%/87%/30% do PartnerQrCode (banner 1008×1880):
+  - 20% de 1008 = 201,6 (centro X) → `x = 201,6 - 151,2 = 50,4` ✅ atual está em `x:60` — vou ajustar pra `x:50, y:1373, size:302` (87% de 1880 = 1635,6 centro; size 30% de 1008 = 302,4; `y = 1635,6 - 151,2 = 1484,4`). Refinando: `BANNER_QR_BOX = { x: 50, y: 1484, size: 302 }`.
 
-### 2. Trocar a cor do bloco "APONTE A CÂMERA DO SEU CELULAR AQUI"
+### Resultado
 
-Hoje está `#22ff44` (verde neon) + `#ffffff` (branco) sobre a foto/fundo verde — pouco contraste, fica "apagado".
-
-Vou trocar para **amarelo `#ffd700`** nas duas linhas (mesmo amarelo da faixa do rodapé e do título do banner), com contorno preto mais grosso pra garantir legibilidade sobre qualquer fundo. A seta também vira amarela pra ficar coerente.
-
-**Arquivos:**
-- `src/components/admin/PanfletoModal.tsx` (função `drawCameraBlock`)
-- `src/components/admin/parceiros/PartnerQrCode.tsx` (bloco "5. APONTE A CÂMERA")
-
-Mudanças em cada um:
-- `fillStyle "#22ff44"` → `"#ffd700"` (linha 1 e seta)
-- `fillStyle "#ffffff"` → `"#ffd700"` (linha 2)
-- `lineWidth` do contorno: `* 0.04` → `* 0.08` (contorno preto ~2x mais grosso pra "estampar" sobre a foto)
-
-## Resultado
-
-- Banner sempre 1:1 com o PDF, tanto no card do parceiro quanto no "meu link" — preview = PNG = PDF.
-- "APONTE A CÂMERA DO SEU CELULAR AQUI" + seta em amarelo brand com contorno preto firme, bem mais legível.
+- Banner no card do parceiro e no "Meu link" sai **idêntico** ao print enviado, sem o usuário conseguir mexer e quebrar o layout.
+- Cadeado 🔒 visível pra deixar claro que é proposital (não é bug).
+- Sulfite A4 segue 100% editável.
 
 Posso aplicar?

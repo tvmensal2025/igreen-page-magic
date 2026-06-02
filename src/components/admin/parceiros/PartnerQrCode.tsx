@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Download, Upload, Trash2, ImageIcon, FileText } from "lucide-react";
+import { Download, Upload, Trash2, ImageIcon, FileText, Lock } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 
@@ -54,13 +54,19 @@ const TEMPLATES: Record<
   banner: {
     label: "Banner 504×940mm",
     src: "/images/banner-lei-14300-base.jpg",
-    qrX: 21,
-    qrY: 88,
-    qrSize: 22,
-    footerY: 97,
+    qrX: 20,
+    qrY: 87,
+    qrSize: 30,
+    footerY: 99,
   },
 };
 const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
+
+/** Layouts travados (não-editáveis) — garantem que o impresso bate 1:1 com o preview. */
+const LOCKED_TEMPLATES: Record<TemplateId, boolean> = {
+  a4: false,
+  banner: true,
+};
 
 /**
  * Build the wa.me URL with the partner's keyword/phrase pre-filled.
@@ -211,8 +217,11 @@ export function PartnerQrCode({
     [],
   );
 
+  const locked = LOCKED_TEMPLATES[templateId];
+
   const handlePointerDown =
     (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
+      if (locked) return;
       e.stopPropagation();
       draggingRef.current = what;
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -407,7 +416,7 @@ export function PartnerQrCode({
               <div
                 ref={qrSvgWrapperRef}
                 onPointerDown={handlePointerDown("qr")}
-                className="absolute select-none touch-none cursor-move bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10"
+                className={`absolute select-none touch-none bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10 ${locked ? "cursor-not-allowed" : "cursor-move"}`}
                 style={{
                   left: `calc(${qrX}% - ${qrCardPxPreview / 2}px)`,
                   top: `calc(${qrY}% - ${qrCardPxPreview / 2}px)`,
@@ -428,7 +437,7 @@ export function PartnerQrCode({
               {showFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 flex items-center justify-between leading-tight px-2"
+                  className={`absolute left-0 right-0 select-none touch-none bg-emerald-900/95 flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
                   style={{
                     top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
@@ -443,7 +452,9 @@ export function PartnerQrCode({
               )}
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px]">
-              Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste fino.
+              {locked
+                ? "Layout travado — bate 1:1 com a impressão."
+                : "Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste fino."}
             </p>
           </div>
 
@@ -464,6 +475,12 @@ export function PartnerQrCode({
                   </Button>
                 ))}
               </div>
+              {locked && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 border border-border rounded-md px-2 py-1.5 mt-1">
+                  <Lock className="h-3.5 w-3.5" />
+                  Layout travado — bate 1:1 com a impressão
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -481,6 +498,7 @@ export function PartnerQrCode({
                   size="sm"
                   onClick={() => fileInputRef.current?.click()}
                   className="gap-2"
+                  disabled={locked}
                 >
                   <Upload className="h-4 w-4" /> Enviar imagem
                 </Button>
@@ -489,11 +507,11 @@ export function PartnerQrCode({
                   size="sm"
                   onClick={() => setBgImage(template.src)}
                   className="gap-2"
-                  disabled={bgImage === template.src}
+                  disabled={locked || bgImage === template.src}
                 >
                   <ImageIcon className="h-4 w-4" /> Usar template padrão
                 </Button>
-                {bgImage && bgImage !== template.src && (
+                {bgImage && bgImage !== template.src && !locked && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -519,6 +537,7 @@ export function PartnerQrCode({
                 min={0}
                 max={100}
                 step={1}
+                disabled={locked}
               />
             </div>
 
@@ -535,6 +554,7 @@ export function PartnerQrCode({
                 min={0}
                 max={100}
                 step={1}
+                disabled={locked}
               />
             </div>
 
@@ -551,6 +571,7 @@ export function PartnerQrCode({
                 min={12}
                 max={45}
                 step={1}
+                disabled={locked}
               />
             </div>
 
@@ -567,14 +588,15 @@ export function PartnerQrCode({
                 min={0}
                 max={100}
                 step={1}
-                disabled={!showFooter}
+                disabled={locked || !showFooter}
               />
-              <label className="flex items-center gap-2 text-xs text-muted-foreground mt-2 cursor-pointer">
+              <label className={`flex items-center gap-2 text-xs text-muted-foreground mt-2 ${locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
                   checked={showFooter}
                   onChange={(e) => setShowFooter(e.target.checked)}
                   className="h-3.5 w-3.5 rounded border-input"
+                  disabled={locked}
                 />
                 Mostrar faixa com nome / ID / WhatsApp
               </label>
