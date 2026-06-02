@@ -204,14 +204,17 @@ export default function AdminConversao() {
           body: { consultant_id: userId, scope: "all_unclassified" },
         });
         if (error) throw error;
-        const processed = data?.processed ?? 0;
-        const hadRateLimit = (data?.results ?? []).some((r: any) =>
-          r?.error === "rate_limited" || r?.error === "no_credits"
-        );
-        done += processed;
+        const results = (data?.results ?? []) as any[];
+        const effective = results.filter(r => r?.temperature).length;
+        const firstError = results.find(r => r?.error)?.error as string | undefined;
+        const hadRateLimit = results.some(r => r?.error === "rate_limited" || r?.error === "no_credits");
+        done += effective;
         setBulkProgress({ done: Math.min(done, total), total });
         await fetchRows();
-        if (processed === 0) break;
+        if (effective === 0) {
+          if (firstError) toast.error("Classificador falhou", { description: firstError });
+          break;
+        }
         if (hadRateLimit) {
           toast.warning("Pausado por limite da IA", { description: "Tente novamente em alguns minutos." });
           break;
