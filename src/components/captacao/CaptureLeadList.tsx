@@ -35,7 +35,7 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
       .select(cols)
       .eq("consultant_id", consultantId)
       .eq("capture_mode", "manual")
-      .order("capture_started_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
       .limit(100);
     const rows: LeadRow[] = (data || []).map((c: any) => ({
       id: c.id,
@@ -124,7 +124,7 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
                       <span className={`truncate ${gameOn ? "text-[15px] font-bold tracking-tight" : "text-sm font-medium"}`}>{l.name || "Sem nome"}</span>
                     </div>
                     <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0">
-                      <Clock className="w-3 h-3" />{fmtTime(l.capture_started_at || l.created_at)}
+                      <Clock className="w-3 h-3" />{fmtTime(l.created_at || l.capture_started_at)}
                     </span>
                   </div>
                   <p className={`truncate ${gameOn ? "text-[11px] text-muted-foreground/80 font-mono" : "text-[11px] text-muted-foreground"}`}>{l.phone_whatsapp || "—"}</p>
