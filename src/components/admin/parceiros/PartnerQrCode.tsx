@@ -452,7 +452,9 @@ export function PartnerQrCode({
               )}
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px]">
-              Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste fino.
+              {locked
+                ? "Layout travado — bate 1:1 com a impressão."
+                : "Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste fino."}
             </p>
           </div>
 
@@ -473,6 +475,12 @@ export function PartnerQrCode({
                   </Button>
                 ))}
               </div>
+              {locked && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 border border-border rounded-md px-2 py-1.5 mt-1">
+                  <Lock className="h-3.5 w-3.5" />
+                  Layout travado — bate 1:1 com a impressão
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
