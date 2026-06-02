@@ -414,8 +414,8 @@ export function PartnerQrCode({
   const qrCorePxPreview = (qrSize / 100) * PREVIEW_W;
   const qrPadPreview = qrCorePxPreview * 0.06;
   const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
-  const footerHPreview = PREVIEW_H * 0.045;
-  const footerFontPreview = Math.max(8, Math.round(footerHPreview * 0.42));
+  const footerHPreview = PREVIEW_H * 0.03;
+  const footerFontPreview = Math.max(7, Math.round(footerHPreview * 0.36));
 
   const footerLeftPreview = consultantName
     ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
@@ -478,11 +478,12 @@ export function PartnerQrCode({
               {showFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex items-center justify-between leading-tight px-2"
+                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 flex items-center justify-between leading-tight px-2"
                   style={{
                     top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
                     fontSize: footerFontPreview,
+                    color: "#fff200",
                     fontWeight: 700,
                   }}
                 >
@@ -501,18 +502,18 @@ export function PartnerQrCode({
                   transform: "translate(-50%, -50%)",
                   width: "55%",
                   lineHeight: 1.05,
-                  WebkitTextStroke: "1px #000",
+                  WebkitTextStroke: "1.2px #000",
                   textShadow: "none",
                 }}
               >
-                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#fff200", fontWeight: 900, fontSize: 11 }}>
                   APONTE A CÂMERA
                 </span>
-                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#fff200", fontWeight: 900, fontSize: 11 }}>
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#fff" stroke="#000" strokeWidth="1" strokeLinejoin="round" />
+                  <polygon points="0,0 14,0 7,12" fill="#fff200" stroke="#000" strokeWidth="1.2" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
