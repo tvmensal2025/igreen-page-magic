@@ -48,7 +48,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
           {(deal as any).customer_name && (
             <div className="flex items-center gap-1.5 mb-0.5">
               <div className="w-4 h-4 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                {isIgreenClient ? <Building2 className="h-2.5 w-2.5 text-primary" /> : <User className="h-2.5 w-2.5 text-primary" />}
+                <User className="h-2.5 w-2.5 text-primary" />
               </div>
               <span className="text-xs font-medium text-foreground truncate sensitive-data">
                 {(deal as any).customer_name}
