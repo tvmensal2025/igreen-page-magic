@@ -28,13 +28,13 @@ const A4_W = A4_BG_W * A4_SCALE;
 const A4_H = A4_BG_H * A4_SCALE;
 const A4_QR_BOX = { x: 32, y: 855, size: 170 };
 
-// ============ FORMATO BANNER (504mm x 940mm) ============
+// ============ FORMATO BANNER (504mm x 904mm) ============
 // O canvas mantém exatamente a mesma proporção física do PDF para preview/export/print baterem.
 const BANNER_W = 1008;
-const BANNER_H = 1880;
+const BANNER_H = 1808; // 1008 * (904/504)
 // Caixa vazia inferior-esquerda já desenhada no banner — só preenchemos com QR.
 // Posição travada (20% X, 87% Y, 30% size) — bate 1:1 com PartnerQrCode.
-const BANNER_QR_BOX = { x: 50, y: 1484, size: 302 };
+const BANNER_QR_BOX = { x: 50, y: 1428, size: 302 };
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
