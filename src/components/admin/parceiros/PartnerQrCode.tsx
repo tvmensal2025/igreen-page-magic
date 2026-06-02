@@ -499,7 +499,7 @@ export function PartnerQrCode({
               {DEFAULT_LOCKED[templateId] && (
                 <button
                   type="button"
-                  onClick={() => setUnlockedMap((m) => ({ ...m, [templateId]: !m[templateId] }))}
+                  onClick={() => setLockedFor(templateId, !unlockedMap[templateId])}
                   className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 hover:bg-muted border border-border rounded-md px-2 py-1.5 mt-1 transition-colors w-full text-left"
                   title={locked ? "Clique para destravar e ajustar manualmente" : "Clique para travar novamente"}
                 >
