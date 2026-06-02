@@ -145,8 +145,11 @@ export function PartnerQrCode({
   const [footerY, setFooterY] = useState(template.footerY);
   const [showFooter, setShowFooter] = useState(true);
 
-  // Which element is being dragged ("qr" | "footer" | null).
-  const draggingRef = useRef<null | "qr" | "footer">(null);
+  // Bloco "APONTE A CÂMERA" arrastável
+  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 45 });
+
+  // Which element is being dragged ("qr" | "footer" | "camera" | null).
+  const draggingRef = useRef<null | "qr" | "footer" | "camera">(null);
 
   const previewRef = useRef<HTMLDivElement>(null);
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
@@ -162,6 +165,7 @@ export function PartnerQrCode({
     setQrSize(t.qrSize);
     setFooterY(t.footerY);
     setShowFooter(true);
+    setCameraPos({ xPct: t.qrX, yPct: Math.max(5, t.qrY - 20) });
   }, [open, templateId]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,25 +181,28 @@ export function PartnerQrCode({
   };
 
   const updatePosFromClient = useCallback(
-    (clientX: number, clientY: number, what: "qr" | "footer") => {
+    (clientX: number, clientY: number, what: "qr" | "footer" | "camera") => {
       const el = previewRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const yPct = ((clientY - rect.top) / rect.height) * 100;
-      const clamped = Math.max(0, Math.min(100, yPct));
+      const xPct = ((clientX - rect.left) / rect.width) * 100;
+      const cy = Math.max(0, Math.min(100, yPct));
+      const cx = Math.max(0, Math.min(100, xPct));
       if (what === "qr") {
-        const xPct = ((clientX - rect.left) / rect.width) * 100;
-        setQrX(Math.max(0, Math.min(100, xPct)));
-        setQrY(clamped);
+        setQrX(cx);
+        setQrY(cy);
+      } else if (what === "footer") {
+        setFooterY(cy);
       } else {
-        setFooterY(clamped);
+        setCameraPos({ xPct: cx, yPct: cy });
       }
     },
     [],
   );
 
   const handlePointerDown =
-    (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
+    (what: "qr" | "footer" | "camera") => (e: React.PointerEvent<HTMLDivElement>) => {
       e.stopPropagation();
       draggingRef.current = what;
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
