@@ -123,16 +123,20 @@ export function PartnerQrCode({
   const phrase = qrPhrase || keyword;
   const url = buildWaMeUrl(consultantPhone, keyword, qrPhrase);
 
+  // Template selecionado (Sulfite A4 ou Banner 504×940mm).
+  const [templateId, setTemplateId] = useState<TemplateId>(DEFAULT_TEMPLATE_ID);
+  const template = TEMPLATES[templateId];
+
   // Default to the built-in template; user can upload to replace.
-  const [bgImage, setBgImage] = useState<string | null>(DEFAULT_TEMPLATE);
+  const [bgImage, setBgImage] = useState<string | null>(template.src);
 
   // QR position/size (percentages of canvas).
-  const [qrX, setQrX] = useState(18); // 18% from left = bottom-left like the reference
-  const [qrY, setQrY] = useState(60); // 60% from top
-  const [qrSize, setQrSize] = useState(22); // 22% of canvas WIDTH
+  const [qrX, setQrX] = useState(template.qrX);
+  const [qrY, setQrY] = useState(template.qrY);
+  const [qrSize, setQrSize] = useState(template.qrSize);
 
   // Footer band Y (percentage of canvas height, anchor = vertical center of band).
-  const [footerY, setFooterY] = useState(82);
+  const [footerY, setFooterY] = useState(template.footerY);
   const [showFooter, setShowFooter] = useState(true);
 
   // Which element is being dragged ("qr" | "footer" | null).
@@ -142,17 +146,17 @@ export function PartnerQrCode({
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset whenever the modal opens.
+  // Reset (background + posições) sempre que o modal abre ou o template muda.
   useEffect(() => {
-    if (open) {
-      setBgImage(DEFAULT_TEMPLATE);
-      setQrX(18);
-      setQrY(60);
-      setQrSize(22);
-      setFooterY(82);
-      setShowFooter(true);
-    }
-  }, [open]);
+    if (!open) return;
+    const t = TEMPLATES[templateId];
+    setBgImage(t.src);
+    setQrX(t.qrX);
+    setQrY(t.qrY);
+    setQrSize(t.qrSize);
+    setFooterY(t.footerY);
+    setShowFooter(true);
+  }, [open, templateId]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
