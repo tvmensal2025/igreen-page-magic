@@ -246,7 +246,7 @@ export function PanfletoModal({
     const p =
       format === "a4"
         ? renderA4(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
-        : renderBanner(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos);
+        : renderBanner(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId);
     p.catch((e) => {
         console.error("[panfleto] render error", e);
         toast({
@@ -256,7 +256,7 @@ export function PanfletoModal({
         });
       })
       .finally(() => setRendering(false));
-  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos, toast]);
+  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, toast]);
 
   const downloadPNG = () => {
     const canvas = canvasRef.current;
