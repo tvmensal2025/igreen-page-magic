@@ -102,6 +102,7 @@ export default function AdminConversao() {
                          conversion_chance, signals, classified_at, needs_reclassify )
       `)
       .eq("consultant_id", userId)
+      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
       .limit(300);
 
