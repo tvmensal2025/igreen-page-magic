@@ -49,11 +49,10 @@ interface InsightRow {
   };
 }
 
-type OriginFilter = "all" | "meta_ads" | "whatsapp_direct" | "igreen_sync" | "partner";
+type OriginFilter = "all" | "meta_ads" | "whatsapp_direct" | "partner";
 
 function originOf(c: InsightRow["customer"]): OriginFilter {
   if (!c) return "all";
-  if (c.customer_origin === "igreen_sync") return "igreen_sync";
   const src = typeof c.lead_source === "string" ? c.lead_source : c.lead_source?.source;
   if (src === "meta_ads") return "meta_ads";
   if (src === "partner") return "partner";
@@ -64,7 +63,6 @@ const ORIGIN_LABEL: Record<OriginFilter, string> = {
   all: "Todas",
   meta_ads: "Meta Ads",
   whatsapp_direct: "WhatsApp direto",
-  igreen_sync: "Cliente iGreen",
   partner: "Parceiro",
 };
 
