@@ -107,6 +107,7 @@ export default function AdminConversao() {
       .from("customers" as any)
       .select(`
         id, name, phone_whatsapp, customer_origin, lead_source, bot_paused, last_bot_interaction_at,
+        referral_partner_id, referral_keyword_matched,
         lead_insights ( customer_id, temperature, loss_reason, main_doubt, main_objection,
                          summary, next_action, next_msg_draft, next_msg_template_shortcut,
                          conversion_chance, signals, classified_at, needs_reclassify )
@@ -140,6 +141,8 @@ export default function AdminConversao() {
           customer_origin: c.customer_origin,
           lead_source: c.lead_source,
           bot_paused: c.bot_paused,
+          referral_partner_id: c.referral_partner_id ?? null,
+          referral_keyword_matched: c.referral_keyword_matched ?? null,
         },
       };
     });
