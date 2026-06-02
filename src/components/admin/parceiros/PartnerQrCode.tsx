@@ -213,34 +213,39 @@ export function PartnerQrCode({
   };
 
   /**
-   * Export PNG: draws background + QR + footer band into an offscreen canvas
-   * at CANVAS_W×CANVAS_H and triggers a download. Background uses "cover" so
-   * the aspect ratio is preserved without distortion.
+   * Renderiza o flyer num canvas com a proporção nativa do template
+   * selecionado (sem corte/distorção). Background usa "contain" e faixas
+   * verdes preenchem o residual caso a arte enviada não bata a proporção.
    */
-  const handleDownload = async () => {
+  const renderToCanvas = async (): Promise<HTMLCanvasElement | null> => {
     const svgElement = qrSvgWrapperRef.current?.querySelector("svg");
-    if (!svgElement) return;
+    if (!svgElement) return null;
+
+    const dims = TEMPLATE_DIMS[templateId];
+    const CW = dims.canvasW;
+    const CH = dims.canvasH;
 
     const canvas = document.createElement("canvas");
-    canvas.width = CANVAS_W;
-    canvas.height = CANVAS_H;
+    canvas.width = CW;
+    canvas.height = CH;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
 
-    // 1. Background.
+    // 1. Fundo verde escuro.
     ctx.fillStyle = "#0a3d2c";
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillRect(0, 0, CW, CH);
 
+    // 2. Arte de fundo (contain — não corta, não distorce).
     if (bgImage) {
       await new Promise<void>((resolve) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
-          const ratio = Math.max(CANVAS_W / img.width, CANVAS_H / img.height);
+          const ratio = Math.min(CW / img.width, CH / img.height);
           const w = img.width * ratio;
           const h = img.height * ratio;
-          const dx = (CANVAS_W - w) / 2;
-          const dy = (CANVAS_H - h) / 2;
+          const dx = (CW - w) / 2;
+          const dy = (CH - h) / 2;
           ctx.drawImage(img, dx, dy, w, h);
           resolve();
         };
@@ -249,7 +254,7 @@ export function PartnerQrCode({
       });
     }
 
-    // 2. QR with white border (matches reference flyer style).
+    // 3. QR com cartão branco.
     const svgData = new XMLSerializer().serializeToString(svgElement);
     const svgUrl =
       "data:image/svg+xml;base64," +
@@ -257,24 +262,15 @@ export function PartnerQrCode({
     await new Promise<void>((resolve) => {
       const img = new Image();
       img.onload = () => {
-        const qrPx = (qrSize / 100) * CANVAS_W;
-        const cx = (qrX / 100) * CANVAS_W;
-        const cy = (qrY / 100) * CANVAS_H;
+        const qrPx = (qrSize / 100) * CW;
+        const cx = (qrX / 100) * CW;
+        const cy = (qrY / 100) * CH;
         const dx = cx - qrPx / 2;
         const dy = cy - qrPx / 2;
         const pad = qrPx * 0.06;
-        // White card.
         ctx.fillStyle = "#ffffff";
-        roundRect(
-          ctx,
-          dx - pad,
-          dy - pad,
-          qrPx + pad * 2,
-          qrPx + pad * 2,
-          qrPx * 0.04,
-        );
+        roundRect(ctx, dx - pad, dy - pad, qrPx + pad * 2, qrPx + pad * 2, qrPx * 0.04);
         ctx.fill();
-        // QR.
         ctx.drawImage(img, dx, dy, qrPx, qrPx);
         resolve();
       };
@@ -282,12 +278,12 @@ export function PartnerQrCode({
       img.src = svgUrl;
     });
 
-    // 3. Footer band (LICENCIADO ... | WHATSAPP ...).
+    // 4. Faixa de rodapé.
     if (showFooter) {
-      const bandHeight = CANVAS_H * 0.045;
-      const bandY = (footerY / 100) * CANVAS_H - bandHeight / 2;
+      const bandHeight = CH * 0.045;
+      const bandY = (footerY / 100) * CH - bandHeight / 2;
       ctx.fillStyle = "#0a3d2c";
-      ctx.fillRect(0, bandY, CANVAS_W, bandHeight);
+      ctx.fillRect(0, bandY, CW, bandHeight);
 
       const footerLeft = consultantName
         ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
@@ -299,19 +295,47 @@ export function PartnerQrCode({
       ctx.fillStyle = "#ffffff";
       ctx.font = `700 ${Math.round(bandHeight * 0.42)}px sans-serif`;
       ctx.textBaseline = "middle";
-      const cy = bandY + bandHeight / 2;
-      const sidePad = CANVAS_W * 0.04;
+      const cyText = bandY + bandHeight / 2;
+      const sidePad = CW * 0.04;
       ctx.textAlign = "left";
-      if (footerLeft) ctx.fillText(footerLeft, sidePad, cy);
+      if (footerLeft) ctx.fillText(footerLeft, sidePad, cyText);
       ctx.textAlign = "right";
-      if (footerRight) ctx.fillText(footerRight, CANVAS_W - sidePad, cy);
+      if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
     }
 
+    return canvas;
+  };
+
+  const handleDownload = async () => {
+    const canvas = await renderToCanvas();
+    if (!canvas) return;
     const a = document.createElement("a");
-    a.download = `flyer-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.png`;
+    a.download = `flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.png`;
     a.href = canvas.toDataURL("image/png");
     a.click();
   };
+
+  const handleDownloadPDF = async () => {
+    const canvas = await renderToCanvas();
+    if (!canvas) return;
+    const { pdfWmm: wmm, pdfHmm: hmm } = TEMPLATE_DIMS[templateId];
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
+    pdf.setFillColor("#0a3d2c");
+    pdf.rect(0, 0, wmm, hmm, "F");
+    const scale = Math.min(wmm / canvas.width, hmm / canvas.height);
+    const drawW = canvas.width * scale;
+    const drawH = canvas.height * scale;
+    const dx = (wmm - drawW) / 2;
+    const dy = (hmm - drawH) / 2;
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    pdf.addImage(imgData, "JPEG", dx, dy, drawW, drawH);
+    pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);
+  };
+
+  // Preview com proporção real do template (largura fixa, altura calculada).
+  const previewAspect =
+    TEMPLATE_DIMS[templateId].canvasH / TEMPLATE_DIMS[templateId].canvasW;
+  const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
 
   // Preview-space sizes (percentages → pixels).
   const qrPxPreview = (qrSize / 100) * PREVIEW_W;
@@ -323,6 +347,8 @@ export function PartnerQrCode({
   const footerRightPreview = consultantPhone
     ? `WHATSAPP: ${formatPhoneDisplay(consultantPhone)}`
     : "WHATSAPP: —";
+
+
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
