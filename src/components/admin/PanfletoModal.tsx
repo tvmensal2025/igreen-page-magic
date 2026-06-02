@@ -406,43 +406,8 @@ export function PanfletoModal({
                 className="max-w-full h-auto shadow-lg block"
                 style={{ maxHeight: "70vh" }}
               />
-              {format === "banner" && (
-                <div
-                  className="absolute select-none touch-none cursor-move rounded ring-2 ring-yellow-400/70 hover:ring-yellow-400"
-                  style={{
-                    left: `${cameraPos.xPct}%`,
-                    top: `${cameraPos.yPct}%`,
-                    width: "32%",
-                    height: "12%",
-                    transform: "translate(-50%, -50%)",
-                  }}
-                  title="Arraste para posicionar a chamada APONTE A CÂMERA"
-                  onPointerDown={(e) => {
-                    draggingCamera.current = true;
-                    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-                  }}
-                  onPointerMove={(e) => {
-                    if (!draggingCamera.current) return;
-                    const wrap = canvasWrapRef.current?.querySelector("canvas");
-                    if (!wrap) return;
-                    const r = wrap.getBoundingClientRect();
-                    const xPct = Math.max(5, Math.min(95, ((e.clientX - r.left) / r.width) * 100));
-                    const yPct = Math.max(5, Math.min(95, ((e.clientY - r.top) / r.height) * 100));
-                    setCameraPos({ xPct, yPct });
-                  }}
-                  onPointerUp={(e) => {
-                    draggingCamera.current = false;
-                    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-                  }}
-                />
-              )}
             </div>
           </div>
-          {format === "banner" && (
-            <p className="text-xs text-muted-foreground text-center -mt-2">
-              Arraste a moldura amarela sobre o banner para posicionar a chamada "APONTE A CÂMERA".
-            </p>
-          )}
 
           <div className="flex flex-wrap gap-2 justify-end">
             <Button variant="outline" onClick={copyLink} className="gap-2">
