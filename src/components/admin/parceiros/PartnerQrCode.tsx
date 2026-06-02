@@ -220,6 +220,26 @@ export function PartnerQrCode({
   const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>({ a4: false, banner: false });
   const locked = DEFAULT_LOCKED[templateId] && !unlockedMap[templateId];
 
+  // Quando travado, força sempre os valores oficiais do template (ignora drift do estado).
+  const effQrX = locked ? template.qrX : qrX;
+  const effQrY = locked ? template.qrY : qrY;
+  const effQrSize = locked ? template.qrSize : qrSize;
+  const effFooterY = locked ? template.footerY : footerY;
+  const effShowFooter = locked ? true : showFooter;
+
+  // Ao re-travar via toggle, restaura valores oficiais para refletir no preview/sliders.
+  const setLockedFor = (id: TemplateId, unlocked: boolean) => {
+    setUnlockedMap((m) => ({ ...m, [id]: unlocked }));
+    if (!unlocked && DEFAULT_LOCKED[id]) {
+      const t = TEMPLATES[id];
+      setQrX(t.qrX);
+      setQrY(t.qrY);
+      setQrSize(t.qrSize);
+      setFooterY(t.footerY);
+      setShowFooter(true);
+    }
+  };
+
   const handlePointerDown =
     (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
       if (locked) return;
