@@ -298,7 +298,7 @@ export function PartnerQrCode({
 
     // 4. Faixa de rodapé.
     if (showFooter) {
-      const bandHeight = CH * 0.045;
+      const bandHeight = CH * 0.03;
       const bandY = (footerY / 100) * CH - bandHeight / 2;
       ctx.fillStyle = "#0a3d2c";
       ctx.fillRect(0, bandY, CW, bandHeight);
@@ -310,14 +310,14 @@ export function PartnerQrCode({
         ? `WHATSAPP: ${formatPhoneDisplay(consultantPhone)}`
         : "";
 
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.textBaseline = "middle";
       const cyText = bandY + bandHeight / 2;
       const sidePad = CW * 0.025;
       const gap = CW * 0.02;
       const available = CW - sidePad * 2 - gap;
       // Auto-shrink pra caber nome+id+telefone sem cortar
-      let fSize = Math.round(bandHeight * 0.42);
+      let fSize = Math.round(bandHeight * 0.36);
       while (fSize > 8) {
         ctx.font = `700 ${fSize}px sans-serif`;
         const wL = footerLeft ? ctx.measureText(footerLeft).width : 0;
@@ -353,14 +353,14 @@ export function PartnerQrCode({
       ctx.lineWidth = Math.max(2, line1Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("APONTE A CÂMERA", cx, topY);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.fillText("APONTE A CÂMERA", cx, topY);
 
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
       ctx.lineWidth = Math.max(2, line2Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
@@ -372,7 +372,7 @@ export function PartnerQrCode({
       ctx.lineWidth = Math.max(2, arrowH * 0.08);
       ctx.strokeStyle = "#000000";
       ctx.stroke();
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#fff200";
       ctx.fill();
     }
 
@@ -414,8 +414,8 @@ export function PartnerQrCode({
   const qrCorePxPreview = (qrSize / 100) * PREVIEW_W;
   const qrPadPreview = qrCorePxPreview * 0.06;
   const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
-  const footerHPreview = PREVIEW_H * 0.045;
-  const footerFontPreview = Math.max(8, Math.round(footerHPreview * 0.42));
+  const footerHPreview = PREVIEW_H * 0.03;
+  const footerFontPreview = Math.max(7, Math.round(footerHPreview * 0.36));
 
   const footerLeftPreview = consultantName
     ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
@@ -478,11 +478,12 @@ export function PartnerQrCode({
               {showFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex items-center justify-between leading-tight px-2"
+                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 flex items-center justify-between leading-tight px-2"
                   style={{
                     top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
                     fontSize: footerFontPreview,
+                    color: "#fff200",
                     fontWeight: 700,
                   }}
                 >
@@ -501,18 +502,18 @@ export function PartnerQrCode({
                   transform: "translate(-50%, -50%)",
                   width: "55%",
                   lineHeight: 1.05,
-                  WebkitTextStroke: "1px #000",
+                  WebkitTextStroke: "1.2px #000",
                   textShadow: "none",
                 }}
               >
-                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#fff200", fontWeight: 900, fontSize: 11 }}>
                   APONTE A CÂMERA
                 </span>
-                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#fff200", fontWeight: 900, fontSize: 11 }}>
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#fff" stroke="#000" strokeWidth="1" strokeLinejoin="round" />
+                  <polygon points="0,0 14,0 7,12" fill="#fff200" stroke="#000" strokeWidth="1.2" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
