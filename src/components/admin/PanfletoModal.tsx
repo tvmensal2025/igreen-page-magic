@@ -4,7 +4,7 @@ import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Copy, FileText, Loader2 } from "lucide-react";
+import { Download, Copy, FileText, Loader2, Lock } from "lucide-react";
 
 type Format = "a4" | "banner";
 
@@ -33,7 +33,8 @@ const A4_QR_BOX = { x: 32, y: 855, size: 170 };
 const BANNER_W = 1008;
 const BANNER_H = 1880;
 // Caixa vazia inferior-esquerda já desenhada no banner — só preenchemos com QR.
-const BANNER_QR_BOX = { x: 60, y: 1480, size: 310 };
+// Posição travada (20% X, 87% Y, 30% size) — bate 1:1 com PartnerQrCode.
+const BANNER_QR_BOX = { x: 50, y: 1484, size: 302 };
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
