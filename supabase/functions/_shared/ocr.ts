@@ -148,7 +148,14 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-              generationConfig: { temperature: 0, maxOutputTokens: 2048, responseMimeType: "application/json" },
+              // ⚠️ FIX 2026-06-02: Gemini 2.5 Flash tem "thinking" ligado por default e
+              // gasta o orçamento de tokens raciocinando ANTES de emitir o JSON. Com
+              // maxOutputTokens=2048 + responseMimeType=json o output saía truncado
+              // (sem `}` final) → regex não casava → "Não extraiu JSON". Caso real:
+              // conta da DAIANE FERNANDA DA SILVA HORACIO (PDF CPFL 761KB) falhou 2x
+              // mesmo o OCR tendo extraído nome+endereço+valor corretamente. Fix:
+              // thinkingBudget=0 desliga o raciocínio interno e budget maior dá folga.
+              generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
             }),
             timeout: TIMEOUT_GEMINI,
           }
