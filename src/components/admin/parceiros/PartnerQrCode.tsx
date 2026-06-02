@@ -411,8 +411,11 @@ export function PartnerQrCode({
   const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
 
   // Preview-space sizes (percentages → pixels).
-  const qrPxPreview = (qrSize / 100) * PREVIEW_W;
+  const qrCorePxPreview = (qrSize / 100) * PREVIEW_W;
+  const qrPadPreview = qrCorePxPreview * 0.06;
+  const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
   const footerHPreview = PREVIEW_H * 0.045;
+  const footerFontPreview = Math.max(8, Math.round(footerHPreview * 0.42));
 
   const footerLeftPreview = consultantName
     ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
@@ -456,15 +459,16 @@ export function PartnerQrCode({
                 onPointerDown={handlePointerDown("qr")}
                 className="absolute select-none touch-none cursor-move bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10"
                 style={{
-                  left: `calc(${qrX}% - ${qrPxPreview / 2}px)`,
-                  top: `calc(${qrY}% - ${qrPxPreview / 2}px)`,
-                  width: qrPxPreview,
-                  height: qrPxPreview,
+                  left: `calc(${qrX}% - ${qrCardPxPreview / 2}px)`,
+                  top: `calc(${qrY}% - ${qrCardPxPreview / 2}px)`,
+                  width: qrCardPxPreview,
+                  height: qrCardPxPreview,
+                  padding: qrPadPreview,
                 }}
               >
                 <QRCodeSVG
                   value={url}
-                  size={qrPxPreview - 12}
+                  size={qrCorePxPreview}
                   level="M"
                   style={{ display: "block" }}
                 />
@@ -474,16 +478,16 @@ export function PartnerQrCode({
               {showFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex flex-col items-center justify-center leading-tight px-1.5"
+                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex items-center justify-between leading-tight px-2"
                   style={{
                     top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
-                    fontSize: 8,
+                    fontSize: footerFontPreview,
                     fontWeight: 700,
                   }}
                 >
-                  <span className="whitespace-nowrap">{footerLeftPreview}</span>
-                  <span className="whitespace-nowrap">{footerRightPreview}</span>
+                  <span className="whitespace-nowrap overflow-hidden text-ellipsis">{footerLeftPreview}</span>
+                  <span className="whitespace-nowrap pl-2">{footerRightPreview}</span>
                 </div>
               )}
 
