@@ -350,14 +350,14 @@ export function PartnerQrCode({
       ctx.miterLimit = 2;
 
       ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(2, line1Size * 0.09);
+      ctx.lineWidth = Math.max(2, line1Size * 0.035);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("APONTE A CÂMERA", cx, topY);
       ctx.fillStyle = "#fff200";
       ctx.fillText("APONTE A CÂMERA", cx, topY);
 
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(2, line2Size * 0.09);
+      ctx.lineWidth = Math.max(2, line2Size * 0.035);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
       ctx.fillStyle = "#fff200";
@@ -369,7 +369,7 @@ export function PartnerQrCode({
       ctx.lineTo(cx + arrowW / 2, arrowTop);
       ctx.lineTo(cx, arrowTop + arrowH);
       ctx.closePath();
-      ctx.lineWidth = Math.max(2, arrowH * 0.08);
+      ctx.lineWidth = Math.max(2, arrowH * 0.04);
       ctx.strokeStyle = "#000000";
       ctx.stroke();
       ctx.fillStyle = "#fff200";
@@ -502,7 +502,7 @@ export function PartnerQrCode({
                   transform: "translate(-50%, -50%)",
                   width: "55%",
                   lineHeight: 1.05,
-                  WebkitTextStroke: "1.2px #000",
+                  WebkitTextStroke: "0.4px #000",
                   textShadow: "none",
                 }}
               >
@@ -513,7 +513,7 @@ export function PartnerQrCode({
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#fff200" stroke="#000" strokeWidth="1.2" strokeLinejoin="round" />
+                  <polygon points="0,0 14,0 7,12" fill="#fff200" stroke="#000" strokeWidth="0.5" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
