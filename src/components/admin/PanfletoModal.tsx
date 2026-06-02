@@ -30,8 +30,8 @@ const A4_QR_BOX = { x: 32, y: 855, size: 170 };
 
 // ============ FORMATO BANNER (504mm x 940mm, proporção ~9:16) ============
 // public/images/banner-lei-14300-base.jpg (1069 x 1920) — usamos resolução nativa
-const BANNER_W = 1069;
-const BANNER_H = 1920;
+const BANNER_W = 1008;
+const BANNER_H = 1880;
 // Caixa vazia inferior-esquerda já desenhada no banner — só preenchemos com QR.
 const BANNER_QR_BOX = { x: 60, y: 1480, size: 310 };
 

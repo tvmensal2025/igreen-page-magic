@@ -1,79 +1,27 @@
-## Problemas identificados
+## Por que o banner baixado fica diferente
 
-**1. Passo 1 dispara o Passo 2 (e segue) automaticamente — `manual-step-send`**
+O preview no modal e o PNG são exatamente o canvas (1069×1920). Já o PDF é gerado em página física **504×940 mm** e a arte é encaixada com `contain` (mantendo proporção, com fundo verde de "letterbox") — só que as proporções não batem:
 
-No `CaptureStepsList` (usado dentro da ficha de captação), o handler de envio passa `continueFlow !== false` → na prática manda `continueFlow: true` quando o consultor clica no avião do Passo 1:
+- Canvas: 1069 / 1920 = **0,5568**
+- PDF: 504 / 940 = **0,5362**
 
-```ts
-// src/components/captacao/CaptureStepsList.tsx:335
-onSend={(opts) => confirmStep && doSend(..., opts?.continueFlow !== false)}
-```
+Como o `contain` deixa a arte menor para caber sem cortar, sobram **faixas verdes nas laterais (ou topo/rodapé)** no PDF, e o conteúdo aparece levemente reduzido em relação ao preview. O PNG não tem esse problema porque é 1:1 com o canvas.
 
-Com `continueFlow=true`, a edge `manual-step-send` entra em `buildContinuationPatch` e tenta encadear até achar uma "pergunta" para parar. A regra usada é:
+## Plano (1 ajuste só)
 
-```ts
-// supabase/functions/manual-step-send/index.ts:1088-1090
-const _normEnd = (s) => String(s?.message_text || "").trim().replace(/[\s\u200B-\u200D\uFEFF]+$/g, "");
-const _looksLikeQuestion = (s) => _normEnd(s).endsWith("?");
-```
+Alinhar a proporção do canvas do banner com a proporção física do PDF para que **preview, PNG e PDF fiquem visualmente idênticos**, sem letterbox.
 
-Mas o Passo 1 termina com `Como posso te chamar? 😊` — o emoji no fim faz `endsWith("?")` retornar **false**, o chain não para, e o bot manda o Passo 2 (`Prazer, **! 🙌 ... valor médio...`) junto. Por isso o card mostrou "PASSOS · 2/10 ENVIADOS" e o nome saiu como `**` (variável `{{nome}}` vazia, porque o lead ainda não tinha nome).
+**Arquivo:** `src/components/admin/PanfletoModal.tsx`
 
-**2. Lista "Em captação" fora de ordem cronológica**
+- Trocar as dimensões do canvas do banner para a mesma proporção do PDF 504×940 mm, mantendo resolução alta para impressão:
+  - `BANNER_W = 1008` (504 × 2)
+  - `BANNER_H = 1880` (940 × 2)
+- Nada mais muda: o render usa `BANNER_W/BANNER_H` em todos os cálculos (faixa do rodapé, posição do QR, bloco "APONTE A CÂMERA" em %), então tudo se adapta automaticamente.
+- A faixa de licenciado/whatsapp continua com auto-shrink, então o texto não estoura.
 
-`CaptureLeadList` ordena por `capture_started_at desc nullslast`. Quando o consultor reabre/reentra captação de um lead antigo, esse `capture_started_at` é atualizado e o lead salta pro topo, fazendo parecer que está fora de ordem em relação aos cadastros recentes. Você confirmou que quer **mais recente primeiro por `created_at`**.
+## Resultado esperado
 
----
+- Preview no modal = PNG baixado = PDF baixado (sem barras verdes nas bordas, mesma composição).
+- A arte fica pronta pra gráfica no tamanho exato 504×940 mm sem distorção.
 
-## Plano
-
-### Fix 1 — Não encadear automaticamente no clique do Passo (frontend)
-
-Em `src/components/captacao/CaptureStepsList.tsx:335`, trocar o default do `continueFlow` para **false** quando o consultor clica no avião de um passo individual:
-
-```ts
-onSend={(opts) => confirmStep && doSend(confirmStep.row, confirmStep.group.step_key, opts?.continueFlow === true)}
-```
-
-Assim só encadeia se o componente de confirmação pedir explicitamente (`Enviar e continuar fluxo`). Clique simples no Passo 1 → manda só o Passo 1.
-
-### Fix 2 — Detector de pergunta robusto a emoji/pontuação (defesa em profundidade, edge)
-
-Em `supabase/functions/manual-step-send/index.ts:1088-1090`, ajustar `_normEnd` para remover emojis, espaços e pontuação decorativa antes de checar `endsWith("?")`. Assim, mesmo se algum outro caminho usar `continueFlow=true`, "Como posso te chamar? 😊" é reconhecido como pergunta e o chain para.
-
-```ts
-const _stripTrailingDecor = (s: string) =>
-  s.replace(/[\s\u200B-\u200D\uFEFF\p{Extended_Pictographic}\p{Emoji_Component}]+$/gu, "");
-const _normEnd = (s: any) => _stripTrailingDecor(String(s?.message_text || "").trim());
-const _looksLikeQuestion = (s: any) => _normEnd(s).endsWith("?");
-```
-
-### Fix 3 — Ordenar lista por `created_at` desc (mais recente primeiro)
-
-Em `src/components/captacao/CaptureLeadList.tsx:38`, trocar:
-
-```ts
-.order("capture_started_at", { ascending: false, nullsFirst: false })
-```
-
-por:
-
-```ts
-.order("created_at", { ascending: false })
-```
-
-E no display (`fmtTime`, linha 127), priorizar `created_at` em vez de `capture_started_at` para o tempo exibido bater com a ordem da lista.
-
----
-
-## Validação
-
-1. Abrir captação com um lead novo, clicar no avião do **Passo 1** → conferir que **apenas** a mensagem do Passo 1 chegou no WhatsApp (badge "1/10 ENVIADOS", não "2/10").
-2. Recarregar a aba Captação → o lead mais recém-criado aparece no topo da lista.
-3. Rodar `npx vitest run` para garantir que nada relacionado a flow-selector quebrou.
-
-## Arquivos afetados
-
-- `src/components/captacao/CaptureStepsList.tsx` (1 linha)
-- `src/components/captacao/CaptureLeadList.tsx` (2 linhas)
-- `supabase/functions/manual-step-send/index.ts` (3 linhas)
+Posso aplicar?
