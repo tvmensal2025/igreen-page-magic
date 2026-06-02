@@ -163,19 +163,22 @@ Deno.serve(async (req) => {
     let ids: string[] = [];
     if (body.customer_id) ids = [body.customer_id];
     else if (Array.isArray(body.customer_ids)) ids = body.customer_ids.slice(0, 25);
-    else if (body.consultant_id && body.scope === "stale_24h") {
+    else if (body.consultant_id && (body.scope === "stale_24h" || body.scope === "all_unclassified")) {
       const { data } = await sb
         .from("customers")
         .select("id, lead_insights(classified_at, needs_reclassify)")
         .eq("consultant_id", body.consultant_id)
         .neq("customer_origin", "igreen_sync")
-        .limit(50);
+        .limit(1000);
       const cutoff = Date.now() - 24 * 3600 * 1000;
+      const onlyUnclassified = body.scope === "all_unclassified";
       ids = (data ?? [])
         .filter((c: any) => {
           const li = c.lead_insights;
           if (!li || (Array.isArray(li) && li.length === 0)) return true;
           const row = Array.isArray(li) ? li[0] : li;
+          if (!row.classified_at) return true;
+          if (onlyUnclassified) return false;
           if (row.needs_reclassify) return true;
           return new Date(row.classified_at).getTime() < cutoff;
         })

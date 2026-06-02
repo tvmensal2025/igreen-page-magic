@@ -1,47 +1,65 @@
-## Escopo
+## Problema
 
-Apagar do banco TODOS os leads marcados como teste/warmup/simulador e seus dados relacionados, em **todos os consultores**. Encontrei pelo menos:
+A página `/admin/conversao` mostra 97 leads não classificados, mas o botão "Classificar com IA (lote)" só processa até 25 por chamada e usa scope `stale_24h` (limita a 50 candidatos). Por isso a contagem fica travada — clicar uma vez não classifica todos.
 
-- `is_test_lead = true` → **25 leads**
-- `is_sandbox = true` → **8 leads**
-- nome contém `Test`, `Warmup`, `Simulad`, `Simulator`, `Simular`, `JornadaTest`, `TraceTest`, `FinalTest`, `Lead Real Simulado`, `TestVariantA/B`, etc. → **34 leads**
-- telefone com padrão fake `550000…`, `5555…`, `1111…` → **43 leads**
+Além disso o visual é funcional mas seco: chips pequenos, tabela densa, sem hierarquia clara entre "tem insight" e "vazio".
 
-Total único estimado: ~50 customers (há sobreposição entre os filtros). Exemplos confirmados na consulta: `Lead Teste E E`, `TestVariantA #3`, `Maria Silva (sandbox)`, `Test_D_Mapping`, `FinalTest`, `Test1..Test15`, `Simular`, `JornadaTest`, `Lead Real Simulado`.
+## O que vou mudar
 
-## O que vou apagar (migration única, `ON DELETE CASCADE` cuidando do resto)
+### 1. Classificar TODOS os 97 (sem ficar clicando)
 
-Definir um `WITH targets AS (...)` que seleciona os `customer_id` que casam com qualquer um dos critérios abaixo, e então `DELETE` em cascata:
+**Edge function `lead-temperature-classifier`** — adicionar novo scope:
 
-```sql
-WITH targets AS (
-  SELECT id FROM customers
-  WHERE is_test_lead = true
-     OR is_sandbox   = true
-     OR name ILIKE '%test%'
-     OR name ILIKE '%warmup%'
-     OR name ILIKE '%simulad%'
-     OR name ILIKE '%simulator%'
-     OR name ILIKE '%simular%'
-     OR phone_whatsapp LIKE '550000%'
-     OR phone_whatsapp LIKE '5555%'
-     OR phone_whatsapp LIKE '1111%'
-     OR phone_whatsapp LIKE '0000%'
-)
-DELETE FROM crm_deals      WHERE customer_id IN (SELECT id FROM targets);
-DELETE FROM lead_insights  WHERE customer_id IN (SELECT id FROM targets);
-DELETE FROM whatsapp_messages WHERE customer_id IN (SELECT id FROM targets);   -- se existir
-DELETE FROM customers      WHERE id IN (SELECT id FROM targets);
+```ts
+else if (body.consultant_id && body.scope === "all_unclassified") {
+  const { data } = await sb
+    .from("customers")
+    .select("id, lead_insights(classified_at)")
+    .eq("consultant_id", body.consultant_id)
+    .neq("customer_origin", "igreen_sync")
+    .limit(500);
+  ids = (data ?? [])
+    .filter((c: any) => {
+      const li = Array.isArray(c.lead_insights) ? c.lead_insights[0] : c.lead_insights;
+      return !li || !li.classified_at;
+    })
+    .map((c: any) => c.id)
+    .slice(0, 25); // ainda processa 25 por chamada (rate-limit Gemini)
+}
 ```
 
-Antes de submeter a migration final, vou listar exatamente quais tabelas referenciam `customers(id)` para incluir todas no DELETE e não deixar órfão.
+**Frontend (`AdminConversao.tsx`)** — trocar o handler `classifyBatch` por um loop que chama a função em lotes de 25 até esvaziar os não-classificados, mostrando progresso "12/97 classificados…" via toast e atualizando a tabela a cada lote. Para no primeiro erro `rate_limited` / `no_credits`.
 
-## Proteções
+Botão fica: **"Classificar 97 não classificados"** (label dinâmico baseado em `unclassified`). Se não houver não-classificados, vira "Reclassificar antigos" (scope antigo `stale_24h`).
 
-- A query **NÃO** toca em `customer_origin = 'igreen_sync'` a menos que ele também esteja marcado como teste (`is_test_lead`/`is_sandbox`). Clientes iGreen reais ficam intactos.
-- A query **NÃO** apaga por palavra-chave em telefone real (`+55 11 9...`); só padrões claramente fake (`550000…`, `5555…`, `1111…`, `0000…`).
-- Nada é apagado em `consultants`, `flow_definitions`, `message_templates`, `network_members` etc.
+### 2. Melhoria visual da página
 
-## Confirmação que peço
+Mantém estrutura e cores existentes (`hot/warm/cold/dead/objection/rescue`), mas:
 
-**Confirma que posso executar?** Vou rodar primeiro um SELECT mostrando a contagem exata por tabela afetada, depois a migration de DELETE.
+- **Header de KPIs**: substituir os chips minúsculos por uma faixa de 6 cards (um por temperatura) com ícone grande, número grande, label, e o card ativo destacado. Card "não classificados" em destaque amarelo no topo enquanto > 0.
+- **Barra de progresso** quando o batch estiver rodando ("Classificando 24/97…").
+- **Tabela**:
+  - Linha do lead com avatar circular com inicial + cor da temperatura
+  - Coluna "Chance" vira mini-barra horizontal (0–100) colorida pelo bucket
+  - Linhas não-classificadas com fundo levemente amarelo + botão "IA" pulsante
+  - Hover mais evidente, padding maior, zebra sutil
+- **Filtros** (origem + busca) numa segunda linha agrupada num bloco com `bg-card/40 rounded-lg p-3`.
+- **Empty state** com ilustração simples (ícone Sparkles grande) + CTA único.
+- **Drawer de detalhe**: títulos de seção com pequena barra colorida à esquerda, botão "Copiar mensagem sugerida" mais proeminente.
+
+Tudo usando tokens do design system (`bg-card`, `text-foreground`, `border-border`, cores de temperatura já no `TEMP_META`). Sem nova lib, sem mudança de rota.
+
+### 3. Aumentar o universo carregado
+
+O `fetchRows` hoje pega 300 customers. Se o consultor tiver mais que isso, alguns dos 97 não aparecem. Vou subir o `.limit(300)` para `.limit(1000)` (limite do PostgREST) e adicionar nota no topo se vier exatamente 1000.
+
+## Fora de escopo
+
+- Não mudo lógica de scoring/IA, só a forma de disparar e mostrar.
+- Não mudo a tabela `lead_insights` nem o schema.
+- Não mexo em outras páginas admin.
+
+## Arquivos tocados
+
+- `supabase/functions/lead-temperature-classifier/index.ts` (novo scope `all_unclassified`)
+- `src/pages/AdminConversao.tsx` (loop de batch + redesign)
