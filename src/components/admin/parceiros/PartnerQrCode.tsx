@@ -455,12 +455,12 @@ export function PartnerQrCode({
               </div>
 
               {/* Footer band, draggable */}
-              {showFooter && (
+              {effShowFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
                   className={`absolute left-0 right-0 select-none touch-none bg-emerald-900/95 flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
                   style={{
-                    top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
+                    top: `calc(${effFooterY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
                     fontSize: footerFontPreview,
                     color: "#fff200",
