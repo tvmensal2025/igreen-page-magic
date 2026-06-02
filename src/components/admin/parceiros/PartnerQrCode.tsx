@@ -220,6 +220,26 @@ export function PartnerQrCode({
   const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>({ a4: false, banner: false });
   const locked = DEFAULT_LOCKED[templateId] && !unlockedMap[templateId];
 
+  // Quando travado, força sempre os valores oficiais do template (ignora drift do estado).
+  const effQrX = locked ? template.qrX : qrX;
+  const effQrY = locked ? template.qrY : qrY;
+  const effQrSize = locked ? template.qrSize : qrSize;
+  const effFooterY = locked ? template.footerY : footerY;
+  const effShowFooter = locked ? true : showFooter;
+
+  // Ao re-travar via toggle, restaura valores oficiais para refletir no preview/sliders.
+  const setLockedFor = (id: TemplateId, unlocked: boolean) => {
+    setUnlockedMap((m) => ({ ...m, [id]: unlocked }));
+    if (!unlocked && DEFAULT_LOCKED[id]) {
+      const t = TEMPLATES[id];
+      setQrX(t.qrX);
+      setQrY(t.qrY);
+      setQrSize(t.qrSize);
+      setFooterY(t.footerY);
+      setShowFooter(true);
+    }
+  };
+
   const handlePointerDown =
     (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
       if (locked) return;
@@ -284,9 +304,9 @@ export function PartnerQrCode({
     await new Promise<void>((resolve) => {
       const img = new Image();
       img.onload = () => {
-        const qrPx = (qrSize / 100) * CW;
-        const cx = (qrX / 100) * CW;
-        const cy = (qrY / 100) * CH;
+        const qrPx = (effQrSize / 100) * CW;
+        const cx = (effQrX / 100) * CW;
+        const cy = (effQrY / 100) * CH;
         const dx = cx - qrPx / 2;
         const dy = cy - qrPx / 2;
         const pad = qrPx * 0.06;
@@ -301,9 +321,9 @@ export function PartnerQrCode({
     });
 
     // 4. Faixa de rodapé.
-    if (showFooter) {
+    if (effShowFooter) {
       const bandHeight = CH * 0.03;
-      const bandY = (footerY / 100) * CH - bandHeight / 2;
+      const bandY = (effFooterY / 100) * CH - bandHeight / 2;
       ctx.fillStyle = "#0a3d2c";
       ctx.fillRect(0, bandY, CW, bandHeight);
 
@@ -371,7 +391,7 @@ export function PartnerQrCode({
   const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
 
   // Preview-space sizes (percentages → pixels).
-  const qrCorePxPreview = (qrSize / 100) * PREVIEW_W;
+  const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W;
   const qrPadPreview = qrCorePxPreview * 0.06;
   const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
   const footerHPreview = PREVIEW_H * 0.03;
@@ -419,8 +439,8 @@ export function PartnerQrCode({
                 onPointerDown={handlePointerDown("qr")}
                 className={`absolute select-none touch-none bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10 ${locked ? "cursor-not-allowed" : "cursor-move"}`}
                 style={{
-                  left: `calc(${qrX}% - ${qrCardPxPreview / 2}px)`,
-                  top: `calc(${qrY}% - ${qrCardPxPreview / 2}px)`,
+                  left: `calc(${effQrX}% - ${qrCardPxPreview / 2}px)`,
+                  top: `calc(${effQrY}% - ${qrCardPxPreview / 2}px)`,
                   width: qrCardPxPreview,
                   height: qrCardPxPreview,
                   padding: qrPadPreview,
@@ -435,12 +455,12 @@ export function PartnerQrCode({
               </div>
 
               {/* Footer band, draggable */}
-              {showFooter && (
+              {effShowFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
                   className={`absolute left-0 right-0 select-none touch-none bg-emerald-900/95 flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
                   style={{
-                    top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
+                    top: `calc(${effFooterY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
                     fontSize: footerFontPreview,
                     color: "#fff200",
@@ -479,7 +499,7 @@ export function PartnerQrCode({
               {DEFAULT_LOCKED[templateId] && (
                 <button
                   type="button"
-                  onClick={() => setUnlockedMap((m) => ({ ...m, [templateId]: !m[templateId] }))}
+                  onClick={() => setLockedFor(templateId, !unlockedMap[templateId])}
                   className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 hover:bg-muted border border-border rounded-md px-2 py-1.5 mt-1 transition-colors w-full text-left"
                   title={locked ? "Clique para destravar e ajustar manualmente" : "Clique para travar novamente"}
                 >
@@ -536,11 +556,11 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Posição do QR (vertical)</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(qrY)}%
+                  {Math.round(effQrY)}%
                 </span>
               </div>
               <Slider
-                value={[qrY]}
+                value={[effQrY]}
                 onValueChange={([v]) => setQrY(v)}
                 min={0}
                 max={100}
@@ -553,11 +573,11 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Posição do QR (horizontal)</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(qrX)}%
+                  {Math.round(effQrX)}%
                 </span>
               </div>
               <Slider
-                value={[qrX]}
+                value={[effQrX]}
                 onValueChange={([v]) => setQrX(v)}
                 min={0}
                 max={100}
@@ -570,11 +590,11 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Tamanho do QR</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(qrSize)}%
+                  {Math.round(effQrSize)}%
                 </span>
               </div>
               <Slider
-                value={[qrSize]}
+                value={[effQrSize]}
                 onValueChange={([v]) => setQrSize(v)}
                 min={12}
                 max={45}
@@ -587,21 +607,21 @@ export function PartnerQrCode({
               <div className="flex justify-between items-center">
                 <Label className="text-sm">Posição do rodapé (vertical)</Label>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {Math.round(footerY)}%
+                  {Math.round(effFooterY)}%
                 </span>
               </div>
               <Slider
-                value={[footerY]}
+                value={[effFooterY]}
                 onValueChange={([v]) => setFooterY(v)}
                 min={0}
                 max={100}
                 step={1}
-                disabled={locked || !showFooter}
+                disabled={locked || !effShowFooter}
               />
               <label className={`flex items-center gap-2 text-xs text-muted-foreground mt-2 ${locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
-                  checked={showFooter}
+                  checked={effShowFooter}
                   onChange={(e) => setShowFooter(e.target.checked)}
                   className="h-3.5 w-3.5 rounded border-input"
                   disabled={locked}
