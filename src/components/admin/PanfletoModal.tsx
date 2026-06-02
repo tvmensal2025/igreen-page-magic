@@ -28,8 +28,8 @@ const A4_W = A4_BG_W * A4_SCALE;
 const A4_H = A4_BG_H * A4_SCALE;
 const A4_QR_BOX = { x: 32, y: 855, size: 170 };
 
-// ============ FORMATO BANNER (504mm x 940mm, proporção ~9:16) ============
-// public/images/banner-lei-14300-base.jpg (1069 x 1920) — usamos resolução nativa
+// ============ FORMATO BANNER (504mm x 940mm) ============
+// O canvas mantém exatamente a mesma proporção física do PDF para preview/export/print baterem.
 const BANNER_W = 1008;
 const BANNER_H = 1880;
 // Caixa vazia inferior-esquerda já desenhada no banner — só preenchemos com QR.
@@ -45,6 +45,22 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     };
     img.src = src;
   });
+}
+
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const scale = Math.max(w / img.width, h / img.height);
+  const sw = w / scale;
+  const sh = h / scale;
+  const sx = (img.width - sw) / 2;
+  const sy = (img.height - sh) / 2;
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
 
 function formatBrPhone(raw?: string): string {
@@ -148,33 +164,33 @@ function drawCameraBlock(
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
 
-  // Linha 1: APONTE A CÂMERA (verde com contorno preto fino)
+  // Linha 1: APONTE A CÂMERA (branco com contorno preto forte)
   ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(1, line1Size * 0.04);
+  ctx.lineWidth = Math.max(2, line1Size * 0.09);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("APONTE A CÂMERA", cx, topY);
-  ctx.fillStyle = "#ffd700";
+  ctx.fillStyle = "#ffffff";
   ctx.fillText("APONTE A CÂMERA", cx, topY);
 
-  // Linha 2: DO SEU CELULAR AQUI (amarelo com contorno preto fino)
+  // Linha 2: DO SEU CELULAR AQUI (branco com contorno preto forte)
   ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-  ctx.lineWidth = Math.max(1, line2Size * 0.04);
+  ctx.lineWidth = Math.max(2, line2Size * 0.09);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-  ctx.fillStyle = "#ffd700";
+  ctx.fillStyle = "#ffffff";
   ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
-  // Seta pra baixo (verde com contorno preto)
+  // Seta pra baixo (branca com contorno preto)
   const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
   ctx.beginPath();
   ctx.moveTo(cx - arrowW / 2, arrowTop);
   ctx.lineTo(cx + arrowW / 2, arrowTop);
   ctx.lineTo(cx, arrowTop + arrowH);
   ctx.closePath();
-  ctx.lineWidth = Math.max(1, arrowH * 0.03);
+  ctx.lineWidth = Math.max(2, arrowH * 0.08);
   ctx.strokeStyle = "#000000";
   ctx.stroke();
-  ctx.fillStyle = "#ffd700";
+  ctx.fillStyle = "#ffffff";
   ctx.fill();
 }
 
@@ -192,7 +208,7 @@ async function renderBanner(
   canvas.height = BANNER_H;
 
   const bg = await loadImage("/images/banner-lei-14300-base.jpg");
-  ctx.drawImage(bg, 0, 0, BANNER_W, BANNER_H);
+  drawImageCover(ctx, bg, 0, 0, BANNER_W, BANNER_H);
 
   // QR dentro da caixa vazia bordada inferior-esquerda
   const { x, y, size } = BANNER_QR_BOX;

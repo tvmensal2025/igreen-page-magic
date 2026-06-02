@@ -106,6 +106,22 @@ const TEMPLATE_DIMS: Record<
 };
 const PREVIEW_W = 320;
 
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const scale = Math.max(w / img.width, h / img.height);
+  const sw = w / scale;
+  const sh = h / scale;
+  const sx = (img.width - sw) / 2;
+  const sy = (img.height - sh) / 2;
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
 
 /**
  * Editable flyer with draggable QR + footer band.
@@ -242,18 +258,13 @@ export function PartnerQrCode({
     ctx.fillStyle = "#0a3d2c";
     ctx.fillRect(0, 0, CW, CH);
 
-    // 2. Arte de fundo (contain — não corta, não distorce).
+    // 2. Arte de fundo (cover — sem barras; igual ao preview/PDF).
     if (bgImage) {
       await new Promise<void>((resolve) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => {
-          const ratio = Math.min(CW / img.width, CH / img.height);
-          const w = img.width * ratio;
-          const h = img.height * ratio;
-          const dx = (CW - w) / 2;
-          const dy = (CH - h) / 2;
-          ctx.drawImage(img, dx, dy, w, h);
+          drawImageCover(ctx, img, 0, 0, CW, CH);
           resolve();
         };
         img.onerror = () => resolve();
@@ -321,7 +332,7 @@ export function PartnerQrCode({
       if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
     }
 
-    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo (verde).
+    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo (branco com contorno forte).
     {
       const cx = (cameraPos.xPct / 100) * CW;
       const cy = (cameraPos.yPct / 100) * CH;
@@ -339,17 +350,17 @@ export function PartnerQrCode({
       ctx.miterLimit = 2;
 
       ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(1, line1Size * 0.04);
+      ctx.lineWidth = Math.max(2, line1Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("APONTE A CÂMERA", cx, topY);
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#ffffff";
       ctx.fillText("APONTE A CÂMERA", cx, topY);
 
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
-      ctx.lineWidth = Math.max(1, line2Size * 0.04);
+      ctx.lineWidth = Math.max(2, line2Size * 0.09);
       ctx.strokeStyle = "#000000";
       ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#ffffff";
       ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
@@ -358,10 +369,10 @@ export function PartnerQrCode({
       ctx.lineTo(cx + arrowW / 2, arrowTop);
       ctx.lineTo(cx, arrowTop + arrowH);
       ctx.closePath();
-      ctx.lineWidth = Math.max(1, arrowH * 0.03);
+      ctx.lineWidth = Math.max(2, arrowH * 0.08);
       ctx.strokeStyle = "#000000";
       ctx.stroke();
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#ffffff";
       ctx.fill();
     }
 
@@ -400,8 +411,11 @@ export function PartnerQrCode({
   const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
 
   // Preview-space sizes (percentages → pixels).
-  const qrPxPreview = (qrSize / 100) * PREVIEW_W;
+  const qrCorePxPreview = (qrSize / 100) * PREVIEW_W;
+  const qrPadPreview = qrCorePxPreview * 0.06;
+  const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
   const footerHPreview = PREVIEW_H * 0.045;
+  const footerFontPreview = Math.max(8, Math.round(footerHPreview * 0.42));
 
   const footerLeftPreview = consultantName
     ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
@@ -431,7 +445,7 @@ export function PartnerQrCode({
                 width: PREVIEW_W,
                 height: PREVIEW_H,
                 backgroundImage: bgImage ? `url(${bgImage})` : undefined,
-                backgroundSize: "contain",
+                  backgroundSize: "cover",
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
               }}
@@ -445,15 +459,16 @@ export function PartnerQrCode({
                 onPointerDown={handlePointerDown("qr")}
                 className="absolute select-none touch-none cursor-move bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10"
                 style={{
-                  left: `calc(${qrX}% - ${qrPxPreview / 2}px)`,
-                  top: `calc(${qrY}% - ${qrPxPreview / 2}px)`,
-                  width: qrPxPreview,
-                  height: qrPxPreview,
+                  left: `calc(${qrX}% - ${qrCardPxPreview / 2}px)`,
+                  top: `calc(${qrY}% - ${qrCardPxPreview / 2}px)`,
+                  width: qrCardPxPreview,
+                  height: qrCardPxPreview,
+                  padding: qrPadPreview,
                 }}
               >
                 <QRCodeSVG
                   value={url}
-                  size={qrPxPreview - 12}
+                  size={qrCorePxPreview}
                   level="M"
                   style={{ display: "block" }}
                 />
@@ -463,16 +478,16 @@ export function PartnerQrCode({
               {showFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex flex-col items-center justify-center leading-tight px-1.5"
+                  className="absolute left-0 right-0 select-none touch-none cursor-row-resize bg-emerald-900/95 text-white flex items-center justify-between leading-tight px-2"
                   style={{
                     top: `calc(${footerY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
-                    fontSize: 8,
+                    fontSize: footerFontPreview,
                     fontWeight: 700,
                   }}
                 >
-                  <span className="whitespace-nowrap">{footerLeftPreview}</span>
-                  <span className="whitespace-nowrap">{footerRightPreview}</span>
+                  <span className="whitespace-nowrap overflow-hidden text-ellipsis">{footerLeftPreview}</span>
+                  <span className="whitespace-nowrap pl-2">{footerRightPreview}</span>
                 </div>
               )}
 
@@ -486,18 +501,18 @@ export function PartnerQrCode({
                   transform: "translate(-50%, -50%)",
                   width: "55%",
                   lineHeight: 1.05,
-                  WebkitTextStroke: "0.5px #000",
+                  WebkitTextStroke: "1px #000",
                   textShadow: "none",
                 }}
               >
-                <span style={{ color: "#22ff44", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
                   APONTE A CÂMERA
                 </span>
                 <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#22ff44" stroke="#000" strokeWidth="0.5" strokeLinejoin="round" />
+                  <polygon points="0,0 14,0 7,12" fill="#fff" stroke="#000" strokeWidth="1" strokeLinejoin="round" />
                 </svg>
               </div>
             </div>
