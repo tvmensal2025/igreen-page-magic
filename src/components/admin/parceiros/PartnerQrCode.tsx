@@ -369,7 +369,8 @@ export function PartnerQrCode({
                 width: PREVIEW_W,
                 height: PREVIEW_H,
                 backgroundImage: bgImage ? `url(${bgImage})` : undefined,
-                backgroundSize: "cover",
+                backgroundSize: "contain",
+                backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
               }}
               onPointerMove={handlePointerMove}
