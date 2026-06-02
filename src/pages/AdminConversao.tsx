@@ -47,6 +47,8 @@ interface InsightRow {
     customer_origin: string | null;
     lead_source: any;
     bot_paused: boolean | null;
+    referral_partner_id: string | null;
+    referral_keyword_matched: string | null;
   };
 }
 
