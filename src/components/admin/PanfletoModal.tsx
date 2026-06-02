@@ -124,12 +124,54 @@ async function renderA4(
   ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, W - 28 * SCALE, stripeMidY);
 }
 
+// Tamanhos do bloco "APONTE A CÂMERA" desenhado no canvas do banner
+const CAMERA_BLOCK = {
+  line1Size: 36,
+  line2Size: 36,
+  lineGap: 10,
+  arrowH: 30,
+  arrowW: 36,
+  arrowGap: 14,
+};
+
+function drawCameraBlock(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  const { line1Size, line2Size, lineGap, arrowH, arrowW, arrowGap } = CAMERA_BLOCK;
+  const totalH = line1Size + lineGap + line2Size + arrowGap + arrowH;
+  const topY = cy - totalH / 2;
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  ctx.fillStyle = "#ffd700";
+  ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
+  ctx.fillText("APONTE A CÂMERA", cx, topY);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
+  ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
+
+  // Seta pra baixo
+  ctx.fillStyle = "#ffd700";
+  const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
+  ctx.beginPath();
+  ctx.moveTo(cx - arrowW / 2, arrowTop);
+  ctx.lineTo(cx + arrowW / 2, arrowTop);
+  ctx.lineTo(cx, arrowTop + arrowH);
+  ctx.closePath();
+  ctx.fill();
+}
+
 async function renderBanner(
   canvas: HTMLCanvasElement,
   redirectUrl: string,
   nomeConsultor: string,
   telefoneConsultor: string,
   igreenId: string,
+  cameraPos: { xPct: number; yPct: number },
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -141,7 +183,6 @@ async function renderBanner(
 
   // QR dentro da caixa vazia bordada inferior-esquerda
   const { x, y, size } = BANNER_QR_BOX;
-  // moldura branca + borda dourada espessa
   const pad = 12;
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(x - pad, y - pad, size + pad * 2, size + pad * 2);
@@ -158,46 +199,21 @@ async function renderBanner(
   const qrImg = await loadImage(qrDataUrl);
   ctx.drawImage(qrImg, x, y, size, size);
 
-  // Bloco de chamada à direita do QR
-  const textX = x + size + 50;
-  const qrCenterY = y + size / 2;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
+  // Bloco "APONTE A CÂMERA" arrastável (posição em % do canvas)
+  drawCameraBlock(
+    ctx,
+    (cameraPos.xPct / 100) * BANNER_W,
+    (cameraPos.yPct / 100) * BANNER_H,
+  );
 
-  // Linha 1: APONTE A CÂMERA (amarelo ouro)
-  ctx.fillStyle = "#ffd700";
-  ctx.font = `900 56px Montserrat, "Arial Black", sans-serif`;
-  ctx.fillText("APONTE A CÂMERA", textX, qrCenterY - 60);
-
-  // Linha 2: DO SEU CELULAR AQUI (branco)
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `900 56px Montserrat, "Arial Black", sans-serif`;
-  ctx.fillText("DO SEU CELULAR AQUI", textX, qrCenterY + 4);
-
-  // Linha 3: subtítulo verde-limão
-  ctx.fillStyle = "#c8ff3e";
-  ctx.font = `700 30px Montserrat, "Arial Black", sans-serif`;
-  ctx.fillText("e fale comigo agora no WhatsApp", textX, qrCenterY + 68);
-
-  // Seta dourada apontando do texto para o QR
-  ctx.fillStyle = "#d4a017";
-  ctx.beginPath();
-  const arrowX = textX - 12;
-  const arrowY = qrCenterY;
-  ctx.moveTo(arrowX, arrowY - 22);
-  ctx.lineTo(arrowX - 28, arrowY);
-  ctx.lineTo(arrowX, arrowY + 22);
-  ctx.closePath();
-  ctx.fill();
-
-  // Faixa LICENCIADO + WHATSAPP no rodapé absoluto — proporcional ao banner
-  const stripeH = 140;
+  // Faixa LICENCIADO + WHATSAPP no rodapé — menor
+  const stripeH = 70;
   const stripeY = BANNER_H - stripeH;
   ctx.fillStyle = "#0d3b1f";
   ctx.fillRect(0, stripeY, BANNER_W, stripeH);
   ctx.fillStyle = "#d4a017";
-  ctx.fillRect(0, stripeY, BANNER_W, 6);
-  ctx.fillRect(0, stripeY + stripeH - 6, BANNER_W, 6);
+  ctx.fillRect(0, stripeY, BANNER_W, 3);
+  ctx.fillRect(0, stripeY + stripeH - 3, BANNER_W, 3);
 
   const nomeUpper = (nomeConsultor || "CONSULTOR IGREEN").toUpperCase();
   const idLabel = igreenId ? ` • ID ${igreenId}` : "";
@@ -206,11 +222,11 @@ async function renderBanner(
   ctx.textBaseline = "middle";
   const midY = stripeY + stripeH / 2;
   ctx.fillStyle = "#ffd700";
-  ctx.font = `900 44px Montserrat, "Arial Black", sans-serif`;
+  ctx.font = `900 26px Montserrat, "Arial Black", sans-serif`;
   ctx.textAlign = "left";
-  ctx.fillText(`LICENCIADO: ${nomeUpper}${idLabel}`, 60, midY);
+  ctx.fillText(`LICENCIADO: ${nomeUpper}${idLabel}`, 40, midY);
   ctx.textAlign = "right";
-  ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, BANNER_W - 60, midY);
+  ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, BANNER_W - 40, midY);
 }
 
 export function PanfletoModal({
@@ -225,6 +241,10 @@ export function PanfletoModal({
   const [rendering, setRendering] = useState(false);
   const [ready, setReady] = useState(false);
   const [format, setFormat] = useState<Format>("a4");
+  // Posição do bloco "APONTE A CÂMERA" (banner) — % do canvas
+  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 65 });
+  const draggingCamera = useRef(false);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const redirectUrl = `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
@@ -241,9 +261,11 @@ export function PanfletoModal({
     }
     if (!ready || !canvasRef.current) return;
     setRendering(true);
-    const render = format === "a4" ? renderA4 : renderBanner;
-    render(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
-      .catch((e) => {
+    const p =
+      format === "a4"
+        ? renderA4(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId)
+        : renderBanner(canvasRef.current, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos);
+    p.catch((e) => {
         console.error("[panfleto] render error", e);
         toast({
           title: "Erro ao gerar arte",
@@ -252,7 +274,7 @@ export function PanfletoModal({
         });
       })
       .finally(() => setRendering(false));
-  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, toast]);
+  }, [open, ready, format, redirectUrl, nomeConsultor, telefoneConsultor, igreenId, cameraPos, toast]);
 
   const downloadPNG = () => {
     const canvas = canvasRef.current;
@@ -349,14 +371,51 @@ export function PanfletoModal({
                 <Loader2 className="w-5 h-5 animate-spin" /> Gerando arte…
               </div>
             )}
-            <canvas
-              ref={setCanvasRef}
-              width={canvasW}
-              height={canvasH}
-              className="max-w-full h-auto shadow-lg"
-              style={{ maxHeight: "70vh" }}
-            />
+            <div ref={canvasWrapRef} className="relative inline-block">
+              <canvas
+                ref={setCanvasRef}
+                width={canvasW}
+                height={canvasH}
+                className="max-w-full h-auto shadow-lg block"
+                style={{ maxHeight: "70vh" }}
+              />
+              {format === "banner" && (
+                <div
+                  className="absolute select-none touch-none cursor-move rounded ring-2 ring-yellow-400/70 hover:ring-yellow-400"
+                  style={{
+                    left: `${cameraPos.xPct}%`,
+                    top: `${cameraPos.yPct}%`,
+                    width: "32%",
+                    height: "12%",
+                    transform: "translate(-50%, -50%)",
+                  }}
+                  title="Arraste para posicionar a chamada APONTE A CÂMERA"
+                  onPointerDown={(e) => {
+                    draggingCamera.current = true;
+                    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!draggingCamera.current) return;
+                    const wrap = canvasWrapRef.current?.querySelector("canvas");
+                    if (!wrap) return;
+                    const r = wrap.getBoundingClientRect();
+                    const xPct = Math.max(5, Math.min(95, ((e.clientX - r.left) / r.width) * 100));
+                    const yPct = Math.max(5, Math.min(95, ((e.clientY - r.top) / r.height) * 100));
+                    setCameraPos({ xPct, yPct });
+                  }}
+                  onPointerUp={(e) => {
+                    draggingCamera.current = false;
+                    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+                  }}
+                />
+              )}
+            </div>
           </div>
+          {format === "banner" && (
+            <p className="text-xs text-muted-foreground text-center -mt-2">
+              Arraste a moldura amarela sobre o banner para posicionar a chamada "APONTE A CÂMERA".
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-2 justify-end">
             <Button variant="outline" onClick={copyLink} className="gap-2">

@@ -145,8 +145,11 @@ export function PartnerQrCode({
   const [footerY, setFooterY] = useState(template.footerY);
   const [showFooter, setShowFooter] = useState(true);
 
-  // Which element is being dragged ("qr" | "footer" | null).
-  const draggingRef = useRef<null | "qr" | "footer">(null);
+  // Bloco "APONTE A CÂMERA" arrastável
+  const [cameraPos, setCameraPos] = useState({ xPct: 50, yPct: 45 });
+
+  // Which element is being dragged ("qr" | "footer" | "camera" | null).
+  const draggingRef = useRef<null | "qr" | "footer" | "camera">(null);
 
   const previewRef = useRef<HTMLDivElement>(null);
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
@@ -162,6 +165,7 @@ export function PartnerQrCode({
     setQrSize(t.qrSize);
     setFooterY(t.footerY);
     setShowFooter(true);
+    setCameraPos({ xPct: t.qrX, yPct: Math.max(5, t.qrY - 20) });
   }, [open, templateId]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,25 +181,28 @@ export function PartnerQrCode({
   };
 
   const updatePosFromClient = useCallback(
-    (clientX: number, clientY: number, what: "qr" | "footer") => {
+    (clientX: number, clientY: number, what: "qr" | "footer" | "camera") => {
       const el = previewRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const yPct = ((clientY - rect.top) / rect.height) * 100;
-      const clamped = Math.max(0, Math.min(100, yPct));
+      const xPct = ((clientX - rect.left) / rect.width) * 100;
+      const cy = Math.max(0, Math.min(100, yPct));
+      const cx = Math.max(0, Math.min(100, xPct));
       if (what === "qr") {
-        const xPct = ((clientX - rect.left) / rect.width) * 100;
-        setQrX(Math.max(0, Math.min(100, xPct)));
-        setQrY(clamped);
+        setQrX(cx);
+        setQrY(cy);
+      } else if (what === "footer") {
+        setFooterY(cy);
       } else {
-        setFooterY(clamped);
+        setCameraPos({ xPct: cx, yPct: cy });
       }
     },
     [],
   );
 
   const handlePointerDown =
-    (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
+    (what: "qr" | "footer" | "camera") => (e: React.PointerEvent<HTMLDivElement>) => {
       e.stopPropagation();
       draggingRef.current = what;
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -301,6 +308,36 @@ export function PartnerQrCode({
       if (footerLeft) ctx.fillText(footerLeft, sidePad, cyText);
       ctx.textAlign = "right";
       if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
+    }
+
+    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo.
+    {
+      const cx = (cameraPos.xPct / 100) * CW;
+      const cy = (cameraPos.yPct / 100) * CH;
+      const line1Size = Math.round(CW * 0.035);
+      const line2Size = line1Size;
+      const lineGap = Math.round(line1Size * 0.25);
+      const arrowH = Math.round(CW * 0.04);
+      const arrowW = Math.round(arrowH * 1.2);
+      const arrowGap = Math.round(line1Size * 0.4);
+      const totalH = line1Size + lineGap + line2Size + arrowGap + arrowH;
+      const topY = cy - totalH / 2;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillStyle = "#ffd700";
+      ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
+      ctx.fillText("APONTE A CÂMERA", cx, topY);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
+      ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
+      ctx.fillStyle = "#ffd700";
+      const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
+      ctx.beginPath();
+      ctx.moveTo(cx - arrowW / 2, arrowTop);
+      ctx.lineTo(cx + arrowW / 2, arrowTop);
+      ctx.lineTo(cx, arrowTop + arrowH);
+      ctx.closePath();
+      ctx.fill();
     }
 
     return canvas;
@@ -413,10 +450,34 @@ export function PartnerQrCode({
                   <span className="truncate ml-2">{footerRightPreview}</span>
                 </div>
               )}
+
+              {/* Bloco "APONTE A CÂMERA" arrastável */}
+              <div
+                onPointerDown={handlePointerDown("camera")}
+                className="absolute select-none touch-none cursor-move flex flex-col items-center justify-center text-center px-1"
+                style={{
+                  left: `${cameraPos.xPct}%`,
+                  top: `${cameraPos.yPct}%`,
+                  transform: "translate(-50%, -50%)",
+                  width: "55%",
+                  lineHeight: 1.05,
+                  textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+                }}
+              >
+                <span style={{ color: "#ffd700", fontWeight: 900, fontSize: 11 }}>
+                  APONTE A CÂMERA
+                </span>
+                <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
+                  DO SEU CELULAR AQUI
+                </span>
+                <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
+                  <polygon points="0,0 14,0 7,12" fill="#ffd700" />
+                </svg>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px]">
-              Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste
-              fino.
+              Arraste o QR, a faixa ou a chamada "APONTE A CÂMERA". Use os
+              sliders para ajuste fino.
             </p>
           </div>
 
