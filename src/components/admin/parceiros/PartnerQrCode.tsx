@@ -300,17 +300,28 @@ export function PartnerQrCode({
         : "";
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = `700 ${Math.round(bandHeight * 0.42)}px sans-serif`;
       ctx.textBaseline = "middle";
       const cyText = bandY + bandHeight / 2;
-      const sidePad = CW * 0.04;
+      const sidePad = CW * 0.025;
+      const gap = CW * 0.02;
+      const available = CW - sidePad * 2 - gap;
+      // Auto-shrink pra caber nome+id+telefone sem cortar
+      let fSize = Math.round(bandHeight * 0.42);
+      while (fSize > 8) {
+        ctx.font = `700 ${fSize}px sans-serif`;
+        const wL = footerLeft ? ctx.measureText(footerLeft).width : 0;
+        const wR = footerRight ? ctx.measureText(footerRight).width : 0;
+        if (wL + wR <= available) break;
+        fSize -= 1;
+      }
+      ctx.font = `700 ${fSize}px sans-serif`;
       ctx.textAlign = "left";
       if (footerLeft) ctx.fillText(footerLeft, sidePad, cyText);
       ctx.textAlign = "right";
       if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
     }
 
-    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo.
+    // 5. Bloco "APONTE A CÂMERA" arrastável + seta pra baixo (verde).
     {
       const cx = (cameraPos.xPct / 100) * CW;
       const cy = (cameraPos.yPct / 100) * CH;
@@ -324,13 +335,13 @@ export function PartnerQrCode({
       const topY = cy - totalH / 2;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#c8ff3e";
       ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
       ctx.fillText("APONTE A CÂMERA", cx, topY);
       ctx.fillStyle = "#ffffff";
       ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
       ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-      ctx.fillStyle = "#ffd700";
+      ctx.fillStyle = "#c8ff3e";
       const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
       ctx.beginPath();
       ctx.moveTo(cx - arrowW / 2, arrowTop);
@@ -464,14 +475,14 @@ export function PartnerQrCode({
                   textShadow: "0 1px 2px rgba(0,0,0,0.6)",
                 }}
               >
-                <span style={{ color: "#ffd700", fontWeight: 900, fontSize: 11 }}>
+                <span style={{ color: "#c8ff3e", fontWeight: 900, fontSize: 11 }}>
                   APONTE A CÂMERA
                 </span>
                 <span style={{ color: "#fff", fontWeight: 900, fontSize: 11 }}>
                   DO SEU CELULAR AQUI
                 </span>
                 <svg width="14" height="12" viewBox="0 0 14 12" className="mt-0.5">
-                  <polygon points="0,0 14,0 7,12" fill="#ffd700" />
+                  <polygon points="0,0 14,0 7,12" fill="#c8ff3e" />
                 </svg>
               </div>
             </div>

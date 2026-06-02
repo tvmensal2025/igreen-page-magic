@@ -146,7 +146,7 @@ function drawCameraBlock(
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
 
-  ctx.fillStyle = "#ffd700";
+  ctx.fillStyle = "#c8ff3e";
   ctx.font = `900 ${line1Size}px Montserrat, "Arial Black", sans-serif`;
   ctx.fillText("APONTE A CÂMERA", cx, topY);
 
@@ -154,8 +154,8 @@ function drawCameraBlock(
   ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
   ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
-  // Seta pra baixo
-  ctx.fillStyle = "#ffd700";
+  // Seta pra baixo (verde)
+  ctx.fillStyle = "#c8ff3e";
   const arrowTop = topY + line1Size + lineGap + line2Size + arrowGap;
   ctx.beginPath();
   ctx.moveTo(cx - arrowW / 2, arrowTop);
@@ -222,11 +222,25 @@ async function renderBanner(
   ctx.textBaseline = "middle";
   const midY = stripeY + stripeH / 2;
   ctx.fillStyle = "#ffd700";
-  ctx.font = `900 26px Montserrat, "Arial Black", sans-serif`;
+  const leftText = `LICENCIADO: ${nomeUpper}${idLabel}`;
+  const rightText = `WHATSAPP: +55 ${phoneFmt}`;
+  const gap = 30;
+  const sidePad = 40;
+  const available = BANNER_W - sidePad * 2 - gap;
+  // Auto-shrink: encontra a maior fonte (até 26px) que caiba ambos os textos
+  let fontSize = 26;
+  while (fontSize > 12) {
+    ctx.font = `900 ${fontSize}px Montserrat, "Arial Black", sans-serif`;
+    const wL = ctx.measureText(leftText).width;
+    const wR = ctx.measureText(rightText).width;
+    if (wL + wR <= available) break;
+    fontSize -= 1;
+  }
+  ctx.font = `900 ${fontSize}px Montserrat, "Arial Black", sans-serif`;
   ctx.textAlign = "left";
-  ctx.fillText(`LICENCIADO: ${nomeUpper}${idLabel}`, 40, midY);
+  ctx.fillText(leftText, sidePad, midY);
   ctx.textAlign = "right";
-  ctx.fillText(`WHATSAPP: +55 ${phoneFmt}`, BANNER_W - 40, midY);
+  ctx.fillText(rightText, BANNER_W - sidePad, midY);
 }
 
 export function PanfletoModal({
