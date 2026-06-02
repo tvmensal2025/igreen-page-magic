@@ -1085,8 +1085,9 @@ async function buildContinuationPatch(supabase: any, sender: any, remoteJid: str
   let cursorPos = Number(step.position) || 0;
   const MAX_CHAIN = 20; // cobre fluxos grandes (10+ passos) sem loop infinito.
 
-  const _normEnd = (s: any) => String(s?.message_text || "").trim()
-    .replace(/[\s\u200B-\u200D\uFEFF]+$/g, "");
+  const _stripTrailingDecor = (s: string) =>
+    s.replace(/[\s\u200B-\u200D\uFEFF\p{Extended_Pictographic}\p{Emoji_Component}]+$/gu, "");
+  const _normEnd = (s: any) => _stripTrailingDecor(String(s?.message_text || "").trim());
   const _looksLikeQuestion = (s: any) => _normEnd(s).endsWith("?");
   const _hasInlineCapture = (s: any) => Array.isArray(s?.captures)
     && s.captures.some((c: any) => c?.enabled === true);
