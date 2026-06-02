@@ -153,15 +153,15 @@ function drawCameraBlock(
   ctx.lineWidth = Math.max(1, line1Size * 0.04);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("APONTE A CÂMERA", cx, topY);
-  ctx.fillStyle = "#22ff44";
+  ctx.fillStyle = "#ffd700";
   ctx.fillText("APONTE A CÂMERA", cx, topY);
 
-  // Linha 2: DO SEU CELULAR AQUI (branco com contorno preto fino)
+  // Linha 2: DO SEU CELULAR AQUI (amarelo com contorno preto fino)
   ctx.font = `900 ${line2Size}px Montserrat, "Arial Black", sans-serif`;
   ctx.lineWidth = Math.max(1, line2Size * 0.04);
   ctx.strokeStyle = "#000000";
   ctx.strokeText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#ffd700";
   ctx.fillText("DO SEU CELULAR AQUI", cx, topY + line1Size + lineGap);
 
   // Seta pra baixo (verde com contorno preto)
@@ -174,7 +174,7 @@ function drawCameraBlock(
   ctx.lineWidth = Math.max(1, arrowH * 0.03);
   ctx.strokeStyle = "#000000";
   ctx.stroke();
-  ctx.fillStyle = "#22ff44";
+  ctx.fillStyle = "#ffd700";
   ctx.fill();
 }
 

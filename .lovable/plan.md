@@ -1,27 +1,35 @@
-## Por que o banner baixado fica diferente
+## O que vou fazer
 
-O preview no modal e o PNG são exatamente o canvas (1069×1920). Já o PDF é gerado em página física **504×940 mm** e a arte é encaixada com `contain` (mantendo proporção, com fundo verde de "letterbox") — só que as proporções não batem:
+### 1. Travar o tamanho do banner — em **Parceiro** e em **Meu link**
 
-- Canvas: 1069 / 1920 = **0,5568**
-- PDF: 504 / 940 = **0,5362**
+No "Meu link" (PanfletoModal) já corrigi pra `1008×1880` (proporção exata de 504×940 mm).
+No "Parceiro" (PartnerQrCode) o banner ainda está em `1069×1920` (proporção 0,5568 ≠ 0,5362 do PDF) — vou ajustar pra ficar igual, sem letterbox e idêntico ao preview.
 
-Como o `contain` deixa a arte menor para caber sem cortar, sobram **faixas verdes nas laterais (ou topo/rodapé)** no PDF, e o conteúdo aparece levemente reduzido em relação ao preview. O PNG não tem esse problema porque é 1:1 com o canvas.
+**Arquivo:** `src/components/admin/parceiros/PartnerQrCode.tsx`
 
-## Plano (1 ajuste só)
+- `TEMPLATE_DIMS.banner`: `canvasW: 1008, canvasH: 1880` (mantém pdfWmm/pdfHmm = 504/940).
+- `TEMPLATE_DIMS.a4`: também ajustar para a proporção real de A4 → `canvasW: 1240, canvasH: 1754` (210/297 ≈ 0,707), pra Sulfite também travar 1:1 com o PDF.
 
-Alinhar a proporção do canvas do banner com a proporção física do PDF para que **preview, PNG e PDF fiquem visualmente idênticos**, sem letterbox.
+Como todos os cálculos de QR, faixa e bloco "APONTE A CÂMERA" usam `% do canvas`, nada mais precisa ser tocado — escala junto.
 
-**Arquivo:** `src/components/admin/PanfletoModal.tsx`
+### 2. Trocar a cor do bloco "APONTE A CÂMERA DO SEU CELULAR AQUI"
 
-- Trocar as dimensões do canvas do banner para a mesma proporção do PDF 504×940 mm, mantendo resolução alta para impressão:
-  - `BANNER_W = 1008` (504 × 2)
-  - `BANNER_H = 1880` (940 × 2)
-- Nada mais muda: o render usa `BANNER_W/BANNER_H` em todos os cálculos (faixa do rodapé, posição do QR, bloco "APONTE A CÂMERA" em %), então tudo se adapta automaticamente.
-- A faixa de licenciado/whatsapp continua com auto-shrink, então o texto não estoura.
+Hoje está `#22ff44` (verde neon) + `#ffffff` (branco) sobre a foto/fundo verde — pouco contraste, fica "apagado".
 
-## Resultado esperado
+Vou trocar para **amarelo `#ffd700`** nas duas linhas (mesmo amarelo da faixa do rodapé e do título do banner), com contorno preto mais grosso pra garantir legibilidade sobre qualquer fundo. A seta também vira amarela pra ficar coerente.
 
-- Preview no modal = PNG baixado = PDF baixado (sem barras verdes nas bordas, mesma composição).
-- A arte fica pronta pra gráfica no tamanho exato 504×940 mm sem distorção.
+**Arquivos:**
+- `src/components/admin/PanfletoModal.tsx` (função `drawCameraBlock`)
+- `src/components/admin/parceiros/PartnerQrCode.tsx` (bloco "5. APONTE A CÂMERA")
+
+Mudanças em cada um:
+- `fillStyle "#22ff44"` → `"#ffd700"` (linha 1 e seta)
+- `fillStyle "#ffffff"` → `"#ffd700"` (linha 2)
+- `lineWidth` do contorno: `* 0.04` → `* 0.08` (contorno preto ~2x mais grosso pra "estampar" sobre a foto)
+
+## Resultado
+
+- Banner sempre 1:1 com o PDF, tanto no card do parceiro quanto no "meu link" — preview = PNG = PDF.
+- "APONTE A CÂMERA DO SEU CELULAR AQUI" + seta em amarelo brand com contorno preto firme, bem mais legível.
 
 Posso aplicar?
