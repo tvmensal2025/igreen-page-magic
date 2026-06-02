@@ -388,7 +388,8 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-              generationConfig: { temperature: 0, maxOutputTokens: 2048, responseMimeType: "application/json" },
+              // ⚠️ Mesmo fix do ocrContaEnergia: thinkingBudget=0 + budget maior.
+              generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
             }),
             timeout: TIMEOUT_GEMINI,
           }
