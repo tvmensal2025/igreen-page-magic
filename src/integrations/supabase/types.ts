@@ -4006,6 +4006,80 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_insights: {
+        Row: {
+          classified_at: string
+          consultant_id: string
+          conversion_chance: number | null
+          created_at: string
+          customer_id: string
+          loss_reason: string | null
+          main_doubt: string | null
+          main_objection: string | null
+          messages_count_at_classify: number | null
+          model_used: string | null
+          needs_reclassify: boolean
+          next_action: string | null
+          next_msg_draft: string | null
+          next_msg_template_shortcut: string | null
+          signals: Json
+          summary: string | null
+          temperature: Database["public"]["Enums"]["lead_temperature"]
+          tokens_used: number | null
+          updated_at: string
+        }
+        Insert: {
+          classified_at?: string
+          consultant_id: string
+          conversion_chance?: number | null
+          created_at?: string
+          customer_id: string
+          loss_reason?: string | null
+          main_doubt?: string | null
+          main_objection?: string | null
+          messages_count_at_classify?: number | null
+          model_used?: string | null
+          needs_reclassify?: boolean
+          next_action?: string | null
+          next_msg_draft?: string | null
+          next_msg_template_shortcut?: string | null
+          signals?: Json
+          summary?: string | null
+          temperature?: Database["public"]["Enums"]["lead_temperature"]
+          tokens_used?: number | null
+          updated_at?: string
+        }
+        Update: {
+          classified_at?: string
+          consultant_id?: string
+          conversion_chance?: number | null
+          created_at?: string
+          customer_id?: string
+          loss_reason?: string | null
+          main_doubt?: string | null
+          main_objection?: string | null
+          messages_count_at_classify?: number | null
+          model_used?: string | null
+          needs_reclassify?: boolean
+          next_action?: string | null
+          next_msg_draft?: string | null
+          next_msg_template_shortcut?: string | null
+          signals?: Json
+          summary?: string | null
+          temperature?: Database["public"]["Enums"]["lead_temperature"]
+          tokens_used?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_insights_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: true
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           consultant_id: string
@@ -5834,6 +5908,13 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user" | "super_admin"
+      lead_temperature:
+        | "hot"
+        | "warm"
+        | "cold"
+        | "dead"
+        | "objection"
+        | "rescue"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -5962,6 +6043,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user", "super_admin"],
+      lead_temperature: ["hot", "warm", "cold", "dead", "objection", "rescue"],
     },
   },
 } as const
