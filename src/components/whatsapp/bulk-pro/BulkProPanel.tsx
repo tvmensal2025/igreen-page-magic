@@ -205,10 +205,10 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     }
 
     // Wait for schedule (treat scheduleAt as LOCAL time)
-    if (config.scheduleAt) {
-      const target = new Date(config.scheduleAt).getTime();
+    if (useConfig.scheduleAt) {
+      const target = new Date(useConfig.scheduleAt).getTime();
       if (!isNaN(target) && target > Date.now()) {
-        setWaitingSchedule(config.scheduleAt);
+        setWaitingSchedule(useConfig.scheduleAt);
         while (Date.now() < target && !cancelledRef.current) {
           await new Promise(r => setTimeout(r, 1000));
         }
@@ -229,7 +229,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       if (cancelledRef.current) break;
 
       // Window check
-      while (!inWindow(config) && !cancelledRef.current) {
+      while (!inWindow(useConfig) && !cancelledRef.current) {
         await new Promise(r => setTimeout(r, 30_000));
       }
       if (cancelledRef.current) break;
@@ -239,7 +239,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       if (cancelledRef.current) break;
 
       // Connection check at block boundary
-      if (idx % config.blockSize === 0 && idx > 0) {
+      if (idx % useConfig.blockSize === 0 && idx > 0) {
         const ok = await checkConnection();
         if (!ok) {
           toast({ title: "WhatsApp desconectado", description: "Envio pausado. Reconecte e clique em Retomar.", variant: "destructive" });
@@ -248,7 +248,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
           if (cancelledRef.current) break;
         }
         // Block pause
-        const pauseMs = config.blockPauseMin * 60_000;
+        const pauseMs = useConfig.blockPauseMin * 60_000;
         const ok2 = await sleep(pauseMs);
         if (!ok2) break;
       }
@@ -256,28 +256,28 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       const t = work[idx];
       setTargets(prev => prev.map(x => x.id === t.id ? { ...x, status: "sending" } : x));
 
-      const finalMsg = renderFinal(text, { name: t.name, bill: t.bill, city: t.city });
+      const finalMsg = renderFinal(useText, { name: t.name, bill: t.bill, city: t.city });
 
       let ok = true;
       let err: string | undefined;
       try {
-        if (media) {
+        if (useMedia) {
           // Send media first or text first
-          if (config.mediaOrder === "text_first" && finalMsg.trim()) {
+          if (useConfig.mediaOrder === "text_first" && finalMsg.trim()) {
             const r = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r.status === "failed") { ok = false; err = r.error; }
             await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
           }
-          const cat = media.kind === "image" ? "image" : media.kind === "video" ? "video" : media.kind === "audio" ? "audio" : "document";
-          const caption = config.mediaOrder === "caption_only" || config.mediaOrder === "media_first" ? finalMsg : undefined;
+          const cat = useMedia.kind === "image" ? "image" : useMedia.kind === "video" ? "video" : useMedia.kind === "audio" ? "audio" : "document";
+          const caption = useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first" ? finalMsg : undefined;
           const r = await sendWhatsAppMessage({
             instanceName, phone: t.phone, mediaCategory: cat as any,
-            mediaUrl: media.url,
+            mediaUrl: useMedia.url,
             text: cat === "image" || cat === "video" ? caption : undefined,
-            fileName: media.fileName,
+            fileName: useMedia.fileName,
           });
           if (r.status === "failed") { ok = false; err = r.error || err; }
-          if (config.mediaOrder === "media_first" && finalMsg.trim() && media.kind !== "image" && media.kind !== "video") {
+          if (useConfig.mediaOrder === "media_first" && finalMsg.trim() && useMedia.kind !== "image" && useMedia.kind !== "video") {
             await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
             const r2 = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r2.status === "failed") { ok = false; err = r2.error || err; }
@@ -321,8 +321,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
       // Random interval before next
       if (idx < work.length - 1) {
-        const minS = Math.max(1, config.intervalMinS);
-        const maxS = Math.max(minS, config.intervalMaxS);
+        const minS = Math.max(1, useConfig.intervalMinS);
+        const maxS = Math.max(minS, useConfig.intervalMaxS);
         const secs = minS + Math.random() * (maxS - minS);
         const ok3 = await sleep(Math.round(secs * 1000));
         if (!ok3) break;
