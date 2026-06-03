@@ -518,6 +518,18 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
           {step === 3 && (
             <div className="space-y-4">
+              <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+                <label className="text-xs font-bold text-foreground mb-1.5 block">Nome da campanha</label>
+                <input
+                  type="text"
+                  value={campaignName}
+                  onChange={(e) => setCampaignName(e.target.value)}
+                  placeholder={`Disparo ${new Date().toLocaleDateString("pt-BR")}`}
+                  maxLength={120}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-border/40 text-sm text-foreground"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">Aparece no histórico para você identificar depois.</p>
+              </div>
               <ScheduleStep config={config} onChange={setConfig} totalContacts={deduped.length} />
               {/* Templates quick load */}
               {templates.length > 0 && (
