@@ -543,6 +543,98 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // 🪶 mode: "answer_only" — caminho leve usado pelo respondAndReentry
+    // dos webhooks (whapi/evolution). Apenas responde objetivamente à
+    // dúvida do lead em 1-2 frases. Não usa tools, não muda estado,
+    // não dispara handoff. Latência alvo: < 2s.
+    // ─────────────────────────────────────────────────────────────────
+    if (mode === "answer_only") {
+      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+      if (!LOVABLE_API_KEY) {
+        return new Response(JSON.stringify({ error: "LOVABLE_API_KEY not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Histórico curto (últimos 6 turnos) só pra contexto mínimo
+      const { data: recent } = await supabase
+        .from("conversations")
+        .select("message_direction,message_text")
+        .eq("customer_id", customer_id)
+        .order("created_at", { ascending: false })
+        .limit(6);
+      const histText = (recent || [])
+        .reverse()
+        .map((m: any) => `${m.message_direction === "inbound" ? "Lead" : "Você"}: ${String(m.message_text || "").slice(0, 240)}`)
+        .join("\n");
+
+      const sysPrompt = [
+        "Você é o atendente humano de um consultor iGreen Energia (energia limpa, cashback, clube de indicação).",
+        "Responda à dúvida do cliente em PT-BR, de forma objetiva, em 1 ou 2 frases curtas e humanas.",
+        "Tom natural, sem emoji excessivo (no máximo 1).",
+        "PROIBIDO: pedir dados, mandar saudação ('oi/olá/bom dia'), oferecer produto, dizer que é IA/assistente, prometer 'já explico melhor'.",
+        "Se a pergunta for fora do escopo iGreen, responda com empatia e brevidade — em 1 frase.",
+        "Sempre RESPONDA de fato a pergunta; nunca dê resposta vazia ou evasiva.",
+      ].join(" ");
+
+      try {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 12000);
+        const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [
+              { role: "system", content: sysPrompt },
+              ...(histText ? [{ role: "user", content: `Histórico recente:\n${histText}` }] : []),
+              { role: "user", content: String(user_input || "").slice(0, 800) },
+            ],
+          }),
+        });
+        clearTimeout(tid);
+
+        if (!resp.ok) {
+          const errTxt = await resp.text().catch(() => "");
+          console.warn(`answer_only gateway ${resp.status}: ${errTxt.slice(0, 200)}`);
+          return new Response(
+            JSON.stringify({ ok: false, reply: "", mode: "answer_only", error: `gateway_${resp.status}` }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        const data = await resp.json().catch(() => ({} as any));
+        const reply = String(data?.choices?.[0]?.message?.content || "").trim();
+
+        // Telemetria leve (best-effort)
+        try {
+          await supabase.from("ai_decisions").insert({
+            customer_id, consultant_id: customer.consultant_id, phase: customer.sales_phase || "abertura",
+            tool_called: "answer_only", reasoning: "midflow_qa_answer",
+            user_input, ai_output: { reply },
+            latency_ms: Date.now() - t0,
+          });
+        } catch (_) { /* noop */ }
+
+        return new Response(
+          JSON.stringify({ ok: true, reply, mode: "answer_only", latency_ms: Date.now() - t0 }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      } catch (e) {
+        console.warn("answer_only erro:", (e as any)?.message);
+        return new Response(
+          JSON.stringify({ ok: false, reply: "", mode: "answer_only", error: (e as any)?.message || "error" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     const phase = customer.sales_phase || "abertura";
 
     // ---------- INTENT-FIRST short-circuit (sem LLM) ----------

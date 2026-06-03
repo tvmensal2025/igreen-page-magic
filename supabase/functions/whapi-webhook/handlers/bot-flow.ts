@@ -696,7 +696,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 8000);
+        const tid = setTimeout(() => ctrl.abort(), 15000);
         const aiResp = await fetch(`${supabaseUrl}/functions/v1/ai-sales-agent`, {
           method: "POST",
           headers: {
@@ -714,15 +714,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         clearTimeout(tid);
         if (aiResp.ok) {
           const body = await aiResp.json().catch(() => ({}));
-          const txt = (body?.decision?.args?.message || body?.reply || body?.message || "").toString().trim();
+          const txt = (body?.reply || body?.decision?.args?.message || body?.message || "").toString().trim();
           if (txt) { answer = txt; source = "ai"; }
         }
       } catch (e) { console.warn("[respondAndReentry] IA falhou:", (e as any)?.message); }
     }
 
-    // 3) Fallback genérico (nunca silêncio)
+    // 3) Sem resposta da IA → não inventa "já explico melhor".
+    //    Mantém answer vazia e a finalMsg passa a ser só o reentry completo.
     if (!answer) {
-      answer = "Boa pergunta! Já explico melhor 💬";
       source = "fallback";
     }
 
@@ -773,7 +773,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     } catch (_) { /* noop */ }
 
     const reentryLine = reentryTail ? `\n\n📋 Voltando: ${reentryTail}` : "";
-    const finalMsg = `${answer}${reentryLine}${courtesyTail}`;
+    const finalMsg = answer
+      ? `${answer}${reentryLine}${courtesyTail}`
+      : `${reentryFull || reentryTail || ""}${courtesyTail}`.trim();
 
     try { await sendText(remoteJid, finalMsg); } catch (e) {
       console.warn("[respondAndReentry] sendText falhou:", (e as any)?.message);
