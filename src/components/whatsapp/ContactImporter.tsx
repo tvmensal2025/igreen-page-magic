@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Users, ClipboardPaste, FileSpreadsheet, Download, Search, X, CheckSquare, AlertTriangle, Trash2, Phone, Loader2, UserCircle, Globe } from "lucide-react";
+import { Users, ClipboardPaste, FileSpreadsheet, Download, Search, X, CheckSquare, AlertTriangle, Trash2, Phone, Loader2, UserCircle, Globe, MessageSquare, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
