@@ -78,11 +78,9 @@ export function MaterialCard({ item, consultantId }: Props) {
           <p className="text-[10px] text-muted-foreground uppercase">{item.type}</p>
         </div>
         <div className="flex gap-1.5">
-          <Button asChild type="button" size="sm" variant="outline" className="flex-1 gap-1.5">
-            <a href={item.url} download={filename} target="_blank" rel="noopener noreferrer">
-              <Download className="w-3.5 h-3.5" />
-              Baixar
-            </a>
+          <Button type="button" size="sm" variant="outline" className="flex-1 gap-1.5" onClick={handleDownload} disabled={downloading}>
+            <Download className="w-3.5 h-3.5" />
+            {downloading ? "Baixando..." : "Baixar"}
           </Button>
           <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={handleCopy}>
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
