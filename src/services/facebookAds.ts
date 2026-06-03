@@ -152,7 +152,7 @@ export interface CreateCampaignBody {
   // Foto: cada imagem traz seu formato (square/vertical/story) p/ asset_feed_spec.
   photos?: { url: string; format: "square" | "vertical" | "story" }[];
   // Vídeo: 1 vídeo + capa opcional. Quando presente, ignora photos.
-  video?: { url: string; thumb_url?: string };
+  video?: { url: string; thumb_url?: string; captions_srt?: string };
   headline: string;
   primary_text: string;
   description?: string;
