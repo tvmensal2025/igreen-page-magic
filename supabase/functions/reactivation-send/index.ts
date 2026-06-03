@@ -10,6 +10,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog, captureError } from "../_shared/audit.ts";
+import { checkSendQuota, registerSend, humanJitterMs } from "../_shared/anti-ban.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
