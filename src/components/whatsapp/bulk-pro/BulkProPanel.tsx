@@ -12,6 +12,7 @@ import { MessageEditor } from "./MessageEditor";
 import { ScheduleStep } from "./ScheduleStep";
 import { DEFAULT_CONFIG, type SendConfig, type PreparedMedia, type CampaignTarget } from "./types";
 import { renderFinal } from "./spintax";
+import { createCampaign, updateCampaignStatus, updateTargetStatus, listCampaigns, deleteCampaign, type PersistedCampaignRow } from "./useCampaignPersistence";
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
