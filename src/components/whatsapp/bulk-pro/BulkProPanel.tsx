@@ -293,13 +293,17 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
     if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo", variant: "destructive" }); return; }
+    if (config.intervalMaxS < config.intervalMinS) {
+      toast({ title: "Intervalo inválido", description: "Intervalo máximo deve ser maior ou igual ao mínimo", variant: "destructive" });
+      return;
+    }
     const initial: CampaignTarget[] = deduped.map(c => ({
       id: c.id, phone: c.phone, name: c.name,
       bill: c.electricity_bill_value,
       status: "queued",
     }));
     runCampaign(initial);
-  }, [deduped, text, media, runCampaign, toast]);
+  }, [deduped, text, media, config, runCampaign, toast]);
 
   const handlePause = () => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); };
   const handleCancel = () => { cancelledRef.current = true; pausedRef.current = false; setPaused(false); };
