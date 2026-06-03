@@ -782,7 +782,9 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                     <AddressRadiusPicker value={radiusPoints} onChange={setRadiusPoints} />
                   </div>
                 ) : (
+                <>
                 <div>
+
 
                   <Label className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-primary" /> Distribuidoras alvo (multi-seleção)</Label>
                   <p className="text-xs text-muted-foreground mb-2">Clique pra carregar/remover as cidades da distribuidora. Pode escolher várias — quanto mais cidades, mais barato fica o lead.</p>
