@@ -45,11 +45,13 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   const t0 = Date.now();
   const { supabase, customerId, inboundText } = input;
 
-  // 1) Carrega customer + consultant
+  // 1) Carrega customer. Sempre relê do banco quando temos customerId, mesmo
+  // se o webhook passou um objeto cacheado — precisamos do conversation_summary
+  // e dados de cadastro mais recentes para a memória funcionar.
   let customer = input.customer;
-  if (!customer) {
+  if (customerId && customerId !== "00000000-0000-0000-0000-000000000000") {
     const { data } = await supabase.from("customers").select("*").eq("id", customerId).maybeSingle();
-    customer = data;
+    if (data) customer = data;
   }
   if (!customer) throw new Error(`[fluxo-b-ai] customer ${customerId} not found`);
 
@@ -64,13 +66,14 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   }
   if (!consultant) throw new Error(`[fluxo-b-ai] consultant for customer ${customerId} not found`);
 
-  // 2) Histórico recente (últimos 16 turnos)
+  // 2) Histórico recente: últimos 40 turnos (cobre conversas longas; resumo
+  // persistente cuida do que vem antes disso).
   const { data: histRows } = await supabase
     .from("conversations")
     .select("message_direction, message_text, message_type, created_at")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
-    .limit(16);
+    .limit(40);
   const history: AIChatMessage[] = ((histRows || []) as any[])
     .slice()
     .reverse()
