@@ -168,7 +168,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     } catch { return false; }
   }, [instanceName]);
 
-  const runCampaign = useCallback(async (initialTargets: CampaignTarget[], existingCampaignId?: string) => {
+  const runCampaign = useCallback(async (
+    initialTargets: CampaignTarget[],
+    existingCampaignId?: string,
+    overrides?: { text?: string; media?: PreparedMedia | null; config?: SendConfig; name?: string },
+  ) => {
+    const useText = overrides?.text ?? text;
+    const useMedia = overrides?.media !== undefined ? overrides.media : media;
+    const useConfig = overrides?.config ?? config;
+    const useName = overrides?.name ?? campaignName;
+
     cancelledRef.current = false;
     pausedRef.current = false;
     setPaused(false);
@@ -181,13 +190,13 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     if (!existingCampaignId) {
       const newId = await createCampaign({
         consultantId,
-        name: campaignName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
-        messageText: text,
-        mediaUrl: media?.url ?? null,
-        mediaType: media?.kind ?? null,
-        mediaFilename: media?.fileName ?? null,
-        config: config as any,
-        scheduledAt: config.scheduleAt,
+        name: useName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
+        messageText: useText,
+        mediaUrl: useMedia?.url ?? null,
+        mediaType: useMedia?.kind ?? null,
+        mediaFilename: useMedia?.fileName ?? null,
+        config: useConfig as any,
+        scheduledAt: useConfig.scheduleAt,
         targets: initialTargets,
       });
       campaignIdRef.current = newId;
