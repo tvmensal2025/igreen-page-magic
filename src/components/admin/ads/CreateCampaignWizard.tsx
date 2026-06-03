@@ -528,29 +528,48 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       } catch (e) { console.warn("[wizard] persist phone failed:", e); }
       // Mantém formato de cada foto pra que o backend monte asset_feed_spec
       // com customization por posicionamento (sem corte de cabeça em Reels).
-      const tagged: { file: AdFile; format: AdFormat }[] = [
+      // Vídeo Reels: faz upload pro storage, manda url p/ edge function publicar.
+      let videoPayload: { url: string; thumb_url?: string } | undefined;
+      if (creativeMode === "video") {
+        if (videoFile) {
+          const up = await uploadAdVideo(consultantId, videoFile);
+          videoPayload = { url: up.url };
+        } else if (videoUrl) {
+          videoPayload = { url: videoUrl };
+        }
+      }
+      // Mantém formato de cada foto pra que o backend monte asset_feed_spec
+      // com customization por posicionamento (sem corte de cabeça em Reels).
+      const tagged: { file: AdFile; format: AdFormat }[] = creativeMode === "photo" ? [
         ...filesByFormat.square.map((f) => ({ file: f, format: "square" as const })),
         ...filesByFormat.vertical.map((f) => ({ file: f, format: "vertical" as const })),
         ...filesByFormat.story.map((f) => ({ file: f, format: "story" as const })),
-      ].filter((x) => isFileValidAny(x.file));
+      ].filter((x) => isFileValidAny(x.file)) : [];
       const photoUrls = tagged.length
         ? await uploadAdPhotos(consultantId, tagged.map((t) => t.file.file), { formats: tagged.map((t) => t.format) })
         : [];
-      const photos: { url: string; format: AdFormat }[] = [
+      const photos: { url: string; format: AdFormat }[] = creativeMode === "photo" ? [
         ...photoUrls.map((url, i) => ({ url, format: tagged[i].format })),
         ...pickedLibrary.map((it) => ({ url: it.url, format: it.format as AdFormat })),
-      ];
+      ] : [];
       const campaignName = activePresetNames.length > 1
         ? `iGreen — ${activePresetNames.length} distribuidoras`
         : distribuidoraPrimary
           ? `iGreen — ${distribuidoraPrimary}`
-          : `iGreen — ${cities.map(c => c.name).slice(0, 3).join(", ")}`;
+          : geoMode === "radius" && radiusPoints[0]
+            ? `iGreen — ${radiusPoints[0].address_string.slice(0, 40)}`
+            : `iGreen — ${cities.map(c => c.name).slice(0, 3).join(", ")}`;
       const payload = {
         name: campaignName,
-        cities: cities.map(c => ({ key: c.key, name: c.name })),
+        cities: geoMode === "cities" ? cities.map(c => ({ key: c.key, name: c.name })) : [],
+        custom_locations: geoMode === "radius"
+          ? radiusPoints.map((p) => ({ ...p, distance_unit: "kilometer" as const }))
+          : undefined,
         daily_budget_cents: Math.round(budget * 100),
         duration_days: duration > 0 ? duration : null,
-        photos,
+        creative_mode: creativeMode,
+        photos: creativeMode === "photo" ? photos : undefined,
+        video: videoPayload,
         headline, primary_text: primaryText, description,
         distribuidora: distribuidoraPrimary || undefined,
         placement_mode: placementMode,
