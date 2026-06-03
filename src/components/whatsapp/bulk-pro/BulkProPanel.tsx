@@ -134,7 +134,15 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   const [waitingSchedule, setWaitingSchedule] = useState<string | null>(null);
   const cancelledRef = useRef(false);
   const pausedRef = useRef(false);
+  const campaignIdRef = useRef<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<"all" | "sent" | "failed">("all");
+  const [history, setHistory] = useState<PersistedCampaignRow[]>([]);
+  const [campaignName, setCampaignName] = useState("");
+
+  // Load history
+  useEffect(() => {
+    listCampaigns(consultantId).then(setHistory);
+  }, [consultantId, done]);
 
   const stats = useMemo(() => {
     const sent = targets.filter(t => t.status === "sent").length;
