@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, validateAccount, type PreflightResult, type CustomLocation } from "@/services/facebookAds";
-import { Check, ChevronRight, Loader2, MapPin, Search, Sparkles, TrendingUp, Upload, X, ImageIcon, Smartphone, Wand2, Save, Target, DollarSign } from "lucide-react";
+import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, uploadAdVideo, validateAccount, type PreflightResult, type CustomLocation } from "@/services/facebookAds";
+import { Check, ChevronRight, Loader2, MapPin, Search, Sparkles, TrendingUp, Upload, X, ImageIcon, Smartphone, Wand2, Save, Target, DollarSign, Video, Zap } from "lucide-react";
 import { AddressRadiusPicker, type RadiusPoint } from "./AddressRadiusPicker";
 import { DISTRIBUIDORAS_PRESETS, type DistribuidoraPreset } from "@/data/distribuidoraPresets";
 import { AdPreview, type AdFormat } from "./AdPreview";
@@ -150,7 +150,11 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
   const [warmedCount, setWarmedCount] = useState<number>(0);
   const [warming, setWarming] = useState(false);
 
-  // Step 2: fotos
+  // Step 2: fotos OU vídeo Reels
+  const [creativeMode, setCreativeMode] = useState<"photo" | "video">("photo");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoMeta, setVideoMeta] = useState<{ duration: number; w: number; h: number } | null>(null);
   const [format, setFormat] = useState<AdFormat>("square");
   const [filesByFormat, setFilesByFormat] = useState<FilesByFormat>(EMPTY_FILES);
   const adFiles = filesByFormat[format];
@@ -200,6 +204,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     if (!open) return;
     setStep(1); setIssues(null); setHits([]);
     setFilesByFormat(EMPTY_FILES); setPickedLibrary([]); setPhotoTab("upload");
+    setCreativeMode("photo"); setVideoFile(null); setVideoUrl(null); setVideoMeta(null);
     setFormat("square"); setCopy(null); setHeadline(""); setPrimaryText(""); setDescription("");
     setBudget(15); setDuration(3);
     setPlacementMode("auto"); setPlacements(ALL_PLACEMENTS);
@@ -463,7 +468,11 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       if (geoMode === "radius" && radiusPoints.length === 0) return toast({ title: "Adicione pelo menos 1 endereço", variant: "destructive" });
       setStep(2);
     } else if (step === 2) {
-      if (totalFiles + pickedLibrary.length < 1) return toast({ title: "Adicione pelo menos 1 foto válida", variant: "destructive" });
+      if (creativeMode === "video") {
+        if (!videoFile && !videoUrl) return toast({ title: "Envie um vídeo (.mp4 vertical)", variant: "destructive" });
+      } else {
+        if (totalFiles + pickedLibrary.length < 1) return toast({ title: "Adicione pelo menos 1 foto válida", variant: "destructive" });
+      }
       setStep(3);
       if (!copy) generateCopyForCities();
     } else if (step === 3) {
@@ -482,7 +491,10 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     setPreflightLoading(true); setPreflight(null);
     try {
       const r = await preflightCampaign({
-        cities: cities.map((c) => ({ key: c.key, name: c.name })),
+        cities: geoMode === "cities" ? cities.map((c) => ({ key: c.key, name: c.name })) : [],
+        custom_locations: geoMode === "radius"
+          ? radiusPoints.map((p) => ({ ...p, distance_unit: "kilometer" as const }))
+          : undefined,
         daily_budget_cents: Math.round(budget * 100),
       });
       setPreflight(r);
@@ -516,29 +528,48 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       } catch (e) { console.warn("[wizard] persist phone failed:", e); }
       // Mantém formato de cada foto pra que o backend monte asset_feed_spec
       // com customization por posicionamento (sem corte de cabeça em Reels).
-      const tagged: { file: AdFile; format: AdFormat }[] = [
+      // Vídeo Reels: faz upload pro storage, manda url p/ edge function publicar.
+      let videoPayload: { url: string; thumb_url?: string } | undefined;
+      if (creativeMode === "video") {
+        if (videoFile) {
+          const up = await uploadAdVideo(consultantId, videoFile);
+          videoPayload = { url: up.url };
+        } else if (videoUrl) {
+          videoPayload = { url: videoUrl };
+        }
+      }
+      // Mantém formato de cada foto pra que o backend monte asset_feed_spec
+      // com customization por posicionamento (sem corte de cabeça em Reels).
+      const tagged: { file: AdFile; format: AdFormat }[] = creativeMode === "photo" ? [
         ...filesByFormat.square.map((f) => ({ file: f, format: "square" as const })),
         ...filesByFormat.vertical.map((f) => ({ file: f, format: "vertical" as const })),
         ...filesByFormat.story.map((f) => ({ file: f, format: "story" as const })),
-      ].filter((x) => isFileValidAny(x.file));
+      ].filter((x) => isFileValidAny(x.file)) : [];
       const photoUrls = tagged.length
         ? await uploadAdPhotos(consultantId, tagged.map((t) => t.file.file), { formats: tagged.map((t) => t.format) })
         : [];
-      const photos: { url: string; format: AdFormat }[] = [
+      const photos: { url: string; format: AdFormat }[] = creativeMode === "photo" ? [
         ...photoUrls.map((url, i) => ({ url, format: tagged[i].format })),
         ...pickedLibrary.map((it) => ({ url: it.url, format: it.format as AdFormat })),
-      ];
+      ] : [];
       const campaignName = activePresetNames.length > 1
         ? `iGreen — ${activePresetNames.length} distribuidoras`
         : distribuidoraPrimary
           ? `iGreen — ${distribuidoraPrimary}`
-          : `iGreen — ${cities.map(c => c.name).slice(0, 3).join(", ")}`;
+          : geoMode === "radius" && radiusPoints[0]
+            ? `iGreen — ${radiusPoints[0].address_string.slice(0, 40)}`
+            : `iGreen — ${cities.map(c => c.name).slice(0, 3).join(", ")}`;
       const payload = {
         name: campaignName,
-        cities: cities.map(c => ({ key: c.key, name: c.name })),
+        cities: geoMode === "cities" ? cities.map(c => ({ key: c.key, name: c.name })) : [],
+        custom_locations: geoMode === "radius"
+          ? radiusPoints.map((p) => ({ ...p, distance_unit: "kilometer" as const }))
+          : undefined,
         daily_budget_cents: Math.round(budget * 100),
         duration_days: duration > 0 ? duration : null,
-        photos,
+        creative_mode: creativeMode,
+        photos: creativeMode === "photo" ? photos : undefined,
+        video: videoPayload,
         headline, primary_text: primaryText, description,
         distribuidora: distribuidoraPrimary || undefined,
         placement_mode: placementMode,
@@ -726,7 +757,35 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
             {step === 1 && (
               <div className="space-y-3">
+                {/* Modo de geo: cidades inteiras OU endereço com raio (ultra-local). */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setGeoMode("cities")}
+                    className={`p-3 rounded-lg border text-left transition ${geoMode === "cities" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {geoMode === "cities" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <MapPin className="w-3.5 h-3.5" /> Cidades inteiras
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">Selecione distribuidoras ou cidades específicas.</div>
+                  </button>
+                  <button type="button" onClick={() => setGeoMode("radius")}
+                    className={`p-3 rounded-lg border text-left transition ${geoMode === "radius" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {geoMode === "radius" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <Target className="w-3.5 h-3.5" /> Endereço + raio
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">Anuncie a 1–50 km de uma rua, casa ou bairro específico.</div>
+                  </button>
+                </div>
+
+                {geoMode === "radius" ? (
+                  <div className="space-y-2">
+                    <AddressRadiusPicker value={radiusPoints} onChange={setRadiusPoints} />
+                  </div>
+                ) : (
+                <>
                 <div>
+
+
                   <Label className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-primary" /> Distribuidoras alvo (multi-seleção)</Label>
                   <p className="text-xs text-muted-foreground mb-2">Clique pra carregar/remover as cidades da distribuidora. Pode escolher várias — quanto mais cidades, mais barato fica o lead.</p>
 
@@ -988,11 +1047,80 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                 <div className="text-xs text-muted-foreground">
                   ✨ Pré-configurado: idade 25-65, Advantage+ Audience ON, posicionamentos automáticos FB+IG, lance Lowest Cost, objetivo Mensagens (WhatsApp).
                 </div>
+                </>
+                )}
               </div>
             )}
 
             {step === 2 && (
               <div className="space-y-3">
+                {/* Modo do criativo: várias fotos (asset_feed_spec) OU 1 vídeo Reels. */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setCreativeMode("photo")}
+                    className={`p-3 rounded-lg border text-left transition ${creativeMode === "photo" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {creativeMode === "photo" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <ImageIcon className="w-3.5 h-3.5" /> Fotos
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">Até 4 imagens por formato — Meta escolhe a melhor.</div>
+                  </button>
+                  <button type="button" onClick={() => setCreativeMode("video")}
+                    className={`p-3 rounded-lg border text-left transition ${creativeMode === "video" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {creativeMode === "video" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <Video className="w-3.5 h-3.5" /> Vídeo Reels
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">1 vídeo vertical 9:16 — só Reels e Stories.</div>
+                  </button>
+                </div>
+
+                {creativeMode === "video" ? (
+                  <div className="space-y-3">
+                    <div className={`border-2 border-dashed rounded-xl p-6 text-center ${videoFile ? "opacity-60" : ""}`}>
+                      <input type="file" accept="video/mp4,video/quicktime,video/mov" id="video-input" className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0]; e.currentTarget.value = "";
+                          if (!f) return;
+                          if (f.size > 100 * 1024 * 1024) { toast({ title: "Vídeo maior que 100 MB", variant: "destructive" }); return; }
+                          if (!/^video\/(mp4|quicktime|mov)$/.test(f.type)) { toast({ title: "Use MP4 ou MOV", variant: "destructive" }); return; }
+                          // Lê metadata (duração e dimensões) p/ avisar se não for vertical.
+                          const url = URL.createObjectURL(f);
+                          const v = document.createElement("video");
+                          v.preload = "metadata"; v.src = url;
+                          v.onloadedmetadata = () => {
+                            const meta = { duration: v.duration, w: v.videoWidth, h: v.videoHeight };
+                            setVideoFile(f); setVideoUrl(url); setVideoMeta(meta);
+                            if (meta.duration < 4) toast({ title: "Vídeo muito curto", description: "Mínimo 4 segundos.", variant: "destructive" });
+                            else if (meta.w / meta.h > 0.65) toast({ title: "Atenção: vídeo não é vertical", description: "Recomendado 9:16 (1080×1920) p/ Reels.", variant: "destructive" });
+                          };
+                        }} />
+                      <label htmlFor="video-input" className="cursor-pointer space-y-2 block">
+                        <Video className="w-8 h-8 text-primary mx-auto" />
+                        <div className="text-sm font-medium">Clique para enviar 1 vídeo Reels</div>
+                        <div className="text-xs text-muted-foreground">
+                          MP4 ou MOV · vertical <strong className="text-foreground">9:16 (1080×1920)</strong> · 4–60s · até 100 MB
+                        </div>
+                      </label>
+                    </div>
+                    {videoUrl && (
+                      <div className="relative rounded-lg overflow-hidden border border-primary/40 bg-black max-w-[280px] mx-auto">
+                        <video src={videoUrl} controls className="w-full aspect-[9/16] object-cover" />
+                        <div className="absolute top-1 right-1">
+                          <button type="button" onClick={() => { setVideoFile(null); setVideoUrl(null); setVideoMeta(null); }}
+                            className="bg-destructive text-destructive-foreground rounded-full p-1">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {videoMeta && (
+                          <div className="text-[10px] text-center py-1 bg-black/60 text-white">
+                            {videoMeta.w}×{videoMeta.h} · {videoMeta.duration.toFixed(1)}s
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                <>
                 <div>
                   <Label className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 text-primary" /> Formato do anúncio</Label>
                   <div className="grid grid-cols-3 gap-2 mt-2">
@@ -1080,6 +1208,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                 <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                   <Smartphone className="w-3 h-3" /> Total: <strong className="text-foreground">{totalFiles + pickedLibrary.length}</strong> foto(s). Misture formatos — Meta usa cada um no posicionamento ideal.
                 </div>
+                </>
+                )}
               </div>
             )}
 
@@ -1201,10 +1331,37 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
             {step === 4 && (
               <div className="space-y-5">
                 <CtwaPreflightCard consultantId={consultantId} onReadyChange={setCtwaReady} />
+
+                {/* Modo Econômico × Padrão × Personalizado — presets de orçamento */}
+                <div>
+                  <Label className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Preset de orçamento</Label>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {[
+                      { id: "eco", label: "Modo Econômico", budget: 15, days: 3, hint: "R$ 45 total · testa rápido" },
+                      { id: "std", label: "Padrão", budget: 25, days: 7, hint: "R$ 175 total · recomendado" },
+                      { id: "custom", label: "Personalizado", budget, days: duration, hint: "ajuste manual" },
+                    ].map((p) => {
+                      const active = (p.id === "eco" && budget === 15 && duration === 3)
+                        || (p.id === "std" && budget === 25 && duration === 7)
+                        || (p.id === "custom" && !(budget === 15 && duration === 3) && !(budget === 25 && duration === 7));
+                      return (
+                        <button key={p.id} type="button"
+                          onClick={() => { if (p.id === "eco") { setBudget(15); setDuration(3); } else if (p.id === "std") { setBudget(25); setDuration(7); } }}
+                          className={`p-2.5 rounded-lg border text-left transition ${active ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                          <div className="font-semibold text-xs flex items-center gap-1">
+                            {active && <Check className="w-3 h-3 text-primary" />} {p.label}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">{p.hint}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div>
                   <Label>Orçamento diário: <span className="text-primary font-bold">R$ {budget}</span></Label>
-                  <Slider min={20} max={500} step={5} value={[budget]} onValueChange={v => setBudget(v[0])} />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1"><span>R$ 20</span><span>R$ 500</span></div>
+                  <Slider min={10} max={500} step={5} value={[budget]} onValueChange={v => setBudget(v[0])} />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1"><span>R$ 10</span><span>R$ 500</span></div>
                 </div>
 
                 <div>
@@ -1213,9 +1370,20 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                 </div>
                 <Card className="p-4 bg-primary/5 border-primary/20 space-y-2 text-sm">
                   <div className="font-bold flex items-center gap-2"><Check className="w-4 h-4 text-primary" /> Resumo</div>
-                  <div className="text-muted-foreground">📍 {cities.length} cidade(s) — {cities.slice(0, 3).map(c => c.name).join(", ")}{cities.length > 3 ? "..." : ""}</div>
-                  <div className="text-muted-foreground">🖼️ {totalFiles} foto(s) — {filesByFormat.square.length} quadrada(s), {filesByFormat.vertical.length} vertical(is), {filesByFormat.story.length} story</div>
+                  {geoMode === "radius" ? (
+                    <div className="text-muted-foreground">📍 {radiusPoints.length} endereço(s) — raio {radiusPoints[0]?.radius || 0} km</div>
+                  ) : (
+                    <div className="text-muted-foreground">📍 {cities.length} cidade(s) — {cities.slice(0, 3).map(c => c.name).join(", ")}{cities.length > 3 ? "..." : ""}</div>
+                  )}
+                  {creativeMode === "video" ? (
+                    <div className="text-muted-foreground">🎬 1 vídeo Reels {videoMeta ? `(${videoMeta.duration.toFixed(1)}s)` : ""}</div>
+                  ) : (
+                    <div className="text-muted-foreground">🖼️ {totalFiles} foto(s) — {filesByFormat.square.length} quadrada(s), {filesByFormat.vertical.length} vertical(is), {filesByFormat.story.length} story</div>
+                  )}
                   <div className="text-muted-foreground">💰 R$ {budget}/dia × {duration === 0 ? "contínuo" : `${duration} dias`} = <strong className="text-foreground">R$ {duration === 0 ? `${budget * 30}/mês est.` : (budget * duration)}</strong></div>
+                  <div className="text-[11px] text-muted-foreground border-t border-border/30 pt-1.5">
+                    Estimativa honesta: a R$ {budget}/dia, espere ~{Math.max(1, Math.round(budget / 6))}–{Math.round(budget / 3)} conversas no WhatsApp/dia, das quais ~20–35% viram lead qualificado.
+                  </div>
                   <div className={`rounded-md p-2 mt-1 ${consultantPhone ? "bg-primary/10 border border-primary/30" : "bg-destructive/10 border border-destructive/40"}`}>
                     <div className={consultantPhone ? "text-foreground" : "text-destructive font-semibold"}>
                       🎯 Click-to-WhatsApp <strong>nativo</strong> (sem link wa.me)
