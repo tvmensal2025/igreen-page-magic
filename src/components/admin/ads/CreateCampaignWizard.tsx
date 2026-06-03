@@ -757,7 +757,33 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
             {step === 1 && (
               <div className="space-y-3">
+                {/* Modo de geo: cidades inteiras OU endereço com raio (ultra-local). */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setGeoMode("cities")}
+                    className={`p-3 rounded-lg border text-left transition ${geoMode === "cities" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {geoMode === "cities" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <MapPin className="w-3.5 h-3.5" /> Cidades inteiras
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">Selecione distribuidoras ou cidades específicas.</div>
+                  </button>
+                  <button type="button" onClick={() => setGeoMode("radius")}
+                    className={`p-3 rounded-lg border text-left transition ${geoMode === "radius" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {geoMode === "radius" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <Target className="w-3.5 h-3.5" /> Endereço + raio
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">Anuncie a 1–50 km de uma rua, casa ou bairro específico.</div>
+                  </button>
+                </div>
+
+                {geoMode === "radius" ? (
+                  <div className="space-y-2">
+                    <AddressRadiusPicker value={radiusPoints} onChange={setRadiusPoints} />
+                  </div>
+                ) : (
                 <div>
+
                   <Label className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-primary" /> Distribuidoras alvo (multi-seleção)</Label>
                   <p className="text-xs text-muted-foreground mb-2">Clique pra carregar/remover as cidades da distribuidora. Pode escolher várias — quanto mais cidades, mais barato fica o lead.</p>
 
