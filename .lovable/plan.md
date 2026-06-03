@@ -1,25 +1,47 @@
-# Fix — anúncio em vídeo bloqueado por falta de miniatura
+# Galeria de Materiais no Admin
 
-## Causa
-No `supabase/functions/facebook-create-campaign/index.ts` (linha 519-525), o `video_data` só recebe `image_url` se o usuário enviou `body.video.thumb_url`. Quando não envia, o Meta recusa com:
+Substituir o `MaterialsTab` atual (que só tem um botão pro Google Drive) por uma **galeria completa** com todas as mídias usadas nas páginas públicas (Licenciada + Consultor/Cliente), agrupadas por seção da página, com **Download** e **Enviar via WhatsApp**.
 
-> Invalid parameter | Seu anúncio precisa de uma miniatura de vídeo | Especifique image_hash ou image_url no campo video_data | subcode=1443226
+## O que vai aparecer
 
-## Fix
+Agrupado por seção (abas/accordion), espelhando o site:
 
-### `supabase/functions/facebook-create-campaign/index.ts` (modo vídeo)
-1. Após o upload e o status do vídeo virar `ready` (loop atual em ~485-494), se **não houver `thumbUrl`**, chamar:
-   - `GET /{fbVideoId}/thumbnails?access_token=...`
-   - Pegar `data[].uri` — preferir `is_preferred: true`, senão o primeiro item.
-   - Atribuir essa URI a `thumbUrl` para que a linha 525 (`videoData.image_url = thumbUrl`) sempre tenha valor.
-2. Se o vídeo **não ficou ready a tempo** (não entrou no `if`), pular o passo acima e ainda assim **forçar uma busca rápida** (1 retry após 3s); se mesmo assim vier vazio, retornar erro claro: "Meta ainda não gerou a miniatura do vídeo, tente novamente em alguns segundos" — em vez de deixar o `adcreatives` quebrar com subcode 1443226.
-3. Persistir o `thumb_url` resolvido no cache `ad_video_library.thumb_url` (upsert na linha 498-505) pra próximo uso reaproveitar.
+- **Notícias** — 7 vídeos (`noticia1..6.mp4` + `noticaia9.mp4`)
+- **Depoimentos** — 5 vídeos (`/videos/depoimento-1..5.mp4`)
+- **Cashback / Referral** — `cash-back-igreen.mp4`
+- **Como funciona** — `casasustentavel.mp4`
+- **Hero (cliente)** — `Green_Energy.mp4`
+- **Usina** — `usina-helio-valgas.mp4`
+- **Club de benefícios** — `club-de-beneficios.mp4`, `igreen_club_3.mp4` + banners (`club-banner-1..7.png`, `lojas-parceiras.png`)
+- **Licenciada — Hero / Why / Conexões** — `imagine-licenciado.mp4`, `Licenciadao-1.mp4`, `conexao-livre.webp`, `conexao-green.webp`, `conexao-expansao.webp`, `conexao-club.webp`, `conexao-solar.webp`, `conexao-telecom.webp`, `kit-licenciado-igreen.png`, `assinatura-empresarial.png`, `planos-igreen-telecom.png`, `qualificacoes-igreen.png`
+- **Conta de energia (Assistente)** — `conta-de-energia.mp4`, `WhatsApp Video 2025-05-29...mp4`
+- **Banners/Flyers Lei 14.300** — `mutirao-lei-14300.jpg`, `mutirao-lei-14300-base.jpg`, `banner-lei-14300-base.jpg`
+- **Botão "Abrir Drive"** continua no topo como atalho secundário.
 
-Sem mudanças em modo foto, UI ou no wizard — o problema é só backend.
+Catálogo declarado **em código** (array tipado em `src/lib/materialsCatalog.ts`) — sem precisar de tabela nova. Cada item: `{ id, title, section, type: 'video'|'image', url, thumbUrl?, sizeHint? }`.
 
-## Validação
-- Republicar o mesmo vídeo: deve criar a campanha sem o erro 1443226.
-- Logs `[fb-create] thumb auto-resolved=...` pra confirmar fluxo.
+## Ações por mídia
+
+Cada card tem:
+
+1. **▶ Preview inline** — `<video controls>` (com `preload="metadata"`) ou `<img>` em lightbox.
+2. **⬇ Download** — `<a href={url} download>` (URLs do Supabase Storage / `/videos/` / `/images/` já são públicas, então funciona sem proxy).
+3. **📋 Copiar link** — copia URL absoluta pra área de transferência.
+4. **💬 Enviar via WhatsApp** — abre um popover com 2 opções:
+   - **Compartilhar (wa.me)**: abre `https://wa.me/?text={titulo}%20{url}` numa nova aba — funciona em qualquer celular/desktop, não precisa de instância conectada.
+   - **Enviar pela minha instância**: input de telefone (com máscara BR), chama a Evolution via helper já existente `sendMedia(chatId, mediaUrl, caption, mediatype)` em `supabase/functions/_shared/whatsapp-api.ts`. Reusa a instância configurada do consultor logado (mesmo padrão do envio em massa). Mostra toast de sucesso/erro.
+
+## Estrutura técnica
+
+- **Novo:** `src/lib/materialsCatalog.ts` — catálogo tipado.
+- **Novo:** `src/components/admin/materials/MaterialCard.tsx` — preview + 3 botões + popover WhatsApp.
+- **Novo:** `src/components/admin/materials/SendViaWhatsAppPopover.tsx` — input telefone + chamada Evolution.
+- **Nova edge function:** `supabase/functions/admin-send-material/index.ts` — recebe `{ phone, mediaUrl, caption, mediatype }`, valida JWT do consultor, busca a `instance_name` do consultor em `whatsapp_instances`, chama `sendMedia` do helper compartilhado. Deploy automático.
+- **Refator:** `src/components/admin/MaterialsTab.tsx` — passa a renderizar `<Tabs>` por seção + grid de cards. Botão "Abrir Drive" continua no topo.
 
 ## Fora de escopo
-- Não mexo em UI, score de qualidade, persona da IA, nem upload manual de thumbnail.
+
+- Não cria tabela nova (catálogo em código — fácil de evoluir depois pra DB se virar caso).
+- Não mexe nas páginas públicas (NewsSection, TestimonialsSection, Licenciada, etc).
+- Não troca o pipeline de envio em massa — apenas reusa o `sendMedia` helper.
+- Whapi legado não é chamado (helper unificado já é Evolution); se quiser fallback Whapi explícito, é incremento futuro.
