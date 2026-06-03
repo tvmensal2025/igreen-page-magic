@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { ConnectionStatus } from "@/types/whatsapp";
 import type { OperationalHealth } from "@/hooks/useWhatsApp";
+import { InstanceHealth } from "./InstanceHealth";
 
 interface ConnectionPanelProps {
   connectionStatus: ConnectionStatus;
