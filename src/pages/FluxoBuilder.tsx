@@ -23,7 +23,7 @@ import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDi
 import CreateFlowFromTemplateDialog from "@/components/admin/flow-builder/CreateFlowFromTemplateDialog";
 import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard";
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
-import FlowAbControl from "@/components/admin/flow-builder/FlowAbControl";
+import FluxoBEditor from "@/components/admin/flow-builder/FluxoBEditor";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
