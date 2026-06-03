@@ -189,9 +189,51 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     });
   } catch (_) { /* tabela pode não existir em alguns ambientes */ }
 
-  const reply = (chosen.text || "").trim() || (shouldHandoff
-    ? "Vou te transferir para um humano, só um instante 🙏"
-    : "Pode me contar um pouquinho mais?");
+  // Fallback profissional quando o modelo devolveu texto vazio: nunca usar
+  // frases tipo "me conta um pouquinho mais". Sempre reavançar o funil.
+  function buildProfessionalFallback(): string {
+    if (shouldHandoff) return "Vou transferir seu atendimento para um consultor humano agora. Um momento, por favor.";
+    if (!customer.name && !updates.name) {
+      return "Para iniciarmos seu cadastro na iGreen Energy, por favor me informe seu nome completo.";
+    }
+    const knownValor = typeof updates.electricity_bill_value === "number"
+      ? updates.electricity_bill_value
+      : (typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null);
+    if (!knownValor) {
+      return "Para calcular sua economia, qual é o valor médio mensal da sua conta de luz?";
+    }
+    if (conversationStepUpdate === "aguardando_conta" || customer.conversation_step === "aguardando_conta") {
+      return "Por favor, envie aqui a foto ou PDF da sua última conta de luz. 📷";
+    }
+    if (conversationStepUpdate === "aguardando_documento" || customer.conversation_step === "aguardando_documento") {
+      return "Agora preciso da foto da frente do seu RG ou CNH para finalizar o cadastro. 📄";
+    }
+    return "Vamos continuar seu cadastro. Pode me confirmar a próxima informação que pedi?";
+  }
+
+  const reply = (chosen.text || "").trim() || buildProfessionalFallback();
+
+  // 7) Memória persistente: atualiza conversation_summary em background a cada
+  // ~6 inbounds. Fire-and-forget — não bloqueia a resposta ao lead.
+  try {
+    const { count: inboundCount } = await supabase
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId)
+      .eq("message_direction", "inbound");
+    const historyText = [...history, { role: "user", content: inboundText } as AIChatMessage, { role: "assistant", content: reply } as AIChatMessage]
+      .map((m) => `${m.role === "user" ? "Lead" : "Bot"}: ${String(m.content).slice(0, 240)}`)
+      .join("\n");
+    void maybeUpdateSummary({
+      supabase,
+      customerId,
+      consultantId: customer.consultant_id,
+      history: historyText,
+      customer: { ...customer, ...updates },
+      inboundTurnCount: inboundCount || 0,
+      previousSummary: customer.conversation_summary || null,
+    });
+  } catch (_) { /* best-effort */ }
 
   return {
     reply,
