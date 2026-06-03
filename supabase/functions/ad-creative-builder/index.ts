@@ -236,6 +236,8 @@ Exemplo do nível de qualidade esperado:
           angle: typeof v === "object" ? (v?.angle || "geral") : "geral",
         }))
         .filter((v) => v.text && isClean(v.text))
+        // Para primary: descarta abridores fracos ("Entre em contato com a P..." é o sintoma clássico).
+        .filter((v) => kind === "headline" || !WEAK_OPENERS.some((r) => r.test(v.text)))
         .map((v) => ({ ...v, score: variationScore(v.text, kind) }))
         .sort((a, b) => b.score - a.score);
 
