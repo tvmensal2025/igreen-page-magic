@@ -9,11 +9,25 @@ import { Eye, EyeOff, ArrowRight, Zap } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/common/BrandLogo";
 
+function slugify(s: string) {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [igreenId, setIgreenId] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -52,17 +66,53 @@ const Auth = () => {
         if (error) throw error;
         toast({ title: "Login realizado com sucesso!" });
       } else {
+        if (!name.trim()) throw new Error("Informe seu nome completo.");
+        if (!phone.trim()) throw new Error("Informe seu WhatsApp.");
+
         await supabase.auth.signOut();
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
-        toast({
-          title: "Cadastro realizado!",
-          description: "Conta criada. Aguarde a aprovação do Super Admin para acessar o painel.",
-        });
+
+        const userId = signUpData.user?.id;
+        if (userId) {
+          // Gera license única a partir do nome + sufixo curto do id
+          const baseSlug = slugify(name) || "consultor";
+          const license = `${baseSlug}-${userId.slice(0, 6)}`;
+          const phoneClean = phone.replace(/\D/g, "");
+
+          const { error: insErr } = await supabase.from("consultants").insert({
+            id: userId,
+            name: name.trim(),
+            license,
+            phone: phoneClean,
+            cadastro_url: license,
+            igreen_id: igreenId.trim() || null,
+            approved: false,
+          } as any);
+
+          if (insErr) {
+            console.error("[auth] falha ao criar consultor:", insErr);
+            toast({
+              title: "Conta criada, mas faltou registrar consultor",
+              description: insErr.message,
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Cadastro realizado!",
+              description: "Conta criada. Aguarde a aprovação do Super Admin para acessar o painel.",
+            });
+          }
+        } else {
+          toast({
+            title: "Cadastro enviado!",
+            description: "Verifique seu email para confirmar e depois complete seu cadastro.",
+          });
+        }
       }
     } catch (error: unknown) {
       toast({
@@ -111,7 +161,30 @@ const Auth = () => {
           <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-transparent to-accent/20 rounded-3xl blur-xl opacity-50" />
           <form onSubmit={handleSubmit} className="relative space-y-5 bg-card/80 backdrop-blur-xl p-7 sm:p-8 rounded-2xl border border-border shadow-xl">
             <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-            
+
+            {!isLogin && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-sm font-medium text-foreground">Nome completo</Label>
+                  <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)}
+                    placeholder="Ex.: Maria Silva" required maxLength={120}
+                    className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="text-sm font-medium text-foreground">WhatsApp</Label>
+                  <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(11) 99999-9999" required maxLength={20}
+                    className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="igreenId" className="text-sm font-medium text-foreground">ID iGreen (opcional)</Label>
+                  <Input id="igreenId" type="text" value={igreenId} onChange={(e) => setIgreenId(e.target.value)}
+                    placeholder="Seu código de consultor iGreen" maxLength={40}
+                    className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
+                </div>
+              </>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium text-foreground">Email</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
