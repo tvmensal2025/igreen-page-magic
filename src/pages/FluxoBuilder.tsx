@@ -344,7 +344,7 @@ export default function FluxoBuilder() {
       setExistingVariants(prevExistingVariants);
       setFlowId(prevFlowId);
       setMediaCounts(prevMediaCounts);
-      toast.error("Não foi possível carregar a variante. Tente novamente.");
+      toast.error("Não foi possível carregar o fluxo. Tente novamente.");
     } finally {
       setLoading(false);
     }
