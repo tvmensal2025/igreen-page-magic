@@ -160,6 +160,8 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [devolutivaFilter, setDevolutivaFilter] = useState("all");
   const [licenciadoFilter, setLicenciadoFilter] = useState<Set<string>>(new Set());
+  const [only48h, setOnly48h] = useState(false);
+  const [dddFilter, setDddFilter] = useState<Set<string>>(new Set());
   const [selectedDbIds, setSelectedDbIds] = useState<Set<string>>(new Set());
 
   // Extract tab state
