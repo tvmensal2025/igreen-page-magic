@@ -65,14 +65,14 @@ export default function FluxoBEditor({ consultantId }: Props) {
   }
 
   async function sendTest() {
-    if (!testCustomerId.trim() || !input.trim()) return;
+    if (!input.trim() || !consultantId) return;
     setSending(true);
     const userMsg: ChatMsg = { role: "user", text: input };
     setChat(prev => [...prev, userMsg]);
     setInput("");
     try {
       const { data, error } = await supabase.functions.invoke("fluxo-b-ai", {
-        body: { customerId: testCustomerId.trim(), inboundText: userMsg.text, dryRun: true },
+        body: { consultantId, inboundText: userMsg.text, dryRun: true },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
