@@ -362,6 +362,29 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     runCampaign(failed);
   };
 
+  const handleResume = useCallback(async (campId: string) => {
+    if (running) { toast({ title: "Já existe um disparo em andamento", variant: "destructive" }); return; }
+    const payload = await loadCampaignForResume(campId);
+    if (!payload) { toast({ title: "Não foi possível carregar a campanha", variant: "destructive" }); return; }
+    if (payload.queuedTargets.length === 0) {
+      toast({ title: "Nada na fila", description: "Esta campanha não tem contatos pendentes." });
+      return;
+    }
+    // Restaura estado local a partir da campanha persistida
+    setText(payload.messageText);
+    if (payload.mediaUrl && payload.mediaType && payload.mediaType !== "text") {
+      setMedia({ url: payload.mediaUrl, kind: payload.mediaType as any, fileName: payload.mediaFilename || undefined });
+    } else {
+      setMedia(null);
+    }
+    const restored: SendConfig = { ...DEFAULT_CONFIG, ...(payload.config || {}), scheduleAt: null };
+    setConfig(restored);
+    setCampaignName(payload.name);
+    toast({ title: "Retomando disparo", description: `${payload.queuedTargets.length} contatos na fila` });
+    // Roda com config restaurada (sem aguardar nova schedule) e mantém o mesmo campaign_id
+    setTimeout(() => runCampaign(payload.queuedTargets, payload.id), 50);
+  }, [running, runCampaign, toast]);
+
   const resetAll = () => {
     setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
     cancelledRef.current = false; pausedRef.current = false;
