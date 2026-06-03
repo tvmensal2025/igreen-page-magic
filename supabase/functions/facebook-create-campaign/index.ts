@@ -32,7 +32,9 @@ interface Body {
   // com customization por posicionamento. Aceita string[] legado (= square).
   photos?: ({ url: string; format: "square" | "vertical" | "story" } | string)[];
   // Vídeo único (modo "video"). Quando presente, ignora photos.
-  video?: { url: string; thumb_url?: string };
+  // captions_srt: conteúdo SRT em pt-BR gerado pelo ad-video-captions
+  // (anexado ao vídeo na Meta para mostrar legenda no Reels/Feed/Stories).
+  video?: { url: string; thumb_url?: string; captions_srt?: string };
   headline: string;
   primary_text: string;
   description?: string;
