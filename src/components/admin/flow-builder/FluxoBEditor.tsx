@@ -131,15 +131,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
           <p className="text-xs text-muted-foreground">Conversa com a IA usando o prompt salvo, SEM persistir nada nem enviar WhatsApp.</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <Label className="text-xs">Customer ID (UUID de um lead real para usar como contexto)</Label>
-            <Input
-              value={testCustomerId}
-              onChange={e => setTestCustomerId(e.target.value)}
-              placeholder="ex.: 2b8caea7-fa9b-432f-bdf2-c74167095836"
-              className="font-mono text-xs"
-            />
-          </div>
+          <p className="text-[11px] text-muted-foreground">Lead simulado · contexto vazio (sem nome, sem valor de conta). Use pra validar o tom e o roteiro da IA.</p>
 
           <div className="border rounded-lg p-3 h-96 overflow-y-auto bg-muted/30 space-y-2">
             {chat.length === 0 && <p className="text-xs text-muted-foreground text-center py-12">Nenhuma mensagem ainda. Digite abaixo para começar.</p>}
