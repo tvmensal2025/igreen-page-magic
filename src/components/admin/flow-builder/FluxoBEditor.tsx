@@ -24,7 +24,6 @@ export default function FluxoBEditor({ consultantId }: Props) {
   const [temperature, setTemperature] = useState(0.7);
   const [cascadeEnabled, setCascadeEnabled] = useState(true);
 
-  const [testCustomerId, setTestCustomerId] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
