@@ -1,47 +1,56 @@
-# Galeria de Materiais no Admin
+## Problema
 
-Substituir o `MaterialsTab` atual (que só tem um botão pro Google Drive) por uma **galeria completa** com todas as mídias usadas nas páginas públicas (Licenciada + Consultor/Cliente), agrupadas por seção da página, com **Download** e **Enviar via WhatsApp**.
+Lead 5511971254913 perguntou "Quanto tempo demora para chegar o desconto?" no passo `d_duvidas`. A IA respondeu, mas nenhuma opção foi enviada (nem botão no Whapi, nem lista numerada no Evolution).
 
-## O que vai aparecer
+Duas causas combinadas:
 
-Agrupado por seção (abas/accordion), espelhando o site:
+1. **Passo `d_duvidas` (id `38c0d101…`) está sem `captures._buttons`.** A refatoração v2 zerou os botões — sobrou só o capture de texto `duvida_livre`.
+2. **Dispatcher do `ai_answer` envia apenas `sendText`** (`whapi-webhook/handlers/conversational/index.ts` linha ~2571). Os botões do passo não são re-emitidos depois da fala da IA.
 
-- **Notícias** — 7 vídeos (`noticia1..6.mp4` + `noticaia9.mp4`)
-- **Depoimentos** — 5 vídeos (`/videos/depoimento-1..5.mp4`)
-- **Cashback / Referral** — `cash-back-igreen.mp4`
-- **Como funciona** — `casasustentavel.mp4`
-- **Hero (cliente)** — `Green_Energy.mp4`
-- **Usina** — `usina-helio-valgas.mp4`
-- **Club de benefícios** — `club-de-beneficios.mp4`, `igreen_club_3.mp4` + banners (`club-banner-1..7.png`, `lojas-parceiras.png`)
-- **Licenciada — Hero / Why / Conexões** — `imagine-licenciado.mp4`, `Licenciadao-1.mp4`, `conexao-livre.webp`, `conexao-green.webp`, `conexao-expansao.webp`, `conexao-club.webp`, `conexao-solar.webp`, `conexao-telecom.webp`, `kit-licenciado-igreen.png`, `assinatura-empresarial.png`, `planos-igreen-telecom.png`, `qualificacoes-igreen.png`
-- **Conta de energia (Assistente)** — `conta-de-energia.mp4`, `WhatsApp Video 2025-05-29...mp4`
-- **Banners/Flyers Lei 14.300** — `mutirao-lei-14300.jpg`, `mutirao-lei-14300-base.jpg`, `banner-lei-14300-base.jpg`
-- **Botão "Abrir Drive"** continua no topo como atalho secundário.
+## Mudanças
 
-Catálogo declarado **em código** (array tipado em `src/lib/materialsCatalog.ts`) — sem precisar de tabela nova. Cada item: `{ id, title, section, type: 'video'|'image', url, thumbUrl?, sizeHint? }`.
+### 1. Passo `d_duvidas` — restaurar botões (sem bagunçar outros passos)
 
-## Ações por mídia
+Como o runtime só avalia `transitions` do **passo atual**, não há cross-step. Mas pra blindar contra falso-positivo dentro do próprio passo:
 
-Cada card tem:
+- **Match principal por ID do botão**, não por texto. Whapi envia `button.id`; Evolution numerado mapeia 1/2/3 → id pela posição.
+- **`trigger_phrases` minimalistas** (só pra quem digita em vez de clicar).
 
-1. **▶ Preview inline** — `<video controls>` (com `preload="metadata"`) ou `<img>` em lightbox.
-2. **⬇ Download** — `<a href={url} download>` (URLs do Supabase Storage / `/videos/` / `/images/` já são públicas, então funciona sem proxy).
-3. **📋 Copiar link** — copia URL absoluta pra área de transferência.
-4. **💬 Enviar via WhatsApp** — abre um popover com 2 opções:
-   - **Compartilhar (wa.me)**: abre `https://wa.me/?text={titulo}%20{url}` numa nova aba — funciona em qualquer celular/desktop, não precisa de instância conectada.
-   - **Enviar pela minha instância**: input de telefone (com máscara BR), chama a Evolution via helper já existente `sendMedia(chatId, mediaUrl, caption, mediatype)` em `supabase/functions/_shared/whatsapp-api.ts`. Reusa a instância configurada do consultor logado (mesmo padrão do envio em massa). Mostra toast de sucesso/erro.
+Atualizar `bot_flow_steps.captures` do step `38c0d101-6492-4b1e-8229-c676c804161a`:
 
-## Estrutura técnica
+`captures._buttons`:
+- `cadastrar` → "✅ Cadastrar agora"
+- `nova_pergunta` → "💬 Fazer mais uma pergunta"
+- `humano` → "👤 Falar com Rafael"
 
-- **Novo:** `src/lib/materialsCatalog.ts` — catálogo tipado.
-- **Novo:** `src/components/admin/materials/MaterialCard.tsx` — preview + 3 botões + popover WhatsApp.
-- **Novo:** `src/components/admin/materials/SendViaWhatsAppPopover.tsx` — input telefone + chamada Evolution.
-- **Nova edge function:** `supabase/functions/admin-send-material/index.ts` — recebe `{ phone, mediaUrl, caption, mediatype }`, valida JWT do consultor, busca a `instance_name` do consultor em `whatsapp_instances`, chama `sendMedia` do helper compartilhado. Deploy automático.
-- **Refator:** `src/components/admin/MaterialsTab.tsx` — passa a renderizar `<Tabs>` por seção + grid de cards. Botão "Abrir Drive" continua no topo.
+`transitions`:
+- `trigger_intent: cadastrar`, phrases: `["cadastrar", "quero cadastrar"]` → `goto_step_id: 58f0a7e2-…` (já existente).
+- `trigger_intent: nova_pergunta`, **phrases: []** → `goto_special: "repeat"`. Sem frases: se o lead digitar qualquer outra coisa, cai no `fallback: ai_answer` (que já é "responder mais uma pergunta"). O botão é só atalho visual.
+- `trigger_intent: humano`, phrases: `["humano", "atendente", "rafael", "falar com rafael"]` → `goto_special: "humano"` (já existente).
 
-## Fora de escopo
+A transition antiga de `simular` é removida (não foi pedida e poderia competir com perguntas sobre simulação).
 
-- Não cria tabela nova (catálogo em código — fácil de evoluir depois pra DB se virar caso).
-- Não mexe nas páginas públicas (NewsSection, TestimonialsSection, Licenciada, etc).
-- Não troca o pipeline de envio em massa — apenas reusa o `sendMedia` helper.
-- Whapi legado não é chamado (helper unificado já é Evolution); se quiser fallback Whapi explícito, é incremento futuro.
+`fallback` permanece `mode: "ai_answer"`, `after_ai: "stay"`. Substituir "Camila" por "Rafael" no `ai_prompt`.
+
+### 2. Dispatcher `ai_answer` — re-emitir botões do passo após resposta da IA
+
+Em `supabase/functions/whapi-webhook/handlers/conversational/index.ts`, no bloco `if (fb.mode === "ai_answer" …)` (linha ~2542), após o `sendText(aiText)`:
+
+- Ler `currentStep.captures._buttons`.
+- Se houver botões, mandar uma segunda mensagem com prompt curto `"👇 É só escolher uma opção:"` + botões, usando o mesmo helper já usado nos passos normais (`renderChoice` em `_shared/channels/dispatch-choice.ts`). Isso resolve Whapi (botão real) e Evolution (lista numerada) automaticamente.
+- Gravar `conversations` insert da segunda mensagem (outbound, mesmo `conversation_step`).
+- Em caso de erro no envio dos botões, logar warning e seguir — não falhar o turno.
+
+Assim a IA responde e o lead recebe na sequência as 3 opções. Vale para **todos** os passos `ai_answer` que tiverem botões configurados.
+
+### Fora de escopo
+
+- `_shared/ai-faq-answerer.ts` (outro caminho, não usado aqui).
+- Outros passos com `ai_answer` — a mudança no dispatcher já cobre todos automaticamente quando tiverem `_buttons`.
+- Mudanças no prompt da IA além do nome.
+
+## Verificação
+
+- "Quanto tempo demora?" via Whapi → resposta da IA + 3 botões reais.
+- Mesma pergunta via Evolution → resposta + `*1.* Cadastrar agora / *2.* Fazer mais uma pergunta / *3.* Falar com Rafael`.
+- Clicar/digitar `cadastrar` → avança pro passo de cadastro. `humano` → handoff. `nova pergunta` ou qualquer outra dúvida → IA responde de novo até `max_questions`.
