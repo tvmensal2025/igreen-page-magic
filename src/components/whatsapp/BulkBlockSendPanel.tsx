@@ -420,7 +420,7 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
                 <span className="text-sm font-bold text-foreground">Importar Contatos</span>
               </div>
               <ContactImporter
-                customers={customers}
+                customers={enrichedCustomers}
                 contacts={contacts}
                 onContactsChange={setContacts}
                 instanceName={instanceName}
