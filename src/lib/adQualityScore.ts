@@ -6,7 +6,8 @@ export interface QualityResult {
   level: "red" | "yellow" | "green";
   copy: { score: number; hits: PolicyHit[]; checks: Check[] };
   image: { score: number; checks: Check[] };
-  canPublish: boolean;
+  canPublish: boolean;        // só bloqueia em violação de política da Meta
+  recommendedPublish: boolean; // score >= 70 — sinaliza "ideal" pra UI
   summary: string;
 }
 export interface Check { ok: boolean; label: string; detail?: string }
