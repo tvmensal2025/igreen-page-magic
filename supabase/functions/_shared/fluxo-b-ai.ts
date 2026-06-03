@@ -240,7 +240,7 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     return "Vamos continuar seu cadastro. Pode me confirmar a próxima informação que pedi?";
   }
 
-  const reply = (chosen.text || "").trim() || buildProfessionalFallback();
+  const reply = sanitizeReply((chosen.text || "").trim() || buildProfessionalFallback());
 
   // 7) Memória persistente: atualiza conversation_summary em background a cada
   // ~6 inbounds. Fire-and-forget — não bloqueia a resposta ao lead.
