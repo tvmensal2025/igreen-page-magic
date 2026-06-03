@@ -212,6 +212,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     setStep(1); setIssues(null); setHits([]);
     setFilesByFormat(EMPTY_FILES); setPickedLibrary([]); setPhotoTab("upload");
     setCreativeMode("photo"); setVideoFile(null); setVideoUrl(null); setVideoMeta(null);
+    setVideoCaptionsSrt(null); setVideoCaptionsLoading(false); setVideoCaptionsError(null); setVideoCaptionsEnabled(true);
     setFormat("square"); setCopy(null); setHeadline(""); setPrimaryText(""); setDescription("");
     setBudget(15); setDuration(3);
     setPlacementMode("auto"); setPlacements(ALL_PLACEMENTS);
