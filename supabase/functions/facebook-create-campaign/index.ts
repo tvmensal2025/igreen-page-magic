@@ -256,7 +256,10 @@ Deno.serve(async (req) => {
     // Advantage+ exige age_max >= 65 (subcode 1870189). Cap defensivo.
     const ageMax = Math.max(body.age_max ?? 65, 65);
     const today = new Date().toISOString().slice(0, 10);
-    const cityNames = body.cities.map((c) => c.name).slice(0, 3).join(", ");
+    const cityNames = (body.cities || []).map((c) => c.name).slice(0, 3).join(", ");
+    const locLabel = hasCustomLocations
+      ? (body.custom_locations![0].name || body.custom_locations![0].address_string || `${body.custom_locations!.length} ponto(s)`)
+      : (cityNames || "iGreen");
     // Tag de consultor profissional: usa license iGreen (ID curto e estável)
     // pra padronizar nomes no Gerenciador e facilitar relatórios por consultor.
     const adminDb2 = adminClient();
