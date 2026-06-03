@@ -808,7 +808,7 @@ Deno.serve(async (req) => {
       fb_adset_ids: [adsetId],
       fb_ad_ids: adIds,
       name: campaignName,
-      cities: body.cities,
+      cities: body.cities || [],
       age_min: ageMin,
       age_max: ageMax,
       daily_budget_cents: body.daily_budget_cents,
