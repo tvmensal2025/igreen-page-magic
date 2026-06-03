@@ -369,6 +369,19 @@ export default function FluxoBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingVariant]);
 
+  // Se a variante atual não existe entre as carregadas (ex.: consultor
+  // nasceu em D e A não foi criada), seleciona automaticamente a primeira
+  // variante existente em vez de manter "A fantasma". Isso impede que o
+  // builder peça um flow_id que não existe.
+  useEffect(() => {
+    if (!existingVariants.length) return;
+    if (!existingVariants.includes(editingVariant)) {
+      setEditingVariant(existingVariants[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingVariants]);
+
+
   const selected = useMemo(() => steps.find((s) => s.id === selectedId) ?? null, [steps, selectedId]);
   const inspectorStep = useMemo(() => steps.find((s) => s.id === inspectorId) ?? null, [steps, inspectorId]);
 
