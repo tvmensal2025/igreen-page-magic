@@ -2,7 +2,7 @@
 
 Flow ID: `320bf22c-e383-4f53-a3c0-b88b89b02558`
 Total de passos: **16** (todos ativos)
-Data: 2026-06-03T18:02:34.051Z
+Data: 2026-06-03T18:02:53.766Z
 
 > **Regra:** cada passo é avaliado isoladamente. Cópias com IDs diferentes são passos independentes.
 
@@ -11,7 +11,7 @@ Data: 2026-06-03T18:02:34.051Z
 | Severidade | Quantidade |
 |---|---|
 | CRIT | 0 |
-| HIGH | 3 |
+| HIGH | 0 |
 | MED | 0 |
 | LOW | 0 |
 | INFO | 1 |
@@ -50,11 +50,7 @@ Runtime: **22/22** jornadas PASS (Whapi + Evolution).
 
 ### ✅ pos18 `d_simular_pedir_conta` (capture_conta) — sem defeitos
 
-### 🟠 pos19 `d_como_funciona_copy_in3s` (message) — "Como funciona (2)"
-
-- **HIGH** transitions[0] tem trigger_phrase "dois" — runtime faz messageText.includes("dois"), casa com qualquer texto contendo "dois" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
-- **HIGH** transitions[1] tem trigger_phrase "três" — runtime faz messageText.includes("três"), casa com qualquer texto contendo "três" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
-- **HIGH** transitions[1] tem trigger_phrase "tres" — runtime faz messageText.includes("tres"), casa com qualquer texto contendo "tres" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+### ✅ pos19 `d_como_funciona_copy_in3s` (message) — sem defeitos
 
 ### ✅ pos20 `d_como_funciona_copy_qwpu` (message) — sem defeitos
 
