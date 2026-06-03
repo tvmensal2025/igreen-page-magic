@@ -2160,6 +2160,9 @@ export type Database = {
           ab_test_enabled: boolean
           active_variants: string[]
           ai_persona: string | null
+          ai_persona_fluxo_b: string | null
+          ai_persona_fluxo_b_cascade_enabled: boolean | null
+          ai_persona_fluxo_b_temperature: number | null
           ai_profile: string
           ai_provider_pref: string
           approved: boolean | null
@@ -2192,6 +2195,9 @@ export type Database = {
           ab_test_enabled?: boolean
           active_variants?: string[]
           ai_persona?: string | null
+          ai_persona_fluxo_b?: string | null
+          ai_persona_fluxo_b_cascade_enabled?: boolean | null
+          ai_persona_fluxo_b_temperature?: number | null
           ai_profile?: string
           ai_provider_pref?: string
           approved?: boolean | null
@@ -2224,6 +2230,9 @@ export type Database = {
           ab_test_enabled?: boolean
           active_variants?: string[]
           ai_persona?: string | null
+          ai_persona_fluxo_b?: string | null
+          ai_persona_fluxo_b_cascade_enabled?: boolean | null
+          ai_persona_fluxo_b_temperature?: number | null
           ai_profile?: string
           ai_provider_pref?: string
           approved?: boolean | null

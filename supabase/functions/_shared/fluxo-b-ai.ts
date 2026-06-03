@@ -1,0 +1,230 @@
+// Fluxo B — núcleo da IA livre. Chamado pelo whapi/evolution webhook
+// quando customer.flow_variant === "B" (texto inbound, não-mídia).
+//
+// Responsabilidades:
+// 1. Carrega contexto (consultor, lead, histórico, super prompt).
+// 2. Roda cascata Gemini 3 Flash → GPT-5.5 com tool calling.
+// 3. Aplica tool calls (registrar_nome, pedir_foto_conta, etc).
+// 4. Retorna o texto que o webhook deve enviar ao lead.
+
+import { aiChatCascade, aiChat, type AIChatMessage } from "./ai-gateway.ts";
+import { buildFluxoBSystemPrompt, FLUXO_B_TOOLS, type FluxoBContext } from "./fluxo-b-prompt.ts";
+
+// SupabaseClient genérico para evitar conflitos de tipos entre callers
+// deno-lint-ignore no-explicit-any
+type SupabaseClient = any;
+
+export interface FluxoBRunInput {
+  supabase: SupabaseClient;
+  customerId: string;
+  inboundText: string;
+  // se já temos os objetos carregados, pular re-fetch
+  customer?: any;
+  consultant?: any;
+}
+
+export interface FluxoBRunResult {
+  reply: string;                              // texto a enviar ao lead
+  toolsApplied: string[];                     // nomes das tools que rodaram
+  conversationStepUpdate: string | null;      // novo conversation_step (se mudou)
+  shouldHandoff: boolean;                     // bot_paused = true?
+  modelUsed: string;
+  latencyMs: number;
+}
+
+const FLASH_MODEL = "google/gemini-3-flash-preview";
+const PRO_MODEL = "openai/gpt-5.5";
+
+export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResult> {
+  const t0 = Date.now();
+  const { supabase, customerId, inboundText } = input;
+
+  // 1) Carrega customer + consultant
+  let customer = input.customer;
+  if (!customer) {
+    const { data } = await supabase.from("customers").select("*").eq("id", customerId).maybeSingle();
+    customer = data;
+  }
+  if (!customer) throw new Error(`[fluxo-b-ai] customer ${customerId} not found`);
+
+  let consultant = input.consultant;
+  if (!consultant && customer.consultant_id) {
+    const { data } = await supabase
+      .from("consultants")
+      .select("id, name, ai_persona_fluxo_b, ai_persona_fluxo_b_temperature, ai_persona_fluxo_b_cascade_enabled")
+      .eq("id", customer.consultant_id)
+      .maybeSingle();
+    consultant = data;
+  }
+  if (!consultant) throw new Error(`[fluxo-b-ai] consultant for customer ${customerId} not found`);
+
+  // 2) Histórico recente (últimos 16 turnos)
+  const { data: histRows } = await supabase
+    .from("conversations")
+    .select("message_direction, message_text, message_type, created_at")
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false })
+    .limit(16);
+  const history: AIChatMessage[] = ((histRows || []) as any[])
+    .slice()
+    .reverse()
+    .map((row): AIChatMessage => ({
+      role: row.message_direction === "outbound" ? "assistant" : "user",
+      content: row.message_text || (row.message_type === "image" ? "[imagem]" : row.message_type === "audio" ? "[áudio]" : "[mídia]"),
+    }))
+    .filter((m) => m.content && String(m.content).trim().length > 0);
+
+  // 3) Monta system prompt
+  const ctx: FluxoBContext = {
+    representante: consultant.name || "Rafael",
+    nomeCliente: customer.name || null,
+    valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
+    conversationSummary: customer.conversation_summary || null,
+    customerId,
+  };
+  const systemPrompt = buildFluxoBSystemPrompt(consultant.ai_persona_fluxo_b, ctx);
+
+  const messages: AIChatMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...history,
+    { role: "user", content: inboundText },
+  ];
+
+  // 4) Chama IA — Flash primeiro, escala pra Pro se cascade habilitado e Flash recusar/falhar
+  const temperature = typeof consultant.ai_persona_fluxo_b_temperature === "number"
+    ? consultant.ai_persona_fluxo_b_temperature
+    : 0.7;
+  const cascadeEnabled = consultant.ai_persona_fluxo_b_cascade_enabled !== false;
+
+  let chosen = await callWithTools(FLASH_MODEL, messages, temperature);
+
+  // Escalada: se Flash respondeu vazio E cascade ligado, tenta GPT-5.5
+  if (cascadeEnabled && (!chosen.text || chosen.text.trim().length < 3) && chosen.toolCalls.length === 0) {
+    console.log(`[fluxo-b-ai] flash retornou vazio, escalando pra ${PRO_MODEL}`);
+    try {
+      chosen = await callWithTools(PRO_MODEL, messages, temperature);
+    } catch (e) {
+      console.warn(`[fluxo-b-ai] cascade pro falhou: ${(e as Error).message}`);
+    }
+  }
+
+  // 5) Aplica tool calls
+  const toolsApplied: string[] = [];
+  let conversationStepUpdate: string | null = null;
+  let shouldHandoff = false;
+  const updates: Record<string, any> = {};
+
+  for (const tc of chosen.toolCalls) {
+    toolsApplied.push(tc.name);
+    try {
+      if (tc.name === "registrar_nome" && tc.arguments?.nome) {
+        const nome = String(tc.arguments.nome).trim().slice(0, 80);
+        if (nome) {
+          updates.name = nome;
+          updates.name_source = "ai_chat";
+        }
+      } else if (tc.name === "registrar_valor_conta" && typeof tc.arguments?.valor === "number") {
+        const v = Number(tc.arguments.valor);
+        if (v > 0 && v < 100000) updates.electricity_bill_value = v;
+      } else if (tc.name === "pedir_foto_conta") {
+        conversationStepUpdate = "aguardando_conta";
+      } else if (tc.name === "pedir_documento") {
+        conversationStepUpdate = "aguardando_documento";
+      } else if (tc.name === "finalizar_cadastro") {
+        conversationStepUpdate = "cadastro_finalizando";
+      } else if (tc.name === "escalar_humano") {
+        shouldHandoff = true;
+        updates.bot_paused = true;
+        updates.bot_paused_reason = String(tc.arguments?.motivo || "ai_escalou").slice(0, 200);
+        updates.bot_paused_at = new Date().toISOString();
+      }
+    } catch (e) {
+      console.warn(`[fluxo-b-ai] erro aplicando tool ${tc.name}:`, (e as Error).message);
+    }
+  }
+
+  if (conversationStepUpdate) updates.conversation_step = conversationStepUpdate;
+
+  if (Object.keys(updates).length > 0) {
+    updates.updated_at = new Date().toISOString();
+    const { error: upErr } = await supabase.from("customers").update(updates).eq("id", customerId);
+    if (upErr) console.warn(`[fluxo-b-ai] update customer falhou:`, upErr.message);
+  }
+
+  // 6) Logging em ai_decisions (best-effort, fire-and-forget)
+  try {
+    await supabase.from("ai_decisions").insert({
+      consultant_id: customer.consultant_id,
+      customer_id: customerId,
+      phase: "fluxo_b_chat",
+      tool_called: toolsApplied.join(",") || null,
+      model: chosen.modelUsed,
+      user_input: inboundText.slice(0, 500),
+      ai_output: { text: chosen.text.slice(0, 500), tools: toolsApplied },
+      step_before: customer.conversation_step || null,
+      step_after: conversationStepUpdate,
+      latency_ms: Date.now() - t0,
+      source: "fluxo_b_ai",
+    });
+  } catch (_) { /* tabela pode não existir em alguns ambientes */ }
+
+  const reply = (chosen.text || "").trim() || (shouldHandoff
+    ? "Vou te transferir para um humano, só um instante 🙏"
+    : "Pode me contar um pouquinho mais?");
+
+  return {
+    reply,
+    toolsApplied,
+    conversationStepUpdate,
+    shouldHandoff,
+    modelUsed: chosen.modelUsed,
+    latencyMs: Date.now() - t0,
+  };
+}
+
+// ─── helpers internos ────────────────────────────────────────────────────
+
+interface AIToolCallParsed { name: string; arguments: any }
+interface AICallResult { text: string; toolCalls: AIToolCallParsed[]; modelUsed: string }
+
+async function callWithTools(model: string, messages: AIChatMessage[], temperature: number): Promise<AICallResult> {
+  // Como aiChat/aiChatCascade não suporta tools nativamente, chamamos o gateway direto.
+  const key = Deno.env.get("LOVABLE_API_KEY");
+  if (!key) throw new Error("LOVABLE_API_KEY not configured");
+
+  const body: Record<string, any> = {
+    model,
+    messages,
+    tools: FLUXO_B_TOOLS,
+    tool_choice: "auto",
+  };
+  // openai/gpt-5* não aceita temperature
+  if (!/^openai\/(gpt-5|o[134])/i.test(model)) body.temperature = temperature;
+
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`AI gateway ${res.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const choice = data?.choices?.[0]?.message;
+  const text = String(choice?.content ?? "");
+  const rawToolCalls = Array.isArray(choice?.tool_calls) ? choice.tool_calls : [];
+  const toolCalls: AIToolCallParsed[] = rawToolCalls.map((tc: any) => {
+    let parsed: any = {};
+    try { parsed = JSON.parse(tc?.function?.arguments || "{}"); } catch (_) { /* ignore */ }
+    return { name: tc?.function?.name || "", arguments: parsed };
+  }).filter((t: AIToolCallParsed) => t.name);
+  return { text, toolCalls, modelUsed: model };
+}
+
+// Sem warning sobre import não-usado de aiChat/aiChatCascade — mantemos
+// disponíveis caso queiramos migrar pra cascata centralizada.
+void aiChat; void aiChatCascade;

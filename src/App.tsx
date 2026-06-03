@@ -18,6 +18,7 @@ const Auth = lazy(() => import("./pages/Auth"));
 const Admin = lazy(() => import("./pages/Admin"));
 
 const FluxoBuilder = lazy(() => import("./pages/FluxoBuilder"));
+const AdminFluxoB = lazy(() => import("./pages/AdminFluxoB"));
 const SaudeBot = lazy(() => import("./pages/SaudeBot"));
 const AdminKnowledge = lazy(() => import("./pages/AdminKnowledge"));
 const AdminReaquecimento = lazy(() => import("./pages/AdminReaquecimento"));
@@ -58,6 +59,7 @@ const App = () => (
               <Route path="/admin" element={<Admin />} />
               <Route path="/admin/whatsapp-clients" element={<WhatsAppClientsPage />} />
               <Route path="/admin/fluxos" element={<FluxoBuilder />} />
+              <Route path="/admin/fluxo-b" element={<AdminFluxoB />} />
               <Route path="/admin/saude-bot" element={<SaudeBot />} />
               <Route path="/admin/saude-producao" element={<SaudeProducao />} />
               <Route path="/admin/conhecimento" element={<AdminKnowledge />} />

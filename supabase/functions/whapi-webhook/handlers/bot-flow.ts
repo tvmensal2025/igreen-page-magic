@@ -6,6 +6,7 @@
 // the closure variables are now properties of `ctx`.
 
 import { resolveFlowId } from "../../_shared/resolve-flow.ts";
+import { runFluxoBAI } from "../../_shared/fluxo-b-ai.ts";
 import {
   validateCustomerForPortal,
   isPlaceholderEmail,
@@ -602,6 +603,49 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     fileBase64,
     geminiApiKey,
   } = ctx;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 🤖 FLUXO B — IA livre conversacional.
+  // Quando customer.flow_variant === "B" e o inbound é TEXTO (não mídia),
+  // delega tudo para o handler `runFluxoBAI` (Gemini 3 Flash → GPT-5.5).
+  // Mídia (foto da conta, documento) continua passando pelos handlers
+  // determinísticos em capture_conta / capture_documento.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const _fbVariant = String((customer as any)?.flow_variant || "").toUpperCase();
+    const _fbStep = String((customer as any)?.conversation_step || "");
+    const _fbWaitingMedia = _fbStep === "aguardando_conta" || _fbStep === "aguardando_documento";
+    if (
+      _fbVariant === "B" &&
+      !isFile && !hasImage && !hasDocument &&
+      !_fbWaitingMedia &&
+      messageText && messageText.trim().length > 0
+    ) {
+      console.log(`[fluxo-b] dispatching customer=${customer.id} step=${_fbStep} text="${messageText.slice(0, 60)}"`);
+      const r = await runFluxoBAI({
+        supabase,
+        customerId: customer.id,
+        inboundText: messageText,
+        customer,
+      });
+      // Envia a resposta direto pelo sender
+      try { await sendText(remoteJid, r.reply); } catch (e) {
+        console.warn(`[fluxo-b] sendText falhou:`, (e as any)?.message);
+      }
+      await supabase.from("conversations").insert({
+        customer_id: customer.id,
+        message_direction: "outbound",
+        message_text: r.reply,
+        message_type: "text",
+        conversation_step: r.conversationStepUpdate || _fbStep || "fluxo_b_ai",
+      });
+      console.log(`[fluxo-b] done model=${r.modelUsed} tools=[${r.toolsApplied.join(",")}] step→${r.conversationStepUpdate || "(unchanged)"} latency=${r.latencyMs}ms`);
+      return { reply: "", updates: {} }; // reply já enviado inline
+    }
+  } catch (e) {
+    console.error(`[fluxo-b] erro, caindo para fluxo padrão:`, (e as Error).message);
+    // fall-through: deixa o fluxo A/D normal seguir
+  }
 
   // ═══════════════════════════════════════════════════════════════════
   // 🛟 respondAndReentry — fallback universal pra mensagens fora do esperado.
