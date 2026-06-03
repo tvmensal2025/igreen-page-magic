@@ -220,9 +220,9 @@ Deno.serve(async (req) => {
         code: "WHATSAPP_INVALID_FORMAT",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Trava de saldo: precisa cobrir budget × duração (default 7 dias se omitido).
+    // Trava de saldo: precisa cobrir budget × duração (default 3 dias se omitido).
     const wallet = await getOrCreateWallet(auth.id);
-    const dur = body.duration_days && body.duration_days > 0 ? body.duration_days : 7;
+    const dur = body.duration_days && body.duration_days > 0 ? body.duration_days : 3;
     const requiredCents = body.daily_budget_cents * dur;
     if (!isAdmin && wallet.balance_cents < requiredCents) {
       return new Response(JSON.stringify({
