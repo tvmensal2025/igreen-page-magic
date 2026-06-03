@@ -51,7 +51,9 @@ export async function scoreImage(input: ImageInput): Promise<QualityResult["imag
   const checks: Check[] = [];
   // 1. Dimensão correta
   const expected = input.format === "square" ? { w: 1080, h: 1080 } : input.format === "vertical" ? { w: 1080, h: 1350 } : { w: 1080, h: 1920 };
-  checks.push({ ok: input.width >= expected.w && input.height >= expected.h, label: `Dimensão ${input.width}×${input.height}`, detail: `mínimo ${expected.w}×${expected.h}` });
+  const dimOk = input.width >= expected.w && input.height >= expected.h;
+  const dimBonus = input.width >= expected.w * 1.5 && input.height >= expected.h * 1.5;
+  checks.push({ ok: dimOk, label: `Dimensão ${input.width}×${input.height}${dimBonus ? " (alta resolução)" : ""}`, detail: `mínimo ${expected.w}×${expected.h}` });
 
   let textRatio = 0;
   let avgBrightness = 128;
