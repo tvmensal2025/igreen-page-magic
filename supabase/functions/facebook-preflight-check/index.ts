@@ -108,17 +108,28 @@ Deno.serve(async (req) => {
 
     // 6. Reach estimate (não bloqueante)
     let reach: { lower: number; upper: number; daily_min: number; daily_max: number } | null = null;
-    if (body.cities?.length && blockers.length === 0) {
+    const hasCustom = Array.isArray(body.custom_locations) && body.custom_locations.length > 0;
+    const hasCities = Array.isArray(body.cities) && body.cities.length > 0;
+    if ((hasCustom || hasCities) && blockers.length === 0) {
       try {
-        const cityKeys = body.cities.map((c) => c.key).slice(0, 200);
+        const geo: Record<string, unknown> = {};
+        if (hasCustom) {
+          geo.custom_locations = body.custom_locations!.slice(0, 200).map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+            radius: Math.max(1, Math.min(50, Math.round(p.radius))),
+            distance_unit: "kilometer",
+            ...(p.address_string ? { address_string: p.address_string } : {}),
+          }));
+        } else {
+          geo.cities = body.cities!.map((c) => ({ key: c.key })).slice(0, 200);
+        }
         const targeting: Record<string, unknown> = {
-          geo_locations: { cities: cityKeys.map((key) => ({ key })) },
+          geo_locations: geo,
           age_min: body.age_min || 25,
           age_max: body.age_max || 65,
           targeting_automation: { advantage_audience: 1 },
         };
-        // Reach fiel à campanha real: passa destination_type=WHATSAPP +
-        // promoted_object pra Meta filtrar quem tem WhatsApp instalado.
         const promotedObject = conn.page_id && conn.whatsapp_destination_number
           ? { page_id: conn.page_id, whatsapp_phone_number: conn.whatsapp_destination_number }
           : null;
@@ -136,11 +147,14 @@ Deno.serve(async (req) => {
         const est = r?.data || r;
         const lower = Number(est?.users_lower_bound ?? est?.users ?? 0);
         const upper = Number(est?.users_upper_bound ?? est?.users ?? 0);
-        // Estimativa diária bem grosseira: ~3-7% do alcance total por dia com orçamento típico
         const daily_min = Math.round(lower * 0.03);
         const daily_max = Math.round(upper * 0.07);
         reach = { lower, upper, daily_min, daily_max };
-        if (lower < 1000) warnings.push(`Audiência muito pequena (${lower.toLocaleString("pt-BR")}) — adicione mais cidades pra baratear o lead`);
+        if (hasCustom) {
+          if (lower < 5_000) warnings.push(`Raio muito apertado (${lower.toLocaleString("pt-BR")} pessoas) — aumente o raio ou adicione mais endereços pra baratear o lead.`);
+        } else if (lower < 1000) {
+          warnings.push(`Audiência muito pequena (${lower.toLocaleString("pt-BR")}) — adicione mais cidades pra baratear o lead`);
+        }
       } catch (e) {
         warnings.push("Não foi possível estimar alcance — campanha será criada mesmo assim");
       }
