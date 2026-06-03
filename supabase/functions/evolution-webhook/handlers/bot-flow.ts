@@ -770,7 +770,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     } catch (_) { /* noop */ }
 
     const reentryLine = reentryTail ? `\n\n📋 Voltando: ${reentryTail}` : "";
-    const finalMsg = `${answer}${reentryLine}${courtesyTail}`;
+    const finalMsg = answer
+      ? `${answer}${reentryLine}${courtesyTail}`
+      : `${reentryFull || reentryTail || ""}${courtesyTail}`.trim();
 
     try { await sendText(remoteJid, finalMsg); } catch (e) {
       console.warn("[respondAndReentry] sendText falhou:", (e as any)?.message);
