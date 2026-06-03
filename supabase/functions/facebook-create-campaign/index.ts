@@ -334,13 +334,26 @@ Deno.serve(async (req) => {
     // - cidades SEM radius (apenas o município escolhido, sem cidades vizinhas)
     // - SEM interests fixos: deixa o algoritmo achar o público (Advantage+ Audience)
     // - Placements automáticos só FB + IG (messenger não combina com destination=WHATSAPP)
+    const geoLocations: Record<string, unknown> = hasCustomLocations
+      ? {
+          custom_locations: body.custom_locations!.slice(0, 200).map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+            radius: Math.max(1, Math.min(50, Math.round(p.radius))),
+            distance_unit: "kilometer",
+            ...(p.address_string ? { address_string: p.address_string } : {}),
+            ...(p.name ? { name: p.name } : {}),
+          })),
+          location_types: ["home", "recent"],
+        }
+      : {
+          // Apenas a cidade escolhida (sem radius/distance_unit) — Meta interpreta
+          // como exclusivamente o município, sem expandir para o entorno.
+          cities: body.cities.map((c) => ({ key: c.key })),
+          location_types: ["home", "recent"],
+        };
     const targeting: Record<string, unknown> = {
-      geo_locations: {
-        // Apenas a cidade escolhida (sem radius/distance_unit) — Meta interpreta
-        // como exclusivamente o município, sem expandir para o entorno.
-        cities: body.cities.map((c) => ({ key: c.key })),
-        location_types: ["home", "recent"],
-      },
+      geo_locations: geoLocations,
       age_min: ageMin,
       age_max: ageMax,
       // Advantage+ Audience (padrão Meta 2026) — algoritmo expande além das âncoras.
@@ -419,16 +432,137 @@ Deno.serve(async (req) => {
     });
     const adsetId = adset.id as string;
 
+    const adIds: string[] = [];
+    const rejectedImages: { url: string; issues: string[]; suggestion?: string }[] = [];
+    // Mensagem inicial WhatsApp — hoisted pra que tanto modo foto quanto vídeo usem.
+    const initialMessage = buildInitialMessage(body.initial_message, body.distribuidora);
+
+
+    // =================== MODO VÍDEO (Reels/Stories) ===================
+    if (creativeMode === "video") {
+      const videoUrl = body.video!.url;
+      const thumbUrl = body.video!.thumb_url || null;
+      console.log("[fb-create] step=video_upload url=", videoUrl);
+
+      // Reusa fb_video_id se já estiver em ad_video_library (best-effort).
+      let fbVideoId: string | null = null;
+      try {
+        const { data: cachedVid } = await adminDb2
+          .from("ad_video_library").select("id, fb_video_id, usage_count")
+          .eq("consultant_id", auth.id).eq("url", videoUrl).maybeSingle();
+        if (cachedVid?.fb_video_id) {
+          fbVideoId = cachedVid.fb_video_id;
+          await adminDb2.from("ad_video_library").update({
+            usage_count: ((cachedVid as any).usage_count ?? 0) + 1,
+            last_used_at: new Date().toISOString(),
+          }).eq("id", cachedVid.id);
+          console.log("[fb-create] video CACHE HIT", fbVideoId);
+        }
+      } catch (e) { console.warn("[fb-create] video cache lookup:", (e as Error).message); }
+
+      if (!fbVideoId) {
+        // Upload do vídeo via parâmetro file_url (Meta baixa direto)
+        const FB_GRAPH_VID = "https://graph.facebook.com/v23.0";
+        try {
+          const vr = await fbFetch(`/${accId}/advideos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              file_url: videoUrl,
+              name: `cons-${consultantLicense}-${Date.now()}`,
+              access_token: conn.token,
+            }),
+          });
+          fbVideoId = vr?.id as string;
+          if (!fbVideoId) throw new Error("Meta não retornou id do vídeo");
+        } catch (e) {
+          throw new Error(`Falha ao enviar vídeo ao Facebook: ${(e as Error).message}`);
+        }
+
+        // Polling de processamento (máx 50s, intervalos de 3s)
+        const started = Date.now();
+        let ready = false;
+        while (Date.now() - started < 50_000) {
+          try {
+            const st = await fbFetch(`/${fbVideoId}?fields=status&access_token=${conn.token}`);
+            const phase = st?.status?.video_status || st?.status?.processing_progress != null ? st?.status?.video_status : null;
+            if (phase === "ready" || st?.status?.video_status === "ready") { ready = true; break; }
+            if (phase === "error") throw new Error(`Vídeo rejeitado: ${st?.status?.error?.message || "erro"}`);
+          } catch (_) { /* tenta de novo */ }
+          await new Promise((r) => setTimeout(r, 3_000));
+        }
+        if (!ready) console.warn("[fb-create] vídeo não ficou pronto a tempo; ad fica PAUSED até processar");
+
+        // Cacheia na biblioteca
+        try {
+          await adminDb2.from("ad_video_library").upsert({
+            consultant_id: auth.id,
+            url: videoUrl,
+            thumb_url: thumbUrl,
+            fb_video_id: fbVideoId,
+            fb_video_id_synced_at: new Date().toISOString(),
+            last_used_at: new Date().toISOString(),
+          }, { onConflict: "consultant_id,url" });
+        } catch (e) { console.warn("[fb-create] cache video falhou:", (e as Error).message); }
+      }
+
+      // Força placements verticais (Reels + Stories + Feed)
+      (targeting as any).publisher_platforms = ["facebook", "instagram"];
+      (targeting as any).facebook_positions = ["feed", "facebook_reels", "story"];
+      (targeting as any).instagram_positions = ["stream", "reels", "story", "explore"];
+
+      const initialMessageV = buildInitialMessage(body.initial_message, body.distribuidora);
+      const waNumberCleanV = String(conn.whatsapp_destination_number).replace(/\D/g, "");
+      const waLinkV = `https://api.whatsapp.com/send?phone=${waNumberCleanV}&text=${encodeURIComponent(initialMessageV)}`;
+      const urlTagsV = `utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.id}}&utm_content=consultor_${consultantLicense}&utm_term={{adset.id}}`;
+
+      const videoData: Record<string, unknown> = {
+        video_id: fbVideoId,
+        title: body.headline,
+        message: body.primary_text,
+        call_to_action: { type: "WHATSAPP_MESSAGE", value: { link: waLinkV } },
+      };
+      if (thumbUrl) (videoData as any).image_url = thumbUrl;
+
+      const cr = await fbFetch(`/${accId}/adcreatives`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          name: `[${consultantTag}] ${distribTag} · Creative Video Reels`,
+          object_story_spec: JSON.stringify({
+            page_id: conn.page_id,
+            video_data: videoData,
+          }),
+          url_tags: urlTagsV,
+          access_token: conn.token,
+        }),
+      });
+      const adV = await fbFetch(`/${accId}/ads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          name: `[${consultantTag}] ${distribTag} · Anúncio Video`,
+          adset_id: adsetId,
+          creative: JSON.stringify({ creative_id: cr.id }),
+          status: "PAUSED",
+          ...(adlabelsParam ? { adlabels: adlabelsParam } : {}),
+          access_token: conn.token,
+        }),
+      });
+      adIds.push(adV.id);
+    }
+
+    // =================== MODO FOTO (asset_feed_spec / fallback) ===================
+    if (creativeMode === "photo") {
     // 3) Upload de imagens — preserva o formato (square / vertical / story).
     type Tagged = { url: string; format: "square" | "vertical" | "story" };
-    const tagged: Tagged[] = body.photos.slice(0, 10).map((p) =>
+    const tagged: Tagged[] = body.photos!.slice(0, 10).map((p) =>
       typeof p === "string" ? { url: p, format: "square" as const } : p,
     );
 
     // 3.0) SEM validação Gemini síncrona aqui — estourava CPU da Edge Function (546).
     // A análise de imagem virou job assíncrono via ad-image-validator (preflight separado).
     const validated: Tagged[] = tagged;
-    const rejectedImages: { url: string; issues: string[]; suggestion?: string }[] = [];
 
     // base64 em chunks (não loop byte-a-byte) — reduz CPU em ~10x
     function bytesToBase64(buf: Uint8Array): string {
@@ -525,8 +659,9 @@ Deno.serve(async (req) => {
 
     // 4) Creative — Click-to-WhatsApp NATIVO (WABA). Meta abre conversa direto
     // no número da WABA conectado à Página, sem link wa.me intermediário.
-    const initialMessage = buildInitialMessage(body.initial_message, body.distribuidora);
+    // initialMessage já declarado acima (hoisted pra modo foto e vídeo).
     console.log("[fb-create] initial WA message:", initialMessage);
+
     // CTWA oficial usa api.whatsapp.com/send com phone WABA (mesmo número do promoted_object).
     const waLink = `https://api.whatsapp.com/send?phone=${waNumberClean}&text=${encodeURIComponent(initialMessage)}`;
     // url_tags: macros do Meta substituem {{campaign.id}} / {{adset.id}} no clique.
@@ -546,7 +681,8 @@ Deno.serve(async (req) => {
       image_hash,
     });
 
-    const adIds: string[] = [];
+    // adIds já declarado acima (modo video pode ter populado).
+
     // Estratégia 1 (preferida): 1 Ad com asset_feed_spec + customization
     // por posicionamento. Reels/Stories pegam 9:16, Feed pega 1:1/4:5 → fim do corte.
     const hasMultiFormat = (squareHashes.length + verticalHashes.length > 0) && storyHashes.length > 0;
@@ -665,6 +801,7 @@ Deno.serve(async (req) => {
       }
     }
     }
+    } // fim do if (creativeMode === "photo")
     if (!adIds.length) throw new Error("Nenhum anúncio pôde ser criado no Facebook.");
 
     // 6) Persiste
@@ -675,7 +812,7 @@ Deno.serve(async (req) => {
       fb_adset_ids: [adsetId],
       fb_ad_ids: adIds,
       name: campaignName,
-      cities: body.cities,
+      cities: body.cities || [],
       age_min: ageMin,
       age_max: ageMax,
       daily_budget_cents: body.daily_budget_cents,

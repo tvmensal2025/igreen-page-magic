@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, validateAccount, type PreflightResult } from "@/services/facebookAds";
-import { Check, ChevronRight, Loader2, MapPin, Search, Sparkles, TrendingUp, Upload, X, ImageIcon, Smartphone, Wand2, Save } from "lucide-react";
+import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, validateAccount, type PreflightResult, type CustomLocation } from "@/services/facebookAds";
+import { Check, ChevronRight, Loader2, MapPin, Search, Sparkles, TrendingUp, Upload, X, ImageIcon, Smartphone, Wand2, Save, Target, DollarSign } from "lucide-react";
+import { AddressRadiusPicker, type RadiusPoint } from "./AddressRadiusPicker";
 import { DISTRIBUIDORAS_PRESETS, type DistribuidoraPreset } from "@/data/distribuidoraPresets";
 import { AdPreview, type AdFormat } from "./AdPreview";
 import { AdQualityPanel } from "./AdQualityPanel";
@@ -176,8 +177,11 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
   const [initialMessageTouched, setInitialMessageTouched] = useState(false);
 
   // Step 4: orçamento
-  const [budget, setBudget] = useState(30); // R$/dia
-  const [duration, setDuration] = useState(0); // 0 = sem fim
+  const [budget, setBudget] = useState(15); // R$/dia (min 10 — Modo Econômico)
+  const [duration, setDuration] = useState(3); // 3 dias default (Modo Econômico)
+  // Modo de geo: cidades inteiras OU endereço/raio (ultra-local).
+  const [geoMode, setGeoMode] = useState<"cities" | "radius">("cities");
+  const [radiusPoints, setRadiusPoints] = useState<RadiusPoint[]>([]);
   // Placements: "auto" = Advantage+ (recomendação Meta — distribui automático
   // em todos os elegíveis pra CTWA e otimiza CPL). Manual = consultor escolhe.
   const [placementMode, setPlacementMode] = useState<"auto" | "manual">("auto");
@@ -197,9 +201,10 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     setStep(1); setIssues(null); setHits([]);
     setFilesByFormat(EMPTY_FILES); setPickedLibrary([]); setPhotoTab("upload");
     setFormat("square"); setCopy(null); setHeadline(""); setPrimaryText(""); setDescription("");
-    setBudget(30); setDuration(0);
+    setBudget(15); setDuration(3);
     setPlacementMode("auto"); setPlacements(ALL_PLACEMENTS);
     setQuality(null); setPreflight(null); setLiveReach(null);
+    setGeoMode("cities"); setRadiusPoints([]);
 
     // Recupera rascunho de cidades/presets do localStorage (por consultor)
     try {
@@ -454,7 +459,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
   async function handleNext() {
     if (step === 1) {
-      if (cities.length === 0) return toast({ title: "Selecione pelo menos 1 cidade", variant: "destructive" });
+      if (geoMode === "cities" && cities.length === 0) return toast({ title: "Selecione pelo menos 1 cidade", variant: "destructive" });
+      if (geoMode === "radius" && radiusPoints.length === 0) return toast({ title: "Adicione pelo menos 1 endereço", variant: "destructive" });
       setStep(2);
     } else if (step === 2) {
       if (totalFiles + pickedLibrary.length < 1) return toast({ title: "Adicione pelo menos 1 foto válida", variant: "destructive" });
@@ -466,7 +472,6 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
         return toast({ title: `Score ${quality.score}/100 — mínimo 70`, description: "Resolva os itens em vermelho do painel de qualidade antes de avançar.", variant: "destructive" });
       }
       setStep(4);
-      // Roda preflight ao entrar no step 4
       runPreflight();
     } else if (step === 4) {
       await submit();
