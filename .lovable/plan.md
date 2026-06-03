@@ -1,73 +1,40 @@
-# Aplicar Fluxo A Perfeito — Plano de Implementação
+# Por que o Fluxo D entrou no meio
 
-## Análise final antes de aplicar (sem risco detectado)
+Confirmei no banco:
 
-Validei contra o código atual:
+- `settings.flow_ab_mode = 'only_D'` → o roteador global está forçando **toda** decisão de variante para D.
+- O lead `5511971254913` está agora com `flow_variant = 'D'` e `conversation_step = flow:c87d76f8…` (UUID que pertence ao **Fluxo D**, step `d_como_funciona` — exatamente o que apareceu nos logs do `whapi-webhook`).
+- O `dev-fire-all-steps` resetou pra A e disparou o primeiro passo do Fluxo A, mas em algum ponto da jornada o lead voltou pra D porque o ambiente inteiro está configurado em `only_D`.
 
-- `bot_flows` ativo `Fluxo Padrão` (id `66a19db4-…`) tem 13 passos e mídias já cadastradas em `ai_media_library` (áudios `boas_vindas`, `como_funciona`, vídeos `fazenda_solar` + `Conexão Green`). **Não preciso criar mídia nova.**
-- `state-machine.ts` linha 90 e 110: pitch_conexao_club já existe como estado, mas o roteamento atual pula direto para `duvidas_pos_club` sem disparar o vídeo do club — é só ajuste de transição, sem schema novo.
-- `variants/a.ts` já respeita `mediaOrderByStepKey` e `_buttons` no capture — basta corrigir a ordem do slot `como_funciona` (hoje `[text,audio,video,image]` mistura 3 vídeos + 2 áudios) e adicionar `_buttons` no step `ask_quero_cadastrar`.
-- Sem migração destrutiva. Sem mexer em auth, RLS, storage. Sem alterar OCR (mantido como pedido).
-- Risco de quebra do fluxo D = zero (mudanças isoladas em variant A e em steps com `slot_key` exclusivo do flow A).
+Resumindo: o disparo inicial foi A, mas o ecossistema (settings + autocura de step + re-resolução de fluxo) puxou o lead pra D na primeira oportunidade.
 
-✅ **Pode aplicar.**
+# Plano de correção (para conseguir testar o Fluxo A em 1 número)
 
----
+## 1. Travar o roteamento global em `only_A` durante o teste
+Atualizar `settings.flow_ab_mode` de `only_D` → `only_A`. Isso garante que **nenhum** caminho do webhook/autocura possa empurrar o lead para D, mesmo que algo limpe a variante do customer.
 
-## O que vou mudar (3 frentes, build mode)
+(Depois do teste, posso reverter pra `split` ou `only_D` — você escolhe.)
 
-### 1. Corrigir state-machine.ts (falhas C1, C2, C3)
-Arquivo: `supabase/functions/whapi-webhook/handlers/conversational/state-machine.ts`
+## 2. Resetar o lead `5511971254913` para virgem + variante A
+Via `dev-fire-all-steps` com `{ customerId, variant: "A", fresh: true, mode: "real" }`:
+- limpa `conversation_step`, OCR, docs, histórico
+- força `flow_variant = 'A'`, `capture_mode = 'auto'`
+- dispara só o **primeiro passo do Fluxo A** (boas-vindas) e o `whapi-webhook` cuida do resto conforme você responder no WhatsApp
 
-- **C2 fix** — `checkin_pos_video + afirmação` deve disparar o vídeo do club, não cair em `qualificacao`. Já está correto na linha 90 ✓ — vou só garantir que `pos_video` siga o mesmo caminho.
-- **C3 fix** — case `pitch_conexao_club` hoje vai direto pra `duvidas_pos_club`. Vou mantê-lo aguardando o `followup` do vídeo (não emite ação dupla).
-- **C1 fix** — `duvidas_pos_club + afirmação` hoje entra em `ENTER_CADASTRO` que pede a **conta**. Já está certo ✓. Vou só remover o atalho que em alguns paths levava direto pra `aguardando_doc_auto` no `bot-flow.ts` legacy (linhas 2282–2293 e 3999–4013) — substituir por `aguardando_conta`.
+## 3. Validar passo-a-passo nos logs
+Acompanhar `whapi-webhook` enquanto você responde:
+- esperado: `boas_vindas → qualificação → como_funciona (audio A) → fazenda_solar (audio A) → checkin_pos_video → pitch_conexao_club → duvidas_pos_club → aguardando_conta (OCR) → simulação → ask_quero_cadastrar → aguardando_doc_auto → finalizar`
+- se em qualquer momento aparecer `step_key` começando com `d_` (ex: `d_como_funciona`) → bug, paro e investigo.
 
-### 2. Reorganizar mídia do step `como_funciona` (DB)
-Migração leve em `bot_flow_steps`/`ai_media_library`:
-- Desativar (`is_active=false`) os 3 vídeos e o áudio webm extras anexados a `como_funciona` — manter só o áudio "Como funciona a energia" (123s).
-- Mover o vídeo "Conexão Green — Apresentação" para o slot `fazenda_solar` (já está lá ✓).
-- Atualizar `flow_step_media_order["como_funciona"]` para `["text","audio"]` (sem vídeo/imagem).
-- Atualizar `flow_step_media_order["fazenda_solar"]` para `["text","image","video"]` (texto curto, imagem da fazenda, vídeo institucional 60s).
+## 4. (Opcional, depois) Reverter o A/B
+Quando você confirmar que o Fluxo A rodou inteiro, devolvo `flow_ab_mode` ao valor que você quiser (`split` para 50/50, ou `only_D` se quiser voltar como estava).
 
-### 3. Adicionar botões no `ask_quero_cadastrar`
-- Inserir `captures._buttons = [{id:"sim_cadastrar",label:"✅ Quero economizar"},{id:"tenho_duvida",label:"❓ Tenho dúvidas"}]` no step `559b8f1b-…`.
-- Handler em `bot-flow.ts`: ao receber `tenho_duvida`, abrir Q&A (LLM com contexto FAQ) e ao final reapresentar o mesmo CTA — sem loop infinito (máx 3 perguntas → handoff humano).
+# Detalhes técnicos
 
----
+- A migração será só um `UPDATE settings SET value='only_A' WHERE key='flow_ab_mode'` (1 linha).
+- O `dev-fire-all-steps` já está travado no número `5511971254913` (anti-abuso), então o disparo é seguro.
+- Nenhum código de produção precisa ser alterado pra esse teste — o problema foi configuração, não bug.
 
-## Roteiro final que ficará vivo (resumo dos 10 passos)
+# Pergunta antes de aplicar
 
-| # | Step | O que o bot envia | O que espera do cliente |
-|---|---|---|---|
-| 1 | `boas_vindas` | 🎙️ áudio 7s + texto "qual seu nome?" | Nome |
-| 2 | `qualificacao` | Texto "qual valor da sua conta?" | Número (R$) |
-| 3 | `como_funciona` | Texto curto + 🎙️ áudio 2min Rafael | Reação ("entendi"/"como assim") |
-| 4 | `fazenda_solar` | Texto + 🖼️ imagem usina + 🎬 vídeo 60s | "show"/"quero" |
-| 5 | simulação | Texto com economia personalizada + botões | ✅ ou ❓ |
-| 6 | `capture_conta` | "manda foto da conta" → OCR → card de confirmação | Foto/PDF + Sim |
-| 7 | `ask_quero_cadastrar` | Resumo da economia + botões | ✅ ou ❓ |
-| 8 | `capture_documento` | "manda RG/CNH" → OCR → confirmação titularidade | Foto + Sim |
-| 9 | dados faltantes | Pergunta apenas o que falta (email/tel/cep) | Respostas pontuais |
-| 10 | `finalizar_cadastro` | Submete portal → pede OTP → valida → ✅ | Código de 6 dígitos |
-
-**Dúvidas em qualquer ponto** (override global): "humano" → handoff; "é golpe?" → prova; "tem fidelidade?" → "não, 30d aviso"; etc. — já existe Q&A em `bot_flow_qa`, vou só garantir que está sendo consultado em todos os steps.
-
----
-
-## Arquivos que serão tocados
-
-- `supabase/functions/whapi-webhook/handlers/conversational/state-machine.ts` (ajuste transições)
-- `supabase/functions/whapi-webhook/handlers/conversational/bot-flow.ts` (remover atalho aguardando_doc_auto, adicionar handler tenho_duvida)
-- 1 migração SQL: desativar mídias extras + atualizar `_buttons` do step + atualizar `flow_step_media_order`
-- Sem alterações no OCR, no portal worker, no frontend.
-
----
-
-## Validação pós-deploy
-
-1. `test_jornada_completa.py` (já existe em `.kiro/specs/flow-engine-v3-rewrite/`)
-2. Curl no `whapi-webhook` simulando 1 lead novo (smoke).
-3. Verificar nos próximos 3 leads reais: `customer_flow_state.current_step` percorre `boas_vindas → qualificacao → como_funciona → fazenda_solar → aguardando_conta → ask_quero_cadastrar → aguardando_doc_auto → finalizar` sem pular etapas.
-
-Tudo pronto. Pode aprovar que aplico em build mode.
+Você quer que eu **mantenha** `only_A` no final do teste (todo lead novo entra em A) ou **reverta** para `split` (50/50 A vs D) assim que o Fluxo A rodar inteiro?
