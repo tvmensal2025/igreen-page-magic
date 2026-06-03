@@ -677,7 +677,8 @@ Deno.serve(async (req) => {
       image_hash,
     });
 
-    const adIds: string[] = [];
+    // adIds já declarado acima (modo video pode ter populado).
+
     // Estratégia 1 (preferida): 1 Ad com asset_feed_spec + customization
     // por posicionamento. Reels/Stories pegam 9:16, Feed pega 1:1/4:5 → fim do corte.
     const hasMultiFormat = (squareHashes.length + verticalHashes.length > 0) && storyHashes.length > 0;
