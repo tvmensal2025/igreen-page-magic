@@ -1,62 +1,71 @@
-## Problemas encontrados na auditoria
+## Diagnóstico
 
-**1. Tom errado — "amigão" em vez de vendedor**
-- `supabase/functions/_shared/fluxo-b-prompt.ts` (DEFAULT_PROMPT, linhas 12-26): define tom "próximo, sem formalidade", mensagens curtíssimas (1-3 linhas). Para venda consultiva da iGreen isso soa amador.
-- `supabase/functions/_shared/fluxo-b-ai.ts` linha 173: fallback final é literalmente **"Pode me contar um pouquinho mais?"** — frase que você citou. Aparece sempre que o modelo devolve vazio.
+O sintoma "não abre em alguns navegadores, só funciona em aba anônima" é o padrão clássico de **Service Worker (PWA) com cache obsoleto**. O navegador anônimo funciona porque não há SW registrado nem cache.
 
-**2. Bot "reseta" depois de pouco tempo**
-- `fluxo-b-ai.ts` só carrega **últimos 16 turnos** (linha 67) como histórico bruto.
-- A memória de longo prazo (`customers.conversation_summary`) **nunca é atualizada no Fluxo B**: a função `maybeUpdateSummary` só roda em `conversational/index.ts` (dúvidas) e em `bot-flow.ts:2092` (fluxos A/D). Fluxo B passa direto.
-- Resultado: depois de ~16 mensagens o lead some do contexto e o bot age como conversa nova.
-- Não há nenhum gatilho automático que zere `conversation_summary` por inatividade — então o problema é só ele nunca ter sido **escrito**. O comando "resetar" continua sendo manual (botão admin / migration), exatamente como você quer.
+Hoje a config (`vite.config.ts` + `src/main.tsx`) tem várias coisas certas — `NetworkFirst` no HTML, `skipWaiting`, `clientsClaim`, guard de iframe/preview, `NetworkOnly` no Supabase — mas falta o seguinte, que é exatamente o que prende o usuário:
 
-## O que vou fazer
+1. **Sem recuperação no app quando um chunk hash some.** Quando o SW serve um `index.html` ainda válido mas que importa `assets/foo-OLDHASH.js`, e esse hash já não existe no novo deploy, o `import()` dinâmico falha e a tela fica em branco. Hoje não há listener para isso → o usuário precisa abrir aba anônima.
+2. **SW antigo (de versões anteriores ao guard atual) pode estar instalado** em domínios `igreen.cloud` / `www.igreen.cloud` / `id-preview--*`. O guard novo só impede *novos* registros em preview/iframe; quem já tinha um SW velho em produção continua preso até o próprio SW se atualizar — e se a atualização falhar, fica preso pra sempre.
+3. **Sem kill-switch acessível.** Se o estado quebrar, não existe uma rota / mecanismo que o usuário possa abrir para forçar limpeza (hoje só aba anônima resolve).
+4. **`navigateFallback: "/index.html"`** pode servir um HTML cacheado do `precache` quando a rede demora >3s, mesmo com `NetworkFirst` — o que perpetua o problema em redes instáveis.
+5. **manifest.json** está OK e não é o culpado, mas `id: "/admin"` + `start_url: "/admin?source=pwa"` são fixados no momento da instalação do PWA — não tocamos neles para não rebootar instalações já existentes.
 
-### A. Reescrever a persona padrão do Fluxo B (vendedor profissional)
-Arquivo: `supabase/functions/_shared/fluxo-b-prompt.ts`
+## Plano (sem quebrar nada, sem migrações de banco)
 
-- Trocar `DEFAULT_PROMPT` por uma persona de **consultor(a) de vendas iGreen Energy**:
-  - Tom cordial mas **profissional**, postura de quem está conduzindo um cadastro comercial — não "amigo".
-  - Nunca usar diminutivos infantilizados ("pouquinho", "rapidinho", "tudo bem aí?").
-  - Sempre direcionar para o próximo passo do funil (nome → valor → conta → documento).
-  - Confirmar dados explicitamente antes de seguir; nunca inventar economia ou prazos.
-  - Mensagens objetivas (2-4 linhas), zero markdown, emojis só quando necessário (✅ confirmação, 📄 pedido de doc).
-  - Bloco explícito **"O que NUNCA fazer"**: não tratar como amigo, não pedir "me conta mais" genérico, não repetir pergunta já respondida (usar memória), não prometer obra/instalação, não inventar valor.
+### 1. Auto-recuperação de chunk hash obsoleto — `src/main.tsx`
+Adicionar 1 listener global que detecta falha de import dinâmico e força recarregamento limpo:
 
-### B. Fallback de resposta vazia
-Arquivo: `supabase/functions/_shared/fluxo-b-ai.ts` linha 171-173
+- Escutar `window.addEventListener('vite:preloadError', ...)` (evento nativo do Vite ≥4).
+- Escutar `window.addEventListener('error', ...)` filtrando mensagens `"Failed to fetch dynamically imported module"` / `"Importing a module script failed"`.
+- Ao detectar, em **1 única vez por sessão** (sessionStorage flag pra não loopar):
+  1. `caches.keys().then(ks => ks.forEach(k => caches.delete(k)))`
+  2. `navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()))`
+  3. `location.reload()` com query `?sw-recover=<timestamp>` para furar HTTP cache.
+- O flag de sessionStorage garante que se o recarregamento ainda falhar, paramos de tentar e deixamos o erro aparecer normalmente (não cria loop infinito).
 
-- Trocar `"Pode me contar um pouquinho mais?"` por um fallback que reavança o funil de forma profissional, escolhido em função do estado conhecido do lead:
-  - Sem nome → "Para começarmos seu cadastro, qual seu nome completo?"
-  - Sem valor → "Pra calcular sua economia, qual o valor médio da sua conta de luz?"
-  - Caso geral → "Vamos continuar seu cadastro: me confirma [próxima informação]?"
-- Se `shouldHandoff`, manter mensagem de transferência atual.
+### 2. Kill-switch fallback `/sw.js` — `public/sw.js`
+Criar um worker estático mínimo que **só faz limpeza e se desregistra**. Serve para devices que registraram um SW antigo num path diferente do gerado pelo VitePWA. Conteúdo essencial:
 
-### C. Memória permanente no Fluxo B
-Arquivo: `supabase/functions/_shared/fluxo-b-ai.ts`
+```js
+self.addEventListener("install", e => e.waitUntil(self.skipWaiting()));
+self.addEventListener("activate", e => e.waitUntil((async () => {
+  await self.clients.claim();
+  const names = await caches.keys();
+  await Promise.all(names.map(n => caches.delete(n)));
+  await self.registration.unregister();
+})()));
+```
 
-1. **Aumentar janela bruta** de 16 → 40 turnos (linha 67) — sem custo relevante e cobre conversas longas.
-2. **Disparar `maybeUpdateSummary` em background** após cada resposta do Fluxo B (mesmo padrão do `conversational/index.ts:1584-1601`):
-   - Contar inbounds do cliente, chamar `maybeUpdateSummary` com `inboundTurnCount` (resumo roda a cada 6 turnos, como no fluxo A).
-   - `previousSummary` = `customer.conversation_summary` atual → o resumo é **incremental** (nunca "esquece" o que já sabia).
-   - Fire-and-forget, não bloqueia resposta.
-3. **Reler customer antes de montar contexto** quando `input.customer` foi passado pelo webhook: garantir que `conversation_summary` mais recente entra no prompt mesmo quando o webhook passou o customer cacheado.
-4. **Injetar dados estruturados já conhecidos** no system prompt ("Estado atual" já existe — ampliar com cidade/estado, distribuidora, sales_phase quando presentes) para que mesmo sem summary o bot reconheça o lead.
+Isso é seguro: o VitePWA gera seu próprio SW em outro nome (`/registerSW.js` + `/sw.js` injetado), e como o `injectRegister: null` está ativo, o app só registra o do plugin quando os guards permitem. O `/sw.js` estático só age se o navegador puxar esse caminho explicitamente — o que é o caso de instalações antigas.
 
-### D. Garantir que reset continue manual
-- Não tocar em nenhum trigger / migration que zere `conversation_summary`.
-- Documentar no topo de `fluxo-b-ai.ts` que a memória só é apagada pelos resets administrativos existentes (botão admin / migrations de manutenção).
+> Confirmação necessária antes de aplicar: o VitePWA com `strategies: "generateSW"` **também emite um arquivo `/sw.js`** no build. Se for o caso, este passo entra em conflito. **Vou checar o output do build antes de escrever o `public/sw.js`** e, se houver conflito, troco a estratégia para servir o kill-switch em `/sw-cleanup.js` + adicionar registro do mesmo no `main.tsx` apenas para hosts publicados. Sem riscos para quem já está funcionando.
 
-## Validação
-1. `tsc` / build (automático).
-2. Chamar `POST /functions/v1/fluxo-b-ai` com `dryRun: true` simulando 3 mensagens sequenciais → verificar que:
-   - Resposta não contém "pouquinho", "tudo bem aí", "me conta mais".
-   - Tom é profissional e direciona para o próximo passo.
-3. Logs do edge `fluxo-b-ai` mostrando `maybeUpdateSummary` rodando a cada 6 inbounds.
-4. Conferir num lead real (após deploy) que `customers.conversation_summary` é preenchido depois de ~6 mensagens.
+### 3. Endurecer o registro do SW — `src/main.tsx`
+- Trocar `registerSW({ immediate: true })` por `registerSW({ immediate: true, onRegisteredSW(_, r) { setInterval(() => r?.update(), 60_000) } })` — força o navegador a checar atualização a cada minuto enquanto a aba está aberta, em vez de esperar o ciclo padrão (24h).
+- Em caso de `onRegisterError`, fazer fallback: `unregister()` de tudo + `caches.delete(...)`.
+
+### 4. Workbox: tornar HTML mais resiliente — `vite.config.ts`
+- Reduzir `expiration.maxAgeSeconds` do `html-cache` de 24h para **5 min** (ainda permite offline curto, mas evita servir HTML antigo apontando para chunks que sumiram).
+- Adicionar `cacheableResponse: { statuses: [200] }` no `html-cache` para não cachear redirects/erros.
+- Manter tudo o mais igual (Supabase NetworkOnly, fontes/imagens iguais).
+
+### 5. Adicionar rota oculta de "recuperação manual" — `src/App.tsx` (mínimo)
+Rota `/reset` que renderiza um botão "Resetar app" que executa o mesmo cleanup do passo 1 e redireciona para `/`. Útil quando o usuário liga pelo suporte: "abre igreen.cloud/reset". Zero impacto em outros fluxos.
 
 ## Arquivos alterados
-- `supabase/functions/_shared/fluxo-b-prompt.ts` (persona + fallback guidelines)
-- `supabase/functions/_shared/fluxo-b-ai.ts` (janela 40, summary background, fallback inteligente, reload customer)
+- `src/main.tsx` — listener de preloadError + onRegisteredSW com update periódico + onRegisterError com cleanup.
+- `vite.config.ts` — `maxAgeSeconds` 24h→5min no `html-cache` + `cacheableResponse: { statuses: [200] }`.
+- `public/sw.js` (ou `public/sw-cleanup.js` conforme verificação do build) — kill-switch estático.
+- `src/App.tsx` — rota `/reset` (componente pequeno inline).
 
-Nenhuma migration de banco. Nenhuma mudança de UI.
+## Como vou validar
+1. Build local (`tsc` automático do harness).
+2. Conferir a saída do `dist/` para garantir que o `public/sw.js` não colide com o gerado pelo VitePWA.
+3. Abrir o preview, simular um chunk error injetando uma URL falsa no console e verificar que o cleanup roda e a página recarrega (1x apenas).
+4. Confirmar que em `/reset` o botão limpa caches + SW e volta para `/`.
+
+## O que **NÃO** vou fazer (preservação)
+- Não mudar `manifest.json` (`id`, `start_url`, `scope`, `display`) — alterar isso quebraria instalações PWA já adicionadas à tela de início dos usuários.
+- Não mudar autenticação Supabase / sessão.
+- Não mexer no banco / RLS / edge functions.
+- Não remover o PWA — apenas torná-lo recuperável.
