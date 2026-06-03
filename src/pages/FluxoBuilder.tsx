@@ -644,6 +644,11 @@ export default function FluxoBuilder() {
         `selectedId` e `inspectorId` (R1.6) vivem no `FluxoBuilder` e são
         naturalmente preservados.
       */}
+      {editingVariant === "B" && userId ? (
+        <main className="mx-auto w-full max-w-7xl px-4 py-6">
+          <FluxoBEditor consultantId={userId} />
+        </main>
+      ) : (
       <main className={`mx-auto grid gap-4 px-4 py-6 ${
         viewMode === "planilha" || (viewMode === "diagrama" && panelHidden)
           ? "max-w-none lg:grid-cols-1"
