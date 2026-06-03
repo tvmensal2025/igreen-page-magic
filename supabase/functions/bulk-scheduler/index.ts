@@ -8,6 +8,7 @@
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkSendQuota, registerSend, simulateTyping, typingDurationMs } from "../_shared/anti-ban.ts";
 
 const MAX_CAMPAIGNS_PER_TICK = 5;
 const MAX_MSGS_PER_TICK = 25; // por campanha por execução
@@ -228,8 +229,21 @@ Deno.serve(async (req) => {
 
     let processed = 0;
     let consecutiveFailures = 0;
+    let quotaBlocked = false;
     for (const t of list) {
       if (Date.now() - startedAt > MAX_EXEC_MS) break;
+
+      // 🛡️ Anti-ban guard: warmup + recovery + circuit breaker.
+      const quota = await checkSendQuota(supabase, instance);
+      if (!quota.allowed) {
+        report.push({
+          id: camp.id, paused: "anti_ban_guard",
+          reason: quota.reason, warmup_day: quota.warmup_day,
+          cap: quota.cap, sent: quota.sent,
+        });
+        quotaBlocked = true;
+        break;
+      }
 
       // Marca sending
       await supabase.from("bulk_campaign_targets").update({ status: "sending" }).eq("id", t.id);
@@ -238,6 +252,14 @@ Deno.serve(async (req) => {
         bill: t.vars?.bill ?? null,
         city: t.vars?.city ?? null,
       });
+
+      // Humaniza: "digitando..." antes do envio (proporcional ao tamanho)
+      if (finalMsg) {
+        await simulateTyping({
+          baseUrl: evoUrl, apiKey: evoKey, instance,
+          remoteJid: t.phone, durationMs: typingDurationMs(finalMsg),
+        });
+      }
 
       const r = await sendViaEvolution({
         baseUrl: evoUrl, apiKey: evoKey, instance,
@@ -254,10 +276,10 @@ Deno.serve(async (req) => {
       if (!r.ok) patch.error = r.error?.slice(0, 500);
       await supabase.from("bulk_campaign_targets").update(patch).eq("id", t.id);
 
-      // Incrementa contador na campanha
       if (r.ok) {
         processed++;
         consecutiveFailures = 0;
+        await registerSend(supabase, instance);
       } else {
         consecutiveFailures++;
       }
@@ -267,10 +289,16 @@ Deno.serve(async (req) => {
         break;
       }
 
-      // Intervalo aleatório
+      // Intervalo respeita o mínimo do warmup (do quota check)
+      const minS = Math.max(
+        Math.ceil((quota.min_interval_ms ?? 18000) / 1000),
+        Number(cfg.intervalMinS ?? 18),
+      );
+      const maxS = Math.max(minS + 4, Number(cfg.intervalMaxS ?? 32));
       const secs = minS + Math.random() * (maxS - minS);
       await new Promise(rs => setTimeout(rs, Math.round(secs * 1000)));
     }
+    if (quotaBlocked) continue;
 
     // Recalcula contadores ao final do lote
     const { data: stats2 } = await supabase
