@@ -659,8 +659,9 @@ Deno.serve(async (req) => {
 
     // 4) Creative — Click-to-WhatsApp NATIVO (WABA). Meta abre conversa direto
     // no número da WABA conectado à Página, sem link wa.me intermediário.
-    const initialMessage = buildInitialMessage(body.initial_message, body.distribuidora);
+    // initialMessage já declarado acima (hoisted pra modo foto e vídeo).
     console.log("[fb-create] initial WA message:", initialMessage);
+
     // CTWA oficial usa api.whatsapp.com/send com phone WABA (mesmo número do promoted_object).
     const waLink = `https://api.whatsapp.com/send?phone=${waNumberClean}&text=${encodeURIComponent(initialMessage)}`;
     // url_tags: macros do Meta substituem {{campaign.id}} / {{adset.id}} no clique.
