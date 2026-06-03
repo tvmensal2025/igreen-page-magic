@@ -54,9 +54,13 @@ export function buildFluxoBSystemPrompt(
     ? `\n\n# Memória da conversa\n${ctx.conversationSummary.trim()}`
     : "";
 
+  const kb = ctx.knowledgeBase?.trim()
+    ? `\n\n# FAQ e informações oficiais (use SOMENTE estas informações para responder dúvidas)\n${ctx.knowledgeBase.trim()}`
+    : "";
+
   const state = `\n\n# Estado atual\n- Nome do lead: ${ctx.nomeCliente || "DESCONHECIDO — pergunte e chame registrar_nome"}\n- Valor da conta: ${ctx.valorConta ? `R$ ${ctx.valorConta.toFixed(2)}` : "DESCONHECIDO — pergunte e chame registrar_valor_conta"}\n\nResponda SEMPRE em português brasileiro. Mantenha mensagens curtas.`;
 
-  return filled + memory + state;
+  return filled + kb + memory + state;
 }
 
 // Tools que a IA pode chamar. Schema OpenAI/Lovable AI compatível.
