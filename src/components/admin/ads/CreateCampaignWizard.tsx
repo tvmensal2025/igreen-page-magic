@@ -201,9 +201,10 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     setStep(1); setIssues(null); setHits([]);
     setFilesByFormat(EMPTY_FILES); setPickedLibrary([]); setPhotoTab("upload");
     setFormat("square"); setCopy(null); setHeadline(""); setPrimaryText(""); setDescription("");
-    setBudget(30); setDuration(0);
+    setBudget(15); setDuration(3);
     setPlacementMode("auto"); setPlacements(ALL_PLACEMENTS);
     setQuality(null); setPreflight(null); setLiveReach(null);
+    setGeoMode("cities"); setRadiusPoints([]);
 
     // Recupera rascunho de cidades/presets do localStorage (por consultor)
     try {
