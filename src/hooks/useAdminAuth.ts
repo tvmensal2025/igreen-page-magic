@@ -91,7 +91,11 @@ export function useAdminAuth() {
       const { data: createdData, error: createError } = await supabase.from("consultants").upsert(pendingConsultant, { onConflict: "id" }).select("*").single();
       if (isStale()) return; if (createError) throw createError;
       applyConsultantData(createdData);
-    } catch { if (isStale()) return; resetConsultantState(); }
+    } catch (e) {
+      if (isStale()) return;
+      console.error("[useAdminAuth] loadConsultant failed:", e);
+      resetConsultantState();
+    }
     finally {
       // `return` em finally é unsafe (no-unsafe-finally) — substituiria
       // qualquer return/throw do try/catch silenciosamente. Aqui só queremos
