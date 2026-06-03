@@ -1,63 +1,73 @@
-# Auditoria do Fluxo D — pronto para tráfego pago?
+# Fluxo D — copy nova, botão "dúvida" pro vídeo, e skip do botão Finalizar
 
-Vou validar o Fluxo D em **3 frentes**: configuração (já levantada), simulação ponta-a-ponta (botão por botão) e infraestrutura de alertas/recuperação. Sem alterar nada — só leitura, simulação e relatório.
+## 1) Banco — atualizar passos do Fluxo D (`320bf22c-...`) via UPDATE
 
-## O que já confirmei (leitura do banco)
+### `d_welcome`
+**Nova copy:**
+> Oi, {{nome}}! 👋
+> 
+> Vi que você se interessou em *reduzir a conta de luz em até 20%* — sem obra, sem instalação, na mesma distribuidora. 💚
+> 
+> Em 2 minutos eu te mostro *quanto você economiza por mês*. Posso começar? 👇
 
-- **Fluxo D ativo:** `Fluxo Whapi (botões)` (`is_active=true`, variant=`D`, 14 passos ativos).
-- **Welcome (d_welcome)** com 3 botões — todos com destino válido:
-  - 💚 Quero simular → `d_escolher_simulacao`
-  - 🤔 Como funciona → `d_como_funciona`
-  - 👨‍💼 Falar com Rafael → handoff humano
-- **Edge functions ativas:** `whapi-webhook`, `flow-d-health-cron`, `flow-d-stuck-watchdog`, `bot-stuck-recovery`, `evolution-proxy` — todas bootando sem erro nos últimos logs.
+**Botões (mesmos IDs, destinos inalterados):**
+- `quero_simular` → `d_escolher_simulacao`
+- `como` (🎥 Como funciona) → `d_como_funciona`
+- `humano` → handoff
 
-## Caminhos a percorrer (cada botão / cada ramo)
+### `d_resultado` — "Tenho dúvidas" vai pro vídeo
+- `cadastrar` (✅ Quero me cadastrar) → `d_pedir_documento` (igual)
+- `duvida` (🎥 Como funciona) → **`d_como_funciona`** (mudou — antes ia pra `d_duvidas`)
+- `humano` (👨‍💼 Falar com Rafael) → handoff (igual)
+Trigger_phrases ajustadas pra refletir o novo destino.
 
-```text
-d_welcome
- ├─ "Quero simular"  → d_escolher_simulacao
- │     ├─ "Simulação completa" → d_pedir_conta → d_resultado
- │     │     ├─ "Continuar Cadastro" → d_pedir_documento → d_pedir_email → d_confirmar_telefone → d_finalizar
- │     │     ├─ "Tenho dúvidas"      → d_duvidas (3 botões)
- │     │     └─ "Falar com Rafael"   → handoff
- │     └─ "Simulação rápida" → d_simular_valor → d_simular_resultado
- │            ├─ "Continuar Cadastro" → d_pedir_documento → ... → d_finalizar
- │            ├─ "Ainda tenho dúvida" → d_duvidas
- │            └─ "Como Funciona"     → d_como_funciona
- ├─ "Como funciona" → d_como_funciona
- │     ├─ "Continuar Cadastro" → d_pedir_conta
- │     ├─ "Ainda tenho dúvida" → d_duvidas
- │     └─ "Falar com Rafael"   → handoff
- └─ "Falar com Rafael" → handoff
+### `d_simular_resultado` — consertar swap + alinhar com `d_resultado`
+- `cadastrar` (✅ Quero me cadastrar) → `d_pedir_documento`
+- `duvida` (🎥 Como funciona) → `d_como_funciona`
+- `humano` (👨‍💼 Falar com Rafael) → handoff
+
+### `d_duvidas` — vira fallback de texto livre (sem botão)
+- **Remove** a captura `_buttons`.
+- **Mantém** `duvida_livre` com `ai_answer:true` (AI responde texto livre).
+- Mantém as 3 transições por palavra-chave (`cadastrar` / `simular` / `humano`).
+- Copy ajustada:
+  > {{nome}}, manda sua *pergunta* aqui que eu te respondo na hora 💬
+  > 
+  > _(ou digite *cadastrar* pra continuar, ou *humano* pra falar com o Rafael)_
+
+## 2) Código — pular o botão "✅ Finalizar"
+
+Arquivo: `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
+
+Hoje, após `confirm_phone → Sim`, o lead cai em `ask_finalizar` e recebe um botão que quase ninguém clica. Já existe atalho em `ask_complement` (linha 4506) que pula direto pra `finalizando`.
+
+**Mudança:** extrair helper local
+```ts
+function applyNextOrFinalize(next, merged, updates) {
+  if (next === "ask_finalizar") {
+    updates.conversation_step = "finalizando";
+    return "✅ Tudo certo! Processando seu cadastro...";
+  }
+  updates.conversation_step = next;
+  return getReplyForStep(next, merged);
+}
 ```
+e aplicar nos cases que hoje assinam `conversation_step` direto do retorno de `autoResolveCepIfNeeded`:
+- `ask_phone_confirm` (≈4310)
+- `ask_phone` (final do case, após validar telefone)
+- `ask_email` (final do case)
+- `ask_distribuidora` (≈4522)
+- `ask_installation_number` e similares que também resolvem CEP
 
-## Plano de verificação
+O `case "ask_finalizar"` existente fica como **fallback** pra leads antigos já parados nesse step.
 
-1. **Conferência estrutural (já parcial)**
-   - Confirmar que todo `goto_step_id` aponta para passo ativo do mesmo flow.
-   - Conferir botões de `d_duvidas`, `d_simular_resultado`, `d_escolher_simulacao` (alguns ainda truncados na leitura).
-   - Validar capturas: `capture_conta`, `capture_documento` (auto-detect), `capture_email` (regex), `confirm_phone`.
-
-2. **Simulação end-to-end via `whapi-webhook`**
-   - Criar payloads de mensagens entrantes (texto + botão) simulando um lead real, disparando em sequência os ramos do diagrama.
-   - Validar em `conversations` que cada step disparou a mensagem certa e que `customer_flow_state` avançou para o próximo `step_key`.
-   - Confirmar que o OCR (conta + documento) está plugado e que `processando_ocr_conta` desbloqueia para `d_resultado`.
-
-3. **Infra de segurança**
-   - Conferir `flow-d-health-cron` (últimos `flow_d_health_runs` e `bot_handoff_alerts` tipo `flow_d_*`).
-   - Conferir `bot-stuck-recovery` (lead travado em D recebe nudge).
-   - Verificar `evolution-proxy` (instância WhatsApp respondendo).
-   - Conferir se a campanha de Ads está apontando para o número/instância certa e se a label/UTM grava `flow_variant='D'`.
-
-4. **Relatório final**
-   - Tabela com cada ramo: **OK** / **quebrado** / **risco**.
-   - Lista de correções (se houver) ordenada por impacto em conversão.
-   - Sinal verde 🟢 / amarelo 🟡 / vermelho 🔴 para liberar tráfego.
+## 3) Validação
+- Reler `bot_flow_steps` do flow D após o UPDATE pra confirmar copy/botões/destinos.
+- Conferir que nenhum `case` ainda assina `ask_finalizar` sem o helper.
+- Garantir que `d_duvidas` continua respondendo texto livre via AI.
 
 ## Fora de escopo
-
-- Não vou alterar passos, botões, transições ou copy sem o seu OK.
-- Não vou enviar mensagens reais para clientes — só payloads de teste contra o webhook.
-- Não vou mexer em Ads Manager / Meta — só verifico se o link e o roteamento para Fluxo D estão corretos.
-
-Confirma que posso rodar essa auditoria? Se quiser, posso focar só em um ramo específico (ex.: só o caminho do botão "Quero simular").
+- Não mexo nos IDs dos botões (`cadastrar`/`duvida`/`humano`) — só títulos e destinos.
+- Não mexo nos slots de mídia (`como_funciona`, `fazenda_solar`, `prova_social`).
+- Não mexo nos demais steps de captura/OCR nem nos flows A/B/C.
+- Não removo o step `d_finalizar` do banco.
