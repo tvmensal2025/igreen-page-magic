@@ -10,10 +10,10 @@ interface Props {
   totalContacts: number;
 }
 
-const PRESET_META: { key: SpeedPreset; label: string; desc: string; icon: any; color: string }[] = [
-  { key: "safe",   label: "Seguro",  desc: "15 por bloco, 15min pausa, ~30s entre",  icon: Shield, color: "emerald" },
-  { key: "normal", label: "Normal",  desc: "25 por bloco, 10min pausa, ~25s entre",  icon: Zap,    color: "blue" },
-  { key: "fast",   label: "Rápido",  desc: "40 por bloco, 5min pausa, ~15s entre",   icon: Rabbit, color: "orange" },
+const PRESET_META: { key: SpeedPreset; label: string; desc: string; icon: any; activeCls: string; iconCls: string }[] = [
+  { key: "safe",   label: "Seguro",  desc: "15 por bloco, 15min pausa, ~30s entre", icon: Shield, activeCls: "border-emerald-500/50 bg-emerald-500/10", iconCls: "text-emerald-400" },
+  { key: "normal", label: "Normal",  desc: "25 por bloco, 10min pausa, ~25s entre", icon: Zap,    activeCls: "border-blue-500/50 bg-blue-500/10",       iconCls: "text-blue-400" },
+  { key: "fast",   label: "Rápido",  desc: "40 por bloco, 5min pausa, ~15s entre",  icon: Rabbit, activeCls: "border-orange-500/50 bg-orange-500/10",   iconCls: "text-orange-400" },
 ];
 
 export function ScheduleStep({ config, onChange, totalContacts }: Props) {
