@@ -55,9 +55,33 @@ const FORBIDDEN = [
   /\b(VOC[ÊE]|SEU|SUA)\b/,
 ];
 
+// Aberturas fracas que matam CTR no Feed (texto corta em ~40 chars no mobile).
+// Variações que começam assim são descartadas pelo cleanList.
+const WEAK_OPENERS = [
+  /^entre\s+em\s+contato/i,
+  /^saiba\s+mais/i,
+  /^conhe[çc]a\s+/i,
+  /^clique\s+(aqui|abaixo|no\s+bot[ãa]o)/i,
+  /^ol[áa][,.\s]/i,
+];
+
 function isClean(s: string): boolean {
   if (!s) return false;
   return !FORBIDDEN.some((r) => r.test(s));
+}
+
+// Para primary_text: verifica se a primeira sentença (até ponto/quebra) cabe em 40 chars.
+// Esse é o hook visível antes do "ver mais" no Feed mobile.
+function firstSentence(s: string): string {
+  const m = s.match(/^[^.!?\n]+/);
+  return (m ? m[0] : s).trim();
+}
+
+function hookOk(s: string): boolean {
+  if (WEAK_OPENERS.some((r) => r.test(s))) return false;
+  const first = firstSentence(s);
+  // hook ideal: 12–40 chars antes do primeiro ponto
+  return first.length >= 8 && first.length <= 40;
 }
 
 function variationScore(s: string, kind: "headline" | "primary"): number {
@@ -70,6 +94,8 @@ function variationScore(s: string, kind: "headline" | "primary"): number {
   if (/\d/.test(s)) score += 10; // números aumentam CTR
   if (/(fala|toca|garante|peça|peca|simule|baixe|conhe[çc]a|descubra|economiz|chame|👇|👉)/i.test(s)) score += 10;
   if (/cliente|cidade|região|aqui|seu boleto|sua conta/i.test(s)) score += 5;
+  // Bônus de hook curto APENAS no primary — o texto fica visível mesmo com "ver mais".
+  if (kind === "primary" && hookOk(s)) score += 20;
   return Math.min(100, score);
 }
 
