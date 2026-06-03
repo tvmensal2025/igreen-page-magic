@@ -202,13 +202,15 @@ REGRAS DE OURO (cumpra TODAS, senão a Meta rejeita):
 - Títulos: 14 a 30 caracteres. Textos: 35 a 90 caracteres. Descrição: até 25.
 - PROIBIDO usar: "garantido", "100%", "milagre", "ganhe dinheiro", "grátis", "melhor do Brasil/mundo", "!!" ou "??", VOCÊ/SEU/SUA em CAIXA ALTA.
 - Tom direto, brasileiro, sem enrolação. Foque em ECONOMIA, nunca em ganho.
+- **HOOK DE FEED (crítico)**: cada primary_text DEVE começar com uma frase de gancho de 12 a 40 caracteres antes do primeiro ponto/exclamação. O Feed mobile corta tudo depois disso. Exemplos de hook: "Conta de luz subindo de novo?", "Cansado de pagar conta cara?", "Sua fatura passou de R$ 300?".
+- PROIBIDO começar primary_text com: "Entre em contato", "Saiba mais", "Conheça", "Clique aqui", "Olá".
 - Cada texto primário precisa ter um CTA no final (ex: "Fala no zap 👇", "Toca aqui", "Garante a sua").
 - Use no máximo 1 emoji por texto. Pelo menos 3 itens devem conter um número específico.
 - Image briefs: NUNCA proponha painel solar bonito em telhado azul — esse é o erro #1 do mercado.
 
 Exemplo do nível de qualidade esperado:
 - headline: "Conta CPFL 20% mais barata"
-- primary: "Cansado da conta alta? Desconto de até 20% direto no boleto. Sem obra. Fala no zap 👇"`;
+- primary: "Cansado da conta alta? Desconto de até 20% direto no boleto. Sem obra. Fala no zap 👇"  ← hook "Cansado da conta alta?" tem 24 chars, cabe no feed.`;
 
   try {
     const result = await geminiGenerate({
