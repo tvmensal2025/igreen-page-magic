@@ -119,6 +119,29 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
         </label>
       </div>
 
+      {/* Media order — só relevante se houver anexo, mas sempre visível para configurar */}
+      <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-2">
+        <div className="flex items-center gap-2"><Layers className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-bold">Ordem do anexo (quando houver)</span></div>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { v: "media_first", label: "Anexo primeiro", desc: "Manda anexo, depois texto" },
+            { v: "text_first",  label: "Texto primeiro", desc: "Manda texto, depois anexo" },
+            { v: "caption_only", label: "Como legenda",  desc: "Texto vai na legenda da mídia" },
+          ] as const).map(o => (
+            <button
+              key={o.v} type="button"
+              onClick={() => onChange({ ...config, mediaOrder: o.v })}
+              className={`text-left p-2 rounded-lg border text-[11px] transition-all ${
+                config.mediaOrder === o.v ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20 hover:bg-secondary/40"
+              }`}
+            >
+              <p className="font-bold text-foreground text-xs">{o.label}</p>
+              <p className="text-muted-foreground">{o.desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Schedule */}
       <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
         <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-bold">Agendamento</span></div>
@@ -128,7 +151,7 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
             className={`px-3 py-2 rounded-lg text-sm font-medium border ${!config.scheduleAt ? "border-primary/50 bg-primary/10 text-primary" : "border-border/40 bg-secondary/20"}`}
           >Enviar agora</button>
           <button
-            type="button" onClick={() => onChange({ ...config, scheduleAt: new Date(Date.now() + 3600_000).toISOString().slice(0, 16) })}
+            type="button" onClick={() => onChange({ ...config, scheduleAt: toLocalInputValue(new Date(Date.now() + 3600_000)) })}
             className={`px-3 py-2 rounded-lg text-sm font-medium border ${config.scheduleAt ? "border-primary/50 bg-primary/10 text-primary" : "border-border/40 bg-secondary/20"}`}
           >Agendar</button>
         </div>
