@@ -223,8 +223,6 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const minS = Math.max(1, Number(cfg.intervalMinS ?? 18));
-    const maxS = Math.max(minS, Number(cfg.intervalMaxS ?? 32));
     const mediaOrder = String(cfg.mediaOrder || "media_first");
 
     let processed = 0;
