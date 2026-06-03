@@ -6,9 +6,15 @@
 // 2. Roda cascata Gemini 3 Flash → GPT-5.5 com tool calling.
 // 3. Aplica tool calls (registrar_nome, pedir_foto_conta, etc).
 // 4. Retorna o texto que o webhook deve enviar ao lead.
+// 5. Em background, atualiza customers.conversation_summary (memória persistente).
+//
+// MEMÓRIA: o bot tem memória permanente via customers.conversation_summary +
+// últimos 40 turnos brutos. Essa memória NUNCA é apagada automaticamente —
+// só pelos resets administrativos manuais (botão admin / migrations de manutenção).
 
 import { aiChatCascade, aiChat, type AIChatMessage } from "./ai-gateway.ts";
 import { buildFluxoBSystemPrompt, FLUXO_B_TOOLS, type FluxoBContext } from "./fluxo-b-prompt.ts";
+import { maybeUpdateSummary } from "./ai-summary.ts";
 
 // SupabaseClient genérico para evitar conflitos de tipos entre callers
 // deno-lint-ignore no-explicit-any
@@ -39,11 +45,13 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   const t0 = Date.now();
   const { supabase, customerId, inboundText } = input;
 
-  // 1) Carrega customer + consultant
+  // 1) Carrega customer. Sempre relê do banco quando temos customerId, mesmo
+  // se o webhook passou um objeto cacheado — precisamos do conversation_summary
+  // e dados de cadastro mais recentes para a memória funcionar.
   let customer = input.customer;
-  if (!customer) {
+  if (customerId && customerId !== "00000000-0000-0000-0000-000000000000") {
     const { data } = await supabase.from("customers").select("*").eq("id", customerId).maybeSingle();
-    customer = data;
+    if (data) customer = data;
   }
   if (!customer) throw new Error(`[fluxo-b-ai] customer ${customerId} not found`);
 
@@ -58,13 +66,14 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   }
   if (!consultant) throw new Error(`[fluxo-b-ai] consultant for customer ${customerId} not found`);
 
-  // 2) Histórico recente (últimos 16 turnos)
+  // 2) Histórico recente: últimos 40 turnos (cobre conversas longas; resumo
+  // persistente cuida do que vem antes disso).
   const { data: histRows } = await supabase
     .from("conversations")
     .select("message_direction, message_text, message_type, created_at")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
-    .limit(16);
+    .limit(40);
   const history: AIChatMessage[] = ((histRows || []) as any[])
     .slice()
     .reverse()
@@ -74,7 +83,7 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     }))
     .filter((m) => m.content && String(m.content).trim().length > 0);
 
-  // 3) Monta system prompt
+  // 3) Monta system prompt + bloco de dados estruturados já conhecidos.
   const ctx: FluxoBContext = {
     representante: consultant.name || "Rafael",
     nomeCliente: customer.name || null,
@@ -82,7 +91,19 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     conversationSummary: customer.conversation_summary || null,
     customerId,
   };
-  const systemPrompt = buildFluxoBSystemPrompt(consultant.ai_persona_fluxo_b, ctx);
+  const baseSystemPrompt = buildFluxoBSystemPrompt(consultant.ai_persona_fluxo_b, ctx);
+
+  const knownFacts: string[] = [];
+  if (customer.address_city) knownFacts.push(`Cidade: ${customer.address_city}`);
+  if (customer.address_state) knownFacts.push(`Estado: ${customer.address_state}`);
+  if (customer.distribuidora) knownFacts.push(`Distribuidora: ${customer.distribuidora}`);
+  if (customer.sales_phase) knownFacts.push(`Fase de venda: ${customer.sales_phase}`);
+  if (customer.conversation_step) knownFacts.push(`Passo atual: ${customer.conversation_step}`);
+  const factsBlock = knownFacts.length
+    ? `\n\n# Dados já confirmados deste lead (NÃO pergunte de novo)\n- ${knownFacts.join("\n- ")}`
+    : "";
+
+  const systemPrompt = baseSystemPrompt + factsBlock;
 
   const messages: AIChatMessage[] = [
     { role: "system", content: systemPrompt },
@@ -168,9 +189,51 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     });
   } catch (_) { /* tabela pode não existir em alguns ambientes */ }
 
-  const reply = (chosen.text || "").trim() || (shouldHandoff
-    ? "Vou te transferir para um humano, só um instante 🙏"
-    : "Pode me contar um pouquinho mais?");
+  // Fallback profissional quando o modelo devolveu texto vazio: nunca usar
+  // frases tipo "me conta um pouquinho mais". Sempre reavançar o funil.
+  function buildProfessionalFallback(): string {
+    if (shouldHandoff) return "Vou transferir seu atendimento para um consultor humano agora. Um momento, por favor.";
+    if (!customer.name && !updates.name) {
+      return "Para iniciarmos seu cadastro na iGreen Energy, por favor me informe seu nome completo.";
+    }
+    const knownValor = typeof updates.electricity_bill_value === "number"
+      ? updates.electricity_bill_value
+      : (typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null);
+    if (!knownValor) {
+      return "Para calcular sua economia, qual é o valor médio mensal da sua conta de luz?";
+    }
+    if (conversationStepUpdate === "aguardando_conta" || customer.conversation_step === "aguardando_conta") {
+      return "Por favor, envie aqui a foto ou PDF da sua última conta de luz. 📷";
+    }
+    if (conversationStepUpdate === "aguardando_documento" || customer.conversation_step === "aguardando_documento") {
+      return "Agora preciso da foto da frente do seu RG ou CNH para finalizar o cadastro. 📄";
+    }
+    return "Vamos continuar seu cadastro. Pode me confirmar a próxima informação que pedi?";
+  }
+
+  const reply = (chosen.text || "").trim() || buildProfessionalFallback();
+
+  // 7) Memória persistente: atualiza conversation_summary em background a cada
+  // ~6 inbounds. Fire-and-forget — não bloqueia a resposta ao lead.
+  try {
+    const { count: inboundCount } = await supabase
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId)
+      .eq("message_direction", "inbound");
+    const historyText = [...history, { role: "user", content: inboundText } as AIChatMessage, { role: "assistant", content: reply } as AIChatMessage]
+      .map((m) => `${m.role === "user" ? "Lead" : "Bot"}: ${String(m.content).slice(0, 240)}`)
+      .join("\n");
+    void maybeUpdateSummary({
+      supabase,
+      customerId,
+      consultantId: customer.consultant_id,
+      history: historyText,
+      customer: { ...customer, ...updates },
+      inboundTurnCount: inboundCount || 0,
+      previousSummary: customer.conversation_summary || null,
+    });
+  } catch (_) { /* best-effort */ }
 
   return {
     reply,
