@@ -468,7 +468,11 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       if (geoMode === "radius" && radiusPoints.length === 0) return toast({ title: "Adicione pelo menos 1 endereço", variant: "destructive" });
       setStep(2);
     } else if (step === 2) {
-      if (totalFiles + pickedLibrary.length < 1) return toast({ title: "Adicione pelo menos 1 foto válida", variant: "destructive" });
+      if (creativeMode === "video") {
+        if (!videoFile && !videoUrl) return toast({ title: "Envie um vídeo (.mp4 vertical)", variant: "destructive" });
+      } else {
+        if (totalFiles + pickedLibrary.length < 1) return toast({ title: "Adicione pelo menos 1 foto válida", variant: "destructive" });
+      }
       setStep(3);
       if (!copy) generateCopyForCities();
     } else if (step === 3) {
