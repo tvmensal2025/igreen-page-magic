@@ -101,6 +101,36 @@ Deno.serve(async (req) => {
       conversation_summary: null,
       bot_paused: false,
       flow_variant: "B",
+      // overrides vindos do cliente (state acumulado entre turnos no tester)
+      ...(body?.customerState && typeof body.customerState === "object" ? body.customerState : {}),
+    };
+  }
+
+  // History override (tester mantém o histórico no front, já que dryRun não persiste em conversations)
+  const syntheticHistory: Array<{ role: "user" | "assistant"; content: string }> | undefined =
+    dryRun && Array.isArray(body?.history) ? body.history.slice(-40) : undefined;
+  if (syntheticHistory && syntheticHistory.length > 0) {
+    // Injeta proxy do select em conversations para devolver o histórico simulado
+    const origFrom = supaForRun.from.bind(supaForRun);
+    supaForRun.from = (table: string) => {
+      if (table !== "conversations") return origFrom(table);
+      return {
+        select: () => ({
+          eq: () => ({
+            order: () => ({
+              limit: async () => ({
+                data: syntheticHistory.map((m) => ({
+                  message_direction: m.role === "assistant" ? "outbound" : "inbound",
+                  message_text: m.content,
+                  message_type: "text",
+                  created_at: new Date().toISOString(),
+                })),
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      } as any;
     };
   }
 
