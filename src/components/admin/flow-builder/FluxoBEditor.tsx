@@ -171,7 +171,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
               <Send className="w-4 h-4" />
             </Button>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setChat([])} disabled={chat.length === 0}>Limpar chat</Button>
+          <Button variant="ghost" size="sm" onClick={() => { setChat([]); setSimState({}); }} disabled={chat.length === 0}>Limpar chat</Button>
         </CardContent>
       </Card>
     </div>
