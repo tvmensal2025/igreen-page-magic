@@ -479,7 +479,12 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     } else if (step === 3) {
       if (!headline || !primaryText) return toast({ title: "Preencha título e texto", variant: "destructive" });
       if (quality && !quality.canPublish) {
-        return toast({ title: `Score ${quality.score}/100 — mínimo 70`, description: "Resolva os itens em vermelho do painel de qualidade antes de avançar.", variant: "destructive" });
+        const blockHit = quality.copy.hits.find((h) => h.severity === "block");
+        return toast({ title: "Termo proibido pela Meta", description: blockHit?.message || "Remova os itens em vermelho antes de avançar.", variant: "destructive" });
+      }
+      if (quality && !quality.recommendedPublish) {
+        setLowScoreConfirm(true);
+        return;
       }
       setStep(4);
       runPreflight();
