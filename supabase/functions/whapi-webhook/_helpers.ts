@@ -42,16 +42,22 @@ export function isRateLimited(phone: string): boolean {
   return recent.length > RATE_LIMIT_MAX;
 }
 
-// ── Reconnect cooldown per-instance ──────────────────────────────────
-const reconnectCooldowns = new Map<string, number>();
-const RECONNECT_COOLDOWN_MS = 120_000;
+// ── Reconnect cooldown per-instance (DB-backed, 10 min) ──────────────
+// Whapi raramente exige reconnect (é cloud), mas mantemos a mesma API
+// para o caso de fallback. Persistimos via RPC para não martelar.
+const RECONNECT_COOLDOWN_MS = 600_000;
 
-export function canReconnect(instance: string): boolean {
-  const now = Date.now();
-  const last = reconnectCooldowns.get(instance) || 0;
-  if (now - last < RECONNECT_COOLDOWN_MS) return false;
-  reconnectCooldowns.set(instance, now);
-  return true;
+export async function canReconnect(supabase: any, instance: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc("try_acquire_reconnect_slot", {
+      p_instance: instance,
+      p_cooldown_ms: RECONNECT_COOLDOWN_MS,
+    });
+    if (error) return false;
+    return data === true;
+  } catch {
+    return false;
+  }
 }
 
 export const OCR_CONFIDENCE_THRESHOLD = 70;

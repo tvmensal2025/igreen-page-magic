@@ -2,7 +2,12 @@
 // Extracted verbatim from index.ts — no behavior change.
 
 import { fetchWithTimeout } from "../../_shared/utils.ts";
-import { canReconnect, classifyDisconnect } from "../_helpers.ts";
+import {
+  canReconnect,
+  classifyDisconnect,
+  recordRiskSignal,
+  activateRecoveryMode,
+} from "../_helpers.ts";
 import type { SupabaseClient } from "./types.ts";
 
 export interface HandleConnectionArgs {
