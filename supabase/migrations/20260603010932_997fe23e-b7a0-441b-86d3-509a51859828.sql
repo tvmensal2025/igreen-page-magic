@@ -1,0 +1,1 @@
+UPDATE settings SET value='only_A' WHERE key='flow_ab_mode';
