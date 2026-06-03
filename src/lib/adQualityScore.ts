@@ -92,11 +92,12 @@ export async function scoreImage(input: ImageInput): Promise<QualityResult["imag
   }
 
   checks.push({ ok: avgBrightness >= 60 && avgBrightness <= 200, label: "Brilho equilibrado", detail: avgBrightness < 60 ? "muito escura" : avgBrightness > 200 ? "muito clara/estourada" : "boa exposição" });
-  checks.push({ ok: contrast >= 35, label: "Contraste suficiente", detail: contrast < 35 ? "imagem chapada — pouco impacto visual" : "boa profundidade" });
-  checks.push({ ok: textRatio < 0.18, label: "Pouco texto na imagem", detail: textRatio >= 0.18 ? `~${Math.round(textRatio * 100)}% de bordas (texto > 20% reduz alcance)` : "Meta favorece imagens com pouco texto" });
+  checks.push({ ok: contrast >= 25, label: "Contraste suficiente", detail: contrast < 25 ? "imagem chapada — pouco impacto visual" : "boa profundidade" });
+  checks.push({ ok: textRatio < 0.28, label: "Pouco texto na imagem", detail: textRatio >= 0.28 ? `~${Math.round(textRatio * 100)}% de bordas (texto > 28% reduz alcance)` : "Meta favorece imagens com pouco texto" });
 
   const passed = checks.filter(c => c.ok).length;
-  const score = Math.round((passed / checks.length) * 100);
+  let score = Math.round((passed / checks.length) * 100);
+  if (dimBonus) score = Math.min(100, score + 10);
   return { score, checks };
 }
 
