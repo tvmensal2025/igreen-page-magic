@@ -216,6 +216,11 @@ async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string
       console.warn(`⚠️ Erro auto-resolve CEP: ${e?.message}`);
     }
   }
+  // 🚀 Pular o botão "✅ Finalizar" — quando todos os campos estiverem prontos,
+  // ir direto para "finalizando" (que dispara a submissão ao portal em 4939).
+  // O case "ask_finalizar" continua existindo como fallback para leads antigos
+  // que já estão parados nesse step.
+  if (step === "ask_finalizar") return "finalizando";
   return step;
 }
 
