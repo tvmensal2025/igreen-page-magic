@@ -1,55 +1,65 @@
-## Diagnóstico
 
-O fluxo de aprovação **não está quebrado** — o SuperAdmin lê de `public.consultants` corretamente. O problema é que **não existe registro lá pros consultores que você cadastrou hoje**.
+## Verificação: Plano A é o padrão usado por profissionais?
 
-Estado real no banco:
+Validei contra fontes 2025/2026 (Whapi, Chatarmin, Affinect, Wazzap, WasenderAPI, baileys-antiban, Kraya AI, docs Meta). Conclusão: **sim, Plano A é o estado-da-arte para APIs não-oficiais (Evolution/Baileys)**. Toda fonte séria recomenda exatamente as 7 camadas que propusemos. Nada melhor existe hoje sem migrar para WhatsApp Cloud API oficial (o que muda preço e UX).
 
-```text
-auth.users (3):
-  - rafael.ids@icloud.com   (admin, criado em mar/26)
-  - tvmensal01@gmail.com    (criado hoje 22:02)
-  - tvmensal22@gmail.com    (criado hoje 22:13)
+### Comparação Plano A × consenso da indústria
 
-public.consultants (1):
-  - rafael (approved=true)
-  → tvmensal01 e tvmensal22 NÃO estão aqui
-```
+| Prática recomendada pela indústria | Onde aparece | Plano A cobre? |
+|---|---|---|
+| Cooldown de reconexão persistente (não em memória) | baileys-antiban, Kraya | ✅ Camada 1 (DB + RPC, 10min) |
+| Tratar `statusReason=401/403/440` como FATAL | docs Baileys, WasenderAPI | ✅ Camada 1 (já parcial, ampliando p/ `0`) |
+| QR polling ≥30s, sem auto-refresh agressivo | Whapi, Affinect | ✅ Camada 2 |
+| Warmup progressivo 14 dias (20→500+/dia) | Wazzap, Affinect, Chatarmin | ✅ Camada B (idêntico ao Wazzap) |
+| Intervalo mínimo entre mensagens com jitter | baileys-antiban, Greentick | ✅ Camada 4 + B |
+| Simular "digitando" (presence) antes de enviar | baileys-antiban, Whapi | ✅ Camada 4 |
+| Circuit breaker em sinais de risco | Kraya, baileys-antiban | ✅ Camada C |
+| Modo de recuperação pós-incidente | Affinect, Whapi | ✅ Camada D |
+| Painel de saúde + kill switch manual | Chatarmin | ✅ Camada E |
+| Excluir respostas inbound do cap diário | Wazzap | ✅ Camada B |
 
-Por isso o SuperAdmin não vê ninguém pra aprovar — e como a tela "Aguardando Aprovação" aparece para o consultor (`approved=false`), o `useAdminAuth` tentou criar a linha pendente automaticamente mas **falhou silenciosamente**: o `catch {}` em `src/hooks/useAdminAuth.ts:93` engole qualquer erro do `upsert` sem logar nem avisar — incluindo erros do trigger `trg_seed_camila_flow` que insere em `bot_flows` no AFTER INSERT.
+**Nada faltando.** A única alternativa "mais segura" seria abandonar Evolution e usar WhatsApp Cloud API oficial — fora do escopo (mudaria todo o produto).
 
-Resultado: o usuário fica preso na tela "Aguardando Aprovação" pra sempre, e o admin nunca recebe nada na fila.
+### Plano A — execução em 4 PRs
 
-## Plano de correção
+**PR1 — Conexão à prova de ban (crítico, libera tudo)**
+- Migration: tabela `instance_reconnect_cooldowns` + RPC `try_acquire_reconnect_slot(instance, ttl_ms)`.
+- `evolution-webhook/_helpers.ts`: `canReconnect` agora consulta RPC (10 min, persistente). Adicionar `0` em `FATAL_DISCONNECT_REASONS`.
+- `handlers/connection.ts`: delay 5s→30s antes de reconectar transiente; logar classificação.
+- Mesmo tratamento em `whapi-webhook/_helpers.ts`.
 
-### 1. Rede de segurança no banco — trigger `on_auth_user_created`
+**PR2 — Frontend não dispara reconexão (crítico)**
+- `useWhatsApp.ts`: polling QR mínimo 30s (era 8s). Remover `connectInstance` de `multiSignalCheck`.
+- `ConnectionPanel.tsx`: remover auto-regenerate QR de 45s; só botão manual.
+- `BroadcastChannel` para impedir duas abas pedindo QR simultâneo.
 
-Criar trigger `AFTER INSERT ON auth.users` que insere automaticamente uma linha pendente em `public.consultants` (com `approved=false`, license única baseada em email+uid). Roda como `SECURITY DEFINER` para bypassar RLS. Esse é o padrão Supabase recomendado e garante que o consultor sempre aparece pro SuperAdmin, independente de onde a UI falhe.
+**PR3 — Warmup + caps + circuit breaker (alto impacto)**
+- Migration: `instance_send_counters` (instance, date, sent_count, first_send_at), `instance_risk_signals` (signal_type, severity, expires_at), coluna `recovery_mode_until` em `whatsapp_instances`, RPC `check_send_quota(instance)` que retorna `{allowed, reason, remaining, min_interval_ms}`.
+- Ramp: D1=20, D2=40, D3=80, D5=150, D8=250, D11=400, D14+=600. Intervalo mín: D1=60s → D14=18s. Inbound bot replies não contam.
+- Aplicar `check_send_quota` em: `bulk-scheduler`, `reactivation-cron`, `reactivation-send`, `send-scheduled-messages`, `ai-followup-cron`.
+- Circuit breaker em `evolution-webhook` connection handler: registra signals (reconexões, falhas, fatais) → ≥3 reconex/6h pausa bulk 2h, ≥1 fatal exige confirmação manual + ativa `recovery_mode_until = now()+14d`.
 
-### 2. Backfill dos 2 órfãos
+**PR4 — Humanização do envio + painel (alto)**
+- `evolution-api.ts`: helper `sendPresence(instance, jid, "composing", ms)` antes de cada `sendText`. Duração ∝ tamanho do texto (40ms/char, min 1.2s, max 6s).
+- Jitter entre mensagens sequenciais do bot (700–2200ms aleatório).
+- `InstanceHealth.tsx`: mostrar dia do warmup, cota usada/restante, sinais de risco ativos, recovery mode, botão "Pausar envios agora" (kill switch grava `recovery_mode_until = now()+24h`).
 
-Migration que insere `tvmensal01` e `tvmensal22` em `consultants` com `approved=false`. Após aplicar, eles aparecem no SuperAdmin pra você aprovar/revogar/resetar senha.
+### Arquivos afetados
 
-### 3. Parar de engolir erro no `useAdminAuth`
+DB migrations (2): tabelas + RPCs.
+Backend: `evolution-webhook/_helpers.ts`, `evolution-webhook/handlers/connection.ts`, `whapi-webhook/_helpers.ts`, `bulk-scheduler/index.ts`, `reactivation-cron/index.ts`, `reactivation-send/index.ts`, `send-scheduled-messages/index.ts`, `ai-followup-cron/index.ts`, `_shared/evolution-api.ts`.
+Frontend: `useWhatsApp.ts`, `whatsappStateChecks.ts`, `ConnectionPanel.tsx`, `InstanceHealth.tsx`.
 
-Trocar `catch {}` por `catch (e) { console.error + toast }` em `src/hooks/useAdminAuth.ts` linha 93, para que qualquer falha futura no upsert apareça no console e como toast (em vez de deixar o user preso achando que tá tudo certo).
+### Garantias para o usuário que segue as regras
 
-### 4. (Opcional) Ajustar Auth.tsx
+- Nunca mais ban por loop de reconexão (cooldown agora real, persistente).
+- Nunca mais ban por disparo no Dia 1 (warmup força ramp).
+- Nunca mais ban silencioso após chip novo (recovery mode automático).
+- Consultor vê painel claro do que pode/não pode enviar hoje.
+- Kill switch manual sempre disponível.
 
-Manter o form completo (nome/whatsapp/igreen_id) que adicionei antes, mas tornar o `insert` em consultants **best-effort** — se falhar, o trigger do passo 1 garante a criação mínima. Isso evita ter dois caminhos de criação podendo conflitar pela license única.
+### Ordem de execução proposta
 
-## Por que não foi só um signup com email mágico?
+PR1 e PR2 primeiro (resolvem causa direta dos 2 bans já sofridos), depois PR3 e PR4 em sequência. Cada PR é independente e seguro de reverter.
 
-Você comentou "antes funcionava". O `useAdminAuth` já tem a lógica de criar pendente no primeiro login (`upsert` com `onConflict:"id"` na linha 91), mas:
-- Depende de o user clicar no link de confirmação e abrir `/admin`.
-- Não loga falhas, então qualquer constraint nova quebrou silenciosamente.
-- Não cria nada se o user ficou na aba de cadastro sem entrar.
-
-O trigger no `auth.users` é determinístico — cria na hora do signup, antes de qualquer navegação.
-
-## Arquivos afetados
-
-- Migration nova: trigger `handle_new_consultant_signup` + backfill dos 2 órfãos.
-- `src/hooks/useAdminAuth.ts` (linha 93 — adicionar log + toast no catch).
-- `src/pages/Auth.tsx` (tornar insert tolerante a duplicata por causa do trigger).
-
-Nenhuma mudança em SuperAdmin.tsx — ele já funciona, só precisa receber dados.
+Aprovando este plano, aplico os 4 PRs em sequência.
