@@ -320,6 +320,41 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   /* ── Create & Connect ── */
   const createAndConnect = useCallback(async () => {
     if (lockRef.current) return;
+
+    // 🔒 Anti-ban: impede que duas abas peçam QR simultaneamente para a mesma
+    // instância. Pedidos de QR duplos/rápidos são interpretados como bot pelo
+    // WhatsApp e contribuem para banimento. Best-effort: BroadcastChannel só
+    // funciona se duas abas estiverem abertas no mesmo navegador.
+    try {
+      const name0 = getFixedInstanceName(consultantId);
+      const ch = new BroadcastChannel("whatsapp-qr-lock");
+      let blocked = false;
+      const onMsg = (ev: MessageEvent) => {
+        if (ev.data?.instance === name0 && ev.data?.type === "qr-lock-active") blocked = true;
+      };
+      ch.addEventListener("message", onMsg);
+      ch.postMessage({ type: "qr-lock-query", instance: name0, ts: Date.now() });
+      await new Promise((r) => setTimeout(r, 250));
+      ch.removeEventListener("message", onMsg);
+      if (blocked) {
+        ch.close();
+        addLog("⚠️ Outra aba já está gerando QR para esta instância. Use aquela aba.");
+        setError("Outra aba já está gerando QR para esta instância. Feche-a antes de tentar aqui.");
+        return;
+      }
+      // Anuncia lock e mantém o canal vivo até finalizar
+      const lockInterval = setInterval(() => {
+        ch.postMessage({ type: "qr-lock-active", instance: name0, ts: Date.now() });
+      }, 2000);
+      ch.addEventListener("message", (ev) => {
+        if (ev.data?.type === "qr-lock-query" && ev.data?.instance === name0) {
+          ch.postMessage({ type: "qr-lock-active", instance: name0, ts: Date.now() });
+        }
+      });
+      // Libera após 5 min
+      setTimeout(() => { clearInterval(lockInterval); ch.close(); }, 5 * 60 * 1000);
+    } catch { /* navegador sem BroadcastChannel, não bloquear */ }
+
     lockRef.current = true;
 
     setIsLoading(true);
