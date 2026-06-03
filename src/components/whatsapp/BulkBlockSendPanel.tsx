@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { Megaphone, Send, Loader2, Pause, Play, X, Shield, Timer, CheckCircle2, XCircle, Layers, ShieldAlert, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -8,11 +8,13 @@ import { BlockConfigurator } from "./BlockConfigurator";
 import { QuickTemplateForm } from "./QuickTemplateForm";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { getConnectionState } from "@/services/evolutionApi";
+import { supabase } from "@/integrations/supabase/client";
 import type { MessageTemplate, BulkContact, BlockConfig, BlockProgress } from "@/types/whatsapp";
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
   status?: string; devolutiva?: string | null; registered_by_name?: string | null;
+  last_inbound_at?: string | null;
 }
 
 interface BulkBlockSendPanelProps {
@@ -90,6 +92,37 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
   const pausedRef = useRef(false);
   const [isPaused, setIsPaused] = useState(false);
   const { toast } = useToast();
+
+  // Enrich customers with last_inbound_at from customer_flow_state (for "Últimas 48h" filter)
+  const [lastInboundMap, setLastInboundMap] = useState<Map<string, string | null>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    const ids = customers.map(c => c.id).filter(Boolean);
+    if (ids.length === 0) { setLastInboundMap(new Map()); return; }
+    (async () => {
+      const map = new Map<string, string | null>();
+      const CHUNK = 500;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        const { data, error } = await (supabase as any)
+          .from("customer_flow_state")
+          .select("customer_id,last_inbound_at")
+          .in("customer_id", slice);
+        if (error) continue;
+        for (const row of (data as any[]) || []) {
+          map.set(String(row.customer_id), row.last_inbound_at ?? null);
+        }
+        if (cancelled) return;
+      }
+      if (!cancelled) setLastInboundMap(map);
+    })();
+    return () => { cancelled = true; };
+  }, [customers]);
+
+  const enrichedCustomers = useMemo<Customer[]>(
+    () => customers.map(c => ({ ...c, last_inbound_at: lastInboundMap.get(c.id) ?? null })),
+    [customers, lastInboundMap],
+  );
 
   const validContacts = useMemo(() => contacts.filter(c => isValidPhone(c.phone)), [contacts]);
   const isSending = progress !== null && !finalResult;
@@ -387,7 +420,7 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
                 <span className="text-sm font-bold text-foreground">Importar Contatos</span>
               </div>
               <ContactImporter
-                customers={customers}
+                customers={enrichedCustomers}
                 contacts={contacts}
                 onContactsChange={setContacts}
                 instanceName={instanceName}

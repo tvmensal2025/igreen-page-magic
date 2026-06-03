@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Users, ClipboardPaste, FileSpreadsheet, Download, Search, X, CheckSquare, AlertTriangle, Trash2, Phone, Loader2, UserCircle, Globe } from "lucide-react";
+import { Users, ClipboardPaste, FileSpreadsheet, Download, Search, X, CheckSquare, AlertTriangle, Trash2, Phone, Loader2, UserCircle, Globe, MessageSquare, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import type { BulkContact } from "@/types/whatsapp";
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
   status?: string; devolutiva?: string | null; registered_by_name?: string | null;
+  last_inbound_at?: string | null;
 }
 
 interface ContactImporterProps {
@@ -30,6 +31,19 @@ function isValidPhone(phone: string): boolean {
   if (/sem_celular/i.test(phone)) return false;
   return phone.replace(/\D/g, "").length >= 10;
 }
+
+/** Extract DDD (2-digit area code) from a Brazilian phone */
+function getDdd(phone: string): string | null {
+  if (!phone) return null;
+  const d = phone.replace(/\D/g, "");
+  if (d.length === 12 || d.length === 13) {
+    if (d.startsWith("55")) return d.slice(2, 4);
+  }
+  if (d.length === 10 || d.length === 11) return d.slice(0, 2);
+  return null;
+}
+
+const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
 function formatPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -146,6 +160,8 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [devolutivaFilter, setDevolutivaFilter] = useState("all");
   const [licenciadoFilter, setLicenciadoFilter] = useState<Set<string>>(new Set());
+  const [only48h, setOnly48h] = useState(false);
+  const [dddFilter, setDddFilter] = useState<Set<string>>(new Set());
   const [selectedDbIds, setSelectedDbIds] = useState<Set<string>>(new Set());
 
   // Extract tab state
@@ -167,17 +183,36 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
     return Array.from(names).sort();
   }, [customers]);
 
+  const dddOptions = useMemo(() => {
+    const set = new Set<string>();
+    customers.forEach(c => {
+      const ddd = getDdd(c.phone_whatsapp);
+      if (ddd) set.add(ddd);
+    });
+    return Array.from(set).sort();
+  }, [customers]);
+
   const filteredCustomers = useMemo(() => {
     let list = customers;
     if (statusFilter !== "all") list = list.filter(c => c.status === statusFilter);
     if (devolutivaFilter !== "all") list = list.filter(c => matchDevolutiva(c.devolutiva, devolutivaFilter));
     if (licenciadoFilter.size > 0) list = list.filter(c => c.registered_by_name != null && licenciadoFilter.has(c.registered_by_name));
+    if (only48h) {
+      const cutoff = Date.now() - FORTY_EIGHT_HOURS_MS;
+      list = list.filter(c => c.last_inbound_at != null && new Date(c.last_inbound_at).getTime() >= cutoff);
+    }
+    if (dddFilter.size > 0) {
+      list = list.filter(c => {
+        const d = getDdd(c.phone_whatsapp);
+        return d != null && dddFilter.has(d);
+      });
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(c => (c.name && c.name.toLowerCase().includes(q)) || c.phone_whatsapp.toLowerCase().includes(q));
     }
     return list;
-  }, [customers, statusFilter, devolutivaFilter, licenciadoFilter, searchQuery]);
+  }, [customers, statusFilter, devolutivaFilter, licenciadoFilter, only48h, dddFilter, searchQuery]);
 
   const validDbCount = useMemo(() => filteredCustomers.filter(c => isValidPhone(c.phone_whatsapp)).length, [filteredCustomers]);
 
@@ -495,6 +530,57 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
               </PopoverContent>
             </Popover>
           )}
+
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setOnly48h(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                only48h ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
+              }`}
+            >
+              <MessageSquare className="w-3 h-3" />
+              Últimas 48h no WhatsApp
+              {only48h && <X className="w-3 h-3" />}
+            </button>
+
+            {dddOptions.length > 0 && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                      dddFilter.size > 0 ? "bg-primary/20 border-primary/40 text-primary" : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
+                    }`}
+                  >
+                    <MapPin className="w-3 h-3" />
+                    {dddFilter.size === 0 ? "Filtrar por DDD" : `DDD: ${Array.from(dddFilter).sort().join(", ")}`}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-0" align="start">
+                  <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
+                    <span className="text-[11px] font-semibold text-muted-foreground">Escolha os DDDs</span>
+                    {dddFilter.size > 0 && (
+                      <button onClick={() => setDddFilter(new Set())} className="text-[10px] text-primary hover:underline">
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-52 overflow-y-auto p-1.5 grid grid-cols-3 gap-0.5">
+                    {dddOptions.map(d => (
+                      <label key={d} className="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:bg-secondary/50 text-xs">
+                        <Checkbox checked={dddFilter.has(d)} onCheckedChange={(checked) => {
+                          setDddFilter(prev => { const n = new Set(prev); checked ? n.add(d) : n.delete(d); return n; });
+                        }} />
+                        <span className="font-mono">{d}</span>
+                      </label>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
+
 
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
