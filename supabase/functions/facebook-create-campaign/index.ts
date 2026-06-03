@@ -334,13 +334,26 @@ Deno.serve(async (req) => {
     // - cidades SEM radius (apenas o município escolhido, sem cidades vizinhas)
     // - SEM interests fixos: deixa o algoritmo achar o público (Advantage+ Audience)
     // - Placements automáticos só FB + IG (messenger não combina com destination=WHATSAPP)
+    const geoLocations: Record<string, unknown> = hasCustomLocations
+      ? {
+          custom_locations: body.custom_locations!.slice(0, 200).map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+            radius: Math.max(1, Math.min(50, Math.round(p.radius))),
+            distance_unit: "kilometer",
+            ...(p.address_string ? { address_string: p.address_string } : {}),
+            ...(p.name ? { name: p.name } : {}),
+          })),
+          location_types: ["home", "recent"],
+        }
+      : {
+          // Apenas a cidade escolhida (sem radius/distance_unit) — Meta interpreta
+          // como exclusivamente o município, sem expandir para o entorno.
+          cities: body.cities.map((c) => ({ key: c.key })),
+          location_types: ["home", "recent"],
+        };
     const targeting: Record<string, unknown> = {
-      geo_locations: {
-        // Apenas a cidade escolhida (sem radius/distance_unit) — Meta interpreta
-        // como exclusivamente o município, sem expandir para o entorno.
-        cities: body.cities.map((c) => ({ key: c.key })),
-        location_types: ["home", "recent"],
-      },
+      geo_locations: geoLocations,
       age_min: ageMin,
       age_max: ageMax,
       // Advantage+ Audience (padrão Meta 2026) — algoritmo expande além das âncoras.
