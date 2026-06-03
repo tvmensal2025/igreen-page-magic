@@ -54,7 +54,7 @@ export default function VariantDistributionBar({
     if (on) current.add(v);
     else {
       if (activeVariants.length <= 1 && activeVariants.includes(v)) {
-        toast.error("Pelo menos 1 variante precisa estar ativa.");
+        toast.error("Pelo menos 1 fluxo precisa estar ativo.");
         return;
       }
       current.delete(v);
@@ -68,12 +68,12 @@ export default function VariantDistributionBar({
     setBusy(null);
     if (error) { toast.error(error.message); return; }
     setActiveVariants(next);
-    toast.success(on ? `Variante ${v} recebendo leads` : `Variante ${v} pausada (continua editável)`);
+    toast.success(on ? `Fluxo ${v} recebendo leads` : `Fluxo ${v} pausado (continua editável)`);
   }
 
   async function addVariant() {
     const next = ALL_VARIANTS.find((v) => !existingVariants.includes(v));
-    if (!next) { toast.error("Todas as variantes (A–E) já existem."); return; }
+    if (!next) { toast.error("Todos os fluxos (A–E) já foram criados (limite: 5)."); return; }
     setCreating(true);
     const { data: cons } = await supabase
       .from("consultants").select("name").eq("id", consultantId).maybeSingle();
@@ -87,24 +87,29 @@ export default function VariantDistributionBar({
     });
     setCreating(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`Variante ${next} criada`);
+    toast.success(`Fluxo ${next} criado`);
     await onChanged();
     onSelectVariant(next);
   }
 
   async function deleteVariant(v: Variant) {
-    if (v === "A") { toast.error("Variante A não pode ser excluída."); return; }
+    // Bloqueia exclusão do último fluxo restante (precisa sobrar pelo menos 1).
+    if (existingVariants.length <= 1) {
+      toast.error("Não é possível excluir o único fluxo existente.");
+      return;
+    }
     const ok = await confirm({
-      title: `Excluir variante ${v}?`,
-      description: "Os passos desta variante serão removidos. Clientes ativos nela passarão a usar a variante A.",
+      title: `Excluir fluxo ${v}?`,
+      description: "Os passos deste fluxo serão removidos. Clientes ativos nele passarão a usar outro fluxo ativo.",
       confirmText: "Excluir",
       tone: "danger",
     });
     if (!ok) return;
     setBusy(v);
-    // Remove de active_variants antes
+    // Remove de active_variants antes — mantém pelo menos 1 fluxo ativo (qualquer um restante).
+    const remaining = existingVariants.filter((x) => x !== v);
     const nextActive = activeVariants.filter((x) => x !== v);
-    if (nextActive.length === 0) nextActive.push("A");
+    if (nextActive.length === 0 && remaining.length > 0) nextActive.push(remaining[0]);
     await supabase.from("consultants").update({ active_variants: nextActive }).eq("id", consultantId);
     // Apaga o fluxo (cascade nos steps)
     const { error } = await supabase
@@ -113,8 +118,8 @@ export default function VariantDistributionBar({
     setBusy(null);
     if (error) { toast.error(error.message); return; }
     setActiveVariants(nextActive as Variant[]);
-    toast.success(`Variante ${v} excluída`);
-    if (editingVariant === v) onSelectVariant("A");
+    toast.success(`Fluxo ${v} excluído`);
+    if (editingVariant === v && remaining.length > 0) onSelectVariant(remaining[0]);
     await onChanged();
   }
 
@@ -122,17 +127,18 @@ export default function VariantDistributionBar({
     <div className="mx-auto max-w-7xl px-4 pb-3">
       <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card/50 p-2">
         <div className="flex items-center gap-1.5 px-1 text-xs font-medium text-muted-foreground">
-          Distribuição
+          Distribuição de fluxos
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Info className="h-3 w-3 cursor-help" />
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                Clientes novos são distribuídos 1 a 1 (round-robin) entre as variantes ativas.
-                Variantes pausadas continuam editáveis mas não recebem leads.
+                Clientes novos são distribuídos 1 a 1 (round-robin) entre os fluxos ativos.
+                Fluxos pausados continuam editáveis mas não recebem leads.
               </TooltipContent>
             </Tooltip>
+
           </TooltipProvider>
         </div>
 
