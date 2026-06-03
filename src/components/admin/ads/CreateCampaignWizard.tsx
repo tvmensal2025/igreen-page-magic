@@ -177,8 +177,11 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
   const [initialMessageTouched, setInitialMessageTouched] = useState(false);
 
   // Step 4: orçamento
-  const [budget, setBudget] = useState(30); // R$/dia
-  const [duration, setDuration] = useState(0); // 0 = sem fim
+  const [budget, setBudget] = useState(15); // R$/dia (min 10 — Modo Econômico)
+  const [duration, setDuration] = useState(3); // 3 dias default (Modo Econômico)
+  // Modo de geo: cidades inteiras OU endereço/raio (ultra-local).
+  const [geoMode, setGeoMode] = useState<"cities" | "radius">("cities");
+  const [radiusPoints, setRadiusPoints] = useState<RadiusPoint[]>([]);
   // Placements: "auto" = Advantage+ (recomendação Meta — distribui automático
   // em todos os elegíveis pra CTWA e otimiza CPL). Manual = consultor escolhe.
   const [placementMode, setPlacementMode] = useState<"auto" | "manual">("auto");
