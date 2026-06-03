@@ -1,65 +1,83 @@
+# Finalizar Plano A + Auditoria Enterprise
 
-## Verificação: Plano A é o padrão usado por profissionais?
+Já está aplicado: migration completa (cooldown, warmup, risk signals, recovery mode, RPCs), shared `anti-ban.ts`, integração em `bulk-scheduler`, `reactivation-send`, `send-scheduled-messages`, `evolution-webhook` (fatal/transient + recovery 14d), QR polling 30s no frontend e remoção do auto-reconnect.
 
-Validei contra fontes 2025/2026 (Whapi, Chatarmin, Affinect, Wazzap, WasenderAPI, baileys-antiban, Kraya AI, docs Meta). Conclusão: **sim, Plano A é o estado-da-arte para APIs não-oficiais (Evolution/Baileys)**. Toda fonte séria recomenda exatamente as 7 camadas que propusemos. Nada melhor existe hoje sem migrar para WhatsApp Cloud API oficial (o que muda preço e UX).
+Faltam 4 peças para fechar o padrão usado por Wazzap/Whapi/Chatarmin + uma auditoria documentada.
 
-### Comparação Plano A × consenso da indústria
+## 1. reactivation-cron (gap crítico)
 
-| Prática recomendada pela indústria | Onde aparece | Plano A cobre? |
-|---|---|---|
-| Cooldown de reconexão persistente (não em memória) | baileys-antiban, Kraya | ✅ Camada 1 (DB + RPC, 10min) |
-| Tratar `statusReason=401/403/440` como FATAL | docs Baileys, WasenderAPI | ✅ Camada 1 (já parcial, ampliando p/ `0`) |
-| QR polling ≥30s, sem auto-refresh agressivo | Whapi, Affinect | ✅ Camada 2 |
-| Warmup progressivo 14 dias (20→500+/dia) | Wazzap, Affinect, Chatarmin | ✅ Camada B (idêntico ao Wazzap) |
-| Intervalo mínimo entre mensagens com jitter | baileys-antiban, Greentick | ✅ Camada 4 + B |
-| Simular "digitando" (presence) antes de enviar | baileys-antiban, Whapi | ✅ Camada 4 |
-| Circuit breaker em sinais de risco | Kraya, baileys-antiban | ✅ Camada C |
-| Modo de recuperação pós-incidente | Affinect, Whapi | ✅ Camada D |
-| Painel de saúde + kill switch manual | Chatarmin | ✅ Camada E |
-| Excluir respostas inbound do cap diário | Wazzap | ✅ Camada B |
+`supabase/functions/reactivation-cron/index.ts` envia via `sender.sendText` sem passar por `checkSendQuota`. É a única porta de envio massivo ainda sem proteção. Vou:
+- Importar `checkSendQuota`, `registerSend`, `simulateTyping`, `typingDurationMs`, `humanJitterMs`.
+- Antes do `sendText`: chamar `checkSendQuota(supabase, instanceName)`; se `allowed=false`, pular o lead, logar `reason` e seguir (sem queimar fila).
+- Antes do envio: `simulateTyping(...)` proporcional ao texto.
+- Depois do envio OK: `registerSend(...)`.
+- Entre leads: aplicar `humanJitterMs() * N` (700–2200ms × multiplicador) no lugar de delays fixos.
 
-**Nada faltando.** A única alternativa "mais segura" seria abandonar Evolution e usar WhatsApp Cloud API oficial — fora do escopo (mudaria todo o produto).
+## 2. ai-followup-cron (verificação)
 
-### Plano A — execução em 4 PRs
+Confirmar que não dispara mensagens diretas (parece apenas enfileirar/agendar). Se enviar, aplicar mesma proteção; se só agenda, ok — `send-scheduled-messages` já protege.
 
-**PR1 — Conexão à prova de ban (crítico, libera tudo)**
-- Migration: tabela `instance_reconnect_cooldowns` + RPC `try_acquire_reconnect_slot(instance, ttl_ms)`.
-- `evolution-webhook/_helpers.ts`: `canReconnect` agora consulta RPC (10 min, persistente). Adicionar `0` em `FATAL_DISCONNECT_REASONS`.
-- `handlers/connection.ts`: delay 5s→30s antes de reconectar transiente; logar classificação.
-- Mesmo tratamento em `whapi-webhook/_helpers.ts`.
+## 3. Kill switch + RPC de saída de recovery
 
-**PR2 — Frontend não dispara reconexão (crítico)**
-- `useWhatsApp.ts`: polling QR mínimo 30s (era 8s). Remover `connectInstance` de `multiSignalCheck`.
-- `ConnectionPanel.tsx`: remover auto-regenerate QR de 45s; só botão manual.
-- `BroadcastChannel` para impedir duas abas pedindo QR simultâneo.
+Migration nova (mínima):
+- RPC `clear_recovery_mode(p_instance TEXT)` — `SECURITY DEFINER`, exposta a `authenticated`, valida que `auth.uid()` é o `consultant_id` da instância antes de zerar `recovery_mode_until` (sai do bloqueio manualmente após confirmar que o chip foi reconectado).
+- RPC `pause_sending_now(p_instance TEXT, p_hours INT DEFAULT 24)` — mesma validação de dono; chama lógica equivalente ao `activate_recovery_mode` mas com default 24h (kill switch suave).
 
-**PR3 — Warmup + caps + circuit breaker (alto impacto)**
-- Migration: `instance_send_counters` (instance, date, sent_count, first_send_at), `instance_risk_signals` (signal_type, severity, expires_at), coluna `recovery_mode_until` em `whatsapp_instances`, RPC `check_send_quota(instance)` que retorna `{allowed, reason, remaining, min_interval_ms}`.
-- Ramp: D1=20, D2=40, D3=80, D5=150, D8=250, D11=400, D14+=600. Intervalo mín: D1=60s → D14=18s. Inbound bot replies não contam.
-- Aplicar `check_send_quota` em: `bulk-scheduler`, `reactivation-cron`, `reactivation-send`, `send-scheduled-messages`, `ai-followup-cron`.
-- Circuit breaker em `evolution-webhook` connection handler: registra signals (reconexões, falhas, fatais) → ≥3 reconex/6h pausa bulk 2h, ≥1 fatal exige confirmação manual + ativa `recovery_mode_until = now()+14d`.
+## 4. Painel `InstanceHealth.tsx` (novo)
 
-**PR4 — Humanização do envio + painel (alto)**
-- `evolution-api.ts`: helper `sendPresence(instance, jid, "composing", ms)` antes de cada `sendText`. Duração ∝ tamanho do texto (40ms/char, min 1.2s, max 6s).
-- Jitter entre mensagens sequenciais do bot (700–2200ms aleatório).
-- `InstanceHealth.tsx`: mostrar dia do warmup, cota usada/restante, sinais de risco ativos, recovery mode, botão "Pausar envios agora" (kill switch grava `recovery_mode_until = now()+24h`).
+Componente em `src/components/whatsapp/InstanceHealth.tsx`, embutido no `ConnectionPanel.tsx` (abaixo do bloco de QR/status). Lê em tempo real:
+- `whatsapp_instances.recovery_mode_until` → badge "MODO RECUPERAÇÃO até DD/MM HH:mm" se ativo.
+- `check_send_quota(instance)` chamado client-side (RPC já liberada para `authenticated`) → mostra: dia do warmup, cota usada / total, próximo horário liberado, motivo do bloqueio.
+- `instance_risk_signals` últimos 6h agregados por `signal_type` → ícones coloridos (reconnects, falhas, fatais).
+- Botões: **"Pausar envios por 24h"** (`pause_sending_now`) e **"Liberar após reconectar chip"** (`clear_recovery_mode`, só visível em recovery mode, exige `confirm()`).
+- Atualização a cada 60s.
 
-### Arquivos afetados
+Mantém estilo do design system (`bg-card`, `text-muted-foreground`, `Badge` variants), sem cores hard-coded.
 
-DB migrations (2): tabelas + RPCs.
-Backend: `evolution-webhook/_helpers.ts`, `evolution-webhook/handlers/connection.ts`, `whapi-webhook/_helpers.ts`, `bulk-scheduler/index.ts`, `reactivation-cron/index.ts`, `reactivation-send/index.ts`, `send-scheduled-messages/index.ts`, `ai-followup-cron/index.ts`, `_shared/evolution-api.ts`.
-Frontend: `useWhatsApp.ts`, `whatsappStateChecks.ts`, `ConnectionPanel.tsx`, `InstanceHealth.tsx`.
+## 5. BroadcastChannel anti-multi-aba (PR2 leftover)
 
-### Garantias para o usuário que segue as regras
+Em `useWhatsApp.ts`: criar `BroadcastChannel('whatsapp-qr')`. Antes de chamar `connectInstance` (QR), enviar `{type:'qr-lock', instance, ts}`. Se outra aba responder/recebeu lock recente (<30s) na mesma instância, abortar com toast "Outra aba já está gerando QR para esta instância". Evita pedido duplo de QR (vetor real de ban).
 
-- Nunca mais ban por loop de reconexão (cooldown agora real, persistente).
-- Nunca mais ban por disparo no Dia 1 (warmup força ramp).
-- Nunca mais ban silencioso após chip novo (recovery mode automático).
-- Consultor vê painel claro do que pode/não pode enviar hoje.
-- Kill switch manual sempre disponível.
+## 6. Whapi parity
 
-### Ordem de execução proposta
+Verificar `whapi-webhook/_helpers.ts` — já tem `canReconnect` via RPC. Garantir que o handler de close trata fatais → `recordRiskSignal` + `activateRecoveryMode` igual ao Evolution. Se faltar, alinhar.
 
-PR1 e PR2 primeiro (resolvem causa direta dos 2 bans já sofridos), depois PR3 e PR4 em sequência. Cada PR é independente e seguro de reverter.
+## 7. Auditoria enterprise (entregável)
 
-Aprovando este plano, aplico os 4 PRs em sequência.
+Criar `docs/ANTI_BAN_AUDIT.md` com:
+- Tabela "Prática indústria 2026 × Onde implementamos × Arquivo:linha" cobrindo as 10 camadas (cooldown persistente, fatal `reason=0`, QR poll ≥30s, warmup 14d, intervalo+jitter, typing presence, circuit breaker, recovery mode, painel+kill switch, multi-aba).
+- Comparação ponto-a-ponto com Wazzap, Whapi, Chatarmin, baileys-antiban (fontes citadas).
+- Checklist operacional para o consultor: o que fazer em chip novo, o que fazer pós-ban, como ler o painel.
+- Limites conhecidos e quando seria necessário migrar para WhatsApp Cloud API oficial.
+
+## Arquivos afetados
+
+```text
+Migration nova:
+  supabase/migrations/<timestamp>_kill_switch_rpcs.sql
+
+Backend:
+  supabase/functions/reactivation-cron/index.ts        (anti-ban)
+  supabase/functions/whapi-webhook/_helpers.ts         (paridade fatal)
+  supabase/functions/whapi-webhook/handlers/*          (se aplicável)
+
+Frontend:
+  src/components/whatsapp/InstanceHealth.tsx           (novo)
+  src/components/whatsapp/ConnectionPanel.tsx          (embutir painel)
+  src/hooks/useWhatsApp.ts                             (BroadcastChannel)
+
+Doc:
+  docs/ANTI_BAN_AUDIT.md                               (auditoria)
+```
+
+## Ordem de execução
+
+1. Migration kill switch (precisa aprovação) → aguarda regen de `types.ts`.
+2. reactivation-cron + whapi parity (paraleliza).
+3. `InstanceHealth.tsx` + integração no `ConnectionPanel`.
+4. BroadcastChannel no `useWhatsApp`.
+5. `ANTI_BAN_AUDIT.md` consolidando tudo + verificação final lendo cada arquivo citado.
+
+## Garantia pós-execução
+
+Após este PR o sistema cobre 100% das camadas que Wazzap/Whapi/Chatarmin descrevem publicamente como padrão 2026 para APIs não-oficiais. O único nível adicional possível seria abandonar Evolution e ir para WhatsApp Cloud API oficial (Meta) — mudança de produto, fora do escopo, e o doc de auditoria deixa isso explícito.
