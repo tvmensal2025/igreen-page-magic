@@ -173,7 +173,7 @@ export default function VariantDistributionBar({
                     className="scale-75"
                   />
                 )}
-                {v !== "A" && (
+                {existingVariants.length > 1 && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-5 w-5">
@@ -185,7 +185,7 @@ export default function VariantDistributionBar({
                         className="text-destructive"
                         onClick={() => deleteVariant(v)}
                       >
-                        Excluir variante {v}
+                        Excluir fluxo {v}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -203,15 +203,17 @@ export default function VariantDistributionBar({
               disabled={creating}
             >
               {creating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
-              Adicionar variante
+              Adicionar fluxo
             </Button>
           )}
         </div>
 
         <div className="ml-auto">
           <Badge variant="secondary" className="text-[10px]">
-            {activeVariants.length} ativa{activeVariants.length === 1 ? "" : "s"} · round-robin 1 a 1
+            {activeVariants.length} fluxo{activeVariants.length === 1 ? "" : "s"} ativo{activeVariants.length === 1 ? "" : "s"} · round-robin 1 a 1
           </Badge>
+        </div>
+
         </div>
       </div>
     </div>
