@@ -84,12 +84,40 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     .filter((m) => m.content && String(m.content).trim().length > 0);
 
   // 3) Monta system prompt + bloco de dados estruturados já conhecidos.
+  // 3a) FAQ / base de conhecimento: seções globais + as do consultor (até ~6000 chars).
+  let knowledgeBase: string | null = null;
+  try {
+    const { data: kbRows } = await supabase
+      .from("ai_knowledge_sections")
+      .select("title, content, is_critical, position, consultant_id")
+      .eq("is_active", true)
+      .or(`consultant_id.is.null,consultant_id.eq.${customer.consultant_id}`)
+      .order("is_critical", { ascending: false })
+      .order("position", { ascending: true })
+      .limit(40);
+    if (kbRows && kbRows.length > 0) {
+      const BUDGET = 6000;
+      const parts: string[] = [];
+      let used = 0;
+      for (const row of kbRows as any[]) {
+        const block = `## ${row.title}\n${(row.content || "").trim()}`;
+        if (used + block.length > BUDGET) break;
+        parts.push(block);
+        used += block.length + 2;
+      }
+      knowledgeBase = parts.join("\n\n");
+    }
+  } catch (e) {
+    console.warn("[fluxo-b-ai] knowledge fetch falhou:", (e as Error).message);
+  }
+
   const ctx: FluxoBContext = {
     representante: consultant.name || "Rafael",
     nomeCliente: customer.name || null,
     valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
     conversationSummary: customer.conversation_summary || null,
     customerId,
+    knowledgeBase,
   };
   const baseSystemPrompt = buildFluxoBSystemPrompt(consultant.ai_persona_fluxo_b, ctx);
 
