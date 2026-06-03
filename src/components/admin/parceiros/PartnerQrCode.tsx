@@ -54,9 +54,9 @@ const TEMPLATES: Record<
   banner: {
     label: "Banner 504×940mm",
     src: "/images/banner-lei-14300-base.jpg",
-    qrX: 20,
+    qrX: 22,
     qrY: 87,
-    qrSize: 30,
+    qrSize: 28,
     footerY: 99,
   },
 };
