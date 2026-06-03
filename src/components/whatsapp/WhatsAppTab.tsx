@@ -11,7 +11,7 @@ import { DragResizer } from "@/components/layout/DragResizer";
 import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History } from "lucide-react";
 
 // Heavy panels — load only when their sub-tab is opened
-const BulkBlockSendPanel = lazy(() => import("./BulkBlockSendPanel").then(m => ({ default: m.BulkBlockSendPanel })));
+const BulkProPanel = lazy(() => import("./bulk-pro/BulkProPanel").then(m => ({ default: m.BulkProPanel })));
 const TemplateManager = lazy(() => import("./TemplateManager").then(m => ({ default: m.TemplateManager })));
 const SchedulePanel = lazy(() => import("./SchedulePanel").then(m => ({ default: m.SchedulePanel })));
 const WhatsAppDashboard = lazy(() => import("./WhatsAppDashboard").then(m => ({ default: m.WhatsAppDashboard })));
@@ -349,13 +349,11 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
           <div className="p-3 overflow-auto h-full min-w-0">
             {isConnected && instanceName ? (
               <Suspense fallback={<LazyFallback />}>
-                <BulkBlockSendPanel
+                <BulkProPanel
                   instanceName={instanceName}
                   customers={customers}
                   templates={templates}
-                  applyTemplate={applyTemplate}
                   consultantId={userId}
-                  onCreateTemplate={(name, content, mediaType, mediaUrl, imageUrl) => createTemplate(name, content, mediaType, mediaUrl, imageUrl)}
                 />
               </Suspense>
             ) : (
