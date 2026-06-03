@@ -62,8 +62,12 @@ function inWindow(cfg: SendConfig, now = new Date()): boolean {
   }
   const [sH, sM] = cfg.windowStart.split(":").map(Number);
   const [eH, eM] = cfg.windowEnd.split(":").map(Number);
+  const start = sH * 60 + sM;
+  const end = eH * 60 + eM;
   const cur = now.getHours() * 60 + now.getMinutes();
-  return cur >= sH * 60 + sM && cur <= eH * 60 + eM;
+  // Overnight window (e.g. 22:00 → 06:00)
+  if (end < start) return cur >= start || cur <= end;
+  return cur >= start && cur <= end;
 }
 
 function downloadCsv(rows: CampaignTarget[]) {
@@ -164,15 +168,18 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     setTargets(initialTargets);
     setStep(4);
 
-    // Wait for schedule
+    // Wait for schedule (treat scheduleAt as LOCAL time)
     if (config.scheduleAt) {
+      // datetime-local format "YYYY-MM-DDTHH:mm" is parsed as local by Date()
       const target = new Date(config.scheduleAt).getTime();
-      setWaitingSchedule(config.scheduleAt);
-      while (Date.now() < target && !cancelledRef.current) {
-        await new Promise(r => setTimeout(r, 1000));
+      if (!isNaN(target) && target > Date.now()) {
+        setWaitingSchedule(config.scheduleAt);
+        while (Date.now() < target && !cancelledRef.current) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        setWaitingSchedule(null);
+        if (cancelledRef.current) { setRunning(false); setDone(true); return; }
       }
-      setWaitingSchedule(null);
-      if (cancelledRef.current) { setRunning(false); setDone(true); return; }
     }
 
     let consecutiveFailures = 0;
@@ -264,8 +271,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
       // Random interval before next
       if (idx < work.length - 1) {
-        const range = config.intervalMaxS - config.intervalMinS;
-        const secs = config.intervalMinS + Math.random() * range;
+        const minS = Math.max(1, config.intervalMinS);
+        const maxS = Math.max(minS, config.intervalMaxS);
+        const secs = minS + Math.random() * (maxS - minS);
         const ok3 = await sleep(Math.round(secs * 1000));
         if (!ok3) break;
       }
@@ -273,19 +281,29 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
     setRunning(false);
     setDone(true);
-    toast({ title: "Disparo finalizado", description: `${stats.sent} enviadas, ${stats.failed} falhas` });
-  }, [config, text, media, instanceName, checkConnection, sleep, toast, stats.sent, stats.failed]);
+    // Use functional setter to read fresh stats
+    setTargets(prev => {
+      const sent = prev.filter(t => t.status === "sent").length;
+      const failed = prev.filter(t => t.status === "failed").length;
+      toast({ title: "Disparo finalizado", description: `${sent} enviadas, ${failed} falhas` });
+      return prev;
+    });
+  }, [config, text, media, instanceName, checkConnection, sleep, toast]);
 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
     if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo", variant: "destructive" }); return; }
+    if (config.intervalMaxS < config.intervalMinS) {
+      toast({ title: "Intervalo inválido", description: "Intervalo máximo deve ser maior ou igual ao mínimo", variant: "destructive" });
+      return;
+    }
     const initial: CampaignTarget[] = deduped.map(c => ({
       id: c.id, phone: c.phone, name: c.name,
       bill: c.electricity_bill_value,
       status: "queued",
     }));
     runCampaign(initial);
-  }, [deduped, text, media, runCampaign, toast]);
+  }, [deduped, text, media, config, runCampaign, toast]);
 
   const handlePause = () => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); };
   const handleCancel = () => { cancelledRef.current = true; pausedRef.current = false; setPaused(false); };
