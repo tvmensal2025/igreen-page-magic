@@ -1081,7 +1081,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         onChange={async (e) => {
                           const f = e.target.files?.[0]; e.currentTarget.value = "";
                           if (!f) return;
-                          if (f.size > 100 * 1024 * 1024) { toast({ title: "Vídeo maior que 100 MB", variant: "destructive" }); return; }
+                          if (f.size > 50 * 1024 * 1024) { toast({ title: "Vídeo maior que 50 MB", description: "Comprima o vídeo (ex: HandBrake, CapCut) e tente de novo.", variant: "destructive" }); return; }
                           if (!/^video\/(mp4|quicktime|mov)$/.test(f.type)) { toast({ title: "Use MP4 ou MOV", variant: "destructive" }); return; }
                           // Lê metadata (duração e dimensões) p/ avisar se não for vertical.
                           const url = URL.createObjectURL(f);
@@ -1098,7 +1098,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         <Video className="w-8 h-8 text-primary mx-auto" />
                         <div className="text-sm font-medium">Clique para enviar 1 vídeo Reels</div>
                         <div className="text-xs text-muted-foreground">
-                          MP4 ou MOV · vertical <strong className="text-foreground">9:16 (1080×1920)</strong> · 4–60s · até 100 MB
+                          MP4 ou MOV · vertical <strong className="text-foreground">9:16 (1080×1920)</strong> · 4–60s · até 50 MB
                         </div>
                       </label>
                     </div>

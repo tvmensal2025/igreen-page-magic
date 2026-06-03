@@ -485,8 +485,8 @@ Deno.serve(async (req) => {
         while (Date.now() - started < 50_000) {
           try {
             const st = await fbFetch(`/${fbVideoId}?fields=status&access_token=${conn.token}`);
-            const phase = st?.status?.video_status || st?.status?.processing_progress != null ? st?.status?.video_status : null;
-            if (phase === "ready" || st?.status?.video_status === "ready") { ready = true; break; }
+            const phase = st?.status?.video_status as string | undefined;
+            if (phase === "ready") { ready = true; break; }
             if (phase === "error") throw new Error(`Vídeo rejeitado: ${st?.status?.error?.message || "erro"}`);
           } catch (_) { /* tenta de novo */ }
           await new Promise((r) => setTimeout(r, 3_000));
@@ -806,13 +806,21 @@ Deno.serve(async (req) => {
 
     // 6) Persiste
     const admin = adminClient();
+    // Em modo raio, serializa os pontos em `cities` (key sintético "radius:lat,lng:r")
+    // pra preservar geo na listagem local — assim o dashboard não fica "sem cidade".
+    const citiesPersist = hasCustomLocations
+      ? body.custom_locations!.map((p) => ({
+          key: `radius:${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}:${Math.round(p.radius)}`,
+          name: `${p.name || p.address_string || "Endereço"} (${Math.round(p.radius)}km)`,
+        }))
+      : (body.cities || []);
     await admin.from("facebook_campaigns").insert({
       consultant_id: auth.id,
       fb_campaign_id: campaignId,
       fb_adset_ids: [adsetId],
       fb_ad_ids: adIds,
       name: campaignName,
-      cities: body.cities || [],
+      cities: citiesPersist,
       age_min: ageMin,
       age_max: ageMax,
       daily_budget_cents: body.daily_budget_cents,
