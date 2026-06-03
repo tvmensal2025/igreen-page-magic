@@ -2283,14 +2283,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     const txt = messageText.trim().toLowerCase();
     const segueAgora = isClubProgressIntent(txt);
     if (segueAgora) {
-      const ctaMsg = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
+      // 🔧 FIX C1: pedir CONTA DE LUZ antes do documento — fluxo correto é
+      // conta → simulação → CTA → documento. Antes pulava direto pro doc.
+      const ctaMsg = `Perfeito! Pra eu calcular sua economia, me envia uma *foto ou PDF da sua conta de luz* 📸`;
       await sendText(remoteJid, ctaMsg);
       await supabase.from("conversations").insert({
         customer_id: customer.id, message_direction: "outbound",
         message_text: ctaMsg, message_type: "text",
-        conversation_step: "aguardando_doc_auto",
+        conversation_step: "aguardando_conta",
       });
-      return { reply: "", updates: { conversation_step: "aguardando_doc_auto", __inline_sent: true } as any };
+      return { reply: "", updates: { conversation_step: "aguardando_conta", __inline_sent: true } as any };
     }
     if (/\?|cancel|cancela|taxa|fidelidade|seguro|pagar|custa|club|clube|funciona/i.test(txt)) {
       return {
@@ -3984,38 +3986,33 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 3a. PITCH CONEXÃO CLUB (fallback caso lead reentre nesse step) ─────────
     case "pitch_conexao_club": {
-      // Pede o documento sem botões — o bot identifica RG/CNH sozinho.
-      reply = `Pra finalizar, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH — o que for mais fácil pra você.`;
-      updates.conversation_step = "aguardando_doc_auto";
+      // 🔧 FIX C3: aguardar a interação pós-vídeo, não pular pro doc.
+      reply = "Curtiu o Conexão Club? Me conta o que achou — ou se preferir, *bora pro cadastro* que eu já te peço sua conta de luz 📸";
+      updates.conversation_step = "duvidas_pos_club";
       break;
     }
 
     // ─── 3a-bis. DÚVIDAS PÓS-CLUB ─────────
-    // O lead recebeu o vídeo + pitch e foi convidado a tirar dúvidas.
-    // - Afirmativo / "pode seguir" / "sem dúvida" → dispara botões do doc.
-    // - Negativo OU pergunta livre → não fecha aqui; deixa a IA responder
-    //   (esse case nem chega a executar nesse caminho, pois conversationalSteps
-    //   inclui "duvidas_pos_club" e o ramo da IA roda antes do switch).
     case "duvidas_pos_club": {
       const txt = (messageText || "").trim().toLowerCase();
       const segueAgora =
         isButton ||
         /^(sim|s|ok|pode|pode seguir|bora|vamos|partiu|segue|seguir|tudo certo|sem d[uú]vida|nenhuma|nao tenho|n[ãa]o tenho|n[ãa]o|t[ãa]|fechou|beleza|blz)\b/.test(txt) ||
-        /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(messageText || "");
+        /(quero|vamos|bora).*(cadastr|seguir|finaliz|economiz)/i.test(messageText || "");
       if (segueAgora) {
-        const ctaMsg = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
+        // 🔧 FIX C1: pedir CONTA antes do doc.
+        const ctaMsg = `Perfeito! Pra eu calcular sua economia, me envia uma *foto ou PDF da sua conta de luz* 📸`;
         await sendText(remoteJid, ctaMsg);
         await supabase.from("conversations").insert({
           customer_id: customer.id, message_direction: "outbound",
           message_text: ctaMsg, message_type: "text",
-          conversation_step: "aguardando_doc_auto",
+          conversation_step: "aguardando_conta",
         });
-        updates.conversation_step = "aguardando_doc_auto";
+        updates.conversation_step = "aguardando_conta";
         (updates as any).__inline_sent = true;
         reply = "";
       } else {
-        // Resposta de fallback se a IA não tiver pegado a dúvida acima.
-        reply = "Pode mandar sua dúvida, que eu explico 😊 — ou diga *pode seguir* para avançar para o cadastro.";
+        reply = "Pode mandar sua dúvida, que eu explico 😊 — ou diga *pode seguir* para avançar e calcular sua economia.";
       }
       break;
     }
@@ -5229,13 +5226,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
         updates.conversation_step = "aguardando_doc_auto";
         reply = "";
+      } else if (/^(tenho_duvida|duvida|d[uú]vida|tenho d[uú]vida|pergunta)/i.test(resp.replace(/^[^a-z0-9]+/i, ""))) {
+        // 🔧 Novo: handler de dúvida — abre espaço pra pergunta em vez de loop de CTA.
+        reply = "Claro! Pode mandar sua pergunta 😊\n\nAssim que eu esclarecer, é só me dizer *bora cadastrar* que a gente segue garantindo sua economia.";
       } else {
-        // Re-emite o CTA com botão.
+        // Re-emite o CTA com botões (sim + dúvida).
         const ctaText = "Pra continuar seu cadastro e garantir essa economia, é só tocar no botão abaixo 👇";
         const sent = await sendOptions(remoteJid, ctaText, [
           { id: "btn_quero_cadastrar", title: "✅ Quero me cadastrar" },
+          { id: "tenho_duvida", title: "❓ Tenho dúvidas" },
         ]);
-        if (!sent) reply = "Toque no botão *✅ Quero me cadastrar* acima — ou responda *SIM* para continuar.";
+        if (!sent) reply = "Toque no botão *✅ Quero me cadastrar* acima — ou responda *SIM* para continuar, ou *DÚVIDA* se tiver perguntas.";
         else reply = "";
       }
       break;
