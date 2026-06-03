@@ -3,6 +3,7 @@ import { captureError } from "../_shared/sentry.ts";
 import { isQuietHourBRT, nextQuietWindowEndISO, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
+import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJitterMs } from "../_shared/anti-ban.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -121,6 +122,26 @@ Deno.serve(async (req) => {
           valor_conta: billValue,
         });
 
+        // 🛡️ Anti-ban guard
+        const quota = await checkSendQuota(supabase, msg.instance_name);
+        if (!quota.allowed) {
+          // Reagendar para depois (não falhar — só pausar)
+          const retryAt = quota.until || quota.next_allowed_at
+            || new Date(Date.now() + 30 * 60_000).toISOString();
+          await supabase.from("scheduled_messages")
+            .update({ scheduled_at: retryAt })
+            .eq("id", msg.id);
+          console.log(`⏸️ [scheduled] msg ${msg.id} adiada (anti-ban): ${quota.reason} → ${retryAt}`);
+          continue;
+        }
+
+        // Humaniza: "digitando..."
+        await simulateTyping({
+          baseUrl: evolutionUrl, apiKey: evolutionKey,
+          instance: msg.instance_name, remoteJid: phone,
+          durationMs: typingDurationMs(renderedText),
+        });
+
         const res = await fetch(`${evolutionUrl}/message/sendText/${msg.instance_name}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", apikey: evolutionKey },
@@ -132,6 +153,7 @@ Deno.serve(async (req) => {
             .from("scheduled_messages")
             .update({ status: "sent", sent_at: new Date().toISOString() })
             .eq("id", msg.id);
+          await registerSend(supabase, msg.instance_name);
           sentCount++;
         } else {
           const errText = await res.text();
@@ -151,9 +173,9 @@ Deno.serve(async (req) => {
         failedCount++;
       }
 
-      // 2s delay between sends
+      // Intervalo mínimo do warmup + jitter humano
       if (messages.indexOf(msg) < messages.length - 1) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, Math.max(5000, humanJitterMs() * 3)));
       }
     }
 
