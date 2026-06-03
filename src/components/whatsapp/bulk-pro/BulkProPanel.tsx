@@ -288,6 +288,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
         ...x, status: ok ? "sent" : "failed", error: err, finalMessage: finalMsg, sentAt: Date.now(),
       } : x));
 
+      // Persist target result (fire-and-forget)
+      if (campaignIdRef.current) {
+        updateTargetStatus(campaignIdRef.current, t.phone, {
+          status: ok ? "sent" : "failed",
+          final_message: finalMsg.slice(0, 4000),
+          error: err,
+          sent_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+
       if (ok) consecutiveFailures = 0;
       else consecutiveFailures++;
 
@@ -317,9 +327,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       const sent = prev.filter(t => t.status === "sent").length;
       const failed = prev.filter(t => t.status === "failed").length;
       toast({ title: "Disparo finalizado", description: `${sent} enviadas, ${failed} falhas` });
+      if (campaignIdRef.current) {
+        updateCampaignStatus(campaignIdRef.current, {
+          status: cancelledRef.current ? "canceled" : "done",
+          sent, failed,
+          finished_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
       return prev;
     });
-  }, [config, text, media, instanceName, checkConnection, sleep, toast]);
+  }, [config, text, media, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
