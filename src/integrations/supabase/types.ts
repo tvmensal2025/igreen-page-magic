@@ -1935,6 +1935,113 @@ export type Database = {
         }
         Relationships: []
       }
+      bulk_campaign_targets: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          error: string | null
+          final_message: string | null
+          id: string
+          name: string | null
+          phone: string
+          sent_at: string | null
+          status: string
+          vars: Json
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          error?: string | null
+          final_message?: string | null
+          id?: string
+          name?: string | null
+          phone: string
+          sent_at?: string | null
+          status?: string
+          vars?: Json
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          error?: string | null
+          final_message?: string | null
+          id?: string
+          name?: string | null
+          phone?: string
+          sent_at?: string | null
+          status?: string
+          vars?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bulk_campaign_targets_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "bulk_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bulk_campaigns: {
+        Row: {
+          config: Json
+          consultant_id: string
+          created_at: string
+          failed: number
+          finished_at: string | null
+          id: string
+          media_filename: string | null
+          media_type: string | null
+          media_url: string | null
+          message_text: string | null
+          name: string
+          scheduled_at: string | null
+          sent: number
+          started_at: string | null
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          consultant_id: string
+          created_at?: string
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          media_filename?: string | null
+          media_type?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          name?: string
+          scheduled_at?: string | null
+          sent?: number
+          started_at?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          consultant_id?: string
+          created_at?: string
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          media_filename?: string | null
+          media_type?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          name?: string
+          scheduled_at?: string | null
+          sent?: number
+          started_at?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       capture_achievements: {
         Row: {
           badge_key: string

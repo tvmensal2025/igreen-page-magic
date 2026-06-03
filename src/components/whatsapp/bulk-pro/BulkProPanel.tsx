@@ -12,6 +12,7 @@ import { MessageEditor } from "./MessageEditor";
 import { ScheduleStep } from "./ScheduleStep";
 import { DEFAULT_CONFIG, type SendConfig, type PreparedMedia, type CampaignTarget } from "./types";
 import { renderFinal } from "./spintax";
+import { createCampaign, updateCampaignStatus, updateTargetStatus, listCampaigns, deleteCampaign, type PersistedCampaignRow } from "./useCampaignPersistence";
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
@@ -133,7 +134,15 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   const [waitingSchedule, setWaitingSchedule] = useState<string | null>(null);
   const cancelledRef = useRef(false);
   const pausedRef = useRef(false);
+  const campaignIdRef = useRef<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<"all" | "sent" | "failed">("all");
+  const [history, setHistory] = useState<PersistedCampaignRow[]>([]);
+  const [campaignName, setCampaignName] = useState("");
+
+  // Load history
+  useEffect(() => {
+    listCampaigns(consultantId).then(setHistory);
+  }, [consultantId, done]);
 
   const stats = useMemo(() => {
     const sent = targets.filter(t => t.status === "sent").length;
@@ -159,7 +168,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     } catch { return false; }
   }, [instanceName]);
 
-  const runCampaign = useCallback(async (initialTargets: CampaignTarget[]) => {
+  const runCampaign = useCallback(async (initialTargets: CampaignTarget[], existingCampaignId?: string) => {
     cancelledRef.current = false;
     pausedRef.current = false;
     setPaused(false);
@@ -168,9 +177,26 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     setTargets(initialTargets);
     setStep(4);
 
+    // Persist campaign (skip if resuming)
+    if (!existingCampaignId) {
+      const newId = await createCampaign({
+        consultantId,
+        name: campaignName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
+        messageText: text,
+        mediaUrl: media?.url ?? null,
+        mediaType: media?.kind ?? null,
+        mediaFilename: media?.fileName ?? null,
+        config: config as any,
+        scheduledAt: config.scheduleAt,
+        targets: initialTargets,
+      });
+      campaignIdRef.current = newId;
+    } else {
+      campaignIdRef.current = existingCampaignId;
+    }
+
     // Wait for schedule (treat scheduleAt as LOCAL time)
     if (config.scheduleAt) {
-      // datetime-local format "YYYY-MM-DDTHH:mm" is parsed as local by Date()
       const target = new Date(config.scheduleAt).getTime();
       if (!isNaN(target) && target > Date.now()) {
         setWaitingSchedule(config.scheduleAt);
@@ -178,7 +204,12 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
           await new Promise(r => setTimeout(r, 1000));
         }
         setWaitingSchedule(null);
-        if (cancelledRef.current) { setRunning(false); setDone(true); return; }
+        if (cancelledRef.current) {
+          setRunning(false); setDone(true);
+          if (campaignIdRef.current) await updateCampaignStatus(campaignIdRef.current, { status: "canceled", finished_at: new Date().toISOString() });
+          return;
+        }
+        if (campaignIdRef.current) await updateCampaignStatus(campaignIdRef.current, { status: "running", started_at: new Date().toISOString() });
       }
     }
 
@@ -257,6 +288,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
         ...x, status: ok ? "sent" : "failed", error: err, finalMessage: finalMsg, sentAt: Date.now(),
       } : x));
 
+      // Persist target result (fire-and-forget)
+      if (campaignIdRef.current) {
+        updateTargetStatus(campaignIdRef.current, t.phone, {
+          status: ok ? "sent" : "failed",
+          final_message: finalMsg.slice(0, 4000),
+          error: err,
+          sent_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+
       if (ok) consecutiveFailures = 0;
       else consecutiveFailures++;
 
@@ -286,9 +327,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       const sent = prev.filter(t => t.status === "sent").length;
       const failed = prev.filter(t => t.status === "failed").length;
       toast({ title: "Disparo finalizado", description: `${sent} enviadas, ${failed} falhas` });
+      if (campaignIdRef.current) {
+        updateCampaignStatus(campaignIdRef.current, {
+          status: cancelledRef.current ? "canceled" : "done",
+          sent, failed,
+          finished_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
       return prev;
     });
-  }, [config, text, media, instanceName, checkConnection, sleep, toast]);
+  }, [config, text, media, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
@@ -317,6 +365,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   const resetAll = () => {
     setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
     cancelledRef.current = false; pausedRef.current = false;
+    campaignIdRef.current = null;
+    setCampaignName("");
   };
 
   const canGoNext = step === 1 ? deduped.length > 0
@@ -407,6 +457,52 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                   <p className="text-lg font-bold text-red-400">{contacts.length - validContacts.length}</p>
                 </div>
               </div>
+
+              {history.length > 0 && (
+                <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-foreground">Histórico de disparos</p>
+                    <span className="text-[10px] text-muted-foreground">{history.length} recentes</span>
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-auto">
+                    {history.map(h => {
+                      const total = h.total || 1;
+                      const pct = Math.round(((h.sent + h.failed) / total) * 100);
+                      const statusColor = h.status === "done" ? "text-emerald-400"
+                        : h.status === "running" ? "text-blue-400"
+                        : h.status === "scheduled" ? "text-amber-400"
+                        : h.status === "canceled" ? "text-red-400" : "text-muted-foreground";
+                      return (
+                        <div key={h.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-background/40 border border-border/30 text-xs">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground truncate">{h.name}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {new Date(h.created_at).toLocaleString("pt-BR")} • {h.total} contatos
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-[10px] font-bold uppercase ${statusColor}`}>{h.status}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              ✓{h.sent} ✗{h.failed} ({pct}%)
+                            </p>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Apagar "${h.name}"?`)) return;
+                              await deleteCampaign(h.id);
+                              setHistory(prev => prev.filter(x => x.id !== h.id));
+                            }}
+                            className="text-red-400 hover:text-red-300 p-1"
+                            title="Apagar"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -424,6 +520,18 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
           {step === 3 && (
             <div className="space-y-4">
+              <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+                <label className="text-xs font-bold text-foreground mb-1.5 block">Nome da campanha</label>
+                <input
+                  type="text"
+                  value={campaignName}
+                  onChange={(e) => setCampaignName(e.target.value)}
+                  placeholder={`Disparo ${new Date().toLocaleDateString("pt-BR")}`}
+                  maxLength={120}
+                  className="w-full px-3 py-2 rounded-md bg-background border border-border/40 text-sm text-foreground"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">Aparece no histórico para você identificar depois.</p>
+              </div>
               <ScheduleStep config={config} onChange={setConfig} totalContacts={deduped.length} />
               {/* Templates quick load */}
               {templates.length > 0 && (
