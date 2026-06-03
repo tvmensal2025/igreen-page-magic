@@ -91,14 +91,41 @@ const isPreviewHost =
   host === "127.0.0.1";
 
 if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
+  // ─── Auto-reload quando um novo SW assume o controle ───────────────────
+  // Com registerType:"autoUpdate" + skipWaiting+clientsClaim, o novo SW
+  // ativa sozinho. Mas o navegador só "vê" a UI nova se a página recarregar.
+  // Forçamos reload UMA vez quando o controlador troca (= deploy novo
+  // assumiu). O flag evita loop caso algo dê errado.
+  let reloadingForSW = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloadingForSW) return;
+    reloadingForSW = true;
+    console.info("[PWA] novo Service Worker assumiu — recarregando");
+    window.location.reload();
+  });
+
   import("virtual:pwa-register")
     .then(({ registerSW }) => {
       const updateSW = registerSW({
         immediate: true,
+        onNeedRefresh() {
+          // Como queremos auto-update, força aplicar imediatamente.
+          // O reload em si acontece no controllerchange acima.
+          updateSW(true).catch(() => {});
+        },
         onRegisteredSW(_swUrl, r) {
-          // Checa por atualização a cada 60s enquanto a aba estiver aberta,
-          // em vez do ciclo padrão (até 24h). Pega deploys novos rapidamente.
-          if (r) setInterval(() => { r.update().catch(() => {}); }, 60_000);
+          if (!r) return;
+          // Checa por atualização a cada 60s enquanto a aba estiver aberta.
+          const poll = () => r.update().catch(() => {});
+          setInterval(poll, 60_000);
+          // E sempre que a aba volta a ficar visível (usuário trocou de
+          // aba/celular e voltou), checa imediatamente — pega deploys
+          // feitos enquanto a aba estava em background.
+          document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") poll();
+          });
+          // E quando volta a ter rede.
+          window.addEventListener("online", poll);
         },
         onRegisterError(err) {
           console.warn("[PWA] register error:", err);
