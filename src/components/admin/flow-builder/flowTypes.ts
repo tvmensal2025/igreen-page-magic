@@ -127,12 +127,13 @@ export const STEP_TYPE_OPTIONS: { value: string; label: string; emoji: string; h
 ];
 
 export const VARIANT_LABEL: Record<Variant, string> = {
-  A: "A (com áudio)",
-  B: "B (sem áudio)",
-  C: "C (vídeo inicial)",
-  D: "D (personalizado)",
-  E: "E (personalizado)",
+  A: "Fluxo A (com áudio)",
+  B: "Fluxo B (IA livre)",
+  C: "Fluxo C (vídeo inicial)",
+  D: "Fluxo D (padrão Camila)",
+  E: "Fluxo E (personalizado)",
 };
+
 
 // Presets de botões prontos para arrastar/clicar
 export const BUTTON_PRESETS: { id: string; title: string; emoji: string }[] = [
