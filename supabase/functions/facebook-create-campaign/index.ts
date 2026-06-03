@@ -539,11 +539,13 @@ Deno.serve(async (req) => {
           } catch (_) { /* best-effort */ }
         } else {
           throw new Error("Meta ainda não gerou a miniatura do vídeo, tente novamente em alguns segundos.");
+        }
       }
 
       // Anexa legendas SRT pt_BR ao vídeo (se geradas pelo wizard via ad-video-captions).
       // Meta API: POST /{video-id}/captions com multipart (captions_file + default_locale).
       // Best-effort: se falhar, o ad sobe sem legenda.
+      // IMPORTANTE: fica FORA do if (!thumbUrl) — senão vídeo do cache (com thumb) nunca recebe legenda.
       const captionsSrt = body.video?.captions_srt;
       if (captionsSrt && fbVideoId) {
         try {
@@ -570,7 +572,7 @@ Deno.serve(async (req) => {
           console.warn("[fb-create] captions error:", (e as Error).message);
         }
       }
-      }
+
 
       // Força placements verticais (Reels + Stories + Feed)
       (targeting as any).publisher_platforms = ["facebook", "instagram"];
