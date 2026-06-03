@@ -2283,14 +2283,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     const txt = messageText.trim().toLowerCase();
     const segueAgora = isClubProgressIntent(txt);
     if (segueAgora) {
-      const ctaMsg = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
+      // 🔧 FIX C1: pedir CONTA DE LUZ antes do documento — fluxo correto é
+      // conta → simulação → CTA → documento. Antes pulava direto pro doc.
+      const ctaMsg = `Perfeito! Pra eu calcular sua economia, me envia uma *foto ou PDF da sua conta de luz* 📸`;
       await sendText(remoteJid, ctaMsg);
       await supabase.from("conversations").insert({
         customer_id: customer.id, message_direction: "outbound",
         message_text: ctaMsg, message_type: "text",
-        conversation_step: "aguardando_doc_auto",
+        conversation_step: "aguardando_conta",
       });
-      return { reply: "", updates: { conversation_step: "aguardando_doc_auto", __inline_sent: true } as any };
+      return { reply: "", updates: { conversation_step: "aguardando_conta", __inline_sent: true } as any };
     }
     if (/\?|cancel|cancela|taxa|fidelidade|seguro|pagar|custa|club|clube|funciona/i.test(txt)) {
       return {
