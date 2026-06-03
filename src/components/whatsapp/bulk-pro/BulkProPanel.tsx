@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowRight, ArrowLeft, Download, RotateCw, AlertTriangle, Users, MessageSquare, Settings2, Activity } from "lucide-react";
+import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowRight, ArrowLeft, Download, RotateCw, AlertTriangle, Users, MessageSquare, Settings2, Activity, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
@@ -12,7 +12,7 @@ import { MessageEditor } from "./MessageEditor";
 import { ScheduleStep } from "./ScheduleStep";
 import { DEFAULT_CONFIG, type SendConfig, type PreparedMedia, type CampaignTarget } from "./types";
 import { renderFinal } from "./spintax";
-import { createCampaign, updateCampaignStatus, updateTargetStatus, listCampaigns, deleteCampaign, type PersistedCampaignRow } from "./useCampaignPersistence";
+import { createCampaign, updateCampaignStatus, updateTargetStatus, listCampaigns, deleteCampaign, loadCampaignForResume, type PersistedCampaignRow } from "./useCampaignPersistence";
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
@@ -168,7 +168,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     } catch { return false; }
   }, [instanceName]);
 
-  const runCampaign = useCallback(async (initialTargets: CampaignTarget[], existingCampaignId?: string) => {
+  const runCampaign = useCallback(async (
+    initialTargets: CampaignTarget[],
+    existingCampaignId?: string,
+    overrides?: { text?: string; media?: PreparedMedia | null; config?: SendConfig; name?: string },
+  ) => {
+    const useText = overrides?.text ?? text;
+    const useMedia = overrides?.media !== undefined ? overrides.media : media;
+    const useConfig = overrides?.config ?? config;
+    const useName = overrides?.name ?? campaignName;
+
     cancelledRef.current = false;
     pausedRef.current = false;
     setPaused(false);
@@ -181,13 +190,13 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     if (!existingCampaignId) {
       const newId = await createCampaign({
         consultantId,
-        name: campaignName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
-        messageText: text,
-        mediaUrl: media?.url ?? null,
-        mediaType: media?.kind ?? null,
-        mediaFilename: media?.fileName ?? null,
-        config: config as any,
-        scheduledAt: config.scheduleAt,
+        name: useName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
+        messageText: useText,
+        mediaUrl: useMedia?.url ?? null,
+        mediaType: useMedia?.kind ?? null,
+        mediaFilename: useMedia?.fileName ?? null,
+        config: useConfig as any,
+        scheduledAt: useConfig.scheduleAt,
         targets: initialTargets,
       });
       campaignIdRef.current = newId;
@@ -196,10 +205,10 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     }
 
     // Wait for schedule (treat scheduleAt as LOCAL time)
-    if (config.scheduleAt) {
-      const target = new Date(config.scheduleAt).getTime();
+    if (useConfig.scheduleAt) {
+      const target = new Date(useConfig.scheduleAt).getTime();
       if (!isNaN(target) && target > Date.now()) {
-        setWaitingSchedule(config.scheduleAt);
+        setWaitingSchedule(useConfig.scheduleAt);
         while (Date.now() < target && !cancelledRef.current) {
           await new Promise(r => setTimeout(r, 1000));
         }
@@ -220,7 +229,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       if (cancelledRef.current) break;
 
       // Window check
-      while (!inWindow(config) && !cancelledRef.current) {
+      while (!inWindow(useConfig) && !cancelledRef.current) {
         await new Promise(r => setTimeout(r, 30_000));
       }
       if (cancelledRef.current) break;
@@ -230,7 +239,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       if (cancelledRef.current) break;
 
       // Connection check at block boundary
-      if (idx % config.blockSize === 0 && idx > 0) {
+      if (idx % useConfig.blockSize === 0 && idx > 0) {
         const ok = await checkConnection();
         if (!ok) {
           toast({ title: "WhatsApp desconectado", description: "Envio pausado. Reconecte e clique em Retomar.", variant: "destructive" });
@@ -239,7 +248,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
           if (cancelledRef.current) break;
         }
         // Block pause
-        const pauseMs = config.blockPauseMin * 60_000;
+        const pauseMs = useConfig.blockPauseMin * 60_000;
         const ok2 = await sleep(pauseMs);
         if (!ok2) break;
       }
@@ -247,28 +256,28 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       const t = work[idx];
       setTargets(prev => prev.map(x => x.id === t.id ? { ...x, status: "sending" } : x));
 
-      const finalMsg = renderFinal(text, { name: t.name, bill: t.bill, city: t.city });
+      const finalMsg = renderFinal(useText, { name: t.name, bill: t.bill, city: t.city });
 
       let ok = true;
       let err: string | undefined;
       try {
-        if (media) {
+        if (useMedia) {
           // Send media first or text first
-          if (config.mediaOrder === "text_first" && finalMsg.trim()) {
+          if (useConfig.mediaOrder === "text_first" && finalMsg.trim()) {
             const r = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r.status === "failed") { ok = false; err = r.error; }
             await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
           }
-          const cat = media.kind === "image" ? "image" : media.kind === "video" ? "video" : media.kind === "audio" ? "audio" : "document";
-          const caption = config.mediaOrder === "caption_only" || config.mediaOrder === "media_first" ? finalMsg : undefined;
+          const cat = useMedia.kind === "image" ? "image" : useMedia.kind === "video" ? "video" : useMedia.kind === "audio" ? "audio" : "document";
+          const caption = useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first" ? finalMsg : undefined;
           const r = await sendWhatsAppMessage({
             instanceName, phone: t.phone, mediaCategory: cat as any,
-            mediaUrl: media.url,
+            mediaUrl: useMedia.url,
             text: cat === "image" || cat === "video" ? caption : undefined,
-            fileName: media.fileName,
+            fileName: useMedia.fileName,
           });
           if (r.status === "failed") { ok = false; err = r.error || err; }
-          if (config.mediaOrder === "media_first" && finalMsg.trim() && media.kind !== "image" && media.kind !== "video") {
+          if (useConfig.mediaOrder === "media_first" && finalMsg.trim() && useMedia.kind !== "image" && useMedia.kind !== "video") {
             await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
             const r2 = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r2.status === "failed") { ok = false; err = r2.error || err; }
@@ -312,8 +321,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
       // Random interval before next
       if (idx < work.length - 1) {
-        const minS = Math.max(1, config.intervalMinS);
-        const maxS = Math.max(minS, config.intervalMaxS);
+        const minS = Math.max(1, useConfig.intervalMinS);
+        const maxS = Math.max(minS, useConfig.intervalMaxS);
         const secs = minS + Math.random() * (maxS - minS);
         const ok3 = await sleep(Math.round(secs * 1000));
         if (!ok3) break;
@@ -361,6 +370,29 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     if (failed.length === 0) return;
     runCampaign(failed);
   };
+
+  const handleResume = useCallback(async (campId: string) => {
+    if (running) { toast({ title: "Já existe um disparo em andamento", variant: "destructive" }); return; }
+    const payload = await loadCampaignForResume(campId);
+    if (!payload) { toast({ title: "Não foi possível carregar a campanha", variant: "destructive" }); return; }
+    if (payload.queuedTargets.length === 0) {
+      toast({ title: "Nada na fila", description: "Esta campanha não tem contatos pendentes." });
+      return;
+    }
+    // Restaura estado local a partir da campanha persistida
+    setText(payload.messageText);
+    if (payload.mediaUrl && payload.mediaType && payload.mediaType !== "text") {
+      setMedia({ url: payload.mediaUrl, kind: payload.mediaType as any, fileName: payload.mediaFilename || undefined });
+    } else {
+      setMedia(null);
+    }
+    const restored: SendConfig = { ...DEFAULT_CONFIG, ...(payload.config || {}), scheduleAt: null };
+    setConfig(restored);
+    setCampaignName(payload.name);
+    toast({ title: "Retomando disparo", description: `${payload.queuedTargets.length} contatos na fila` });
+    // Roda com config restaurada (sem aguardar nova schedule) e mantém o mesmo campaign_id
+    setTimeout(() => runCampaign(payload.queuedTargets, payload.id), 50);
+  }, [running, runCampaign, toast]);
 
   const resetAll = () => {
     setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
@@ -486,6 +518,15 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                               ✓{h.sent} ✗{h.failed} ({pct}%)
                             </p>
                           </div>
+                          {(h.status === "running" || h.status === "scheduled") && (
+                            <button
+                              onClick={() => handleResume(h.id)}
+                              className="text-emerald-400 hover:text-emerald-300 p-1"
+                              title="Retomar fila pendente"
+                            >
+                              <PlayCircle className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={async () => {
                               if (!confirm(`Apagar "${h.name}"?`)) return;
