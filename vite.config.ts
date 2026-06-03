@@ -29,24 +29,30 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
+        // Movido para /sw-app.js. O /sw.js no /public é um kill-switch para
+        // limpar instalações antigas — não é mais o SW principal do app.
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [
           /^\/~oauth/,
           /^\/api/,
           /^\/functions/,
+          /^\/reset/, // rota de recuperação manual nunca pode vir do cache
         ],
         // Não tente precachear o manifest manual nem assets gigantes.
-        globIgnores: ["**/manifest.json"],
+        globIgnores: ["**/manifest.json", "**/sw.js"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
           {
             // HTML — sempre tenta rede antes (3s) para pegar deploy novo.
+            // Cache curto (5min) para evitar servir HTML antigo apontando
+            // para chunks que já não existem no novo deploy.
             urlPattern: ({ request }) => request.mode === "navigate",
             handler: "NetworkFirst",
             options: {
               cacheName: "html-cache",
               networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 },
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 5 },
+              cacheableResponse: { statuses: [200] },
             },
           },
           {
