@@ -1054,6 +1054,73 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
             {step === 2 && (
               <div className="space-y-3">
+                {/* Modo do criativo: várias fotos (asset_feed_spec) OU 1 vídeo Reels. */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setCreativeMode("photo")}
+                    className={`p-3 rounded-lg border text-left transition ${creativeMode === "photo" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {creativeMode === "photo" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <ImageIcon className="w-3.5 h-3.5" /> Fotos
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">Até 4 imagens por formato — Meta escolhe a melhor.</div>
+                  </button>
+                  <button type="button" onClick={() => setCreativeMode("video")}
+                    className={`p-3 rounded-lg border text-left transition ${creativeMode === "video" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">
+                      {creativeMode === "video" && <Check className="w-3.5 h-3.5 text-primary" />}
+                      <Video className="w-3.5 h-3.5" /> Vídeo Reels
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-1">1 vídeo vertical 9:16 — só Reels e Stories.</div>
+                  </button>
+                </div>
+
+                {creativeMode === "video" ? (
+                  <div className="space-y-3">
+                    <div className={`border-2 border-dashed rounded-xl p-6 text-center ${videoFile ? "opacity-60" : ""}`}>
+                      <input type="file" accept="video/mp4,video/quicktime,video/mov" id="video-input" className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0]; e.currentTarget.value = "";
+                          if (!f) return;
+                          if (f.size > 100 * 1024 * 1024) { toast({ title: "Vídeo maior que 100 MB", variant: "destructive" }); return; }
+                          if (!/^video\/(mp4|quicktime|mov)$/.test(f.type)) { toast({ title: "Use MP4 ou MOV", variant: "destructive" }); return; }
+                          // Lê metadata (duração e dimensões) p/ avisar se não for vertical.
+                          const url = URL.createObjectURL(f);
+                          const v = document.createElement("video");
+                          v.preload = "metadata"; v.src = url;
+                          v.onloadedmetadata = () => {
+                            const meta = { duration: v.duration, w: v.videoWidth, h: v.videoHeight };
+                            setVideoFile(f); setVideoUrl(url); setVideoMeta(meta);
+                            if (meta.duration < 4) toast({ title: "Vídeo muito curto", description: "Mínimo 4 segundos.", variant: "destructive" });
+                            else if (meta.w / meta.h > 0.65) toast({ title: "Atenção: vídeo não é vertical", description: "Recomendado 9:16 (1080×1920) p/ Reels.", variant: "destructive" });
+                          };
+                        }} />
+                      <label htmlFor="video-input" className="cursor-pointer space-y-2 block">
+                        <Video className="w-8 h-8 text-primary mx-auto" />
+                        <div className="text-sm font-medium">Clique para enviar 1 vídeo Reels</div>
+                        <div className="text-xs text-muted-foreground">
+                          MP4 ou MOV · vertical <strong className="text-foreground">9:16 (1080×1920)</strong> · 4–60s · até 100 MB
+                        </div>
+                      </label>
+                    </div>
+                    {videoUrl && (
+                      <div className="relative rounded-lg overflow-hidden border border-primary/40 bg-black max-w-[280px] mx-auto">
+                        <video src={videoUrl} controls className="w-full aspect-[9/16] object-cover" />
+                        <div className="absolute top-1 right-1">
+                          <button type="button" onClick={() => { setVideoFile(null); setVideoUrl(null); setVideoMeta(null); }}
+                            className="bg-destructive text-destructive-foreground rounded-full p-1">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {videoMeta && (
+                          <div className="text-[10px] text-center py-1 bg-black/60 text-white">
+                            {videoMeta.w}×{videoMeta.h} · {videoMeta.duration.toFixed(1)}s
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                <>
                 <div>
                   <Label className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 text-primary" /> Formato do anúncio</Label>
                   <div className="grid grid-cols-3 gap-2 mt-2">
