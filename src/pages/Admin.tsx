@@ -203,7 +203,7 @@ const AdminContent = () => {
     { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
     { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
     { id: "links", label: "Links", icon: LinkIcon },
-    { id: "materiais", label: "Materiais", icon: FolderDown, external: true },
+    { id: "materiais", label: "Materiais", icon: FolderDown },
   ];
 
 
