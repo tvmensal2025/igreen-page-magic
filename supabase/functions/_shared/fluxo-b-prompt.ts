@@ -7,6 +7,7 @@ export interface FluxoBContext {
   valorConta: number | null;    // valor médio da conta (pode ser null)
   conversationSummary: string | null; // memória longa
   customerId: string;
+  knowledgeBase?: string | null; // FAQ + institucional já formatado
 }
 
 const DEFAULT_PROMPT = `# Persona
