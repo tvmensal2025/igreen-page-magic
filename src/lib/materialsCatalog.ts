@@ -44,7 +44,7 @@ function abs(path: string): string {
   return path;
 }
 
-const raw: Omit<MaterialItem, "url"> & { url: string }[] = [
+const raw: MaterialItem[] = [
   // ── Notícias ──
   ...[1, 2, 3, 4, 5, 6].map((n) => ({
     id: `noticia-${n}`,
