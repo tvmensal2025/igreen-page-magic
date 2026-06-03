@@ -345,7 +345,7 @@ const AdminContent = () => {
           )}
 
           {activeTab === "materiais" && (
-            <MaterialsTab />
+            <MaterialsTab consultantId={userId} />
           )}
 
           {userId && activeTab === "crm" && (
