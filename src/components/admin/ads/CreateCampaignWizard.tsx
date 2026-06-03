@@ -491,7 +491,10 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     setPreflightLoading(true); setPreflight(null);
     try {
       const r = await preflightCampaign({
-        cities: cities.map((c) => ({ key: c.key, name: c.name })),
+        cities: geoMode === "cities" ? cities.map((c) => ({ key: c.key, name: c.name })) : [],
+        custom_locations: geoMode === "radius"
+          ? radiusPoints.map((p) => ({ latitude: p.lat, longitude: p.lng, radius: p.radius_km, distance_unit: "kilometer" as const, address_string: p.address }))
+          : undefined,
         daily_budget_cents: Math.round(budget * 100),
       });
       setPreflight(r);
