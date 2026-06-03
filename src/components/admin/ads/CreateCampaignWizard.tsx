@@ -1420,6 +1420,20 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
               <div className="space-y-5">
                 <CtwaPreflightCard consultantId={consultantId} onReadyChange={setCtwaReady} />
 
+                {/* Aviso sobre a Página da plataforma — toda a rede compartilha 1 Page hoje. */}
+                {connection?.page_name && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                    <div className="font-semibold text-amber-700 dark:text-amber-400 mb-0.5">
+                      Página que vai aparecer no anúncio: <strong>{connection.page_name}</strong>
+                    </div>
+                    <div className="text-muted-foreground leading-snug">
+                      Essa é a Página única da plataforma. Para sua marca aparecer no lugar, peça
+                      ao admin pra conectar uma Página própria sua no Meta Business Suite.
+                    </div>
+                  </div>
+                )}
+
+
                 {/* Modo Econômico × Padrão × Personalizado — presets de orçamento */}
                 <div>
                   <Label className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Preset de orçamento</Label>
