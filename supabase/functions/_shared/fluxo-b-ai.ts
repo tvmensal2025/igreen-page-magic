@@ -271,6 +271,7 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     shouldHandoff,
     modelUsed: chosen.modelUsed,
     latencyMs: Date.now() - t0,
+    customerUpdates: updates,
   };
 }
 
