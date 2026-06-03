@@ -1116,19 +1116,89 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                       </label>
                     </div>
                     {videoUrl && (
-                      <div className="relative rounded-lg overflow-hidden border border-primary/40 bg-black max-w-[280px] mx-auto">
-                        <video src={videoUrl} controls className="w-full aspect-[9/16] object-cover" />
-                        <div className="absolute top-1 right-1">
-                          <button type="button" onClick={() => { setVideoFile(null); setVideoUrl(null); setVideoMeta(null); }}
-                            className="bg-destructive text-destructive-foreground rounded-full p-1">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {videoMeta && (
-                          <div className="text-[10px] text-center py-1 bg-black/60 text-white">
-                            {videoMeta.w}×{videoMeta.h} · {videoMeta.duration.toFixed(1)}s
+                      <div className="space-y-2">
+                        <div className="relative rounded-lg overflow-hidden border border-primary/40 bg-black max-w-[280px] mx-auto">
+                          <video src={videoUrl} controls className="w-full aspect-[9/16] object-cover" />
+                          <div className="absolute top-1 right-1">
+                            <button type="button" onClick={() => {
+                              setVideoFile(null); setVideoUrl(null); setVideoMeta(null);
+                              setVideoCaptionsSrt(null); setVideoCaptionsError(null); setVideoCaptionsLoading(false);
+                            }}
+                              className="bg-destructive text-destructive-foreground rounded-full p-1">
+                              <X className="w-3 h-3" />
+                            </button>
                           </div>
-                        )}
+                          {videoMeta && (
+                            <div className="text-[10px] text-center py-1 bg-black/60 text-white">
+                              {videoMeta.w}×{videoMeta.h} · {videoMeta.duration.toFixed(1)}s
+                            </div>
+                          )}
+                        </div>
+                        {/* Legendas automáticas: 85% do Feed assiste sem som. */}
+                        <div className="max-w-[320px] mx-auto rounded-lg border border-border bg-card/40 p-3 text-xs space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={videoCaptionsEnabled}
+                                onChange={(e) => setVideoCaptionsEnabled(e.target.checked)}
+                                className="accent-primary"
+                              />
+                              <span className="font-medium">Gerar legenda automática</span>
+                            </label>
+                            <span className="text-[10px] text-muted-foreground">recomendado</span>
+                          </div>
+                          {videoCaptionsLoading && (
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Loader2 className="w-3 h-3 animate-spin" /> Transcrevendo áudio…
+                            </div>
+                          )}
+                          {!videoCaptionsLoading && videoCaptionsSrt && (
+                            <div className="text-emerald-600 dark:text-emerald-400">
+                              ✓ Legenda pronta — vai junto com o vídeo no Reels/Feed/Stories.
+                            </div>
+                          )}
+                          {!videoCaptionsLoading && videoCaptionsError && (
+                            <div className="text-amber-600 dark:text-amber-400">
+                              ⚠ {videoCaptionsError} (vídeo sobe sem legenda)
+                            </div>
+                          )}
+                          {!videoCaptionsLoading && !videoCaptionsSrt && !videoCaptionsError && videoCaptionsEnabled && videoFile && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!videoFile) return;
+                                setVideoCaptionsLoading(true); setVideoCaptionsError(null);
+                                try {
+                                  const { supabase } = await import("@/integrations/supabase/client");
+                                  // Sobe vídeo p/ storage primeiro (ad-video-captions precisa de URL pública)
+                                  const up = await uploadAdVideo(consultantId, videoFile);
+                                  const { data, error } = await supabase.functions.invoke("ad-video-captions", {
+                                    body: { video_url: up.url },
+                                  });
+                                  if (error) throw error;
+                                  if ((data as any)?.error) {
+                                    setVideoCaptionsError((data as any).hint || (data as any).error);
+                                  } else if ((data as any)?.srt) {
+                                    setVideoCaptionsSrt((data as any).srt);
+                                  } else {
+                                    setVideoCaptionsError("Falha desconhecida ao gerar legenda");
+                                  }
+                                } catch (e: any) {
+                                  setVideoCaptionsError(e?.message || "Erro ao gerar legenda");
+                                } finally {
+                                  setVideoCaptionsLoading(false);
+                                }
+                              }}
+                              className="w-full px-2 py-1.5 rounded bg-primary/10 hover:bg-primary/20 text-primary font-medium"
+                            >
+                              Gerar legenda agora
+                            </button>
+                          )}
+                          <div className="text-[10px] text-muted-foreground leading-snug">
+                            85% das pessoas assistem vídeos sem som. Legenda costuma subir CTR em 30–60%.
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
