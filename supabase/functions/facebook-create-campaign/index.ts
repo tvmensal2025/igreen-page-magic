@@ -273,9 +273,11 @@ Deno.serve(async (req) => {
     const consultantTag = `CONS-${consultantLicense}`;
     const distribTag = body.distribuidora || cityNames || "iGreen";
     const cityPrincipal = body.cities[0]?.name || cityNames;
+    const cityPrincipal = body.cities[0]?.name || (hasCustomLocations ? locLabel : cityNames);
+    const distribTagReal = body.distribuidora || (hasCustomLocations ? locLabel : (cityNames || "iGreen"));
     const campaignName = body.name
-      ? `[${consultantTag}] ${distribTag} · ${body.name} · ${today}`
-      : `[${consultantTag}] ${distribTag} · ${cityPrincipal} · ${today}`;
+      ? `[${consultantTag}] ${distribTagReal} · ${body.name} · ${today}`
+      : `[${consultantTag}] ${distribTagReal} · ${cityPrincipal} · ${today}`;
 
     // Adlabel nativo do Meta — uma label por consultor, cacheada em
     // consultants.facebook_label_id. Permite filtrar campanhas no Gerenciador
