@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { Megaphone, Send, Loader2, Pause, Play, X, Shield, Timer, CheckCircle2, XCircle, Layers, ShieldAlert, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -8,11 +8,13 @@ import { BlockConfigurator } from "./BlockConfigurator";
 import { QuickTemplateForm } from "./QuickTemplateForm";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { getConnectionState } from "@/services/evolutionApi";
+import { supabase } from "@/integrations/supabase/client";
 import type { MessageTemplate, BulkContact, BlockConfig, BlockProgress } from "@/types/whatsapp";
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
   status?: string; devolutiva?: string | null; registered_by_name?: string | null;
+  last_inbound_at?: string | null;
 }
 
 interface BulkBlockSendPanelProps {
