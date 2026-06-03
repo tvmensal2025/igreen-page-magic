@@ -321,10 +321,34 @@ Deno.serve(async (req: Request) => {
         }
         const finalText = renderVars(rawMsg, customer, consultantName);
         const remoteJid = `${customer.phone_whatsapp}@s.whatsapp.net`;
+
+        // 🛡️ Anti-ban guard: respeita warmup + recovery + circuit breaker
+        const instName = await fetchInstanceName(supabase, consultantId);
+        if (instName) {
+          const quota = await checkSendQuota(supabase, instName);
+          if (!quota.allowed) {
+            failed++;
+            failures.push({ customer_id: customer.id, reason: `anti_ban:${quota.reason}` });
+            await logSend(supabase, {
+              customer_id: customer.id,
+              consultant_id: consultantId,
+              template_id: tpl?.id ?? null,
+              conversation_step: step,
+              message_text: finalText,
+              trigger_type: "batch",
+              status: "failed",
+              error_reason: `anti_ban_guard:${quota.reason}`,
+              batch_id: finalBatchId,
+            });
+            break;
+          }
+        }
+
         try {
           const ok = await sender.sendText(remoteJid, finalText);
           if (ok) {
             sent++;
+            if (instName) await registerSend(supabase, instName);
             await supabase.from("conversations").insert({
               customer_id: customer.id,
               message_direction: "outbound",
@@ -373,8 +397,8 @@ Deno.serve(async (req: Request) => {
             batch_id: finalBatchId,
           });
         }
-        // 2s entre envios (Req 14.3)
-        await new Promise((r) => setTimeout(r, 2000));
+        // Intervalo entre envios: mínimo do warmup + jitter humano
+        await new Promise((r) => setTimeout(r, Math.max(5000, humanJitterMs() * 4)));
       }
 
       // Audit log
