@@ -14,6 +14,30 @@ export function MaterialCard({ item, consultantId }: Props) {
   const { toast } = useToast();
   const [playing, setPlaying] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload(e: React.MouseEvent) {
+    e.preventDefault();
+    setDownloading(true);
+    try {
+      const response = await fetch(item.url);
+      if (!response.ok) throw new Error("Falha ao baixar");
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(item.url, "_blank", "noopener,noreferrer");
+      toast({ title: "Não foi possível baixar direto", description: "Abrimos em nova aba — use 'Salvar como'" });
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function handleCopy() {
     try {
@@ -54,11 +78,9 @@ export function MaterialCard({ item, consultantId }: Props) {
           <p className="text-[10px] text-muted-foreground uppercase">{item.type}</p>
         </div>
         <div className="flex gap-1.5">
-          <Button asChild type="button" size="sm" variant="outline" className="flex-1 gap-1.5">
-            <a href={item.url} download={filename} target="_blank" rel="noopener noreferrer">
-              <Download className="w-3.5 h-3.5" />
-              Baixar
-            </a>
+          <Button type="button" size="sm" variant="outline" className="flex-1 gap-1.5" onClick={handleDownload} disabled={downloading}>
+            <Download className="w-3.5 h-3.5" />
+            {downloading ? "Baixando..." : "Baixar"}
           </Button>
           <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={handleCopy}>
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
