@@ -542,13 +542,17 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       // Mantém formato de cada foto pra que o backend monte asset_feed_spec
       // com customization por posicionamento (sem corte de cabeça em Reels).
       // Vídeo Reels: faz upload pro storage, manda url p/ edge function publicar.
-      let videoPayload: { url: string; thumb_url?: string } | undefined;
+      let videoPayload: { url: string; thumb_url?: string; captions_srt?: string } | undefined;
       if (creativeMode === "video") {
         if (videoFile) {
           const up = await uploadAdVideo(consultantId, videoFile);
           videoPayload = { url: up.url };
         } else if (videoUrl) {
           videoPayload = { url: videoUrl };
+        }
+        // Anexa legenda SRT (gerada via ad-video-captions no Step 2).
+        if (videoPayload && videoCaptionsEnabled && videoCaptionsSrt) {
+          videoPayload.captions_srt = videoCaptionsSrt;
         }
       }
       // Mantém formato de cada foto pra que o backend monte asset_feed_spec
