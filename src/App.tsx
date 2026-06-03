@@ -29,6 +29,7 @@ const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
+const ResetApp = lazy(() => import("./pages/ResetApp"));
 import { CookieBanner } from "@/components/CookieBanner";
 
 
@@ -80,6 +81,7 @@ const App = () => (
               <Route path="/cadastro/:licenca" element={<CadastroPage />} />
               <Route path="/politica-privacidade" element={<PoliticaPrivacidade />} />
               <Route path="/install" element={<InstallPage />} />
+              <Route path="/reset" element={<ResetApp />} />
               {/* ⚠️ Catch-all de 1º nível: captura o slug público do consultor.
                   Mantenha QUALQUER rota nova ACIMA desta linha, senão ela será
                   interpretada como uma licença e cairá na ConsultantPage. */}
