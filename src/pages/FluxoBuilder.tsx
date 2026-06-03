@@ -249,18 +249,41 @@ export default function FluxoBuilder() {
         (supabase as any).from("bot_flows").select("id").eq("consultant_id", uid).eq("is_active", true).eq("variant", variant).order("created_at").limit(1),
         supabase.from("bot_flows").select("variant").eq("consultant_id", uid).eq("is_active", true),
       ]);
-      
+
       setConsultantName((cons as any)?.name ?? "");
-      const ex = new Set<Variant>(["A"]);
+
+      // Isolamento estrito de variantes: a barra só lista variantes que
+      // existem de fato em `bot_flows`. Antes forçávamos "A" no Set, o que
+      // mostrava uma A fantasma para consultores nascidos em D — e o
+      // fallback de seed abaixo acabava reaproveitando o flow_id de D.
+      const ex = new Set<Variant>();
       for (const r of ((allFlows as any[]) || [])) {
         if (ALL_VARIANTS.includes(r.variant)) ex.add(r.variant);
       }
+
+      // Provisionamento inicial: se o consultor não tem NENHUM fluxo,
+      // semeamos a variante padrão D (a função já filtra por variant='D').
+      // Nunca semeamos como fallback de A — isso causava o vazamento entre
+      // variantes (mexer em A alterava D).
+      let seededD = false;
+      if (ex.size === 0) {
+        const { data: seededId } = await supabase.rpc("seed_default_camila_flow", { _consultant_id: uid });
+        if (seededId) {
+          ex.add("D");
+          seededD = true;
+        }
+      }
       setExistingVariants(ALL_VARIANTS.filter((v) => ex.has(v)));
 
-      let fid = flows?.[0]?.id ?? null;
-      if (!fid && variant === "A") {
-        const { data } = await supabase.rpc("seed_default_camila_flow", { _consultant_id: uid });
-        fid = (data as string) ?? null;
+      // Se a variante pedida não existe, não inventamos flow_id. O builder
+      // mostra estado vazio e o usuário pode criar via "Adicionar variante".
+      let fid: string | null = flows?.[0]?.id ?? null;
+      if (!fid && seededD && variant === "D") {
+        const { data: dFlow } = await (supabase as any)
+          .from("bot_flows").select("id")
+          .eq("consultant_id", uid).eq("is_active", true).eq("variant", "D")
+          .order("created_at").limit(1).maybeSingle();
+        fid = (dFlow as any)?.id ?? null;
       }
       setFlowId(fid);
 
@@ -291,6 +314,7 @@ export default function FluxoBuilder() {
         setSteps([]);
         setSelectedId(null);
       }
+
 
       // Contagem de mídias por slot
       const { data: medias } = await supabase
@@ -344,6 +368,19 @@ export default function FluxoBuilder() {
     if (userId) reload(userId, editingVariant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingVariant]);
+
+  // Se a variante atual não existe entre as carregadas (ex.: consultor
+  // nasceu em D e A não foi criada), seleciona automaticamente a primeira
+  // variante existente em vez de manter "A fantasma". Isso impede que o
+  // builder peça um flow_id que não existe.
+  useEffect(() => {
+    if (!existingVariants.length) return;
+    if (!existingVariants.includes(editingVariant)) {
+      setEditingVariant(existingVariants[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingVariants]);
+
 
   const selected = useMemo(() => steps.find((s) => s.id === selectedId) ?? null, [steps, selectedId]);
   const inspectorStep = useMemo(() => steps.find((s) => s.id === inspectorId) ?? null, [steps, inspectorId]);
