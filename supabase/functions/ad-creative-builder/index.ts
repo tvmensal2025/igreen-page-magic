@@ -108,9 +108,9 @@ const FALLBACK = {
     { text: "+50 mil famílias economizam", framework: "prova social", angle: "prova_social", score: 82 },
   ],
   primary_texts: [
-    { text: "Sua conta de luz até 20% mais barata. Sem obra. Fala no zap 👇", framework: "AIDA", angle: "economia_concreta", score: 92 },
-    { text: "Cansado da conta alta? Desconto direto na fatura. Toca aqui.", framework: "PAS", angle: "quebra_objecao", score: 86 },
-    { text: "Energia limpa, conta leve. Sem instalar nada. Garante a sua 🌱", framework: "benefício", angle: "curiosidade", score: 88 },
+    { text: "Conta de luz subindo de novo? Desconto direto no boleto, sem obra. Fala no zap 👇", framework: "PAS", angle: "dor_pas", score: 95 },
+    { text: "Sua fatura passou de R$ 300? Até 20% mais barata todo mês. Toca aqui.", framework: "AIDA", angle: "economia_concreta", score: 92 },
+    { text: "Cansada de pagar caro? Energia limpa, conta leve, sem instalar nada. Garante 🌱", framework: "benefício", angle: "quebra_objecao", score: 90 },
   ],
   description: "Sem obra. Sem taxa.",
   image_briefs: [
