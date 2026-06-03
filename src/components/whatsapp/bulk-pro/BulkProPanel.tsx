@@ -365,6 +365,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   const resetAll = () => {
     setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
     cancelledRef.current = false; pausedRef.current = false;
+    campaignIdRef.current = null;
+    setCampaignName("");
   };
 
   const canGoNext = step === 1 ? deduped.length > 0
