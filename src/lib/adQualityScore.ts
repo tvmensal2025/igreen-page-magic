@@ -112,8 +112,14 @@ export function aggregate(copy: QualityResult["copy"], image: QualityResult["ima
   const score = Math.round(copy.score * 0.6 + image.score * 0.4);
   const level: QualityResult["level"] = score >= 80 ? "green" : score >= 60 ? "yellow" : "red";
   const blocks = copy.hits.filter(h => h.severity === "block").length;
-  // Threshold 70: scores menores costumam ter CPL alto e/ou risco de rejeição.
-  const canPublish = blocks === 0 && score >= 70;
-  const summary = level === "green" ? "Pronto pra performar" : level === "yellow" ? "Funciona, mas dá pra melhorar" : "Risco de rejeição ou CPL alto";
-  return { score, level, copy, image, canPublish, summary };
+  // canPublish bloqueia apenas em violação de política da Meta (que seria rejeitada).
+  // Score baixo vira aviso — o usuário pode confirmar e publicar mesmo assim.
+  const canPublish = blocks === 0;
+  const recommendedPublish = canPublish && score >= 70;
+  const summary = level === "green"
+    ? "Pronto pra performar"
+    : level === "yellow"
+      ? "Funciona, mas dá pra melhorar — dá pra publicar assim"
+      : blocks > 0 ? "Risco de rejeição pela Meta" : "CPL pode ficar alto — dá pra publicar assim";
+  return { score, level, copy, image, canPublish, recommendedPublish, summary };
 }
