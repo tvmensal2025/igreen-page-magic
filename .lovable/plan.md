@@ -1,35 +1,63 @@
-## Objetivo
+# Auditoria do Fluxo D — pronto para tráfego pago?
 
-Remover dependência do Google Maps no `AddressRadiusPicker.tsx` e usar **Nominatim (OpenStreetMap)** para autocomplete de endereços. Sem mapa visual, sem chave de API, sem custo.
+Vou validar o Fluxo D em **3 frentes**: configuração (já levantada), simulação ponta-a-ponta (botão por botão) e infraestrutura de alertas/recuperação. Sem alterar nada — só leitura, simulação e relatório.
 
-## O que muda
+## O que já confirmei (leitura do banco)
 
-**Arquivo único:** `src/components/admin/ads/AddressRadiusPicker.tsx`
+- **Fluxo D ativo:** `Fluxo Whapi (botões)` (`is_active=true`, variant=`D`, 14 passos ativos).
+- **Welcome (d_welcome)** com 3 botões — todos com destino válido:
+  - 💚 Quero simular → `d_escolher_simulacao`
+  - 🤔 Como funciona → `d_como_funciona`
+  - 👨‍💼 Falar com Rafael → handoff humano
+- **Edge functions ativas:** `whapi-webhook`, `flow-d-health-cron`, `flow-d-stuck-watchdog`, `bot-stuck-recovery`, `evolution-proxy` — todas bootando sem erro nos últimos logs.
 
-1. Remover todo o código de carregamento do Google Maps JS (`loadMapsApi`, `mapsLoadPromise`, refs de mapa/marker/circle, `renderAll`, `useEffect` do mapa).
-2. Remover variáveis `BROWSER_KEY` / `TRACKING_ID` e o bloco de aviso "Google Maps não está configurado".
-3. Substituir o autocomplete do Places API por chamada direta ao Nominatim:
-   - Endpoint: `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=br&limit=8&q={query}`
-   - Headers: `Accept: application/json` (sem User-Agent custom — browser bloqueia)
-   - Debounce 400ms (Nominatim pede ≤1 req/s; 400ms + debounce do digitar fica seguro)
-   - Resposta traz `lat`, `lon`, `display_name` → mapear direto para `RadiusPoint`
-4. Remover o `<div>` do mapa (`mapDivRef`). Manter:
-   - Input com sugestões em dropdown
-   - Slider de raio (1–50 km)
-   - Botões de preset (Quarteirão / Bairro / Região / Cidade)
-   - Bloco "Confirmar" verde
-   - Lista de pontos confirmados com badges removíveis
-5. Adicionar pequeno texto informativo: "Buscando endereços via OpenStreetMap".
-6. Manter exatamente a mesma interface `RadiusPoint` e props `value`/`onChange` — `CreateCampaignWizard.tsx` continua funcionando sem alteração.
+## Caminhos a percorrer (cada botão / cada ramo)
 
-## Detalhes técnicos
+```text
+d_welcome
+ ├─ "Quero simular"  → d_escolher_simulacao
+ │     ├─ "Simulação completa" → d_pedir_conta → d_resultado
+ │     │     ├─ "Continuar Cadastro" → d_pedir_documento → d_pedir_email → d_confirmar_telefone → d_finalizar
+ │     │     ├─ "Tenho dúvidas"      → d_duvidas (3 botões)
+ │     │     └─ "Falar com Rafael"   → handoff
+ │     └─ "Simulação rápida" → d_simular_valor → d_simular_resultado
+ │            ├─ "Continuar Cadastro" → d_pedir_documento → ... → d_finalizar
+ │            ├─ "Ainda tenho dúvida" → d_duvidas
+ │            └─ "Como Funciona"     → d_como_funciona
+ ├─ "Como funciona" → d_como_funciona
+ │     ├─ "Continuar Cadastro" → d_pedir_conta
+ │     ├─ "Ainda tenho dúvida" → d_duvidas
+ │     └─ "Falar com Rafael"   → handoff
+ └─ "Falar com Rafael" → handoff
+```
 
-- Nominatim é gratuito e público, sem chave. Política de uso permite apps de baixo volume; para produção pesada o ideal seria self-host, mas dado o uso (admin criando campanha pontualmente) está dentro do aceitável.
-- Coordenadas vêm como string → converter com `parseFloat`.
-- Tratamento de erro: se fetch falhar, mostrar mensagem discreta abaixo do input.
-- Sem mudanças no backend, banco, ou em `CreateCampaignWizard.tsx`.
+## Plano de verificação
+
+1. **Conferência estrutural (já parcial)**
+   - Confirmar que todo `goto_step_id` aponta para passo ativo do mesmo flow.
+   - Conferir botões de `d_duvidas`, `d_simular_resultado`, `d_escolher_simulacao` (alguns ainda truncados na leitura).
+   - Validar capturas: `capture_conta`, `capture_documento` (auto-detect), `capture_email` (regex), `confirm_phone`.
+
+2. **Simulação end-to-end via `whapi-webhook`**
+   - Criar payloads de mensagens entrantes (texto + botão) simulando um lead real, disparando em sequência os ramos do diagrama.
+   - Validar em `conversations` que cada step disparou a mensagem certa e que `customer_flow_state` avançou para o próximo `step_key`.
+   - Confirmar que o OCR (conta + documento) está plugado e que `processando_ocr_conta` desbloqueia para `d_resultado`.
+
+3. **Infra de segurança**
+   - Conferir `flow-d-health-cron` (últimos `flow_d_health_runs` e `bot_handoff_alerts` tipo `flow_d_*`).
+   - Conferir `bot-stuck-recovery` (lead travado em D recebe nudge).
+   - Verificar `evolution-proxy` (instância WhatsApp respondendo).
+   - Conferir se a campanha de Ads está apontando para o número/instância certa e se a label/UTM grava `flow_variant='D'`.
+
+4. **Relatório final**
+   - Tabela com cada ramo: **OK** / **quebrado** / **risco**.
+   - Lista de correções (se houver) ordenada por impacto em conversão.
+   - Sinal verde 🟢 / amarelo 🟡 / vermelho 🔴 para liberar tráfego.
 
 ## Fora de escopo
 
-- Mini-mapa visual (escolha Opção B explícita do usuário).
-- Remoção do conector Google Maps em outros lugares — esse componente era o único consumidor da chave `VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY` no front.
+- Não vou alterar passos, botões, transições ou copy sem o seu OK.
+- Não vou enviar mensagens reais para clientes — só payloads de teste contra o webhook.
+- Não vou mexer em Ads Manager / Meta — só verifico se o link e o roteamento para Fluxo D estão corretos.
+
+Confirma que posso rodar essa auditoria? Se quiser, posso focar só em um ramo específico (ex.: só o caminho do botão "Quero simular").
