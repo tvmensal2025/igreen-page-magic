@@ -459,7 +459,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
   async function handleNext() {
     if (step === 1) {
-      if (cities.length === 0) return toast({ title: "Selecione pelo menos 1 cidade", variant: "destructive" });
+      if (geoMode === "cities" && cities.length === 0) return toast({ title: "Selecione pelo menos 1 cidade", variant: "destructive" });
+      if (geoMode === "radius" && radiusPoints.length === 0) return toast({ title: "Adicione pelo menos 1 endereço", variant: "destructive" });
       setStep(2);
     } else if (step === 2) {
       if (totalFiles + pickedLibrary.length < 1) return toast({ title: "Adicione pelo menos 1 foto válida", variant: "destructive" });
@@ -471,7 +472,6 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
         return toast({ title: `Score ${quality.score}/100 — mínimo 70`, description: "Resolva os itens em vermelho do painel de qualidade antes de avançar.", variant: "destructive" });
       }
       setStep(4);
-      // Roda preflight ao entrar no step 4
       runPreflight();
     } else if (step === 4) {
       await submit();
