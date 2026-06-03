@@ -797,6 +797,7 @@ Deno.serve(async (req) => {
       }
     }
     }
+    } // fim do if (creativeMode === "photo")
     if (!adIds.length) throw new Error("Nenhum anúncio pôde ser criado no Facebook.");
 
     // 6) Persiste
