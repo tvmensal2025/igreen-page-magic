@@ -875,6 +875,7 @@ export default function FluxoBuilder() {
           </aside>
         )}
       </main>
+      )}
 
       {/* Painel lateral de revisão IA */}
       <FlowReviewPanel
