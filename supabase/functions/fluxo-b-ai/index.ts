@@ -33,11 +33,12 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch (_) { return json({ error: "invalid_json" }, 400); }
 
   const customerId = String(body?.customerId || "").trim();
+  const consultantId = String(body?.consultantId || "").trim();
   const inboundText = String(body?.inboundText || "").trim();
   const dryRun = Boolean(body?.dryRun);
 
-  if (!customerId) return json({ error: "missing_customerId" }, 400);
   if (!inboundText) return json({ error: "missing_inboundText" }, 400);
+  if (!customerId && !consultantId) return json({ error: "missing_customerId_or_consultantId" }, 400);
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL");
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -45,7 +46,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
-  // Em dryRun: cria um wrapper que intercepta updates pra não persistir
+  // Em dryRun: intercepta updates/inserts pra não persistir
   let supaForRun: any = supabase;
   if (dryRun) {
     const log: any[] = [];
@@ -77,11 +78,39 @@ Deno.serve(async (req) => {
     (supaForRun as any).__dryRunLog = log;
   }
 
+  // Em dryRun sem customerId: monta lead/consultor sintéticos
+  let syntheticCustomer: any = undefined;
+  let syntheticConsultant: any = undefined;
+  let effectiveCustomerId = customerId;
+
+  if (dryRun && !customerId && consultantId) {
+    const { data: cons, error: consErr } = await supabase
+      .from("consultants")
+      .select("id, name, ai_persona_fluxo_b, ai_persona_fluxo_b_temperature, ai_persona_fluxo_b_cascade_enabled")
+      .eq("id", consultantId)
+      .maybeSingle();
+    if (consErr || !cons) return json({ error: `consultor não encontrado: ${consErr?.message || consultantId}` }, 400);
+    syntheticConsultant = cons;
+    effectiveCustomerId = "00000000-0000-0000-0000-000000000000";
+    syntheticCustomer = {
+      id: effectiveCustomerId,
+      consultant_id: cons.id,
+      name: null,
+      electricity_bill_value: null,
+      conversation_step: null,
+      conversation_summary: null,
+      bot_paused: false,
+      flow_variant: "B",
+    };
+  }
+
   try {
     const result = await runFluxoBAI({
       supabase: supaForRun,
-      customerId,
+      customerId: effectiveCustomerId,
       inboundText,
+      customer: syntheticCustomer,
+      consultant: syntheticConsultant,
     });
     const dryRunLog = dryRun ? (supaForRun as any).__dryRunLog : undefined;
     return json({ ok: true, ...result, dryRun, dryRunLog });
