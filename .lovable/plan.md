@@ -1,38 +1,25 @@
-# Permitir que o score chegue a ≥70 e desbloquear publicação
+# Score de qualidade quando o anúncio é vídeo
 
 ## Diagnóstico
-Dois problemas, não um:
-
-**1. Score "trava" mesmo depois de aplicar a sugestão da IA.**
-Em `src/lib/adQualityScore.ts`:
-- O score final é `copy*0.6 + image*0.4`.
-- O score de imagem tem 4 checks. Dois deles são quase impossíveis de passar com foto real:
-  - `textRatio < 0.18` (densidade de bordas via Sobel) — qualquer foto de placa/painel/conta de luz com detalhes finos cai como "muito texto".
-  - `contrast >= 35` — fotos em hora dourada/sombra falham.
-- Resultado: imagem fica em 50/100 e puxa o total pra ~65 mesmo com copy 100/100. Por isso o usuário "ajustou tudo" e continuou abaixo de 70.
-
-**2. Mesmo quando o score sobe, o gate é binário e arbitrário.**
-`CreateCampaignWizard.tsx:480` bloqueia avançar com `score < 70`. Não há override. O que **de fato** rejeita anúncio na Meta são os termos proibidos (`severity: "block"`).
+No modo vídeo, o `AdQualityPanel` recebe `primaryImage={null}` (porque `filesByFormat` só é populado pra foto). Em `adQualityScore.ts`, quando `primaryImage` é nulo, o componente passa um placeholder `{ score: 0, checks: [{ ok: false, label: "Nenhuma foto enviada" }] }` pro `image`, e o agregado vira `copy*0.6 + 0*0.4` — mesmo copy 100/100 fica em 60 e dispara o diálogo de "abaixo do ideal" sem motivo.
 
 ## Mudanças
 
-### 1. `src/lib/adQualityScore.ts` — calibrar score de imagem
-- `textRatio`: limite de 0.18 → **0.28** (fotos reais com detalhe passam; só bloqueia thumb cheia de texto).
-- `contrast`: limite de 35 → **25**.
-- Adicionar bônus de +10 quando dimensão está acima do mínimo em 1.5× (premia foto grande).
-- `canPublish`: passar a depender **só** de `blocks === 0` (sem piso de 70). Manter `score` e `level` pra UI.
-- Adicionar campo novo `recommendedPublish = score >= 70` pra UI continuar sinalizando "ideal".
+### 1. `src/lib/adQualityScore.ts`
+- Adicionar função `scoreVideo({ width, height, duration })` com checks:
+  - dimensão vertical (≥1080×1920 ideal, ≥720×1280 mínimo)
+  - aspect ratio 9:16 (±5%)
+  - duração 6-60s (sweet spot Reels/Stories)
+- Retorna mesma forma de `{ score, checks }` que `scoreImage`.
 
-### 2. `src/components/admin/ads/CreateCampaignWizard.tsx` (≈ 478-488)
-Trocar o bloqueio duro por confirmação:
-- Se houver `block` de política → mantém toast vermelho e trava (anúncio seria rejeitado pela Meta).
-- Se `score < 70` sem block → abrir `AlertDialog`: "Score X/100 abaixo do ideal de 70 — pode aumentar o CPL. Publicar mesmo assim?" com botões **Voltar a ajustar** / **Publicar mesmo assim**. Confirmar avança pro step 4.
-- Se `score >= 70` → avança direto.
+### 2. `src/components/admin/ads/AdQualityPanel.tsx`
+- Novo prop opcional `primaryVideo?: { w: number; h: number; duration: number }`.
+- Se `primaryVideo` presente, usar `scoreVideo` no lugar de `scoreImage` e renderizar a seção com o título **"Vídeo"** em vez de "Imagem". Mantém o resto (copy + agregado) idêntico.
 
-### 3. `src/components/admin/ads/AdQualityPanel.tsx`
-- Ajustar `summary` amarelo: "Funciona, mas dá pra melhorar — dá pra publicar assim".
-- Mostrar dica curta quando `image.score < 70` apontando que foto real com bastante detalhe pode ser sinalizada como "muito texto" (false positive comum).
+### 3. `src/components/admin/ads/CreateCampaignWizard.tsx` (≈ linha 1314)
+- Passar `primaryVideo={creativeMode === "video" && videoMeta ? { w: videoMeta.w, h: videoMeta.h, duration: videoMeta.duration } : undefined}`.
+- Quando vídeo, não passa `primaryImage`.
 
 ## Fora de escopo
-- Não mexo no gerador de copy da IA, templates, edge functions, banco, ou fluxo do bot.
-- Não removo o painel de qualidade — só recalibro limites e tiro o gate duro.
+- Não mexo no upload/validação de vídeo na edge function.
+- Não mexo no gerador de copy nem nas regras de política.

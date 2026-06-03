@@ -1,33 +1,37 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Check, AlertTriangle, X, Sparkles } from "lucide-react";
-import { aggregate, scoreCopy, scoreImage, type QualityResult } from "@/lib/adQualityScore";
+import { aggregate, scoreCopy, scoreImage, scoreVideo, type QualityResult } from "@/lib/adQualityScore";
 
 interface Props {
   headline: string; primary: string; description: string;
   cityCount: number; distribuidora?: string | null;
   primaryImage?: { url: string; w: number; h: number; format: "square" | "vertical" | "story" } | null;
+  primaryVideo?: { w: number; h: number; duration: number } | null;
   onChange?: (r: QualityResult) => void;
 }
 
-export function AdQualityPanel({ headline, primary, description, cityCount, distribuidora, primaryImage, onChange }: Props) {
+export function AdQualityPanel({ headline, primary, description, cityCount, distribuidora, primaryImage, primaryVideo, onChange }: Props) {
   const [result, setResult] = useState<QualityResult | null>(null);
+  const isVideo = !!primaryVideo;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const copy = scoreCopy({ headline, primary, description, cityCount, distribuidora });
-      const image = primaryImage
-        ? await scoreImage({ width: primaryImage.w, height: primaryImage.h, dataUrl: primaryImage.url, format: primaryImage.format })
-        : { score: 0, checks: [{ ok: false, label: "Nenhuma foto enviada" }] };
+      const media = primaryVideo
+        ? scoreVideo({ width: primaryVideo.w, height: primaryVideo.h, duration: primaryVideo.duration })
+        : primaryImage
+          ? await scoreImage({ width: primaryImage.w, height: primaryImage.h, dataUrl: primaryImage.url, format: primaryImage.format })
+          : { score: 0, checks: [{ ok: false, label: "Nenhuma mídia enviada" }] };
       if (cancelled) return;
-      const r = aggregate(copy, image);
+      const r = aggregate(copy, media);
       setResult(r);
       onChange?.(r);
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [headline, primary, description, cityCount, distribuidora, primaryImage?.url]);
+  }, [headline, primary, description, cityCount, distribuidora, primaryImage?.url, primaryVideo?.w, primaryVideo?.h, primaryVideo?.duration]);
 
   if (!result) return null;
   const colorBg = result.level === "green" ? "bg-emerald-500/10 border-emerald-500/30" : result.level === "yellow" ? "bg-amber-500/10 border-amber-500/30" : "bg-destructive/10 border-destructive/30";
@@ -45,8 +49,8 @@ export function AdQualityPanel({ headline, primary, description, cityCount, dist
 
       <div className="space-y-2 pt-1">
         <Section title="Copy" score={result.copy.score} checks={result.copy.checks} />
-        <Section title="Imagem" score={result.image.score} checks={result.image.checks} />
-        {result.image.score < 70 && (
+        <Section title={isVideo ? "Vídeo" : "Imagem"} score={result.image.score} checks={result.image.checks} />
+        {!isVideo && result.image.score < 70 && (
           <div className="text-[10px] text-muted-foreground italic pl-1">
             Dica: fotos reais com bastante detalhe podem ser sinalizadas como "muito texto". Você ainda pode publicar.
           </div>

@@ -1324,11 +1324,12 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                     description={description}
                     cityCount={cities.length}
                     distribuidora={distribuidoraPrimary}
-                    primaryImage={(() => {
+                    primaryImage={creativeMode === "video" ? null : (() => {
                       const f = filesByFormat.vertical[0] || filesByFormat.square[0] || filesByFormat.story[0];
                       const fmt: AdFormat = filesByFormat.vertical[0] ? "vertical" : filesByFormat.square[0] ? "square" : "story";
                       return f ? { url: f.url, w: f.w, h: f.h, format: fmt } : null;
                     })()}
+                    primaryVideo={creativeMode === "video" && videoMeta ? { w: videoMeta.w, h: videoMeta.h, duration: videoMeta.duration } : null}
                     onChange={setQuality}
                   />
                 </div>
