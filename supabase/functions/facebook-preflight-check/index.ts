@@ -4,6 +4,13 @@ import { authConsultant, corsHeaders, FB_GRAPH, fbFetch, loadCampaignConnection 
 
 interface PreflightBody {
   cities?: { key: string; name: string }[];
+  custom_locations?: {
+    latitude: number;
+    longitude: number;
+    radius: number; // km
+    address_string?: string;
+    name?: string;
+  }[];
   daily_budget_cents?: number;
   age_min?: number;
   age_max?: number;
