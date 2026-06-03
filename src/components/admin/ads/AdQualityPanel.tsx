@@ -49,8 +49,8 @@ export function AdQualityPanel({ headline, primary, description, cityCount, dist
 
       <div className="space-y-2 pt-1">
         <Section title="Copy" score={result.copy.score} checks={result.copy.checks} />
-        <Section title="Imagem" score={result.image.score} checks={result.image.checks} />
-        {result.image.score < 70 && (
+        <Section title={isVideo ? "Vídeo" : "Imagem"} score={result.image.score} checks={result.image.checks} />
+        {!isVideo && result.image.score < 70 && (
           <div className="text-[10px] text-muted-foreground italic pl-1">
             Dica: fotos reais com bastante detalhe podem ser sinalizadas como "muito texto". Você ainda pode publicar.
           </div>
