@@ -32,6 +32,19 @@ function isValidPhone(phone: string): boolean {
   return phone.replace(/\D/g, "").length >= 10;
 }
 
+/** Extract DDD (2-digit area code) from a Brazilian phone */
+function getDdd(phone: string): string | null {
+  if (!phone) return null;
+  const d = phone.replace(/\D/g, "");
+  if (d.length === 12 || d.length === 13) {
+    if (d.startsWith("55")) return d.slice(2, 4);
+  }
+  if (d.length === 10 || d.length === 11) return d.slice(0, 2);
+  return null;
+}
+
+const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+
 function formatPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   if (/^55\d{10,11}$/.test(digits)) {
