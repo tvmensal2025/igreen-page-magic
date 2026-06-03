@@ -14,6 +14,29 @@ export interface Check { ok: boolean; label: string; detail?: string }
 
 export interface CopyInput { headline: string; primary: string; description: string; cityCount: number; distribuidora?: string | null }
 export interface ImageInput { width: number; height: number; dataUrl?: string; format: "square" | "vertical" | "story" }
+export interface VideoInput { width: number; height: number; duration: number }
+
+/** Score de vídeo: dimensão vertical, aspect 9:16, duração no sweet spot. */
+export function scoreVideo(input: VideoInput): QualityResult["image"] {
+  const checks: Check[] = [];
+  const idealW = 1080, idealH = 1920, minW = 720, minH = 1280;
+  const dimOk = input.width >= minW && input.height >= minH;
+  const hi = input.width >= idealW && input.height >= idealH;
+  checks.push({ ok: dimOk, label: `Dimensão ${input.width}×${input.height}${hi ? " (alta)" : ""}`, detail: `mínimo ${minW}×${minH}, ideal ${idealW}×${idealH}` });
+
+  const ratio = input.width / Math.max(1, input.height);
+  const target = 9 / 16;
+  const ratioOk = Math.abs(ratio - target) / target <= 0.05;
+  checks.push({ ok: ratioOk, label: "Vertical 9:16", detail: ratioOk ? "formato Reels/Stories" : "fora de 9:16 — pode ser cortado" });
+
+  const dOk = input.duration >= 6 && input.duration <= 60;
+  checks.push({ ok: dOk, label: `Duração ${input.duration.toFixed(1)}s`, detail: input.duration < 6 ? "curto demais (mín 6s)" : input.duration > 60 ? "longo demais (máx 60s)" : "sweet spot Reels" });
+
+  const passed = checks.filter(c => c.ok).length;
+  let score = Math.round((passed / checks.length) * 100);
+  if (hi) score = Math.min(100, score + 10);
+  return { score, checks };
+}
 
 /** Score de copy: políticas + estrutura (CTA, gancho, números, comprimento ideal). */
 export function scoreCopy(input: CopyInput): QualityResult["copy"] {
