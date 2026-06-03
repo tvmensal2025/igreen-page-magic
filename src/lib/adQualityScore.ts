@@ -6,7 +6,8 @@ export interface QualityResult {
   level: "red" | "yellow" | "green";
   copy: { score: number; hits: PolicyHit[]; checks: Check[] };
   image: { score: number; checks: Check[] };
-  canPublish: boolean;
+  canPublish: boolean;        // só bloqueia em violação de política da Meta
+  recommendedPublish: boolean; // score >= 70 — sinaliza "ideal" pra UI
   summary: string;
 }
 export interface Check { ok: boolean; label: string; detail?: string }
@@ -50,7 +51,9 @@ export async function scoreImage(input: ImageInput): Promise<QualityResult["imag
   const checks: Check[] = [];
   // 1. Dimensão correta
   const expected = input.format === "square" ? { w: 1080, h: 1080 } : input.format === "vertical" ? { w: 1080, h: 1350 } : { w: 1080, h: 1920 };
-  checks.push({ ok: input.width >= expected.w && input.height >= expected.h, label: `Dimensão ${input.width}×${input.height}`, detail: `mínimo ${expected.w}×${expected.h}` });
+  const dimOk = input.width >= expected.w && input.height >= expected.h;
+  const dimBonus = input.width >= expected.w * 1.5 && input.height >= expected.h * 1.5;
+  checks.push({ ok: dimOk, label: `Dimensão ${input.width}×${input.height}${dimBonus ? " (alta resolução)" : ""}`, detail: `mínimo ${expected.w}×${expected.h}` });
 
   let textRatio = 0;
   let avgBrightness = 128;
@@ -89,11 +92,12 @@ export async function scoreImage(input: ImageInput): Promise<QualityResult["imag
   }
 
   checks.push({ ok: avgBrightness >= 60 && avgBrightness <= 200, label: "Brilho equilibrado", detail: avgBrightness < 60 ? "muito escura" : avgBrightness > 200 ? "muito clara/estourada" : "boa exposição" });
-  checks.push({ ok: contrast >= 35, label: "Contraste suficiente", detail: contrast < 35 ? "imagem chapada — pouco impacto visual" : "boa profundidade" });
-  checks.push({ ok: textRatio < 0.18, label: "Pouco texto na imagem", detail: textRatio >= 0.18 ? `~${Math.round(textRatio * 100)}% de bordas (texto > 20% reduz alcance)` : "Meta favorece imagens com pouco texto" });
+  checks.push({ ok: contrast >= 25, label: "Contraste suficiente", detail: contrast < 25 ? "imagem chapada — pouco impacto visual" : "boa profundidade" });
+  checks.push({ ok: textRatio < 0.28, label: "Pouco texto na imagem", detail: textRatio >= 0.28 ? `~${Math.round(textRatio * 100)}% de bordas (texto > 28% reduz alcance)` : "Meta favorece imagens com pouco texto" });
 
   const passed = checks.filter(c => c.ok).length;
-  const score = Math.round((passed / checks.length) * 100);
+  let score = Math.round((passed / checks.length) * 100);
+  if (dimBonus) score = Math.min(100, score + 10);
   return { score, checks };
 }
 
@@ -108,8 +112,14 @@ export function aggregate(copy: QualityResult["copy"], image: QualityResult["ima
   const score = Math.round(copy.score * 0.6 + image.score * 0.4);
   const level: QualityResult["level"] = score >= 80 ? "green" : score >= 60 ? "yellow" : "red";
   const blocks = copy.hits.filter(h => h.severity === "block").length;
-  // Threshold 70: scores menores costumam ter CPL alto e/ou risco de rejeição.
-  const canPublish = blocks === 0 && score >= 70;
-  const summary = level === "green" ? "Pronto pra performar" : level === "yellow" ? "Funciona, mas dá pra melhorar" : "Risco de rejeição ou CPL alto";
-  return { score, level, copy, image, canPublish, summary };
+  // canPublish bloqueia apenas em violação de política da Meta (que seria rejeitada).
+  // Score baixo vira aviso — o usuário pode confirmar e publicar mesmo assim.
+  const canPublish = blocks === 0;
+  const recommendedPublish = canPublish && score >= 70;
+  const summary = level === "green"
+    ? "Pronto pra performar"
+    : level === "yellow"
+      ? "Funciona, mas dá pra melhorar — dá pra publicar assim"
+      : blocks > 0 ? "Risco de rejeição pela Meta" : "CPL pode ficar alto — dá pra publicar assim";
+  return { score, level, copy, image, canPublish, recommendedPublish, summary };
 }

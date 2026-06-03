@@ -1,73 +1,38 @@
-# Fluxo D — copy nova, botão "dúvida" pro vídeo, e skip do botão Finalizar
+# Permitir que o score chegue a ≥70 e desbloquear publicação
 
-## 1) Banco — atualizar passos do Fluxo D (`320bf22c-...`) via UPDATE
+## Diagnóstico
+Dois problemas, não um:
 
-### `d_welcome`
-**Nova copy:**
-> Oi, {{nome}}! 👋
-> 
-> Vi que você se interessou em *reduzir a conta de luz em até 20%* — sem obra, sem instalação, na mesma distribuidora. 💚
-> 
-> Em 2 minutos eu te mostro *quanto você economiza por mês*. Posso começar? 👇
+**1. Score "trava" mesmo depois de aplicar a sugestão da IA.**
+Em `src/lib/adQualityScore.ts`:
+- O score final é `copy*0.6 + image*0.4`.
+- O score de imagem tem 4 checks. Dois deles são quase impossíveis de passar com foto real:
+  - `textRatio < 0.18` (densidade de bordas via Sobel) — qualquer foto de placa/painel/conta de luz com detalhes finos cai como "muito texto".
+  - `contrast >= 35` — fotos em hora dourada/sombra falham.
+- Resultado: imagem fica em 50/100 e puxa o total pra ~65 mesmo com copy 100/100. Por isso o usuário "ajustou tudo" e continuou abaixo de 70.
 
-**Botões (mesmos IDs, destinos inalterados):**
-- `quero_simular` → `d_escolher_simulacao`
-- `como` (🎥 Como funciona) → `d_como_funciona`
-- `humano` → handoff
+**2. Mesmo quando o score sobe, o gate é binário e arbitrário.**
+`CreateCampaignWizard.tsx:480` bloqueia avançar com `score < 70`. Não há override. O que **de fato** rejeita anúncio na Meta são os termos proibidos (`severity: "block"`).
 
-### `d_resultado` — "Tenho dúvidas" vai pro vídeo
-- `cadastrar` (✅ Quero me cadastrar) → `d_pedir_documento` (igual)
-- `duvida` (🎥 Como funciona) → **`d_como_funciona`** (mudou — antes ia pra `d_duvidas`)
-- `humano` (👨‍💼 Falar com Rafael) → handoff (igual)
-Trigger_phrases ajustadas pra refletir o novo destino.
+## Mudanças
 
-### `d_simular_resultado` — consertar swap + alinhar com `d_resultado`
-- `cadastrar` (✅ Quero me cadastrar) → `d_pedir_documento`
-- `duvida` (🎥 Como funciona) → `d_como_funciona`
-- `humano` (👨‍💼 Falar com Rafael) → handoff
+### 1. `src/lib/adQualityScore.ts` — calibrar score de imagem
+- `textRatio`: limite de 0.18 → **0.28** (fotos reais com detalhe passam; só bloqueia thumb cheia de texto).
+- `contrast`: limite de 35 → **25**.
+- Adicionar bônus de +10 quando dimensão está acima do mínimo em 1.5× (premia foto grande).
+- `canPublish`: passar a depender **só** de `blocks === 0` (sem piso de 70). Manter `score` e `level` pra UI.
+- Adicionar campo novo `recommendedPublish = score >= 70` pra UI continuar sinalizando "ideal".
 
-### `d_duvidas` — vira fallback de texto livre (sem botão)
-- **Remove** a captura `_buttons`.
-- **Mantém** `duvida_livre` com `ai_answer:true` (AI responde texto livre).
-- Mantém as 3 transições por palavra-chave (`cadastrar` / `simular` / `humano`).
-- Copy ajustada:
-  > {{nome}}, manda sua *pergunta* aqui que eu te respondo na hora 💬
-  > 
-  > _(ou digite *cadastrar* pra continuar, ou *humano* pra falar com o Rafael)_
+### 2. `src/components/admin/ads/CreateCampaignWizard.tsx` (≈ 478-488)
+Trocar o bloqueio duro por confirmação:
+- Se houver `block` de política → mantém toast vermelho e trava (anúncio seria rejeitado pela Meta).
+- Se `score < 70` sem block → abrir `AlertDialog`: "Score X/100 abaixo do ideal de 70 — pode aumentar o CPL. Publicar mesmo assim?" com botões **Voltar a ajustar** / **Publicar mesmo assim**. Confirmar avança pro step 4.
+- Se `score >= 70` → avança direto.
 
-## 2) Código — pular o botão "✅ Finalizar"
-
-Arquivo: `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
-
-Hoje, após `confirm_phone → Sim`, o lead cai em `ask_finalizar` e recebe um botão que quase ninguém clica. Já existe atalho em `ask_complement` (linha 4506) que pula direto pra `finalizando`.
-
-**Mudança:** extrair helper local
-```ts
-function applyNextOrFinalize(next, merged, updates) {
-  if (next === "ask_finalizar") {
-    updates.conversation_step = "finalizando";
-    return "✅ Tudo certo! Processando seu cadastro...";
-  }
-  updates.conversation_step = next;
-  return getReplyForStep(next, merged);
-}
-```
-e aplicar nos cases que hoje assinam `conversation_step` direto do retorno de `autoResolveCepIfNeeded`:
-- `ask_phone_confirm` (≈4310)
-- `ask_phone` (final do case, após validar telefone)
-- `ask_email` (final do case)
-- `ask_distribuidora` (≈4522)
-- `ask_installation_number` e similares que também resolvem CEP
-
-O `case "ask_finalizar"` existente fica como **fallback** pra leads antigos já parados nesse step.
-
-## 3) Validação
-- Reler `bot_flow_steps` do flow D após o UPDATE pra confirmar copy/botões/destinos.
-- Conferir que nenhum `case` ainda assina `ask_finalizar` sem o helper.
-- Garantir que `d_duvidas` continua respondendo texto livre via AI.
+### 3. `src/components/admin/ads/AdQualityPanel.tsx`
+- Ajustar `summary` amarelo: "Funciona, mas dá pra melhorar — dá pra publicar assim".
+- Mostrar dica curta quando `image.score < 70` apontando que foto real com bastante detalhe pode ser sinalizada como "muito texto" (false positive comum).
 
 ## Fora de escopo
-- Não mexo nos IDs dos botões (`cadastrar`/`duvida`/`humano`) — só títulos e destinos.
-- Não mexo nos slots de mídia (`como_funciona`, `fazenda_solar`, `prova_social`).
-- Não mexo nos demais steps de captura/OCR nem nos flows A/B/C.
-- Não removo o step `d_finalizar` do banco.
+- Não mexo no gerador de copy da IA, templates, edge functions, banco, ou fluxo do bot.
+- Não removo o painel de qualidade — só recalibro limites e tiro o gate duro.

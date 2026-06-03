@@ -7,6 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, uploadAdVideo, validateAccount, type PreflightResult, type CustomLocation } from "@/services/facebookAds";
 import { Check, ChevronRight, Loader2, MapPin, Search, Sparkles, TrendingUp, Upload, X, ImageIcon, Smartphone, Wand2, Save, Target, DollarSign, Video, Zap } from "lucide-react";
@@ -197,6 +198,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
   // Quality + preflight
   const [quality, setQuality] = useState<QualityResult | null>(null);
+  const [lowScoreConfirm, setLowScoreConfirm] = useState(false);
   const [preflight, setPreflight] = useState<PreflightResult | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
 
@@ -478,7 +480,12 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     } else if (step === 3) {
       if (!headline || !primaryText) return toast({ title: "Preencha título e texto", variant: "destructive" });
       if (quality && !quality.canPublish) {
-        return toast({ title: `Score ${quality.score}/100 — mínimo 70`, description: "Resolva os itens em vermelho do painel de qualidade antes de avançar.", variant: "destructive" });
+        const blockHit = quality.copy.hits.find((h) => h.severity === "block");
+        return toast({ title: "Termo proibido pela Meta", description: blockHit?.message || "Remova os itens em vermelho antes de avançar.", variant: "destructive" });
+      }
+      if (quality && !quality.recommendedPublish) {
+        setLowScoreConfirm(true);
+        return;
       }
       setStep(4);
       runPreflight();
@@ -1523,6 +1530,22 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
         isSuperAdmin={isSuperAdmin}
         onConfirm={(meta) => handleSaveAsTemplate(meta)}
       />
+      <AlertDialog open={lowScoreConfirm} onOpenChange={setLowScoreConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Score {quality?.score ?? 0}/100 — abaixo do ideal</AlertDialogTitle>
+            <AlertDialogDescription>
+              Anúncios com score abaixo de 70 tendem a ter CPL mais alto e menos alcance. Você pode voltar e ajustar copy/foto, ou publicar mesmo assim.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar a ajustar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setLowScoreConfirm(false); setStep(4); runPreflight(); }}>
+              Publicar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
