@@ -62,8 +62,12 @@ function inWindow(cfg: SendConfig, now = new Date()): boolean {
   }
   const [sH, sM] = cfg.windowStart.split(":").map(Number);
   const [eH, eM] = cfg.windowEnd.split(":").map(Number);
+  const start = sH * 60 + sM;
+  const end = eH * 60 + eM;
   const cur = now.getHours() * 60 + now.getMinutes();
-  return cur >= sH * 60 + sM && cur <= eH * 60 + eM;
+  // Overnight window (e.g. 22:00 → 06:00)
+  if (end < start) return cur >= start || cur <= end;
+  return cur >= start && cur <= end;
 }
 
 function downloadCsv(rows: CampaignTarget[]) {
