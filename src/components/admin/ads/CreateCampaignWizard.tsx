@@ -197,6 +197,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
   // Quality + preflight
   const [quality, setQuality] = useState<QualityResult | null>(null);
+  const [lowScoreConfirm, setLowScoreConfirm] = useState(false);
   const [preflight, setPreflight] = useState<PreflightResult | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
 
