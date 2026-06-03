@@ -27,6 +27,8 @@ export default function FluxoBEditor({ consultantId }: Props) {
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // Estado sintético do "lead simulado" — acumula updates entre turnos no tester
+  const [simState, setSimState] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (!consultantId) return;
@@ -68,14 +70,19 @@ export default function FluxoBEditor({ consultantId }: Props) {
     if (!input.trim() || !consultantId) return;
     setSending(true);
     const userMsg: ChatMsg = { role: "user", text: input };
-    setChat(prev => [...prev, userMsg]);
+    const newChat = [...chat, userMsg];
+    setChat(newChat);
     setInput("");
     try {
+      const history = newChat.slice(0, -1).map(m => ({ role: m.role, content: m.text }));
       const { data, error } = await supabase.functions.invoke("fluxo-b-ai", {
-        body: { consultantId, inboundText: userMsg.text, dryRun: true },
+        body: { consultantId, inboundText: userMsg.text, dryRun: true, customerState: simState, history },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      if (data?.customerUpdates && typeof data.customerUpdates === "object") {
+        setSimState(prev => ({ ...prev, ...data.customerUpdates }));
+      }
       setChat(prev => [...prev, { role: "assistant", text: data.reply, meta: { model: data.modelUsed, tools: data.toolsApplied, step: data.conversationStepUpdate, latency: data.latencyMs } }]);
     } catch (e) {
       setChat(prev => [...prev, { role: "assistant", text: `❌ erro: ${(e as Error).message}` }]);
@@ -164,7 +171,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
               <Send className="w-4 h-4" />
             </Button>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setChat([])} disabled={chat.length === 0}>Limpar chat</Button>
+          <Button variant="ghost" size="sm" onClick={() => { setChat([]); setSimState({}); }} disabled={chat.length === 0}>Limpar chat</Button>
         </CardContent>
       </Card>
     </div>

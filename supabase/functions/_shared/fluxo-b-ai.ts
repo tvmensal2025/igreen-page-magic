@@ -36,6 +36,7 @@ export interface FluxoBRunResult {
   shouldHandoff: boolean;                     // bot_paused = true?
   modelUsed: string;
   latencyMs: number;
+  customerUpdates: Record<string, any>;       // campos persistidos no customer (útil pro tester dryRun)
 }
 
 const FLASH_MODEL = "google/gemini-3-flash-preview";
@@ -270,6 +271,7 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     shouldHandoff,
     modelUsed: chosen.modelUsed,
     latencyMs: Date.now() - t0,
+    customerUpdates: updates,
   };
 }
 
