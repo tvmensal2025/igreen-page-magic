@@ -55,6 +55,7 @@ function getButtons(s: Step) {
 }
 
 for (const s of steps) {
+  if (!s.is_active) continue; // passos inativos não afetam runtime
   // (a) fallback ai_answer exige _buttons
   if (s.fallback?.mode === "ai_answer") {
     const btns = getButtons(s);
