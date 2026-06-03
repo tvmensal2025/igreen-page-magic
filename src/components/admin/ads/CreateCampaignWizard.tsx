@@ -1331,10 +1331,37 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
             {step === 4 && (
               <div className="space-y-5">
                 <CtwaPreflightCard consultantId={consultantId} onReadyChange={setCtwaReady} />
+
+                {/* Modo Econômico × Padrão × Personalizado — presets de orçamento */}
+                <div>
+                  <Label className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Preset de orçamento</Label>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {[
+                      { id: "eco", label: "Modo Econômico", budget: 15, days: 3, hint: "R$ 45 total · testa rápido" },
+                      { id: "std", label: "Padrão", budget: 25, days: 7, hint: "R$ 175 total · recomendado" },
+                      { id: "custom", label: "Personalizado", budget, days: duration, hint: "ajuste manual" },
+                    ].map((p) => {
+                      const active = (p.id === "eco" && budget === 15 && duration === 3)
+                        || (p.id === "std" && budget === 25 && duration === 7)
+                        || (p.id === "custom" && !(budget === 15 && duration === 3) && !(budget === 25 && duration === 7));
+                      return (
+                        <button key={p.id} type="button"
+                          onClick={() => { if (p.id === "eco") { setBudget(15); setDuration(3); } else if (p.id === "std") { setBudget(25); setDuration(7); } }}
+                          className={`p-2.5 rounded-lg border text-left transition ${active ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                          <div className="font-semibold text-xs flex items-center gap-1">
+                            {active && <Check className="w-3 h-3 text-primary" />} {p.label}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">{p.hint}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div>
                   <Label>Orçamento diário: <span className="text-primary font-bold">R$ {budget}</span></Label>
-                  <Slider min={20} max={500} step={5} value={[budget]} onValueChange={v => setBudget(v[0])} />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1"><span>R$ 20</span><span>R$ 500</span></div>
+                  <Slider min={10} max={500} step={5} value={[budget]} onValueChange={v => setBudget(v[0])} />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1"><span>R$ 10</span><span>R$ 500</span></div>
                 </div>
 
                 <div>
@@ -1343,9 +1370,20 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                 </div>
                 <Card className="p-4 bg-primary/5 border-primary/20 space-y-2 text-sm">
                   <div className="font-bold flex items-center gap-2"><Check className="w-4 h-4 text-primary" /> Resumo</div>
-                  <div className="text-muted-foreground">📍 {cities.length} cidade(s) — {cities.slice(0, 3).map(c => c.name).join(", ")}{cities.length > 3 ? "..." : ""}</div>
-                  <div className="text-muted-foreground">🖼️ {totalFiles} foto(s) — {filesByFormat.square.length} quadrada(s), {filesByFormat.vertical.length} vertical(is), {filesByFormat.story.length} story</div>
+                  {geoMode === "radius" ? (
+                    <div className="text-muted-foreground">📍 {radiusPoints.length} endereço(s) — raio {radiusPoints[0]?.radius || 0} km</div>
+                  ) : (
+                    <div className="text-muted-foreground">📍 {cities.length} cidade(s) — {cities.slice(0, 3).map(c => c.name).join(", ")}{cities.length > 3 ? "..." : ""}</div>
+                  )}
+                  {creativeMode === "video" ? (
+                    <div className="text-muted-foreground">🎬 1 vídeo Reels {videoMeta ? `(${videoMeta.duration.toFixed(1)}s)` : ""}</div>
+                  ) : (
+                    <div className="text-muted-foreground">🖼️ {totalFiles} foto(s) — {filesByFormat.square.length} quadrada(s), {filesByFormat.vertical.length} vertical(is), {filesByFormat.story.length} story</div>
+                  )}
                   <div className="text-muted-foreground">💰 R$ {budget}/dia × {duration === 0 ? "contínuo" : `${duration} dias`} = <strong className="text-foreground">R$ {duration === 0 ? `${budget * 30}/mês est.` : (budget * duration)}</strong></div>
+                  <div className="text-[11px] text-muted-foreground border-t border-border/30 pt-1.5">
+                    Estimativa honesta: a R$ {budget}/dia, espere ~{Math.max(1, Math.round(budget / 6))}–{Math.round(budget / 3)} conversas no WhatsApp/dia, das quais ~20–35% viram lead qualificado.
+                  </div>
                   <div className={`rounded-md p-2 mt-1 ${consultantPhone ? "bg-primary/10 border border-primary/30" : "bg-destructive/10 border border-destructive/40"}`}>
                     <div className={consultantPhone ? "text-foreground" : "text-destructive font-semibold"}>
                       🎯 Click-to-WhatsApp <strong>nativo</strong> (sem link wa.me)
