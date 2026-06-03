@@ -698,7 +698,7 @@ export default function FluxoBuilder() {
         >
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium text-muted-foreground">
-              Editando variante <span className="font-semibold text-foreground">{editingVariant}</span> — {VARIANT_LABEL[editingVariant].replace(/^[A-E]\s*/, "")} · {steps.length} {steps.length === 1 ? "passo" : "passos"}
+              Editando <span className="font-semibold text-foreground">Fluxo {editingVariant}</span> — {VARIANT_LABEL[editingVariant].replace(/^Fluxo\s+[A-E]\s*/, "")} · {steps.length} {steps.length === 1 ? "passo" : "passos"}
             </h2>
           </div>
 
