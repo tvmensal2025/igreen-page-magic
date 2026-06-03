@@ -83,7 +83,7 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     }))
     .filter((m) => m.content && String(m.content).trim().length > 0);
 
-  // 3) Monta system prompt
+  // 3) Monta system prompt + bloco de dados estruturados já conhecidos.
   const ctx: FluxoBContext = {
     representante: consultant.name || "Rafael",
     nomeCliente: customer.name || null,
@@ -91,7 +91,19 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     conversationSummary: customer.conversation_summary || null,
     customerId,
   };
-  const systemPrompt = buildFluxoBSystemPrompt(consultant.ai_persona_fluxo_b, ctx);
+  const baseSystemPrompt = buildFluxoBSystemPrompt(consultant.ai_persona_fluxo_b, ctx);
+
+  const knownFacts: string[] = [];
+  if (customer.address_city) knownFacts.push(`Cidade: ${customer.address_city}`);
+  if (customer.address_state) knownFacts.push(`Estado: ${customer.address_state}`);
+  if (customer.distribuidora) knownFacts.push(`Distribuidora: ${customer.distribuidora}`);
+  if (customer.sales_phase) knownFacts.push(`Fase de venda: ${customer.sales_phase}`);
+  if (customer.conversation_step) knownFacts.push(`Passo atual: ${customer.conversation_step}`);
+  const factsBlock = knownFacts.length
+    ? `\n\n# Dados já confirmados deste lead (NÃO pergunte de novo)\n- ${knownFacts.join("\n- ")}`
+    : "";
+
+  const systemPrompt = baseSystemPrompt + factsBlock;
 
   const messages: AIChatMessage[] = [
     { role: "system", content: systemPrompt },
