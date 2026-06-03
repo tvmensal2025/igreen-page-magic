@@ -23,7 +23,7 @@ import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDi
 import CreateFlowFromTemplateDialog from "@/components/admin/flow-builder/CreateFlowFromTemplateDialog";
 import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard";
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
-import FlowAbControl from "@/components/admin/flow-builder/FlowAbControl";
+import FluxoBEditor from "@/components/admin/flow-builder/FluxoBEditor";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
@@ -631,10 +631,6 @@ export default function FluxoBuilder() {
           />
         )}
 
-        {/* Teste A/B: qual fluxo (A ou D) cada lead novo recebe + kill-switch */}
-        <div className="mx-auto w-full max-w-7xl px-4 pb-2">
-          <FlowAbControl />
-        </div>
       </header>
 
       {/*
@@ -648,6 +644,11 @@ export default function FluxoBuilder() {
         `selectedId` e `inspectorId` (R1.6) vivem no `FluxoBuilder` e são
         naturalmente preservados.
       */}
+      {editingVariant === "B" && userId ? (
+        <main className="mx-auto w-full max-w-7xl px-4 py-6">
+          <FluxoBEditor consultantId={userId} />
+        </main>
+      ) : (
       <main className={`mx-auto grid gap-4 px-4 py-6 ${
         viewMode === "planilha" || (viewMode === "diagrama" && panelHidden)
           ? "max-w-none lg:grid-cols-1"
@@ -874,6 +875,7 @@ export default function FluxoBuilder() {
           </aside>
         )}
       </main>
+      )}
 
       {/* Painel lateral de revisão IA */}
       <FlowReviewPanel
