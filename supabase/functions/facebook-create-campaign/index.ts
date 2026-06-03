@@ -166,11 +166,11 @@ Deno.serve(async (req) => {
       const admin = adminDb;
       const { data: ps } = await admin.from("platform_settings").select("*").eq("id", true).maybeSingle();
       const feePct = Number(ps?.platform_fee_percent ?? 20) / 100;
-      // Garante 7 dias de orçamento — Facebook precisa disso pra sair da fase
-      // de aprendizado. Sem isso, CPL nunca estabiliza e a campanha pausa cedo.
-      const minDays = 7;
-      const safety = Math.max(Number(ps?.campaign_safety_multiplier ?? 1.3), minDays);
-      const minBalance = Number(ps?.min_balance_to_create_campaign_cents ?? 5000);
+      // Mínimo de 3 dias (era 7) — permite teste rápido "gastar pouco para validar".
+      // O usuário pode subir o orçamento depois quando o anúncio começar a entregar.
+      const minDays = 3;
+      const safety = Math.max(Number(ps?.campaign_safety_multiplier ?? 1.0), minDays);
+      const minBalance = Number(ps?.min_balance_to_create_campaign_cents ?? 3000);
       const requiredCents = Math.max(minBalance, Math.round(body.daily_budget_cents * (1 + feePct) * safety));
       const { data: w } = await admin.from("consultant_wallet")
         .select("balance_cents").eq("consultant_id", auth.id).maybeSingle();
