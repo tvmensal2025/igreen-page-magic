@@ -373,15 +373,8 @@ export function PartnerQrCode({
     if (!canvas) return;
     const { pdfWmm: wmm, pdfHmm: hmm } = TEMPLATE_DIMS[templateId];
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
-    pdf.setFillColor("#0a3d2c");
-    pdf.rect(0, 0, wmm, hmm, "F");
-    const scale = Math.min(wmm / canvas.width, hmm / canvas.height);
-    const drawW = canvas.width * scale;
-    const drawH = canvas.height * scale;
-    const dx = (wmm - drawW) / 2;
-    const dy = (hmm - drawH) / 2;
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    pdf.addImage(imgData, "JPEG", dx, dy, drawW, drawH);
+    const imgData = canvas.toDataURL("image/png");
+    pdf.addImage(imgData, "PNG", 0, 0, wmm, hmm);
     pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);
   };
 
