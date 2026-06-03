@@ -1,47 +1,92 @@
-# Filtros novos no Envio em Massa
+# Bot WhatsApp respondendo "Boa pergunta, já explico melhor" em vez de responder
 
-Hoje em **Admin → WhatsApp → Envio em Massa**, a aba "Base" (`ContactImporter`) lista todos os clientes da carteira e só permite filtrar por status / devolutiva / licenciada / busca. Para selecionar rapidamente quem realmente conversa no WhatsApp, faltam dois filtros pedidos:
+## Diagnóstico
 
-1. **Últimas 48h no WhatsApp** — só quem mandou mensagem inbound nas últimas 48 horas.
-2. **DDD** — escolher um ou mais DDDs (ex.: 11, 21, 31) para focar em uma região.
+No log do `whapi-webhook` ficou claro o que acontece (lead 5511971254913, passo `ask_email`):
 
-Os dois filtros são combináveis (AND com os filtros já existentes) e a seleção "Selecionar todos" passa a respeitar o resultado filtrado, deixando o envio em massa muito mais direto.
+```
+[midflow-qa] hit=false step="ask_email" → respondAndReentry (IA + reentry)
+[respondAndReentry] reason=midflow_qa_miss source=fallback detour=1 step=ask_email
+✅ [whapi:sendText] → "Boa pergunta! Já explico melhor 💬\n\n📋 Voltando: ASSOCIACAO, me passa seu *e-mail*..."
+```
 
-## O que muda
+`source=fallback` significa que tanto o **FAQ** quanto o **IA** falharam — então o bot caiu no texto fixo "Boa pergunta! Já explico melhor 💬". Investigando:
 
-### 1. `src/components/whatsapp/ContactImporter.tsx`
-- Estender a interface `Customer` interna com `last_inbound_at?: string | null`.
-- Adicionar dois novos estados:
-  - `only48h: boolean` (toggle).
-  - `dddFilter: Set<string>` (multi-select).
-- Helper `getDdd(phone)` que extrai o DDD a partir de `phone_whatsapp` (digits → se começar com `55` e tiver 12/13 dígitos pega `slice(2,4)`, senão pega os 2 primeiros).
-- `dddOptions` calculados via `useMemo` a partir dos `customers` (lista ordenada de DDDs únicos válidos).
-- `filteredCustomers` ganha:
-  - se `only48h` → mantém apenas quem tem `last_inbound_at` e a diferença para `Date.now()` ≤ 48h.
-  - se `dddFilter.size > 0` → mantém apenas quem o DDD do telefone está no set.
-- UI na aba "Base" (logo abaixo dos filtros de status):
-  - Botão chip "📲 Últimas 48h no WhatsApp" (ativa/desativa `only48h`).
-  - `Popover` "DDD" igual ao de "Licenciada", listando `dddOptions` com checkboxes; mostra contagem ativa.
-  - Contador resumido: "X contatos filtrados (Y conversaram nas últimas 48h)".
+1. **`respondAndReentry`** (em `supabase/functions/whapi-webhook/handlers/bot-flow.ts:665` e o gêmeo em `evolution-webhook/handlers/bot-flow.ts:662`) tenta nesta ordem:
+   - `matchQA` (FAQ do fluxo) → sem hit.
+   - `ai-sales-agent` com `mode: "answer_only"` e timeout de **8 s**.
+   - Texto fixo "Boa pergunta! Já explico melhor 💬".
 
-### 2. Carregar `last_inbound_at` para os clientes
-A coluna existe em `public.customer_flow_state.last_inbound_at`. Vamos enriquecer a lista de clientes que já chega em `WhatsAppTab` → `BulkBlockSendPanel` → `ContactImporter` sem alterar a query principal do Admin:
+2. **`ai-sales-agent` não tem nenhum branch para `mode === "answer_only"`.** O código só conhece `reply`, `closer`, `rescue` (linha 499). Quando recebe `answer_only`, segue o pipeline completo de orquestração de vendas com tool calling. O modelo acaba escolhendo uma tool que **não** preenche `decision.args.message`, então `respondAndReentry` lê string vazia em `body?.decision?.args?.message || body?.reply || body?.message` e cai no fallback.
 
-- Em `src/components/whatsapp/BulkBlockSendPanel.tsx`, novo `useEffect` que, quando `customers` mudar, busca em lote `customer_flow_state` (`select customer_id,last_inbound_at`) com `in("customer_id", ids)` em chunks de 500 e monta um `Map<id, last_inbound_at>`.
-- Construir `enrichedCustomers = customers.map(c => ({ ...c, last_inbound_at: map.get(c.id) ?? null }))` e passar para `<ContactImporter customers={enrichedCustomers} />`.
-- Estender a interface `Customer` no `BulkBlockSendPanel` com o mesmo campo opcional.
+3. Reforçando o problema: o log mostra que a função `ai-sales-agent` **boot** começou em `19:12:26` (cold start de ~3 s) e a chamada do `respondAndReentry` saiu logo antes — com timeout de 8 s não sobra margem para cold start + 1 round-trip ao Gemini, então em muitos casos nem chega a responder.
 
-Sem migração SQL — apenas leitura de uma coluna existente via supabase-js, respeitando RLS já vigente.
+Resultado: o bot soa evasivo ("Boa pergunta, já explico melhor") sem nunca explicar, e ainda incrementa `detour_count` — depois de 5 dessas ele faz handoff para humano sem motivo real.
 
-### 3. Detalhe UX
-- Toggle "Últimas 48h" usa o ícone `MessageSquare` (já importado em outros painéis) para reforçar que o critério é "mandou mensagem no WhatsApp".
-- DDD usa `Phone` / `MapPin`.
-- Limpar filtro pelo "X" no chip; "Selecionar todos" continua aplicando sobre o resultado filtrado (lógica já existe).
-- Nenhuma alteração no fluxo de disparo, dedupe, blocos, circuit breaker ou templates.
+## Correção
+
+### 1. `supabase/functions/ai-sales-agent/index.ts` — implementar `mode: "answer_only"`
+
+Adicionar, logo depois das guardas (`isCustomerPausedByHuman`, `isConsultantAIDisabled`, validação de input) e **antes** de `loadContext`/intent-detection, um branch dedicado:
+
+```text
+if (mode === "answer_only") {
+  → call Lovable AI Gateway diretamente (google/gemini-2.5-flash)
+  → system: "Você é o atendente do consultor iGreen. Responda à dúvida do
+             cliente em PT-BR, 1-2 frases curtas e humanas, sem emoji
+             excessivo. NÃO peça dados, NÃO ofereça produto, NÃO mande
+             saudação. Se a pergunta for fora do escopo iGreen
+             (energia/cashback/club), responda com empatia e brevidade."
+  → user: user_input
+  → 1 chamada, sem tools, sem histórico longo (max últimos 4 turnos)
+  → resposta: { reply: <texto>, mode: "answer_only", latency_ms }
+}
+```
+
+Carregar `LOVABLE_API_KEY` de `Deno.env`. Já é o padrão usado em outras edge functions do projeto.
+
+Vantagens: ~1 s de latência, custo desprezível, resposta sempre preenchida, sem efeitos colaterais (não muda `customers`, não muda `customer_flow_state`, não dispara handoff).
+
+### 2. `respondAndReentry` nos dois webhooks
+
+Arquivos: `supabase/functions/whapi-webhook/handlers/bot-flow.ts` e `supabase/functions/evolution-webhook/handlers/bot-flow.ts`.
+
+- **Aumentar o timeout** do `AbortController` de `8000` → `15000` ms para tolerar cold start do `ai-sales-agent`.
+- **Reler a resposta**: o novo retorno é `{ reply }`. O parser atual já cobre (`body?.reply`), então nenhuma mudança extra.
+- **Fallback mais honesto**: quando `answer` continuar vazio depois de FAQ + IA, em vez de "Boa pergunta! Já explico melhor 💬" enviar apenas o reentry (`📋 Voltando: …`) — assim o cliente vê a pergunta de volta sem a frase de evasão. Concretamente:
+
+```text
+if (!answer) {
+  // Não inventa "já explico melhor" — apenas reconduz ao passo.
+  answer = "";
+  source = "fallback";
+}
+...
+const finalMsg = answer
+  ? `${answer}${reentryLine}${courtesyTail}`
+  : `${reentryFull}${courtesyTail}`;  // reentry completo, sem prefixo evasivo
+```
+
+Isso evita o efeito "gaslighting" do bot prometendo explicar e nunca explicando, e mantém o detour suave (handoff humano só após 5 desvios reais).
+
+### 3. Não mexer em nada de UI / frontend
+
+Esse fix é 100% backend (edge functions). Deploy automático faz o resto.
 
 ## Validação
 
-- Abrir Admin → WhatsApp → Envio em Massa, ativar "Últimas 48h": só restam clientes com `last_inbound_at` dentro da janela.
-- Selecionar DDD 11: lista reduz para telefones `5511…`.
-- Combinar os dois: interseção correta; "Selecionar todos" adiciona só o conjunto filtrado.
-- Sem filtros, comportamento atual permanece idêntico.
+1. **Curl direto na função** depois do deploy:
+   ```
+   POST /functions/v1/ai-sales-agent
+   body: { customer_id: "<id>", user_input: "vocês são confiáveis?", mode: "answer_only" }
+   esperado: { reply: "<resposta curta em pt-BR>", mode: "answer_only", latency_ms: <1500 }
+   ```
+2. **Conversa real** no WhatsApp: lead em `ask_email` digita "vocês são confiáveis?" → bot responde com 1-2 frases reais sobre confiança e reapresenta a pergunta do email. `source=ai` nos logs.
+3. **Quando o gateway falhar** (cortar `LOVABLE_API_KEY` em teste): bot apenas reapresenta a pergunta sem a frase "já explico melhor". `source=fallback`, mas a UX continua limpa.
+4. **Métrica**: nos logs `[respondAndReentry] source=ai` deve passar a dominar; `source=fallback` deve cair drasticamente.
+
+## Arquivos tocados
+
+- `supabase/functions/ai-sales-agent/index.ts` — branch `mode === "answer_only"`.
+- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` — timeout 15 s + fallback sem "Boa pergunta".
+- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` — mesmas duas mudanças (mantém paridade com Evolution).
