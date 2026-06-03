@@ -32,7 +32,9 @@ interface Body {
   // com customization por posicionamento. Aceita string[] legado (= square).
   photos?: ({ url: string; format: "square" | "vertical" | "story" } | string)[];
   // Vídeo único (modo "video"). Quando presente, ignora photos.
-  video?: { url: string; thumb_url?: string };
+  // captions_srt: conteúdo SRT em pt-BR gerado pelo ad-video-captions
+  // (anexado ao vídeo na Meta para mostrar legenda no Reels/Feed/Stories).
+  video?: { url: string; thumb_url?: string; captions_srt?: string };
   headline: string;
   primary_text: string;
   description?: string;
@@ -537,7 +539,37 @@ Deno.serve(async (req) => {
           } catch (_) { /* best-effort */ }
         } else {
           throw new Error("Meta ainda não gerou a miniatura do vídeo, tente novamente em alguns segundos.");
+      }
+
+      // Anexa legendas SRT pt_BR ao vídeo (se geradas pelo wizard via ad-video-captions).
+      // Meta API: POST /{video-id}/captions com multipart (captions_file + default_locale).
+      // Best-effort: se falhar, o ad sobe sem legenda.
+      const captionsSrt = body.video?.captions_srt;
+      if (captionsSrt && fbVideoId) {
+        try {
+          const FB_GRAPH_VID = "https://graph.facebook.com/v23.0";
+          const fd = new FormData();
+          fd.append(
+            "captions_file",
+            new Blob([captionsSrt], { type: "application/x-subrip" }),
+            "captions.pt_BR.srt",
+          );
+          fd.append("default_locale", "pt_BR");
+          fd.append("access_token", conn.token);
+          const cap = await fetch(`${FB_GRAPH_VID}/${fbVideoId}/captions`, {
+            method: "POST",
+            body: fd,
+          });
+          const capJson = await cap.json().catch(() => ({}));
+          if (!cap.ok) {
+            console.warn("[fb-create] captions upload falhou:", cap.status, JSON.stringify(capJson).slice(0, 300));
+          } else {
+            console.log("[fb-create] captions anexadas pt_BR ao video", fbVideoId);
+          }
+        } catch (e) {
+          console.warn("[fb-create] captions error:", (e as Error).message);
         }
+      }
       }
 
       // Força placements verticais (Reels + Stories + Feed)

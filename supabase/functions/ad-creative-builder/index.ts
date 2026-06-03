@@ -55,9 +55,33 @@ const FORBIDDEN = [
   /\b(VOC[ÊE]|SEU|SUA)\b/,
 ];
 
+// Aberturas fracas que matam CTR no Feed (texto corta em ~40 chars no mobile).
+// Variações que começam assim são descartadas pelo cleanList.
+const WEAK_OPENERS = [
+  /^entre\s+em\s+contato/i,
+  /^saiba\s+mais/i,
+  /^conhe[çc]a\s+/i,
+  /^clique\s+(aqui|abaixo|no\s+bot[ãa]o)/i,
+  /^ol[áa][,.\s]/i,
+];
+
 function isClean(s: string): boolean {
   if (!s) return false;
   return !FORBIDDEN.some((r) => r.test(s));
+}
+
+// Para primary_text: verifica se a primeira sentença (até ponto/quebra) cabe em 40 chars.
+// Esse é o hook visível antes do "ver mais" no Feed mobile.
+function firstSentence(s: string): string {
+  const m = s.match(/^[^.!?\n]+/);
+  return (m ? m[0] : s).trim();
+}
+
+function hookOk(s: string): boolean {
+  if (WEAK_OPENERS.some((r) => r.test(s))) return false;
+  const first = firstSentence(s);
+  // hook ideal: 12–40 chars antes do primeiro ponto
+  return first.length >= 8 && first.length <= 40;
 }
 
 function variationScore(s: string, kind: "headline" | "primary"): number {
@@ -70,6 +94,8 @@ function variationScore(s: string, kind: "headline" | "primary"): number {
   if (/\d/.test(s)) score += 10; // números aumentam CTR
   if (/(fala|toca|garante|peça|peca|simule|baixe|conhe[çc]a|descubra|economiz|chame|👇|👉)/i.test(s)) score += 10;
   if (/cliente|cidade|região|aqui|seu boleto|sua conta/i.test(s)) score += 5;
+  // Bônus de hook curto APENAS no primary — o texto fica visível mesmo com "ver mais".
+  if (kind === "primary" && hookOk(s)) score += 20;
   return Math.min(100, score);
 }
 
@@ -82,9 +108,9 @@ const FALLBACK = {
     { text: "+50 mil famílias economizam", framework: "prova social", angle: "prova_social", score: 82 },
   ],
   primary_texts: [
-    { text: "Sua conta de luz até 20% mais barata. Sem obra. Fala no zap 👇", framework: "AIDA", angle: "economia_concreta", score: 92 },
-    { text: "Cansado da conta alta? Desconto direto na fatura. Toca aqui.", framework: "PAS", angle: "quebra_objecao", score: 86 },
-    { text: "Energia limpa, conta leve. Sem instalar nada. Garante a sua 🌱", framework: "benefício", angle: "curiosidade", score: 88 },
+    { text: "Conta de luz subindo de novo? Desconto direto no boleto, sem obra. Fala no zap 👇", framework: "PAS", angle: "dor_pas", score: 95 },
+    { text: "Sua fatura passou de R$ 300? Até 20% mais barata todo mês. Toca aqui.", framework: "AIDA", angle: "economia_concreta", score: 92 },
+    { text: "Cansada de pagar caro? Energia limpa, conta leve, sem instalar nada. Garante 🌱", framework: "benefício", angle: "quebra_objecao", score: 90 },
   ],
   description: "Sem obra. Sem taxa.",
   image_briefs: [
@@ -176,13 +202,15 @@ REGRAS DE OURO (cumpra TODAS, senão a Meta rejeita):
 - Títulos: 14 a 30 caracteres. Textos: 35 a 90 caracteres. Descrição: até 25.
 - PROIBIDO usar: "garantido", "100%", "milagre", "ganhe dinheiro", "grátis", "melhor do Brasil/mundo", "!!" ou "??", VOCÊ/SEU/SUA em CAIXA ALTA.
 - Tom direto, brasileiro, sem enrolação. Foque em ECONOMIA, nunca em ganho.
+- **HOOK DE FEED (crítico)**: cada primary_text DEVE começar com uma frase de gancho de 12 a 40 caracteres antes do primeiro ponto/exclamação. O Feed mobile corta tudo depois disso. Exemplos de hook: "Conta de luz subindo de novo?", "Cansado de pagar conta cara?", "Sua fatura passou de R$ 300?".
+- PROIBIDO começar primary_text com: "Entre em contato", "Saiba mais", "Conheça", "Clique aqui", "Olá".
 - Cada texto primário precisa ter um CTA no final (ex: "Fala no zap 👇", "Toca aqui", "Garante a sua").
 - Use no máximo 1 emoji por texto. Pelo menos 3 itens devem conter um número específico.
 - Image briefs: NUNCA proponha painel solar bonito em telhado azul — esse é o erro #1 do mercado.
 
 Exemplo do nível de qualidade esperado:
 - headline: "Conta CPFL 20% mais barata"
-- primary: "Cansado da conta alta? Desconto de até 20% direto no boleto. Sem obra. Fala no zap 👇"`;
+- primary: "Cansado da conta alta? Desconto de até 20% direto no boleto. Sem obra. Fala no zap 👇"  ← hook "Cansado da conta alta?" tem 24 chars, cabe no feed.`;
 
   try {
     const result = await geminiGenerate({
@@ -208,6 +236,8 @@ Exemplo do nível de qualidade esperado:
           angle: typeof v === "object" ? (v?.angle || "geral") : "geral",
         }))
         .filter((v) => v.text && isClean(v.text))
+        // Para primary: descarta abridores fracos ("Entre em contato com a P..." é o sintoma clássico).
+        .filter((v) => kind === "headline" || !WEAK_OPENERS.some((r) => r.test(v.text)))
         .map((v) => ({ ...v, score: variationScore(v.text, kind) }))
         .sort((a, b) => b.score - a.score);
 
