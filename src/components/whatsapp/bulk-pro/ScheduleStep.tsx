@@ -45,11 +45,11 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
               <button
                 key={p.key} type="button" onClick={() => applyPreset(p.key)}
                 className={`text-left p-3 rounded-xl border transition-all ${
-                  active ? `border-${p.color}-500/50 bg-${p.color}-500/10` : "border-border/40 bg-secondary/20 hover:bg-secondary/40"
+                  active ? p.activeCls : "border-border/40 bg-secondary/20 hover:bg-secondary/40"
                 }`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <Icon className={`w-4 h-4 text-${p.color}-400`} />
+                  <Icon className={`w-4 h-4 ${p.iconCls}`} />
                   <span className="text-sm font-bold text-foreground">{p.label}</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">{p.desc}</p>
