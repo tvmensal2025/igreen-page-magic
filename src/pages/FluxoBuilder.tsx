@@ -631,10 +631,6 @@ export default function FluxoBuilder() {
           />
         )}
 
-        {/* Teste A/B: qual fluxo (A ou D) cada lead novo recebe + kill-switch */}
-        <div className="mx-auto w-full max-w-7xl px-4 pb-2">
-          <FlowAbControl />
-        </div>
       </header>
 
       {/*
