@@ -441,17 +441,18 @@ Deno.serve(async (req) => {
     // =================== MODO VÍDEO (Reels/Stories) ===================
     if (creativeMode === "video") {
       const videoUrl = body.video!.url;
-      const thumbUrl = body.video!.thumb_url || null;
+      let thumbUrl: string | null = body.video!.thumb_url || null;
       console.log("[fb-create] step=video_upload url=", videoUrl);
 
       // Reusa fb_video_id se já estiver em ad_video_library (best-effort).
       let fbVideoId: string | null = null;
       try {
         const { data: cachedVid } = await adminDb2
-          .from("ad_video_library").select("id, fb_video_id, usage_count")
+          .from("ad_video_library").select("id, fb_video_id, thumb_url, usage_count")
           .eq("consultant_id", auth.id).eq("url", videoUrl).maybeSingle();
         if (cachedVid?.fb_video_id) {
           fbVideoId = cachedVid.fb_video_id;
+          if (!thumbUrl && (cachedVid as any).thumb_url) thumbUrl = (cachedVid as any).thumb_url;
           await adminDb2.from("ad_video_library").update({
             usage_count: ((cachedVid as any).usage_count ?? 0) + 1,
             last_used_at: new Date().toISOString(),
@@ -506,6 +507,39 @@ Deno.serve(async (req) => {
         } catch (e) { console.warn("[fb-create] cache video falhou:", (e as Error).message); }
       }
 
+      // Auto-resolve thumbnail se o usuário não enviou (Meta exige image_url/image_hash).
+      if (!thumbUrl && fbVideoId) {
+        const fetchThumb = async (): Promise<string | null> => {
+          try {
+            const tr = await fbFetch(`/${fbVideoId}/thumbnails?access_token=${conn.token}`);
+            const list = (tr?.data || []) as Array<{ uri?: string; is_preferred?: boolean }>;
+            if (!list.length) return null;
+            const preferred = list.find((t) => t.is_preferred && t.uri);
+            return (preferred?.uri || list[0]?.uri) ?? null;
+          } catch (e) {
+            console.warn("[fb-create] thumbnails fetch falhou:", (e as Error).message);
+            return null;
+          }
+        };
+        thumbUrl = await fetchThumb();
+        if (!thumbUrl) {
+          // 1 retry curto: Meta às vezes leva alguns segundos pra gerar thumb
+          await new Promise((r) => setTimeout(r, 3_000));
+          thumbUrl = await fetchThumb();
+        }
+        if (thumbUrl) {
+          console.log("[fb-create] thumb auto-resolved=", thumbUrl);
+          // Persiste no cache pra próximo uso reaproveitar
+          try {
+            await adminDb2.from("ad_video_library")
+              .update({ thumb_url: thumbUrl })
+              .eq("consultant_id", auth.id).eq("url", videoUrl);
+          } catch (_) { /* best-effort */ }
+        } else {
+          throw new Error("Meta ainda não gerou a miniatura do vídeo, tente novamente em alguns segundos.");
+        }
+      }
+
       // Força placements verticais (Reels + Stories + Feed)
       (targeting as any).publisher_platforms = ["facebook", "instagram"];
       (targeting as any).facebook_positions = ["feed", "facebook_reels", "story"];
@@ -523,6 +557,7 @@ Deno.serve(async (req) => {
         call_to_action: { type: "WHATSAPP_MESSAGE", value: { link: waLinkV } },
       };
       if (thumbUrl) (videoData as any).image_url = thumbUrl;
+
 
       const cr = await fbFetch(`/${accId}/adcreatives`, {
         method: "POST",
