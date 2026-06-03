@@ -483,6 +483,7 @@ export function ConnectionPanel({
 
         {/* Diagnostic panel */}
         {showDiagnostic && <DiagnosticPanel logs={connectionLog} />}
+        {instanceName && !isWhapi && <InstanceHealth instanceName={instanceName} />}
       </div>
 
       {/* Disconnect confirmation dialog */}
