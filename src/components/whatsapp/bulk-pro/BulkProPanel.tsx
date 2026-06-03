@@ -168,7 +168,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     } catch { return false; }
   }, [instanceName]);
 
-  const runCampaign = useCallback(async (initialTargets: CampaignTarget[]) => {
+  const runCampaign = useCallback(async (initialTargets: CampaignTarget[], existingCampaignId?: string) => {
     cancelledRef.current = false;
     pausedRef.current = false;
     setPaused(false);
@@ -177,9 +177,26 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     setTargets(initialTargets);
     setStep(4);
 
+    // Persist campaign (skip if resuming)
+    if (!existingCampaignId) {
+      const newId = await createCampaign({
+        consultantId,
+        name: campaignName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
+        messageText: text,
+        mediaUrl: media?.url ?? null,
+        mediaType: media?.kind ?? null,
+        mediaFilename: media?.fileName ?? null,
+        config: config as any,
+        scheduledAt: config.scheduleAt,
+        targets: initialTargets,
+      });
+      campaignIdRef.current = newId;
+    } else {
+      campaignIdRef.current = existingCampaignId;
+    }
+
     // Wait for schedule (treat scheduleAt as LOCAL time)
     if (config.scheduleAt) {
-      // datetime-local format "YYYY-MM-DDTHH:mm" is parsed as local by Date()
       const target = new Date(config.scheduleAt).getTime();
       if (!isNaN(target) && target > Date.now()) {
         setWaitingSchedule(config.scheduleAt);
@@ -187,7 +204,12 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
           await new Promise(r => setTimeout(r, 1000));
         }
         setWaitingSchedule(null);
-        if (cancelledRef.current) { setRunning(false); setDone(true); return; }
+        if (cancelledRef.current) {
+          setRunning(false); setDone(true);
+          if (campaignIdRef.current) await updateCampaignStatus(campaignIdRef.current, { status: "canceled", finished_at: new Date().toISOString() });
+          return;
+        }
+        if (campaignIdRef.current) await updateCampaignStatus(campaignIdRef.current, { status: "running", started_at: new Date().toISOString() });
       }
     }
 
