@@ -1098,7 +1098,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         <Video className="w-8 h-8 text-primary mx-auto" />
                         <div className="text-sm font-medium">Clique para enviar 1 vídeo Reels</div>
                         <div className="text-xs text-muted-foreground">
-                          MP4 ou MOV · vertical <strong className="text-foreground">9:16 (1080×1920)</strong> · 4–60s · até 100 MB
+                          MP4 ou MOV · vertical <strong className="text-foreground">9:16 (1080×1920)</strong> · 4–60s · até 50 MB
                         </div>
                       </label>
                     </div>
