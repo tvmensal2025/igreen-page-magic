@@ -102,9 +102,11 @@ Deno.serve(async (req) => {
       });
     }
     if (fresh) {
+      // Não seedar nome — deixa null para que o passo de boas-vindas
+      // pergunte o nome ao cliente e ESPERE a resposta (igual lead real).
       Object.assign(resetPayload, {
-        name: `Teste ${new Date().toISOString().slice(11, 19)}`,
-        name_source: "manual_seed",
+        name: null,
+        name_source: null,
         conversation_summary: null,
       });
       const { error: delErr } = await supabase
