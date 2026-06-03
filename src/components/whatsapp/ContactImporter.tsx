@@ -15,6 +15,7 @@ import type { BulkContact } from "@/types/whatsapp";
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
   status?: string; devolutiva?: string | null; registered_by_name?: string | null;
+  last_inbound_at?: string | null;
 }
 
 interface ContactImporterProps {
