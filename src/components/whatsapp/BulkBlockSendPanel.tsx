@@ -93,6 +93,37 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
   const [isPaused, setIsPaused] = useState(false);
   const { toast } = useToast();
 
+  // Enrich customers with last_inbound_at from customer_flow_state (for "Últimas 48h" filter)
+  const [lastInboundMap, setLastInboundMap] = useState<Map<string, string | null>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    const ids = customers.map(c => c.id).filter(Boolean);
+    if (ids.length === 0) { setLastInboundMap(new Map()); return; }
+    (async () => {
+      const map = new Map<string, string | null>();
+      const CHUNK = 500;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        const { data, error } = await (supabase as any)
+          .from("customer_flow_state")
+          .select("customer_id,last_inbound_at")
+          .in("customer_id", slice);
+        if (error) continue;
+        for (const row of (data as any[]) || []) {
+          map.set(String(row.customer_id), row.last_inbound_at ?? null);
+        }
+        if (cancelled) return;
+      }
+      if (!cancelled) setLastInboundMap(map);
+    })();
+    return () => { cancelled = true; };
+  }, [customers]);
+
+  const enrichedCustomers = useMemo<Customer[]>(
+    () => customers.map(c => ({ ...c, last_inbound_at: lastInboundMap.get(c.id) ?? null })),
+    [customers, lastInboundMap],
+  );
+
   const validContacts = useMemo(() => contacts.filter(c => isValidPhone(c.phone)), [contacts]);
   const isSending = progress !== null && !finalResult;
 
