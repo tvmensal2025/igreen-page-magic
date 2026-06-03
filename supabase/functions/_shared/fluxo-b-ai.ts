@@ -6,9 +6,15 @@
 // 2. Roda cascata Gemini 3 Flash → GPT-5.5 com tool calling.
 // 3. Aplica tool calls (registrar_nome, pedir_foto_conta, etc).
 // 4. Retorna o texto que o webhook deve enviar ao lead.
+// 5. Em background, atualiza customers.conversation_summary (memória persistente).
+//
+// MEMÓRIA: o bot tem memória permanente via customers.conversation_summary +
+// últimos 40 turnos brutos. Essa memória NUNCA é apagada automaticamente —
+// só pelos resets administrativos manuais (botão admin / migrations de manutenção).
 
 import { aiChatCascade, aiChat, type AIChatMessage } from "./ai-gateway.ts";
 import { buildFluxoBSystemPrompt, FLUXO_B_TOOLS, type FluxoBContext } from "./fluxo-b-prompt.ts";
+import { maybeUpdateSummary } from "./ai-summary.ts";
 
 // SupabaseClient genérico para evitar conflitos de tipos entre callers
 // deno-lint-ignore no-explicit-any
