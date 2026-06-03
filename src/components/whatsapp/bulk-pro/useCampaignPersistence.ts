@@ -93,3 +93,56 @@ export async function listCampaigns(consultantId: string, limit = 20): Promise<P
 export async function deleteCampaign(id: string) {
   await (supabase as any).from("bulk_campaigns").delete().eq("id", id);
 }
+
+export interface ResumePayload {
+  id: string;
+  name: string;
+  messageText: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  mediaFilename: string | null;
+  config: any;
+  queuedTargets: CampaignTarget[];
+  sent: number;
+  failed: number;
+  total: number;
+}
+
+export async function loadCampaignForResume(id: string): Promise<ResumePayload | null> {
+  const { data: camp, error } = await (supabase as any)
+    .from("bulk_campaigns")
+    .select("id,name,message_text,media_url,media_type,media_filename,config,sent,failed,total")
+    .eq("id", id)
+    .single();
+  if (error || !camp) { console.error("loadCampaignForResume", error); return null; }
+
+  const { data: rows, error: e2 } = await (supabase as any)
+    .from("bulk_campaign_targets")
+    .select("id,phone,name,vars,status")
+    .eq("campaign_id", id)
+    .eq("status", "queued");
+  if (e2) { console.error("queued targets", e2); return null; }
+
+  const queuedTargets: CampaignTarget[] = ((rows as any[]) || []).map(r => ({
+    id: String(r.id),
+    phone: r.phone,
+    name: r.name || r.phone,
+    bill: r.vars?.bill ?? undefined,
+    city: r.vars?.city ?? undefined,
+    status: "queued",
+  }));
+
+  return {
+    id: camp.id,
+    name: camp.name,
+    messageText: camp.message_text || "",
+    mediaUrl: camp.media_url,
+    mediaType: camp.media_type,
+    mediaFilename: camp.media_filename,
+    config: camp.config,
+    queuedTargets,
+    sent: camp.sent || 0,
+    failed: camp.failed || 0,
+    total: camp.total || 0,
+  };
+}
