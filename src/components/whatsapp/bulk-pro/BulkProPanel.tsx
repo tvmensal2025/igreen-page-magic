@@ -271,8 +271,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
       // Random interval before next
       if (idx < work.length - 1) {
-        const range = config.intervalMaxS - config.intervalMinS;
-        const secs = config.intervalMinS + Math.random() * range;
+        const minS = Math.max(1, config.intervalMinS);
+        const maxS = Math.max(minS, config.intervalMaxS);
+        const secs = minS + Math.random() * (maxS - minS);
         const ok3 = await sleep(Math.round(secs * 1000));
         if (!ok3) break;
       }
@@ -280,8 +281,14 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
     setRunning(false);
     setDone(true);
-    toast({ title: "Disparo finalizado", description: `${stats.sent} enviadas, ${stats.failed} falhas` });
-  }, [config, text, media, instanceName, checkConnection, sleep, toast, stats.sent, stats.failed]);
+    // Use functional setter to read fresh stats
+    setTargets(prev => {
+      const sent = prev.filter(t => t.status === "sent").length;
+      const failed = prev.filter(t => t.status === "failed").length;
+      toast({ title: "Disparo finalizado", description: `${sent} enviadas, ${failed} falhas` });
+      return prev;
+    });
+  }, [config, text, media, instanceName, checkConnection, sleep, toast]);
 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
