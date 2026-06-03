@@ -1,8 +1,13 @@
-import { Shield, Zap, Rabbit, Calendar, Clock } from "lucide-react";
+import { Shield, Zap, Rabbit, Calendar, Clock, Layers } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { PRESETS, type SendConfig, type SpeedPreset } from "./types";
+
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 interface Props {
   config: SendConfig;
