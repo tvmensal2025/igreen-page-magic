@@ -8,6 +8,10 @@ export interface AdTemplate {
   title: string;
   description: string | null;
   photos: AdTemplatePhoto[];
+  // Vídeo (alternativa a photos quando creative_mode = "video").
+  video_url: string | null;
+  video_thumb_url: string | null;
+  creative_mode: "photo" | "video";
   headline: string;
   primary_text: string;
   description_text: string;
@@ -32,6 +36,9 @@ function row(r: any): AdTemplate {
     title: r.title,
     description: r.description,
     photos: Array.isArray(r.photos) ? r.photos : [],
+    video_url: r.video_url ?? null,
+    video_thumb_url: r.video_thumb_url ?? null,
+    creative_mode: (r.creative_mode === "video" ? "video" : "photo"),
     headline: r.headline ?? "",
     primary_text: r.primary_text ?? "",
     description_text: r.description_text ?? "",
@@ -51,6 +58,7 @@ function row(r: any): AdTemplate {
   };
 }
 
+
 export async function listAdTemplates(opts?: { onlyPublished?: boolean }): Promise<AdTemplate[]> {
   let q = supabase.from("ad_templates").select("*").order("updated_at", { ascending: false });
   if (opts?.onlyPublished) q = q.eq("status", "published");
@@ -64,6 +72,9 @@ export async function upsertAdTemplate(t: Partial<AdTemplate> & { id?: string })
     title: t.title,
     description: t.description ?? null,
     photos: t.photos ?? [],
+    video_url: t.video_url ?? null,
+    video_thumb_url: t.video_thumb_url ?? null,
+    creative_mode: t.creative_mode ?? "photo",
     headline: t.headline ?? "",
     primary_text: t.primary_text ?? "",
     description_text: t.description_text ?? "",

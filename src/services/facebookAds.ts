@@ -113,13 +113,25 @@ export async function generateCopy(cities: string[]): Promise<CopyPack> {
   return data as CopyPackV2;
 }
 
+export interface CustomLocation {
+  latitude: number;
+  longitude: number;
+  radius: number; // em km
+  address_string?: string;
+  name?: string;
+}
+
 export interface PreflightResult {
   ok: boolean;
   blockers: string[];
   warnings: string[];
   reach: { lower: number; upper: number; daily_min: number; daily_max: number } | null;
 }
-export async function preflightCampaign(input: { cities: { key: string; name: string }[]; daily_budget_cents: number }): Promise<PreflightResult> {
+export async function preflightCampaign(input: {
+  cities?: { key: string; name: string }[];
+  custom_locations?: CustomLocation[];
+  daily_budget_cents: number;
+}): Promise<PreflightResult> {
   const { data, error } = await supabase.functions.invoke("facebook-preflight-check", { body: input });
   if (error) throw error;
   return data as PreflightResult;
@@ -127,14 +139,20 @@ export async function preflightCampaign(input: { cities: { key: string; name: st
 
 export interface CreateCampaignBody {
   name: string;
+  // Use cities OU custom_locations. Quando custom_locations vem preenchido,
+  // ele substitui as cidades no targeting (segmentação por raio/endereço).
   cities: { key: string; name: string }[];
+  custom_locations?: CustomLocation[];
   daily_budget_cents: number;
   duration_days?: number | null;
   age_min?: number;
   age_max?: number;
-  // Cada foto vem com seu formato pra que o backend monte asset_feed_spec
-  // com customization por posicionamento (resolve corte de cabeça em Reels).
-  photos: { url: string; format: "square" | "vertical" | "story" }[];
+  // Modo do criativo: foto (até 5 imagens) ou vídeo (1 vídeo vertical p/ Reels).
+  creative_mode?: "photo" | "video";
+  // Foto: cada imagem traz seu formato (square/vertical/story) p/ asset_feed_spec.
+  photos?: { url: string; format: "square" | "vertical" | "story" }[];
+  // Vídeo: 1 vídeo + capa opcional. Quando presente, ignora photos.
+  video?: { url: string; thumb_url?: string };
   headline: string;
   primary_text: string;
   description?: string;
@@ -153,6 +171,23 @@ export async function createCampaign(body: CreateCampaignBody) {
   if (error) await throwFunctionError(error);
   if ((data as any)?.error) throw new Error((data as any).error);
   return data as { ok: true; campaign_id: string; adset_id: string; ad_ids: string[]; ads_count: number };
+}
+
+// Upload de vídeo do anúncio (modo Reels/Stories). Aceita mp4/mov até ~100 MB.
+// Vai pro mesmo bucket das fotos sob `{consultantId}/ads/video-...`.
+export async function uploadAdVideo(
+  consultantId: string,
+  file: File
+): Promise<{ url: string; path: string | null }> {
+  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${consultantId}/ads/video-${Date.now()}-${safe}`;
+  const contentType = file.type || "video/mp4";
+  const { error } = await supabase.storage
+    .from("consultant-photos")
+    .upload(path, file, { upsert: true, contentType });
+  if (error) throw error;
+  const { data } = supabase.storage.from("consultant-photos").getPublicUrl(path);
+  return { url: data.publicUrl, path };
 }
 
 // Lê o File para um ArrayBuffer em memória. Se a referência do arquivo do

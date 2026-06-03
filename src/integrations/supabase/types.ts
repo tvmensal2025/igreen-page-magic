@@ -581,6 +581,7 @@ export type Database = {
           consultant_id: string | null
           created_at: string
           created_by: string | null
+          creative_mode: string
           description: string | null
           description_text: string
           genders: string[]
@@ -598,6 +599,8 @@ export type Database = {
           title: string
           updated_at: string
           usage_count: number
+          video_thumb_url: string | null
+          video_url: string | null
         }
         Insert: {
           age_max?: number
@@ -606,6 +609,7 @@ export type Database = {
           consultant_id?: string | null
           created_at?: string
           created_by?: string | null
+          creative_mode?: string
           description?: string | null
           description_text?: string
           genders?: string[]
@@ -623,6 +627,8 @@ export type Database = {
           title: string
           updated_at?: string
           usage_count?: number
+          video_thumb_url?: string | null
+          video_url?: string | null
         }
         Update: {
           age_max?: number
@@ -631,6 +637,7 @@ export type Database = {
           consultant_id?: string | null
           created_at?: string
           created_by?: string | null
+          creative_mode?: string
           description?: string | null
           description_text?: string
           genders?: string[]
@@ -648,6 +655,8 @@ export type Database = {
           title?: string
           updated_at?: string
           usage_count?: number
+          video_thumb_url?: string | null
+          video_url?: string | null
         }
         Relationships: [
           {
@@ -658,6 +667,66 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ad_video_library: {
+        Row: {
+          consultant_id: string
+          content_type: string | null
+          created_at: string
+          duration_seconds: number | null
+          fb_video_id: string | null
+          fb_video_id_synced_at: string | null
+          file_size: number | null
+          filename: string | null
+          height: number | null
+          id: string
+          last_used_at: string | null
+          storage_path: string | null
+          thumb_url: string | null
+          updated_at: string
+          url: string
+          usage_count: number
+          width: number | null
+        }
+        Insert: {
+          consultant_id: string
+          content_type?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          fb_video_id?: string | null
+          fb_video_id_synced_at?: string | null
+          file_size?: number | null
+          filename?: string | null
+          height?: number | null
+          id?: string
+          last_used_at?: string | null
+          storage_path?: string | null
+          thumb_url?: string | null
+          updated_at?: string
+          url: string
+          usage_count?: number
+          width?: number | null
+        }
+        Update: {
+          consultant_id?: string
+          content_type?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          fb_video_id?: string | null
+          fb_video_id_synced_at?: string | null
+          file_size?: number | null
+          filename?: string | null
+          height?: number | null
+          id?: string
+          last_used_at?: string | null
+          storage_path?: string | null
+          thumb_url?: string | null
+          updated_at?: string
+          url?: string
+          usage_count?: number
+          width?: number | null
+        }
+        Relationships: []
       }
       admin_audit_log: {
         Row: {

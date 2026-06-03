@@ -13,13 +13,26 @@ import { notifyConsultant } from "../_shared/notify-consultant.ts";
 interface Body {
   name: string;
   cities: { key: string; name: string }[];
+  // Segmentação por endereço/raio (sobrepõe cities quando preenchido).
+  // Cada ponto: lat/lng + raio em km (1 a 50) + endereço.
+  custom_locations?: {
+    latitude: number;
+    longitude: number;
+    radius: number; // km
+    address_string?: string;
+    name?: string;
+  }[];
   daily_budget_cents: number;
   duration_days?: number | null;
   age_min?: number;
   age_max?: number;
+  // Modo do criativo: "photo" (padrão) ou "video" (1 vídeo Reels/Stories).
+  creative_mode?: "photo" | "video";
   // Cada foto traz seu formato original — usado pra montar asset_feed_spec
   // com customization por posicionamento. Aceita string[] legado (= square).
-  photos: ({ url: string; format: "square" | "vertical" | "story" } | string)[];
+  photos?: ({ url: string; format: "square" | "vertical" | "story" } | string)[];
+  // Vídeo único (modo "video"). Quando presente, ignora photos.
+  video?: { url: string; thumb_url?: string };
   headline: string;
   primary_text: string;
   description?: string;
@@ -124,11 +137,19 @@ Deno.serve(async (req) => {
       };
     }
 
-    if (!body?.cities?.length || !body.daily_budget_cents || !body.photos?.length || !body.headline || !body.primary_text) {
-      return new Response(JSON.stringify({ error: "Campos obrigatórios faltando." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const creativeMode: "photo" | "video" = body.creative_mode === "video" ? "video" : "photo";
+    const hasCustomLocations = Array.isArray(body.custom_locations) && body.custom_locations.length > 0;
+    const hasCities = Array.isArray(body.cities) && body.cities.length > 0;
+    const hasCreative = creativeMode === "video"
+      ? !!(body.video && body.video.url)
+      : !!(body.photos && body.photos.length);
+    if ((!hasCities && !hasCustomLocations) || !body.daily_budget_cents || !hasCreative || !body.headline || !body.primary_text) {
+      return new Response(JSON.stringify({ error: "Campos obrigatórios faltando (localização, criativo, headline ou texto)." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    if (body.daily_budget_cents < 2000) {
-      return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 20/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Mínimo R$ 10/dia (Meta aceita a partir de ~R$ 6/dia em CTWA, mas <R$10
+    // o aprendizado fica muito lento). UI também recomenda R$20 como sweet spot.
+    if (body.daily_budget_cents < 1000) {
+      return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 10/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Admin (Super Admin) usa a conta Facebook da plataforma diretamente —
@@ -145,11 +166,11 @@ Deno.serve(async (req) => {
       const admin = adminDb;
       const { data: ps } = await admin.from("platform_settings").select("*").eq("id", true).maybeSingle();
       const feePct = Number(ps?.platform_fee_percent ?? 20) / 100;
-      // Garante 7 dias de orçamento — Facebook precisa disso pra sair da fase
-      // de aprendizado. Sem isso, CPL nunca estabiliza e a campanha pausa cedo.
-      const minDays = 7;
-      const safety = Math.max(Number(ps?.campaign_safety_multiplier ?? 1.3), minDays);
-      const minBalance = Number(ps?.min_balance_to_create_campaign_cents ?? 5000);
+      // Mínimo de 3 dias (era 7) — permite teste rápido "gastar pouco para validar".
+      // O usuário pode subir o orçamento depois quando o anúncio começar a entregar.
+      const minDays = 3;
+      const safety = Math.max(Number(ps?.campaign_safety_multiplier ?? 1.0), minDays);
+      const minBalance = Number(ps?.min_balance_to_create_campaign_cents ?? 3000);
       const requiredCents = Math.max(minBalance, Math.round(body.daily_budget_cents * (1 + feePct) * safety));
       const { data: w } = await admin.from("consultant_wallet")
         .select("balance_cents").eq("consultant_id", auth.id).maybeSingle();
@@ -199,9 +220,9 @@ Deno.serve(async (req) => {
         code: "WHATSAPP_INVALID_FORMAT",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Trava de saldo: precisa cobrir budget × duração (default 7 dias se omitido).
+    // Trava de saldo: precisa cobrir budget × duração (default 3 dias se omitido).
     const wallet = await getOrCreateWallet(auth.id);
-    const dur = body.duration_days && body.duration_days > 0 ? body.duration_days : 7;
+    const dur = body.duration_days && body.duration_days > 0 ? body.duration_days : 3;
     const requiredCents = body.daily_budget_cents * dur;
     if (!isAdmin && wallet.balance_cents < requiredCents) {
       return new Response(JSON.stringify({
@@ -235,7 +256,10 @@ Deno.serve(async (req) => {
     // Advantage+ exige age_max >= 65 (subcode 1870189). Cap defensivo.
     const ageMax = Math.max(body.age_max ?? 65, 65);
     const today = new Date().toISOString().slice(0, 10);
-    const cityNames = body.cities.map((c) => c.name).slice(0, 3).join(", ");
+    const cityNames = (body.cities || []).map((c) => c.name).slice(0, 3).join(", ");
+    const locLabel = hasCustomLocations
+      ? (body.custom_locations![0].name || body.custom_locations![0].address_string || `${body.custom_locations!.length} ponto(s)`)
+      : (cityNames || "iGreen");
     // Tag de consultor profissional: usa license iGreen (ID curto e estável)
     // pra padronizar nomes no Gerenciador e facilitar relatórios por consultor.
     const adminDb2 = adminClient();
@@ -247,8 +271,8 @@ Deno.serve(async (req) => {
     const consultantLicense = consultantRow?.license || auth.id.slice(0, 8);
     const consultantName = consultantRow?.name || settings?.display_name || "Consultor";
     const consultantTag = `CONS-${consultantLicense}`;
-    const distribTag = body.distribuidora || cityNames || "iGreen";
-    const cityPrincipal = body.cities[0]?.name || cityNames;
+    const distribTag = body.distribuidora || (hasCustomLocations ? locLabel : (cityNames || "iGreen"));
+    const cityPrincipal = body.cities[0]?.name || (hasCustomLocations ? locLabel : cityNames);
     const campaignName = body.name
       ? `[${consultantTag}] ${distribTag} · ${body.name} · ${today}`
       : `[${consultantTag}] ${distribTag} · ${cityPrincipal} · ${today}`;
