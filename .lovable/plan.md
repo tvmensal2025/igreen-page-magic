@@ -1,35 +1,83 @@
-# Travar layout do Banner 504×940mm e corrigir download
+# Disparo em Massa PRO — nova aba profissional
 
-## O que muda
+Reescrever a aba "Envio em Massa" do WhatsApp com uma página em wizard de 4 passos, mídia completa (imagem/vídeo/áudio/documento), filtros poderosos de origem, anti-bloqueio e relatórios. Substitui o `BulkBlockSendPanel` atual.
 
-No `src/components/admin/parceiros/PartnerQrCode.tsx`, atualizar os defaults travados do template `banner` para bater exatamente com o que aparece no print (sliders mostrados: 87% / 22% / 28% / 99%):
+## Fluxo da página (wizard)
 
-```ts
-banner: {
-  label: "Banner 504×940mm",
-  src: "/images/banner-lei-14300-base.jpg",
-  qrX: 22,      // era 20
-  qrY: 87,      // já estava
-  qrSize: 28,   // era 30
-  footerY: 99,  // já estava
-},
+```
+[1 Contatos] → [2 Mensagem] → [3 Envio] → [4 Acompanhar]
 ```
 
-`DEFAULT_LOCKED.banner` continua `true` — abre travado nessa posição. Quem quiser mexer continua podendo destravar.
+Topo fixo com stepper, contador de selecionados, botão "Salvar rascunho" e atalho "Testar em mim".
 
-## Garantir que o download sai igual ao preview (sem cortes laterais)
+### Passo 1 — Contatos (de onde vêm)
+Abas dentro do passo:
+- **Do CRM** — filtros combinados: etapa do kanban, consultor, tag, distribuidora/UF (via DDD), valor da conta (min/max), origem (anúncio, orgânico, indicação), data de criação, última interação (>N dias sem responder).
+- **Das conversas** — leads que conversaram em X dias, com status (respondeu / não respondeu / bot pausado / humano assumiu), horário da última mensagem.
+- **Colar lista** — textarea, aceita um número por linha ou separados por vírgula; auto-limpa máscara.
+- **Importar CSV/Excel** — drag-and-drop, mapeamento visual de colunas (nome, telefone, valor_conta, cidade...), preview das 5 primeiras linhas, detecção de duplicados.
 
-O preview usa `background-size: cover` (320 × 575 px, ratio 0.557). O canvas de export é `1008 × 1808` (mesmo ratio 0.557) com `drawImageCover`. PDF é `504 × 904 mm` (mesmo ratio). Como os três usam a mesma proporção e o mesmo "cover", o download já sai 1:1 com o preview.
+Painel lateral direito mostra ao vivo: total, válidos, duplicados, já enviados hoje, em DND (opt-out). Botão "Remover quem já recebeu este disparo nos últimos N dias" (anti-spam).
 
-Para blindar contra qualquer drift futuro:
+### Passo 2 — Mensagem
+Editor único que aceita:
+- **Texto** com toolbar de variáveis ({nome}, {primeiro_nome}, {valor_conta}, {cidade}, {consultor}) e **spintax** `{oi|olá|e aí}` com botão "Gerar 3 variações" para preview.
+- **Anexo** (um dos tipos): imagem (jpg/png/webp), vídeo (mp4), áudio (ogg/mp3 — enviado como voice/PTT), documento (pdf, docx, xlsx). Suporta arrastar arquivo, gravação de áudio no navegador (já existe `useAudioRecorder` com OGG/Opus), e seleção da biblioteca de mídia (`ai_media_library`).
+- **Ordem de envio** se houver texto + mídia: mídia primeiro / texto primeiro / só legenda na mídia.
+- **Saudação dinâmica por horário**: bom dia/boa tarde/boa noite automático.
+- Preview ao vivo com o primeiro contato real selecionado, em "balão" WhatsApp, navegável (←/→) para conferir 5 contatos diferentes.
+- Carregar/Salvar como template (reusa `useTemplates`).
 
-1. No `handleDownloadPDF`, remover o cálculo de `scale/dx/dy` (que existe só "por segurança" e nunca dispara hoje) e desenhar a imagem ocupando o PDF inteiro: `pdf.addImage(imgData, "JPEG", 0, 0, wmm, hmm)`. Isso garante que nada fica com margem branca/preta nas laterais mesmo se o canvas vier com 1px de diferença por arredondamento.
-2. Trocar `toDataURL("image/jpeg", 0.95)` por `toDataURL("image/png")` no PDF — JPEG nessa qualidade pode introduzir artefato no QR (que é binário). PNG mantém o QR cristalino e ainda preserva 100% do visual do preview.
+### Passo 3 — Configurar envio
+- **Velocidade**: presets Seguro / Normal / Rápido + custom (blocos de 10–50, pausa 5–60min, intervalo aleatório N–M segundos entre mensagens).
+- **Janela permitida**: horário (ex. 08:00–20:00), dias da semana (seg–sex), fuso. Fora da janela, pausa e retoma sozinho.
+- **Agendamento**: enviar agora / começar em data+hora.
+- **Anti-bloqueio**: typing simulado, pular finais de semana, parar se >X% falhar, rotação automática entre N instâncias do mesmo consultor (se existirem).
+- **Confirmação**: tela final com resumo (X contatos, Y mensagens, tempo estimado, custo zero) e botão grande "Iniciar disparo" com double-click confirmation.
 
-Nenhuma outra parte do componente, nem o resto do app, é tocada.
+### Passo 4 — Acompanhar (vira a tela principal após iniciar)
+- Barra de progresso por bloco + total.
+- Lista ao vivo: contato, status (fila/enviando/enviado/falha/bloqueado), horário, mensagem usada.
+- Botões: Pausar / Retomar / Cancelar / Pular bloco.
+- Filtros: só falhas, só enviados.
+- **Download relatório CSV** (telefone, nome, status, motivo da falha, mensagem enviada, timestamp).
+- Histórico de campanhas anteriores no rodapé, com botão "Reenviar só para quem falhou".
 
-## Verificação
+## Arquitetura técnica
 
-- Abrir o modal QR Code de um parceiro → escolher "Banner 504×940mm" → conferir que aparece travado com QR no canto inferior esquerdo sobre a família e faixa amarela no rodapé, idêntico ao print.
-- Clicar "Baixar PDF (504×904mm)" → abrir o PDF → conferir que o conteúdo enche a página inteira, sem margem branca lateral, com QR e faixa exatamente nas mesmas posições do preview.
-- Clicar "Baixar PNG" → mesma checagem (1008×1808, sem cortes).
+### Frontend
+- Nova pasta `src/components/whatsapp/bulk-pro/` com:
+  - `BulkProPanel.tsx` (orquestrador + stepper)
+  - `steps/Step1Contacts.tsx`, `Step2Message.tsx`, `Step3Schedule.tsx`, `Step4Monitor.tsx`
+  - `parts/ContactFilters.tsx`, `CsvImporter.tsx`, `MessageEditor.tsx`, `SpintaxPreview.tsx`, `MediaPicker.tsx`, `LivePreview.tsx`, `CampaignHistory.tsx`
+  - `useBulkProState.ts` (Zustand-like reducer com persistência em localStorage = rascunho)
+  - `useCampaignRunner.ts` (motor de envio, baseado no atual `BulkBlockSendPanel` mas reescrito)
+- Em `WhatsAppTab.tsx` trocar `BulkBlockSendPanel` por `BulkProPanel` (mantém o arquivo antigo por 1 release como fallback comentado).
+- Reusa: `useAudioRecorder`, `useFileAttach`, `useTemplates`, `uploadMedia`, `sendMessage` do `services/messageSender.ts`.
+- Validação com `zod` (schemas para CSV, contato, campanha).
+
+### Backend (Supabase)
+- Nova tabela `bulk_campaigns` (id, consultant_id, name, status, message_text, media_url, media_type, total, sent, failed, scheduled_at, started_at, finished_at, config jsonb, created_at) — com GRANTs + RLS por `consultant_id = auth.uid()`.
+- Nova tabela `bulk_campaign_targets` (id, campaign_id, phone, name, vars jsonb, status, sent_at, error, message_id) — GRANTs + RLS via campanha do dono.
+- Edge function existente de envio é reaproveitada; loop fica no cliente (igual hoje) mas grava progresso na tabela para sobreviver a F5.
+- Cron `bulk-scheduler` (nova edge function): roda a cada 1 min, dispara campanhas agendadas cujo `scheduled_at <= now()`.
+
+### Tipos de mídia (atende o pedido)
+| Tipo | Aceito | Como envia |
+|------|--------|-----------|
+| Imagem | jpg, png, webp ≤16MB | mensagem image + legenda |
+| Vídeo | mp4 ≤16MB | mensagem video + legenda |
+| Áudio | ogg, mp3, m4a ≤16MB | voice/PTT (ogg) ou audio |
+| Documento | pdf, docx, xlsx, etc | mensagem document + nome |
+
+## Fora de escopo (próxima fase)
+- A/B test de mensagens
+- Integração com lista de transmissão nativa do WhatsApp
+- Webhooks de status (sentregue/lido) já capturados, só será exibido na v2
+
+## Arquivos a criar/editar
+- **novo**: `src/components/whatsapp/bulk-pro/` (10 arquivos)
+- **editar**: `src/components/whatsapp/WhatsAppTab.tsx` (trocar import)
+- **migration**: `bulk_campaigns` + `bulk_campaign_targets` com GRANTs + RLS
+- **nova edge function**: `bulk-scheduler`
+- **manter**: `BulkSendPanel.tsx` e `BulkBlockSendPanel.tsx` como fallback (não removidos nesta entrega)
