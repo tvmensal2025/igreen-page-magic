@@ -168,15 +168,18 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     setTargets(initialTargets);
     setStep(4);
 
-    // Wait for schedule
+    // Wait for schedule (treat scheduleAt as LOCAL time)
     if (config.scheduleAt) {
+      // datetime-local format "YYYY-MM-DDTHH:mm" is parsed as local by Date()
       const target = new Date(config.scheduleAt).getTime();
-      setWaitingSchedule(config.scheduleAt);
-      while (Date.now() < target && !cancelledRef.current) {
-        await new Promise(r => setTimeout(r, 1000));
+      if (!isNaN(target) && target > Date.now()) {
+        setWaitingSchedule(config.scheduleAt);
+        while (Date.now() < target && !cancelledRef.current) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        setWaitingSchedule(null);
+        if (cancelledRef.current) { setRunning(false); setDone(true); return; }
       }
-      setWaitingSchedule(null);
-      if (cancelledRef.current) { setRunning(false); setDone(true); return; }
     }
 
     let consecutiveFailures = 0;
