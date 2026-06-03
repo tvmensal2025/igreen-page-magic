@@ -531,6 +531,57 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
             </Popover>
           )}
 
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setOnly48h(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                only48h ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
+              }`}
+            >
+              <MessageSquare className="w-3 h-3" />
+              Últimas 48h no WhatsApp
+              {only48h && <X className="w-3 h-3" />}
+            </button>
+
+            {dddOptions.length > 0 && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                      dddFilter.size > 0 ? "bg-primary/20 border-primary/40 text-primary" : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
+                    }`}
+                  >
+                    <MapPin className="w-3 h-3" />
+                    {dddFilter.size === 0 ? "Filtrar por DDD" : `DDD: ${Array.from(dddFilter).sort().join(", ")}`}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-0" align="start">
+                  <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/50">
+                    <span className="text-[11px] font-semibold text-muted-foreground">Escolha os DDDs</span>
+                    {dddFilter.size > 0 && (
+                      <button onClick={() => setDddFilter(new Set())} className="text-[10px] text-primary hover:underline">
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-52 overflow-y-auto p-1.5 grid grid-cols-3 gap-0.5">
+                    {dddOptions.map(d => (
+                      <label key={d} className="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:bg-secondary/50 text-xs">
+                        <Checkbox checked={dddFilter.has(d)} onCheckedChange={(checked) => {
+                          setDddFilter(prev => { const n = new Set(prev); checked ? n.add(d) : n.delete(d); return n; });
+                        }} />
+                        <span className="font-mono">{d}</span>
+                      </label>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
+
+
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input placeholder="Buscar por nome ou telefone..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
