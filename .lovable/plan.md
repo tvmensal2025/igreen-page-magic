@@ -1,57 +1,54 @@
-# Auditoria completa do Fluxo D
+# Correção dos achados da auditoria do Fluxo D
 
-**Regra inviolável:** cada passo é uma entidade isolada com ID próprio. Cópias são passos novos. A auditoria nunca sugere "sincronizar" passos entre si — só aponta defeitos *internos* a um passo ou *link quebrado* a partir dele.
+Cada passo é alterado isoladamente, por ID. Nenhum UPDATE afeta dois passos.
 
-## O que será feito
+## Migration única (todas as operações, cada uma num statement próprio)
 
-### 1. Auditoria estática (por passo, isolada)
+### A. Desativar 2 passos inalcançáveis
 
-Script Deno lê os 16 passos do flow `320bf22c-…` e valida cada um sozinho:
+```sql
+UPDATE bot_flow_steps SET is_active=false WHERE id='7a85cc99-6fdf-4e5c-8752-d51b92e9bd09'; -- d_handoff
+UPDATE bot_flow_steps SET is_active=false WHERE id='dc43c090-62e8-4429-bc7d-d5e2230c2a26'; -- d_como_funciona_copy_in3s
+```
 
-- `fallback.mode = ai_answer` exige `captures._buttons` com ≥1 opção (bug já corrigido — re-checar)
-- `transitions[].goto_step_id` aponta para passo existente **e ativo** (senão = link quebrado **deste** passo)
-- IDs de botões únicos dentro do passo
-- `trigger_phrases` não-vazias quando a transição não tem `goto_special`
-- `captures` com `field` e `kind` válidos para o `step_type`
-- Typos óbvios em títulos de botão (espaço faltando após emoji, etc.)
-- `position` único no fluxo
-- Passo ativo cujo `goto_step_id` aponta para passo inativo
+### B. Remover `trigger_phrases` curtas (substring-collision)
 
-### 2. Reachability (passo isolado, só reporta)
+Phrases-alvo a remover: `"um"`, `"dois"`, `"tres"`, `"três"`, `"como"`. Mantenho `"1"`, `"2"`, `"3"` numéricos (cobertos pelo parser numérico do engine) e mantenho `"primeiro"`, `"segundo"`, `"terceiro"` que não colidem.
 
-A partir de `d_welcome`, calcular conjunto alcançável. Passos ativos fora desse conjunto são reportados como "inalcançáveis" e a migration opcional desativa **apenas eles** (`is_active=false`), sem tocar em mais nada.
+Um UPDATE por passo (7 passos afetados), cada um reescrevendo só o próprio `transitions` jsonb com as phrases filtradas:
 
-Candidatos atuais: `d_como_funciona_copy_in3s` (pos 19) e `d_handoff` (pos 9).
+- `d_welcome` (aee7b26c…) — remove um, dois, três, tres, como das suas 3 transitions
+- `d_como_funciona` (c87d76f8…) — remove dois, três, tres
+- `d_resultado` (4df1f90a…) — remove um, três, tres
+- `d_simular_resultado` (b1a52222…) — remove dois, três, tres, como
+- `d_escolher_simulacao` (b1a53333…) — remove um, dois
+- `d_como_funciona_copy_qwpu` (26b106c7…) — remove dois, três, tres
+- (o copy_in3s será desativado em A, não precisa limpar)
 
-### 3. Simulação de runtime (engine v3 local, determinístico)
+Cada UPDATE usa `jsonb_path_query_array` para filtrar literalmente as phrases do array, sem reescrever o restante da transition.
 
-Importa `_shared/engine` direto, sem Whapi/Evolution/Gemini reais. Para cada jornada, valida turno-a-turno o outbound esperado:
+### C. Typo no botão de `d_como_funciona_copy_qwpu`
 
-- **Happy path foto:** welcome → "simular" → escolher_simulacao(foto) → upload conta → resultado → cadastrar → documento → email → telefone → finalizar
-- **Happy path valor:** welcome → "simular" → escolher_simulacao(valor) → "300" → resultado → cadastrar → …
-- **Dúvida + IA (bug original):** welcome → simular → resultado → "tem fidelidade?" → confirma que sai `ai_answer` **+** os 3 botões (cadastrar/nova_pergunta/humano) re-emitidos
-- **Loop de dúvida:** 3x perguntas seguidas → confirma escalation/repeat correto
-- **Handoff:** "humano" digitado em welcome, simular, resultado, dúvidas
-- **Atalho:** "cadastrar" direto em welcome
-- **Inputs hostis:** texto em capture_conta, imagem em capture_email, "1"/"2"/"3" como números (Evolution numbered fallback)
-- **Cobertura de canal:** cada jornada roda 2x — capabilities Whapi (botões reais) e Evolution (lista numerada)
+```sql
+UPDATE bot_flow_steps
+SET captures = jsonb_set(
+  captures,
+  '{0,value,0,title}',
+  '"✅ Continuar Cadastro"'
+)
+WHERE id='26b106c7-2679-42cb-b7f6-9392e4049f6d';
+```
 
-### 4. Entregáveis
+## Verificação pós-migration
 
-- `.kiro/specs/fluxo-d-auditoria/report.md` — relatório completo agrupado por passo: defeitos internos, links quebrados, alcançabilidade, resultado de cada jornada simulada (PASS/FAIL com diff do outbound esperado vs. obtido)
-- Migration opcional separada que só desativa os passos inalcançáveis (apresentada via supabase--migration para aprovação)
+Re-rodar `bun run .kiro/specs/fluxo-d-auditoria/audit.ts` (sem rede, determinístico) e confirmar:
+- 0 HIGH, 0 MED restantes
+- 22/22 jornadas PASS (incluindo "humano digitado no welcome" → handoff)
+- 0 passos inalcançáveis ativos
 
-### Sem efeitos colaterais
+Atualizar `report.md` com o resultado final.
 
-- Zero escrita em `bot_flow_steps` durante a auditoria
-- Zero chamada a Whapi/Evolution/Gemini reais
-- Banco só é tocado se você aprovar a migration de desativação no fim
-
-## Detalhes técnicos
-
-- Scripts em `.kiro/specs/fluxo-d-auditoria/` (audit-static.ts, audit-runtime.ts)
-- Runtime usa `supabase/functions/_shared/engine/runStep.ts` + `variants/d.ts` + capabilities mockadas (`{supportsButtons:true,maxButtons:3,supportsList:false}` para Whapi; `{supportsButtons:false,maxButtons:0,supportsList:false}` para Evolution)
-- Cada jornada é um array `[{input, expectedOutbound[]}]`; o runner compara `kind`, `text` (regex tolerante), `choice.preferred`, `choice.options.length`
-- Falha de jornada = diff exato para reproduzir  
-  
-JA APLICAR PARA OS PASSOS NAO SER DUPLICADO ERRADO, E SIM COO UNICO SEMPRE, INDEPENDENTE DA ALTERACO DE 1 NUNCA ALTERA O OUTRO
+## Sem efeitos colaterais
+- Cada UPDATE escopado por `WHERE id=...` único
+- Nenhum passo cópia é tocado por causa de outro
+- Nenhuma alteração no engine v3 ou nos handlers
