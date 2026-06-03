@@ -390,8 +390,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     setConfig(restored);
     setCampaignName(payload.name);
     toast({ title: "Retomando disparo", description: `${payload.queuedTargets.length} contatos na fila` });
-    // Roda com config restaurada (sem aguardar nova schedule) e mantém o mesmo campaign_id
-    setTimeout(() => runCampaign(payload.queuedTargets, payload.id), 50);
+    // Passa overrides para não depender da propagação de setState
+    const mediaOverride: PreparedMedia | null = payload.mediaUrl && payload.mediaType && payload.mediaType !== "text"
+      ? { url: payload.mediaUrl, kind: payload.mediaType as any, fileName: payload.mediaFilename || undefined }
+      : null;
+    runCampaign(payload.queuedTargets, payload.id, {
+      text: payload.messageText,
+      media: mediaOverride,
+      config: restored,
+      name: payload.name,
+    });
   }, [running, runCampaign, toast]);
 
   const resetAll = () => {
