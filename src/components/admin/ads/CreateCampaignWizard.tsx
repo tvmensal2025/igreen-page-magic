@@ -1208,6 +1208,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                 <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                   <Smartphone className="w-3 h-3" /> Total: <strong className="text-foreground">{totalFiles + pickedLibrary.length}</strong> foto(s). Misture formatos — Meta usa cada um no posicionamento ideal.
                 </div>
+                </>
+                )}
               </div>
             )}
 
