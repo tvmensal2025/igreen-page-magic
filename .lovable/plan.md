@@ -1,51 +1,67 @@
-# Renomear "Variante" → "Fluxo" e confirmar capacidade/isolamento
+# Análise + melhoria do Fluxo B (IA livre)
 
-## Análise
+## Diagnóstico
 
-**Pode adicionar mais fluxos?** Sim. O schema (`bot_flows.variant CHECK IN ('A','B','C','D','E')`) suporta **até 5 fluxos por consultor**, um por letra. Para o Rafael hoje existem **B** (IA livre) e **D** (padrão). Sobram **A**, **C** e **E** para criar.
+### 1. "2 fluxos juntos" — o que está acontecendo
 
-**Cada fluxo é 100% individual?** Sim, após a correção da rodada anterior:
-- Cada `bot_flows.id` é único por `(consultant_id, variant)` (índice `uniq_bot_flows_active_per_consultant_variant`).
-- `bot_flow_steps` referenciam `flow_id` específico — editar um nunca toca outro.
-- `seed_default_camila_flow` agora filtra por `variant='D'` (não reaproveita outro fluxo).
-- O builder não cria mais "A fantasma": só lista fluxos que existem de fato.
+Olhando o pipeline:
 
-**Limite de 5** é uma constraint de banco. Aumentar exigiria nova migration (`bot_flows_variant_check` + `customers_flow_variant_check`). Não é necessário agora — o usuário só pediu para confirmar; vou deixar em 5 e informar.
+- `whapi-webhook/handlers/bot-flow.ts:614-648` — Quando `flow_variant === "B"` e é texto, chama `runFluxoBAI` e **retorna imediatamente** (`return { reply: "", updates: {} }`). Não há disparo paralelo do fluxo A/D, o caminho é exclusivo.
+- `_shared/fluxo-b-ai.ts:243` — `reply = (chosen.text || "").trim() || buildProfessionalFallback()`. Só usa o fallback quando o modelo devolveu vazio. Sem duplicação.
 
-## Mudança solicitada: renomear "Variante" → "Fluxo" na UI
+Conclusão: **não há dois fluxos disparando**. O que o usuário percebe como "2 fluxos juntos" é a **própria IA gerando duas mensagens em um único turno** — porque o super prompt atual permite respostas de "2 a 4 linhas" e ainda traz a estrutura de abertura em 3 linhas. O modelo cola: (a) saudação/recapitulação + (b) próxima pergunta, parecendo duas mensagens emendadas. Há também a "Abertura" em 3 partes que o modelo às vezes repete mesmo quando já existe histórico.
 
-Apenas labels/textos visíveis. As letras A-E continuam (são chaves técnicas no banco). O `type Variant` no código pode permanecer — não afeta o que o usuário vê.
+Causa raiz no prompt:
+- Bloco `# Abertura` exige saudação + gancho + pedido de nome **em 3 linhas**. Modelos fracos replicam esse padrão fora da abertura, gerando o efeito "duas mensagens".
+- `# Tom` permite "2 a 4 linhas" sem regra de "uma pergunta por turno".
+- Não há instrução explícita "1 mensagem = 1 pergunta concreta".
 
-### Arquivos editados
+### 2. "Não tem negrito"
 
-**`src/components/admin/flow-builder/VariantDistributionBar.tsx`** (todos os textos voltados ao usuário):
-- "Distribuição" → "Distribuição de fluxos"
-- Tooltip: "variantes ativas" → "fluxos ativos"; "Variantes pausadas" → "Fluxos pausados"
-- Toast: "Variante X recebendo leads" → "Fluxo X recebendo leads"; "Variante X pausada" → "Fluxo X pausado"
-- Toast: "Todas as variantes (A–E) já existem" → "Todos os fluxos (A–E) já foram criados (limite: 5)"
-- Toast: "Variante X criada/excluída" → "Fluxo X criado/excluído"
-- "Variante A não pode ser excluída" → "Fluxo A não pode ser excluído" (ajustar regra: hoje só D é o padrão; mudar para impedir exclusão do **último** fluxo restante em vez de fixar em "A", o que é mais correto após a refactor)
-- Confirm: "Excluir variante X?" → "Excluir fluxo X?"; descrição: "passos desta variante" → "passos deste fluxo"
-- Dropdown: "Excluir variante X" → "Excluir fluxo X"
-- Botão: "Adicionar variante" → "Adicionar fluxo"
-- Badge: "X ativa(s) · round-robin" → "X fluxo(s) ativo(s) · round-robin"
+O prompt diz literalmente **"Sem markdown"**. Resultado: o modelo não usa `*texto*`, que é o padrão de **negrito do WhatsApp**. O usuário quer destaque visual nos números importantes (valor da conta, economia estimada, percentual). É só liberar e instruir o formato WhatsApp (não Markdown padrão).
 
-**`src/components/admin/flow-builder/flowTypes.ts`**:
-- `VARIANT_LABEL`: trocar prefixos para soar como "Fluxo X — descrição":
-  - A: "Fluxo A (com áudio)"
-  - B: "Fluxo B (IA livre)"  ← corrigir descrição também
-  - C: "Fluxo C (vídeo inicial)"
-  - D: "Fluxo D (padrão Camila)"
-  - E: "Fluxo E (personalizado)"
+WhatsApp suporta: `*negrito*`, `_itálico_`, `~tachado~`, ```` ``` ```` `monoespaçado```` ``` ````. Vamos liberar apenas `*negrito*` para evitar visual carregado.
 
-**`src/pages/FluxoBuilder.tsx`**:
-- Linha 701: "Editando variante X — ..." → "Editando Fluxo X — ..."
-- Linha 347 (toast de erro): "Não foi possível carregar a variante" → "Não foi possível carregar o fluxo"
-- Comentários internos: podem permanecer "variante" (não são UI).
+## Mudanças
 
-## Não muda
+### A. `supabase/functions/_shared/fluxo-b-prompt.ts` — reescrever `DEFAULT_PROMPT`
 
-- Schema do banco (constraint fica em A-E).
-- `type Variant`, nomes de variáveis, RPCs.
-- Lógica de isolamento já corrigida.
-- Variante/Fluxo **B** (IA livre) — só recebe novo label.
+Reorganizar regras com foco em três coisas:
+
+1. **1 mensagem = 1 pergunta**. Máximo 3 linhas. Nunca empilhar saudação + recapitulação + pergunta nova no mesmo turno (essa era a fonte do "2 fluxos juntos").
+2. **Abertura** vira opção curta: 2 linhas no máximo, gancho de valor + pergunta do nome. E é proibido repetir o padrão de abertura quando já há histórico (deduzido por `# Memória da conversa` presente).
+3. **Liberar negrito WhatsApp** com regra clara:
+   - Use `*texto*` (negrito WhatsApp) para **destacar valores e percentuais críticos**: valor da conta, economia mensal/anual, percentual (ex.: `economia de *até 20%*`, `R$ *350,00*`).
+   - Nunca use `**texto**` (Markdown), só `*texto*`.
+   - Sem itálico, sem tachado, sem listas markdown. Só negrito pontual.
+4. Reforçar tom profissional e remover gatilhos que fazem o modelo "explicar antes de perguntar".
+
+### B. Pequeno ajuste em `fluxo-b-ai.ts` — sanitizar saída
+
+Após receber `chosen.text`, aplicar uma normalização leve antes de devolver:
+
+- Trocar `**texto**` → `*texto*` (caso o modelo escape em Markdown).
+- Cortar linhas em branco duplicadas (`\n{3,}` → `\n\n`).
+- Se a resposta tiver mais de **4 linhas não-vazias**, manter apenas as 4 primeiras + a última pergunta detectada (heurística simples para impedir "2 mensagens em 1").
+- Limite duro: **600 caracteres** por resposta; trunca preservando última frase.
+
+Isso garante que mesmo se o modelo errar, o usuário nunca veja duas mensagens emendadas.
+
+### C. Atualizar a persona salva do Rafael (consultor atual)
+
+A persona personalizada do Rafael em `ai_persona_fluxo_b` foi gravada na rodada anterior com o tom antigo (sem negrito, "2 a 4 linhas"). Vou regravar com o novo template — mantendo o nome dele como representante.
+
+## Arquivos tocados
+
+- `supabase/functions/_shared/fluxo-b-prompt.ts` — novo `DEFAULT_PROMPT`.
+- `supabase/functions/_shared/fluxo-b-ai.ts` — função `sanitizeReply()` aplicada antes do `return`.
+- `update` em `public.consultants` (somente Rafael) reescrevendo `ai_persona_fluxo_b` para o novo template.
+
+Sem migration de schema, sem mexer em variantes A/C/D, sem mexer no roteamento do webhook.
+
+## Validação
+
+- Abrir `/admin/fluxos` (variante B) no tester:
+  - "oi" → deve responder em até 3 linhas, com negrito no número (`*até 20%*`), e **só uma pergunta**.
+  - Depois de informar nome → próxima resposta pergunta valor da conta em 1-2 linhas, com `*R$*` se citar valor.
+  - Nunca repetir o gancho de abertura após o primeiro turno.

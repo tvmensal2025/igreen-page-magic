@@ -240,7 +240,7 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     return "Vamos continuar seu cadastro. Pode me confirmar a próxima informação que pedi?";
   }
 
-  const reply = (chosen.text || "").trim() || buildProfessionalFallback();
+  const reply = sanitizeReply((chosen.text || "").trim() || buildProfessionalFallback());
 
   // 7) Memória persistente: atualiza conversation_summary em background a cada
   // ~6 inbounds. Fire-and-forget — não bloqueia a resposta ao lead.
@@ -276,6 +276,44 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
 }
 
 // ─── helpers internos ────────────────────────────────────────────────────
+
+// Sanitiza a resposta da IA antes de enviar ao lead:
+// - Converte **negrito** (Markdown) em *negrito* (WhatsApp)
+// - Remove listas markdown soltas no início de linha
+// - Colapsa linhas em branco duplicadas
+// - Garante no máximo 4 linhas não-vazias (impede "2 mensagens em 1")
+// - Limita a 600 caracteres preservando a última frase
+function sanitizeReply(raw: string): string {
+  let s = String(raw || "").trim();
+  if (!s) return s;
+  // **bold** -> *bold*  (WhatsApp não entende dupla)
+  s = s.replace(/\*\*(.+?)\*\*/g, "*$1*");
+  // Remove bullets markdown "- " / "* " no começo de linha
+  s = s.replace(/^[ \t]*[-*][ \t]+/gm, "");
+  // Colapsa múltiplas linhas em branco
+  s = s.replace(/\n{3,}/g, "\n\n");
+  // Máx 4 linhas não-vazias
+  const lines = s.split("\n");
+  const kept: string[] = [];
+  let nonEmpty = 0;
+  for (const ln of lines) {
+    const t = ln.trim();
+    if (t) {
+      if (nonEmpty >= 4) continue;
+      nonEmpty++;
+    }
+    kept.push(ln);
+  }
+  s = kept.join("\n").trim();
+  // Limite duro de 600 chars, cortando na última frase completa
+  if (s.length > 600) {
+    const cut = s.slice(0, 600);
+    const lastStop = Math.max(cut.lastIndexOf("."), cut.lastIndexOf("?"), cut.lastIndexOf("!"));
+    s = lastStop > 200 ? cut.slice(0, lastStop + 1) : cut;
+  }
+  return s.trim();
+}
+
 
 interface AIToolCallParsed { name: string; arguments: any }
 interface AICallResult { text: string; toolCalls: AIToolCallParsed[]; modelUsed: string }
