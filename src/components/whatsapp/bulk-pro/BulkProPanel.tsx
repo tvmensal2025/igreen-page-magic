@@ -204,21 +204,18 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
       campaignIdRef.current = existingCampaignId;
     }
 
-    // Wait for schedule (treat scheduleAt as LOCAL time)
+    // Se houver agendamento futuro, deixa para o worker server-side (bulk-scheduler)
+    // — pode fechar a aba sem perder o disparo.
     if (useConfig.scheduleAt) {
       const target = new Date(useConfig.scheduleAt).getTime();
       if (!isNaN(target) && target > Date.now()) {
-        setWaitingSchedule(useConfig.scheduleAt);
-        while (Date.now() < target && !cancelledRef.current) {
-          await new Promise(r => setTimeout(r, 1000));
-        }
-        setWaitingSchedule(null);
-        if (cancelledRef.current) {
-          setRunning(false); setDone(true);
-          if (campaignIdRef.current) await updateCampaignStatus(campaignIdRef.current, { status: "canceled", finished_at: new Date().toISOString() });
-          return;
-        }
-        if (campaignIdRef.current) await updateCampaignStatus(campaignIdRef.current, { status: "running", started_at: new Date().toISOString() });
+        toast({
+          title: "Disparo agendado ✓",
+          description: `Início: ${new Date(useConfig.scheduleAt).toLocaleString("pt-BR")}. Você pode fechar a aba — o servidor envia sozinho.`,
+        });
+        setRunning(false);
+        setDone(true);
+        return;
       }
     }
 
