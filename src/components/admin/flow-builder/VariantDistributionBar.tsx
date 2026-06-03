@@ -213,9 +213,8 @@ export default function VariantDistributionBar({
             {activeVariants.length} fluxo{activeVariants.length === 1 ? "" : "s"} ativo{activeVariants.length === 1 ? "" : "s"} · round-robin 1 a 1
           </Badge>
         </div>
-
-        </div>
       </div>
     </div>
   );
+
 }
