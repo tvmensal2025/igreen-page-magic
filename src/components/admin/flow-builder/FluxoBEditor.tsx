@@ -158,9 +158,9 @@ export default function FluxoBEditor({ consultantId }: Props) {
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTest(); } }}
               placeholder="Digite como se fosse o lead..."
-              disabled={!testCustomerId.trim() || sending}
+              disabled={sending}
             />
-            <Button onClick={sendTest} disabled={!testCustomerId.trim() || !input.trim() || sending}>
+            <Button onClick={sendTest} disabled={!input.trim() || sending}>
               <Send className="w-4 h-4" />
             </Button>
           </div>
