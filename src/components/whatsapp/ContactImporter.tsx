@@ -183,17 +183,36 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
     return Array.from(names).sort();
   }, [customers]);
 
+  const dddOptions = useMemo(() => {
+    const set = new Set<string>();
+    customers.forEach(c => {
+      const ddd = getDdd(c.phone_whatsapp);
+      if (ddd) set.add(ddd);
+    });
+    return Array.from(set).sort();
+  }, [customers]);
+
   const filteredCustomers = useMemo(() => {
     let list = customers;
     if (statusFilter !== "all") list = list.filter(c => c.status === statusFilter);
     if (devolutivaFilter !== "all") list = list.filter(c => matchDevolutiva(c.devolutiva, devolutivaFilter));
     if (licenciadoFilter.size > 0) list = list.filter(c => c.registered_by_name != null && licenciadoFilter.has(c.registered_by_name));
+    if (only48h) {
+      const cutoff = Date.now() - FORTY_EIGHT_HOURS_MS;
+      list = list.filter(c => c.last_inbound_at != null && new Date(c.last_inbound_at).getTime() >= cutoff);
+    }
+    if (dddFilter.size > 0) {
+      list = list.filter(c => {
+        const d = getDdd(c.phone_whatsapp);
+        return d != null && dddFilter.has(d);
+      });
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(c => (c.name && c.name.toLowerCase().includes(q)) || c.phone_whatsapp.toLowerCase().includes(q));
     }
     return list;
-  }, [customers, statusFilter, devolutivaFilter, licenciadoFilter, searchQuery]);
+  }, [customers, statusFilter, devolutivaFilter, licenciadoFilter, only48h, dddFilter, searchQuery]);
 
   const validDbCount = useMemo(() => filteredCustomers.filter(c => isValidPhone(c.phone_whatsapp)).length, [filteredCustomers]);
 
