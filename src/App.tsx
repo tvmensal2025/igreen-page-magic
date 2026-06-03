@@ -81,6 +81,7 @@ const App = () => (
               <Route path="/cadastro/:licenca" element={<CadastroPage />} />
               <Route path="/politica-privacidade" element={<PoliticaPrivacidade />} />
               <Route path="/install" element={<InstallPage />} />
+              <Route path="/reset" element={<ResetApp />} />
               {/* ⚠️ Catch-all de 1º nível: captura o slug público do consultor.
                   Mantenha QUALQUER rota nova ACIMA desta linha, senão ela será
                   interpretada como uma licença e cairá na ConsultantPage. */}
