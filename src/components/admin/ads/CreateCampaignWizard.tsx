@@ -156,6 +156,11 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoMeta, setVideoMeta] = useState<{ duration: number; w: number; h: number } | null>(null);
+  // Legenda automática (SRT pt_BR) gerada pelo ad-video-captions.
+  const [videoCaptionsSrt, setVideoCaptionsSrt] = useState<string | null>(null);
+  const [videoCaptionsLoading, setVideoCaptionsLoading] = useState(false);
+  const [videoCaptionsError, setVideoCaptionsError] = useState<string | null>(null);
+  const [videoCaptionsEnabled, setVideoCaptionsEnabled] = useState(true);
   const [format, setFormat] = useState<AdFormat>("square");
   const [filesByFormat, setFilesByFormat] = useState<FilesByFormat>(EMPTY_FILES);
   const adFiles = filesByFormat[format];
