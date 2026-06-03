@@ -434,6 +434,9 @@ Deno.serve(async (req) => {
 
     const adIds: string[] = [];
     const rejectedImages: { url: string; issues: string[]; suggestion?: string }[] = [];
+    // Mensagem inicial WhatsApp — hoisted pra que tanto modo foto quanto vídeo usem.
+    const initialMessage = buildInitialMessage(body.initial_message, body.distribuidora);
+
 
     // =================== MODO VÍDEO (Reels/Stories) ===================
     if (creativeMode === "video") {
