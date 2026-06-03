@@ -137,11 +137,19 @@ Deno.serve(async (req) => {
       };
     }
 
-    if (!body?.cities?.length || !body.daily_budget_cents || !body.photos?.length || !body.headline || !body.primary_text) {
-      return new Response(JSON.stringify({ error: "Campos obrigatórios faltando." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const creativeMode: "photo" | "video" = body.creative_mode === "video" ? "video" : "photo";
+    const hasCustomLocations = Array.isArray(body.custom_locations) && body.custom_locations.length > 0;
+    const hasCities = Array.isArray(body.cities) && body.cities.length > 0;
+    const hasCreative = creativeMode === "video"
+      ? !!(body.video && body.video.url)
+      : !!(body.photos && body.photos.length);
+    if ((!hasCities && !hasCustomLocations) || !body.daily_budget_cents || !hasCreative || !body.headline || !body.primary_text) {
+      return new Response(JSON.stringify({ error: "Campos obrigatórios faltando (localização, criativo, headline ou texto)." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    if (body.daily_budget_cents < 2000) {
-      return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 20/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Mínimo R$ 10/dia (Meta aceita a partir de ~R$ 6/dia em CTWA, mas <R$10
+    // o aprendizado fica muito lento). UI também recomenda R$20 como sweet spot.
+    if (body.daily_budget_cents < 1000) {
+      return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 10/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Admin (Super Admin) usa a conta Facebook da plataforma diretamente —
