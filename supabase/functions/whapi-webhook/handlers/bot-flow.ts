@@ -5227,17 +5227,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         updates.conversation_step = "aguardando_doc_auto";
         reply = "";
       } else if (/^(tenho_duvida|duvida|d[uú]vida|tenho d[uú]vida|pergunta)/i.test(resp.replace(/^[^a-z0-9]+/i, ""))) {
-        // 🔧 Novo: handler de dúvida — abre Q&A em vez de re-emitir CTA em loop.
-        const dCount = ((customer as any).cta_duvida_count || 0) + 1;
-        (updates as any).cta_duvida_count = dCount;
-        if (dCount >= 3) {
-          await sendText(remoteJid, "Vou te conectar com um humano pra esclarecer com calma 🤝");
-          updates.bot_paused = true as any;
-          (updates as any).__inline_sent = true;
-          reply = "";
-        } else {
-          reply = "Pode mandar sua pergunta 😊 — assim que eu esclarecer, é só me dizer *bora cadastrar* que a gente segue.";
-        }
+        // 🔧 Novo: handler de dúvida — abre espaço pra pergunta em vez de loop de CTA.
+        reply = "Claro! Pode mandar sua pergunta 😊\n\nAssim que eu esclarecer, é só me dizer *bora cadastrar* que a gente segue garantindo sua economia.";
       } else {
         // Re-emite o CTA com botões (sim + dúvida).
         const ctaText = "Pra continuar seu cadastro e garantir essa economia, é só tocar no botão abaixo 👇";
