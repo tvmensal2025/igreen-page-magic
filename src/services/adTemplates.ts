@@ -8,6 +8,10 @@ export interface AdTemplate {
   title: string;
   description: string | null;
   photos: AdTemplatePhoto[];
+  // Vídeo (alternativa a photos quando creative_mode = "video").
+  video_url: string | null;
+  video_thumb_url: string | null;
+  creative_mode: "photo" | "video";
   headline: string;
   primary_text: string;
   description_text: string;
@@ -24,6 +28,34 @@ export interface AdTemplate {
   updated_at: string;
   target_distribuidora_ids: string[];
   target_cidades: string[];
+}
+
+function row(r: any): AdTemplate {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    photos: Array.isArray(r.photos) ? r.photos : [],
+    video_url: r.video_url ?? null,
+    video_thumb_url: r.video_thumb_url ?? null,
+    creative_mode: (r.creative_mode === "video" ? "video" : "photo"),
+    headline: r.headline ?? "",
+    primary_text: r.primary_text ?? "",
+    description_text: r.description_text ?? "",
+    headline_variants: Array.isArray(r.headline_variants) ? r.headline_variants : [],
+    primary_text_variants: Array.isArray(r.primary_text_variants) ? r.primary_text_variants : [],
+    age_min: r.age_min ?? 28,
+    age_max: r.age_max ?? 60,
+    genders: r.genders ?? [],
+    suggested_daily_budget_cents: r.suggested_daily_budget_cents ?? 3000,
+    status: r.status ?? "draft",
+    usage_count: r.usage_count ?? 0,
+    avg_cpl_cents: r.avg_cpl_cents ?? null,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    target_distribuidora_ids: Array.isArray(r.target_distribuidora_ids) ? r.target_distribuidora_ids : [],
+    target_cidades: Array.isArray(r.target_cidades) ? r.target_cidades : [],
+  };
 }
 
 function row(r: any): AdTemplate {
