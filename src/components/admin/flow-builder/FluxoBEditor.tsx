@@ -27,6 +27,8 @@ export default function FluxoBEditor({ consultantId }: Props) {
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // Estado sintético do "lead simulado" — acumula updates entre turnos no tester
+  const [simState, setSimState] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (!consultantId) return;
