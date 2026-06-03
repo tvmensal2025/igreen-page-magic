@@ -1045,6 +1045,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                 <div className="text-xs text-muted-foreground">
                   ✨ Pré-configurado: idade 25-65, Advantage+ Audience ON, posicionamentos automáticos FB+IG, lance Lowest Cost, objetivo Mensagens (WhatsApp).
                 </div>
+                </div>
+                )}
               </div>
             )}
 
