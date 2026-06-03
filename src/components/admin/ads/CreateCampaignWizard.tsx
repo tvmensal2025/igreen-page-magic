@@ -493,7 +493,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       const r = await preflightCampaign({
         cities: geoMode === "cities" ? cities.map((c) => ({ key: c.key, name: c.name })) : [],
         custom_locations: geoMode === "radius"
-          ? radiusPoints.map((p) => ({ latitude: p.lat, longitude: p.lng, radius: p.radius_km, distance_unit: "kilometer" as const, address_string: p.address }))
+          ? radiusPoints.map((p) => ({ ...p, distance_unit: "kilometer" as const }))
           : undefined,
         daily_budget_cents: Math.round(budget * 100),
       });
