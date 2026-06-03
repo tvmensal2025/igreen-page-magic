@@ -1,5 +1,5 @@
-// Picker de endereço/raio para segmentação ultra-local (rua, casa do vizinho, bairro).
-// Usa Places API (New) via browser autocomplete + Google Maps JS p/ mini-mapa com círculo.
+// Picker de endereço/raio para segmentação ultra-local (rua, bairro, ponto de referência).
+// Usa Nominatim (OpenStreetMap) para autocomplete — gratuito, sem chave de API.
 // Saída: lista de pontos { latitude, longitude, radius_km, address_string } (até 200).
 import { useEffect, useRef, useState } from "react";
 import { Label } from "@/components/ui/label";
@@ -22,153 +22,65 @@ interface Props {
   onChange: (next: RadiusPoint[]) => void;
 }
 
-const BROWSER_KEY = import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY as string | undefined;
-const TRACKING_ID = import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID as string | undefined;
-
-declare global {
-  interface Window {
-    google: any;
-    __ig_initMaps?: () => void;
-  }
-}
-
-let mapsLoadPromise: Promise<void> | null = null;
-function loadMapsApi(): Promise<void> {
-  if (typeof window === "undefined") return Promise.reject(new Error("no window"));
-  if (window.google?.maps?.importLibrary) return Promise.resolve();
-  if (mapsLoadPromise) return mapsLoadPromise;
-  if (!BROWSER_KEY) return Promise.reject(new Error("Google Maps browser key não configurada."));
-  mapsLoadPromise = new Promise((resolve, reject) => {
-    window.__ig_initMaps = () => resolve();
-    const s = document.createElement("script");
-    const channel = TRACKING_ID ? `&channel=${TRACKING_ID}` : "";
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${BROWSER_KEY}&loading=async&libraries=places&callback=__ig_initMaps${channel}`;
-    s.async = true;
-    s.onerror = () => reject(new Error("Falha ao carregar Google Maps"));
-    document.head.appendChild(s);
-  });
-  return mapsLoadPromise;
+interface NominatimResult {
+  lat: string;
+  lon: string;
+  display_name: string;
+  place_id: number;
 }
 
 export function AddressRadiusPicker({ value, onChange }: Props) {
   const [query, setQuery] = useState("");
   const [radius, setRadius] = useState(3);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
   const [loadingSugg, setLoadingSugg] = useState(false);
-  const [picking, setPicking] = useState(false);
   const [pending, setPending] = useState<RadiusPoint | null>(null);
-  const [mapReady, setMapReady] = useState(false);
-  const [mapError, setMapError] = useState<string | null>(null);
-
-  const mapDivRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
-  const circleRef = useRef<any>(null);
-  const sessionTokenRef = useRef<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    loadMapsApi()
-      .then(async () => {
-        const { Map } = await window.google.maps.importLibrary("maps");
-        if (!mapDivRef.current) return;
-        mapRef.current = new Map(mapDivRef.current, {
-          center: { lat: -15.78, lng: -47.93 }, // Brasil
-          zoom: 4,
-          disableDefaultUI: true,
-          zoomControl: true,
-          gestureHandling: "greedy",
-        });
-        // Renderiza pontos já existentes
-        renderAll();
-        setMapReady(true);
-      })
-      .catch((e) => setMapError(e.message || "Não foi possível carregar o mapa."));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => { if (mapReady) renderAll(); /* eslint-disable-next-line */ }, [value, pending, mapReady]);
-
-  function renderAll() {
-    if (!mapRef.current || !window.google?.maps) return;
-    // Limpa overlays atuais
-    (mapRef.current as any).__markers?.forEach((m: any) => m.setMap(null));
-    (mapRef.current as any).__circles?.forEach((c: any) => c.setMap(null));
-    (mapRef.current as any).__markers = [];
-    (mapRef.current as any).__circles = [];
-    const bounds = new window.google.maps.LatLngBounds();
-    const pts: RadiusPoint[] = [...value, ...(pending ? [pending] : [])];
-    pts.forEach((p, idx) => {
-      const pos = { lat: p.latitude, lng: p.longitude };
-      const m = new window.google.maps.Marker({ position: pos, map: mapRef.current, label: String(idx + 1) });
-      const c = new window.google.maps.Circle({
-        center: pos, radius: p.radius * 1000, map: mapRef.current,
-        strokeColor: pending && idx === pts.length - 1 ? "#22c55e" : "#3b82f6",
-        strokeOpacity: 0.8, strokeWeight: 1.5,
-        fillColor: pending && idx === pts.length - 1 ? "#22c55e" : "#3b82f6",
-        fillOpacity: 0.12,
-      });
-      (mapRef.current as any).__markers.push(m);
-      (mapRef.current as any).__circles.push(c);
-      bounds.extend(pos);
-      // Estende bounds pelo raio
-      const r = p.radius / 111; // km → graus aprox
-      bounds.extend({ lat: p.latitude + r, lng: p.longitude + r });
-      bounds.extend({ lat: p.latitude - r, lng: p.longitude - r });
-    });
-    if (pts.length > 0) mapRef.current.fitBounds(bounds, 40);
-  }
-
-  useEffect(() => {
-    if (!query || query.length < 3) { setSuggestions([]); return; }
-    if (!mapReady) return;
+    if (!query || query.length < 3) {
+      setSuggestions([]);
+      return;
+    }
     const handle = setTimeout(async () => {
       setLoadingSugg(true);
+      setError(null);
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
       try {
-        const { AutocompleteSuggestion, AutocompleteSessionToken } =
-          await window.google.maps.importLibrary("places");
-        if (!sessionTokenRef.current) sessionTokenRef.current = new AutocompleteSessionToken();
-        const { suggestions: s } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
-          input: query,
-          sessionToken: sessionTokenRef.current,
-          includedRegionCodes: ["br"],
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=br&limit=8&q=${encodeURIComponent(query)}`;
+        const res = await fetch(url, {
+          headers: { Accept: "application/json" },
+          signal: ctrl.signal,
         });
-        setSuggestions(s || []);
-      } catch (e) {
-        console.warn("autocomplete falhou", e);
+        if (!res.ok) throw new Error("Falha na busca");
+        const data: NominatimResult[] = await res.json();
+        setSuggestions(data || []);
+      } catch (e: any) {
+        if (e.name !== "AbortError") {
+          console.warn("nominatim falhou", e);
+          setError("Não foi possível buscar endereços agora. Tente novamente.");
+        }
       } finally {
         setLoadingSugg(false);
       }
-    }, 300);
+    }, 400);
     return () => clearTimeout(handle);
-  }, [query, mapReady]);
+  }, [query]);
 
-  async function pickSuggestion(sugg: any) {
-    setPicking(true);
-    try {
-      const place = sugg.placePrediction.toPlace();
-      await place.fetchFields({ fields: ["location", "formattedAddress", "displayName"] });
-      const loc = place.location;
-      const pt: RadiusPoint = {
-        latitude: loc.lat(),
-        longitude: loc.lng(),
-        radius,
-        address_string: place.formattedAddress || place.displayName || sugg.placePrediction.text?.text || "",
-        name: place.displayName || undefined,
-      };
-      setPending(pt);
-      setQuery(pt.address_string);
-      setSuggestions([]);
-      // Centraliza no novo ponto
-      if (mapRef.current) {
-        mapRef.current.setCenter({ lat: pt.latitude, lng: pt.longitude });
-        mapRef.current.setZoom(radius <= 2 ? 15 : radius <= 5 ? 13 : radius <= 15 ? 11 : 10);
-      }
-    } catch (e) {
-      console.warn("pick place failed", e);
-    } finally {
-      setPicking(false);
-      sessionTokenRef.current = null;
-    }
+  function pickSuggestion(s: NominatimResult) {
+    const pt: RadiusPoint = {
+      latitude: parseFloat(s.lat),
+      longitude: parseFloat(s.lon),
+      radius,
+      address_string: s.display_name,
+      name: s.display_name.split(",")[0],
+    };
+    setPending(pt);
+    setQuery(pt.address_string);
+    setSuggestions([]);
   }
 
   function confirmPending() {
@@ -180,18 +92,13 @@ export function AddressRadiusPicker({ value, onChange }: Props) {
   }
 
   // Atualiza pending.radius enquanto o slider mexe
-  useEffect(() => { if (pending) setPending({ ...pending, radius }); /* eslint-disable-next-line */ }, [radius]);
+  useEffect(() => {
+    if (pending) setPending({ ...pending, radius });
+    // eslint-disable-next-line
+  }, [radius]);
 
   function removePoint(idx: number) {
     onChange(value.filter((_, i) => i !== idx));
-  }
-
-  if (!BROWSER_KEY) {
-    return (
-      <div className="text-xs rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-amber-200">
-        Google Maps não está configurado. Configure o conector Google Maps Platform pra usar segmentação por endereço/raio.
-      </div>
-    );
   }
 
   return (
@@ -212,23 +119,21 @@ export function AddressRadiusPicker({ value, onChange }: Props) {
           />
           {loadingSugg && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />}
         </div>
+        <p className="text-[10px] text-muted-foreground mt-1">Buscando via OpenStreetMap</p>
+        {error && <p className="text-[11px] text-destructive mt-1">{error}</p>}
         {suggestions.length > 0 && (
           <div className="mt-1 border rounded-lg bg-card divide-y max-h-48 overflow-y-auto">
-            {suggestions.map((s, i) => {
-              const txt = s.placePrediction?.text?.text || "";
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={picking}
-                  onClick={() => pickSuggestion(s)}
-                  className="w-full text-left px-3 py-2 hover:bg-accent text-sm flex items-center gap-2"
-                >
-                  <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                  <span className="truncate">{txt}</span>
-                </button>
-              );
-            })}
+            {suggestions.map((s) => (
+              <button
+                key={s.place_id}
+                type="button"
+                onClick={() => pickSuggestion(s)}
+                className="w-full text-left px-3 py-2 hover:bg-accent text-sm flex items-center gap-2"
+              >
+                <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span className="truncate">{s.display_name}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -257,15 +162,6 @@ export function AddressRadiusPicker({ value, onChange }: Props) {
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Mapa */}
-      <div className="rounded-lg overflow-hidden border bg-muted">
-        {mapError ? (
-          <div className="p-4 text-xs text-destructive">{mapError}</div>
-        ) : (
-          <div ref={mapDivRef} className="w-full h-64" />
-        )}
       </div>
 
       {pending && (
