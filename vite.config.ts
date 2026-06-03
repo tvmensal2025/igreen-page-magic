@@ -17,6 +17,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       injectRegister: null, // registramos manualmente em main.tsx (com guards)
       strategies: "generateSW",
+      filename: "sw-app.js", // /sw.js fica reservado para o kill-switch em public/
       devOptions: { enabled: false },
       includeAssets: [
         "favicon.png",
