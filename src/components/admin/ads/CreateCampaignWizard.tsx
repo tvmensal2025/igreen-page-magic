@@ -1529,6 +1529,22 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
         isSuperAdmin={isSuperAdmin}
         onConfirm={(meta) => handleSaveAsTemplate(meta)}
       />
+      <AlertDialog open={lowScoreConfirm} onOpenChange={setLowScoreConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Score {quality?.score ?? 0}/100 — abaixo do ideal</AlertDialogTitle>
+            <AlertDialogDescription>
+              Anúncios com score abaixo de 70 tendem a ter CPL mais alto e menos alcance. Você pode voltar e ajustar copy/foto, ou publicar mesmo assim.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar a ajustar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setLowScoreConfirm(false); setStep(4); runPreflight(); }}>
+              Publicar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
