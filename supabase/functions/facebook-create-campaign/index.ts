@@ -13,13 +13,26 @@ import { notifyConsultant } from "../_shared/notify-consultant.ts";
 interface Body {
   name: string;
   cities: { key: string; name: string }[];
+  // Segmentação por endereço/raio (sobrepõe cities quando preenchido).
+  // Cada ponto: lat/lng + raio em km (1 a 50) + endereço.
+  custom_locations?: {
+    latitude: number;
+    longitude: number;
+    radius: number; // km
+    address_string?: string;
+    name?: string;
+  }[];
   daily_budget_cents: number;
   duration_days?: number | null;
   age_min?: number;
   age_max?: number;
+  // Modo do criativo: "photo" (padrão) ou "video" (1 vídeo Reels/Stories).
+  creative_mode?: "photo" | "video";
   // Cada foto traz seu formato original — usado pra montar asset_feed_spec
   // com customization por posicionamento. Aceita string[] legado (= square).
-  photos: ({ url: string; format: "square" | "vertical" | "story" } | string)[];
+  photos?: ({ url: string; format: "square" | "vertical" | "story" } | string)[];
+  // Vídeo único (modo "video"). Quando presente, ignora photos.
+  video?: { url: string; thumb_url?: string };
   headline: string;
   primary_text: string;
   description?: string;
