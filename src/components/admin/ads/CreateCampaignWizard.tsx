@@ -7,6 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, uploadAdVideo, validateAccount, type PreflightResult, type CustomLocation } from "@/services/facebookAds";
 import { Check, ChevronRight, Loader2, MapPin, Search, Sparkles, TrendingUp, Upload, X, ImageIcon, Smartphone, Wand2, Save, Target, DollarSign, Video, Zap } from "lucide-react";
