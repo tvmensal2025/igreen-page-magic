@@ -2,7 +2,7 @@
 
 Flow ID: `320bf22c-e383-4f53-a3c0-b88b89b02558`
 Total de passos: **16** (todos ativos)
-Data: 2026-06-03T17:55:34.480Z
+Data: 2026-06-03T17:56:30.987Z
 
 > **Regra:** cada passo é avaliado isoladamente. Cópias com IDs diferentes são passos independentes.
 
@@ -11,7 +11,7 @@ Data: 2026-06-03T17:55:34.480Z
 | Severidade | Quantidade |
 |---|---|
 | CRIT | 0 |
-| HIGH | 0 |
+| HIGH | 23 |
 | MED | 1 |
 | LOW | 0 |
 | INFO | 1 |
@@ -20,13 +20,27 @@ Runtime: **20/22** jornadas PASS (Whapi + Evolution).
 
 ## 1. Auditoria estática por passo
 
-### ✅ pos1 `d_welcome` (message) — sem defeitos
+### 🟠 pos1 `d_welcome` (message) — "Boas-vindas com botões"
+
+- **HIGH** transitions[0] tem trigger_phrase "um" — runtime faz messageText.includes("um"), casa com qualquer texto contendo "um" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "como" — runtime faz messageText.includes("como"), casa com qualquer texto contendo "como" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "dois" — runtime faz messageText.includes("dois"), casa com qualquer texto contendo "dois" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[2] tem trigger_phrase "três" — runtime faz messageText.includes("três"), casa com qualquer texto contendo "três" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[2] tem trigger_phrase "tres" — runtime faz messageText.includes("tres"), casa com qualquer texto contendo "tres" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
 
 ### ✅ pos2 `d_pedir_conta` (capture_conta) — sem defeitos
 
-### ✅ pos3 `d_como_funciona` (message) — sem defeitos
+### 🟠 pos3 `d_como_funciona` (message) — "Como funciona"
 
-### ✅ pos4 `d_resultado` (message) — sem defeitos
+- **HIGH** transitions[0] tem trigger_phrase "dois" — runtime faz messageText.includes("dois"), casa com qualquer texto contendo "dois" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "três" — runtime faz messageText.includes("três"), casa com qualquer texto contendo "três" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "tres" — runtime faz messageText.includes("tres"), casa com qualquer texto contendo "tres" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+
+### 🟠 pos4 `d_resultado` (message) — "Resultado da simulação"
+
+- **HIGH** transitions[0] tem trigger_phrase "um" — runtime faz messageText.includes("um"), casa com qualquer texto contendo "um" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "tres" — runtime faz messageText.includes("tres"), casa com qualquer texto contendo "tres" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "três" — runtime faz messageText.includes("três"), casa com qualquer texto contendo "três" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
 
 ### ✅ pos5 `d_pedir_documento` (capture_documento) — sem defeitos
 
@@ -44,16 +58,31 @@ Runtime: **20/22** jornadas PASS (Whapi + Evolution).
 
 ### ✅ pos15 `d_simular_valor` (message) — sem defeitos
 
-### ✅ pos16 `d_simular_resultado` (message) — sem defeitos
+### 🟠 pos16 `d_simular_resultado` (message) — "Resultado da simulação - Si"
 
-### ✅ pos17 `d_escolher_simulacao` (message) — sem defeitos
+- **HIGH** transitions[0] tem trigger_phrase "dois" — runtime faz messageText.includes("dois"), casa com qualquer texto contendo "dois" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[0] tem trigger_phrase "como" — runtime faz messageText.includes("como"), casa com qualquer texto contendo "como" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "tres" — runtime faz messageText.includes("tres"), casa com qualquer texto contendo "tres" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "três" — runtime faz messageText.includes("três"), casa com qualquer texto contendo "três" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+
+### 🟠 pos17 `d_escolher_simulacao` (message) — "Completa ou Rapida"
+
+- **HIGH** transitions[0] tem trigger_phrase "um" — runtime faz messageText.includes("um"), casa com qualquer texto contendo "um" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "dois" — runtime faz messageText.includes("dois"), casa com qualquer texto contendo "dois" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
 
 ### ✅ pos18 `d_simular_pedir_conta` (capture_conta) — sem defeitos
 
-### ✅ pos19 `d_como_funciona_copy_in3s` (message) — sem defeitos
+### 🟠 pos19 `d_como_funciona_copy_in3s` (message) — "Como funciona (2)"
 
-### 🟡 pos20 `d_como_funciona_copy_qwpu` (message) — "Como funciona (3)"
+- **HIGH** transitions[0] tem trigger_phrase "dois" — runtime faz messageText.includes("dois"), casa com qualquer texto contendo "dois" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "três" — runtime faz messageText.includes("três"), casa com qualquer texto contendo "três" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "tres" — runtime faz messageText.includes("tres"), casa com qualquer texto contendo "tres" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
 
+### 🟠 pos20 `d_como_funciona_copy_qwpu` (message) — "Como funciona (3)"
+
+- **HIGH** transitions[0] tem trigger_phrase "dois" — runtime faz messageText.includes("dois"), casa com qualquer texto contendo "dois" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "três" — runtime faz messageText.includes("três"), casa com qualquer texto contendo "três" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
+- **HIGH** transitions[1] tem trigger_phrase "tres" — runtime faz messageText.includes("tres"), casa com qualquer texto contendo "tres" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.
 - **MED** Typo em botão "cadastrar": título "✅Continuar Cadastro" sem espaço após o emoji.
 
 ## 2. Reachability a partir de d_welcome
@@ -142,7 +171,7 @@ Capabilities: Whapi=`{supportsButtons:true, maxButtons:3}`, Evolution=`{supports
 ### ✅ [Whapi] Numéricos 1/2/3 no welcome
 
 ```
-  turn 1: txt="1" via txt~"1." → d_escolher_simulacao | exp=d_escolher_simulacao ✅
+  turn 1: txt="1" via txt~"1" → d_escolher_simulacao | exp=d_escolher_simulacao ✅
 ```
 
 ### ✅ [Whapi] Numérico 2 no welcome → como funciona
@@ -224,7 +253,7 @@ Capabilities: Whapi=`{supportsButtons:true, maxButtons:3}`, Evolution=`{supports
 ### ✅ [Evolution] Numéricos 1/2/3 no welcome
 
 ```
-  turn 1: txt="1" via txt~"1." → d_escolher_simulacao | exp=d_escolher_simulacao ✅
+  turn 1: txt="1" via txt~"1" → d_escolher_simulacao | exp=d_escolher_simulacao ✅
 ```
 
 ### ✅ [Evolution] Numérico 2 no welcome → como funciona
