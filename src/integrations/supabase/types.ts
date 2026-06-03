@@ -5914,6 +5914,7 @@ export type Database = {
         Args: { _customer_id: string }
         Returns: undefined
       }
+      clear_recovery_mode: { Args: { p_instance: string }; Returns: undefined }
       clone_bot_flow_as: {
         Args: { _consultant_id: string; _variant: string }
         Returns: string
@@ -6100,6 +6101,10 @@ export type Database = {
           _source: string
         }
         Returns: undefined
+      }
+      pause_sending_now: {
+        Args: { p_hours?: number; p_instance: string }
+        Returns: string
       }
       recompute_pos_venda_stages: { Args: never; Returns: number }
       record_risk_signal: {

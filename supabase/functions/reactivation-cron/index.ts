@@ -21,6 +21,13 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog } from "../_shared/audit.ts";
+import {
+  checkSendQuota,
+  registerSend,
+  simulateTyping,
+  typingDurationMs,
+  humanJitterMs,
+} from "../_shared/anti-ban.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -253,12 +260,37 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         ? customer.phone_whatsapp
         : `${customer.phone_whatsapp}@s.whatsapp.net`;
 
+      // Anti-ban: warmup/cap/circuit breaker/recovery mode.
+      const quota = await checkSendQuota(supabase, instanceName);
+      if (!quota.allowed) {
+        jsonLog("info", "reactivation_cron_quota_block", {
+          instance: instanceName, reason: quota.reason, warmup_day: quota.warmup_day,
+        });
+        // Se o motivo é cota/intervalo, faz sentido tentar o próximo template noutra rodada.
+        // Se é recovery/circuit breaker, encerra o cron pra essa instância.
+        if (quota.reason === "recovery_mode" || quota.reason === "fatal_disconnect_pending_confirmation"
+            || quota.reason === "too_many_reconnects" || quota.reason === "too_many_send_failures") {
+          break;
+        }
+        if (quota.reason === "daily_cap_reached") break;
+        // min_interval_not_elapsed → pula este lead, aguarda jitter, segue
+        await new Promise((r) => setTimeout(r, Math.max(2000, humanJitterMs() * 3)));
+        continue;
+      }
+
       let ok = false;
       try {
+        // Humaniza: digitando antes do envio.
+        await simulateTyping({
+          baseUrl: apiUrl, apiKey, instance: instanceName, remoteJid,
+          durationMs: typingDurationMs(finalText),
+        });
         ok = await sender.sendText(remoteJid, finalText);
       } catch (e: any) {
         console.warn("[reactivation-cron] sendText raised:", e?.message);
       }
+
+      if (ok) await registerSend(supabase, instanceName);
 
       // Registra envio.
       try {
@@ -289,7 +321,8 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         } catch { /* não crítico */ }
         totalSent++;
         totalSentGlobal++;
-        await sleep(SLEEP_BETWEEN_SENDS_MS);
+        // Jitter humano entre envios (700-2200ms × 4 ≈ 3-9s) substitui sleep fixo.
+        await new Promise((r) => setTimeout(r, Math.max(SLEEP_BETWEEN_SENDS_MS, humanJitterMs() * 4)));
       } else {
         totalFailed++;
       }
