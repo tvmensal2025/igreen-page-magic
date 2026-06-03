@@ -11,16 +11,15 @@ export type SpeedPreset = "safe" | "normal" | "fast" | "custom";
 
 export interface SendConfig {
   preset: SpeedPreset;
-  blockSize: number;          // 10..50
-  blockPauseMin: number;      // 5..60
-  intervalMinS: number;       // seconds
-  intervalMaxS: number;       // seconds
+  blockSize: number;
+  blockPauseMin: number;
+  intervalMinS: number;
+  intervalMaxS: number;
   windowStart: string;        // "HH:mm"
-  windowEnd: string;          // "HH:mm"
+  windowEnd: string;          // "HH:mm" (se < start, janela atravessa meia-noite)
   weekdaysOnly: boolean;
-  scheduleAt: string | null;  // ISO datetime or null = now
+  scheduleAt: string | null;  // "YYYY-MM-DDTHH:mm" local time
   mediaOrder: "media_first" | "text_first" | "caption_only";
-  greetingAuto: boolean;
 }
 
 export interface CampaignTarget {
@@ -49,5 +48,4 @@ export const DEFAULT_CONFIG: SendConfig = {
   weekdaysOnly: false,
   scheduleAt: null,
   mediaOrder: "media_first",
-  greetingAuto: false,
 };
