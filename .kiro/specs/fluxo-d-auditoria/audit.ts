@@ -220,13 +220,13 @@ function matchTransition(
     }
   }
 
-  // (c) texto contém trigger_phrase
+  // (c) texto: runtime real faz APENAS messageText.includes(needle)
   if (m) {
     for (const t of s.transitions) {
       const phrases = (t.trigger_phrases || []).map(norm);
       for (const p of phrases) {
         if (!p) continue;
-        if (m === p || m.includes(p) || (p.length <= 8 && p.includes(m))) {
+        if (m.includes(p)) {
           return { nextId: t.goto_step_id, special: t.goto_special, via: `txt~"${p}"` };
         }
       }
