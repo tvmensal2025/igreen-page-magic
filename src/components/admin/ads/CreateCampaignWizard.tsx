@@ -1081,7 +1081,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         onChange={async (e) => {
                           const f = e.target.files?.[0]; e.currentTarget.value = "";
                           if (!f) return;
-                          if (f.size > 100 * 1024 * 1024) { toast({ title: "Vídeo maior que 100 MB", variant: "destructive" }); return; }
+                          if (f.size > 50 * 1024 * 1024) { toast({ title: "Vídeo maior que 50 MB", description: "Comprima o vídeo (ex: HandBrake, CapCut) e tente de novo.", variant: "destructive" }); return; }
                           if (!/^video\/(mp4|quicktime|mov)$/.test(f.type)) { toast({ title: "Use MP4 ou MOV", variant: "destructive" }); return; }
                           // Lê metadata (duração e dimensões) p/ avisar se não for vertical.
                           const url = URL.createObjectURL(f);
