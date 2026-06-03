@@ -203,7 +203,7 @@ const AdminContent = () => {
     { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
     { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
     { id: "links", label: "Links", icon: LinkIcon },
-    { id: "materiais", label: "Materiais", icon: FolderDown, external: true },
+    { id: "materiais", label: "Materiais", icon: FolderDown },
   ];
 
 
@@ -297,10 +297,6 @@ const AdminContent = () => {
               const isActive = activeTab === tab.id;
               return (
                 <button key={tab.id} onClick={() => {
-                  if (tab.external && tab.id === "materiais") {
-                    window.open("https://drive.google.com/drive/folders/1KupNLRpZaJwHfgRUgbWV-cGYQenreSfu", "_blank", "noopener,noreferrer");
-                    return;
-                  }
                   if (tab.href) { navigate(tab.href); return; }
                   setActiveTab(tab.id as any);
                 }}
