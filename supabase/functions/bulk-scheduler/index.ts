@@ -256,14 +256,9 @@ Deno.serve(async (req) => {
 
       // Incrementa contador na campanha
       if (r.ok) {
-        await supabase.rpc as any; // noop placeholder — usamos update direto:
-        await supabase.from("bulk_campaigns")
-          .update({ sent: camp.sent + (++processed) }).eq("id", camp.id);
+        processed++;
         consecutiveFailures = 0;
       } else {
-        await supabase.from("bulk_campaigns")
-          .update({ failed: camp.failed + 1 }).eq("id", camp.id);
-        camp.failed = camp.failed + 1;
         consecutiveFailures++;
       }
 
@@ -277,7 +272,18 @@ Deno.serve(async (req) => {
       await new Promise(rs => setTimeout(rs, Math.round(secs * 1000)));
     }
 
-    report.push({ id: camp.id, processed });
+    // Recalcula contadores ao final do lote
+    const { data: stats2 } = await supabase
+      .from("bulk_campaign_targets")
+      .select("status")
+      .eq("campaign_id", camp.id);
+    const sentN = (stats2 || []).filter((s: any) => s.status === "sent").length;
+    const failedN = (stats2 || []).filter((s: any) => s.status === "failed").length;
+    await supabase.from("bulk_campaigns")
+      .update({ sent: sentN, failed: failedN })
+      .eq("id", camp.id);
+
+    report.push({ id: camp.id, processed, sent: sentN, failed: failedN });
   }
 
   return new Response(JSON.stringify({ ok: true, elapsed_ms: Date.now() - startedAt, report }), {
