@@ -114,6 +114,23 @@ for (const s of steps) {
   // (f) position única
   const dupPos = steps.filter((x) => x.position === s.position && x.id !== s.id);
   if (dupPos.length) add(s.step_key, "HIGH", `Position ${s.position} duplicada com ${dupPos.map((x) => x.step_key).join(", ")}.`);
+
+  // (g) trigger_phrases curtas que viram substring de palavras válidas.
+  // Runtime real faz messageText.includes(needle): "humano" contém "um", "tres" contém "três", etc.
+  const SHORT_RISK = new Set(["um", "dois", "tres", "três", "para", "sim", "nao", "não", "como"]);
+  for (let i = 0; i < s.transitions.length; i++) {
+    const t = s.transitions[i];
+    for (const p of t.trigger_phrases || []) {
+      const np = norm(p);
+      if (SHORT_RISK.has(np)) {
+        add(
+          s.step_key,
+          "HIGH",
+          `transitions[${i}] tem trigger_phrase "${p}" — runtime faz messageText.includes("${np}"), casa com qualquer texto contendo "${np}" (ex: "humano" contém "um"). Trocar por âncora exata ou remover.`,
+        );
+      }
+    }
+  }
 }
 
 // ============================================================
