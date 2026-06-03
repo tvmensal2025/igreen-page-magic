@@ -42,52 +42,88 @@ export function isRateLimited(phone: string): boolean {
   return recent.length > RATE_LIMIT_MAX;
 }
 
-// ── Reconnect cooldown per-instance ──────────────────────────────────
-const reconnectCooldowns = new Map<string, number>();
-const RECONNECT_COOLDOWN_MS = 120_000;
+// ── Reconnect cooldown per-instance (DB-backed, 10 min) ──────────────
+// IMPORTANTE: Edge Functions são serverless — `Map` em memória é apagado
+// a cada cold start. Antes o cooldown era ignorado e o sistema reconectava
+// em loop, o que é a causa #1 de banimento. Agora persistimos via RPC.
+const RECONNECT_COOLDOWN_MS = 600_000; // 10 minutos
 
-export function canReconnect(instance: string): boolean {
-  const now = Date.now();
-  const last = reconnectCooldowns.get(instance) || 0;
-  if (now - last < RECONNECT_COOLDOWN_MS) return false;
-  reconnectCooldowns.set(instance, now);
-  return true;
+export async function canReconnect(
+  supabase: any,
+  instance: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc("try_acquire_reconnect_slot", {
+      p_instance: instance,
+      p_cooldown_ms: RECONNECT_COOLDOWN_MS,
+    });
+    if (error) {
+      console.warn(`[canReconnect] RPC error for ${instance}:`, error.message);
+      // Fail-CLOSED: em caso de erro, NÃO reconecta (mais seguro p/ o chip).
+      return false;
+    }
+    return data === true;
+  } catch (e: any) {
+    console.warn(`[canReconnect] exception for ${instance}:`, e?.message);
+    return false;
+  }
 }
 
 // ── Disconnect reason classification (Baileys / WhatsApp) ────────────
-// O `statusReason` que chega no CONNECTION_UPDATE.close vem do
-// DisconnectReason do Baileys (mapeado de códigos HTTP do WhatsApp Web).
-// Reconectar automaticamente uma sessão derrubada por logout/ban/conflito
-// é o que ACELERA e consolida o banimento do número: cada tentativa de
-// repareamento é interpretada como comportamento abusivo pelo WhatsApp.
-//
-// Por isso só reconectamos em motivos transitórios (queda de rede, restart
-// do servidor, timeout). Em motivos fatais a instância é marcada como
-// `needs_reconnect` e exige um NOVO QR Code escaneado manualmente.
-//
-// Referência dos códigos Baileys DisconnectReason:
-//   401 loggedOut          → aparelho desvinculou a sessão (fatal)
-//   403 forbidden/banned   → número bloqueado pelo WhatsApp (fatal)
-//   405 / 409 / 411 etc.   → conflito de credenciais (fatal)
-//   440 connectionReplaced → sessão aberta em outro lugar (fatal)
-//   428 connectionClosed   → queda transitória (reconectar)
-//   408 timedOut           → timeout transitório (reconectar)
-//   500 badSession / 515 restartRequired → reinício de stream (reconectar)
+// Reconectar uma sessão derrubada por logout/ban/conflito ACELERA o
+// banimento. Só reconectamos em motivos transitórios genuínos.
+// reason=0 (unknown) também é tratado como FATAL — pode mascarar ban
+// silencioso que o WhatsApp não detalha.
 export type DisconnectClass = "fatal" | "transient";
 
-// Motivos que NÃO devem disparar reconexão automática.
 const FATAL_DISCONNECT_REASONS = new Set<number>([
-  401, // loggedOut — sessão encerrada pelo aparelho
-  403, // forbidden — número banido/bloqueado pelo WhatsApp
-  405, // bad credentials / not authorized
-  409, // conflict — outra sessão assumiu
+  0,   // unknown/unspecified — pode ser ban silencioso
+  401, // loggedOut
+  403, // forbidden / banned
+  405, // bad credentials
+  409, // conflict
   411, // multi-device mismatch
-  440, // connectionReplaced — conectado em outro lugar
+  440, // connectionReplaced
 ]);
 
 export function classifyDisconnect(statusReason: number | null | undefined): DisconnectClass {
-  const code = Number(statusReason) || 0;
+  const code = Number(statusReason);
+  if (!Number.isFinite(code)) return "fatal"; // sem código → cautela
   return FATAL_DISCONNECT_REASONS.has(code) ? "fatal" : "transient";
+}
+
+// ── Helper: registra sinal de risco (circuit breaker) ────────────────
+export async function recordRiskSignal(
+  supabase: any,
+  instance: string,
+  signalType: "reconnect" | "send_failure" | "disconnect_fatal" | "disconnect_transient",
+  severity: "low" | "medium" | "high" | "critical" = "low",
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await supabase.rpc("record_risk_signal", {
+      p_instance: instance,
+      p_signal_type: signalType,
+      p_severity: severity,
+      p_metadata: metadata ?? null,
+      p_ttl_hours: 6,
+    });
+  } catch (e: any) {
+    console.warn(`[recordRiskSignal] failed:`, e?.message);
+  }
+}
+
+// ── Helper: ativa modo recuperação (14 dias após desconexão fatal) ────
+export async function activateRecoveryMode(
+  supabase: any,
+  instance: string,
+  hours = 336,
+): Promise<void> {
+  try {
+    await supabase.rpc("activate_recovery_mode", { p_instance: instance, p_hours: hours });
+  } catch (e: any) {
+    console.warn(`[activateRecoveryMode] failed:`, e?.message);
+  }
 }
 
 export const OCR_CONFIDENCE_THRESHOLD = 70;

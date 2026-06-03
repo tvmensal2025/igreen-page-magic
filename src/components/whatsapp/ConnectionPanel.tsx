@@ -181,10 +181,10 @@ export function ConnectionPanel({
   }, [qrCode]);
 
   const handleQrExpired = () => {
+    // ⚠️ Não regenera QR automaticamente. Auto-refresh agressivo é
+    // interpretado como comportamento de bot pelo WhatsApp e contribui
+    // para banimento. Consultor precisa clicar para gerar um novo QR.
     setQrExpired(true);
-    if (onRefreshQr) {
-      onRefreshQr().catch(() => { /* swallowed */ });
-    }
   };
 
   return (

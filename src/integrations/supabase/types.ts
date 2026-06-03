@@ -4146,6 +4146,93 @@ export type Database = {
         }
         Relationships: []
       }
+      instance_reconnect_cooldowns: {
+        Row: {
+          attempts: number
+          created_at: string
+          instance_name: string
+          next_allowed_at: string
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          instance_name: string
+          next_allowed_at: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          instance_name?: string
+          next_allowed_at?: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      instance_risk_signals: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          instance_name: string
+          metadata: Json | null
+          severity: string
+          signal_type: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          instance_name: string
+          metadata?: Json | null
+          severity?: string
+          signal_type: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          instance_name?: string
+          metadata?: Json | null
+          severity?: string
+          signal_type?: string
+        }
+        Relationships: []
+      }
+      instance_send_counters: {
+        Row: {
+          created_at: string
+          day: string
+          first_send_at: string | null
+          instance_name: string
+          last_send_at: string | null
+          sent_count: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          day: string
+          first_send_at?: string | null
+          instance_name: string
+          last_send_at?: string | null
+          sent_count?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          day?: string
+          first_send_at?: string | null
+          instance_name?: string
+          last_send_at?: string | null
+          sent_count?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       kanban_stages: {
         Row: {
           auto_message_enabled: boolean
@@ -5513,8 +5600,10 @@ export type Database = {
           id: string
           instance_name: string
           last_health_check_at: string | null
+          recovery_mode_until: string | null
           status: string
           updated_at: string
+          warmup_started_at: string | null
         }
         Insert: {
           connected_phone?: string | null
@@ -5523,8 +5612,10 @@ export type Database = {
           id?: string
           instance_name: string
           last_health_check_at?: string | null
+          recovery_mode_until?: string | null
           status?: string
           updated_at?: string
+          warmup_started_at?: string | null
         }
         Update: {
           connected_phone?: string | null
@@ -5533,8 +5624,10 @@ export type Database = {
           id?: string
           instance_name?: string
           last_health_check_at?: string | null
+          recovery_mode_until?: string | null
           status?: string
           updated_at?: string
+          warmup_started_at?: string | null
         }
         Relationships: []
       }
@@ -5800,6 +5893,10 @@ export type Database = {
       }
     }
     Functions: {
+      activate_recovery_mode: {
+        Args: { p_hours?: number; p_instance: string }
+        Returns: undefined
+      }
       admin_unpause_global_bot: { Args: never; Returns: number }
       ai_cooldown_check_and_set: {
         Args: { p_key: string; p_reason: string; p_ttl_ms: number }
@@ -5810,6 +5907,7 @@ export type Database = {
         Args: { _consultant: string; _user: string }
         Returns: boolean
       }
+      check_send_quota: { Args: { p_instance: string }; Returns: Json }
       cleanup_bot_test_data: { Args: { _run_id: string }; Returns: Json }
       cleanup_webhook_artifacts: { Args: never; Returns: undefined }
       clear_pending_inbound: {
@@ -6004,6 +6102,16 @@ export type Database = {
         Returns: undefined
       }
       recompute_pos_venda_stages: { Args: never; Returns: number }
+      record_risk_signal: {
+        Args: {
+          p_instance: string
+          p_metadata?: Json
+          p_severity?: string
+          p_signal_type: string
+          p_ttl_hours?: number
+        }
+        Returns: string
+      }
       refund_consultant_wallet: {
         Args: {
           _amount_cents: number
@@ -6014,6 +6122,7 @@ export type Database = {
         }
         Returns: number
       }
+      register_send: { Args: { p_instance: string }; Returns: undefined }
       release_customer_lock: {
         Args: { p_customer: string; p_token: string }
         Returns: boolean
@@ -6074,6 +6183,10 @@ export type Database = {
       }
       try_acquire_rate_limit: {
         Args: { p_max_count: number; p_phone: string; p_window_ms: number }
+        Returns: boolean
+      }
+      try_acquire_reconnect_slot: {
+        Args: { p_cooldown_ms?: number; p_instance: string }
         Returns: boolean
       }
       try_lock_customer_processing: {

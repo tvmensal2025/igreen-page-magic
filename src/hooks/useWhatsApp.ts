@@ -257,11 +257,13 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
             setError(null);
             setHealth("needs_qr");
             addLog("📱 QR Code gerado — escaneie com seu celular");
-            pollRef.current = setTimeout(poll, 10000);
+            // Polling mínimo 30s durante QR (era 10s). Pedir QR a cada
+            // poucos segundos é interpretado como bot e contribui para ban.
+            pollRef.current = setTimeout(poll, 30000);
             return;
           }
 
-          if (!schedulePendingRecovery(10000, "⏳ Ainda aguardando um sinal confiável do servidor...")) return;
+          if (!schedulePendingRecovery(30000, "⏳ Ainda aguardando um sinal confiável do servidor...")) return;
           return;
         }
 
@@ -271,7 +273,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
             setHealth("recovering");
           }
           graceCountRef.current++;
-          pollRef.current = setTimeout(poll, 8000);
+          pollRef.current = setTimeout(poll, 15000);
           return;
         }
 
@@ -297,11 +299,11 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           setError(null);
           setHealth("needs_qr");
           addLog("📱 QR Code gerado — escaneie com seu celular");
-          pollRef.current = setTimeout(poll, 8000);
+          pollRef.current = setTimeout(poll, 30000);
           return;
         }
 
-        if (!schedulePendingRecovery(8000, "⏳ Conexão ainda sem resposta estável. Nova tentativa em instantes...")) return;
+        if (!schedulePendingRecovery(30000, "⏳ Conexão ainda sem resposta estável. Nova tentativa em instantes...")) return;
       } catch (err) {
         if (isAuthError(err)) {
           handleAuthFailure(err);

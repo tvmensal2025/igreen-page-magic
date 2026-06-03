@@ -93,24 +93,11 @@ export function createStateChecks(deps: StateChecksDeps): StateChecks {
     }
   };
 
+  // multiSignalCheck NÃO chama mais connectInstance — pedir QR só para
+  // "confirmar estado" é uma das principais causas de comportamento
+  // bot-like que leva a banimento. Confiamos somente no getConnectionState.
   const multiSignalCheck = async (name: string): Promise<ConnectionCheckState> => {
     const state1 = await checkState(name);
-    if (state1 === "open" || state1 === "missing") return state1;
-
-    if (state1 === "unknown" && timeoutCountRef.current >= 2) {
-      addLog("🔍 Verificando por sinal alternativo...");
-      try {
-        const resp = await withTimeout(connectInstance(name), 12000);
-        if (resp?.base64) return "connecting";
-        return "unknown";
-      } catch (err) {
-        if (isAuthError(err)) throw err;
-        const msg = err instanceof Error ? err.message : "";
-        if (isAlreadyConnectedError(msg)) return "open";
-        if (isNotFoundError(msg)) return "missing";
-        return "unknown";
-      }
-    }
     return state1;
   };
 
