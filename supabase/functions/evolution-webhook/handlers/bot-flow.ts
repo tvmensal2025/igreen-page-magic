@@ -6,6 +6,7 @@
 // the closure variables are now properties of `ctx`.
 
 import { resolveFlowId } from "../../_shared/resolve-flow.ts";
+import { runFluxoBAI } from "../../_shared/fluxo-b-ai.ts";
 import {
   validateCustomerForPortal,
   isPlaceholderEmail,
@@ -601,6 +602,42 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     fileBase64,
     geminiApiKey,
   } = ctx;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 🤖 FLUXO B — IA livre conversacional (espelho do whapi-webhook).
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const _fbVariant = String((customer as any)?.flow_variant || "").toUpperCase();
+    const _fbStep = String((customer as any)?.conversation_step || "");
+    const _fbWaitingMedia = _fbStep === "aguardando_conta" || _fbStep === "aguardando_documento";
+    if (
+      _fbVariant === "B" &&
+      !isFile && !hasImage && !hasDocument &&
+      !_fbWaitingMedia &&
+      messageText && messageText.trim().length > 0
+    ) {
+      console.log(`[fluxo-b] dispatching customer=${customer.id} step=${_fbStep}`);
+      const r = await runFluxoBAI({
+        supabase,
+        customerId: customer.id,
+        inboundText: messageText,
+        customer,
+      });
+      try { await ctx.sender.sendText(remoteJid, r.reply); } catch (e) {
+        console.warn(`[fluxo-b] sendText falhou:`, (e as any)?.message);
+      }
+      await supabase.from("conversations").insert({
+        customer_id: customer.id,
+        message_direction: "outbound",
+        message_text: r.reply,
+        message_type: "text",
+        conversation_step: r.conversationStepUpdate || _fbStep || "fluxo_b_ai",
+      });
+      return { reply: "", updates: {} };
+    }
+  } catch (e) {
+    console.error(`[fluxo-b] erro:`, (e as Error).message);
+  }
 
   // ═══════════════════════════════════════════════════════════════════
   // 🛟 respondAndReentry — fallback universal pra mensagens fora do esperado.
