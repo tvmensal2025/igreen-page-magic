@@ -518,6 +518,15 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                               ✓{h.sent} ✗{h.failed} ({pct}%)
                             </p>
                           </div>
+                          {(h.status === "running" || h.status === "scheduled") && (
+                            <button
+                              onClick={() => handleResume(h.id)}
+                              className="text-emerald-400 hover:text-emerald-300 p-1"
+                              title="Retomar fila pendente"
+                            >
+                              <PlayCircle className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={async () => {
                               if (!confirm(`Apagar "${h.name}"?`)) return;
