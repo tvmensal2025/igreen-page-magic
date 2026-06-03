@@ -455,6 +455,52 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                   <p className="text-lg font-bold text-red-400">{contacts.length - validContacts.length}</p>
                 </div>
               </div>
+
+              {history.length > 0 && (
+                <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-foreground">Histórico de disparos</p>
+                    <span className="text-[10px] text-muted-foreground">{history.length} recentes</span>
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-auto">
+                    {history.map(h => {
+                      const total = h.total || 1;
+                      const pct = Math.round(((h.sent + h.failed) / total) * 100);
+                      const statusColor = h.status === "done" ? "text-emerald-400"
+                        : h.status === "running" ? "text-blue-400"
+                        : h.status === "scheduled" ? "text-amber-400"
+                        : h.status === "canceled" ? "text-red-400" : "text-muted-foreground";
+                      return (
+                        <div key={h.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-background/40 border border-border/30 text-xs">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground truncate">{h.name}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {new Date(h.created_at).toLocaleString("pt-BR")} • {h.total} contatos
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-[10px] font-bold uppercase ${statusColor}`}>{h.status}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              ✓{h.sent} ✗{h.failed} ({pct}%)
+                            </p>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Apagar "${h.name}"?`)) return;
+                              await deleteCampaign(h.id);
+                              setHistory(prev => prev.filter(x => x.id !== h.id));
+                            }}
+                            className="text-red-400 hover:text-red-300 p-1"
+                            title="Apagar"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
