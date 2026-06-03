@@ -1,25 +1,25 @@
-# Score de qualidade quando o anúncio é vídeo
+# Fix — anúncio em vídeo bloqueado por falta de miniatura
 
-## Diagnóstico
-No modo vídeo, o `AdQualityPanel` recebe `primaryImage={null}` (porque `filesByFormat` só é populado pra foto). Em `adQualityScore.ts`, quando `primaryImage` é nulo, o componente passa um placeholder `{ score: 0, checks: [{ ok: false, label: "Nenhuma foto enviada" }] }` pro `image`, e o agregado vira `copy*0.6 + 0*0.4` — mesmo copy 100/100 fica em 60 e dispara o diálogo de "abaixo do ideal" sem motivo.
+## Causa
+No `supabase/functions/facebook-create-campaign/index.ts` (linha 519-525), o `video_data` só recebe `image_url` se o usuário enviou `body.video.thumb_url`. Quando não envia, o Meta recusa com:
 
-## Mudanças
+> Invalid parameter | Seu anúncio precisa de uma miniatura de vídeo | Especifique image_hash ou image_url no campo video_data | subcode=1443226
 
-### 1. `src/lib/adQualityScore.ts`
-- Adicionar função `scoreVideo({ width, height, duration })` com checks:
-  - dimensão vertical (≥1080×1920 ideal, ≥720×1280 mínimo)
-  - aspect ratio 9:16 (±5%)
-  - duração 6-60s (sweet spot Reels/Stories)
-- Retorna mesma forma de `{ score, checks }` que `scoreImage`.
+## Fix
 
-### 2. `src/components/admin/ads/AdQualityPanel.tsx`
-- Novo prop opcional `primaryVideo?: { w: number; h: number; duration: number }`.
-- Se `primaryVideo` presente, usar `scoreVideo` no lugar de `scoreImage` e renderizar a seção com o título **"Vídeo"** em vez de "Imagem". Mantém o resto (copy + agregado) idêntico.
+### `supabase/functions/facebook-create-campaign/index.ts` (modo vídeo)
+1. Após o upload e o status do vídeo virar `ready` (loop atual em ~485-494), se **não houver `thumbUrl`**, chamar:
+   - `GET /{fbVideoId}/thumbnails?access_token=...`
+   - Pegar `data[].uri` — preferir `is_preferred: true`, senão o primeiro item.
+   - Atribuir essa URI a `thumbUrl` para que a linha 525 (`videoData.image_url = thumbUrl`) sempre tenha valor.
+2. Se o vídeo **não ficou ready a tempo** (não entrou no `if`), pular o passo acima e ainda assim **forçar uma busca rápida** (1 retry após 3s); se mesmo assim vier vazio, retornar erro claro: "Meta ainda não gerou a miniatura do vídeo, tente novamente em alguns segundos" — em vez de deixar o `adcreatives` quebrar com subcode 1443226.
+3. Persistir o `thumb_url` resolvido no cache `ad_video_library.thumb_url` (upsert na linha 498-505) pra próximo uso reaproveitar.
 
-### 3. `src/components/admin/ads/CreateCampaignWizard.tsx` (≈ linha 1314)
-- Passar `primaryVideo={creativeMode === "video" && videoMeta ? { w: videoMeta.w, h: videoMeta.h, duration: videoMeta.duration } : undefined}`.
-- Quando vídeo, não passa `primaryImage`.
+Sem mudanças em modo foto, UI ou no wizard — o problema é só backend.
+
+## Validação
+- Republicar o mesmo vídeo: deve criar a campanha sem o erro 1443226.
+- Logs `[fb-create] thumb auto-resolved=...` pra confirmar fluxo.
 
 ## Fora de escopo
-- Não mexo no upload/validação de vídeo na edge function.
-- Não mexo no gerador de copy nem nas regras de política.
+- Não mexo em UI, score de qualidade, persona da IA, nem upload manual de thumbnail.
