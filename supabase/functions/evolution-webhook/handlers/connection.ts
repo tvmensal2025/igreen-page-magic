@@ -84,36 +84,47 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
 
 
   if (connState === "close" && connInstance) {
-    // Classifica o motivo: ban/logout/conflito são FATAIS — reconectar uma
-    // sessão derrubada por esses motivos só agrava o bloqueio do número.
     const disconnectClass = classifyDisconnect(statusReason);
 
     if (disconnectClass === "fatal") {
       console.warn(
-        `🛑 Instância ${connInstance} desconectou com motivo FATAL (reason=${statusReason}). ` +
-        `NÃO será reconectada automaticamente — exige novo QR Code.`,
+        `🛑 Instância ${connInstance} desconectou FATAL (reason=${statusReason}). ` +
+        `Marcando needs_reconnect + ativando recovery mode (14d).`,
       );
-      // Marca a instância como needs_reconnect para que o painel/health-cron
-      // alertem o consultor e o frontend force a geração de um novo QR.
-      // Best-effort: não falha o webhook se o update der erro.
       try {
         await supabase
           .from("whatsapp_instances")
           .update({ status: "needs_reconnect", updated_at: new Date().toISOString() })
           .eq("instance_name", connInstance);
       } catch (e: any) {
-        console.warn(`⚠️ Falha ao marcar ${connInstance} como needs_reconnect:`, e?.message);
+        console.warn(`⚠️ Falha ao marcar ${connInstance} needs_reconnect:`, e?.message);
       }
+      // Registra sinal crítico — bloqueia disparos via check_send_quota
+      await recordRiskSignal(supabase, connInstance, "disconnect_fatal", "critical", {
+        reason: statusReason,
+      });
+      // Ativa modo recuperação 14 dias — só sai com confirmação manual
+      await activateRecoveryMode(supabase, connInstance, 336);
       return true;
     }
 
-    // Motivo transitório (queda de rede, restart, timeout): reconecta com
-    // cooldown de 2 min para não martelar o servidor Evolution.
-    if (evolutionApiUrl && evolutionApiKey && canReconnect(connInstance)) {
+    // Transiente: registra sinal + tenta reconectar com cooldown PERSISTENTE de 10 min
+    await recordRiskSignal(supabase, connInstance, "disconnect_transient", "low", {
+      reason: statusReason,
+    });
+
+    const allowedToReconnect = evolutionApiUrl && evolutionApiKey
+      && await canReconnect(supabase, connInstance);
+
+    if (allowedToReconnect) {
       const baseUrl = evolutionApiUrl.replace(/\/$/, "");
-      console.log(`🔄 Instância ${connInstance} desconectou (reason=${statusReason}, transitório). Tentando reconectar em 5s...`);
+      console.log(
+        `🔄 Instância ${connInstance} desconectou (reason=${statusReason}, transitório). ` +
+        `Aguardando 30s antes de reconectar (anti-ban).`,
+      );
       try {
-        await new Promise((r) => setTimeout(r, 5000));
+        // Delay 30s (era 5s) — pico de reconnect rápido é interpretado como abuso
+        await new Promise((r) => setTimeout(r, 30_000));
         const reconnRes = await fetchWithTimeout(`${baseUrl}/instance/connect/${connInstance}`, {
           method: "GET",
           headers: { apikey: evolutionApiKey },
@@ -121,15 +132,21 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
         });
         if (reconnRes.ok) {
           console.log(`✅ Reconexão iniciada para ${connInstance}`);
+          await recordRiskSignal(supabase, connInstance, "reconnect", "medium", {
+            reason: statusReason,
+          });
         } else {
           const errText = await reconnRes.text();
           console.warn(`⚠️ Falha ao reconectar ${connInstance}: ${reconnRes.status} ${errText.substring(0, 200)}`);
+          await recordRiskSignal(supabase, connInstance, "send_failure", "medium", {
+            stage: "reconnect", status: reconnRes.status,
+          });
         }
       } catch (e: any) {
-        console.warn(`⚠️ Erro ao tentar reconectar ${connInstance}: ${e.message}`);
+        console.warn(`⚠️ Erro ao reconectar ${connInstance}: ${e.message}`);
       }
     } else {
-      console.log(`⏳ Reconexão em cooldown para ${connInstance}, aguardando 2 min`);
+      console.log(`⏳ Reconexão em cooldown persistente (10min) para ${connInstance}`);
     }
   }
 
