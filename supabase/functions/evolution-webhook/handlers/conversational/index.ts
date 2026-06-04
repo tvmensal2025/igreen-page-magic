@@ -234,6 +234,36 @@ async function sleepForMedia(kind: string, _durationSec?: number | null, delayBe
   await new Promise((r) => setTimeout(r, pause));
 }
 
+// ─── Render botões como lista numerada no texto ─────────────────────────
+// A Evolution atual envia texto puro (sem botões nativos). Quando o passo
+// tem `_buttons` configurado, anexamos uma lista 1️⃣/2️⃣/3️⃣ ao final do
+// texto para que o lead veja as opções e o handler de transições consiga
+// casar pelas próprias trigger_phrases ("1", "2", "humano", etc.).
+const _NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+export function appendButtonsToText(step: any, text: string): string {
+  try {
+    if (!step) return text || "";
+    const caps = Array.isArray(step.captures) ? step.captures : [];
+    const btnCap = caps.find((c: any) => c?.field === "_buttons" && c?.enabled !== false);
+    const btns: Array<{ id: string; title: string }> = [];
+    if (btnCap?.value && Array.isArray(btnCap.value)) {
+      for (const b of btnCap.value) {
+        if (b?.title) btns.push({ id: String(b.id || ""), title: String(b.title) });
+      }
+    }
+    if (btns.length === 0) return text || "";
+    // Não duplica se o texto já lista as opções (heurística simples).
+    const lower = String(text || "").toLowerCase();
+    const alreadyHas = btns.every((b) => lower.includes(b.title.toLowerCase().slice(0, 6)));
+    if (alreadyHas) return text || "";
+    const lines = btns.slice(0, 9).map((b, i) => `${_NUM_EMOJI[i] || `${i + 1}.`} ${b.title.replace(/^\W+\s*/, "")}`);
+    const base = (text || "").replace(/\s+$/g, "");
+    return `${base}\n\n${lines.join("\n")}`;
+  } catch {
+    return text || "";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Capture phase — usa extractors compartilhados (regex + extenso + validação)
 // ---------------------------------------------------------------------------
@@ -709,6 +739,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // disparando áudios/explicações antigas.
   if (
     (ctx.isFile || ctx.hasImage || ctx.hasDocument) &&
+    !ctx.hasAudio && // 🎧 áudio NUNCA vai pra OCR de conta — trata como mensagem comum
     !(ctx.customer as any).electricity_bill_photo_url &&
     !CADASTRO_STEPS.has(stepKey)
   ) {
@@ -721,15 +752,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       const { runBotFlow } = await import("../bot-flow.ts");
       (ctx.customer as any).conversation_step = targetStep;
       const result = await runBotFlow(ctx);
+      // Contrato: só marca __inline_sent quando runBotFlow realmente enviou inline
+      // (reply vazio + updates não vazios é o sinal usado pelo pipeline legado).
+      const handlerEmittedInline = (!result.reply || result.reply === "") && !!result.updates && Object.keys(result.updates).length > 0;
       return {
         reply: result.reply,
-        updates: { ...(result.updates || {}), conversation_step: result.updates?.conversation_step || targetStep, __inline_sent: true },
+        updates: {
+          ...(result.updates || {}),
+          conversation_step: result.updates?.conversation_step || targetStep,
+          ...(handlerEmittedInline ? { __inline_sent: true } : {}),
+        },
       };
     } catch (e) {
       console.error("[conversational] falha ao redirecionar p/ bot-flow:", (e as Error)?.message || e);
+      // ❌ NUNCA __inline_sent=true em catch — não há outbound real.
+      // Deixa o orquestrador cair no fallback de segurança.
       return {
         reply: "",
-        updates: { conversation_step: targetStep, __inline_sent: true },
+        updates: { conversation_step: targetStep },
       };
     }
   }
@@ -793,7 +833,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         .select("initial_delay_seconds")
         .eq("id", flowId)
         .maybeSingle();
-      const delaySec = Math.min(Number((flowRow as any)?.initial_delay_seconds || 0), 300);
+      // 🔒 Teto reduzido para 15s — Edge Functions têm timeout de 60s e um
+      // delay maior fazia o inbound ficar dedupado sem nunca enviar resposta.
+      const delaySec = Math.min(Number((flowRow as any)?.initial_delay_seconds || 0), 15);
       if (delaySec > 0) {
         console.log(JSON.stringify({ level: "info", kind: "flow_initial_delay", customer_id: ctx.customer?.id, flow_id: flowId, delay_seconds: delaySec }));
         // Envia "digitando..." durante o delay para parecer humano
@@ -968,7 +1010,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       // emitir tudo (mídia + texto) no slot configurado pelo consultor. Sem isso,
       // todo o cascade vinha como mídia primeiro e os textos colados no fim.
       const tpl = (cursor.message_text || "").trim();
-      const renderedText = tpl ? renderTemplate(tpl, vars) : "";
+      const renderedText = tpl ? appendButtonsToText(cursor, renderTemplate(tpl, vars)) : "";
       const textDelay = Math.max(0, Number((cursor as any).text_delay_ms || 0));
       const { mediaSent, textSentInline } = await sendStepMedia(
         ctx, cursor, consultantId, true,
@@ -1347,7 +1389,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       // tudo (mídia + texto) na ordem configurada, em vez de colar todos os
       // textos no fim do cascade.
       const tpl = (cursor.message_text || "").trim();
-      const renderedText = tpl ? renderTemplate(tpl, restartVars) : "";
+      const renderedText = tpl ? appendButtonsToText(cursor, renderTemplate(tpl, restartVars)) : "";
       const textDelay = Math.max(0, Number((cursor as any).text_delay_ms || 0));
       const { mediaSent, textSentInline } = await sendStepMedia(
         ctx, cursor, consultantId, true,
@@ -1441,7 +1483,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // Durante cascade (wait_for=none), cada step intermediário é enviado como
   // MENSAGEM SEPARADA via ctx.sender (mídia + texto), e o último vira `reply`.
   const renderStepText = (st: DbStep): string =>
-    renderTemplate(st.message_text || "", vars).trim();
+    appendButtonsToText(st, renderTemplate(st.message_text || "", vars)).trim();
 
   // Envia um step (mídia SEMPRE + texto SEMPRE quando existem), respeitando a ordem configurada.
   const emitStep = async (

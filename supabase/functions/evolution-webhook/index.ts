@@ -1650,12 +1650,33 @@ Deno.serve(async (req) => {
     }
 
 
-    // GARANTIA: nunca deixar o cliente sem resposta. Se reply vazio E nenhum botão foi enviado dentro do handler,
-    // injeta uma mensagem padrão de "continue" para evitar bot em silêncio.
-    // Note: __inline_sent_flag === true is now handled by the gate above,
-    // so this branch only fires for the legacy "handler made non-__inline_sent
-    // updates but returned empty reply" pattern (e.g. step transition only).
-    const handlerSentInline = reply === "" && Object.keys(updates).length > 0;
+    // GARANTIA: nunca deixar o cliente sem resposta. Se reply vazio E nenhum
+    // outbound real foi gravado nos últimos 30s, injeta mensagem mínima.
+    //
+    // 🔒 ANTES: `handlerSentInline = reply === "" && updates não vazio` —
+    // mascarava silêncio em qualquer handler que só mudasse `conversation_step`.
+    // AGORA: só consideramos "inline enviado" quando o gate acima confirmou
+    // outbound real (e neste ponto a função já retornou). Aqui, se chegamos
+    // com reply vazio, precisamos checar conversations e injetar fallback.
+    let realOutboundExistsFinal = false;
+    if (!reply) {
+      try {
+        const sinceIso = new Date(Date.now() - 30_000).toISOString();
+        const { data: realRow } = await supabase
+          .from("conversations")
+          .select("id")
+          .eq("customer_id", customer.id)
+          .eq("message_direction", "outbound")
+          .gte("created_at", sinceIso)
+          .not("message_text", "like", "[inline-sent]%")
+          .not("message_text", "like", "[failed:%")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        realOutboundExistsFinal = !!realRow;
+      } catch (_) { /* fail-open para enviar fallback */ }
+    }
+    const handlerSentInline = !reply && realOutboundExistsFinal;
     let finalReply = reply;
     if (!finalReply && !handlerSentInline) {
       // Sem resposta do bot E nada inline foi enviado.
