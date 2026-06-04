@@ -54,6 +54,7 @@ export async function notifyConsultant(
 
     const text = `${ICON[level]} *${title}*\n\n${body}\n\n_Mensagem automática iGreen_`;
 
+    // INTENTIONAL: staff alert — bypasses anti-ban guard (notifica consultor sobre eventos críticos)
     const res = await fetch(`${evolutionUrl.replace(/\/+$/, "")}/message/sendText/${inst.instance_name}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: evolutionKey },
