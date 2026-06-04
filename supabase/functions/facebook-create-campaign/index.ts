@@ -318,6 +318,9 @@ Deno.serve(async (req) => {
         status: "PAUSED",
         buying_type: "AUCTION",
         daily_budget: String(body.daily_budget_cents),
+        // spend_cap = teto absoluto que a Meta vai gastar. Mesmo que nosso sync
+        // atrase, a Meta pausa sozinha quando bater nesse valor → zero prejuízo.
+        spend_cap: String(lifetimeCapCents),
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
         ...(adlabelsParam ? { adlabels: adlabelsParam } : {}),
         access_token: conn.token,
