@@ -246,13 +246,14 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     text: string,
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
+    const number = toEvolutionNumber(remoteJid);
     const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
-    console.log(`📤 [sendText] -> ${remoteJid} | "${preview}${text.length > 60 ? "..." : ""}"`);
+    console.log(`📤 [sendText] -> ${number} | "${preview}${text.length > 60 ? "..." : ""}"`);
     const ok = await sendWithRetry("send_text", () =>
       fetchWithTimeout(`${baseUrl}/message/sendText/${instanceName}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": apiKey },
-        body: JSON.stringify({ number: remoteJid, text }),
+        body: JSON.stringify({ number, text }),
         timeout: TIMEOUT_WHAPI,
       }),
       idempotency,
@@ -267,37 +268,17 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     buttons: EvolutionButton[],
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
-    // Evolution API v2 (Baileys) exige `type: "reply"` em cada botão.
-    const safeButtons = buttons.slice(0, 3).map((b) => ({
-      type: "reply" as const,
-      displayText: (b.title || "").substring(0, 20),
-      id: b.id,
-    }));
+    // Evolution/Baileys entrega botões de forma inconsistente nas versões atuais
+    // do WhatsApp — muitos clientes recebem só a descrição, sem opções clicáveis.
+    // Pedido do produto: na Evolution, sempre cair para texto numerado (sem botão).
+    // Isso mantém paridade visual com o WhAPI (que usa botões nativos confiáveis)
+    // do ponto de vista do usuário: ele sempre vê a pergunta + opções.
+    console.log(`📤 [sendButtons→text] -> ${toEvolutionNumber(remoteJid)} (${buttons.length} opções: ${buttons.map(b => b.id).join(",")})`);
+    logStructured("info", "evolution_buttons_as_text", { instance: instanceName, count: buttons.length });
+    const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
+    return sendText(remoteJid, textWithOptions, idempotency);
+  }
 
-    console.log(`📤 [sendButtons] -> ${remoteJid} (${safeButtons.length} botões: ${safeButtons.map(b => b.id).join(",")})`);
-    const ok = await sendWithRetry("send_buttons", () =>
-      fetchWithTimeout(`${baseUrl}/message/sendButtons/${instanceName}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": apiKey },
-        body: JSON.stringify({
-          number: remoteJid,
-          title: "Escolha uma opção",
-          description: message,
-          footer: "iGreen Energy",
-          buttons: safeButtons,
-        }),
-        timeout: TIMEOUT_WHAPI,
-      }),
-      idempotency,
-    );
-    if (ok) {
-      console.log(`✅ [sendButtons] entregue à Evolution`);
-      return true;
-    }
-
-    // Fallback final: texto numerado garantindo que o cliente NUNCA fica sem resposta
-    console.warn(`⚠️ [sendButtons] FALHOU -> caindo para texto numerado`);
-    logStructured("warn", "evolution_buttons_fallback_to_text", { instance: instanceName });
     const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
     // Fallback intentionally does not reuse the idempotency key — the
     // primary attempt already consumed the slot and the post-record
