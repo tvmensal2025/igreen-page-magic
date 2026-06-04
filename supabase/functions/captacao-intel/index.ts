@@ -3,7 +3,24 @@
 //
 // Roda manual (botão "Atualizar agora") ou via cron diário.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { openaiChat } from "../_shared/openai.ts";
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+
+const HANDOFF_REASON_LABELS: Record<string, string> = {
+  flow_d_ocr_failed_doc: "Documento ilegível (OCR falhou)",
+  flow_d_ocr_failed_bill: "Conta de luz ilegível (OCR falhou)",
+  flow_d_invalid_doc: "Documento inválido enviado",
+  flow_d_invalid_bill: "Conta de luz inválida enviada",
+  flow_d_user_request: "Lead pediu falar com humano",
+  flow_d_timeout: "Lead parou de responder",
+  flow_d_unknown_intent: "Bot não entendeu a mensagem",
+  manual: "Consultor assumiu manualmente",
+  unknown: "Motivo não classificado",
+};
+
+function humanizeReason(slug: string) {
+  return HANDOFF_REASON_LABELS[slug] || slug.replace(/_/g, " ");
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
