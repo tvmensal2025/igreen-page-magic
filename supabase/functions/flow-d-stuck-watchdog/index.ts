@@ -15,7 +15,7 @@
 // Cap em 200 leads por execução pra não saturar.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { jsonLog } from "../_shared/audit.ts";
+import { jsonLog, captureError } from "../_shared/audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
