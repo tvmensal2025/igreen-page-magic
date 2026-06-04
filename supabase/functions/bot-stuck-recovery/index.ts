@@ -122,6 +122,9 @@ Deno.serve(async (req) => {
         .in("conversation_step", Array.from(RESCUABLE_STEPS))
         .eq("bot_paused", false)
         .is("assigned_human_id", null)
+        // Respeita pausa programada (postpone-intent: "te mando amanhã").
+        // Sem isso, rescue dispara mesmo após cliente pedir tempo.
+        .or("bot_paused_until.is.null,bot_paused_until.lt." + nowIso)
         .not("status", "in", "(complete,cadastro_concluido,portal_submitting,registered_igreen,approved,active,awaiting_signature,automation_failed,abandoned)")
         .order("last_bot_reply_at", { ascending: true })
         .limit(MAX_RESCUES_PER_RUN);
