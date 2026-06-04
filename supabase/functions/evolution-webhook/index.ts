@@ -2009,17 +2009,21 @@ Deno.serve(async (req) => {
             if (!res.ok) return;
             const data = await res.json();
             const records = Array.isArray(data) ? data : (data?.messages?.records || data?.records || []);
-            const found = records.find((m: any) => m?.key?.id === mid);
+            const found = records.find((m: any) => m?.key?.id === mid || m?.keyId === mid || m?.id === mid);
             if (found) {
-              const st = Number(found.status);
-              const newStatus = st >= 2 ? "delivered" : "sent";
+              const mapped = mapEvolutionDeliveryStatus(found.status ?? found.messageStatus ?? found.update?.status);
+              if (!mapped.status || mapped.status === "queued") return;
               await supabase.from("conversations")
                 .update({
-                  delivery_status: newStatus,
+                  delivery_status: mapped.status,
                   delivery_checked_at: new Date().toISOString(),
+                  delivery_error: mapped.status === "failed" ? (mapped.error || "Evolution delivery failed") : null,
                 })
                 .eq("customer_id", cid)
                 .eq("external_message_id", mid);
+              await supabase.from("outbound_message_log")
+                .update({ result_status: mapped.status === "failed" ? "failed" : "sent" })
+                .eq("evolution_message_id", mid);
             }
           } catch (_) { /* best-effort */ }
         })());
