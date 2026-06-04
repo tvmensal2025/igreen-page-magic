@@ -582,6 +582,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           creative_mode: string
+          default_radius_km: number | null
           description: string | null
           description_text: string
           genders: string[]
@@ -610,6 +611,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           creative_mode?: string
+          default_radius_km?: number | null
           description?: string | null
           description_text?: string
           genders?: string[]
@@ -638,6 +640,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           creative_mode?: string
+          default_radius_km?: number | null
           description?: string | null
           description_text?: string
           genders?: string[]
@@ -2039,66 +2042,6 @@ export type Database = {
           status?: string
           total?: number
           updated_at?: string
-        }
-        Relationships: []
-      }
-      campaign_templates: {
-        Row: {
-          age_max: number
-          age_min: number
-          anchor_city: string
-          consultant_id: string
-          copy_text: string
-          created_at: string
-          creative_title: string
-          daily_budget_brl: number
-          destination_url: string
-          id: string
-          interests: string[]
-          name: string
-          observations: string
-          radius_km: number
-          updated_at: string
-          utm_campaign: string
-          video_url: string
-        }
-        Insert: {
-          age_max?: number
-          age_min?: number
-          anchor_city?: string
-          consultant_id: string
-          copy_text?: string
-          created_at?: string
-          creative_title?: string
-          daily_budget_brl?: number
-          destination_url?: string
-          id?: string
-          interests?: string[]
-          name: string
-          observations?: string
-          radius_km?: number
-          updated_at?: string
-          utm_campaign?: string
-          video_url?: string
-        }
-        Update: {
-          age_max?: number
-          age_min?: number
-          anchor_city?: string
-          consultant_id?: string
-          copy_text?: string
-          created_at?: string
-          creative_title?: string
-          daily_budget_brl?: number
-          destination_url?: string
-          id?: string
-          interests?: string[]
-          name?: string
-          observations?: string
-          radius_km?: number
-          updated_at?: string
-          utm_campaign?: string
-          video_url?: string
         }
         Relationships: []
       }
