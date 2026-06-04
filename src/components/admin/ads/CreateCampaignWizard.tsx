@@ -722,7 +722,9 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
         suggested_daily_budget_cents: Math.round(budget * 100),
         status: isSuperAdmin ? "published" : "draft",
         target_distribuidora_ids: Array.from(selectedPresetIds),
-        target_cidades: [],
+        // Salva nomes das cidades selecionadas: assim, ao reutilizar o template
+        // via UseTemplateDialog, as mesmas cidades já vêm pré-filtradas.
+        target_cidades: cities.map((c) => c.name),
       });
       toast({
         title: "Template salvo ✓",

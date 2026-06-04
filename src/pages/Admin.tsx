@@ -202,7 +202,7 @@ const AdminContent = () => {
     { id: "rede", label: "Rede", icon: Network },
     { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
     { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
-    { id: "campanhas", label: "Campanhas (Templates)", icon: ClipboardList, href: "/admin/campanhas" },
+    
     { id: "links", label: "Links", icon: LinkIcon },
     { id: "materiais", label: "Materiais", icon: FolderDown },
   ];
