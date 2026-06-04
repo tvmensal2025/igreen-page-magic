@@ -22,6 +22,7 @@ import { aiInCooldown, setAiCooldown, aiInCooldownPersistent, setAiCooldownPersi
 // `checkAndMarkWebhookDedupe` removido — dedupe canônico fica no orquestrador.
 import { matchTransition as matchTransitionShared, CADASTRO_STEPS } from "../../../_shared/flow-router.ts";
 import { extractStepButtons, matchButtonIntent } from "../../../_shared/ai-button-intent.ts";
+import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
 
 export { CONVERSATIONAL_STEPS };
 
