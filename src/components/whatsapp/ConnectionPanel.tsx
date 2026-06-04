@@ -27,6 +27,9 @@ interface ConnectionPanelProps {
   operationalHealth?: OperationalHealth;
   consecutiveTimeouts?: number;
   isWhapi?: boolean;
+  /** Quando true, esconde botões de reconexão/reset (número em revisão manual). */
+  fatalLocked?: boolean;
+  fatalReason?: number | null;
   onConnect: () => Promise<void>;
   onDisconnect: () => Promise<void>;
   onReconnect: () => Promise<void>;
@@ -157,6 +160,8 @@ export function ConnectionPanel({
   operationalHealth = "healthy",
   consecutiveTimeouts = 0,
   isWhapi = false,
+  fatalLocked = false,
+  fatalReason = null,
   onConnect,
   onDisconnect,
   onReconnect,
@@ -168,7 +173,8 @@ export function ConnectionPanel({
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const showDiagnostic = connectionLog.length > 0 && (isLoading || error || connectionStatus === "connecting" || operationalHealth !== "healthy");
   const isAutoReconnecting = isLoading && connectionLog.some((l) => l.includes("🔄"));
-  const showResetButton = onSafeReset && (operationalHealth === "reset_recommended" || operationalHealth === "degraded" || consecutiveTimeouts >= 3);
+  // ⚠️ Reset/reconnect totalmente bloqueados quando há revisão manual ativa.
+  const showResetButton = !fatalLocked && onSafeReset && (operationalHealth === "reset_recommended" || operationalHealth === "degraded" || consecutiveTimeouts >= 3);
   const showLoadingState = isLoading && !qrCode;
   const showErrorState = !showLoadingState && !isLoading && !!error;
   const showDisconnectedWithoutInstance = !showLoadingState && !showErrorState && !isLoading && connectionStatus === "disconnected" && !instanceName;
