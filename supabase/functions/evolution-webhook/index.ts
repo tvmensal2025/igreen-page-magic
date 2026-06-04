@@ -19,6 +19,7 @@ import {
   isRateLimited,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
+  recordRiskSignal,
 } from "./_helpers.ts";
 import { handleConnectionUpdate } from "./handlers/connection.ts";
 import { tryInterceptOtp } from "./handlers/otp-intercept.ts";
