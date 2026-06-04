@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { Activity, ShieldAlert, ShieldCheck, PauseCircle, PlayCircle, Flame, Plug, Hourglass } from "lucide-react";
+import { Activity, ShieldAlert, ShieldCheck, PauseCircle, PlayCircle, AlertTriangle, Flame, Plug, Hourglass } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
