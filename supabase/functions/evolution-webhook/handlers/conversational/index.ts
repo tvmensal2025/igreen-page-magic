@@ -234,6 +234,36 @@ async function sleepForMedia(kind: string, _durationSec?: number | null, delayBe
   await new Promise((r) => setTimeout(r, pause));
 }
 
+// ─── Render botões como lista numerada no texto ─────────────────────────
+// A Evolution atual envia texto puro (sem botões nativos). Quando o passo
+// tem `_buttons` configurado, anexamos uma lista 1️⃣/2️⃣/3️⃣ ao final do
+// texto para que o lead veja as opções e o handler de transições consiga
+// casar pelas próprias trigger_phrases ("1", "2", "humano", etc.).
+const _NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+export function appendButtonsToText(step: any, text: string): string {
+  try {
+    if (!step) return text || "";
+    const caps = Array.isArray(step.captures) ? step.captures : [];
+    const btnCap = caps.find((c: any) => c?.field === "_buttons" && c?.enabled !== false);
+    const btns: Array<{ id: string; title: string }> = [];
+    if (btnCap?.value && Array.isArray(btnCap.value)) {
+      for (const b of btnCap.value) {
+        if (b?.title) btns.push({ id: String(b.id || ""), title: String(b.title) });
+      }
+    }
+    if (btns.length === 0) return text || "";
+    // Não duplica se o texto já lista as opções (heurística simples).
+    const lower = String(text || "").toLowerCase();
+    const alreadyHas = btns.every((b) => lower.includes(b.title.toLowerCase().slice(0, 6)));
+    if (alreadyHas) return text || "";
+    const lines = btns.slice(0, 9).map((b, i) => `${_NUM_EMOJI[i] || `${i + 1}.`} ${b.title.replace(/^\W+\s*/, "")}`);
+    const base = (text || "").replace(/\s+$/g, "");
+    return `${base}\n\n${lines.join("\n")}`;
+  } catch {
+    return text || "";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Capture phase — usa extractors compartilhados (regex + extenso + validação)
 // ---------------------------------------------------------------------------
