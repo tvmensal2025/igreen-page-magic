@@ -163,10 +163,8 @@ export function IntelDiagnostic() {
                     <p className="text-xs text-muted-foreground">{a.detail}</p>
                   </div>
                 ))}
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-3 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> Execução automática das ações chega na próxima fase. Por enquanto, use como guia.
-              </p>
+            </div>
+
             </div>
           )}
         </>
