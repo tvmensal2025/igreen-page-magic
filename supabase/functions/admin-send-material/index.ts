@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createWhatsAppSender } from "../_shared/whatsapp-api.ts";
+import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 
 interface Body {
   phone: string;
