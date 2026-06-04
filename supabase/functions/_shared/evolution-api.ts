@@ -138,11 +138,18 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     let lastStatus = 0;
     let lastBody = "";
     let succeeded = false;
+    let messageId: string | null = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const res = await doSend();
         if (res.ok) {
           succeeded = true;
+          // Tenta capturar `key.id` da resposta Evolution v2 (sendText/Buttons/Media).
+          // Falha silenciosa não impede o sucesso — apenas perdemos telemetria.
+          try {
+            const data = await res.clone().json();
+            messageId = data?.key?.id ?? data?.messageId ?? data?.id ?? null;
+          } catch (_) { /* body não-json, ignora */ }
           break;
         }
         lastStatus = res.status;
@@ -165,14 +172,20 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     }
 
     if (succeeded) {
+      logStructured("info", "evolution_send_ok", {
+        instance: instanceName,
+        kind: label,
+        message_id: messageId,
+      });
       // ── Idempotency post-record (success) ─────────────────────────
       if (idemEnabled) {
         try {
-          await recordOutboundResult(idemSupabase!, idemKey!, "sent", null);
+          await recordOutboundResult(idemSupabase!, idemKey!, "sent", messageId);
         } catch (_) { /* swallow */ }
       }
       return true;
     }
+
     // Detecta sessão WhatsApp derrubada do lado do servidor Evolution.
     // Sintoma típico: HTTP 500 + body contendo "Connection Closed".
     const isConnectionClosed =
