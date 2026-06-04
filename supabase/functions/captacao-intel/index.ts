@@ -147,15 +147,21 @@ async function runDiagnostic() {
     collectVariants(sb, sinceIso),
   ]);
 
+  // Filtra variantes fantasma (sample < 5) — evita IA inventar análise sobre 0-1 leads
+  const variantsForAI: Record<string, { total: number; approved: number }> = {};
+  for (const [k, v] of Object.entries(variants)) {
+    if ((v as any).total >= 5) variantsForAI[k] = v as any;
+  }
+
   const kpis = {
     spend_cents: adsData.totals.spend_cents,
     leads: funnelData.leads,
     cpl_cents: funnelData.leads > 0 && adsData.totals.spend_cents > 0
       ? Math.round(adsData.totals.spend_cents / funnelData.leads)
       : adsData.totals.cpl_cents,
-    wallet_open_cents: funnelData.wallet_open_cents,
-    wallet_won_cents: funnelData.wallet_won_cents,
-    conversion_lp_lead_pct: pct(funnelData.leads, funnelData.views),
+    deals_open_count: funnelData.deals_open_count,
+    deals_won_count: funnelData.deals_won_count,
+    conversion_lp_lead_pct: Math.min(100, pct(funnelData.leads, funnelData.views)),
     conversion_lead_approved_pct: pct(funnelData.approved, funnelData.leads),
     deals_count: funnelData.deals_count,
     handoff_count_30d: Object.values(funnelData.handoff_reasons).reduce((s, n) => s + n, 0),
