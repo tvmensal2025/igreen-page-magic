@@ -39,9 +39,11 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
     const ownerJid = body.data?.ownerJid || body.ownerJid || "";
     const ownerPhone = ownerJid ? ownerJid.replace(/@.*$/, "") : "";
 
-    // Conexão aberta: sempre normaliza o status para `connected` (limpando um
-    // eventual `needs_reconnect` de uma desconexão fatal anterior) e grava o
-    // telefone conectado quando disponível.
+    // Conexão aberta confirmada: normaliza o status e (importante) limpa o
+    // recovery_mode + sinais de risco transitórios automaticamente — agora
+    // sim temos prova de que a sessão voltou. NUNCA limpa fatal lock aqui:
+    // 401/403/440 exigem revisão manual mesmo que o usuário escaneie um QR
+    // novo na mesma instância.
     const instanceUpdate: Record<string, unknown> = {
       status: "connected",
       last_health_check_at: new Date().toISOString(),
@@ -56,13 +58,35 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
       .from("whatsapp_instances")
       .update(instanceUpdate)
       .eq("instance_name", connInstance)
-      .select("consultant_id")
+      .select("consultant_id, manual_review_required, fatal_lock_until")
       .maybeSingle();
+
+    // Auto-clear recovery_mode + sinais transitórios SOMENTE se não houver
+    // fatal lock ativo. Fatal lock só sai por admin_clear_fatal_lock.
+    const fatalActive =
+      !!(inst as any)?.manual_review_required ||
+      (!!(inst as any)?.fatal_lock_until &&
+        new Date((inst as any).fatal_lock_until) > new Date());
+    if (!fatalActive) {
+      try {
+        await supabase
+          .from("whatsapp_instances")
+          .update({ recovery_mode_until: null })
+          .eq("instance_name", connInstance);
+        await supabase
+          .from("instance_risk_signals")
+          .delete()
+          .eq("instance_name", connInstance)
+          .in("signal_type", ["send_failure", "disconnect_transient", "reconnect"]);
+        console.log(`✅ Recovery cleared para ${connInstance} após state=open confirmado.`);
+      } catch (e: any) {
+        console.warn(`[connection] limpeza pós-open falhou: ${e?.message}`);
+      }
+    }
 
     // 🔗 CTWA bridge: se o consultor ainda não tem whatsapp_destination_number
     // configurado em consultant_ad_settings (usado para o anúncio Click-to-WhatsApp
     // do Facebook), aproveita o número que acabou de conectar via QR como default.
-    // O consultor pode sobrescrever depois no formulário de Dados ou via WABA real.
     const consultantId = (inst as any)?.consultant_id;
     if (ownerPhone && consultantId) {
       try {
