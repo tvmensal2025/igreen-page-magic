@@ -1,49 +1,112 @@
 ## Diagnóstico confirmado
 
-- O webhook do bot recebeu os dois “Oi” e chamou a Evolution corretamente.
-- A Evolution respondeu 2xx e devolveu IDs de mensagem para os envios automáticos:
-  - `5511989000650`: `3EB0A43971A3692FA75A2D`
-  - `5511971254913`: `3EB02B7BB2CD02C94F42E0`
-- O sistema gravou esses outbounds em `conversations` como se estivessem enviados.
-- No envio manual visto no log, a Evolution retornou `201` com `status: "PENDING"`; hoje o frontend interpreta qualquer resposta sem erro como `sent` e adiciona a bolha com `status: 1`.
-- Portanto o bug principal é: o app confunde “Evolution aceitou/filou a mensagem” com “WhatsApp recebeu/entregou a mensagem”.
+Pelos logs e banco, o problema ainda não é “o bot não chamou a Evolution”. Ele chamou.
 
-## Plano de correção
+Evidências recentes:
 
-1. Validar resposta real da Evolution no frontend
-   - Alterar `src/services/messageSender.ts` para não retornar `sent` automaticamente após `sendTextMessage`/mídia.
-   - Se a resposta vier com `status: "PENDING"`, retornar `pending` em vez de `sent`.
-   - Se vier sem `key.id`, `messageId` ou estrutura mínima esperada, retornar `failed` ou `pending_confirmation`, não `sent`.
+- Lead `5511971254913` enviou `Oi` às `16:26:35`.
+- O webhook respondeu com a mensagem de boas-vindas às `16:27:29`.
+- A Evolution devolveu `message_id = 3EB09BD5AAD23CBECBEC10`, mas com estado `PENDING`.
+- Mesmo assim, o sistema gravou em `conversations` como outbound normal e logou `outbound_done sent=true`.
+- Em `outbound_message_log`, o mesmo envio foi salvo como `result_status='sent'`, apesar de ser apenas `PENDING`.
 
-2. Mostrar estado correto na UI
-   - Alterar `src/hooks/useMessages.ts` para criar mensagem otimista como pendente quando a Evolution retornar `PENDING`.
-   - Não marcar visualmente como enviada até haver confirmação posterior pelo histórico/ACK.
-   - Se o envio falhar, remover ou marcar a bolha como erro.
+Conclusão: a correção anterior melhorou a leitura do `PENDING`, mas o fluxo principal do bot ainda trata `PENDING` como sucesso final. O app continua dizendo “enviado” quando, na prática, a Evolution só aceitou a requisição e ainda não confirmou entrega pelo WhatsApp/Baileys.
 
-3. Validar o envio automático do bot
-   - Alterar `supabase/functions/_shared/evolution-api.ts` para `sendWithRetry` distinguir:
-     - `sent/accepted` com ID válido;
-     - `pending` quando Evolution retornar fila pendente;
-     - `failed` quando houver erro real ou payload inválido.
-   - Não registrar `evolution_send_ok` como sucesso absoluto quando a resposta é apenas `PENDING`; registrar como `evolution_send_pending`.
+## Correção proposta
 
-4. Evitar registro falso no histórico do bot
-   - Ajustar `supabase/functions/evolution-webhook/index.ts` para só inserir outbound em `conversations` como enviado quando o helper confirmar envio aceito com ID válido.
-   - Quando ficar pendente, registrar de forma rastreável sem afirmar entrega final.
+### 1. Separar “aceito pela Evolution” de “confirmado pelo WhatsApp”
 
-5. Adicionar verificação pós-envio
-   - Após receber `key.id`, consultar `chat/findMessages` por alguns segundos para confirmar se a mensagem apareceu no histórico da Evolution.
-   - Se não aparecer, logar falha de confirmação e não mostrar como entregue.
+Alterar `supabase/functions/_shared/evolution-api.ts` para retornar um resultado estruturado em vez de apenas `true/false` no envio detalhado:
 
-6. Opcional, mas recomendado: persistir status de entrega
-   - Adicionar campos em `conversations` para `external_message_id`, `delivery_status` e `delivery_checked_at`.
-   - Isso permite diferenciar `queued`, `sent`, `delivered`, `read` e `failed` no histórico.
+```text
+accepted: Evolution recebeu HTTP 2xx
+pending: Evolution respondeu PENDING
+messageId: id externo retornado
+confirmed: apareceu no histórico/ACK
+failed: erro real
+```
 
-7. Reconfigurar webhook para eventos de status
-   - Atualizar a configuração da instância para ouvir também eventos de atualização/status de mensagem da Evolution, além de `MESSAGES_UPSERT` e `CONNECTION_UPDATE`.
-   - Usar esses eventos para atualizar `delivery_status` quando a Evolution informar entrega/leitura.
+Manter compatibilidade com os pontos antigos que ainda esperam booleano, mas o webhook do bot passará a usar o resultado detalhado.
 
-8. Validação final
-   - Enviar uma mensagem manual e uma automática para os dois números.
-   - Conferir nos logs: resposta Evolution, ID externo, status inicial, confirmação no histórico e atualização visual.
-   - O app só deve marcar como enviado quando houver confirmação, e deve mostrar pendente/falha quando a Evolution não confirmar entrega.
+### 2. Parar de gravar PENDING como enviado final
+
+Alterar `supabase/functions/evolution-webhook/index.ts`:
+
+- Se Evolution retornar erro: não gravar como mensagem enviada.
+- Se retornar `PENDING`: gravar como rastreável, mas não como envio final confirmado.
+- Ajustar `outbound_done` para registrar `delivery_status='queued' | 'sent' | 'failed'`, não apenas `sent=true`.
+
+### 3. Persistir status real de entrega
+
+Criar migração para adicionar em `conversations`:
+
+- `external_message_id`
+- `delivery_status`
+- `delivery_checked_at`
+- `delivery_error`
+
+Valores esperados:
+
+```text
+queued       Evolution aceitou, mas WhatsApp ainda não confirmou
+sent         apareceu no histórico/ACK como enviado
+-delivered   entregue ao aparelho do contato, quando ACK existir
+read         lida, quando ACK existir
+failed       falha real ou não apareceu após verificação
+```
+
+Assim o painel deixa de depender de texto/log e passa a ter estado auditável por mensagem.
+
+### 4. Verificação pós-envio no webhook do bot
+
+Depois de receber `messageId`, consultar `chat/findMessages` por alguns segundos.
+
+- Se o ID aparecer no histórico da Evolution: marcar `sent`.
+- Se não aparecer: manter `queued` ou marcar `failed` após tentativas.
+- Se status vier menor que entrega real, manter `queued` e deixar o ACK atualizar depois.
+
+### 5. Configurar eventos de status/ACK da Evolution
+
+Atualizar `src/services/evolutionApi.ts` em `createInstance` e `setInstanceWebhook` para ouvir também eventos de atualização/status, além dos atuais:
+
+- `MESSAGES_UPSERT`
+- `CONNECTION_UPDATE`
+- `MESSAGES_UPDATE` / `MESSAGE_ACK` conforme payload da Evolution
+
+Depois adaptar `evolution-webhook` para reconhecer esses eventos e atualizar `conversations.delivery_status` pelo `external_message_id`.
+
+### 6. Corrigir envio manual no painel
+
+Ajustar `src/hooks/useMessages.ts` e `src/services/messageSender.ts`:
+
+- `PENDING` não deve renderizar como “enviado final”.
+- A bolha fica pendente enquanto não houver confirmação no histórico.
+- Se não confirmar, a UI marca como falha/pendente em vez de manter check falso.
+
+### 7. Reconfigurar a instância atual
+
+Além de alterar o código para novas instâncias, aplicar a configuração de webhook na instância atual:
+
+```text
+igreen-953f7e48509b
+```
+
+Isso é necessário porque mudar `setInstanceWebhook` só afeta quando essa função for chamada novamente.
+
+## Validação final
+
+Após implementar:
+
+1. Enviar `Oi` para `5511971254913`.
+2. Enviar `Oi` para `5511989000650`.
+3. Conferir nos logs:
+   - resposta Evolution;
+   - `messageId`;
+   - `delivery_status` inicial;
+   - confirmação no histórico;
+   - atualização por ACK, se chegar.
+4. Confirmar que o app não mostra mais “enviado” quando a Evolution retorna apenas `PENDING`.
+
+## Resultado esperado
+
+O sistema vai parar de mentir visualmente. Se a Evolution aceitar mas o WhatsApp não entregar, o painel mostrará pendente/falha rastreável. Se confirmar no histórico ou ACK, aí sim será marcado como enviado/entregue.
