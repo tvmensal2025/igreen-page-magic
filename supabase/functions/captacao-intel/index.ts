@@ -219,33 +219,45 @@ Regras:
   let aiOut: any = { summary: null, bottlenecks: [], winners: [], actions: [] };
   let modelUsed = "fallback";
   try {
-    const res = await openaiChat({
-      model: "gpt-5-mini",
-      responseFormat: "json_object",
-      maxTokens: 2000,
-      messages: [
-        { role: "system", content: "Você responde EXCLUSIVAMENTE com JSON válido." },
-        { role: "user", content: prompt },
-      ],
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const resp = await fetch(LOVABLE_AI_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          { role: "system", content: "Você responde EXCLUSIVAMENTE com JSON válido. Sem texto antes ou depois." },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+      }),
     });
-    if (res.json) {
-      aiOut = res.json;
-      modelUsed = "gpt-5-mini";
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error(`Lovable AI ${resp.status}: ${txt.slice(0, 200)}`);
+    }
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (content) {
+      aiOut = typeof content === "string" ? JSON.parse(content) : content;
+      modelUsed = "google/gemini-3-flash-preview";
     }
   } catch (e) {
-    console.error("[captacao-intel] OpenAI failed, using heuristic fallback:", String(e));
-    // Fallback heurístico
+    console.error("[captacao-intel] AI failed, using heuristic fallback:", String(e));
     const bottlenecks: any[] = [];
-    if (kpis.conversion_lp_lead_pct < 5) {
+    if (kpis.conversion_lp_lead_pct < 5 && funnelData.views > funnelData.leads) {
       bottlenecks.push({ title: "LP convertendo pouco", detail: `Apenas ${kpis.conversion_lp_lead_pct}% das visitas viram lead. Meta: >5%.`, metric: `${kpis.conversion_lp_lead_pct}%`, severity: "high" });
     }
-    const variantEntries = Object.entries(variants);
+    const variantEntries = Object.entries(variantsForAI);
     if (variantEntries.length > 1) {
       const sorted = variantEntries.sort((a, b) => (b[1].approved / Math.max(1, b[1].total)) - (a[1].approved / Math.max(1, a[1].total)));
       const best = sorted[0]; const worst = sorted[sorted.length - 1];
       const bestRate = pct(best[1].approved, best[1].total);
       const worstRate = pct(worst[1].approved, worst[1].total);
-      if (bestRate > worstRate * 1.3 && worst[1].total > 5) {
+      if (bestRate > worstRate * 1.3) {
         bottlenecks.push({ title: `Variante ${worst[0]} está perdendo`, detail: `${worstRate}% vs ${bestRate}% da variante ${best[0]}.`, metric: `${worstRate}%`, severity: "medium" });
       }
     }
