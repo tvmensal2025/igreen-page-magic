@@ -474,7 +474,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
       const res = await fetchWithTimeout(`${baseUrl}/chat/sendPresence/${instanceName}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": apiKey },
-        body: JSON.stringify({ number: remoteJid, presence, delay: delayMs }),
+        body: JSON.stringify({ number: toEvolutionNumber(remoteJid), presence, delay: delayMs }),
         timeout: 8000,
       });
       return res.ok;
