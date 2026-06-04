@@ -422,11 +422,13 @@ export function ConnectionPanel({
             <div className="flex items-center gap-3">
               {onRefreshQr && (
                 <Button
-                  onClick={onRefreshQr}
+                  onClick={handleSafeRefresh}
                   variant="outline"
-                  className="gap-2 rounded-xl border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all"
+                  disabled={refreshDisabled}
+                  className="gap-2 rounded-xl border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all disabled:opacity-50"
                 >
-                  <RefreshCw className="w-4 h-4" /> Atualizar agora
+                  <RefreshCw className={`w-4 h-4 ${refreshCooldownLeft > 0 ? "" : ""}`} />
+                  {refreshCooldownLeft > 0 ? `Aguarde ${refreshCooldownLeft}s` : "Atualizar agora"}
                 </Button>
               )}
               {showResetButton && (
@@ -480,12 +482,14 @@ export function ConnectionPanel({
 
             {onRefreshQr && (
               <Button
-                onClick={onRefreshQr}
+                onClick={handleSafeRefresh}
                 variant="ghost"
                 size="sm"
-                className="gap-2 text-xs text-muted-foreground hover:text-foreground"
+                disabled={refreshDisabled}
+                className="gap-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Gerar novo QR
+                <RefreshCw className="w-3.5 h-3.5" />
+                {refreshCooldownLeft > 0 ? `Aguarde ${refreshCooldownLeft}s` : "Gerar novo QR"}
               </Button>
             )}
 
