@@ -432,7 +432,12 @@ Deno.serve(async (req) => {
     report_id: (inserted as { id: number }).id,
     summary,
   });
+  } catch (err: any) {
+    captureError(err, { tags: { function: "flow-engine-v3-rollout-cron" } });
+    return jsonResponse({ ok: false, error: String(err?.message || err) }, 500);
+  }
 });
+
 
 // ─── Aggregation ───────────────────────────────────────────────────────────
 
