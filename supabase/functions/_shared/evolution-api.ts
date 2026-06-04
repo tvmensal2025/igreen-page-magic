@@ -279,15 +279,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     return sendText(remoteJid, textWithOptions, idempotency);
   }
 
-    const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
-    // Fallback intentionally does not reuse the idempotency key — the
-    // primary attempt already consumed the slot and the post-record
-    // marked it as failed; sending the text fallback is a separate
-    // operation from the customer's perspective.
-    const okText = await sendText(remoteJid, textWithOptions);
-    console.log(`${okText ? "✅" : "❌"} [sendButtons fallback texto] resultado=${okText}`);
-    return okText;
-  }
+
 
   async function downloadMedia(key: any, message: any): Promise<string | null> {
     try {
