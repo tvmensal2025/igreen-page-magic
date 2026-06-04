@@ -15,7 +15,7 @@
 // Cap em 200 leads por execução pra não saturar.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { jsonLog } from "../_shared/audit.ts";
+import { jsonLog, captureError } from "../_shared/audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,6 +50,7 @@ interface CustomerRow {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  try {
   const t0 = Date.now();
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -148,4 +149,11 @@ Deno.serve(async (req) => {
     debounced: debouncedSet.size,
     ms: Date.now() - t0,
   }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (err: any) {
+    captureError(err, { tags: { function: "flow-d-stuck-watchdog" } });
+    return new Response(
+      JSON.stringify({ ok: false, error: String(err?.message || err) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 });

@@ -68,6 +68,7 @@
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { captureError } from "../_shared/audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -167,6 +168,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  try {
 
   const generatedAtIso = new Date().toISOString();
   const reportDate = utcDateOf(generatedAtIso);
@@ -429,7 +432,12 @@ Deno.serve(async (req) => {
     report_id: (inserted as { id: number }).id,
     summary,
   });
+  } catch (err: any) {
+    captureError(err, { tags: { function: "flow-engine-v3-rollout-cron" } });
+    return jsonResponse({ ok: false, error: String(err?.message || err) }, 500);
+  }
 });
+
 
 // ─── Aggregation ───────────────────────────────────────────────────────────
 

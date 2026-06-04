@@ -3,6 +3,7 @@
 // off → dark → canary → on (ou rollback) automaticamente.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
+import { captureError } from "../_shared/audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,6 +38,7 @@ interface HealthRow {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  try {
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -135,7 +137,15 @@ Deno.serve(async (req) => {
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
+  } catch (err: any) {
+    captureError(err, { tags: { function: "flow-engine-rollout-cron" } });
+    return new Response(
+      JSON.stringify({ ok: false, error: String(err?.message || err) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 });
+
 
 function decideNext(
   current: Flag,
