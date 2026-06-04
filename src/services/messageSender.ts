@@ -13,11 +13,12 @@ import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("messageSender");
 
-export type SendStatus = "sent" | "timeout" | "failed";
+export type SendStatus = "sent" | "pending" | "timeout" | "failed";
 
 export interface SendResult {
   status: SendStatus;
   error?: string;
+  messageId?: string;
 }
 
 export type MediaCategory = "text" | "image" | "video" | "audio" | "document";
