@@ -99,7 +99,15 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const handleReset = useCallback(async () => {
     if (!chat) return;
     setResetting(true);
-    const r = await resetLeadConversation({ consultantId, remoteJid: chat.remoteJid });
+    // IMPORTANTE: Evolution usa remoteJid no formato `<lid>@lid` (ID criptografado,
+    // não telefone). Se passarmos só remoteJid, a RPC não encontra o customer e
+    // o reset não limpa handoff/pause/step. Quando temos customerId em estado,
+    // passamos ele direto — a RPC deriva o telefone real da tabela customers.
+    const r = await resetLeadConversation({
+      consultantId,
+      customerId: customerId ?? null,
+      remoteJid: customerId ? null : chat.remoteJid,
+    });
     setResetting(false);
     if (r.ok) {
       await refetch();
@@ -112,7 +120,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     } else {
       toast({ title: "Erro ao zerar", description: (r as { error: string }).error, variant: "destructive" });
     }
-  }, [chat, consultantId, refetch, toast, globalAiEnabled]);
+  }, [chat, consultantId, customerId, refetch, toast, globalAiEnabled]);
 
   // Carrega estado do bot (paused, force_enabled) + flag global do consultor.
   useEffect(() => {
