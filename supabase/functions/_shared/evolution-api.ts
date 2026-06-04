@@ -139,16 +139,18 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     let lastBody = "";
     let succeeded = false;
     let messageId: string | null = null;
+    let pendingOnly = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const res = await doSend();
         if (res.ok) {
           succeeded = true;
-          // Tenta capturar `key.id` da resposta Evolution v2 (sendText/Buttons/Media).
-          // Falha silenciosa não impede o sucesso — apenas perdemos telemetria.
+          // Tenta capturar `key.id` e `status` da resposta Evolution v2.
           try {
             const data = await res.clone().json();
             messageId = data?.key?.id ?? data?.messageId ?? data?.id ?? null;
+            const rawStatus = String(data?.status ?? data?.messageStatus ?? "").toUpperCase();
+            if (rawStatus === "PENDING") pendingOnly = true;
           } catch (_) { /* body não-json, ignora */ }
           break;
         }
@@ -172,14 +174,17 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     }
 
     if (succeeded) {
-      logStructured("info", "evolution_send_ok", {
+      logStructured(pendingOnly ? "warn" : "info", pendingOnly ? "evolution_send_pending" : "evolution_send_ok", {
         instance: instanceName,
         kind: label,
         message_id: messageId,
+        pending: pendingOnly,
       });
       // ── Idempotency post-record (success) ─────────────────────────
       if (idemEnabled) {
         try {
+          // Mesmo PENDING marcamos como "sent" para evitar reenvio em retries;
+          // o status real de entrega é monitorado via eventos do webhook.
           await recordOutboundResult(idemSupabase!, idemKey!, "sent", messageId);
         } catch (_) { /* swallow */ }
       }
