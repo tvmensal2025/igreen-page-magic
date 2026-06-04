@@ -597,17 +597,14 @@ async function sendStepMedia(
     const configuredDelay = Number(m.delay_before_ms || 0);
     if (!isTestMode()) {
       if (configuredDelay > 0) {
-        const wait = Math.min(configuredDelay, 12_000);
+        // Respeita config do consultor, mas teto de 4s para não estourar Edge.
+        const wait = Math.min(configuredDelay, 4_000);
         await new Promise((r) => setTimeout(r, wait));
       } else if (prevForPause) {
-        let pause = 800;
-        if ((prevForPause.kind === "audio" || prevForPause.kind === "video") && Number(prevForPause.duration_sec || 0) > 0) {
-          // 90% da duração + 600ms de buffer humano. Teto 12s.
-          pause = Math.min(
-            Math.round(Number(prevForPause.duration_sec) * 1000 * 0.9) + 600,
-            12_000,
-          );
-        }
+        // Pausa curta e fixa: 900ms após áudio/vídeo, 400ms após texto/imagem.
+        // ANTES esperávamos 90% da duração do item anterior (até 12s),
+        // o que somava ~25s entre 3 mídias e o lead achava que o bot travou.
+        const pause = (prevForPause.kind === "audio" || prevForPause.kind === "video") ? 900 : 400;
         await new Promise((r) => setTimeout(r, pause));
       }
     }
