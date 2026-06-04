@@ -5487,6 +5487,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          is_public: boolean
           name: string
           shortcut: string | null
           updated_at: string
@@ -5496,6 +5497,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_public?: boolean
           name: string
           shortcut?: string | null
           updated_at?: string
@@ -5505,6 +5507,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_public?: boolean
           name?: string
           shortcut?: string | null
           updated_at?: string
@@ -5924,6 +5927,10 @@ export type Database = {
       }
       clone_bot_flow_as_b: { Args: { _consultant_id: string }; Returns: string }
       clone_bot_flow_as_c: { Args: { _consultant_id: string }; Returns: string }
+      clone_superadmin_flow_d_steps: {
+        Args: { _target_flow_id: string }
+        Returns: number
+      }
       compute_pos_venda_stage: {
         Args: { _andamento: string; _status: string; _submitted_at: string }
         Returns: string
