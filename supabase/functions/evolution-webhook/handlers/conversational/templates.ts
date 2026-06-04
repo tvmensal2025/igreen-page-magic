@@ -57,7 +57,8 @@ function fmtEconomiaRange(v: number | string | null | undefined): string {
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
   // Sem nome conhecido: deixa vazio (template deve omitir vírgula/saudação sozinho)
   const nome = (vars.nome || "").split(" ")[0] || "";
-  const rep = vars.representante || "consultor";
+  // Fallback alinhado ao whapi — se consultor não tem nome cadastrado, usa marca.
+  const rep = vars.representante || "iGreen Energy";
   const valor = fmtValor(vars.valor_conta);
   const econMensal = fmtEconomiaMensal(vars.valor_conta);
   const econAnual = fmtEconomiaAnual(vars.valor_conta);
