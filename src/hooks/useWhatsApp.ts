@@ -740,7 +740,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       try {
         const { data: instanceRecord } = await supabase
           .from("whatsapp_instances")
-          .select("id")
+          .select("id, manual_review_required, fatal_lock_until, fatal_disconnect_reason")
           .eq("consultant_id", consultantId)
           .maybeSingle();
 
@@ -754,6 +754,22 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           return;
         }
         setHasInstance(true);
+
+        // Hard-lock detection (fatal disconnect → manual review)
+        const fatalActive =
+          !!(instanceRecord as any).manual_review_required ||
+          (!!(instanceRecord as any).fatal_lock_until &&
+            new Date((instanceRecord as any).fatal_lock_until) > new Date());
+        setFatalLocked(fatalActive);
+        setFatalReason((instanceRecord as any).fatal_disconnect_reason ?? null);
+        if (fatalActive) {
+          setStatus("disconnected");
+          setHealth("reset_recommended");
+          setError(null);
+          addLog("⛔ Número em revisão manual após desconexão grave. Não reconectar agora.");
+          setIsLoading(false);
+          return;
+        }
 
         const state = await withTimeout(checks.checkState(name), 15000);
         if (cancelled) return;
