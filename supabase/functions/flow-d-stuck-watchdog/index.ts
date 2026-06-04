@@ -149,4 +149,11 @@ Deno.serve(async (req) => {
     debounced: debouncedSet.size,
     ms: Date.now() - t0,
   }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (err: any) {
+    captureError(err, { tags: { function: "flow-d-stuck-watchdog" } });
+    return new Response(
+      JSON.stringify({ ok: false, error: String(err?.message || err) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 });
