@@ -161,7 +161,26 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
       return { status: "timeout", error: "Serviço temporariamente indisponível" };
     }
 
-    return { status: "sent" };
+    // Detect Evolution PENDING status (message queued but not confirmed by WhatsApp).
+    // Evolution returns 2xx with body { status: "PENDING", key: { id } } when the
+    // message was accepted by the API but Baileys has not yet received server ACK.
+    // We surface this distinctly so the UI can show "pendente" instead of "enviado".
+    const resObj = (result && typeof result === "object" ? result : {}) as Record<string, unknown>;
+    const rawStatus = String(resObj.status ?? resObj.messageStatus ?? "").toUpperCase();
+    const messageId = (resObj.key as { id?: string } | undefined)?.id || (resObj as { messageId?: string }).messageId;
+
+    if (rawStatus === "PENDING") {
+      logger.warn("Envio em estado PENDING (não confirmado pelo WhatsApp ainda)", { phone, messageId });
+      return { status: "pending", messageId, error: "Mensagem na fila — aguardando confirmação do WhatsApp." };
+    }
+
+    // Sem key.id é suspeito — provavelmente não chegou no servidor.
+    if (!messageId && (rawStatus === "" || rawStatus === "ERROR")) {
+      logger.warn("Resposta sem messageId — possivelmente não enviada", { phone, rawStatus });
+      return { status: "failed", error: "Servidor não confirmou o envio." };
+    }
+
+    return { status: "sent", messageId };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     logger.error("Falha no envio:", msg);
