@@ -186,8 +186,34 @@ Deno.serve(async (req) => {
         balance_cents: liquid,
       }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // spend_cap (teto absoluto na Meta) = saldo líquido / (1 + fee) — o que sobra pra Meta após o markup.
-    const lifetimeCapCents = Math.max(1000, Math.floor(liquid / (1 + feePct)));
+    // RATEIO ANTI-PREJUÍZO: divide o saldo entre TODAS as campanhas ativas/pendentes
+    // do consultor + a nova. Sem isso, N campanhas ativas teriam cada uma cap = saldo,
+    // permitindo gasto potencial = N × saldo na Meta.
+    // Para cada campanha existente, descontamos o que ela JÁ gastou (não conta como reserva).
+    const { data: existingCamps } = await admin
+      .from("facebook_campaigns")
+      .select("id, fb_campaign_id, status")
+      .eq("consultant_id", auth.id)
+      .in("status", ["active", "paused", "pending_review"]);
+    // Soma o gasto já realizado pelas existentes (usa nossa tabela diária — barato, sem chamar Meta)
+    let alreadySpentMetaCents = 0;
+    if (existingCamps && existingCamps.length > 0) {
+      const ids = existingCamps.map((c: any) => c.id);
+      const { data: spent } = await admin
+        .from("facebook_metrics_daily")
+        .select("campaign_id, gross_spend_cents")
+        .in("campaign_id", ids);
+      for (const r of (spent || []) as any[]) {
+        alreadySpentMetaCents += Number(r.gross_spend_cents || 0);
+      }
+    }
+    const liquidMetaBudget = Math.floor(liquid / (1 + feePct));
+    const activeCount = (existingCamps?.length || 0) + 1; // +1 = a nova
+    const perCampaignExtra = Math.floor(liquidMetaBudget / activeCount);
+    // cap da NOVA campanha = só a fatia dela (ainda não gastou nada)
+    const lifetimeCapCents = Math.max(1000, perCampaignExtra);
+    // realinha o cap das existentes pra elas também respeitarem o rateio
+    const realignTargets = (existingCamps || []).filter((c: any) => c.fb_campaign_id);
 
     // Carrega a conta Facebook ÚNICA da plataforma (admin) — todos consultores
     // rodam ads na mesma ad account/página/pixel, mudando só o telefone do CTA.
@@ -962,6 +988,32 @@ Deno.serve(async (req) => {
         `A campanha "${campaignName}" foi criada mas não ativou automaticamente.\n\nMotivo: ${activationError}\n\nAcesse o painel e clique em "Tentar reativar".`,
       );
     }
+
+    // RATEIO ANTI-PREJUÍZO (parte 2): realinha o spend_cap das campanhas existentes
+    // pra cada uma respeitar a nova fatia. Sem isso, as antigas ainda teriam o cap
+    // anterior (calculado quando havia menos campanhas) e poderiam estourar o saldo.
+    for (const ec of realignTargets) {
+      try {
+        // gasto já realizado dessa campanha específica
+        const { data: spentRow } = await admin
+          .from("facebook_metrics_daily")
+          .select("gross_spend_cents")
+          .eq("campaign_id", ec.id);
+        const ecSpent = (spentRow || []).reduce((s: number, r: any) => s + Number(r.gross_spend_cents || 0), 0);
+        const newEcCap = Math.max(1000, ecSpent + perCampaignExtra);
+        await fbFetch(`/${ec.fb_campaign_id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ spend_cap: String(newEcCap), access_token: conn.token }),
+        });
+        await admin.from("facebook_campaigns")
+          .update({ lifetime_cap_cents: newEcCap, updated_at: new Date().toISOString() })
+          .eq("id", ec.id);
+      } catch (re) {
+        console.warn("[fb-create] realign existing cap failed", ec.fb_campaign_id, (re as Error).message);
+      }
+    }
+
 
     return new Response(JSON.stringify({ ok: true, campaign_id: campaignId, adset_id: adsetId, ad_ids: adIds, ads_count: adIds.length, activated, activation_error: activationError }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
