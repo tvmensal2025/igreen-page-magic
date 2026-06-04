@@ -1599,36 +1599,56 @@ Deno.serve(async (req) => {
     // The new contract is universal: __inline_sent === true means the
     // handler took full responsibility for this turn's outbound, period.
     if (__inline_sent_flag) {
-      jsonLog("info", "inline_sent_skipped", {
+      // 🛡️ Anti-silêncio (2026-06-04): só confia em __inline_sent quando
+      // existe outbound REAL recente desse customer (≤ 30s) — texto/mídia
+      // de verdade, não outro marcador `[inline-sent]`/`[failed:*]`. Sem
+      // essa checagem, um handler que devolva `__inline_sent=true` por
+      // engano (ex.: dedupe duplicado) faz o cliente nunca receber nada
+      // e o histórico mostra só `[inline-sent]`.
+      let realOutboundExists = false;
+      try {
+        const sinceIso = new Date(Date.now() - 30_000).toISOString();
+        const { data: realRow } = await supabase
+          .from("conversations")
+          .select("id, message_text, message_type")
+          .eq("customer_id", customer.id)
+          .eq("message_direction", "outbound")
+          .gte("created_at", sinceIso)
+          .not("message_text", "like", "[inline-sent]%")
+          .not("message_text", "like", "[failed:%")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        realOutboundExists = !!realRow;
+      } catch (_) { /* fail-open para o fallback abaixo */ }
+
+      if (realOutboundExists) {
+        jsonLog("info", "inline_sent_skipped", {
+          customer_id: customer.id,
+          consultant_id: instanceData.consultant_id,
+          step: stepToSend ? stripPrefix(String(stepToSend)) : undefined,
+          reply_was_set: reply !== "",
+          v2_flag: v2Flag,
+        });
+        return new Response(JSON.stringify({ ok: true, mode: "inline_sent" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Handler afirmou inline_sent mas não há outbound real → contrato
+      // violado. Loga ERRO e NÃO retorna: deixa cair no fallback abaixo
+      // pra garantir que o cliente receba pelo menos uma resposta.
+      jsonLog("warn", "inline_sent_contract_violation", {
         customer_id: customer.id,
         consultant_id: instanceData.consultant_id,
         step: stepToSend ? stripPrefix(String(stepToSend)) : undefined,
         reply_was_set: reply !== "",
         v2_flag: v2Flag,
+        note: "handler set __inline_sent=true but no real outbound found in last 30s",
       });
-      // Persiste uma linha de log apenas quando o handler enviou SOMENTE mídia
-      // (reply vazio). Quando reply !== "", o handler já inseriu suas próprias
-      // linhas via sendStepMedia/sendText — inserir aqui duplicaria o histórico.
-      if (!reply) {
-        try {
-          await supabase.from("conversations").insert({
-            customer_id: customer.id,
-            message_direction: "outbound",
-            message_text: "[inline-sent]",
-            message_type: "text",
-            conversation_step: updates.conversation_step || stepBefore,
-          });
-        } catch (logErr) {
-          jsonLog("warn", "inline_sent_log_failed", {
-            customer_id: customer.id,
-            message: logErr instanceof Error ? logErr.message : String(logErr),
-          });
-        }
-      }
-      return new Response(JSON.stringify({ ok: true, mode: "inline_sent" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      // Limpa a flag pra não duplicar o fallback como inline depois.
     }
+
 
     // GARANTIA: nunca deixar o cliente sem resposta. Se reply vazio E nenhum botão foi enviado dentro do handler,
     // injeta uma mensagem padrão de "continue" para evitar bot em silêncio.

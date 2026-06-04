@@ -19,7 +19,7 @@ import { isStrictScriptMode } from "../../../_shared/ai-decisions.ts";
 import { validateAiFallbackChoice } from "../../../_shared/grounding.ts";
 // Sprint 2.6 — helpers compartilhados (cooldown e dedupe)
 import { aiInCooldown, setAiCooldown, aiInCooldownPersistent, setAiCooldownPersistent } from "../../../_shared/bot/ai-cooldown.ts";
-import { checkAndMarkWebhookDedupe } from "../../../_shared/bot/dedupe.ts";
+// `checkAndMarkWebhookDedupe` removido — dedupe canônico fica no orquestrador.
 import { matchTransition as matchTransitionShared, CADASTRO_STEPS } from "../../../_shared/flow-router.ts";
 import { extractStepButtons, matchButtonIntent } from "../../../_shared/ai-button-intent.ts";
 
@@ -734,18 +734,18 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     }
   }
 
-  // ─── Dedupe de mensagem (idempotência) — Sprint 2.6 + bugfix Task 7
-  // Composite key (message_id, instance_name) garante isolamento multi-tenant.
-  if (ctx.messageId) {
-    const dedupe = await checkAndMarkWebhookDedupe(
-      ctx.supabase,
-      ctx.messageId,
-      ctx.instanceName,
-    );
-    if (dedupe.duplicate) {
-      return { reply: "", updates: { __inline_sent: true } };
-    }
-  }
+  // ─── Dedupe de mensagem ──────────────────────────────────────────
+  // REMOVIDO (2026-06-04): a chamada `checkAndMarkWebhookDedupe` aqui era
+  // redundante — o orquestrador `evolution-webhook/index.ts` já marca a
+  // mensagem como processada via `checkAndMarkProcessed` ANTES de
+  // delegar para este handler. A segunda marcação detectava a própria
+  // linha recém-inserida como duplicada e devolvia
+  // `{ reply: "", updates: { __inline_sent: true } }`, fazendo o
+  // orquestrador gravar `[inline-sent]` e ENCERRAR o turno em silêncio.
+  // Sintoma: lead manda "Oi", nada chega de volta, banco mostra apenas
+  // outbound `[inline-sent]` (customer 937defb9 e 1cf4edd9 em 2026-06-04).
+  // Idempotência canônica fica no orquestrador (fonte única).
+
 
   // ─── Detour return: se o lead foi desviado por uma regra goto_step no turno
   // anterior, restaura o passo original ANTES de processar a nova mensagem.
