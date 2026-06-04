@@ -1,28 +1,34 @@
-# Correções na landing page pública
+## Diagnóstico
 
-## Problemas identificados
+O domínio `igreen.cloud` está correto e o consultor `rafael-ferreira` existe no banco. A página retorna "Consultor não encontrado" porque a query do `useConsultant` falha por permissão:
 
-1. **Link "Página de Cliente" do Admin não abre** — `PreviewTab` usa `baseUrl="igreen.institutodossonhos.com.br"` (domínio que não responde). O domínio real é `igreen.cloud` (visto no print).
-2. **Título gigante no mobile** — `HeroSection` usa `text-[2.2rem]` (~35px) com `font-black` e `max-width: 18ch`, fazendo cada palavra quebrar em uma linha. Precisa cair para ~`1.6rem` no mobile.
-3. **Vídeo está abaixo do título** — usuário quer o vídeo no topo da Hero, logo após a nav, com autoplay funcionando.
+- A view `public.consultants_public` está criada com `WITH (security_invoker=on)`.
+- Com `security_invoker=on`, quando o role `anon` consulta a view, o Postgres tenta ler a tabela base `public.consultants` usando a permissão do próprio anon.
+- O anon não tem `SELECT` em `public.consultants` (e nem deveria ter — a tabela tem colunas sensíveis).
+- Resultado: PostgREST devolve `42501 permission denied for table consultants`, o front trata como "sem dados" e mostra a tela de erro.
 
-## Mudanças
+Verificado com requisição direta ao PostgREST usando a anon key publicada — retorna `permission denied for table consultants`.
 
-### 1. `src/pages/Admin.tsx`
-- Trocar `const baseUrl = "igreen.institutodossonhos.com.br"` por `"igreen.cloud"`.
+## Mudança
 
-### 2. `src/components/HeroSection.tsx`
-- Reordenar Hero: **nav → vídeo → badge → título → subtítulo → CTAs → social proof**.
-- Reduzir tipografia do `h1` no mobile: `text-[1.65rem] sm:text-4xl md:text-5xl lg:text-[3.5rem]`, aumentar `max-width` para `20ch` para evitar quebra palavra-a-palavra.
-- Garantir vídeo funcionando: manter `autoPlay muted playsInline loop`, adicionar `preload="metadata"` e `poster` (frame inicial) para não ficar preto enquanto carrega.
-- Reduzir `pt` da seção (vídeo no topo precisa menos respiro): `pt-24 md:pt-28`.
+Migração única que troca o modo da view para `security_definer` (executa com a permissão do dono da view, que tem acesso à `consultants`) e garante o GRANT de leitura para `anon` e `authenticated` na própria view. A view continua expondo apenas as colunas públicas já definidas (sem e-mail, sem dados sensíveis), então o risco de exposição não muda — só a forma como a permissão é checada.
 
-### 3. Validação
-- Após edição, abrir o preview em viewport mobile (375px) via browser tool e confirmar:
-  - vídeo renderiza acima do título e dá play sozinho,
-  - título cabe em ~3 linhas sem palavra solta,
-  - link "Página de Cliente" do Admin abre `https://igreen.cloud/<slug>`.
+```sql
+ALTER VIEW public.consultants_public SET (security_invoker = off);
+GRANT SELECT ON public.consultants_public TO anon, authenticated;
+```
+
+## Verificação
+
+Depois da migração:
+
+1. `curl` no PostgREST com a anon key em `consultants_public?license=eq.rafael-ferreira` deve retornar a linha do Rafael.
+2. Abrir `https://igreen.cloud/rafael-ferreira` deve renderizar a landing page do consultor (sem "Consultor não encontrado").
+3. O preview dentro de `/admin → Links → Página de Cliente` deve abrir a landing correta.  
+TODOS OS CONSULTORES QUE COLOCAR O NOME EM DADOS VAI TER SUA PAGINA PUBLICA
 
 ## Fora de escopo
-- Não mexer no fluxo de Central de Anúncios nem em edge functions.
-- Não trocar o vídeo em si (`/videos/Green_Energy.mp4`).
+
+- Não mexer no `baseUrl` (já está em `igreen.cloud`, que é o domínio correto).
+- Não mexer em `useConsultant`, `ConsultantPage`, `HeroSection`, ou Central de Anúncios.
+- Não alterar grants da tabela `consultants` (continua sem acesso direto pelo anon).
