@@ -62,6 +62,16 @@ export interface EvolutionInstance {
 export function createEvolutionSender(apiUrl: string, apiKey: string, instanceName: string) {
   const baseUrl = apiUrl.replace(/\/$/, "");
 
+  /**
+   * Evolution API v2 (/message/sendText, /sendButtons, /sendMedia,
+   * /sendWhatsAppAudio, /chat/sendPresence) espera `number` em dígitos puros.
+   * Quando recebe JID completo (`5511…@s.whatsapp.net`) responde 2xx mas
+   * Baileys silenciosamente NÃO entrega a mensagem. Normalize sempre aqui.
+   */
+  const toEvolutionNumber = (jid: string) =>
+    String(jid || "").split("@")[0].replace(/\D/g, "");
+
+
   // Retry helper para envios — exponential backoff (300ms, 900ms, 2.7s).
   //
   // Optional `idempotencyOpts`:
@@ -128,11 +138,18 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     let lastStatus = 0;
     let lastBody = "";
     let succeeded = false;
+    let messageId: string | null = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const res = await doSend();
         if (res.ok) {
           succeeded = true;
+          // Tenta capturar `key.id` da resposta Evolution v2 (sendText/Buttons/Media).
+          // Falha silenciosa não impede o sucesso — apenas perdemos telemetria.
+          try {
+            const data = await res.clone().json();
+            messageId = data?.key?.id ?? data?.messageId ?? data?.id ?? null;
+          } catch (_) { /* body não-json, ignora */ }
           break;
         }
         lastStatus = res.status;
@@ -155,14 +172,20 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     }
 
     if (succeeded) {
+      logStructured("info", "evolution_send_ok", {
+        instance: instanceName,
+        kind: label,
+        message_id: messageId,
+      });
       // ── Idempotency post-record (success) ─────────────────────────
       if (idemEnabled) {
         try {
-          await recordOutboundResult(idemSupabase!, idemKey!, "sent", null);
+          await recordOutboundResult(idemSupabase!, idemKey!, "sent", messageId);
         } catch (_) { /* swallow */ }
       }
       return true;
     }
+
     // Detecta sessão WhatsApp derrubada do lado do servidor Evolution.
     // Sintoma típico: HTTP 500 + body contendo "Connection Closed".
     const isConnectionClosed =
@@ -223,13 +246,14 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     text: string,
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
+    const number = toEvolutionNumber(remoteJid);
     const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
-    console.log(`📤 [sendText] -> ${remoteJid} | "${preview}${text.length > 60 ? "..." : ""}"`);
+    console.log(`📤 [sendText] -> ${number} | "${preview}${text.length > 60 ? "..." : ""}"`);
     const ok = await sendWithRetry("send_text", () =>
       fetchWithTimeout(`${baseUrl}/message/sendText/${instanceName}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": apiKey },
-        body: JSON.stringify({ number: remoteJid, text }),
+        body: JSON.stringify({ number, text }),
         timeout: TIMEOUT_WHAPI,
       }),
       idempotency,
@@ -244,46 +268,18 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     buttons: EvolutionButton[],
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
-    // Evolution API v2 (Baileys) exige `type: "reply"` em cada botão.
-    const safeButtons = buttons.slice(0, 3).map((b) => ({
-      type: "reply" as const,
-      displayText: (b.title || "").substring(0, 20),
-      id: b.id,
-    }));
-
-    console.log(`📤 [sendButtons] -> ${remoteJid} (${safeButtons.length} botões: ${safeButtons.map(b => b.id).join(",")})`);
-    const ok = await sendWithRetry("send_buttons", () =>
-      fetchWithTimeout(`${baseUrl}/message/sendButtons/${instanceName}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": apiKey },
-        body: JSON.stringify({
-          number: remoteJid,
-          title: "Escolha uma opção",
-          description: message,
-          footer: "iGreen Energy",
-          buttons: safeButtons,
-        }),
-        timeout: TIMEOUT_WHAPI,
-      }),
-      idempotency,
-    );
-    if (ok) {
-      console.log(`✅ [sendButtons] entregue à Evolution`);
-      return true;
-    }
-
-    // Fallback final: texto numerado garantindo que o cliente NUNCA fica sem resposta
-    console.warn(`⚠️ [sendButtons] FALHOU -> caindo para texto numerado`);
-    logStructured("warn", "evolution_buttons_fallback_to_text", { instance: instanceName });
+    // Evolution/Baileys entrega botões de forma inconsistente nas versões atuais
+    // do WhatsApp — muitos clientes recebem só a descrição, sem opções clicáveis.
+    // Pedido do produto: na Evolution, sempre cair para texto numerado (sem botão).
+    // Isso mantém paridade visual com o WhAPI (que usa botões nativos confiáveis)
+    // do ponto de vista do usuário: ele sempre vê a pergunta + opções.
+    console.log(`📤 [sendButtons→text] -> ${toEvolutionNumber(remoteJid)} (${buttons.length} opções: ${buttons.map(b => b.id).join(",")})`);
+    logStructured("info", "evolution_buttons_as_text", { instance: instanceName, count: buttons.length });
     const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
-    // Fallback intentionally does not reuse the idempotency key — the
-    // primary attempt already consumed the slot and the post-record
-    // marked it as failed; sending the text fallback is a separate
-    // operation from the customer's perspective.
-    const okText = await sendText(remoteJid, textWithOptions);
-    console.log(`${okText ? "✅" : "❌"} [sendButtons fallback texto] resultado=${okText}`);
-    return okText;
+    return sendText(remoteJid, textWithOptions, idempotency);
   }
+
+
 
   async function downloadMedia(key: any, message: any): Promise<string | null> {
     try {
@@ -398,7 +394,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     }
     return withIdempotency("send_media", idempotency, async () => {
       // Evolution API espera apenas o número, sem sufixo JID
-      const number = remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
+      const number = toEvolutionNumber(remoteJid);
       try {
         const res = await fetchWithTimeout(`${baseUrl}/message/sendMedia/${instanceName}`, {
           method: "POST",
@@ -444,7 +440,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
     return withIdempotency("send_audio", idempotency, async () => {
-      const number = remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
+      const number = toEvolutionNumber(remoteJid);
       try {
         const res = await fetchWithTimeout(`${baseUrl}/message/sendWhatsAppAudio/${instanceName}`, {
           method: "POST",
@@ -478,7 +474,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
       const res = await fetchWithTimeout(`${baseUrl}/chat/sendPresence/${instanceName}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": apiKey },
-        body: JSON.stringify({ number: remoteJid, presence, delay: delayMs }),
+        body: JSON.stringify({ number: toEvolutionNumber(remoteJid), presence, delay: delayMs }),
         timeout: 8000,
       });
       return res.ok;
