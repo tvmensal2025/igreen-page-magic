@@ -43,6 +43,8 @@ interface UseWhatsAppReturn {
   consecutiveTimeouts: number;
   isWhapi: boolean;
   hasInstance: boolean;
+  fatalLocked: boolean;
+  fatalReason: number | null;
   createAndConnect: () => Promise<void>;
   disconnect: () => Promise<void>;
   reconnect: () => Promise<void>;
@@ -63,6 +65,8 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   const [connectionLog, setConnectionLog] = useState<string[]>([]);
   const [operationalHealth, setOperationalHealth] = useState<OperationalHealth>("healthy");
   const [consecutiveTimeouts, setConsecutiveTimeouts] = useState(0);
+  const [fatalLocked, setFatalLocked] = useState(false);
+  const [fatalReason, setFatalReason] = useState<number | null>(null);
 
   const mountedRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
