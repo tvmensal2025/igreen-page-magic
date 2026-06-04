@@ -22,9 +22,10 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
   };
 
   return (
-    <section id="top" className="relative overflow-hidden pt-24 md:pt-28 pb-16 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
+    <section id="top" className="relative overflow-hidden pt-20 md:pt-28 pb-12 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
       <LandingNav
         ctaLabel="Falar no WhatsApp"
+        ctaLabelMobile="WhatsApp"
         ctaHref={WHATSAPP}
         onCtaClick={() => handleClick("whatsapp")}
       />
