@@ -293,7 +293,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           phone_whatsapp: insertPhone,
           name: fallbackName,
           customer_origin: "whatsapp_lead",
-          conversation_step: "novo_lead",
+          conversation_step: "welcome",
         })
         .select("id")
         .maybeSingle();

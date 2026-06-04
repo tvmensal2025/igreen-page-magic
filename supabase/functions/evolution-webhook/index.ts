@@ -1250,6 +1250,13 @@ Deno.serve(async (req) => {
       "apresentacao",
       "objecoes",
     ]);
+    // Defesa em profundidade: 'novo_lead' é stage do CRM/Kanban, NÃO um step válido do bot.
+    // Se chegou aqui (ex.: ChatView auto-criou customer com esse valor antes do webhook),
+    // normaliza para 'welcome' para que isOpeningTurn / CONVERSATIONAL_STEPS / engine override
+    // reconheçam corretamente como abertura e disparem o fluxo (qualquer variante).
+    if ((customer as any).conversation_step === "novo_lead") {
+      (customer as any).conversation_step = "welcome";
+    }
     const currentStep = customer.conversation_step || "welcome";
 
     // Cascata: config do consultor -> config global (consultant_id IS NULL)
