@@ -3562,10 +3562,12 @@ export type Database = {
           id: string
           initial_message: string | null
           leads_count: number
+          lifetime_cap_cents: number | null
           migrated_to_abo_at: string | null
           name: string
           optimization_strategy: string
           parent_campaign_id: string | null
+          pause_pending: boolean
           pixel_event_optimized: string | null
           rejection_reason: string | null
           started_at: string | null
@@ -3590,10 +3592,12 @@ export type Database = {
           id?: string
           initial_message?: string | null
           leads_count?: number
+          lifetime_cap_cents?: number | null
           migrated_to_abo_at?: string | null
           name: string
           optimization_strategy?: string
           parent_campaign_id?: string | null
+          pause_pending?: boolean
           pixel_event_optimized?: string | null
           rejection_reason?: string | null
           started_at?: string | null
@@ -3618,10 +3622,12 @@ export type Database = {
           id?: string
           initial_message?: string | null
           leads_count?: number
+          lifetime_cap_cents?: number | null
           migrated_to_abo_at?: string | null
           name?: string
           optimization_strategy?: string
           parent_campaign_id?: string | null
+          pause_pending?: boolean
           pixel_event_optimized?: string | null
           rejection_reason?: string | null
           started_at?: string | null
