@@ -335,7 +335,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    const sender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
+    const rawSender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
+    // Etapa 3 anti-ban: TODO envio originado do bot passa por check_send_quota
+    // + register_send. Se a instância estiver em recovery/fatal_lock/warmup
+    // estourado, sender.sendX() retorna `false` SEM enviar — handlers que já
+    // checam o retorno (`if (await sender.sendText(...))`) não avançam step.
+    const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+    const sender = wrapSenderWithGuard(rawSender, { supabase, instanceName });
 
     // Phase A — Task 8 (whatsapp-flow-architecture-v3): instancia o adapter
     // em paralelo SEM trocar o sender legado. Apenas confirma que `getAdapter`
