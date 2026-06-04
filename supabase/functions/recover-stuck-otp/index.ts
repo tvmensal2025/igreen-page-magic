@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
     }
 
     const remoteJid = `${lead.phone_whatsapp}@s.whatsapp.net`;
-    const sent = await sendWhatsAppText(instance.instance_name, remoteJid, FOLLOWUP_MESSAGE);
+    const sent = await sendWhatsAppText(supabase, instance.instance_name, remoteJid, FOLLOWUP_MESSAGE);
 
     if (sent) {
       // Marcar como reativado para não mandar de novo amanhã
@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
         `📱 ${lead.phone_whatsapp}\n\n` +
         `Verifique se o cadastro travou no portal/OTP e ajude manualmente.`;
       const notifJid = `${String(notifPhone).replace(/\D/g, "")}@s.whatsapp.net`;
-      const ok = await sendWhatsAppText(instance.instance_name, notifJid, msg);
+      const ok = await sendWhatsAppText(supabase, instance.instance_name, notifJid, msg);
 
       if (ok) {
         // Marca dedup via conversations (sem mexer no updated_at do lead)

@@ -65,6 +65,7 @@ async function sendEvolutionAudio(supabase: any, instanceName: string, phone: st
 }
 
 async function sendSingleMessage(
+  supabase: any,
   instanceName: string,
   phone: string,
   msg: { message_type: string; message_text: string | null; media_url: string | null; image_url: string | null },
@@ -80,18 +81,18 @@ async function sendSingleMessage(
 
   // Send optional image first
   if (msg.image_url && msgType !== "image") {
-    await sendEvolutionMedia(instanceName, phone, msg.image_url, "", "image", apiUrl, apiKey);
+    await sendEvolutionMedia(supabase, instanceName, phone, msg.image_url, "", "image", apiUrl, apiKey);
   }
 
   if (msgType === "audio" && msg.media_url) {
-    await sendEvolutionAudio(instanceName, phone, msg.media_url, apiUrl, apiKey);
-    if (messageText) await sendEvolutionText(instanceName, phone, messageText, apiUrl, apiKey);
+    await sendEvolutionAudio(supabase, instanceName, phone, msg.media_url, apiUrl, apiKey);
+    if (messageText) await sendEvolutionText(supabase, instanceName, phone, messageText, apiUrl, apiKey);
   } else if (msgType === "image" && msg.media_url) {
-    await sendEvolutionMedia(instanceName, phone, msg.media_url, messageText, "image", apiUrl, apiKey);
+    await sendEvolutionMedia(supabase, instanceName, phone, msg.media_url, messageText, "image", apiUrl, apiKey);
   } else if (msgType === "video" && msg.media_url) {
-    await sendEvolutionMedia(instanceName, phone, msg.media_url, messageText, "video", apiUrl, apiKey);
+    await sendEvolutionMedia(supabase, instanceName, phone, msg.media_url, messageText, "video", apiUrl, apiKey);
   } else if (messageText) {
-    await sendEvolutionText(instanceName, phone, messageText, apiUrl, apiKey);
+    await sendEvolutionText(supabase, instanceName, phone, messageText, apiUrl, apiKey);
   }
 
   return messageText || "[mídia]";
@@ -130,14 +131,14 @@ async function sendAutoMessages(
       if (i > 0 && msg.delay_seconds > 0) {
         await new Promise((r) => setTimeout(r, msg.delay_seconds * 1000));
       }
-      preview = await sendSingleMessage(instanceName, phone, msg, apiUrl, apiKey, customerName);
+      preview = await sendSingleMessage(supabase, instanceName, phone, msg, apiUrl, apiKey, customerName);
     }
     console.log(`Multi-messages (${filtered.length}) sent to ${phone} for stage ${stageData.label}`);
   } else {
     // Legacy single message
     const hasContent = stageData.auto_message_text || stageData.auto_message_media_url || stageData.auto_message_image_url;
     if (!hasContent) return "";
-    preview = await sendSingleMessage(instanceName, phone, {
+    preview = await sendSingleMessage(supabase, instanceName, phone, {
       message_type: stageData.auto_message_type,
       message_text: stageData.auto_message_text,
       media_url: stageData.auto_message_media_url,
