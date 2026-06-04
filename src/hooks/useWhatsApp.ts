@@ -325,6 +325,18 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   const createAndConnect = useCallback(async () => {
     if (lockRef.current) return;
 
+    // ⛔ Hard-lock: revisão manual ativa após desconexão fatal. Não tentar
+    // novo QR/connect para o mesmo número — pode piorar um bloqueio do WhatsApp.
+    if (fatalLocked) {
+      addLog("⛔ Conexão bloqueada: número em revisão manual.");
+      setError(
+        "Este número está em revisão manual após uma desconexão grave do WhatsApp. " +
+        "Verifique no app oficial e, se quiser usar outro chip, escolha 'Desconectar / trocar chip'.",
+      );
+      return;
+    }
+
+
     // 🔒 Anti-ban: impede que duas abas peçam QR simultaneamente para a mesma
     // instância. Pedidos de QR duplos/rápidos são interpretados como bot pelo
     // WhatsApp e contribuem para banimento. Best-effort: BroadcastChannel só
