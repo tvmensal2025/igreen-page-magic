@@ -2468,6 +2468,10 @@ export type Database = {
           conversation_step: string | null
           created_at: string
           customer_id: string
+          delivery_checked_at: string | null
+          delivery_error: string | null
+          delivery_status: string | null
+          external_message_id: string | null
           id: string
           media_id: string | null
           message_direction: string
@@ -2480,6 +2484,10 @@ export type Database = {
           conversation_step?: string | null
           created_at?: string
           customer_id: string
+          delivery_checked_at?: string | null
+          delivery_error?: string | null
+          delivery_status?: string | null
+          external_message_id?: string | null
           id?: string
           media_id?: string | null
           message_direction: string
@@ -2492,6 +2500,10 @@ export type Database = {
           conversation_step?: string | null
           created_at?: string
           customer_id?: string
+          delivery_checked_at?: string | null
+          delivery_error?: string | null
+          delivery_status?: string | null
+          external_message_id?: string | null
           id?: string
           media_id?: string | null
           message_direction?: string
