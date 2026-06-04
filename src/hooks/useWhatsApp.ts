@@ -43,6 +43,8 @@ interface UseWhatsAppReturn {
   consecutiveTimeouts: number;
   isWhapi: boolean;
   hasInstance: boolean;
+  fatalLocked: boolean;
+  fatalReason: number | null;
   createAndConnect: () => Promise<void>;
   disconnect: () => Promise<void>;
   reconnect: () => Promise<void>;
@@ -63,6 +65,8 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   const [connectionLog, setConnectionLog] = useState<string[]>([]);
   const [operationalHealth, setOperationalHealth] = useState<OperationalHealth>("healthy");
   const [consecutiveTimeouts, setConsecutiveTimeouts] = useState(0);
+  const [fatalLocked, setFatalLocked] = useState(false);
+  const [fatalReason, setFatalReason] = useState<number | null>(null);
 
   const mountedRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -321,6 +325,18 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   const createAndConnect = useCallback(async () => {
     if (lockRef.current) return;
 
+    // ⛔ Hard-lock: revisão manual ativa após desconexão fatal. Não tentar
+    // novo QR/connect para o mesmo número — pode piorar um bloqueio do WhatsApp.
+    if (fatalLocked) {
+      addLog("⛔ Conexão bloqueada: número em revisão manual.");
+      setError(
+        "Este número está em revisão manual após uma desconexão grave do WhatsApp. " +
+        "Verifique no app oficial e, se quiser usar outro chip, escolha 'Desconectar / trocar chip'.",
+      );
+      return;
+    }
+
+
     // 🔒 Anti-ban: impede que duas abas peçam QR simultaneamente para a mesma
     // instância. Pedidos de QR duplos/rápidos são interpretados como bot pelo
     // WhatsApp e contribuem para banimento. Best-effort: BroadcastChannel só
@@ -553,6 +569,8 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       setPhoneNumber(null);
       setError(null);
       setHealth("healthy");
+      setFatalLocked(false);
+      setFatalReason(null);
       health.resetRecoveryCounter();
       instanceSavedRef.current = false;
       timeoutCountRef.current = 0;
@@ -570,6 +588,11 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   /* ── Level 3: Safe Reset ── */
   const safeReset = useCallback(async () => {
     if (lockRef.current) return;
+    if (fatalLocked) {
+      addLog("⛔ Reset bloqueado: número em revisão manual. Use 'Desconectar / trocar chip'.");
+      setError("Reset bloqueado: este número está em revisão manual.");
+      return;
+    }
     lockRef.current = true;
 
     const name = instanceName || getFixedInstanceName(consultantId);
@@ -736,7 +759,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       try {
         const { data: instanceRecord } = await supabase
           .from("whatsapp_instances")
-          .select("id")
+          .select("id, manual_review_required, fatal_lock_until, fatal_disconnect_reason")
           .eq("consultant_id", consultantId)
           .maybeSingle();
 
@@ -750,6 +773,22 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           return;
         }
         setHasInstance(true);
+
+        // Hard-lock detection (fatal disconnect → manual review)
+        const fatalActive =
+          !!(instanceRecord as any).manual_review_required ||
+          (!!(instanceRecord as any).fatal_lock_until &&
+            new Date((instanceRecord as any).fatal_lock_until) > new Date());
+        setFatalLocked(fatalActive);
+        setFatalReason((instanceRecord as any).fatal_disconnect_reason ?? null);
+        if (fatalActive) {
+          setStatus("disconnected");
+          setHealth("reset_recommended");
+          setError(null);
+          addLog("⛔ Número em revisão manual após desconexão grave. Não reconectar agora.");
+          setIsLoading(false);
+          return;
+        }
 
         const state = await withTimeout(checks.checkState(name), 15000);
         if (cancelled) return;
@@ -820,6 +859,8 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     consecutiveTimeouts,
     isWhapi,
     hasInstance,
+    fatalLocked,
+    fatalReason,
     createAndConnect,
     disconnect,
     reconnect,

@@ -27,6 +27,9 @@ interface ConnectionPanelProps {
   operationalHealth?: OperationalHealth;
   consecutiveTimeouts?: number;
   isWhapi?: boolean;
+  /** Quando true, esconde botões de reconexão/reset (número em revisão manual). */
+  fatalLocked?: boolean;
+  fatalReason?: number | null;
   onConnect: () => Promise<void>;
   onDisconnect: () => Promise<void>;
   onReconnect: () => Promise<void>;
@@ -157,6 +160,8 @@ export function ConnectionPanel({
   operationalHealth = "healthy",
   consecutiveTimeouts = 0,
   isWhapi = false,
+  fatalLocked = false,
+  fatalReason = null,
   onConnect,
   onDisconnect,
   onReconnect,
@@ -168,7 +173,8 @@ export function ConnectionPanel({
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const showDiagnostic = connectionLog.length > 0 && (isLoading || error || connectionStatus === "connecting" || operationalHealth !== "healthy");
   const isAutoReconnecting = isLoading && connectionLog.some((l) => l.includes("🔄"));
-  const showResetButton = onSafeReset && (operationalHealth === "reset_recommended" || operationalHealth === "degraded" || consecutiveTimeouts >= 3);
+  // ⚠️ Reset/reconnect totalmente bloqueados quando há revisão manual ativa.
+  const showResetButton = !fatalLocked && onSafeReset && (operationalHealth === "reset_recommended" || operationalHealth === "degraded" || consecutiveTimeouts >= 3);
   const showLoadingState = isLoading && !qrCode;
   const showErrorState = !showLoadingState && !isLoading && !!error;
   const showDisconnectedWithoutInstance = !showLoadingState && !showErrorState && !isLoading && connectionStatus === "disconnected" && !instanceName;
@@ -333,14 +339,28 @@ export function ConnectionPanel({
                 <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
               </div>
             </div>
-            <div className="text-center space-y-1.5">
-              <p className="text-base font-heading font-bold text-foreground">Conexão perdida</p>
-              <p className="text-sm text-muted-foreground max-w-xs">A reconexão automática não foi possível. Clique abaixo para reconectar.</p>
+            <div className="text-center space-y-1.5 max-w-md">
+              {fatalLocked ? (
+                <>
+                  <p className="text-base font-heading font-bold text-red-400">Número em revisão manual</p>
+                  <p className="text-sm text-muted-foreground">
+                    Houve uma desconexão grave{fatalReason ? ` (código ${fatalReason})` : ""}. O WhatsApp pode ter restringido este chip.
+                    <strong> Não reconecte aqui agora.</strong> Verifique o número no app oficial do WhatsApp no celular. Se quiser usar outro chip, use o botão abaixo.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-base font-heading font-bold text-foreground">Conexão perdida</p>
+                  <p className="text-sm text-muted-foreground">A reconexão automática não foi possível. Você pode gerar um novo QR ou trocar de chip.</p>
+                </>
+              )}
             </div>
             <div className="flex flex-wrap gap-2 justify-center">
-              <Button onClick={onReconnect} variant="outline" className="gap-2 rounded-xl px-6 h-11 border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                <RefreshCw className="w-4 h-4" /> Reconectar chip
-              </Button>
+              {!fatalLocked && (
+                <Button onClick={onConnect} variant="outline" className="gap-2 rounded-xl px-6 h-11 border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all">
+                  <QrCode className="w-4 h-4" /> Gerar novo QR
+                </Button>
+              )}
               <Button
                 onClick={() => setShowDisconnectConfirm(true)}
                 variant="outline"
@@ -430,7 +450,7 @@ export function ConnectionPanel({
             <div className="flex items-center gap-2.5">
               <div className={`w-2 h-2 rounded-full ${qrExpired ? "bg-yellow-400" : "bg-green-400"} animate-pulse`} />
               <p className="text-sm text-muted-foreground font-medium">
-                {qrExpired ? "Renovando QR Code..." : "Aguardando leitura do QR Code..."}
+                {qrExpired ? "QR expirado — clique em \"Gerar novo QR\" abaixo" : "Aguardando leitura do QR Code..."}
               </p>
             </div>
 
@@ -483,9 +503,6 @@ export function ConnectionPanel({
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={onReconnect} variant="outline" size="sm" className="gap-2 rounded-xl text-primary border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                <RefreshCw className="w-4 h-4" /> Reconectar chip
-              </Button>
               <Button onClick={() => setShowDisconnectConfirm(true)} variant="outline" size="sm" className="gap-2 rounded-xl text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400 transition-all">
                 <WifiOff className="w-4 h-4" /> Desconectar / trocar chip
               </Button>

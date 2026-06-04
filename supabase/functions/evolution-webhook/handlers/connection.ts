@@ -89,22 +89,32 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
     if (disconnectClass === "fatal") {
       console.warn(
         `🛑 Instância ${connInstance} desconectou FATAL (reason=${statusReason}). ` +
-        `Marcando needs_reconnect + ativando recovery mode (14d).`,
+        `Ativando HARD-LOCK (manual_review_required + recovery 14d).`,
       );
-      try {
-        await supabase
-          .from("whatsapp_instances")
-          .update({ status: "needs_reconnect", updated_at: new Date().toISOString() })
-          .eq("instance_name", connInstance);
-      } catch (e: any) {
-        console.warn(`⚠️ Falha ao marcar ${connInstance} needs_reconnect:`, e?.message);
-      }
       // Registra sinal crítico — bloqueia disparos via check_send_quota
       await recordRiskSignal(supabase, connInstance, "disconnect_fatal", "critical", {
         reason: statusReason,
       });
-      // Ativa modo recuperação 14 dias — só sai com confirmação manual
-      await activateRecoveryMode(supabase, connInstance, 336);
+      // Hard-lock atômico: marca needs_reconnect + manual_review_required +
+      // fatal_lock_until + recovery_mode_until = now + 14d. Só super_admin
+      // destrava via admin_clear_fatal_lock.
+      try {
+        await supabase.rpc("register_fatal_disconnect", {
+          p_instance: connInstance,
+          p_reason: Number(statusReason) || 0,
+          p_lock_hours: 336,
+        });
+      } catch (e: any) {
+        console.warn(`⚠️ register_fatal_disconnect falhou para ${connInstance}:`, e?.message);
+        // Fallback: pelo menos marca status + recovery legado
+        try {
+          await supabase
+            .from("whatsapp_instances")
+            .update({ status: "needs_reconnect", updated_at: new Date().toISOString() })
+            .eq("instance_name", connInstance);
+        } catch (_) { /* swallow */ }
+        await activateRecoveryMode(supabase, connInstance, 336);
+      }
       return true;
     }
 

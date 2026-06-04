@@ -59,6 +59,8 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     consecutiveTimeouts,
     isWhapi,
     hasInstance,
+    fatalLocked,
+    fatalReason,
     createAndConnect,
     disconnect,
     reconnect,
@@ -188,12 +190,15 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
             <button
               onClick={() => {
                 setActiveSubTab("conversas");
-                if (hasInstance && connectionStatus === "disconnected") createAndConnect();
+                if (!fatalLocked && hasInstance && connectionStatus === "disconnected") createAndConnect();
               }}
-              disabled={isLoading}
-              className="text-[10px] text-primary hover:underline font-medium shrink-0"
+              disabled={isLoading || fatalLocked}
+              title={fatalLocked ? "Número em revisão manual — não reconecte aqui" : undefined}
+              className="text-[10px] text-primary hover:underline font-medium shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading || connectionStatus === "connecting" ? "Conectando..." : "Conectar"}
+              {fatalLocked
+                ? "Em revisão"
+                : isLoading || connectionStatus === "connecting" ? "Conectando..." : "Conectar"}
             </button>
           </>
         )}
@@ -242,20 +247,24 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
           (isWhapi || (hasInstance && isConnected)) ? (
             <div className="flex flex-col h-full min-h-0">
               {!isConnected && (
-                <div className="px-3 py-1 bg-amber-500/10 border-b border-amber-500/20 text-[11px] text-amber-200 flex items-center gap-2 shrink-0">
-                  <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <div className={`px-3 py-1 border-b text-[11px] flex items-center gap-2 shrink-0 ${fatalLocked ? "bg-red-500/10 border-red-500/20 text-red-200" : "bg-amber-500/10 border-amber-500/20 text-amber-200"}`}>
+                  <div className={`h-1.5 w-1.5 rounded-full animate-pulse shrink-0 ${fatalLocked ? "bg-red-400" : "bg-amber-400"}`} />
                   <span className="truncate">
-                    {connectionStatus === "connecting"
-                      ? "Reconectando — você ainda pode ver o histórico"
-                      : "Desconectado — histórico disponível, envios podem falhar"}
+                    {fatalLocked
+                      ? "Número em revisão manual — não reconecte aqui. Use 'Desconectar / trocar chip'."
+                      : connectionStatus === "connecting"
+                        ? "Reconectando — você ainda pode ver o histórico"
+                        : "Desconectado — histórico disponível, envios podem falhar"}
                   </span>
-                  <button
-                    onClick={() => createAndConnect()}
-                    disabled={isLoading}
-                    className="ml-auto text-amber-100 hover:underline font-medium shrink-0"
-                  >
-                    {isLoading ? "..." : "Reconectar"}
-                  </button>
+                  {!fatalLocked && (
+                    <button
+                      onClick={() => createAndConnect()}
+                      disabled={isLoading}
+                      className="ml-auto text-amber-100 hover:underline font-medium shrink-0"
+                    >
+                      {isLoading ? "..." : "Reconectar"}
+                    </button>
+                  )}
                 </div>
               )}
               <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "280px" } as React.CSSProperties}>
@@ -334,6 +343,8 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                 operationalHealth={operationalHealth}
                 consecutiveTimeouts={consecutiveTimeouts}
                 isWhapi={isWhapi}
+                fatalLocked={fatalLocked}
+                fatalReason={fatalReason}
                 onConnect={createAndConnect}
                 onDisconnect={disconnect}
                 onReconnect={reconnect}

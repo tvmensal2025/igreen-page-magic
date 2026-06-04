@@ -1,12 +1,18 @@
-// Reconnect a degraded WhatsApp instance: logout (force) + connect (returns new QR).
-// Used by the admin UI when delivery is failing with ERROR acks.
+// Reconnect a degraded WhatsApp instance.
 //
-// Flow:
-//   1. Authenticate the caller and verify they own (or admin) the instance.
-//   2. Optionally call /instance/logout/{name} to drop the dead Baileys session.
-//   3. Call /instance/connect/{name} to obtain a fresh pairing code / QR.
-//   4. Clear `consecutive` risk signals and `recovery_mode_until` so the next
-//      successful connection isn't blocked by stale circuit breaker state.
+// ⚠️ Plano B — Segurança máxima:
+// Após um incidente de desconexão fatal (statusReason 403/401/440/...) o WhatsApp
+// pode ter restringido ou bloqueado o número. Reconectar imediatamente costuma
+// piorar a situação. Por isso esta função:
+//   • REJEITA reconexão se a instância está em `manual_review_required` ou
+//     `fatal_lock_until` ativo. Só super_admin destrava via `admin_clear_fatal_lock`.
+//   • NÃO faz logout forçado por padrão (`forceLogout` precisa ser `true` explícito).
+//   • NÃO limpa `recovery_mode` automaticamente — usuário precisa confirmar pelo
+//     painel após validar manualmente que o número voltou normal.
+//   • NÃO apaga sinais de risco automaticamente.
+//
+// Em estado saudável (sem fatal lock) ela apenas pede um novo QR via
+// `/instance/connect`, sem mexer na sessão atual.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -20,7 +26,10 @@ const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") || "";
 
 interface ReconnectBody {
   instanceName: string;
+  /** Se TRUE, faz logout antes de pedir novo QR (perigoso após fatal). Default FALSE. */
   forceLogout?: boolean;
+  /** Se TRUE, ignora o bloqueio de fatal lock (somente super_admin). */
+  overrideFatalLock?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -34,33 +43,34 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "missing_auth" }, 401);
 
-    const supabase = createClient(
+    const userClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { global: { headers: { Authorization: authHeader } } },
     );
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    const { data: { user }, error: authErr } = await userClient.auth.getUser();
     if (authErr || !user) return json({ error: "unauthorized" }, 401);
 
     const body = (await req.json().catch(() => ({}))) as Partial<ReconnectBody>;
     const instanceName = String(body?.instanceName || "").trim();
     if (!instanceName) return json({ error: "instanceName_required" }, 400);
 
-    // Ownership check (consultant owns instance OR user is super-admin)
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    // Ownership / admin check
     const { data: inst } = await admin
       .from("whatsapp_instances")
-      .select("id, instance_name, consultant_id")
+      .select("id, instance_name, consultant_id, manual_review_required, fatal_lock_until, fatal_disconnect_reason, fatal_disconnect_at, recovery_mode_until")
       .eq("instance_name", instanceName)
       .maybeSingle();
     if (!inst) return json({ error: "instance_not_found" }, 404);
 
     const owns = inst.consultant_id === user.id;
     let isAdmin = false;
-    if (!owns) {
+    if (!owns || body?.overrideFatalLock) {
       const { data: roleRow } = await admin
         .from("user_roles")
         .select("role")
@@ -71,21 +81,38 @@ Deno.serve(async (req) => {
     }
     if (!owns && !isAdmin) return json({ error: "forbidden" }, 403);
 
+    // ── HARD-LOCK: bloqueia reconexão se instância está em revisão manual ──
+    const fatalLockActive =
+      !!inst.manual_review_required ||
+      (inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date());
+    if (fatalLockActive && !(isAdmin && body?.overrideFatalLock)) {
+      return json({
+        error: "manual_review_required",
+        message:
+          "Este número teve uma desconexão grave (possível restrição/bloqueio do WhatsApp). " +
+          "Não reconecte aqui agora. Verifique no app oficial do WhatsApp se o número voltou " +
+          "ao normal. Se quiser usar outro chip, escolha 'Desconectar / trocar chip'.",
+        fatal_disconnect_reason: inst.fatal_disconnect_reason,
+        fatal_disconnect_at: inst.fatal_disconnect_at,
+        fatal_lock_until: inst.fatal_lock_until,
+      }, 423); // 423 Locked
+    }
+
     const headers = { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY };
 
-    // Step 1: logout (best-effort) — drops the dead Baileys session.
+    // Step 1: logout SOMENTE se foi pedido explicitamente (default = FALSE).
     let loggedOut = false;
-    if (body?.forceLogout !== false) {
+    if (body?.forceLogout === true) {
       try {
         const r = await fetch(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
           method: "DELETE", headers,
         });
         loggedOut = r.ok;
-        await r.text(); // consume
+        await r.text();
       } catch (_) { /* swallow */ }
     }
 
-    // Step 2: connect — returns base64 QR + pairingCode.
+    // Step 2: connect — pede novo QR.
     let qrPayload: any = null;
     try {
       const r = await fetch(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
@@ -99,15 +126,8 @@ Deno.serve(async (req) => {
       return json({ error: "evolution_connect_exception", message: e?.message }, 502);
     }
 
-    // Step 3: clear stale recovery state so a successful reconnect isn't blocked.
-    try { await admin.rpc("clear_recovery_mode", { p_instance: instanceName }); } catch (_) { /* swallow */ }
-    try {
-      await admin
-        .from("instance_risk_signals")
-        .delete()
-        .eq("instance_name", instanceName)
-        .in("signal_type", ["send_failure", "disconnect_transient"]);
-    } catch (_) { /* swallow */ }
+    // ⚠️ NÃO limpa recovery_mode e NÃO apaga risk_signals automaticamente.
+    // O destravamento agora é manual (botão de admin) ou expira por tempo.
 
     return json({
       ok: true,
