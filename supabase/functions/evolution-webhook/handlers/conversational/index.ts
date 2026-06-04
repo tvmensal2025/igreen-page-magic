@@ -998,7 +998,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       // emitir tudo (mídia + texto) no slot configurado pelo consultor. Sem isso,
       // todo o cascade vinha como mídia primeiro e os textos colados no fim.
       const tpl = (cursor.message_text || "").trim();
-      const renderedText = tpl ? renderTemplate(tpl, vars) : "";
+      const renderedText = tpl ? appendButtonsToText(cursor, renderTemplate(tpl, vars)) : "";
       const textDelay = Math.max(0, Number((cursor as any).text_delay_ms || 0));
       const { mediaSent, textSentInline } = await sendStepMedia(
         ctx, cursor, consultantId, true,
@@ -1377,7 +1377,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       // tudo (mídia + texto) na ordem configurada, em vez de colar todos os
       // textos no fim do cascade.
       const tpl = (cursor.message_text || "").trim();
-      const renderedText = tpl ? renderTemplate(tpl, restartVars) : "";
+      const renderedText = tpl ? appendButtonsToText(cursor, renderTemplate(tpl, restartVars)) : "";
       const textDelay = Math.max(0, Number((cursor as any).text_delay_ms || 0));
       const { mediaSent, textSentInline } = await sendStepMedia(
         ctx, cursor, consultantId, true,
@@ -1471,7 +1471,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // Durante cascade (wait_for=none), cada step intermediário é enviado como
   // MENSAGEM SEPARADA via ctx.sender (mídia + texto), e o último vira `reply`.
   const renderStepText = (st: DbStep): string =>
-    renderTemplate(st.message_text || "", vars).trim();
+    appendButtonsToText(st, renderTemplate(st.message_text || "", vars)).trim();
 
   // Envia um step (mídia SEMPRE + texto SEMPRE quando existem), respeitando a ordem configurada.
   const emitStep = async (
