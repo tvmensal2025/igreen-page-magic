@@ -33,13 +33,17 @@ export function ActionDrillDialog({ open, onOpenChange, action }: Props) {
       if (type === "reactivate_leads" || type === "view_stuck_leads" || type === "tune_handoff") {
         const { data } = await supabase
           .from("customers")
-          .select("id, name, phone, status, created_at, last_message_at, flow_variant")
+          .select("id, name, phone_whatsapp, status, created_at, last_bot_interaction_at, updated_at, flow_variant")
           .neq("customer_origin", "igreen_sync")
-          .in("status", ["pending", "lead", "new"])
+          .in("status", ["contato_incompleto", "pending", "awaiting_otp"])
           .gte("created_at", since)
-          .order("last_message_at", { ascending: true, nullsFirst: true })
+          .order("last_bot_interaction_at", { ascending: true, nullsFirst: true })
           .limit(50);
-        return data || [];
+        return (data || []).map((r: any) => ({
+          ...r,
+          phone: r.phone_whatsapp,
+          last_message_at: r.last_bot_interaction_at || r.updated_at,
+        }));
       }
       if (type === "pause_variant") {
         const { data } = await supabase
