@@ -3,7 +3,24 @@
 //
 // Roda manual (botão "Atualizar agora") ou via cron diário.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { openaiChat } from "../_shared/openai.ts";
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+
+const HANDOFF_REASON_LABELS: Record<string, string> = {
+  flow_d_ocr_failed_doc: "Documento ilegível (OCR falhou)",
+  flow_d_ocr_failed_bill: "Conta de luz ilegível (OCR falhou)",
+  flow_d_invalid_doc: "Documento inválido enviado",
+  flow_d_invalid_bill: "Conta de luz inválida enviada",
+  flow_d_user_request: "Lead pediu falar com humano",
+  flow_d_timeout: "Lead parou de responder",
+  flow_d_unknown_intent: "Bot não entendeu a mensagem",
+  manual: "Consultor assumiu manualmente",
+  unknown: "Motivo não classificado",
+};
+
+function humanizeReason(slug: string) {
+  return HANDOFF_REASON_LABELS[slug] || slug.replace(/_/g, " ");
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,7 +41,7 @@ async function collectFunnel(sb: any, sinceIso: string) {
   const [viewsRes, customersRes, dealsRes, handoffRes] = await Promise.all([
     sb.from("page_views").select("id", { count: "exact", head: true }).gte("created_at", sinceIso),
     sb.from("customers").select("id, status, customer_origin, created_at").gte("created_at", sinceIso),
-    sb.from("crm_deals").select("id, stage, value_cents, created_at"),
+    sb.from("crm_deals").select("id, stage, created_at"),
     sb.from("bot_handoff_alerts").select("reason, created_at").gte("created_at", sinceIso),
   ]);
 
@@ -33,12 +50,16 @@ async function collectFunnel(sb: any, sinceIso: string) {
   const leads = customers.length;
   const approved = customers.filter((c: any) => c.status === "approved").length;
   const deals = dealsRes.data || [];
-  const openValue = deals.filter((d: any) => d.stage !== "venda_perdida" && d.stage !== "fechado").reduce((s: number, d: any) => s + (d.value_cents || 0), 0);
-  const wonValue = deals.filter((d: any) => d.stage === "fechado").reduce((s: number, d: any) => s + (d.value_cents || 0), 0);
+  const dealsOpenCount = deals.filter((d: any) => d.stage !== "venda_perdida" && d.stage !== "fechado" && d.stage !== "reprovado").length;
+  const dealsWonCount = deals.filter((d: any) => d.stage === "fechado").length;
 
-  const handoffReasons: Record<string, number> = {};
+  const handoffReasonsRaw: Record<string, number> = {};
   for (const h of (handoffRes.data || [])) {
-    handoffReasons[h.reason || "unknown"] = (handoffReasons[h.reason || "unknown"] || 0) + 1;
+    handoffReasonsRaw[h.reason || "unknown"] = (handoffReasonsRaw[h.reason || "unknown"] || 0) + 1;
+  }
+  const handoffReasons: Record<string, number> = {};
+  for (const [slug, n] of Object.entries(handoffReasonsRaw)) {
+    handoffReasons[humanizeReason(slug)] = n;
   }
 
   const stageCounts: Record<string, number> = {};
@@ -59,8 +80,8 @@ async function collectFunnel(sb: any, sinceIso: string) {
     views,
     approved,
     deals_count: deals.length,
-    wallet_open_cents: openValue,
-    wallet_won_cents: wonValue,
+    deals_open_count: dealsOpenCount,
+    deals_won_count: dealsWonCount,
     handoff_reasons: handoffReasons,
     deals_by_stage: stageCounts,
   };
@@ -126,15 +147,21 @@ async function runDiagnostic() {
     collectVariants(sb, sinceIso),
   ]);
 
+  // Filtra variantes fantasma (sample < 5) — evita IA inventar análise sobre 0-1 leads
+  const variantsForAI: Record<string, { total: number; approved: number }> = {};
+  for (const [k, v] of Object.entries(variants)) {
+    if ((v as any).total >= 5) variantsForAI[k] = v as any;
+  }
+
   const kpis = {
     spend_cents: adsData.totals.spend_cents,
     leads: funnelData.leads,
     cpl_cents: funnelData.leads > 0 && adsData.totals.spend_cents > 0
       ? Math.round(adsData.totals.spend_cents / funnelData.leads)
       : adsData.totals.cpl_cents,
-    wallet_open_cents: funnelData.wallet_open_cents,
-    wallet_won_cents: funnelData.wallet_won_cents,
-    conversion_lp_lead_pct: pct(funnelData.leads, funnelData.views),
+    deals_open_count: funnelData.deals_open_count,
+    deals_won_count: funnelData.deals_won_count,
+    conversion_lp_lead_pct: Math.min(100, pct(funnelData.leads, funnelData.views)),
     conversion_lead_approved_pct: pct(funnelData.approved, funnelData.leads),
     deals_count: funnelData.deals_count,
     handoff_count_30d: Object.values(funnelData.handoff_reasons).reduce((s, n) => s + n, 0),
@@ -148,8 +175,8 @@ Analise os dados abaixo e produza um diagnóstico ACIONÁVEL focado em PARAR DE 
 # Funil (últimos 30 dias)
 ${JSON.stringify(funnelData.funnel, null, 2)}
 
-# Conversão por variante de fluxo (A=áudio, B=sem áudio, C=vídeo)
-${JSON.stringify(variants, null, 2)}
+# Conversão por variante de fluxo (apenas variantes com ≥5 leads — ignore o resto)
+${JSON.stringify(variantsForAI, null, 2)}
 
 # Motivos de handoff (bot pediu humano)
 ${JSON.stringify(funnelData.handoff_reasons, null, 2)}
@@ -192,33 +219,45 @@ Regras:
   let aiOut: any = { summary: null, bottlenecks: [], winners: [], actions: [] };
   let modelUsed = "fallback";
   try {
-    const res = await openaiChat({
-      model: "gpt-5-mini",
-      responseFormat: "json_object",
-      maxTokens: 2000,
-      messages: [
-        { role: "system", content: "Você responde EXCLUSIVAMENTE com JSON válido." },
-        { role: "user", content: prompt },
-      ],
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const resp = await fetch(LOVABLE_AI_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          { role: "system", content: "Você responde EXCLUSIVAMENTE com JSON válido. Sem texto antes ou depois." },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+      }),
     });
-    if (res.json) {
-      aiOut = res.json;
-      modelUsed = "gpt-5-mini";
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error(`Lovable AI ${resp.status}: ${txt.slice(0, 200)}`);
+    }
+    const data = await resp.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (content) {
+      aiOut = typeof content === "string" ? JSON.parse(content) : content;
+      modelUsed = "google/gemini-3-flash-preview";
     }
   } catch (e) {
-    console.error("[captacao-intel] OpenAI failed, using heuristic fallback:", String(e));
-    // Fallback heurístico
+    console.error("[captacao-intel] AI failed, using heuristic fallback:", String(e));
     const bottlenecks: any[] = [];
-    if (kpis.conversion_lp_lead_pct < 5) {
+    if (kpis.conversion_lp_lead_pct < 5 && funnelData.views > funnelData.leads) {
       bottlenecks.push({ title: "LP convertendo pouco", detail: `Apenas ${kpis.conversion_lp_lead_pct}% das visitas viram lead. Meta: >5%.`, metric: `${kpis.conversion_lp_lead_pct}%`, severity: "high" });
     }
-    const variantEntries = Object.entries(variants);
+    const variantEntries = Object.entries(variantsForAI);
     if (variantEntries.length > 1) {
       const sorted = variantEntries.sort((a, b) => (b[1].approved / Math.max(1, b[1].total)) - (a[1].approved / Math.max(1, a[1].total)));
       const best = sorted[0]; const worst = sorted[sorted.length - 1];
       const bestRate = pct(best[1].approved, best[1].total);
       const worstRate = pct(worst[1].approved, worst[1].total);
-      if (bestRate > worstRate * 1.3 && worst[1].total > 5) {
+      if (bestRate > worstRate * 1.3) {
         bottlenecks.push({ title: `Variante ${worst[0]} está perdendo`, detail: `${worstRate}% vs ${bestRate}% da variante ${best[0]}.`, metric: `${worstRate}%`, severity: "medium" });
       }
     }

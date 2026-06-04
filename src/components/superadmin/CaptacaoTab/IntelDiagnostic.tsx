@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Brain, RefreshCw, TrendingDown, TrendingUp, Zap, AlertTriangle } from "lucide-react";
+import { Brain, RefreshCw, TrendingDown, TrendingUp, Zap } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { KpisRow } from "./KpisRow";
@@ -164,11 +164,9 @@ export function IntelDiagnostic() {
                   </div>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-3 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> Execução automática das ações chega na próxima fase. Por enquanto, use como guia.
-              </p>
             </div>
           )}
+
         </>
       )}
     </div>
