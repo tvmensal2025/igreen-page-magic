@@ -103,4 +103,11 @@ Deno.serve(async (req) => {
   return new Response(JSON.stringify({ ok: true, processed: results.length, results }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+  } catch (err: any) {
+    captureError(err, { tags: { function: "portal-offline-retry" } });
+    return new Response(
+      JSON.stringify({ ok: false, error: String(err?.message || err) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 });
