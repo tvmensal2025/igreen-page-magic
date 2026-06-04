@@ -1,0 +1,84 @@
+/**
+ * Sender-Guard (Etapa 3 anti-ban):
+ *
+ * Embrulha um sender retornado por `createEvolutionSender` (ou compatível) e
+ * aplica `checkSendQuota` + `registerSend` em CADA envio originado pelo bot
+ * (sendText / sendMedia / sendButtons / sendAudio).
+ *
+ * Comportamento:
+ *  - Se `check_send_quota` retornar `allowed=false` → o envio é PULADO e o
+ *    método devolve `false`. Isso garante que qualquer handler que checa o
+ *    retorno (`if (await sender.sendText(...))`) NÃO avance `conversation_step`.
+ *  - Se o envio for executado e retornar `true` → registra com `register_send`
+ *    para alimentar warmup/intervalo/recovery.
+ *  - Falha fechada: erro de RPC bloqueia. É melhor o lead esperar 1min do
+ *    que queimar o chip.
+ *
+ * Não toca em `downloadMedia` nem `sendPresence` (cosméticos / inbound).
+ */
+
+import { checkSendQuota, registerSend } from "./anti-ban.ts";
+
+export interface GuardedSenderOpts {
+  /** Cliente Supabase com acesso ao RPC `check_send_quota` / `register_send`. */
+  supabase: any;
+  /** Nome da instância (whatsapp_instances.instance_name). */
+  instanceName: string;
+  /** Log prefix opcional para debug. */
+  label?: string;
+}
+
+type AnyFn = (...args: any[]) => any;
+
+function wrapSendFn(
+  fn: AnyFn | undefined,
+  opts: GuardedSenderOpts,
+  kind: string,
+): AnyFn | undefined {
+  if (typeof fn !== "function") return fn;
+  return async (...args: any[]) => {
+    const quota = await checkSendQuota(opts.supabase, opts.instanceName);
+    if (!quota.allowed) {
+      console.warn(
+        `🚫 [sender-guard] bloqueado kind=${kind} instance=${opts.instanceName} reason=${quota.reason ?? "?"}` +
+        (quota.next_allowed_at ? ` next=${quota.next_allowed_at}` : "") +
+        (quota.until ? ` until=${quota.until}` : ""),
+      );
+      return false;
+    }
+    let result: any = false;
+    try {
+      result = await fn(...args);
+    } finally {
+      // register_send só conta quando algo realmente foi enviado.
+      const ok = result === true || (result && typeof result === "object" && result.ok === true);
+      if (ok) {
+        await registerSend(opts.supabase, opts.instanceName);
+      }
+    }
+    return result;
+  };
+}
+
+/**
+ * Embrulha um sender (objeto `{ sendText, sendMedia, sendButtons, ... }`)
+ * para que toda chamada passe por `check_send_quota` + `register_send`.
+ *
+ * Métodos não-envio (`downloadMedia`, `sendPresence`, `sendTextDetailed`)
+ * são preservados sem wrapping para não duplicar contagem (sendTextDetailed
+ * é chamado internamente por sendText).
+ */
+export function wrapSenderWithGuard<T extends Record<string, any>>(
+  sender: T,
+  opts: GuardedSenderOpts,
+): T {
+  const wrapped: any = { ...sender };
+  wrapped.sendText = wrapSendFn(sender.sendText, opts, "text");
+  wrapped.sendMedia = wrapSendFn(sender.sendMedia, opts, "media");
+  wrapped.sendButtons = wrapSendFn(sender.sendButtons, opts, "buttons");
+  wrapped.sendAudio = wrapSendFn(sender.sendAudio, opts, "audio");
+  // sendTextDetailed é chamado internamente por sendText → não embrulha
+  // (caso contrário, contaríamos 2x). Se algum chamador externo precisar,
+  // o guard pode ser adicionado depois.
+  return wrapped as T;
+}
