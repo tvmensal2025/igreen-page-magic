@@ -72,12 +72,16 @@ export async function canReconnect(
 // ── Disconnect reason classification (Baileys / WhatsApp) ────────────
 // Reconectar uma sessão derrubada por logout/ban/conflito ACELERA o
 // banimento. Só reconectamos em motivos transitórios genuínos.
-// reason=0 (unknown) também é tratado como FATAL — pode mascarar ban
-// silencioso que o WhatsApp não detalha.
+//
+// IMPORTANTE: `statusReason` ausente (undefined/null) é tratado como
+// TRANSIENTE — Evolution às vezes omite o campo em quedas de rede /
+// restart de servidor. Tratar como fatal causa 14 dias de lock falso.
+// Apenas o valor explícito `0` (unknown) continua FATAL, pois indica
+// "fechou e o servidor não soube dizer porquê" — costuma ser ban silencioso.
 export type DisconnectClass = "fatal" | "transient";
 
 const FATAL_DISCONNECT_REASONS = new Set<number>([
-  0,   // unknown/unspecified — pode ser ban silencioso
+  0,   // unknown/unspecified EXPLÍCITO — possível ban silencioso
   401, // loggedOut
   403, // forbidden / banned
   405, // bad credentials
@@ -87,8 +91,11 @@ const FATAL_DISCONNECT_REASONS = new Set<number>([
 ]);
 
 export function classifyDisconnect(statusReason: number | null | undefined): DisconnectClass {
+  // Campo ausente do payload → trata como transiente para não disparar
+  // 14d de lock por causa de um glitch de rede que omitiu o motivo.
+  if (statusReason === undefined || statusReason === null) return "transient";
   const code = Number(statusReason);
-  if (!Number.isFinite(code)) return "fatal"; // sem código → cautela
+  if (!Number.isFinite(code)) return "transient";
   return FATAL_DISCONNECT_REASONS.has(code) ? "fatal" : "transient";
 }
 

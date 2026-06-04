@@ -28,16 +28,22 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
 
   const connState = body.data?.state || body.state;
   const connInstance = body.instance || body.data?.instance || fallbackInstance;
-  const statusReason = body.data?.statusReason || 0;
-  console.log(`📡 CONNECTION_UPDATE: instance=${connInstance}, state=${connState}, reason=${statusReason}`);
+  // ⚠️ Preserva `undefined`/`null` (campo ausente) para que classifyDisconnect
+  // diferencie "Evolution não mandou motivo" (transiente) de "0 explícito" (fatal).
+  const rawReason = body.data?.statusReason;
+  const statusReason: number | null | undefined =
+    rawReason === undefined || rawReason === null ? rawReason : Number(rawReason);
+  console.log(`📡 CONNECTION_UPDATE: instance=${connInstance}, state=${connState}, reason=${statusReason ?? "(missing)"}`);
 
   if (connState === "open" && connInstance) {
     const ownerJid = body.data?.ownerJid || body.ownerJid || "";
     const ownerPhone = ownerJid ? ownerJid.replace(/@.*$/, "") : "";
 
-    // Conexão aberta: sempre normaliza o status para `connected` (limpando um
-    // eventual `needs_reconnect` de uma desconexão fatal anterior) e grava o
-    // telefone conectado quando disponível.
+    // Conexão aberta confirmada: normaliza o status e (importante) limpa o
+    // recovery_mode + sinais de risco transitórios automaticamente — agora
+    // sim temos prova de que a sessão voltou. NUNCA limpa fatal lock aqui:
+    // 401/403/440 exigem revisão manual mesmo que o usuário escaneie um QR
+    // novo na mesma instância.
     const instanceUpdate: Record<string, unknown> = {
       status: "connected",
       last_health_check_at: new Date().toISOString(),
@@ -52,13 +58,35 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
       .from("whatsapp_instances")
       .update(instanceUpdate)
       .eq("instance_name", connInstance)
-      .select("consultant_id")
+      .select("consultant_id, manual_review_required, fatal_lock_until")
       .maybeSingle();
+
+    // Auto-clear recovery_mode + sinais transitórios SOMENTE se não houver
+    // fatal lock ativo. Fatal lock só sai por admin_clear_fatal_lock.
+    const fatalActive =
+      !!(inst as any)?.manual_review_required ||
+      (!!(inst as any)?.fatal_lock_until &&
+        new Date((inst as any).fatal_lock_until) > new Date());
+    if (!fatalActive) {
+      try {
+        await supabase
+          .from("whatsapp_instances")
+          .update({ recovery_mode_until: null })
+          .eq("instance_name", connInstance);
+        await supabase
+          .from("instance_risk_signals")
+          .delete()
+          .eq("instance_name", connInstance)
+          .in("signal_type", ["send_failure", "disconnect_transient", "reconnect"]);
+        console.log(`✅ Recovery cleared para ${connInstance} após state=open confirmado.`);
+      } catch (e: any) {
+        console.warn(`[connection] limpeza pós-open falhou: ${e?.message}`);
+      }
+    }
 
     // 🔗 CTWA bridge: se o consultor ainda não tem whatsapp_destination_number
     // configurado em consultant_ad_settings (usado para o anúncio Click-to-WhatsApp
     // do Facebook), aproveita o número que acabou de conectar via QR como default.
-    // O consultor pode sobrescrever depois no formulário de Dados ou via WABA real.
     const consultantId = (inst as any)?.consultant_id;
     if (ownerPhone && consultantId) {
       try {
@@ -130,35 +158,51 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
       const baseUrl = evolutionApiUrl.replace(/\/$/, "");
       console.log(
         `🔄 Instância ${connInstance} desconectou (reason=${statusReason}, transitório). ` +
-        `Aguardando 30s antes de reconectar (anti-ban).`,
+        `Agendando reconexão em 30s (background, anti-ban).`,
       );
-      try {
-        // Delay 30s (era 5s) — pico de reconnect rápido é interpretado como abuso
-        await new Promise((r) => setTimeout(r, 30_000));
-        const reconnRes = await fetchWithTimeout(`${baseUrl}/instance/connect/${connInstance}`, {
-          method: "GET",
-          headers: { apikey: evolutionApiKey },
-          timeout: 10_000,
-        });
-        if (reconnRes.ok) {
-          console.log(`✅ Reconexão iniciada para ${connInstance}`);
-          await recordRiskSignal(supabase, connInstance, "reconnect", "medium", {
-            reason: statusReason,
+      // ⚠️ Antes: `await sleep(30s)` BLOQUEAVA a resposta do webhook,
+      // causando timeout do Evolution e re-entrega do mesmo evento.
+      // Agora: retorna 200 imediatamente e a reconexão acontece em
+      // background via EdgeRuntime.waitUntil.
+      const reconnectInBackground = (async () => {
+        try {
+          await new Promise((r) => setTimeout(r, 30_000));
+          const reconnRes = await fetchWithTimeout(`${baseUrl}/instance/connect/${connInstance}`, {
+            method: "GET",
+            headers: { apikey: evolutionApiKey },
+            timeout: 10_000,
           });
-        } else {
-          const errText = await reconnRes.text();
-          console.warn(`⚠️ Falha ao reconectar ${connInstance}: ${reconnRes.status} ${errText.substring(0, 200)}`);
-          await recordRiskSignal(supabase, connInstance, "send_failure", "medium", {
-            stage: "reconnect", status: reconnRes.status,
-          });
+          if (reconnRes.ok) {
+            console.log(`✅ Reconexão iniciada para ${connInstance}`);
+            await recordRiskSignal(supabase, connInstance, "reconnect", "medium", {
+              reason: statusReason,
+            });
+          } else {
+            const errText = await reconnRes.text();
+            console.warn(`⚠️ Falha ao reconectar ${connInstance}: ${reconnRes.status} ${errText.substring(0, 200)}`);
+            await recordRiskSignal(supabase, connInstance, "send_failure", "medium", {
+              stage: "reconnect", status: reconnRes.status,
+            });
+          }
+        } catch (e: any) {
+          console.warn(`⚠️ Erro ao reconectar ${connInstance}: ${e?.message}`);
         }
-      } catch (e: any) {
-        console.warn(`⚠️ Erro ao reconectar ${connInstance}: ${e.message}`);
-      }
+      })();
+      try {
+        // @ts-ignore: EdgeRuntime é global no runtime Supabase Deno.
+        if (typeof EdgeRuntime !== "undefined" && (EdgeRuntime as any)?.waitUntil) {
+          // @ts-ignore
+          (EdgeRuntime as any).waitUntil(reconnectInBackground);
+        } else {
+          // fallback dev/local: ainda assim não awaita, só dispara.
+          void reconnectInBackground;
+        }
+      } catch (_) { void reconnectInBackground; }
     } else {
       console.log(`⏳ Reconexão em cooldown persistente (10min) para ${connInstance}`);
     }
   }
+
 
   return true;
 }

@@ -278,7 +278,7 @@ Deno.serve(async (req) => {
 
     const { data: instanceData, error: instanceError } = await supabase
       .from("whatsapp_instances")
-      .select("id, instance_name, consultant_id, connected_phone")
+      .select("id, instance_name, consultant_id, connected_phone, manual_review_required, fatal_lock_until, fatal_disconnect_reason")
       .eq("instance_name", instanceName)
       .single();
 
@@ -288,6 +288,34 @@ Deno.serve(async (req) => {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // ── HARD-LOCK ANTI-BAN ──────────────────────────────────────────────
+    // Se a instância está em revisão manual (após uma desconexão fatal)
+    // ou dentro da janela `fatal_lock_until`, BLOQUEIA QUALQUER resposta
+    // automática do bot. Eventos de entrada continuam sendo ack-ados (200)
+    // para o Evolution não re-entregar, mas o bot-flow é pulado.
+    // Só sai deste estado via admin_clear_fatal_lock (super_admin).
+    const _fatalActive =
+      !!(instanceData as any).manual_review_required ||
+      (!!(instanceData as any).fatal_lock_until &&
+        new Date((instanceData as any).fatal_lock_until) > new Date());
+    if (_fatalActive) {
+      console.warn(
+        `🛑 [hard-lock] Bot-flow bloqueado para ${instanceName} ` +
+        `(reason=${(instanceData as any).fatal_disconnect_reason ?? "?"}, ` +
+        `lock_until=${(instanceData as any).fatal_lock_until ?? "manual"}). ` +
+        `Inbound ignorado para não acelerar ban.`,
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          mode: "hard_lock_skip",
+          reason: "manual_review_required",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
 
     const { data: consultantData } = await supabase
       .from("consultants")

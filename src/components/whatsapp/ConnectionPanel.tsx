@@ -171,6 +171,21 @@ export function ConnectionPanel({
   const [qrExpired, setQrExpired] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  // ⚠️ Anti-spam: pedir QR várias vezes em poucos segundos é interpretado
+  // pelo WhatsApp como comportamento de bot. Forçamos um cooldown de 10s
+  // entre cliques nos botões "Atualizar agora" / "Gerar novo QR".
+  const [refreshCooldownLeft, setRefreshCooldownLeft] = useState(0);
+  const refreshDisabled = isLoading || refreshCooldownLeft > 0;
+  const handleSafeRefresh = async () => {
+    if (refreshDisabled || !onRefreshQr) return;
+    setRefreshCooldownLeft(10);
+    try { await onRefreshQr(); } finally { /* cooldown corre independente */ }
+  };
+  useEffect(() => {
+    if (refreshCooldownLeft <= 0) return;
+    const t = setInterval(() => setRefreshCooldownLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [refreshCooldownLeft]);
   const showDiagnostic = connectionLog.length > 0 && (isLoading || error || connectionStatus === "connecting" || operationalHealth !== "healthy");
   const isAutoReconnecting = isLoading && connectionLog.some((l) => l.includes("🔄"));
   // ⚠️ Reset/reconnect totalmente bloqueados quando há revisão manual ativa.
@@ -290,10 +305,19 @@ export function ConnectionPanel({
             <div className="w-full rounded-xl bg-red-500/5 border border-red-500/20 px-5 py-4 text-center backdrop-blur-sm">
               <p className="text-sm text-red-400 font-medium">{error}</p>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={onConnect} variant="outline" className="gap-2 rounded-xl border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all">
+            <div className="flex flex-wrap gap-2 justify-center">
+              <Button onClick={onConnect} variant="outline" className="gap-2 rounded-xl border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all" disabled={isLoading}>
                 <RefreshCw className="w-4 h-4" /> Tentar novamente
               </Button>
+              {!!instanceName && (
+                <Button
+                  onClick={() => setShowDisconnectConfirm(true)}
+                  variant="outline"
+                  className="gap-2 rounded-xl text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400"
+                >
+                  <WifiOff className="w-4 h-4" /> Desconectar / trocar chip
+                </Button>
+              )}
               {showResetButton && (
                 <Button
                   onClick={() => setShowResetConfirm(true)}
@@ -398,11 +422,13 @@ export function ConnectionPanel({
             <div className="flex items-center gap-3">
               {onRefreshQr && (
                 <Button
-                  onClick={onRefreshQr}
+                  onClick={handleSafeRefresh}
                   variant="outline"
-                  className="gap-2 rounded-xl border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all"
+                  disabled={refreshDisabled}
+                  className="gap-2 rounded-xl border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all disabled:opacity-50"
                 >
-                  <RefreshCw className="w-4 h-4" /> Atualizar agora
+                  <RefreshCw className={`w-4 h-4 ${refreshCooldownLeft > 0 ? "" : ""}`} />
+                  {refreshCooldownLeft > 0 ? `Aguarde ${refreshCooldownLeft}s` : "Atualizar agora"}
                 </Button>
               )}
               {showResetButton && (
@@ -456,12 +482,14 @@ export function ConnectionPanel({
 
             {onRefreshQr && (
               <Button
-                onClick={onRefreshQr}
+                onClick={handleSafeRefresh}
                 variant="ghost"
                 size="sm"
-                className="gap-2 text-xs text-muted-foreground hover:text-foreground"
+                disabled={refreshDisabled}
+                className="gap-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Gerar novo QR
+                <RefreshCw className="w-3.5 h-3.5" />
+                {refreshCooldownLeft > 0 ? `Aguarde ${refreshCooldownLeft}s` : "Gerar novo QR"}
               </Button>
             )}
 
