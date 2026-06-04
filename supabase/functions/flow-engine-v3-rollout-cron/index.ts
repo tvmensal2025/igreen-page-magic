@@ -169,6 +169,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  try {
+
   const generatedAtIso = new Date().toISOString();
   const reportDate = utcDateOf(generatedAtIso);
 
