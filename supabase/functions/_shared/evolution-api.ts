@@ -18,6 +18,25 @@ export interface EvolutionButton {
 }
 
 /**
+ * Detailed result of a send call. Distinguishes:
+ *   - `ok`: Evolution HTTP returned 2xx (request accepted by Evolution)
+ *   - `pending`: Evolution body carried status="PENDING" (Baileys hasn't
+ *     confirmed delivery yet — WhatsApp may or may not deliver it)
+ *   - `messageId`: external Evolution/WhatsApp message id when present
+ *   - `error`: short error message when `ok === false`
+ *
+ * Callers MUST treat `ok && !pending` as the only "sent" state.
+ * `ok && pending` is "queued" and needs ACK confirmation.
+ */
+export interface SendResult {
+  ok: boolean;
+  pending: boolean;
+  messageId: string | null;
+  status: number;
+  error?: string;
+}
+
+/**
  * Optional idempotency context attached to a send. When all four fields are
  * present **and** a Supabase client is provided, `sendWithRetry` will:
  *   1. Acquire an outbound slot in `outbound_message_log` BEFORE sending —
