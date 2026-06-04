@@ -1,74 +1,55 @@
 ## Diagnóstico
 
-Reconstrui a linha do tempo do lead `5511989000650` no consultor `tvmensal01` (instância Evolution `igreen-953f7e48509b`, connectionState=`open`):
+O erro **"Número fora do padrão BR"** que aparece no card do Rafael Ferreira **não tem nada a ver com o fluxo D, com botões ou com a paridade Evolution/Whapi**. É um bug de dado: o telefone está corrompido no banco.
 
-- 11:36:50 — inbound do lead: "Bom Dia" gravado em `conversations` (step=`welcome`).
-- 11:37:28 — outbound do bot: "Oi! Tudo bem? Aqui é da equipe da *tvmensal01* 💚 …" gravado em `conversations` (step=`qualificacao`).
-- 11:37:27 — `outbound_message_log` registra `result_status='sent'`, mas `evolution_message_id = NULL`.
-- A partir daí: zero mensagens novas. O lead não respondeu — porque nunca recebeu nada no WhatsApp.
+### O que o banco mostra
 
-Confirmações cruzadas:
-- Webhook está configurado no servidor Evolution (`/webhook/set` retornou 201 com `url=…/evolution-webhook`, eventos `MESSAGES_UPSERT`+`CONNECTION_UPDATE`, `enabled:true`).
-- `verify_jwt=false` em `supabase/config.toml` para `evolution-webhook` → não há bloqueio de auth no inbound.
-- Instância `igreen-953f7e48509b` está `state:open`, `status='connected'`, `connected_phone=5511946097469`.
-- Bot global ligado, consultant existe (`bot_engine_mode=legacy`, `flow_engine_v3=off`), `conversational_flow_enabled=false`.
-- O outbound não retornou erro: `sendWithRetry` só marca `'sent'` quando o HTTP do Evolution é 2xx.
-
-## Causa raiz mais provável
-
-Em `supabase/functions/evolution-webhook/index.ts` o webhook chama `sender.sendText(remoteJid, …)` passando o JID completo (`5511989000650@s.whatsapp.net`, vindo de `body.data.key.remoteJid`).
-
-Dentro de `supabase/functions/_shared/evolution-api.ts:228-234` esse JID é repassado como está para o Evolution:
-
-```ts
-body: JSON.stringify({ number: remoteJid, text })
+```text
+customer_id: 7aa1876f-0c17-4f56-ab8b-9d68038257fa
+name:        Rafael Ferreira
+consultant:  tvmensal01  (não rafael.ids@icloud.com)
+flow_variant: D
+phone_whatsapp: 55121380171473111   ← 17 dígitos!
 ```
 
-O endpoint `/message/sendText` da Evolution API v2 espera `number` em dígitos puros (`5511989000650`). Quando recebe `…@s.whatsapp.net`, em boa parte das versões do Baileys/Evolution ele responde `2xx` (parecendo sucesso) mas Baileys nunca envia a mensagem — exatamente o sintoma observado: `result_status='sent'` no nosso log, zero entrega no WhatsApp.
+O padrão BR válido é 12 ou 13 dígitos (`55` + DDD + 8/9). Esse lead tem `55` + `121380171473111` (15 dígitos extras). A UI mostra os 15 dígitos sem o DDI (`121380171473111`).
 
-O fluxo WhAPI funciona porque o cliente WhAPI já normaliza o destinatário (e/ou aceita JID completo). O envio manual do consultor às 11:40 ("Oi") também chegou — feito pelo próprio cliente WhatsApp do consultor, sem passar pelo nosso sender.
+A validação em `supabase/functions/manual-step-send/index.ts` (linhas 116-135) está **correta** e rejeita com `phone_invalid_format` antes mesmo de tentar enviar — por isso nenhum passo do fluxo dispara, independente de ser variante A, D, com botão ou sem.
 
-Ponto adicional: hoje `recordOutboundResult(..., 'sent', null)` sempre grava `evolution_message_id=NULL` mesmo em sucesso (`evolution-api.ts:161`). Sem o `key.id` retornado, perdemos a única prova objetiva de que a Evolution aceitou o envio.
+### Sobre "fluxo D do Rafael vs tvmensal01"
 
-## Plano
+O lead pertence ao consultor **tvmensal01** (não [rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)). Selecionar a variante D no card só muda qual `bot_flows` do **tvmensal01** será usado — não importa fluxo de outro consultor. Cada consultor tem o seu próprio conjunto de `bot_flows` (A/B/C/D/E). O motor (Evolution, com as correções da auditoria anterior) só roda depois da validação de telefone passar.
 
-Mudanças cirúrgicas, só em Evolution. Nada do WhAPI é tocado.
+### Causa raiz do número corrompido
 
-### 1. Normalizar `number` antes de enviar (`_shared/evolution-api.ts`)
+Vou precisar verificar como esse lead foi criado (Excel? captação? handoff manual?) — `55121380171473111` parece ser concatenação dupla de um JID ou paste acidental. Os candidatos:
 
-Em `sendText`, `sendButtons`, `sendMedia`, `sendAudio` e `sendPresence`: extrair os dígitos do `remoteJid` antes do `JSON.stringify`. Helper único:
+- Importação Excel sem sanitização (`importLeadsExcel` / RPC `import_leads_*`)
+- Função de criação de lead que concatena `55` quando já vem com `55…`
+- Webhook que gravou `from`+`fromMe` juntos
 
-```ts
-const toEvolutionNumber = (jid: string) =>
-  String(jid || "").split("@")[0].replace(/\D/g, "");
-```
+## Plano (após sua aprovação)
 
-E usar `number: toEvolutionNumber(remoteJid)`. Não muda o `remoteJid` usado nos logs/handlers — só o payload do POST.
+1. **Corrigir o telefone do lead Rafael Ferreira** (id `7aa1876f…`).
+  - Preciso que você me diga qual é o número real do Rafael (11 dígitos, ex: `11999887766`) — não consigo adivinhar quais dos 15 dígitos são os corretos.
+  - Aplico `UPDATE customers SET phone_whatsapp = '55XXXXXXXXXXX' WHERE id = '7aa1876f-0c17-4f56-ab8b-9d68038257fa'` via migração.
+2. **Auditar a origem do bug de gravação** (read-only):
+  - `customer_origin`, `created_at` e logs próximos para identificar qual rota criou esse registro.
+  - Varrer `customers` por `length(regexp_replace(phone_whatsapp,'\D','','g')) > 13` para ver quantos outros leads estão quebrados.
+3. **Hardening na escrita** (após confirmar a rota):
+  - Adicionar normalização única `normalizeBrPhone()` no ponto de entrada culpado, rejeitando ≥14 dígitos antes de gravar.
+  - Opcional: trigger `BEFORE INSERT/UPDATE` em `customers.phone_whatsapp` validando `length(only_digits) IN (10,11,12,13)`.
+4. **Validar envio do fluxo D** com o telefone correto:
+  - Após o UPDATE, reenviar passo 1 pelo painel. Como variante=D e o Evolution já está com as correções da auditoria anterior (`toEvolutionNumber`, `evolution_message_id`, fallback de botões), o fluxo D do tvmensal01 deve disparar normalmente.
 
-### 2. Capturar e persistir o `evolution_message_id`
+### O que **não** vou tocar
 
-- Em `sendWithRetry`, quando `res.ok`, ler `await res.json()` e extrair `key?.id` (resposta padrão da Evolution v2 para sendText/sendButtons/sendMedia).
-- Propagar esse id para `recordOutboundResult(..., 'sent', messageId)` em vez de `null`.
-- Em caso de falha, gravar status code + 200 chars de body no log estruturado (já existe parcialmente em `captureError`).
+- Whapi (segue intocado, conforme regra).
+- `_shared/evolution-api.ts` (já validado na auditoria anterior).
+- Fluxo de outro consultor ([rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)) — irrelevante aqui. MAS EU DEIXEI O FLUXO D DO SUPERADMIN COMO PUBLICO
 
-### 3. Garantir que botões não são usados na Evolution
+### Pergunta antes de implementar
 
-Pedido explícito do usuário ("assim como na whapi, mas sem botão"). Forçar fallback de `sendButtons` para texto numerado quando o canal é Evolution: pular o POST para `/message/sendButtons` e ir direto ao `sendText` com a lista numerada já existente em `evolution-api.ts:278`.
-
-### 4. Verificação pós-deploy
-
-- Reabrir conversa do lead (ou simular novo inbound) e conferir:
-  - `outbound_message_log` agora tem `evolution_message_id` não-nulo.
-  - Log do webhook mostra `✅ [sendText] resultado=true` + `key.id`.
-  - Lead recebe a mensagem no WhatsApp.
-- Se ainda falhar: o `key.id` capturado permite consultar `chat/findMessages` na Evolution e descobrir se a mensagem ficou em `PENDING` (problema de sessão Baileys) vs nunca foi aceita.
-
-## Detalhes técnicos
-
-Arquivos tocados:
-- `supabase/functions/_shared/evolution-api.ts` — helper `toEvolutionNumber`, mudança em todos os payloads `number:`, parser de `key.id` no `sendWithRetry`, propagação do id para `recordOutboundResult`, short-circuit do `sendButtons` para texto.
-- Nenhuma alteração em `evolution-webhook/index.ts` (continua passando `remoteJid` completo nos handlers — só o sender normaliza).
-- Nenhuma alteração no WhAPI (`whapi-webhook`, `_shared/whapi-api.ts`).
-- Sem migração de banco: `outbound_message_log.evolution_message_id` já existe.
-
-Risco: baixo. Só normaliza o campo `number` enviado à Evolution e melhora telemetria. Caso a Evolution já aceitasse JID completo em alguma rota, o número puro continua válido (formato canônico documentado).
+**Qual o número real do Rafael Ferreira (lead `7aa1876f…` do tvmensal01)?** Sem isso só consigo limpar o registro (apagar) ou marcar como `sem_celular_*`.  
+  
+numero: 11989000650 
