@@ -610,6 +610,22 @@ export function MediaColumn({ userId }: { userId: string }) {
                       title="Prioridade (maior = enviado primeiro)"
                     />
                     <TagEditor m={m} />
+                    {isSuperAdmin && (
+                      <button
+                        onClick={() => togglePublic(m)}
+                        className={`p-1.5 rounded transition-colors shrink-0 ${
+                          m.is_public
+                            ? "text-emerald-400 hover:text-emerald-300"
+                            : "text-muted-foreground hover:text-emerald-400"
+                        }`}
+                        title={m.is_public
+                          ? "Pública — clique para tornar privada"
+                          : "Privada — clique para tornar pública (todos os consultores poderão usar)"}
+                        aria-label="Alternar público"
+                      >
+                        <Globe className="w-4 h-4" />
+                      </button>
+                    )}
                     <Switch
                       checked={m.active}
                       onCheckedChange={(v) => toggleActive(m, v)}
