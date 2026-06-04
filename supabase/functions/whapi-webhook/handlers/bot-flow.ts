@@ -38,6 +38,7 @@ import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-
 import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
+import { detectPostponeIntent, buildPostponeReply } from "../../_shared/postpone-intent.ts";
 import {
   getReplyForStep,
   getNextMissingStep,
