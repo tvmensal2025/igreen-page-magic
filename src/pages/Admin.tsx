@@ -189,7 +189,7 @@ const AdminContent = () => {
 
   const copyLink = (url: string) => { navigator.clipboard.writeText(url); toast({ title: "✅ Link copiado!" }); };
 
-  const baseUrl = "igreen.institutodossonhos.com.br";
+  const baseUrl = "igreen.cloud";
   const slug = form.license || "sua-licenca";
 
   const tabs: Array<{ id: string; label: string; icon: any; href?: string; external?: boolean }> = [
