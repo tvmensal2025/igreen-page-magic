@@ -1,83 +1,97 @@
-# Finalizar Plano A + Auditoria Enterprise
+# Campanha "28% Análise" — Uberlândia + 100km (Meta Ads)
 
-Já está aplicado: migration completa (cooldown, warmup, risk signals, recovery mode, RPCs), shared `anti-ban.ts`, integração em `bulk-scheduler`, `reactivation-send`, `send-scheduled-messages`, `evolution-webhook` (fatal/transient + recovery 14d), QR polling 30s no frontend e remoção do auto-reconnect.
+Foco exclusivo em **Facebook + Instagram** (Meta Ads), aproveitando a conta/Pixel já configurados. Duas entregas:
 
-Faltam 4 peças para fechar o padrão usado por Wazzap/Whapi/Chatarmin + uma auditoria documentada.
+1. Configuração pronta para colar no Meta Ads Manager (R$70/dia)
+2. Sistema de templates de campanha no app, reutilizável para futuras cidades
 
-## 1. reactivation-cron (gap crítico)
+---
 
-`supabase/functions/reactivation-cron/index.ts` envia via `sender.sendText` sem passar por `checkSendQuota`. É a única porta de envio massivo ainda sem proteção. Vou:
-- Importar `checkSendQuota`, `registerSend`, `simulateTyping`, `typingDurationMs`, `humanJitterMs`.
-- Antes do `sendText`: chamar `checkSendQuota(supabase, instanceName)`; se `allowed=false`, pular o lead, logar `reason` e seguir (sem queimar fila).
-- Antes do envio: `simulateTyping(...)` proporcional ao texto.
-- Depois do envio OK: `registerSend(...)`.
-- Entre leads: aplicar `humanJitterMs() * N` (700–2200ms × multiplicador) no lugar de delays fixos.
+## Parte 1 — Configuração pronta (Meta Ads)
 
-## 2. ai-followup-cron (verificação)
+### Campanha
 
-Confirmar que não dispara mensagens diretas (parece apenas enfileirar/agendar). Se enviar, aplicar mesma proteção; se só agenda, ok — `send-scheduled-messages` já protege.
+- **Objetivo:** Cadastros (Leads)
+- **Tipo de lead:** Formulário Instantâneo do Facebook (recomendado — CPL 40–60% menor que tráfego pro site). Alternativa: Conversões com Pixel + evento `Lead` em `igreen.cloud`.
+- **Orçamento:** R$50/dia (CBO — Advantage Campaign Budget)
+- **Estratégia de lance:** Volume mais alto (sem limite de custo)
+- **Data:** Início imediato, sem data de término
 
-## 3. Kill switch + RPC de saída de recovery
+### Conjunto de Anúncios (1 só — não fragmentar)
 
-Migration nova (mínima):
-- RPC `clear_recovery_mode(p_instance TEXT)` — `SECURITY DEFINER`, exposta a `authenticated`, valida que `auth.uid()` é o `consultant_id` da instância antes de zerar `recovery_mode_until` (sai do bloqueio manualmente após confirmar que o chip foi reconectado).
-- RPC `pause_sending_now(p_instance TEXT, p_hours INT DEFAULT 24)` — mesma validação de dono; chama lógica equivalente ao `activate_recovery_mode` mas com default 24h (kill switch suave).
+- **Localização:** Uberlândia, MG — raio **100 km** — "Pessoas que moram neste local"
+- **Idade:** 28–65
+- **Gênero:** Todos
+- **Idioma:** Português
+- **Segmentação detalhada** (Advantage detailed targeting ON — deixar Meta expandir):
+  - Proprietários de imóveis
+  - Conta de luz / Energia elétrica / Cemig
+  - Pequenas empresas / Donos de empresa
+  - Sustentabilidade / Energia solar
+- **Posicionamentos:** Advantage+ (automático — Feed, Stories, Reels, Explore, etc.)
+- **Otimização da entrega:** Leads
 
-## 4. Painel `InstanceHealth.tsx` (novo)
+### Criativo
 
-Componente em `src/components/whatsapp/InstanceHealth.tsx`, embutido no `ConnectionPanel.tsx` (abaixo do bloco de QR/status). Lê em tempo real:
-- `whatsapp_instances.recovery_mode_until` → badge "MODO RECUPERAÇÃO até DD/MM HH:mm" se ativo.
-- `check_send_quota(instance)` chamado client-side (RPC já liberada para `authenticated`) → mostra: dia do warmup, cota usada / total, próximo horário liberado, motivo do bloqueio.
-- `instance_risk_signals` últimos 6h agregados por `signal_type` → ícones coloridos (reconnects, falhas, fatais).
-- Botões: **"Pausar envios por 24h"** (`pause_sending_now`) e **"Liberar após reconectar chip"** (`clear_recovery_mode`, só visível em recovery mode, exige `confirm()`).
-- Atualização a cada 60s.
+- **Vídeo:** o mesmo já usado na campanha "28% Análise"
+- **Título principal:**  Tenha até`28% de economia na energia.`
+- **Texto principal (copy):**
+  > Sua conta de luz pode ficar até **28% mais barata** sem obra, sem troca de fiação e sem instalar nada. Faça sua análise gratuita em 2 minutos. ⚡
+- **CTA:** "Cadastre-se" (formulário instantâneo) ou "Saiba mais" (tráfego)
+- **URL (se tráfego):** `https://igreen.cloud/?utm_source=meta&utm_medium=cpc&utm_campaign=uberlandia_100km&utm_content=video_28`
 
-Mantém estilo do design system (`bg-card`, `text-muted-foreground`, `Badge` variants), sem cores hard-coded.
+### Regras para gastar pouco / captar muito
 
-## 5. BroadcastChannel anti-multi-aba (PR2 leftover)
+1. **1 criativo + 1 público** — nunca fragmentar
+2. Não editar a campanha nos primeiros **4 dias** (zera aprendizado)
+3. Deixar a IA do Meta otimizar **7 dias** antes de qualquer ajuste
+4. Formulário instantâneo > tráfego para site (menos fricção, CPL menor)
+5. Se o CPL passar de R$15 após 7 dias, trocar o **título** primeiro (não o público)
 
-Em `useWhatsApp.ts`: criar `BroadcastChannel('whatsapp-qr')`. Antes de chamar `connectInstance` (QR), enviar `{type:'qr-lock', instance, ts}`. Se outra aba responder/recebeu lock recente (<30s) na mesma instância, abortar com toast "Outra aba já está gerando QR para esta instância". Evita pedido duplo de QR (vetor real de ban).
+---
 
-## 6. Whapi parity
+## Parte 2 — Sistema de templates de campanha no app
 
-Verificar `whapi-webhook/_helpers.ts` — já tem `canReconnect` via RPC. Garantir que o handler de close trata fatais → `recordRiskSignal` + `activateRecoveryMode` igual ao Evolution. Se faltar, alinhar.
+Nova seção `/campanhas` acessível pelo menu lateral.
 
-## 7. Auditoria enterprise (entregável)
+### Funcionalidades
 
-Criar `docs/ANTI_BAN_AUDIT.md` com:
-- Tabela "Prática indústria 2026 × Onde implementamos × Arquivo:linha" cobrindo as 10 camadas (cooldown persistente, fatal `reason=0`, QR poll ≥30s, warmup 14d, intervalo+jitter, typing presence, circuit breaker, recovery mode, painel+kill switch, multi-aba).
-- Comparação ponto-a-ponto com Wazzap, Whapi, Chatarmin, baileys-antiban (fontes citadas).
-- Checklist operacional para o consultor: o que fazer em chip novo, o que fazer pós-ban, como ler o painel.
-- Limites conhecidos e quando seria necessário migrar para WhatsApp Cloud API oficial.
+- Lista de templates salvos (cards)
+- Botão **"Novo template"** → formulário
+- Botão **"Duplicar e adaptar"** em cada card → clona para outra cidade
+- Botão **"Copiar configuração"** → coloca no clipboard a config formatada (igual à Parte 1) pronta para colar no Ads Manager
+- Botão **"Exportar .txt"** → baixa arquivo texto
 
-## Arquivos afetados
+### Campos do template
 
-```text
-Migration nova:
-  supabase/migrations/<timestamp>_kill_switch_rpcs.sql
+- Nome (ex: "Uberlândia 100km — 28% Análise")
+- Cidade-âncora + raio (km)
+- Faixa etária (min/max)
+- Interesses (lista editável)
+- Orçamento diário (R$)
+- Título do criativo
+- Copy principal
+- URL do vídeo (link do criativo já existente — não upload)
+- URL de destino + UTMs auto-geradas a partir do nome
+- Observações
 
-Backend:
-  supabase/functions/reactivation-cron/index.ts        (anti-ban)
-  supabase/functions/whapi-webhook/_helpers.ts         (paridade fatal)
-  supabase/functions/whapi-webhook/handlers/*          (se aplicável)
+### Pré-populado
 
-Frontend:
-  src/components/whatsapp/InstanceHealth.tsx           (novo)
-  src/components/whatsapp/ConnectionPanel.tsx          (embutir painel)
-  src/hooks/useWhatsApp.ts                             (BroadcastChannel)
+Template **"Uberlândia 100km — 28% Análise"** já criado com toda a config da Parte 1.
 
-Doc:
-  docs/ANTI_BAN_AUDIT.md                               (auditoria)
-```
+### Implementação técnica
 
-## Ordem de execução
+- Tabela `campaign_templates` no Supabase com RLS escopada a `auth.uid()` do consultor
+- GRANTs explícitos para `authenticated` e `service_role`
+- Página `src/pages/Campanhas.tsx` + componentes `CampaignTemplateList`, `CampaignTemplateForm`, `CampaignTemplateCard`
+- Função utilitária `generateMetaAdsConfig(template)` que monta o texto de saída no formato da Parte 1
+- Geração de UTM automática (slug do nome do template)
+- Item novo no menu lateral
 
-1. Migration kill switch (precisa aprovação) → aguarda regen de `types.ts`.
-2. reactivation-cron + whapi parity (paraleliza).
-3. `InstanceHealth.tsx` + integração no `ConnectionPanel`.
-4. BroadcastChannel no `useWhatsApp`.
-5. `ANTI_BAN_AUDIT.md` consolidando tudo + verificação final lendo cada arquivo citado.
+---
 
-## Garantia pós-execução
+## Fora do escopo
 
-Após este PR o sistema cobre 100% das camadas que Wazzap/Whapi/Chatarmin descrevem publicamente como padrão 2026 para APIs não-oficiais. O único nível adicional possível seria abandonar Evolution e ir para WhatsApp Cloud API oficial (Meta) — mudança de produto, fora do escopo, e o doc de auditoria deixa isso explícito.
+- Integração direta com Meta Marketing API (exige OAuth + Business Manager + revisão da Meta — Fase 2)
+- Tracking de performance dentro do app (mesma razão)
+- Google Ads (removido a pedido do usuário)
