@@ -394,7 +394,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     }
     return withIdempotency("send_media", idempotency, async () => {
       // Evolution API espera apenas o número, sem sufixo JID
-      const number = remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
+      const number = toEvolutionNumber(remoteJid);
       try {
         const res = await fetchWithTimeout(`${baseUrl}/message/sendMedia/${instanceName}`, {
           method: "POST",
