@@ -890,6 +890,7 @@ Deno.serve(async (req) => {
       age_min: ageMin,
       age_max: ageMax,
       daily_budget_cents: body.daily_budget_cents,
+      lifetime_cap_cents: lifetimeCapCents,
       duration_days: body.duration_days ?? null,
       status: "pending_review",
       started_at: new Date().toISOString(),
