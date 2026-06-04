@@ -330,10 +330,11 @@ export function useMessages(
           throw new Error(result.error || "Falha no envio");
         }
 
-        if (result.status === "timeout") {
-          logger.warn("message send pending confirmation", { recipient, remoteJid });
+        const isPending = result.status === "pending" || result.status === "timeout";
+        if (isPending) {
+          logger.warn("message send pending confirmation", { recipient, remoteJid, status: result.status });
         } else {
-          logger.debug("message sent successfully");
+          logger.debug("message sent successfully", { messageId: result.messageId });
         }
 
         // Auto-takeover: ao consultor enviar manualmente, assume o controle
@@ -344,19 +345,42 @@ export function useMessages(
           logger.warn("auto-takeover error (não bloqueia envio):", e);
         }
 
+        // Status WhatsApp: 1 = pendente (✓), 2 = entregue ao servidor (✓✓).
+        // Quando Evolution devolve PENDING, mantemos status=1 (um check) até
+        // o webhook real confirmar entrega.
+        const optimisticId = result.messageId || `temp-${Date.now()}`;
         setMessages((prev) => [
           ...prev,
           {
-            id: `temp-${Date.now()}`,
+            id: optimisticId,
             remoteJid,
             fromMe: true,
             text,
-            // Float (sub-second) garante que a otimista vença qualquer empate
-            // com mensagens vindas do servidor no mesmo segundo.
             timestamp: Date.now() / 1000,
             status: 1,
           },
         ]);
+
+        // Confirmação assíncrona: após 6s, busca histórico da Evolution e
+        // atualiza o status da bolha se a mensagem foi de fato confirmada
+        // (status >= 2) ou se sumiu (provavelmente não entregue).
+        if (result.messageId && !isWhapi && instanceName) {
+          const mid = result.messageId;
+          setTimeout(async () => {
+            try {
+              const latest = await findMessages(instanceName, remoteJid, 30);
+              const found = latest.find((m) => m.key?.id === mid);
+              if (found && typeof found.status === "number" && found.status >= 2) {
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === mid ? { ...m, status: found.status } : m))
+                );
+              }
+            } catch {
+              // best-effort
+            }
+          }, 6000);
+        }
+
       } catch (err) {
         logger.error("sendMessage error:", err);
         throw err;
