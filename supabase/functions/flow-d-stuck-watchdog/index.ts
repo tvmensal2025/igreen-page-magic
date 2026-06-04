@@ -50,6 +50,7 @@ interface CustomerRow {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  try {
   const t0 = Date.now();
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
