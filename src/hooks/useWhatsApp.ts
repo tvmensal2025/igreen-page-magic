@@ -586,6 +586,11 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   /* ── Level 3: Safe Reset ── */
   const safeReset = useCallback(async () => {
     if (lockRef.current) return;
+    if (fatalLocked) {
+      addLog("⛔ Reset bloqueado: número em revisão manual. Use 'Desconectar / trocar chip'.");
+      setError("Reset bloqueado: este número está em revisão manual.");
+      return;
+    }
     lockRef.current = true;
 
     const name = instanceName || getFixedInstanceName(consultantId);
