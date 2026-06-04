@@ -175,7 +175,7 @@ html {
   }
 
   .section-heading {
-    @apply text-[2rem] md:text-[2.6rem] lg:text-[3rem] font-extrabold text-center tracking-[-0.02em] leading-[1.08];
+    @apply text-[1.5rem] sm:text-[2rem] md:text-[2.6rem] lg:text-[3rem] font-extrabold text-center tracking-[-0.02em] leading-[1.15] sm:leading-[1.1];
     color: hsl(var(--foreground));
     font-family: var(--font-heading);
   }
