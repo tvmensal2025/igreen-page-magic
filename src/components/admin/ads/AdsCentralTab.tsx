@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CreateCampaignWizard } from "./CreateCampaignWizard";
+import { ExpressCampaignDialog } from "./ExpressCampaignDialog";
 import { CampaignsList } from "./CampaignsList";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";
