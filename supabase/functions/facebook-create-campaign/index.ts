@@ -224,18 +224,10 @@ Deno.serve(async (req) => {
         code: "WHATSAPP_INVALID_FORMAT",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Trava de saldo: precisa cobrir budget × duração (default 3 dias se omitido).
+    // Trava de saldo já validada acima (linha ~165) com fee e safety. Aqui só
+    // garantimos a wallet existe; remoção do bypass admin pra zero prejuízo.
     const wallet = await getOrCreateWallet(auth.id);
-    const dur = body.duration_days && body.duration_days > 0 ? body.duration_days : 3;
-    const requiredCents = body.daily_budget_cents * dur;
-    if (!isAdmin && wallet.balance_cents < requiredCents) {
-      return new Response(JSON.stringify({
-        error: `Saldo insuficiente. Você precisa de R$ ${(requiredCents / 100).toFixed(2)} mas tem R$ ${(wallet.balance_cents / 100).toFixed(2)}. Adicione crédito antes de publicar.`,
-        code: "INSUFFICIENT_BALANCE",
-        balance_cents: wallet.balance_cents,
-        required_cents: requiredCents,
-      }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
+    void wallet;
     // Adapter: mantém o resto do código falando com "conn".
     // PIXEL TRAVADO: todo novo anúncio sai com o pixel oficial da plataforma,
     // independente do que estiver salvo em platform_facebook_account.pixel_id.
