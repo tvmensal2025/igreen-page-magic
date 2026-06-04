@@ -1,94 +1,200 @@
-## Auditoria detalhada da plataforma de anúncios
+## Auditoria — Central de Anúncios
 
-### O que está bom (manter)
-- OAuth Facebook funcional, conta+página+pixel configurados (`facebook_connections`, `consultant_ad_settings`)
-- 40+ edge functions cobrindo todo o ciclo: criar, pausar, estender, healthcheck, CBO→ABO, CAPI, audiences, sync
-- `CreateCampaignWizard` (1646 linhas) + `SmartPublishButton` ("1 clique publica") já funcionam — 11 campanhas reais comprovam
-- Picker de endereço+raio existe (`AddressRadiusPicker`) — modo "ultra-local" pronto
+### O fluxo hoje, na prática
 
-### Problemas reais encontrados
+A Central tem **4 caminhos paralelos** que fazem coisas parecidas, e cada um com graus diferentes de "automático":
 
-**1. Templates não têm vídeo.** Todos os 10 `ad_templates` estão com `creative_mode='photo'`. O vídeo de "28% análise" que você quer reaproveitar está em `ad_video_library` (2 vídeos), mas nunca foi salvo como template. Por isso você não consegue "usar o mesmo vídeo" via gallery.
+| Fluxo | Quem decide o quê | Cliques até publicar |
+|---|---|---|
+| **CreateCampaignWizard** (botão "Criar do zero") | Tudo manual, 4 steps, ~15 escolhas | 8–12 cliques + 2 esperas |
+| **UseTemplateDialog** (galeria de modelos) | Pega copy/imagem do template; usuário escolhe distribuidora e 1 cidade | 4–5 cliques |
+| **SmartPublishButton** (botão raio no template) | Pega tudo do template + escolhe cidade pelo DDD do consultor | **1 clique** (mas sem chance de tunar) |
+| **ReplicateUberlandiaCard** (que acabei de criar) | SmartPublish empacotado num card | **1 clique** |
 
-**2. Templates sem cidades salvas.** Todos com `target_cidades=[]`. Significa que cada vez que você publica, precisa redigitar a cidade. Não há "Uberlândia 100km" salvo em lugar nenhum.
+### O que está bem (e quero preservar)
 
-**3. Limite de raio em 50km.** O `AddressRadiusPicker` tem slider `min=1 max=50`. Você pediu 100km — hoje, impossível pelo modo radius. Saída: usar modo `cities` com Uberlândia + cidades num raio de 100km (Araguari, Uberaba, Patrocínio, Ituiutaba, Monte Carmelo, Araxá, Tupaciguara, Prata). A campanha de R$70/dia com 24 leads que você já rodou usa exatamente esse padrão (`Uberlândia, Araguari, Uberaba`).
+- `ad-creative-builder` (edge) **já consulta** `ad_playbooks` (10 padrões globais), `ad_creative_insights` (1 padrão do seu consultor) e `ad_competitor_creatives` (38 concorrentes ranqueados por `active_days`) antes de gerar copy. Ou seja: **cada copy nova já nasce mais afiada que a anterior**.
+- `ad-creative-learner` roda **todo dia 07h** e atualiza esses insights com base nas últimas 30 dias de spend/leads/cadastros.
+- `facebook-creative-rotator` roda **12h/12h**: pausa criativos perdedores e aumenta budget dos vencedores em 20%.
+- `fb-sync-metrics` roda a cada **30 min** e popula `facebook_metrics_daily` (28 linhas hoje, dados reais chegando).
+- `ad_recommendations` tem **68 sugestões** acumuladas (subir budget X, pausar criativo Y) — só não estão sendo mostradas no wizard.
 
-**4. Métricas não chegam ao banco.** `facebook_ad_metrics_daily=0 linhas` e `avg_cpl_cents=NULL` em 100% dos templates. A função `facebook-sync-metrics` existe mas não está sendo chamada por cron. Resultado: o `usage_count` sobe (máx 2 num template), mas o CPL nunca aparece, então você nunca sabe qual template performa melhor.
+### Problemas reais (o que faz você precisar tomar 15 decisões em vez de 5)
 
-**5. Template "Uberladia" com typo.** ID `7934ae66...` — R$70/dia, foto, 0 usos. Provavelmente foi sua tentativa anterior. Renomear + adicionar vídeo + salvar cidades.
+**1. O wizard atual obriga a escolher coisas que poderiam ser automáticas.**
+   - Idade: chumbado em 28–60 (linha 721) — nunca olha o `ad_creative_insights.best_image_traits` ou ages winners
+   - Gênero: sempre "all"
+   - Placements: tem toggle auto/manual mas o user vê o controle
+   - Distribuidora: você marca manualmente apesar de ser **dedutível da cidade**
+   - Mensagem inicial do WhatsApp: você edita 1 a 1, mas é template fixo
+   - Formato da foto: tem que mandar **3 versões** (square 1080×1080, vertical 1080×1350, story 1080×1920) — se faltar uma, trava
 
-**6. Tabela `bulk_campaigns` vazia.** Existe infra de campanhas em lote multi-cidade que nunca foi exercitada — pode ser exatamente o caso "1 campanha → várias cidades no raio".
+**2. Copy aparece como 1 versão só, não 3 lado a lado.**
+   - O builder devolve `headlines: string[]` + `primary_texts: string[]` (várias), mas o wizard usa apenas `[0]` (linhas 465–467). Você não consegue **escolher** entre opções com 1 clique.
 
-**7. Meu lixo recente (vou apagar).** `campaign_templates` (tabela), `/admin/campanhas` (rota), `Campanhas.tsx`, `CampaignTemplateForm.tsx`, `CampaignTemplateCard.tsx`, `campaignTemplate.ts`, item de menu "Campanhas (Templates)" — tudo duplicado, vai sair.
+**3. Imagem é upload manual, não vem sugerida.**
+   - `ad_image_library` existe e o `AdImageLibraryPanel` mostra fotos antigas, mas **não ranqueia por performance**. A imagem que mais converteu não fica em destaque. A escolha "melhor imagem" não acontece.
+
+**4. `facebook_creative_packs` está vazio.**
+   - Existe a tabela pra empacotar "headline + primary + imagem" como combo vencedor. Nada popula. O conceito de "melhor pack" não está materializado.
+
+**5. Orçamento e dias são chutes.**
+   - Default R$15/3 dias. Não puxa "média de orçamento dos winners" de `ad_creative_performance`. Para a campanha de Uberlândia que gerou 24 leads (R$70/dia, sem prazo) você teve que digitar isso na mão.
+
+**6. Cada publicação é uma campanha nova.**
+   - Isso é certo pra teste A/B, mas significa que **toda campanha entra na fase de aprendizado do Facebook do zero** (~24h reaprendendo audiência). Não há reuso de adset/warm audience. (Não vou consertar isso aqui — Meta dificulta, é outra fase.)
+
+**7. "Sempre nova vs reusar campanha vencedora?"**
+   - Hoje: **sempre nova**. O `SmartPublishButton` cria sempre uma nova campanha mesmo se já existe uma idêntica ativa.
+   - Não há detecção de "essa exata combinação já está no ar dando lucro — só estende em vez de duplicar".
 
 ---
 
-## Plano de execução — B + C combinados
+## Plano — Modo Express (1 tela, 5 escolhas)
 
-### Fase 0 — Reverter o erro
-- Deletar arquivos: `src/pages/Campanhas.tsx`, `src/components/admin/campanhas/*`, `src/lib/campaignTemplate.ts`
-- Remover rota `/admin/campanhas` em `App.tsx` e item de menu em `Admin.tsx`
-- Migração: `DROP TABLE public.campaign_templates`
+### O que entrega
 
-### Fase 1 — Consertar `ad_templates` (parte C)
-- Adicionar dois templates novos via migração (consultant_id NULL = templates de plataforma):
-  - **"Uberlândia + 100km — 28% Análise (Vídeo)"**: `creative_mode='video'`, `video_url` apontando para o vídeo que você usa, `target_cidades=['Uberlândia/MG','Araguari/MG','Uberaba/MG','Patrocínio/MG','Ituiutaba/MG','Monte Carmelo/MG','Araxá/MG','Tupaciguara/MG']`, `suggested_daily_budget_cents=7000`, `age_min=28 age_max=65`, headline e copy do "28%"
-  - Renomear "Uberladia" → arquivar (status='archived') para sumir da galeria
-- Adicionar campo `default_radius_km` (NULL, integer) em `ad_templates` para futuros templates ultra-locais
-
-### Fase 2 — Expandir raio até 80km (parte C)
-- Em `AddressRadiusPicker.tsx`: subir slider para `max=80` (limite real da Meta API), adicionar quick-picks `10, 25, 50, 80`
-- Acima de 50km, mostrar dica: "Para cobrir região >80km, prefira modo 'Cidades inteiras'"
-
-### Fase 3 — Atalho "Replicar última campanha" (parte B)
-- Em `AdsCentralTab.tsx`, adicionar card no topo: **"Replicar campanha Uberlândia 100km · R$70/dia · 24 leads"** com botão "Publicar de novo"
-- Botão chama o `CreateCampaignWizard` em modo `initialState` pré-preenchido:
-  - Cidades: as 8 cidades de MG (Uberlândia + raio 100km)
-  - Idade: 25–65, orçamento R$70/dia
-  - Template ID: o novo template do vídeo de 28%
-- Adicionar prop `initialState` ao `CreateCampaignWizard` (opcional, não quebra usos atuais)
-
-### Fase 4 — Backfill de métricas (parte C)
-- Criar cron Postgres (pg_cron) que chama `facebook-sync-metrics` 1x/dia para todos `facebook_campaigns` ativos
-- Resultado: `avg_cpl_cents` começa a ser preenchido → galeria de templates passa a mostrar CPL real e ordenar por performance
-
-### Fase 5 — Salvar cidades ao virar template (parte C)
-- Em `SaveTemplateDialog.tsx`: capturar `cities` da campanha original e salvar em `target_cidades` do template (hoje não salva)
-- Pequena UI: checkbox "Salvar cidades junto com o template"
-
-### Detalhes técnicos
+Um botão grande **"Criar campanha (Modo Express)"** no topo da Central, abrindo **1 tela só** com 5 perguntas, nessa ordem:
 
 ```text
-Arquivos a editar
-├── src/App.tsx                                  (remover rota)
-├── src/pages/Admin.tsx                          (remover item menu)
-├── src/components/admin/ads/AdsCentralTab.tsx   (card "Replicar")
-├── src/components/admin/ads/CreateCampaignWizard.tsx  (prop initialState)
-├── src/components/admin/ads/AddressRadiusPicker.tsx   (max 80)
-├── src/components/admin/ads/SaveTemplateDialog.tsx    (salvar cidades)
-
-Arquivos a deletar
-├── src/pages/Campanhas.tsx
-├── src/components/admin/campanhas/CampaignTemplateCard.tsx
-├── src/components/admin/campanhas/CampaignTemplateForm.tsx
-└── src/lib/campaignTemplate.ts
-
-Migrações
-├── DROP TABLE campaign_templates
-├── INSERT ad_templates (Uberlândia 100km vídeo)
-├── UPDATE ad_templates SET status='archived' WHERE title LIKE 'Uberladia%'
-├── ALTER TABLE ad_templates ADD COLUMN default_radius_km integer
-└── SELECT cron.schedule('sync-fb-metrics-daily', '0 6 * * *', $$ ... $$)
+┌──────────────────────────────────────────────────────┐
+│  1. ONDE                                              │
+│     ◉ Cidade(s)     ○ Rua + raio                     │
+│     [📍 Uberlândia, Araguari +4 ▾]   (último uso)    │
+│                                                       │
+│  2. IMAGEM (escolha 1)                                │
+│     [img 1 ★] [img 2] [img 3] [img 4] [img 5] [img 6]│
+│      Top do seu histórico   Plataforma  Biblioteca   │
+│                                                       │
+│  3. COPY (escolha 1 das 3 que a IA gerou)            │
+│     ┌─AIDA──┐  ┌─PAS───┐  ┌─Story─┐                  │
+│     │…texto…│  │…texto…│  │…texto…│   [↻ Gerar +]    │
+│     └───────┘  └───────┘  └───────┘                  │
+│                                                       │
+│  4. VALOR       R$ [50] /dia   (média winners: R$70) │
+│  5. DIAS        ○3  ◉7  ○14  ○Contínuo               │
+│                                                       │
+│  Pré-marcado automático ▾                            │
+│   • Distribuidora: Cemig (deduzido da cidade)        │
+│   • Idade: 28–65 · todos os gêneros                  │
+│   • Posicionamentos: Advantage+ (auto)               │
+│   • WhatsApp: (34) 9xxxx-xxxx                        │
+│   • Mensagem inicial: "Olá! Quero saber..."          │
+│                                                       │
+│         [Publicar campanha — 1 clique]               │
+└──────────────────────────────────────────────────────┘
 ```
 
-### Fora do escopo desta entrega
-- Mexer em `bulk_campaigns` (existe infra mas seria feature nova)
-- Dashboard novo de comparativo de templates (depende das métricas começarem a chegar — 1-2 dias após Fase 4)
-- Auto-pause baseado em CPL (já existe `facebook-auto-pause`, só precisaria configurar regra)
+### Arquitetura
 
-### Pré-requisito de você
-Preciso que me mande:
-1. **URL do vídeo de 28%** que você quer usar (pode ser link do `ad_video_library` ou eu busco — me diga qual dos 2 vídeos)
-2. **Headline exato** que tem performado bem ("Análise de 28% de economia"?)
-3. **Copy principal** atual desse anúncio
+**Edge function nova: `ad-best-creative-suggest`**
+Entrada: `{ consultantId, cities[], distribuidora }`. Saída:
+```ts
+{
+  images: [{ url, format, score, reason }],   // 6 imagens ranqueadas
+  copies: [                                    // 3 packs gerados (frameworks distintos)
+    { framework: "AIDA", headline, primary, description, score },
+    { framework: "PAS", headline, primary, description, score },
+    { framework: "Story", headline, primary, description, score },
+  ],
+  suggested_budget_cents: number,              // média winners deste consultor (fallback R$50)
+  suggested_duration_days: number | null,      // mediana de winners (fallback 7)
+  suggested_age_min: number,                   // dos winners (fallback 28)
+  suggested_age_max: number,                   // dos winners (fallback 65)
+  inferred_distribuidora_id: string | null,    // deduzido das cidades
+  initial_message: string,                     // gerado com {cidade} preenchida
+}
+```
+
+Internamente:
+- Imagens vêm de `ad_image_library` + `ad_creative_performance` (JOIN por `image_url`) ordenadas por `(leads_count * 100 + clicks)`. Tagged com "★ Top" quem está no top 3.
+- Copies: chama `ad-creative-builder` **3x em paralelo** com frameworks diferentes (AIDA, PAS, Storytelling) — já existe, só precisa parametrizar.
+- Budget/idade/duração: query SQL em `facebook_campaigns` JOIN `facebook_metrics_daily` filtrando por consultant_id e `leads > 0` (winners).
+- Distribuidora: lookup `cidade → preset.id` em `DISTRIBUIDORAS_PRESETS`.
+
+**Tela nova: `src/components/admin/ads/ExpressCampaignDialog.tsx`**
+- Reusa `AddressRadiusPicker` (modo radius) e o seletor de cidades do wizard
+- Reusa `SmartPublishButton`'s lógica de publicação (chama `createCampaign` direto, não `smartPublish` porque queremos cidades escolhidas pelo user, não pelo DDD)
+- Mostra o accordion "Pré-marcado automático" colapsado por padrão; clicar mostra os defaults e dá um link discreto "Modo avançado" que abre o wizard atual
+
+**Detecção "já existe campanha igual no ar"**
+Antes do `createCampaign`, query:
+```sql
+SELECT id, name, leads_count FROM facebook_campaigns
+WHERE consultant_id = $1 AND status = 'ACTIVE'
+  AND cities_text = $cities_joined
+  AND headline = $headline
+  AND status = 'ACTIVE' AND created_at > now() - interval '30 days'
+```
+Se existir, mostra modal: **"Você já tem uma campanha idêntica no ar — quer só estender +7 dias (mais barato, sem reaprender) ou criar uma nova mesmo assim?"**
+
+**Popular `facebook_creative_packs`**
+Adicionar trigger no `ad-creative-learner` (já roda 07h) que, ao identificar um "vencedor" (combo image+headline+primary com `leads_count > 3`), faz UPSERT em `facebook_creative_packs` com score. O `ad-best-creative-suggest` consulta essa tabela primeiro.
+
+### Arquivos
+
+```text
+Criar:
+├── src/components/admin/ads/ExpressCampaignDialog.tsx       (~300 linhas)
+├── src/services/expressCampaign.ts                          (orquestrador, ~120)
+├── supabase/functions/ad-best-creative-suggest/index.ts     (~200)
+
+Editar:
+├── src/components/admin/ads/AdsCentralTab.tsx
+│      • Trocar botão "Criar do zero" por "Criar campanha (Express)"
+│      • Manter "Modo avançado" como link discreto
+├── supabase/functions/ad-creative-learner/index.ts
+│      • Ao final do run, popular facebook_creative_packs
+```
+
+### Loop de "sempre subir a melhor"
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ user publica via Express                                     │
+│   → grava em ad_template_usages (combo image+copy+budget)   │
+│                ↓                                             │
+│ fb-sync-metrics (30min)  → facebook_metrics_daily           │
+│                ↓                                             │
+│ ad-creative-learner (07h)                                    │
+│   • Recalcula ad_creative_insights                           │
+│   • Atualiza ad_playbooks                                    │
+│   • Popula facebook_creative_packs (winners)                 │
+│                ↓                                             │
+│ próxima abertura do Express                                  │
+│   → ad-best-creative-suggest devolve combos atualizados     │
+│   → top imagem/copy já vêm pré-selecionados                  │
+└─────────────────────────────────────────────────────────────┘
+
+facebook-creative-rotator (12h) roda em paralelo:
+   • Pausa criativos perdedores nas campanhas vivas
+   • Sobe +20% budget nos vencedores (teto R$200/dia)
+```
+
+### Resultado prático
+
+| Antes | Depois (Express) |
+|---|---|
+| 8–12 cliques + 2 esperas | **5 cliques + 1 espera** |
+| Você escolhe: cidade, imagem, formato, copy, headline, primary, desc, msg inicial, idade, gênero, orçamento, dias, placements, distribuidora | **Só cidade, imagem, copy, valor, dias** |
+| Imagem é upload em branco | Top imagens já carregadas + ranqueadas |
+| Copy 1 só | 3 variações lado a lado (frameworks distintos) |
+| Sem aviso se já existe campanha igual | "Estender ou criar nova?" |
+| Defaults estáticos (R$15, idade 28–60) | Defaults vindos dos seus winners |
+
+### Fora deste escopo (próximas fases)
+
+- **Reuso de adset com warm audience** (Meta dificulta, exige outra modelagem)
+- **Multivariate testing 3×3** (publicar 3 imagens × 3 copies como 9 anúncios num único adset)
+- **Auto-publicar do learner**: hoje o learner só gera `ad_recommendations`; uma fase futura seria publicar sozinho variações com aprovação do user
+- **Dashboard "qual combo de pack está dando mais retorno?"** (depende do `facebook_creative_packs` começar a popular)
+
+### Pergunta antes de começar
+
+Pra Modo Express estar mesmo redondo desde o lançamento, preciso saber:
+
+**1.** Quando você abrir o Express **pela 1ª vez** (sem histórico de winners ainda), os defaults caem para: orçamento **R$50/dia**, dias **7**, idade **28–65**, distribuidora deduzida da cidade. **OK?**
+
+**2.** A detecção "campanha idêntica já no ar" — quando dispara, o que prefere: (**a**) bloqueia e força usar "Estender", (**b**) só avisa e deixa o user decidir, ou (**c**) nem avisa, sempre cria nova?
+
+**3.** Mantenho o wizard antigo (4 steps) acessível por link "Modo avançado"? Ou apago de vez?
