@@ -91,7 +91,9 @@ Deno.serve(async (req) => {
     async function sendWhatsApp(message: string) {
       // Tentar Evolution API primeiro
       if (evolutionUrl && evolutionKey && instanceName) {
-        const { sendText } = createEvolutionSender(evolutionUrl, evolutionKey, instanceName);
+        const _raw = createEvolutionSender(evolutionUrl, evolutionKey, instanceName);
+        const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+        const { sendText } = wrapSenderWithGuard(_raw, { supabase, instanceName });
         const ok = await sendText(remoteJid, message);
         if (ok) return;
       }

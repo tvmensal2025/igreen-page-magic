@@ -265,7 +265,9 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const sender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, inst.instance_name);
+        const _raw = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, inst.instance_name);
+        const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+        const sender = wrapSenderWithGuard(_raw, { supabase, instanceName: inst.instance_name });
         const remoteJid = `${lead.phone_whatsapp}@s.whatsapp.net`;
         const sent = await sender.sendText(remoteJid, message);
 

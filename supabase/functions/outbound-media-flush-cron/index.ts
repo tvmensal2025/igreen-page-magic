@@ -145,11 +145,16 @@ async function processRow(supabase: SupabaseClient, row: PendingRow): Promise<bo
     return false;
   }
 
-  const sender = createEvolutionSender(
+  const _raw = createEvolutionSender(
     instance.api_url,
     instance.api_key,
     instance.instance_name || instanceName || "",
   );
+  const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+  const sender = wrapSenderWithGuard(_raw, {
+    supabase,
+    instanceName: instance.instance_name || instanceName || "",
+  });
 
   // Despacha em ordem. Se algum item falhar, atualiza payload removendo
   // os já enviados e reagenda o restante.
