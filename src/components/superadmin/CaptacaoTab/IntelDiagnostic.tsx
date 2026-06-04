@@ -163,10 +163,10 @@ export function IntelDiagnostic() {
                     <p className="text-xs text-muted-foreground">{a.detail}</p>
                   </div>
                 ))}
-            </div>
-
+              </div>
             </div>
           )}
+
         </>
       )}
     </div>
