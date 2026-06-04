@@ -5618,9 +5618,16 @@ export type Database = {
           connected_phone: string | null
           consultant_id: string
           created_at: string | null
+          fatal_disconnect_at: string | null
+          fatal_disconnect_reason: number | null
+          fatal_lock_clear_reason: string | null
+          fatal_lock_cleared_at: string | null
+          fatal_lock_cleared_by: string | null
+          fatal_lock_until: string | null
           id: string
           instance_name: string
           last_health_check_at: string | null
+          manual_review_required: boolean
           recovery_mode_until: string | null
           status: string
           updated_at: string
@@ -5630,9 +5637,16 @@ export type Database = {
           connected_phone?: string | null
           consultant_id: string
           created_at?: string | null
+          fatal_disconnect_at?: string | null
+          fatal_disconnect_reason?: number | null
+          fatal_lock_clear_reason?: string | null
+          fatal_lock_cleared_at?: string | null
+          fatal_lock_cleared_by?: string | null
+          fatal_lock_until?: string | null
           id?: string
           instance_name: string
           last_health_check_at?: string | null
+          manual_review_required?: boolean
           recovery_mode_until?: string | null
           status?: string
           updated_at?: string
@@ -5642,9 +5656,16 @@ export type Database = {
           connected_phone?: string | null
           consultant_id?: string
           created_at?: string | null
+          fatal_disconnect_at?: string | null
+          fatal_disconnect_reason?: number | null
+          fatal_lock_clear_reason?: string | null
+          fatal_lock_cleared_at?: string | null
+          fatal_lock_cleared_by?: string | null
+          fatal_lock_until?: string | null
           id?: string
           instance_name?: string
           last_health_check_at?: string | null
+          manual_review_required?: boolean
           recovery_mode_until?: string | null
           status?: string
           updated_at?: string
@@ -5918,6 +5939,10 @@ export type Database = {
         Args: { p_hours?: number; p_instance: string }
         Returns: undefined
       }
+      admin_clear_fatal_lock: {
+        Args: { p_instance: string; p_reason: string }
+        Returns: undefined
+      }
       admin_unpause_global_bot: { Args: never; Returns: number }
       ai_cooldown_check_and_set: {
         Args: { p_key: string; p_reason: string; p_ttl_ms: number }
@@ -6092,6 +6117,7 @@ export type Database = {
         Returns: undefined
       }
       is_consultant_online: { Args: { p_consultant: string }; Returns: boolean }
+      is_fatal_locked: { Args: { p_instance: string }; Returns: boolean }
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
       is_team_member: {
         Args: { _leader: string; _member: string }
@@ -6151,6 +6177,10 @@ export type Database = {
           _stripe_session_id?: string
         }
         Returns: number
+      }
+      register_fatal_disconnect: {
+        Args: { p_instance: string; p_lock_hours?: number; p_reason: number }
+        Returns: undefined
       }
       register_send: { Args: { p_instance: string }; Returns: undefined }
       release_customer_lock: {
