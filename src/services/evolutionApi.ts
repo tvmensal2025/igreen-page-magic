@@ -189,6 +189,7 @@ export async function createInstance(instanceName: string) {
       enabled: true,
       events: [
         "MESSAGES_UPSERT",
+        "MESSAGES_UPDATE",
         "CONNECTION_UPDATE",
       ],
     },
@@ -214,6 +215,7 @@ export async function setInstanceWebhook(instanceName: string) {
       enabled: true,
       events: [
         "MESSAGES_UPSERT",
+        "MESSAGES_UPDATE",
         "CONNECTION_UPDATE",
       ],
     },

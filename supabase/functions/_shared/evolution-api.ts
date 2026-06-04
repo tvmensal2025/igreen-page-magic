@@ -18,6 +18,25 @@ export interface EvolutionButton {
 }
 
 /**
+ * Detailed result of a send call. Distinguishes:
+ *   - `ok`: Evolution HTTP returned 2xx (request accepted by Evolution)
+ *   - `pending`: Evolution body carried status="PENDING" (Baileys hasn't
+ *     confirmed delivery yet — WhatsApp may or may not deliver it)
+ *   - `messageId`: external Evolution/WhatsApp message id when present
+ *   - `error`: short error message when `ok === false`
+ *
+ * Callers MUST treat `ok && !pending` as the only "sent" state.
+ * `ok && pending` is "queued" and needs ACK confirmation.
+ */
+export interface SendResult {
+  ok: boolean;
+  pending: boolean;
+  messageId: string | null;
+  status: number;
+  error?: string;
+}
+
+/**
  * Optional idempotency context attached to a send. When all four fields are
  * present **and** a Supabase client is provided, `sendWithRetry` will:
  *   1. Acquire an outbound slot in `outbound_message_log` BEFORE sending —
@@ -86,11 +105,12 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
   //
   // When `idempotencyOpts` is absent, behavior is byte-for-byte identical
   // to the pre-bugfix implementation.
+
   async function sendWithRetry(
     label: string,
     doSend: () => Promise<Response>,
     idempotencyOpts?: IdempotencyOptions,
-  ): Promise<boolean> {
+  ): Promise<SendResult> {
     // ── Idempotency pre-check ────────────────────────────────────────
     const idemKey = idempotencyOpts?.idempotencyKey;
     const idemSupabase = idempotencyOpts?.supabase;
@@ -119,12 +139,14 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
             previous_status: slot.previousResultStatus ?? null,
             previous_message_id: slot.previousMessageId ?? null,
           });
-          // Treat any non-failed status as success so the caller does
-          // not retry a turn the customer has already received. Defaults
-          // to true when the prior status is null (slot was acquired by
-          // a peer that has not finished yet — the in-flight peer will
-          // record its outcome shortly; we must not double-send).
-          return slot.previousResultStatus !== "failed";
+          const replayOk = slot.previousResultStatus !== "failed";
+          return {
+            ok: replayOk,
+            pending: false,
+            messageId: slot.previousMessageId ?? null,
+            status: 0,
+            error: replayOk ? undefined : "idempotent_replay_previous_failure",
+          };
         }
       } catch (e) {
         // Fail open — proceed with the actual send.
@@ -145,6 +167,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
         const res = await doSend();
         if (res.ok) {
           succeeded = true;
+          lastStatus = res.status;
           // Tenta capturar `key.id` e `status` da resposta Evolution v2.
           try {
             const data = await res.clone().json();
@@ -181,14 +204,26 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
         pending: pendingOnly,
       });
       // ── Idempotency post-record (success) ─────────────────────────
+      // Diferenciamos: "sent" só quando a Evolution efetivamente confirmou
+      // (não-PENDING). PENDING fica como "queued" para que um retry possa
+      // ressubmeter caso o ACK nunca chegue. Isso evita que uma redelivery
+      // do webhook NÃO reenvie uma mensagem que ficou presa na fila.
       if (idemEnabled) {
         try {
-          // Mesmo PENDING marcamos como "sent" para evitar reenvio em retries;
-          // o status real de entrega é monitorado via eventos do webhook.
-          await recordOutboundResult(idemSupabase!, idemKey!, "sent", messageId);
+          await recordOutboundResult(
+            idemSupabase!,
+            idemKey!,
+            pendingOnly ? "queued" : "sent",
+            messageId,
+          );
         } catch (_) { /* swallow */ }
       }
-      return true;
+      return {
+        ok: true,
+        pending: pendingOnly,
+        messageId,
+        status: lastStatus,
+      };
     }
 
     // Detecta sessão WhatsApp derrubada do lado do servidor Evolution.
@@ -205,7 +240,6 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
 
     if (isConnectionClosed) {
       // Marca instância como needs_reconnect — super-admin recebe alerta visual.
-      // (Best-effort: não falha o envio se o update der erro.)
       try {
         const sbUrl = Deno.env.get("SUPABASE_URL");
         const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -243,18 +277,24 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
         await recordOutboundResult(idemSupabase!, idemKey!, "failed", null);
       } catch (_) { /* swallow */ }
     }
-    return false;
+    return {
+      ok: false,
+      pending: false,
+      messageId: null,
+      status: lastStatus,
+      error: lastBody || "send_failed",
+    };
   }
 
-  async function sendText(
+  async function sendTextDetailed(
     remoteJid: string,
     text: string,
     idempotency?: IdempotencyOptions,
-  ): Promise<boolean> {
+  ): Promise<SendResult> {
     const number = toEvolutionNumber(remoteJid);
     const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
     console.log(`📤 [sendText] -> ${number} | "${preview}${text.length > 60 ? "..." : ""}"`);
-    const ok = await sendWithRetry("send_text", () =>
+    const result = await sendWithRetry("send_text", () =>
       fetchWithTimeout(`${baseUrl}/message/sendText/${instanceName}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": apiKey },
@@ -263,8 +303,17 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
       }),
       idempotency,
     );
-    console.log(`${ok ? "✅" : "❌"} [sendText] resultado=${ok}`);
-    return ok;
+    console.log(`${result.ok ? (result.pending ? "🟡" : "✅") : "❌"} [sendText] ok=${result.ok} pending=${result.pending} id=${result.messageId ?? "-"}`);
+    return result;
+  }
+
+  async function sendText(
+    remoteJid: string,
+    text: string,
+    idempotency?: IdempotencyOptions,
+  ): Promise<boolean> {
+    const r = await sendTextDetailed(remoteJid, text, idempotency);
+    return r.ok;
   }
 
   async function sendButtons(
@@ -273,11 +322,6 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     buttons: EvolutionButton[],
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
-    // Evolution/Baileys entrega botões de forma inconsistente nas versões atuais
-    // do WhatsApp — muitos clientes recebem só a descrição, sem opções clicáveis.
-    // Pedido do produto: na Evolution, sempre cair para texto numerado (sem botão).
-    // Isso mantém paridade visual com o WhAPI (que usa botões nativos confiáveis)
-    // do ponto de vista do usuário: ele sempre vê a pergunta + opções.
     console.log(`📤 [sendButtons→text] -> ${toEvolutionNumber(remoteJid)} (${buttons.length} opções: ${buttons.map(b => b.id).join(",")})`);
     logStructured("info", "evolution_buttons_as_text", { instance: instanceName, count: buttons.length });
     const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
@@ -488,7 +532,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     }
   }
 
-  return { sendText, sendButtons, downloadMedia, sendMedia, sendAudio, sendPresence };
+  return { sendText, sendTextDetailed, sendButtons, downloadMedia, sendMedia, sendAudio, sendPresence };
 }
 
 /**

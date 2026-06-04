@@ -110,6 +110,47 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── 1b) MESSAGES_UPDATE / message status ACK ──────────────────────
+    // Evolution envia MESSAGES_UPDATE quando o WhatsApp confirma entrega/leitura.
+    // Status numérico Baileys: 1=PENDING, 2=SERVER_ACK(enviado),
+    // 3=DELIVERY_ACK(entregue ao aparelho), 4=READ(lido), 5=PLAYED.
+    // Atualizamos `conversations.delivery_status` pelo external_message_id.
+    const evtRaw = String(body?.event || "").toLowerCase().replace(/\./g, "_");
+    if (evtRaw === "messages_update" || evtRaw === "message_update") {
+      try {
+        const items = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean);
+        for (const it of items) {
+          const mid = it?.key?.id || it?.keyId || it?.messageId;
+          const stRaw = it?.status ?? it?.update?.status;
+          if (!mid) continue;
+          let newStatus: string | null = null;
+          const stNum = Number(stRaw);
+          if (Number.isFinite(stNum)) {
+            if (stNum >= 4) newStatus = "read";
+            else if (stNum === 3) newStatus = "delivered";
+            else if (stNum === 2) newStatus = "sent";
+          } else if (typeof stRaw === "string") {
+            const s = stRaw.toUpperCase();
+            if (s === "READ") newStatus = "read";
+            else if (s === "DELIVERY_ACK" || s === "DELIVERED") newStatus = "delivered";
+            else if (s === "SERVER_ACK" || s === "SENT") newStatus = "sent";
+          }
+          if (!newStatus) continue;
+          await supabase.from("conversations")
+            .update({
+              delivery_status: newStatus,
+              delivery_checked_at: new Date().toISOString(),
+            })
+            .eq("external_message_id", mid);
+        }
+      } catch (e: any) {
+        console.warn("[messages_update] handler error:", e?.message);
+      }
+      return new Response(JSON.stringify({ ok: true, event: "messages_update" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ─── 2) Identify instance ──────────────────────────────────────────
     const instanceName = body.instance || fallbackInstance;
     if (!instanceName) {
@@ -1829,13 +1870,19 @@ Deno.serve(async (req) => {
       } catch (_) { /* best-effort: never block sending on a dedup error */ }
     }
 
+    // Resultado real do envio: ok=Evolution aceitou, pending=PENDING (não
+    // confirmado pelo WhatsApp), messageId=ID externo, error=falha real.
+    let sendResult: { ok: boolean; pending: boolean; messageId: string | null; error?: string } = {
+      ok: false,
+      pending: false,
+      messageId: null,
+      error: !finalReply ? "no_reply" : (isDuplicate ? "duplicate_skipped" : undefined),
+    };
+
     if (finalReply && !isDuplicate) {
       try {
         // Simular humano: presença "digitando…" + delay proporcional ao tamanho da resposta.
-        // ~45ms por caractere, mín 1.5s, máx 6s. Não bloqueia se presença falhar.
-        // Humano: 3s base + ~60ms por caractere, mín 3.5s, máx 14s.
         const humanDelayMs = Math.min(14000, Math.max(3500, 3000 + finalReply.length * 60));
-        // Reenvia "composing" a cada ~3s para garantir que o "digitando…" continue visível no app.
         try { await (sender as any).sendPresence?.(remoteJid, "composing", humanDelayMs); } catch (_) { /* noop */ }
         let waited = 0;
         while (waited < humanDelayMs) {
@@ -1846,10 +1893,6 @@ Deno.serve(async (req) => {
             try { await (sender as any).sendPresence?.(remoteJid, "composing", humanDelayMs - waited); } catch (_) { /* noop */ }
           }
         }
-        // Envia sempre como texto (botões não funcionam na Evolution API atual).
-        // Smoke test of Task 8: pass idempotency context so duplicate
-        // webhook redeliveries with the same content + step short-circuit
-        // in `outbound_message_log` instead of re-sending.
         let idemKey = "";
         let payloadHash = "";
         try {
@@ -1865,7 +1908,7 @@ Deno.serve(async (req) => {
             minuteBucket: 0,
           });
         } catch (_) { /* fail-open: send without idempotency */ }
-        await sender.sendText(remoteJid, finalReply, {
+        sendResult = await (sender as any).sendTextDetailed(remoteJid, finalReply, {
           idempotencyKey: idemKey,
           customerId: customer.id,
           consultantId: instanceData.consultant_id,
@@ -1874,17 +1917,34 @@ Deno.serve(async (req) => {
         });
       } catch (e: any) {
         console.error("Erro enviar:", e);
+        sendResult = { ok: false, pending: false, messageId: null, error: e?.message || "exception" };
       }
     }
 
-    // ─── 11) Log outbound ──────────────────────────────────────────────
-    if (!isDuplicate) {
+    // ─── 11) Log outbound com status de entrega real ───────────────────
+    // Mapeia o resultado para um delivery_status auditável:
+    //   - "sent"   → Evolution confirmou (não-PENDING)
+    //   - "queued" → Evolution aceitou mas WhatsApp não confirmou (PENDING)
+    //   - "failed" → erro real ou exceção
+    // Mensagens duplicadas/sem reply não são gravadas como novo outbound.
+    let deliveryStatus: "sent" | "queued" | "failed" | null = null;
+    if (finalReply && !isDuplicate) {
+      if (sendResult.ok && !sendResult.pending) deliveryStatus = "sent";
+      else if (sendResult.ok && sendResult.pending) deliveryStatus = "queued";
+      else deliveryStatus = "failed";
+    }
+
+    if (!isDuplicate && finalReply) {
       await supabase.from("conversations").insert({
         customer_id: customer.id,
         message_direction: "outbound",
-        message_text: finalReply || "[botões enviados]",
-        message_type: "text",
+        message_text: finalReply,
+        message_type: deliveryStatus === "failed" ? "text_failed" : "text",
         conversation_step: updates.conversation_step || stepBefore,
+        external_message_id: sendResult.messageId,
+        delivery_status: deliveryStatus,
+        delivery_checked_at: new Date().toISOString(),
+        delivery_error: deliveryStatus === "failed" ? (sendResult.error || "send_failed") : null,
       });
     }
 
@@ -1892,10 +1952,49 @@ Deno.serve(async (req) => {
       customer_id: customer.id,
       consultant_id: instanceData.consultant_id,
       step: updates.conversation_step ? stripPrefix(updates.conversation_step) : stepBefore,
-      sent: !!finalReply && !isDuplicate,
+      sent: deliveryStatus === "sent",
+      queued: deliveryStatus === "queued",
+      failed: deliveryStatus === "failed",
       duplicate: isDuplicate,
+      external_message_id: sendResult.messageId,
       v2_flag: v2Flag,
     });
+
+    // Verificação pós-envio assíncrona: se ficou "queued" (PENDING), tenta
+    // confirmar no histórico da Evolution após 6s. Best-effort; o ACK real
+    // virá pelos eventos MESSAGES_UPDATE quando habilitados na instância.
+    if (deliveryStatus === "queued" && sendResult.messageId) {
+      const mid = sendResult.messageId;
+      const cid = customer.id;
+      const inst = instanceName;
+      try {
+        EdgeRuntime.waitUntil((async () => {
+          try {
+            await new Promise(r => setTimeout(r, 6000));
+            const res = await fetch(`${EVOLUTION_API_URL.replace(/\/$/,"")}/chat/findMessages/${inst}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY },
+              body: JSON.stringify({ where: { key: { id: mid } }, limit: 1 }),
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const records = Array.isArray(data) ? data : (data?.messages?.records || data?.records || []);
+            const found = records.find((m: any) => m?.key?.id === mid);
+            if (found) {
+              const st = Number(found.status);
+              const newStatus = st >= 2 ? "delivered" : "sent";
+              await supabase.from("conversations")
+                .update({
+                  delivery_status: newStatus,
+                  delivery_checked_at: new Date().toISOString(),
+                })
+                .eq("customer_id", cid)
+                .eq("external_message_id", mid);
+            }
+          } catch (_) { /* best-effort */ }
+        })());
+      } catch (_) { /* EdgeRuntime indisponível em dev local */ }
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
