@@ -4,6 +4,7 @@ import { CampaignsList } from "./CampaignsList";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";
 import { CtwaConnectGuide } from "./CtwaConnectGuide";
+import { ReplicateUberlandiaCard } from "./ReplicateUberlandiaCard";
 import { SyncMetricsButton } from "./SyncMetricsButton";
 import { DragResizer } from "@/components/layout/DragResizer";
 
@@ -90,6 +91,13 @@ export function AdsCentralTab({ consultantId }: Props) {
       </header>
 
       <CtwaConnectGuide consultantId={consultantId} />
+
+      <ReplicateUberlandiaCard
+        consultantId={consultantId}
+        onPublished={() => { setRefreshKey((k) => k + 1); setView("campaigns"); }}
+      />
+
+
 
 
 
