@@ -105,54 +105,6 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
   //
   // When `idempotencyOpts` is absent, behavior is byte-for-byte identical
   // to the pre-bugfix implementation.
-  async function sendWithRetry(
-    label: string,
-    doSend: () => Promise<Response>,
-    idempotencyOpts?: IdempotencyOptions,
-  ): Promise<boolean> {
-    // ── Idempotency pre-check ────────────────────────────────────────
-    const idemKey = idempotencyOpts?.idempotencyKey;
-    const idemSupabase = idempotencyOpts?.supabase;
-    const idemEnabled = !!(
-      idemKey && idemSupabase &&
-      idempotencyOpts?.customerId &&
-      idempotencyOpts?.consultantId &&
-      idempotencyOpts?.payloadHash
-    );
-    if (idemEnabled) {
-      try {
-        const slot = await acquireOutboundSlot(
-          idemSupabase!,
-          {
-            idempotencyKey: idemKey!,
-            customerId: idempotencyOpts!.customerId!,
-            consultantId: idempotencyOpts!.consultantId!,
-            payloadHash: idempotencyOpts!.payloadHash!,
-          } as AcquireOutboundSlotInput,
-        );
-        if (!slot.acquired) {
-          // Replay previous outcome without re-sending.
-          logStructured("info", "evolution_send_idempotent_replay", {
-            instance: instanceName,
-            kind: label,
-            previous_status: slot.previousResultStatus ?? null,
-            previous_message_id: slot.previousMessageId ?? null,
-          });
-          // Treat any non-failed status as success so the caller does
-          // not retry a turn the customer has already received. Defaults
-          // to true when the prior status is null (slot was acquired by
-          // a peer that has not finished yet — the in-flight peer will
-          // record its outcome shortly; we must not double-send).
-          return slot.previousResultStatus !== "failed";
-        }
-      } catch (e) {
-        // Fail open — proceed with the actual send.
-        console.warn(
-          `[evolution-api] idempotency pre-check threw; sending anyway`,
-          e,
-        );
-      }
-    }
 
   async function sendWithRetry(
     label: string,
