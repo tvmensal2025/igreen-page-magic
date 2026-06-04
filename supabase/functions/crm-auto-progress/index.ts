@@ -20,31 +20,48 @@ const REJECTED_PROGRESSION = [
   { days: 60, stage_key: "60_dias" },
 ];
 
-async function sendEvolutionText(instanceName: string, phone: string, text: string, apiUrl: string, apiKey: string) {
+import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+
+async function guardOk(supabase: any, instanceName: string, label: string): Promise<boolean> {
+  const quota = await checkSendQuota(supabase, instanceName);
+  if (!quota.allowed) {
+    console.warn(`🚫 [crm-auto-progress:${label}] bloqueado instance=${instanceName} reason=${quota.reason}`);
+    return false;
+  }
+  return true;
+}
+
+async function sendEvolutionText(supabase: any, instanceName: string, phone: string, text: string, apiUrl: string, apiKey: string) {
+  if (!(await guardOk(supabase, instanceName, "text"))) return;
   const res = await fetch(`${apiUrl}/message/sendText/${instanceName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: apiKey },
     body: JSON.stringify({ number: phone, text }),
   });
   if (!res.ok) console.error("Evolution sendText error:", await res.text());
+  else await registerSend(supabase, instanceName);
 }
 
-async function sendEvolutionMedia(instanceName: string, phone: string, mediaUrl: string, caption: string, mediatype: "image" | "video" | "document", apiUrl: string, apiKey: string) {
+async function sendEvolutionMedia(supabase: any, instanceName: string, phone: string, mediaUrl: string, caption: string, mediatype: "image" | "video" | "document", apiUrl: string, apiKey: string) {
+  if (!(await guardOk(supabase, instanceName, "media"))) return;
   const res = await fetch(`${apiUrl}/message/sendMedia/${instanceName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: apiKey },
     body: JSON.stringify({ number: phone, mediatype, media: mediaUrl, caption }),
   });
   if (!res.ok) console.error("Evolution sendMedia error:", await res.text());
+  else await registerSend(supabase, instanceName);
 }
 
-async function sendEvolutionAudio(instanceName: string, phone: string, audioUrl: string, apiUrl: string, apiKey: string) {
+async function sendEvolutionAudio(supabase: any, instanceName: string, phone: string, audioUrl: string, apiUrl: string, apiKey: string) {
+  if (!(await guardOk(supabase, instanceName, "audio"))) return;
   const res = await fetch(`${apiUrl}/message/sendWhatsAppAudio/${instanceName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: apiKey },
     body: JSON.stringify({ number: phone, audio: audioUrl }),
   });
   if (!res.ok) console.error("Evolution sendAudio error:", await res.text());
+  else await registerSend(supabase, instanceName);
 }
 
 async function sendSingleMessage(

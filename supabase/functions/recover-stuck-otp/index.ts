@@ -18,8 +18,15 @@ const FOLLOWUP_MESSAGE =
   "📱 Por favor, verifique suas mensagens no WhatsApp e nos envie o código aqui.\n\n" +
   "Se você não recebeu o código ou precisa de ajuda, é só responder esta mensagem!";
 
-async function sendWhatsAppText(instanceName: string, remoteJid: string, text: string) {
+async function sendWhatsAppText(supabase: any, instanceName: string, remoteJid: string, text: string) {
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) return false;
+  // Anti-ban: bloqueia se instância em fatal_lock / recovery / quota estourada
+  const { checkSendQuota, registerSend } = await import("../_shared/anti-ban.ts");
+  const quota = await checkSendQuota(supabase, instanceName);
+  if (!quota.allowed) {
+    console.warn(`🚫 [recover-stuck-otp] envio bloqueado instance=${instanceName} reason=${quota.reason}`);
+    return false;
+  }
   const url = `${EVOLUTION_API_URL.replace(/\/$/, "")}/message/sendText/${instanceName}`;
   try {
     const res = await fetch(url, {
@@ -30,6 +37,7 @@ async function sendWhatsAppText(instanceName: string, remoteJid: string, text: s
       },
       body: JSON.stringify({ number: remoteJid, text }),
     });
+    if (res.ok) await registerSend(supabase, instanceName);
     return res.ok;
   } catch (e) {
     console.error(`[recover-stuck-otp] sendText failed: ${(e as Error).message}`);

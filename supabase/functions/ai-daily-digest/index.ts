@@ -164,7 +164,9 @@ Deno.serve(async (req) => {
 
       const sourceInstance = instances?.[0]?.instance_name;
       if (sourceInstance) {
-        const sender = createEvolutionSender(apiUrl, apiKey, sourceInstance);
+        const _raw = createEvolutionSender(apiUrl, apiKey, sourceInstance);
+        const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+        const sender = wrapSenderWithGuard(_raw, { supabase, instanceName: sourceInstance });
         for (const a of admins || []) {
           if (!a.phone) continue;
           const jid = `${a.phone.replace(/\D/g, "")}@s.whatsapp.net`;
