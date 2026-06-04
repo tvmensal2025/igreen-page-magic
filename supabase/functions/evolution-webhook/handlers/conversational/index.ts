@@ -739,6 +739,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // disparando áudios/explicações antigas.
   if (
     (ctx.isFile || ctx.hasImage || ctx.hasDocument) &&
+    !ctx.hasAudio && // 🎧 áudio NUNCA vai pra OCR de conta — trata como mensagem comum
     !(ctx.customer as any).electricity_bill_photo_url &&
     !CADASTRO_STEPS.has(stepKey)
   ) {
@@ -751,15 +752,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       const { runBotFlow } = await import("../bot-flow.ts");
       (ctx.customer as any).conversation_step = targetStep;
       const result = await runBotFlow(ctx);
+      // Contrato: só marca __inline_sent quando runBotFlow realmente enviou inline
+      // (reply vazio + updates não vazios é o sinal usado pelo pipeline legado).
+      const handlerEmittedInline = (!result.reply || result.reply === "") && !!result.updates && Object.keys(result.updates).length > 0;
       return {
         reply: result.reply,
-        updates: { ...(result.updates || {}), conversation_step: result.updates?.conversation_step || targetStep, __inline_sent: true },
+        updates: {
+          ...(result.updates || {}),
+          conversation_step: result.updates?.conversation_step || targetStep,
+          ...(handlerEmittedInline ? { __inline_sent: true } : {}),
+        },
       };
     } catch (e) {
       console.error("[conversational] falha ao redirecionar p/ bot-flow:", (e as Error)?.message || e);
+      // ❌ NUNCA __inline_sent=true em catch — não há outbound real.
+      // Deixa o orquestrador cair no fallback de segurança.
       return {
         reply: "",
-        updates: { conversation_step: targetStep, __inline_sent: true },
+        updates: { conversation_step: targetStep },
       };
     }
   }
