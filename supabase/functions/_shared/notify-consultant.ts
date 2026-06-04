@@ -54,6 +54,7 @@ export async function notifyConsultant(
 
     const text = `${ICON[level]} *${title}*\n\n${body}\n\n_Mensagem automática iGreen_`;
 
+    // INTENTIONAL: staff alert — bypasses anti-ban guard (notifica consultor sobre eventos críticos)
     const res = await fetch(`${evolutionUrl.replace(/\/+$/, "")}/message/sendText/${inst.instance_name}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: evolutionKey },
@@ -122,6 +123,7 @@ async function sendRawToAlertNumber(consultantId: string, text: string): Promise
       .eq("consultant_id", consultantId)
       .maybeSingle();
     if (!inst?.instance_name || inst.status === "needs_reconnect") return false;
+    // INTENTIONAL: staff alert — bypasses anti-ban guard (notificação direta ao consultor)
     const res = await fetch(`${evolutionUrl.replace(/\/+$/, "")}/message/sendText/${inst.instance_name}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: evolutionKey },

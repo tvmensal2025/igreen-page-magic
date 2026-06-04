@@ -141,6 +141,7 @@ async function sendAlert(supabase: any, severity: "warn" | "critical", text: str
   }
   try {
     const jid = `${String(phone).replace(/\D/g, "")}@s.whatsapp.net`;
+    // INTENTIONAL: staff alert — bypasses anti-ban guard (alerta de quota ao super-admin)
     const r = await fetch(`${EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(inst)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY },

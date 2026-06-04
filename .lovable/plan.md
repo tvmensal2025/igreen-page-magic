@@ -1,71 +1,73 @@
-## Auditoria profunda — segunda passada
+# Auditoria Profunda — Fase 4
 
-### ✅ Tudo o que está coberto
+Cobertura validada em todas as 23 funções que disparam para Evolution. Restam **1 gap real (alto)** + **3 decisões conscientes** para revisar.
 
-- `evolution-webhook` (bot conversacional inteiro) → sender com guard
-- `ai-agent-router` (2x) → guard
-- `bot-stuck-recovery` → guard
-- `outbound-media-flush-cron` → guard
-- `worker-callback` → guard
-- `bulk-scheduler` → `checkSendQuota` direto (linha 235)
-- `send-scheduled-messages` → `checkSendQuota` direto (linha 126)
-- `reactivation-cron` → `checkSendQuota` (linha 264)
-- Hard-lock no `check_send_quota` SQL ativo
-- RPCs `register_fatal_disconnect` / `admin_clear_fatal_lock` / `clear_recovery_mode` presentes
-- Instância `igreen-953f7e48509b` segue travada até 18/06
+## 🔴 Gap novo encontrado
 
-### 🔴 Gaps NOVOS encontrados nesta passada
+### 1. `admin-send-material/index.ts:89-90` — ALTO
+Usa `createWhatsAppSender` (de `_shared/whatsapp-api.ts`) e dispara `sender.sendMedia` direto para o lead **sem `checkSendQuota`** e sem `registerSend`. É chamado pelo admin/consultor para mandar materiais — se a instância estiver em `fatal_lock` ou `recovery_mode`, o envio passa por cima da trava.
 
+**Correção:**
+1. Importar `checkSendQuota` / `registerSend` de `_shared/anti-ban.ts`.
+2. Antes do `sendMedia`, chamar `checkSendQuota(supabase, inst.instance_name)`. Se `!allowed`, retornar **423 Locked** com `{ error, reason, until }` para o painel exibir a trava.
+3. Após `ok === true`, chamar `registerSend(supabase, inst.instance_name)`.
 
-| #   | Local                                          | Tipo                                                      | Risco    | Observação                                                 |
-| --- | ---------------------------------------------- | --------------------------------------------------------- | -------- | ---------------------------------------------------------- |
-| 1   | `crm-auto-progress/index.ts:24,33,42`          | `fetch` direto a Evolution (sendText/sendMedia/sendAudio) | 🔴 ALTO  | Bot de progressão de CRM dispara para leads, ZERO checagem |
-| 2   | `reactivation-send/index.ts:213`               | `sender.sendText` sem `checkSendQuota`                    | 🔴 ALTO  | Callsite escapou do padrão; a outra (linha 348) tem        |
-| 3   | `recover-stuck-otp/index.ts` (helper linha 23) | `fetch` direto                                            | 🟡 MÉDIO | Followup de OTP a leads sem check                          |
-| 4   | `finalize-capture/index.ts:60`                 | `fetch` direto                                            | 🟡 MÉDIO | Confirmação pós-captura ao lead                            |
-| 5   | `ai-daily-digest/index.ts:167`                 | `createEvolutionSender` sem guard                         | 🟢 BAIXO | Relatório ao consultor (não lead), mas inconsistente       |
+## 🟡 Inconsistências (revisar política)
 
+| Local | Tipo | Quem recebe | Status atual |
+|---|---|---|---|
+| `_shared/notify-consultant.ts:57,125` | `fetch` direto sendText | Consultor (instância do consultor) | Sem guard — decidido manter |
+| `super-admin-alerts/index.ts:41` | `fetch` direto sendText | Super-admin | Sem guard — decidido manter |
+| `minio-quota-check/index.ts:144` | `fetch` direto sendText | Super-admin | Sem guard — decidido manter |
 
-### 🟢 Casos que NÃO precisam mexer (decisão consciente)
+Esses não disparam para leads, mas **tecnicamente** ainda batem na Evolution e podem agravar um lock existente. Risco baixo (volume mínimo, destinatários são staff). **Recomendo manter como bypass intencional** e adicionar comentário `// INTENTIONAL: staff alert — bypasses anti-ban guard` nas 4 linhas para documentar a decisão.
 
-- `manual-step-send` (2x) — envio manual do operador, bypass intencional
-- `notify-consultant` (2x) — notifica admin, não lead
-- `super-admin-alerts`, `minio-quota-check` — alertas internos
-- `_shared/whatsapp-api.ts` — usado pelo canal Whapi (Cloud API, sem risco de ban Baileys)
-- `_shared/channels/evolution.ts` — adapter genérico, sender pode ser embrulhado pelo caller
+## ✅ Confirmados cobertos (nada a fazer)
 
-### Plano de correção
+- `evolution-webhook` ✓ (wrap)
+- `ai-agent-router` ✓ (2x wrap)
+- `bot-stuck-recovery` ✓ (wrap)
+- `worker-callback` ✓ (wrap)
+- `outbound-media-flush-cron` ✓ (wrap)
+- `ai-daily-digest` ✓ (wrap)
+- `reactivation-cron` ✓ (check+register inline)
+- `reactivation-send` ✓ (wrap em 155)
+- `send-scheduled-messages` ✓ (check+register inline)
+- `bulk-scheduler` ✓ (check+register inline)
+- `crm-auto-progress` ✓ (3 helpers com guard inline)
+- `finalize-capture` ✓ (check+register inline)
+- `recover-stuck-otp` ✓ (helper com guard inline)
+- `manual-step-send` — bypass intencional (operador humano)
+- `whapi-webhook` — provider Whapi (Cloud API), não Baileys → não sujeito ao `fatal_lock`
+- `_shared/channels/evolution.ts` — adapter genérico, recebe sender já embrulhado dos chamadores
 
-**Para os fetches diretos (#1, #3, #4)** — adicionar gate inline antes do `fetch`:
+## Plano de execução
+
+**Passo único:** editar `admin-send-material/index.ts`:
+- Adicionar import `checkSendQuota`, `registerSend`.
+- Inserir guard antes do `sendMedia` (linha 89-90), com resposta 423 quando bloqueado.
+- Chamar `registerSend` após `ok === true`.
+
+**Passo opcional** (a confirmar): adicionar comentário documentando bypass nos 4 sites de alerta interno (`notify-consultant.ts` x2, `super-admin-alerts.ts`, `minio-quota-check.ts`).
+
+## Detalhes técnicos
 
 ```ts
+// admin-send-material/index.ts
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
-const quota = await checkSendQuota(supabase, instanceName);
+
+const quota = await checkSendQuota(admin, inst.instance_name);
 if (!quota.allowed) {
-  console.warn(`🚫 [<fn>] envio bloqueado: ${quota.reason}`);
-  return false;
+  return new Response(JSON.stringify({
+    error: "Instância bloqueada (anti-ban)",
+    reason: quota.reason,
+    until: quota.until ?? quota.next_allowed_at ?? null,
+  }), { status: 423, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
-const res = await fetch(...);
-if (res.ok) await registerSend(supabase, instanceName);
+
+const sender = createWhatsAppSender(evolutionUrl, evolutionKey, inst.instance_name);
+const ok = await sender.sendMedia(phone, mediaUrl, caption, mediatype);
+if (ok) await registerSend(admin, inst.instance_name);
 ```
 
-**Para os senders sem guard (#2, #5)** — aplicar `wrapSenderWithGuard` no padrão já estabelecido.
-
-**Arquivos afetados:**
-
-1. `supabase/functions/crm-auto-progress/index.ts` — adicionar quota nos 3 helpers (sendText/sendMedia/sendAudio)
-2. `supabase/functions/reactivation-send/index.ts` — envolver sender na linha 155 (cobre callsite 213) OU adicionar checkSendQuota antes da linha 213
-3. `supabase/functions/recover-stuck-otp/index.ts` — adicionar quota no helper `sendWhatsAppText`
-4. `supabase/functions/finalize-capture/index.ts` — adicionar quota antes do fetch da linha 60
-5. `supabase/functions/ai-daily-digest/index.ts` — wrapSenderWithGuard na linha 167
-
-### Critério de aceite
-
-- Nenhum caminho automatizado para LEAD escapa de `check_send_quota`.
-- Notificações admin (`notify-consultant`, alerts) permanecem livres.
-- `manual-step-send` continua manual.
-- Instância em hard-lock fica 100% silenciosa em qualquer cenário.
-
-Posso aplicar? Sim
-
-&nbsp;
+Instância `igreen-953f7e48509b` continua 100% protegida até 2026-06-18.

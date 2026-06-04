@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createWhatsAppSender } from "../_shared/whatsapp-api.ts";
+import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 
 interface Body {
   phone: string;
@@ -86,6 +87,19 @@ Deno.serve(async (req) => {
       });
     }
 
+    // 🛡️ Anti-ban guard — respeita fatal_lock / recovery_mode / quota
+    const quota = await checkSendQuota(admin, inst.instance_name);
+    if (!quota.allowed) {
+      return new Response(JSON.stringify({
+        error: "Instância bloqueada (anti-ban)",
+        reason: (quota as any).reason ?? null,
+        until: (quota as any).until ?? (quota as any).next_allowed_at ?? null,
+      }), {
+        status: 423,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const sender = createWhatsAppSender(evolutionUrl, evolutionKey, inst.instance_name);
     const ok = await sender.sendMedia(phone, mediaUrl, caption, mediatype);
 
@@ -95,6 +109,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    await registerSend(admin, inst.instance_name);
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
