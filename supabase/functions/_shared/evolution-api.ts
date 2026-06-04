@@ -580,7 +580,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     }
   }
 
-  return { sendText, sendButtons, downloadMedia, sendMedia, sendAudio, sendPresence };
+  return { sendText, sendTextDetailed, sendButtons, downloadMedia, sendMedia, sendAudio, sendPresence };
 }
 
 /**
