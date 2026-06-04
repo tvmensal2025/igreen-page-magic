@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy, Paperclip, Sparkles, IdCard, Zap } from "lucide-react";
+import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy, Paperclip, Sparkles, IdCard, Zap, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SaveMessageAsTemplateDialog } from "./SaveMessageAsTemplateDialog";
@@ -25,8 +25,10 @@ function formatTime(ts: number): string {
   });
 }
 
-function StatusIcon({ status }: { status?: number }) {
+function StatusIcon({ status }: { status?: number | string }) {
   if (status === undefined || status === null) return null;
+  if (status === "failed" || status === "ERROR" || status === "FAILED") return <XCircle className="h-3 w-3 text-destructive" />;
+  if (typeof status !== "number") return null;
   if (status <= 1) return <Clock className="h-3 w-3 text-muted-foreground" />;
   if (status === 2) return <Check className="h-3 w-3 text-muted-foreground" />;
   if (status === 3) return <CheckCheck className="h-3 w-3 text-muted-foreground" />;

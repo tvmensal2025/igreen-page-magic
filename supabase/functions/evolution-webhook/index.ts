@@ -53,6 +53,39 @@ const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") || "";
 // dispensa a verificação de posse para a invocação interna do webhook.
 const SERVICE_SHARED_SECRET = Deno.env.get("SERVICE_SHARED_SECRET") || "";
 
+type DeliveryStatus = "queued" | "sent" | "delivered" | "read" | "failed";
+
+function mapEvolutionDeliveryStatus(raw: unknown): { status: DeliveryStatus | null; error?: string } {
+  const stNum = Number(raw);
+  if (Number.isFinite(stNum)) {
+    if (stNum >= 4) return { status: "read" };
+    if (stNum === 3) return { status: "delivered" };
+    if (stNum === 2) return { status: "sent" };
+    if (stNum === 1) return { status: "queued" };
+    return { status: null };
+  }
+
+  if (typeof raw !== "string") return { status: null };
+  const s = raw.toUpperCase();
+  if (["ERROR", "FAILED", "FAILURE", "SEND_ERROR", "UNDELIVERED"].includes(s)) {
+    return { status: "failed", error: `Evolution returned ${s} ack` };
+  }
+  if (s === "READ" || s === "PLAYED") return { status: "read" };
+  if (s === "DELIVERY_ACK" || s === "DELIVERED") return { status: "delivered" };
+  if (s === "SERVER_ACK" || s === "SENT") return { status: "sent" };
+  if (s === "PENDING") return { status: "queued" };
+  return { status: null };
+}
+
+function extractMessageIdCandidates(item: any): string[] {
+  return Array.from(new Set([
+    item?.key?.id,
+    item?.keyId,
+    item?.id,
+    item?.messageId,
+  ].filter((v) => typeof v === "string" && v.trim())));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -77,21 +110,6 @@ Deno.serve(async (req) => {
     );
     lockSupabaseRef = supabase;
 
-    // Kill switch global (Fase 0 auditoria). Fail-open: erros = habilitado.
-    // Espelha whapi-webhook/index.ts (~linha 62): silencia globalmente todas as
-    // respostas automáticas quando bot_global_enabled=false, com zero outbound e
-    // resposta neutra 200 (nunca 5xx, para o provedor não reenviar o evento).
-    // Fica ANTES da guarda por-consultor `isConsultantAIDisabled` (esta é global).
-    // `as any`: helper compartilhado pina @supabase/supabase-js@2.49.4 enquanto este
-    // arquivo pina @2; runtime idêntico mas TS vê duas shapes diferentes (mesmo
-    // workaround já usado em isConsultantAIDisabled).
-    if (!(await isBotGloballyEnabled(supabase as any))) {
-      console.log("[evolution-webhook] bot_global_enabled=false → silenciado");
-      return new Response(JSON.stringify({ ok: true, msg: "bot_globally_disabled" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const body = await req.json();
     console.log("Evolution webhook received:", JSON.stringify(body).substring(0, 500));
 
@@ -114,39 +132,51 @@ Deno.serve(async (req) => {
     // Evolution envia MESSAGES_UPDATE quando o WhatsApp confirma entrega/leitura.
     // Status numérico Baileys: 1=PENDING, 2=SERVER_ACK(enviado),
     // 3=DELIVERY_ACK(entregue ao aparelho), 4=READ(lido), 5=PLAYED.
+    // Também pode enviar status="ERROR"; isso é falha real de entrega e não
+    // pode ser promovido para "sent" pela verificação de histórico.
     // Atualizamos `conversations.delivery_status` pelo external_message_id.
     const evtRaw = String(body?.event || "").toLowerCase().replace(/\./g, "_");
     if (evtRaw === "messages_update" || evtRaw === "message_update") {
       try {
         const items = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean);
         for (const it of items) {
-          const mid = it?.key?.id || it?.keyId || it?.messageId;
+          const mids = extractMessageIdCandidates(it);
           const stRaw = it?.status ?? it?.update?.status;
-          if (!mid) continue;
-          let newStatus: string | null = null;
-          const stNum = Number(stRaw);
-          if (Number.isFinite(stNum)) {
-            if (stNum >= 4) newStatus = "read";
-            else if (stNum === 3) newStatus = "delivered";
-            else if (stNum === 2) newStatus = "sent";
-          } else if (typeof stRaw === "string") {
-            const s = stRaw.toUpperCase();
-            if (s === "READ") newStatus = "read";
-            else if (s === "DELIVERY_ACK" || s === "DELIVERED") newStatus = "delivered";
-            else if (s === "SERVER_ACK" || s === "SENT") newStatus = "sent";
-          }
-          if (!newStatus) continue;
+          if (mids.length === 0) continue;
+          const mapped = mapEvolutionDeliveryStatus(stRaw);
+          if (!mapped.status) continue;
           await supabase.from("conversations")
             .update({
-              delivery_status: newStatus,
+              delivery_status: mapped.status,
               delivery_checked_at: new Date().toISOString(),
+              delivery_error: mapped.status === "failed" ? (mapped.error || "Evolution delivery failed") : null,
             })
-            .eq("external_message_id", mid);
+            .in("external_message_id", mids);
+          await supabase.from("outbound_message_log")
+            .update({
+              result_status: mapped.status === "failed" ? "failed" : mapped.status === "queued" ? "queued" : "sent",
+            })
+            .in("evolution_message_id", mids);
+          jsonLog(mapped.status === "failed" ? "warn" : "info", "messages_update_delivery_status", {
+            message_ids: mids,
+            raw_status: stRaw,
+            delivery_status: mapped.status,
+          });
         }
       } catch (e: any) {
         console.warn("[messages_update] handler error:", e?.message);
       }
       return new Response(JSON.stringify({ ok: true, event: "messages_update" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Kill switch global (Fase 0 auditoria). Fail-open: erros = habilitado.
+    // Status/ACK e conexão são processados antes do kill switch para não perder
+    // confirmações/falhas reais de entrega quando a IA estiver silenciada.
+    if (!(await isBotGloballyEnabled(supabase as any))) {
+      console.log("[evolution-webhook] bot_global_enabled=false → silenciado");
+      return new Response(JSON.stringify({ ok: true, msg: "bot_globally_disabled" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -1979,17 +2009,21 @@ Deno.serve(async (req) => {
             if (!res.ok) return;
             const data = await res.json();
             const records = Array.isArray(data) ? data : (data?.messages?.records || data?.records || []);
-            const found = records.find((m: any) => m?.key?.id === mid);
+            const found = records.find((m: any) => m?.key?.id === mid || m?.keyId === mid || m?.id === mid);
             if (found) {
-              const st = Number(found.status);
-              const newStatus = st >= 2 ? "delivered" : "sent";
+              const mapped = mapEvolutionDeliveryStatus(found.status ?? found.messageStatus ?? found.update?.status);
+              if (!mapped.status || mapped.status === "queued") return;
               await supabase.from("conversations")
                 .update({
-                  delivery_status: newStatus,
+                  delivery_status: mapped.status,
                   delivery_checked_at: new Date().toISOString(),
+                  delivery_error: mapped.status === "failed" ? (mapped.error || "Evolution delivery failed") : null,
                 })
                 .eq("customer_id", cid)
                 .eq("external_message_id", mid);
+              await supabase.from("outbound_message_log")
+                .update({ result_status: mapped.status === "failed" ? "failed" : "sent" })
+                .eq("evolution_message_id", mid);
             }
           } catch (_) { /* best-effort */ }
         })());

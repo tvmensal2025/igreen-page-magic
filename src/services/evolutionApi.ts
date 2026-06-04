@@ -323,7 +323,7 @@ export interface EvolutionMessage {
     stickerMessage?: { url?: string; mimetype?: string; base64?: string };
   };
   messageTimestamp?: number;
-  status?: number;
+  status?: number | string;
 }
 
 export async function getBase64FromMediaMessage(

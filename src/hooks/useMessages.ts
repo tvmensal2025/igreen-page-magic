@@ -20,13 +20,25 @@ export interface ChatMessage {
   fromMe: boolean;
   text: string;
   timestamp: number;
-  status?: number;
+  status?: number | string;
   mediaType?: "image" | "audio" | "video" | "document" | "sticker";
   mediaUrl?: string;
   mediaBase64?: string;
   mediaMimetype?: string;
   mediaCaption?: string;
   fileName?: string;
+}
+
+function normalizeDeliveryStatus(status: unknown): number | "failed" | undefined {
+  if (typeof status === "number") return status;
+  if (typeof status !== "string") return undefined;
+  const s = status.toUpperCase();
+  if (["ERROR", "FAILED", "FAILURE", "SEND_ERROR", "UNDELIVERED"].includes(s)) return "failed";
+  if (s === "READ" || s === "PLAYED") return 4;
+  if (s === "DELIVERY_ACK" || s === "DELIVERED") return 3;
+  if (s === "SERVER_ACK" || s === "SENT") return 2;
+  if (s === "PENDING") return 1;
+  return undefined;
 }
 
 function normalizeMessageTimestamp(value: unknown): number {
@@ -92,7 +104,7 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     fromMe: msg.key.fromMe,
     text,
     timestamp: normalizeMessageTimestamp(msg.messageTimestamp),
-    status: msg.status,
+    status: normalizeDeliveryStatus(msg.status),
     mediaType,
     mediaUrl,
     mediaBase64,
