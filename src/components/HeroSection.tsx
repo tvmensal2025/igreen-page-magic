@@ -22,9 +22,10 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
   };
 
   return (
-    <section id="top" className="relative overflow-hidden pt-24 md:pt-28 pb-16 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
+    <section id="top" className="relative overflow-hidden pt-20 md:pt-28 pb-12 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
       <LandingNav
         ctaLabel="Falar no WhatsApp"
+        ctaLabelMobile="WhatsApp"
         ctaHref={WHATSAPP}
         onCtaClick={() => handleClick("whatsapp")}
       />
@@ -41,12 +42,12 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
           </div>
 
           {/* Title */}
-          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[1.75rem] sm:text-4xl md:text-5xl lg:text-[3.5rem] max-w-[20ch] mx-auto text-foreground">
+          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.1] text-[1.5rem] sm:text-4xl md:text-5xl lg:text-[3.5rem] max-w-[20ch] mx-auto text-foreground">
             Receba até <span className="text-gradient-green">20% de desconto</span> na sua conta de luz todo mês
           </h1>
 
           {/* Subtitle */}
-          <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          <p className="mt-4 sm:mt-6 text-sm sm:text-base md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Energia solar por assinatura, sem instalar placas, sem obras e sem custos. Conheça a oportunidade da iGreen Energy para sua casa, comércio ou empresa.
           </p>
 

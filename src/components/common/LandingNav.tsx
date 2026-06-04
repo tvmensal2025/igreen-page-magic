@@ -11,6 +11,8 @@ interface LandingNavProps {
   items?: NavItem[];
   /** Texto do botão de CTA à direita. */
   ctaLabel?: string;
+  /** Texto curto do CTA exibido em telas pequenas (<640px). */
+  ctaLabelMobile?: string;
   /** URL do CTA. */
   ctaHref?: string;
   /** Callback de tracking ao clicar no CTA. */
@@ -21,7 +23,7 @@ interface LandingNavProps {
  * Navbar premium full-width para landing pages. Fica transparente no topo e
  * ganha fundo translúcido + borda ao rolar (padrão de SaaS moderno).
  */
-const LandingNav = ({ items = [], ctaLabel, ctaHref, onCtaClick }: LandingNavProps) => {
+const LandingNav = ({ items = [], ctaLabel, ctaLabelMobile, ctaHref, onCtaClick }: LandingNavProps) => {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -54,9 +56,10 @@ const LandingNav = ({ items = [], ctaLabel, ctaHref, onCtaClick }: LandingNavPro
             target="_blank"
             rel="noopener noreferrer"
             onClick={onCtaClick}
-            className="btn-cta !px-5 !py-2.5 !text-sm"
+            className="btn-cta !px-3 !py-2 !text-xs sm:!px-5 sm:!py-2.5 sm:!text-sm whitespace-nowrap"
           >
-            {ctaLabel}
+            <span className="sm:hidden">{ctaLabelMobile || ctaLabel}</span>
+            <span className="hidden sm:inline">{ctaLabel}</span>
           </a>
         )}
       </div>

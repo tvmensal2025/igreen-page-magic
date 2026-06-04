@@ -175,7 +175,7 @@ html {
   }
 
   .section-heading {
-    @apply text-[2rem] md:text-[2.6rem] lg:text-[3rem] font-extrabold text-center tracking-[-0.02em] leading-[1.08];
+    @apply text-[1.5rem] sm:text-[2rem] md:text-[2.6rem] lg:text-[3rem] font-extrabold text-center tracking-[-0.02em] leading-[1.15] sm:leading-[1.1];
     color: hsl(var(--foreground));
     font-family: var(--font-heading);
   }
@@ -190,12 +190,12 @@ html {
   }
 
   .section-container {
-    @apply mx-auto w-full max-w-[1240px] px-5 sm:px-8 lg:px-10 py-20 md:py-28;
+    @apply mx-auto w-full max-w-[1240px] px-4 sm:px-8 lg:px-10 py-14 sm:py-20 md:py-28;
   }
 
   /* Variante larga — para grids de cards que devem preencher telas grandes */
   .section-container-wide {
-    @apply mx-auto w-full max-w-[1400px] px-5 sm:px-8 lg:px-10 py-20 md:py-28;
+    @apply mx-auto w-full max-w-[1400px] px-4 sm:px-8 lg:px-10 py-14 sm:py-20 md:py-28;
   }
 
   .btn-cta {
@@ -213,7 +213,7 @@ html {
   }
 
   .btn-cta-lg {
-    @apply inline-flex items-center justify-center gap-2.5 px-8 py-4 text-base sm:text-lg font-semibold rounded-full transition-all duration-300 relative overflow-hidden;
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 text-sm sm:gap-2.5 sm:px-8 sm:py-4 sm:text-lg font-semibold rounded-full transition-all duration-300 relative overflow-hidden;
     background: var(--gradient-green);
     color: hsl(var(--primary-foreground));
     box-shadow: var(--shadow-green-lg);
@@ -268,7 +268,7 @@ html {
 
   /* Premium card */
   .premium-card {
-    @apply rounded-2xl border border-border p-5 sm:p-6;
+    @apply rounded-2xl border border-border p-4 sm:p-6;
     background: hsl(var(--card));
     box-shadow: var(--shadow-card);
     transition: box-shadow 0.3s ease, border-color 0.3s ease;
@@ -280,7 +280,7 @@ html {
 
   /* Glass card */
   .glass-card {
-    @apply rounded-2xl border border-border p-6 md:p-7 relative;
+    @apply rounded-2xl border border-border p-4 sm:p-6 md:p-7 relative;
     background: hsl(var(--glass-bg));
     backdrop-filter: blur(20px);
     box-shadow: var(--shadow-card);
@@ -466,7 +466,7 @@ html {
     @apply fixed top-0 inset-x-0 z-50 transition-all duration-300;
   }
   .app-navbar-inner {
-    @apply mx-auto flex items-center justify-between gap-4 w-full max-w-[1280px] px-5 sm:px-8 lg:px-10 h-16 md:h-20;
+    @apply mx-auto flex items-center justify-between gap-3 w-full max-w-[1280px] px-4 sm:px-8 lg:px-10 h-14 md:h-20;
   }
   .app-navbar.scrolled {
     @apply border-b border-border;
