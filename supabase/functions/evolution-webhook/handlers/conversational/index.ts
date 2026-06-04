@@ -19,7 +19,7 @@ import { isStrictScriptMode } from "../../../_shared/ai-decisions.ts";
 import { validateAiFallbackChoice } from "../../../_shared/grounding.ts";
 // Sprint 2.6 — helpers compartilhados (cooldown e dedupe)
 import { aiInCooldown, setAiCooldown, aiInCooldownPersistent, setAiCooldownPersistent } from "../../../_shared/bot/ai-cooldown.ts";
-import { checkAndMarkWebhookDedupe } from "../../../_shared/bot/dedupe.ts";
+// `checkAndMarkWebhookDedupe` removido — dedupe canônico fica no orquestrador.
 import { matchTransition as matchTransitionShared, CADASTRO_STEPS } from "../../../_shared/flow-router.ts";
 import { extractStepButtons, matchButtonIntent } from "../../../_shared/ai-button-intent.ts";
 
