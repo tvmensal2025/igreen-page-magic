@@ -74,6 +74,10 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
   const [signals, setSignals] = useState<RiskRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [reconnectOpen, setReconnectOpen] = useState(false);
+  const [reconnectLoading, setReconnectLoading] = useState(false);
+  const [qrBase64, setQrBase64] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!instanceName) return;
