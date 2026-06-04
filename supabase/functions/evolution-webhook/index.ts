@@ -110,6 +110,47 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── 1b) MESSAGES_UPDATE / message status ACK ──────────────────────
+    // Evolution envia MESSAGES_UPDATE quando o WhatsApp confirma entrega/leitura.
+    // Status numérico Baileys: 1=PENDING, 2=SERVER_ACK(enviado),
+    // 3=DELIVERY_ACK(entregue ao aparelho), 4=READ(lido), 5=PLAYED.
+    // Atualizamos `conversations.delivery_status` pelo external_message_id.
+    const evtRaw = String(body?.event || "").toLowerCase().replace(/\./g, "_");
+    if (evtRaw === "messages_update" || evtRaw === "message_update") {
+      try {
+        const items = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean);
+        for (const it of items) {
+          const mid = it?.key?.id || it?.keyId || it?.messageId;
+          const stRaw = it?.status ?? it?.update?.status;
+          if (!mid) continue;
+          let newStatus: string | null = null;
+          const stNum = Number(stRaw);
+          if (Number.isFinite(stNum)) {
+            if (stNum >= 4) newStatus = "read";
+            else if (stNum === 3) newStatus = "delivered";
+            else if (stNum === 2) newStatus = "sent";
+          } else if (typeof stRaw === "string") {
+            const s = stRaw.toUpperCase();
+            if (s === "READ") newStatus = "read";
+            else if (s === "DELIVERY_ACK" || s === "DELIVERED") newStatus = "delivered";
+            else if (s === "SERVER_ACK" || s === "SENT") newStatus = "sent";
+          }
+          if (!newStatus) continue;
+          await supabase.from("conversations")
+            .update({
+              delivery_status: newStatus,
+              delivery_checked_at: new Date().toISOString(),
+            })
+            .eq("external_message_id", mid);
+        }
+      } catch (e: any) {
+        console.warn("[messages_update] handler error:", e?.message);
+      }
+      return new Response(JSON.stringify({ ok: true, event: "messages_update" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ─── 2) Identify instance ──────────────────────────────────────────
     const instanceName = body.instance || fallbackInstance;
     if (!instanceName) {
