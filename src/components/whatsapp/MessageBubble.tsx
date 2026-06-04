@@ -413,7 +413,7 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
 
         <div className="flex items-center justify-end gap-1 mt-0.5">
           <span className="text-[10px] text-muted-foreground">{formatTime(timestamp)}</span>
-          {fromMe && <StatusIcon status={status} />}
+          {fromMe && <StatusIcon status={status} error={(message as any).deliveryError} />}
         </div>
       </div>
 
