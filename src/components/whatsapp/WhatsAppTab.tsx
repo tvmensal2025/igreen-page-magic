@@ -59,6 +59,8 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     consecutiveTimeouts,
     isWhapi,
     hasInstance,
+    fatalLocked,
+    fatalReason,
     createAndConnect,
     disconnect,
     reconnect,
@@ -188,12 +190,15 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
             <button
               onClick={() => {
                 setActiveSubTab("conversas");
-                if (hasInstance && connectionStatus === "disconnected") createAndConnect();
+                if (!fatalLocked && hasInstance && connectionStatus === "disconnected") createAndConnect();
               }}
-              disabled={isLoading}
-              className="text-[10px] text-primary hover:underline font-medium shrink-0"
+              disabled={isLoading || fatalLocked}
+              title={fatalLocked ? "Número em revisão manual — não reconecte aqui" : undefined}
+              className="text-[10px] text-primary hover:underline font-medium shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading || connectionStatus === "connecting" ? "Conectando..." : "Conectar"}
+              {fatalLocked
+                ? "Em revisão"
+                : isLoading || connectionStatus === "connecting" ? "Conectando..." : "Conectar"}
             </button>
           </>
         )}
