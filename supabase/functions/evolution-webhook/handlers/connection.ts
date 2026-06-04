@@ -158,35 +158,51 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
       const baseUrl = evolutionApiUrl.replace(/\/$/, "");
       console.log(
         `🔄 Instância ${connInstance} desconectou (reason=${statusReason}, transitório). ` +
-        `Aguardando 30s antes de reconectar (anti-ban).`,
+        `Agendando reconexão em 30s (background, anti-ban).`,
       );
-      try {
-        // Delay 30s (era 5s) — pico de reconnect rápido é interpretado como abuso
-        await new Promise((r) => setTimeout(r, 30_000));
-        const reconnRes = await fetchWithTimeout(`${baseUrl}/instance/connect/${connInstance}`, {
-          method: "GET",
-          headers: { apikey: evolutionApiKey },
-          timeout: 10_000,
-        });
-        if (reconnRes.ok) {
-          console.log(`✅ Reconexão iniciada para ${connInstance}`);
-          await recordRiskSignal(supabase, connInstance, "reconnect", "medium", {
-            reason: statusReason,
+      // ⚠️ Antes: `await sleep(30s)` BLOQUEAVA a resposta do webhook,
+      // causando timeout do Evolution e re-entrega do mesmo evento.
+      // Agora: retorna 200 imediatamente e a reconexão acontece em
+      // background via EdgeRuntime.waitUntil.
+      const reconnectInBackground = (async () => {
+        try {
+          await new Promise((r) => setTimeout(r, 30_000));
+          const reconnRes = await fetchWithTimeout(`${baseUrl}/instance/connect/${connInstance}`, {
+            method: "GET",
+            headers: { apikey: evolutionApiKey },
+            timeout: 10_000,
           });
-        } else {
-          const errText = await reconnRes.text();
-          console.warn(`⚠️ Falha ao reconectar ${connInstance}: ${reconnRes.status} ${errText.substring(0, 200)}`);
-          await recordRiskSignal(supabase, connInstance, "send_failure", "medium", {
-            stage: "reconnect", status: reconnRes.status,
-          });
+          if (reconnRes.ok) {
+            console.log(`✅ Reconexão iniciada para ${connInstance}`);
+            await recordRiskSignal(supabase, connInstance, "reconnect", "medium", {
+              reason: statusReason,
+            });
+          } else {
+            const errText = await reconnRes.text();
+            console.warn(`⚠️ Falha ao reconectar ${connInstance}: ${reconnRes.status} ${errText.substring(0, 200)}`);
+            await recordRiskSignal(supabase, connInstance, "send_failure", "medium", {
+              stage: "reconnect", status: reconnRes.status,
+            });
+          }
+        } catch (e: any) {
+          console.warn(`⚠️ Erro ao reconectar ${connInstance}: ${e?.message}`);
         }
-      } catch (e: any) {
-        console.warn(`⚠️ Erro ao reconectar ${connInstance}: ${e.message}`);
-      }
+      })();
+      try {
+        // @ts-ignore: EdgeRuntime é global no runtime Supabase Deno.
+        if (typeof EdgeRuntime !== "undefined" && (EdgeRuntime as any)?.waitUntil) {
+          // @ts-ignore
+          (EdgeRuntime as any).waitUntil(reconnectInBackground);
+        } else {
+          // fallback dev/local: ainda assim não awaita, só dispara.
+          void reconnectInBackground;
+        }
+      } catch (_) { void reconnectInBackground; }
     } else {
       console.log(`⏳ Reconexão em cooldown persistente (10min) para ${connInstance}`);
     }
   }
+
 
   return true;
 }
