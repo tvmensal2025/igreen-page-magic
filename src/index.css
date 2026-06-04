@@ -268,7 +268,7 @@ html {
 
   /* Premium card */
   .premium-card {
-    @apply rounded-2xl border border-border p-5 sm:p-6;
+    @apply rounded-2xl border border-border p-4 sm:p-6;
     background: hsl(var(--card));
     box-shadow: var(--shadow-card);
     transition: box-shadow 0.3s ease, border-color 0.3s ease;
@@ -280,7 +280,7 @@ html {
 
   /* Glass card */
   .glass-card {
-    @apply rounded-2xl border border-border p-6 md:p-7 relative;
+    @apply rounded-2xl border border-border p-4 sm:p-6 md:p-7 relative;
     background: hsl(var(--glass-bg));
     backdrop-filter: blur(20px);
     box-shadow: var(--shadow-card);
