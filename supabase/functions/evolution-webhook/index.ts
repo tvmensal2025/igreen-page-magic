@@ -19,6 +19,7 @@ import {
   isRateLimited,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
+  recordRiskSignal,
 } from "./_helpers.ts";
 import { handleConnectionUpdate } from "./handlers/connection.ts";
 import { tryInterceptOtp } from "./handlers/otp-intercept.ts";
@@ -139,28 +140,113 @@ Deno.serve(async (req) => {
     if (evtRaw === "messages_update" || evtRaw === "message_update") {
       try {
         const items = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean);
+        const instNameForAck = body?.instance || fallbackInstance;
+        // Resolve instance + consultant for fallback matching (when external_message_id missing)
+        let ackInstanceId: string | null = null;
+        let ackConsultantId: string | null = null;
+        if (instNameForAck) {
+          const { data: instAck } = await supabase
+            .from("whatsapp_instances")
+            .select("id, consultant_id")
+            .eq("instance_name", instNameForAck)
+            .maybeSingle();
+          ackInstanceId = instAck?.id ?? null;
+          ackConsultantId = instAck?.consultant_id ?? null;
+        }
+
+        // Hierarchy used to prevent regression: never downgrade from a stronger ack.
+        const rank: Record<string, number> = { failed: 0, queued: 1, sent: 2, delivered: 3, read: 4 };
+
         for (const it of items) {
           const mids = extractMessageIdCandidates(it);
           const stRaw = it?.status ?? it?.update?.status;
-          if (mids.length === 0) continue;
+          const remoteJidAck: string = it?.key?.remoteJid || it?.remoteJid || "";
+          if (mids.length === 0 && !remoteJidAck) continue;
           const mapped = mapEvolutionDeliveryStatus(stRaw);
           if (!mapped.status) continue;
-          await supabase.from("conversations")
-            .update({
-              delivery_status: mapped.status,
-              delivery_checked_at: new Date().toISOString(),
-              delivery_error: mapped.status === "failed" ? (mapped.error || "Evolution delivery failed") : null,
-            })
-            .in("external_message_id", mids);
-          await supabase.from("outbound_message_log")
-            .update({
-              result_status: mapped.status === "failed" ? "failed" : mapped.status === "queued" ? "queued" : "sent",
-            })
-            .in("evolution_message_id", mids);
+          const newRank = rank[mapped.status] ?? -1;
+
+          // Find target conversation(s)
+          let targets: Array<{ id: string; delivery_status: string | null }> = [];
+          if (mids.length > 0) {
+            const { data: rows } = await supabase
+              .from("conversations")
+              .select("id, delivery_status")
+              .in("external_message_id", mids);
+            targets = (rows || []) as any;
+          }
+          // Fallback matching: ACK arrived but conversation has no external_message_id yet.
+          if (targets.length === 0 && remoteJidAck && ackConsultantId) {
+            const phoneDigits = String(remoteJidAck).split("@")[0].replace(/\D/g, "");
+            if (phoneDigits) {
+              const { data: cust } = await supabase
+                .from("customers")
+                .select("id")
+                .eq("consultant_id", ackConsultantId)
+                .eq("phone_whatsapp", phoneDigits)
+                .maybeSingle();
+              if (cust?.id) {
+                const cutoff = new Date(Date.now() - 90_000).toISOString();
+                const { data: rows } = await supabase
+                  .from("conversations")
+                  .select("id, delivery_status")
+                  .eq("customer_id", cust.id)
+                  .eq("message_direction", "outbound")
+                  .is("external_message_id", null)
+                  .gte("created_at", cutoff)
+                  .order("created_at", { ascending: false })
+                  .limit(1);
+                targets = (rows || []) as any;
+                // Link the Evolution id for future matching
+                if (targets.length > 0 && mids[0]) {
+                  await supabase
+                    .from("conversations")
+                    .update({ external_message_id: mids[0] })
+                    .eq("id", targets[0].id);
+                }
+              }
+            }
+          }
+
+          // Filter out conversations that already reached a stronger status (prevent regression).
+          const updatable = targets.filter(t => {
+            const curRank = rank[t.delivery_status ?? ""] ?? -1;
+            return newRank >= curRank;
+          });
+
+          if (updatable.length > 0) {
+            await supabase.from("conversations")
+              .update({
+                delivery_status: mapped.status,
+                delivery_checked_at: new Date().toISOString(),
+                delivery_error: mapped.status === "failed" ? (mapped.error || "Evolution delivery failed") : null,
+              })
+              .in("id", updatable.map(t => t.id));
+          }
+          if (mids.length > 0) {
+            await supabase.from("outbound_message_log")
+              .update({
+                result_status: mapped.status === "failed" ? "failed" : mapped.status === "queued" ? "queued" : "sent",
+              })
+              .in("evolution_message_id", mids);
+          }
+
+          // Anti-ban: real ERROR acks feed the existing circuit breaker.
+          if (mapped.status === "failed" && instNameForAck) {
+            await recordRiskSignal(supabase, instNameForAck, "send_failure", "medium", {
+              source: "messages_update_ack",
+              raw_status: String(stRaw ?? ""),
+              message_ids: mids,
+              remote_jid: remoteJidAck || null,
+            });
+          }
+
           jsonLog(mapped.status === "failed" ? "warn" : "info", "messages_update_delivery_status", {
             message_ids: mids,
             raw_status: stRaw,
             delivery_status: mapped.status,
+            matched: updatable.length,
+            instance_id: ackInstanceId,
           });
         }
       } catch (e: any) {
@@ -2001,29 +2087,38 @@ Deno.serve(async (req) => {
         EdgeRuntime.waitUntil((async () => {
           try {
             await new Promise(r => setTimeout(r, 6000));
-            const res = await fetch(`${EVOLUTION_API_URL.replace(/\/$/,"")}/chat/findMessages/${inst}`, {
+            // Use findStatusMessage (real ACK endpoint), not findMessages (history).
+            // findMessages was promoting messages to "sent" just because they
+            // existed in history — even when WhatsApp returned ERROR.
+            const res = await fetch(`${EVOLUTION_API_URL.replace(/\/$/,"")}/chat/findStatusMessage/${inst}`, {
               method: "POST",
               headers: { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY },
-              body: JSON.stringify({ where: { key: { id: mid } }, limit: 1 }),
+              body: JSON.stringify({ where: { keyId: mid } }),
             });
             if (!res.ok) return;
             const data = await res.json();
-            const records = Array.isArray(data) ? data : (data?.messages?.records || data?.records || []);
-            const found = records.find((m: any) => m?.key?.id === mid || m?.keyId === mid || m?.id === mid);
-            if (found) {
-              const mapped = mapEvolutionDeliveryStatus(found.status ?? found.messageStatus ?? found.update?.status);
-              if (!mapped.status || mapped.status === "queued") return;
-              await supabase.from("conversations")
-                .update({
-                  delivery_status: mapped.status,
-                  delivery_checked_at: new Date().toISOString(),
-                  delivery_error: mapped.status === "failed" ? (mapped.error || "Evolution delivery failed") : null,
-                })
-                .eq("customer_id", cid)
-                .eq("external_message_id", mid);
-              await supabase.from("outbound_message_log")
-                .update({ result_status: mapped.status === "failed" ? "failed" : "sent" })
-                .eq("evolution_message_id", mid);
+            const records = Array.isArray(data) ? data : (data?.records || data?.messages?.records || []);
+            const found = records.find((m: any) => m?.keyId === mid || m?.key?.id === mid || m?.id === mid);
+            if (!found) return;
+            const mapped = mapEvolutionDeliveryStatus(found.status ?? found.messageStatus ?? found.update?.status);
+            // Only act on a definitive ack. queued/null → stay queued.
+            if (!mapped.status || mapped.status === "queued") return;
+            await supabase.from("conversations")
+              .update({
+                delivery_status: mapped.status,
+                delivery_checked_at: new Date().toISOString(),
+                delivery_error: mapped.status === "failed" ? (mapped.error || "Evolution delivery failed") : null,
+              })
+              .eq("customer_id", cid)
+              .eq("external_message_id", mid);
+            await supabase.from("outbound_message_log")
+              .update({ result_status: mapped.status === "failed" ? "failed" : "sent" })
+              .eq("evolution_message_id", mid);
+            if (mapped.status === "failed") {
+              await recordRiskSignal(supabase, inst, "send_failure", "medium", {
+                source: "post_send_verification",
+                message_id: mid,
+              });
             }
           } catch (_) { /* best-effort */ }
         })());

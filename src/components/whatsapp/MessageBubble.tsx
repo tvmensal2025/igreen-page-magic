@@ -25,9 +25,15 @@ function formatTime(ts: number): string {
   });
 }
 
-function StatusIcon({ status }: { status?: number | string }) {
+function StatusIcon({ status, error }: { status?: number | string; error?: string | null }) {
   if (status === undefined || status === null) return null;
-  if (status === "failed" || status === "ERROR" || status === "FAILED") return <XCircle className="h-3 w-3 text-destructive" />;
+  if (status === "failed" || status === "ERROR" || status === "FAILED") {
+    return (
+      <span title={error || "Falha na entrega — WhatsApp recusou a mensagem"} className="inline-flex">
+        <XCircle className="h-3 w-3 text-destructive" />
+      </span>
+    );
+  }
   if (typeof status !== "number") return null;
   if (status <= 1) return <Clock className="h-3 w-3 text-muted-foreground" />;
   if (status === 2) return <Check className="h-3 w-3 text-muted-foreground" />;
@@ -407,7 +413,7 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
 
         <div className="flex items-center justify-end gap-1 mt-0.5">
           <span className="text-[10px] text-muted-foreground">{formatTime(timestamp)}</span>
-          {fromMe && <StatusIcon status={status} />}
+          {fromMe && <StatusIcon status={status} error={(message as any).deliveryError} />}
         </div>
       </div>
 

@@ -21,6 +21,7 @@ export interface ChatMessage {
   text: string;
   timestamp: number;
   status?: number | string;
+  deliveryError?: string | null;
   mediaType?: "image" | "audio" | "video" | "document" | "sticker";
   mediaUrl?: string;
   mediaBase64?: string;
