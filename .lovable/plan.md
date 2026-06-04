@@ -1,102 +1,148 @@
-## Diagnóstico atual
+# Plano: paridade Evolution × Whapi (sem tocar superadmin)
 
-Hoje o fluxo de saldo tem 3 furos que podem te deixar no prejuízo:
+Mexe apenas em arquivos do `evolution-webhook`. O `whapi-webhook` (superadmin), `_shared/step-media-order.ts` e `_shared/notify-consultant.ts` ficam intactos.
 
-1. **Sincronização lenta (até 30 min de atraso)** — `facebook-sync-metrics` roda via cron a cada ~30 min. Entre uma rodada e outra a Meta pode gastar muito além do saldo antes do sistema "ver" e pausar. Numa campanha de R$ 50/dia o estrago é pequeno, mas em R$ 500/dia o overrun pode passar de R$ 10.
-2. **Sem teto na Meta** — a campanha é criada só com `daily_budget`, sem `lifetime_budget`/`spend_cap` espelhando o saldo do consultor. Ou seja, a Meta não sabe que ele só tem R$ 100 — quem segura é a nossa pausa, que depende do item 1.
-3. **Acabou o saldo = pausa silenciosa** — `debit_consultant_wallet` já gera `debt_cents` quando ultrapassa, e o sync pausa a campanha + manda notificação, mas **não existe popup/modal** forçando o consultor a escolher: "recarregar X" ou "subir o orçamento" no momento em que a campanha morre. Ele só descobre quando entra no painel.
+---
 
-E também: campanha pode ser criada **sem nenhum saldo** se o consultor for admin (bypass na linha 229 do create-campaign), e a UI não bloqueia "Criar campanha" mostrando o popup de recarga antes.
+## Item 1 — Reduzir o "digitando…" entre mensagens
 
-## O que vou construir
+**Arquivo**: `supabase/functions/evolution-webhook/handlers/conversational/index.ts`
 
-### 1. Saldo virou orçamento real (lifetime cap na Meta)
+### Como está hoje
 
-Na criação da campanha (`facebook-create-campaign`):
-
-- Calcular `lifetime_cap_cents = floor(saldo_disponivel / (1 + fee%))` (desconta nosso markup, sobra o que a Meta pode gastar).
-- Mandar pra Meta `lifetime_budget = lifetime_cap_cents` **junto** com `daily_budget` (Meta aceita os dois: daily limita o ritmo, lifetime trava o total).
-- Salvar `lifetime_cap_cents` em `facebook_campaigns` (nova coluna) pra UI mostrar "gastou X de Y reservados".
-- Quando o consultor recarregar, um job realinha o `lifetime_budget` de cada campanha ativa pra (gasto_atual + saldo_novo_disponivel).
-
-Assim, mesmo se nosso sync atrasar, a **Meta** segura — você nunca gasta além do que tem em caixa.
-
-### 2. Pausa quase-instantânea (sync sob demanda + cron mais frequente)
-
-- Reduzir o cron de `facebook-sync-metrics` de 30 min → 5 min (a Meta atualiza insights em ~minutos mesmo).
-- Em paralelo, criar `facebook-balance-check` (cron de 2 min) que só lê `amount_spent` por campanha ativa (chamada barata, 1 campo) e dispara a pausa se já bateu no `lifetime_cap`. Sem fazer o sync pesado de leads/insights/breakdown.
-- Trigger no banco: quando `wallet_transactions.type='spend'` derruba `balance_cents <= 0`, marca a campanha como `pause_pending` e o próximo balance-check garante a pausa.
-
-### 3. Popup obrigatório de recarga quando acabar o saldo
-
-UI (front):
-
-- Novo hook `useWalletGuard()` escutando realtime em `consultant_wallet`. Quando `balance_cents <= auto_pause_at` **ou** alguma campanha do consultor virou `paused` por motivo `saldo_*`, abre um `<RechargeRequiredDialog>` modal.
-- O modal tem 3 ações:
-  1. **Recarregar R$ X** (sugerido = 7 dias do daily_budget total das campanhas pausadas) → cria Stripe checkout via `wallet-create-topup`.
-  2. **Aumentar orçamento** (ajusta `daily_budget` e/ou `lifetime_cap` da campanha) → reativa quando tiver saldo.
-  3. **Encerrar campanha** (arquiva).
-- Fechar o modal sem ação só é permitido em "Lembrar depois" (cooldown de 24h) — a campanha continua pausada.
-
-### 4. Bloquear criação sem saldo
-
-- Remover o bypass `!isAdmin` na linha 229 do `facebook-create-campaign` (admin também precisa ter saldo na carteira do próprio consultor que ele está criando).
-- No front (`CampaignFormDialog` e formulário de criar campanha de anúncio), botão "Criar" abre o `<RechargeRequiredDialog>` antes do submit se `saldo < min_required` em vez de só toast de erro.
-
-### 5. Auditoria a prova de bala
-
-- Toda chamada `debit_consultant_wallet` continua persistindo `gross_spend_cents` (Meta real) + `amount_cents` (cobrado com fee). Hoje já faz, manter.
-- Adicionar índice único `(campaign_id, date)` em `facebook_metrics_daily` (já existe via onConflict, vou confirmar) e `synced_to_wallet_cents` pra **nunca** debitar duas vezes o mesmo gasto. Hoje já trata, vou rodar uma migration de validação pra garantir constraint.
-- `facebook-balance-reconcile` continua rodando 1x/dia: compara `Meta.amount_spent` vs soma de `wallet_transactions.gross_spend_cents` e ajusta delta — assim qualquer drift é detectado em 24h no máximo.
-
-### Detalhes técnicos
+Áudio de 14s → bot espera `0,9 × 14s + 600ms = 13.2s` → manda vídeo de 15s → espera `0,9 × 15s + 600ms = 14.1s` → manda texto.
+Total de "digitando…" em 1 áudio + 1 vídeo + 1 texto: **~28 segundos**.
 
 ```text
-Wallet (R$ 100) ──▶ create_campaign
-                    ├─ lifetime_cap_cents = 100/(1+0.20) = 83,33 (líquido Meta)
-                    ├─ daily_budget = X
-                    └─ Meta recebe daily + lifetime
-                          │
-                          ▼
-                    [Meta gasta]
-                          │
-                          ├─ cron 5 min: facebook-sync-metrics (insights completos + débito)
-                          └─ cron 2 min: facebook-balance-check (só amount_spent, pausa se ≥ cap)
-                                              │
-                                              ▼
-                                        wallet.balance ≤ 0
-                                              │
-                                              ├─ pausa Meta (status=PAUSED)
-                                              ├─ marca rejection_reason
-                                              ├─ trigger realtime
-                                              └─ front abre <RechargeRequiredDialog>
-                                                    ├─ Recarregar (stripe)
-                                                    ├─ Aumentar budget (recria lifetime_cap)
-                                                    └─ Encerrar
+[áudio 14s]  →  digitando 13.2s  →  [vídeo 15s]  →  digitando 14.1s  →  [texto]
 ```
 
-Migrations necessárias:
+Linhas que produzem isso:
+- `sleepForMedia` (222-235): piso 600ms (texto/imagem) / 800ms (áudio/vídeo), cap 5s.
+- `sendStepMedia` (596-612): fórmula `min(0,9·duração_anterior + 600ms, 12s)`.
 
-- `ALTER TABLE facebook_campaigns ADD COLUMN lifetime_cap_cents bigint`
-- `ALTER TABLE facebook_campaigns ADD COLUMN pause_pending boolean DEFAULT false`
-- Confirmar UNIQUE em `facebook_metrics_daily(campaign_id, date)`
-- Cron novos via `pg_cron`: `facebook-balance-check` a cada 2 min, ajustar `facebook-sync-metrics` pra 5 min.
+### Como vai ficar
 
-Arquivos tocados:
+Pausas curtas e fixas. WhatsApp já entrega na ordem; não precisa esperar a duração inteira.
 
-- `supabase/functions/facebook-create-campaign/index.ts` — adicionar lifetime, remover bypass admin
-- `supabase/functions/facebook-sync-metrics/index.ts` — cron mais frequente
-- `supabase/functions/facebook-balance-check/index.ts` — **novo**
-- `supabase/functions/facebook-realign-lifetime/index.ts` — **novo** (chamado após recarga)
-- `supabase/functions/wallet-stripe-webhook/index.ts` — invocar realign após topup confirmado
-- `src/hooks/useWalletGuard.ts` — **novo**
-- `src/components/wallet/RechargeRequiredDialog.tsx` — **novo**
-- Integração no shell do `/admin` ou `App.tsx` pra mount global do hook
-- Migration SQL (3 alterações + cron)
+| Item anterior | Pausa antes do próximo |
+|---|---|
+| texto / imagem | 400ms |
+| áudio / vídeo | 900ms |
+| `delay_before_ms` configurado | `min(cfg, 4000ms)` |
 
-## Pontos pra você confirmar
+`sleepForMedia` passa a usar piso 400ms e cap 2500ms.
 
-1. **Markup atual**: tá em 20% (`platform_fee_percent=20`). O `lifetime_cap` da Meta vai ser **saldo / 1.20** (a parte que sobra pra anúncio real). Ok?
-2. **Frequência do sync**: 5 min é ok ou prefere 10? Mais frequente = mais chamadas Graph API (custa rate-limit, não dinheiro).
-3. **Comportamento do popup**: "Lembrar depois" libera 24h ou você quer que ele **bloqueie a navegação** até recarregar/encerrar (mais agressivo, garante 0% prejuízo)?bloquei a camapnha o escritorio nao, 0 prejuizo
-4. **Valor sugerido de recarga**: 7 dias do orçamento total das pausadas, ou prefere oferecer botões fixos (R$ 50, R$ 100, R$ 200, R$ 500)?e valor livre- 
+```text
+[áudio 14s]  →  900ms  →  [vídeo 15s]  →  900ms  →  [texto]
+```
+
+Total: **~1.8 segundos** entre mensagens. O lead segue sentindo a digitação humana (presença renovada por `withTypingPresence`, que continua intacta), mas sem o gap eterno.
+
+---
+
+## Item 2 — Lead que diz "não quero" ou fica confuso
+
+**Arquivo**: `supabase/functions/evolution-webhook/handlers/conversational/index.ts` (mesmo do #1)
+
+### Como está hoje
+
+Lead recebe um passo com botões `[Quero simular] [Tenho dúvida] [Falar com humano]` e digita "ah não, deixa pra lá".
+
+1. Evolution chama `matchButtonIntent` (linha 1273).
+2. Se a IA não casar com nenhum botão → cai no bloco de baixa confiança (linhas 1281-1312) → pausa silenciosa: `reply: ""` + `bot_paused: true`.
+3. **Lead recebe SILÊNCIO**. Não sabe se o bot quebrou, se foi ignorado, se deve esperar.
+
+Mesmo cenário com "humm, não entendi, repete?": vai pra handoff direto, sem reenviar o menu.
+
+### Como vai ficar
+
+Espelha o padrão do whapi (linhas 1430-1545), adaptado para o Evolution (sem `sendButtons` nativo — usa lista numerada):
+
+**A. Lead recusou** (`intent.refused`):
+```
+Tranquilo, João! Quando quiser voltar é só me mandar uma mensagem. Tô por aqui 💚
+```
++ `bot_paused = true`, motivo `lead_refused_softpause`. Consultor vê no CRM.
+
+**B. Lead confuso** (`intent.confused`), 1ª e 2ª vez:
+```
+Posso te ajudar com qualquer uma destas opções 👇
+
+1) Quero simular
+2) Tenho dúvida
+3) Falar com humano
+
+É só tocar no número ou me dizer qual 🙂
+```
+Contador `ai_followups_count` (já existe no schema) incrementa.
+
+**C. Lead confuso pela 3ª vez**:
+```
+Vou chamar alguém do time pra te ajudar — em instantes te respondem por aqui 🙌
+```
++ `notifyHandoff(consultantId, lead, msg, "confused_after_retries")` → consultor recebe alerta no WhatsApp.
++ `bot_paused = true`.
+
+**D. Passo de captura (foto de conta) com recusa**:
+```
+Tranquilo, João! Quando quiser dar continuidade é só me mandar a foto da conta. Tô por aqui 💚
+```
++ pausa.
+
+### Garantia de não quebrar
+
+- `notifyHandoff` tem dedupe interno (5 min em memória + 30 min persistido) → impossível enviar dois alertas seguidos pro consultor mesmo se o lead spamar.
+- Inserido **antes** do bloco existente de baixa confiança (linha 1281), preservando o caminho atual para casos não cobertos.
+- Usa a assinatura correta `(consultantId, lead, lastQuestion, reason)` — mesma do whapi:1470, validada na auditoria.
+
+---
+
+## Item 3 — Template com `{{representante}}` vazio
+
+**Arquivo**: `supabase/functions/evolution-webhook/handlers/conversational/templates.ts`
+
+### Como está hoje
+
+Quando o consultor não tem nome cadastrado (`vars.representante` vazio ou nulo), o texto sai:
+
+```
+Bom dia! Eu sou o assistente do consultor.
+```
+
+E quando o template tem markdown WhatsApp em volta da variável (`do *{{representante}}*`), com variável vazia sai:
+
+```
+Bom dia! Eu sou o assistente do * *
+```
+
+(asterisco órfão, fica feio).
+
+### Como vai ficar
+
+Mesmo comportamento do whapi:
+- Fallback de `representante` muda de `"consultor"` para `"iGreen Energy"`.
+- Após render, aplica 3 regex de limpeza: `\*\s*\*` → "", `_\s*_` → "", `~\s*~` → "".
+
+Resultado:
+```
+Bom dia! Eu sou o assistente da iGreen Energy.
+```
+
+Mudança: 6 linhas. Sem risco — é cópia literal do whapi.
+
+---
+
+## Verificação após deploy
+
+1. Enviar "Oi" para um lead do `tvmensal01@gmail.com` (consultor de teste).
+2. Conferir no painel `/admin/whatsapp` que o intervalo entre áudio → vídeo → texto está em ~1-2s (não mais 25s).
+3. Responder "não quero" no passo com botões → conferir despedida amigável + `bot_paused`.
+4. Responder "hã?" três vezes seguidas → conferir 2 nudges com menu numerado e depois handoff.
+5. Conferir que o whapi (superadmin) continua idêntico — mandar "Oi" para o número do superadmin e validar timing/texto inalterados.
+
+## Fora do escopo (não vamos mexer agora)
+
+- Saudação no meio do funil — risco de quebrar passos sem template; revisitar só se houver reclamação.
+- Trocar `answerFaqWithAI` por `conversational-orchestrator` — custo de IA sobe 3-5×; sem evidência de problema.
+- Bug latente em `whapi-webhook/.../index.ts:1618` (`notifyHandoff` com argumentos errados) — pré-existente no superadmin; registrar para arrumar em outro plano.

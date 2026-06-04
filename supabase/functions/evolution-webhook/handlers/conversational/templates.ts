@@ -57,7 +57,8 @@ function fmtEconomiaRange(v: number | string | null | undefined): string {
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
   // Sem nome conhecido: deixa vazio (template deve omitir vírgula/saudação sozinho)
   const nome = (vars.nome || "").split(" ")[0] || "";
-  const rep = vars.representante || "consultor";
+  // Fallback alinhado ao whapi — se consultor não tem nome cadastrado, usa marca.
+  const rep = vars.representante || "iGreen Energy";
   const valor = fmtValor(vars.valor_conta);
   const econMensal = fmtEconomiaMensal(vars.valor_conta);
   const econAnual = fmtEconomiaAnual(vars.valor_conta);
@@ -80,6 +81,11 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   // Limpa artefatos quando uma variável ficou vazia (sem nome conhecido etc):
   // "Oi , tudo bem" -> "Oi, tudo bem" ; "Olá !" -> "Olá!" ; "  " -> " "
   out = out
+    // Remove pares órfãos de markdown WhatsApp quando variável ficou vazia
+    // (ex.: "do *{{representante}}*" com rep="" → "do * *" → "do")
+    .replace(/\*\s*\*/g, "")
+    .replace(/_\s*_/g, "")
+    .replace(/~\s*~/g, "")
     .replace(/([,;:])\s*([,;:!?.])/g, "$2")        // ", !" -> "!"
     .replace(/\s+([,.!?;:])/g, "$1")                // " ," -> ","
     .replace(/([(\[])\s+/g, "$1")
