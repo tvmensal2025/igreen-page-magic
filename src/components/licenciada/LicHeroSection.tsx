@@ -22,9 +22,10 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
   };
 
   return (
-    <section id="top" className="relative overflow-hidden pt-28 md:pt-36 pb-16 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
+    <section id="top" className="relative overflow-hidden pt-20 md:pt-36 pb-12 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
       <LandingNav
         ctaLabel="Quero ser Licenciado"
+        ctaLabelMobile="Licenciado"
         ctaHref={WHATSAPP}
         onCtaClick={() => handleClick("whatsapp")}
       />
@@ -32,7 +33,7 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
       <AmbientGlow variant="hero" />
       <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1180px] px-5 sm:px-8 lg:px-10">
+      <div className="relative z-10 mx-auto w-full max-w-[1180px] px-4 sm:px-8 lg:px-10">
         <div className="flex flex-col items-center text-center">
           {/* Badge */}
           <div className="badge-green animate-fade-in mb-6">
@@ -41,28 +42,28 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
           </div>
 
           {/* Title */}
-          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[2.1rem] sm:text-5xl md:text-6xl lg:text-[3.9rem] max-w-[20ch] mx-auto text-foreground">
+          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.1] text-[1.65rem] sm:text-4xl md:text-5xl lg:text-[3.9rem] max-w-[20ch] mx-auto text-foreground">
             Seja Licenciado iGreen e receba <span className="text-gradient-green">comissões vitalícias</span> todo mês
           </h1>
 
           {/* Subtitle */}
-          <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          <p className="mt-4 sm:mt-6 text-sm sm:text-base md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             O mercado de energia solar está explodindo no Brasil. Quem está aproveitando agora já está faturando — <strong className="text-foreground">esse é o seu momento.</strong>
           </p>
 
           {/* CTA */}
-          <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
+          <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row gap-3 justify-center items-center">
             <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => handleClick("whatsapp")}>
               Quero ser Licenciado <ArrowRight className="w-5 h-5" />
             </a>
-            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-whatsapp" onClick={() => handleClick("cadastro")}>
+            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-whatsapp hidden sm:inline-flex" onClick={() => handleClick("cadastro")}>
               Fazer cadastro
             </a>
           </div>
         </div>
 
         {/* Video mockup */}
-        <div className="relative mt-14 md:mt-20 max-w-4xl mx-auto">
+        <div className="relative mt-10 md:mt-20 max-w-4xl mx-auto">
           <div className="mockup-window">
             <div className="mockup-bar">
               <span className="mockup-dot bg-red-400/70" />
@@ -70,7 +71,7 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
               <span className="mockup-dot bg-green-400/70" />
               <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
             </div>
-            <video controls playsInline autoPlay muted preload="auto" className="w-full aspect-video block">
+            <video playsInline autoPlay muted loop preload="metadata" className="w-full aspect-video block">
               <source src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/imagine-licenciado.mp4" type="video/mp4" />
             </video>
           </div>
