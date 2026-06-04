@@ -71,7 +71,7 @@ export default function Campanhas() {
     setLoading(false);
   }
 
-  async function handleSave(draft: Draft) {
+  async function handleSave(draft: Draft): Promise<void> {
     if (!userId) return;
     const payload = {
       ...draft,
@@ -81,12 +81,12 @@ export default function Campanhas() {
     if (draft.id) {
       const { id, ...rest } = payload as any;
       const { error } = await supabase.from("campaign_templates").update(rest).eq("id", draft.id);
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       toast.success("Template atualizado");
     } else {
       const { id: _omit, ...insertPayload } = payload as any;
       const { error } = await supabase.from("campaign_templates").insert(insertPayload);
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       toast.success("Template criado");
     }
     if (userId) await loadAndSeed(userId);
