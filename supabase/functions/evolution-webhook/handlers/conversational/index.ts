@@ -226,11 +226,12 @@ async function sleepForMedia(kind: string, _durationSec?: number | null, delayBe
   // nunca avançava. Agora usamos pausa curta: o Whapi já entrega na ordem.
   const configuredDelay = Number(delayBeforeMs || 0);
   if (configuredDelay > 0) {
-    await new Promise((r) => setTimeout(r, Math.min(configuredDelay, 5_000)));
+    await new Promise((r) => setTimeout(r, Math.min(configuredDelay, 2_500)));
     return;
   }
-  // Sincronia rápida entre mídias soltas (fora do cascade); 600ms padrão.
-  const pause = kind === "audio" || kind === "video" ? 800 : 600;
+  // Pausa curta e fixa — WhatsApp já entrega na ordem, não precisamos esperar
+  // a duração inteira do áudio/vídeo (causava ~25s de "digitando").
+  const pause = kind === "audio" || kind === "video" ? 900 : 400;
   await new Promise((r) => setTimeout(r, pause));
 }
 
