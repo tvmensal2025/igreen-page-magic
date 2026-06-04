@@ -256,12 +256,37 @@ export async function getConnectionState(instanceName: string) {
   }
 }
 
+/**
+ * "not connected" / "does not exist" são estados esperados ao desconectar
+ * uma instância já offline ou removida — não devem virar erro de runtime.
+ */
+function isBenignDisconnectError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /not connected|does not exist|not found/i.test(msg);
+}
+
 export async function deleteInstance(instanceName: string) {
-  return request<void>(`instance/delete/${instanceName}`, "DELETE");
+  try {
+    return await request<void>(`instance/delete/${instanceName}`, "DELETE");
+  } catch (err) {
+    if (isBenignDisconnectError(err)) {
+      console.warn(`[EvolutionAPI] deleteInstance ignorado (já offline): ${(err as Error).message}`);
+      return undefined as unknown as void;
+    }
+    throw err;
+  }
 }
 
 export async function logoutInstance(instanceName: string) {
-  return request<void>(`instance/logout/${instanceName}`, "DELETE");
+  try {
+    return await request<void>(`instance/logout/${instanceName}`, "DELETE");
+  } catch (err) {
+    if (isBenignDisconnectError(err)) {
+      console.warn(`[EvolutionAPI] logoutInstance ignorado (já offline): ${(err as Error).message}`);
+      return undefined as unknown as void;
+    }
+    throw err;
+  }
 }
 
 export interface EvolutionInstanceSummary {
