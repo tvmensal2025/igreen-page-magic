@@ -440,7 +440,7 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
     return withIdempotency("send_audio", idempotency, async () => {
-      const number = remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
+      const number = toEvolutionNumber(remoteJid);
       try {
         const res = await fetchWithTimeout(`${baseUrl}/message/sendWhatsAppAudio/${instanceName}`, {
           method: "POST",
