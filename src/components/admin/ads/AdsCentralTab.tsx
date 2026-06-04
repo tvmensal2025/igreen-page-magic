@@ -86,8 +86,11 @@ export function AdsCentralTab({ consultantId }: Props) {
             onSynced={() => setRefreshKey((k) => k + 1)}
           />
           <WalletChip consultantId={consultantId} />
-          <Button size="sm" onClick={() => setWizardOpen(true)} className="gap-1.5 h-8">
-            <Plus className="w-3.5 h-3.5" /> Criar do zero
+          <Button size="sm" variant="outline" onClick={() => setWizardOpen(true)} className="gap-1.5 h-8 hidden sm:inline-flex">
+            <Plus className="w-3.5 h-3.5" /> Avançado
+          </Button>
+          <Button size="sm" onClick={() => setExpressOpen(true)} className="gap-1.5 h-8 shadow-md">
+            <Sparkles className="w-3.5 h-3.5" /> Criar campanha
           </Button>
         </div>
       </header>
