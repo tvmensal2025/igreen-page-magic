@@ -1,63 +1,87 @@
-## Diagnóstico (revisão em 390px – iPhone)
+# Bot não entende cliente que diz "te mando amanhã"
 
-Naveguei nas duas páginas pelo browser do sandbox em viewport mobile (390×844) e analisei seção por seção:
+## O caso real (lead Verinha, 04/06 00:11)
 
-**Página de Cliente (`/rafael-ferreira`)**
-- Botão "Falar no WhatsApp" na navbar ocupa ~65% da largura; logo parece pequena ao lado.
-- Subtítulo do hero está em `text-base` mas o card containers depois usam padding e fontes grandes que parecem desproporcionais.
-- Cards de vantagens (`AdvantagesSection`) usam padding/altura excessivos, deixando muito texto centralizado em telas de 360-390px.
-- Títulos de seção ("Acesso gratuito ao iGreen Club", "Depoimentos", "Conheça nosso consultor") quebram em 2-3 linhas com tamanho gigante (`text-4xl/5xl`) que não escala bem.
-- Cookie banner ocupa ~25% da tela e sobrepõe os CTAs do final do hero — visualmente quebra a página em qualquer scroll.
+```
+00:11:10  cliente → [arquivo da conta]              step: capture_conta
+00:11:19  bot     → "⚠ não consegui ler (qualidade 33%)... envie foto nítida"
+00:11:49  cliente → [áudio] "Então amanhã eu te mando, porque hoje com as
+                   luzes não tem como não ficar sombra. Amanhã logo cedo
+                   eu mando, tá bom? Obrigada."     step: aguardando_conta
+00:11:58  bot     → "📋 Voltando ao seu cadastro: Verinha, me envia uma
+                   foto ou PDF da conta de luz pra eu seguir 📸"
+```
 
-**Página de Licenciado (`/licenciado/rafael-ferreira`)**
-- Mesmo problema de navbar (botão "Quero ser Licenciado" enorme).
-- Hero tem H1 em `text-[2.1rem]` que ainda vaza em telas 360px ("comissões vitalícias" ocupa linha inteira sozinho).
-- 2 CTAs empilhados em full-width (`btn-cta-lg` + `btn-whatsapp`) — bloco gigante.
-- Vídeo `controls` nativos aparecem grandes; player default sem mockup-window em algumas seções.
-- Títulos numerados ("5 Conexão Club (Individual)") com `text-4xl` quebram em 3 linhas.
-- Mesma cookie banner gigante.
+A cliente avisou que envia amanhã. O bot ignorou e repetiu o pedido — soa robótico e queima o lead.
 
-## O que vou ajustar
+## Causa raiz
 
-**1. Navbar (`src/components/common/LandingNav.tsx` + `.btn-cta` no index.css)**
-- Reduzir CTA em mobile: padding menor, texto encurtado em <640px (ex.: "WhatsApp" / "Ser Licenciado") via classes responsivas, mantendo texto completo em ≥640px.
-- Garantir altura da navbar `h-14` em mobile (em vez de `h-16`).
+Em `supabase/functions/whapi-webhook/handlers/bot-flow.ts`:
 
-**2. Hero das duas páginas**
-- Cliente: subtítulo `text-sm sm:text-base md:text-lg`; espaçamentos `mt-4 sm:mt-6`.
-- Licenciado: H1 `text-[1.65rem] sm:text-4xl md:text-5xl lg:text-[3.5rem]`, remover botão secundário `btn-whatsapp` no mobile (manter só CTA principal), exibir secundário a partir de `sm:`.
-- Padding `pt-20 md:pt-28` (menos espaço morto no topo mobile).
+1. Áudio é transcrito (`whapi-webhook/index.ts:1172`) e vira `messageText`, mas chega no handler com `isFile = true` (é mídia de áudio).
+2. O interceptor "off-topic" (linha 2555) só roda quando `!isFile`. Áudio nunca passa por ele.
+3. Não existe nenhuma detecção de **adiamento** ("amanhã", "logo cedo", "mais tarde", "à noite", "depois", "agora não", "tô na rua", "sem luz aqui"). Só existe `nao_quer` no intent-classifier conversacional — mas nos steps de coleta (`aguardando_conta`, `aguardando_doc_*`) o classifier nem é consultado.
+4. Resultado: cliente que pede tempo recebe o mesmo prompt em loop até desistir.
 
-**3. Títulos de seção (escala global)**
-- Criar utilitário `.section-title` no index.css: `text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black leading-[1.1]`.
-- Aplicar em `AdvantagesSection`, `ClubSection`, `HowItWorksSection`, `ReferralSection`, `TestimonialsSection`, `ConsultantSection`, `NewsSection`, `StatesSection` e equivalentes em `licenciada/*`.
+## O que vou implementar
 
-**4. Cards**
-- Reduzir padding `.premium-card` / `.glass-card` no mobile: `p-4 sm:p-6` em vez de `p-5 sm:p-6`/`p-6 md:p-7`.
-- Texto interno: `text-sm sm:text-base` (hoje vem grande por herança).
+### 1. Helper de detecção de adiamento
 
-**5. Botões CTA**
-- `.btn-cta-lg`: reduzir mobile `px-6 py-3.5 text-base sm:text-lg sm:px-8 sm:py-4`.
-- Conferir que botões largos não ficam `w-full` desnecessariamente.
+Novo `detectPostponeIntent(text)` em `bot-flow.ts` (ou util compartilhado), regex em PT-BR cobrindo:
 
-**6. Vídeo do Licenciado (`LicHeroSection` + Hélio Valgas section)**
-- Envolver o `<video>` em `mockup-window` consistente; remover `controls` nativos do hero (já é autoPlay/muted/loop como o Cliente faz) e manter `controls` só nos vídeos institucionais.
+- "amanh[ãa]", "logo (cedo|mais|de manh[ãa])", "mais tarde", "depois", "[áa] noite", "[áa] tarde"
+- "agora n[ãa]o", "ainda n[ãa]o", "n[ãa]o (consigo|posso|d[áa]) agora"
+- "(t[oôu]|estou) (na rua|no trabalho|sem luz|sem internet|sem (a )?conta (em m[ãa]os|aqui))"
+- "(daqui a pouco|j[áa] te mando|j[áa] mando|mando (assim que|quando))"
+- captura opcional do "quando" (amanhã / mais tarde / hoje à noite) pra usar na resposta
 
-**7. Cookie banner (`CookieBanner.tsx`)**
-- Compactar versão mobile: padding `p-3`, texto `text-xs`, botões menores `px-3 py-1.5 text-xs`, altura total ≤ ~80px.
+### 2. Interceptor aplicado a texto **e** áudio nos steps de coleta de mídia
 
-**8. QA visual**
-- Reabrir `/rafael-ferreira` e `/licenciado/rafael-ferreira` em 360, 390 e 414px após mudanças e capturar 3-4 screenshots por página para validar antes de fechar.
+Antes do switch principal, em `bot-flow.ts` (perto da linha 2555, ampliado):
 
-## Detalhes técnicos
+```ts
+const MEDIA_WAIT_STEPS = /^(aguardando_(conta|doc|doc_auto|doc_frente|doc_verso))/;
+if (MEDIA_WAIT_STEPS.test(step) && messageText && !isButton && !isFile_image_or_pdf) {
+  const postpone = detectPostponeIntent(messageText);
+  if (postpone) { … }
+}
+```
 
-- Mudanças concentradas em: `src/index.css` (tokens `.btn-cta-lg`, `.premium-card`, `.glass-card`, `.app-navbar-inner`, novo `.section-title`), `src/components/common/LandingNav.tsx`, `src/components/HeroSection.tsx`, `src/components/licenciada/LicHeroSection.tsx`, demais componentes de seção apenas trocando classes de tamanho do título para `.section-title`.
-- Nenhuma alteração de lógica de negócio, dados ou rotas.
-- Manter cores/HSL semânticas existentes (sem cores cruas).
-- Sem mexer em desktop além do que cascateia naturalmente das classes responsivas (`sm:` em diante preserva o visual atual).
+`isFile_image_or_pdf` = só bloqueia se a mídia recebida for **a própria conta/doc** (imagem/PDF). Áudio transcrito entra.
 
-## Fora de escopo
+### 3. Resposta empática + pausa de prompts
 
-- Reescrever copy ou estrutura de seções.
-- Alterar fluxo de cadastro/WhatsApp.
-- Mudar paleta ou tema.
+Quando detecta adiamento:
+
+- Envia mensagem única, sem repetir o "📋 Voltando ao seu cadastro": algo como
+  *"Combinado, {nome}! Fico no aguardo da conta {quando}. 💚 Qualquer coisa, é só me chamar."*
+- Marca em `customers` (campo já existente `bot_paused_until` / `next_followup_at` — verificar nome real na migração) o horário esperado: amanhã 09:00 / +3h / +6h conforme o "quando" detectado, default +12h.
+- Registra `ai_decisions` com `tool_called: "schedule_followup"`, `reasoning: "lead pediu adiamento"`, pra aparecer no painel de decisões.
+- **Não muda o `conversation_step`** — continua em `aguardando_conta`, só pausa nudges.
+
+### 4. Nudge/reaquecimento respeita a pausa
+
+Confirmar nos crons `bot-stuck-recovery` e `ai-followup-cron` que eles já leem o `bot_paused_until` (provavelmente sim — checar). Se não, adicionar guard.
+
+### 5. Quando a pausa vence
+
+O cron de follow-up dispara mensagem leve do tipo *"Oi {nome}! Conseguiu separar a conta de luz? 📸"* — usar texto existente se houver, senão adicionar template.
+
+### 6. Testes
+
+- Unit test do `detectPostponeIntent` cobrindo: "amanhã eu mando", "mais tarde te envio", "tô sem luz aqui", "depois eu vejo", falsos positivos ("amanhã não vai dar" → ainda é adiamento; "não quero" → continua `nao_quer` no fluxo normal).
+- Teste de integração em `bot-flow` simulando áudio transcrito em `aguardando_conta` → garante que **não** reenvia o prompt e **agenda** follow-up.
+
+## Arquivos a tocar
+
+- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` — interceptor + helper + chamada de schedule
+- `supabase/functions/_shared/postpone-intent.ts` *(novo)* — regex + parser do "quando"
+- `supabase/functions/_shared/postpone-intent.test.ts` *(novo)*
+- Possível ajuste em `bot-stuck-recovery/index.ts` se não respeitar pausa
+- Migração só se o campo de pausa ainda não existir (verifico antes)
+
+## Fora do escopo
+
+- Não mexo no OCR (a qualidade 33% do PDF original é outro fluxo).
+- Não mudo o pipeline de transcrição de áudio.
+- Não toco no design das landings (assunto das mensagens anteriores).

@@ -38,6 +38,7 @@ import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-
 import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
+import { detectPostponeIntent, buildPostponeReply } from "../../_shared/postpone-intent.ts";
 import {
   getReplyForStep,
   getNextMissingStep,
@@ -2544,6 +2545,70 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     updates.email = messageText.trim().toLowerCase();
     console.log(`📧 [CAPTURA] Email "${updates.email}" salvo automaticamente (digitado no step "${step}")`);
   }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 🕊️ INTERCEPÇÃO DE ADIAMENTO ("amanhã eu mando", "tô sem luz",
+  // "mais tarde te envio") nos passos que aguardam mídia (conta/doc).
+  // Vale para texto E para áudio transcrito — vendedor humano não repete
+  // "manda a foto" 10s depois do cliente avisar que envia amanhã.
+  //
+  // - Confirma com empatia ("Combinado, fico no aguardo amanhã cedo")
+  // - Pausa bot até pauseUntil (bot_paused_until)
+  // - Agenda follow-up (next_followup_at)
+  // - NÃO muda conversation_step → quando o cliente voltar, segue do mesmo lugar.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const MEDIA_WAIT_RX = /^aguardando_(?:conta|doc(?:_auto|_frente|_verso)?)$/;
+    const isAudioTranscript = isFile && !hasImage && !hasDocument;
+    const isPlainText = !isFile && !isButton;
+    const canCheckPostpone = !!messageText && (isPlainText || isAudioTranscript);
+    if (canCheckPostpone && MEDIA_WAIT_RX.test(step)) {
+      const intent = detectPostponeIntent(messageText);
+      if (intent) {
+        const firstName = ((customer as any)?.name || "").split(/\s+/)[0] || "";
+        const waitingDoc = step.startsWith("aguardando_doc");
+        const reply = buildPostponeReply({ firstName, when: intent.when, waitingDoc });
+        console.log(`[postpone] customer=${customer.id} step=${step} when="${intent.when}" until=${intent.pauseUntil}`);
+        try {
+          await sendText(remoteJid, reply);
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "outbound",
+            message_text: reply,
+            message_type: "text",
+            conversation_step: step,
+          });
+        } catch (e) {
+          console.warn("[postpone] send falhou:", (e as any)?.message);
+        }
+        try {
+          await supabase.from("ai_decisions" as any).insert({
+            customer_id: customer.id,
+            consultant_id: customer.consultant_id || null,
+            phase: "postpone",
+            tool_called: "schedule_followup",
+            user_input: String(messageText).slice(0, 240),
+            reasoning: `Lead pediu adiamento (${intent.when}). Pausando até ${intent.pauseUntil}.`,
+            ai_output: { message: reply, when: intent.when, pause_until: intent.pauseUntil },
+          });
+        } catch (e) {
+          console.warn("[postpone] ai_decisions insert falhou:", (e as any)?.message);
+        }
+        return {
+          reply: "",
+          updates: {
+            ...updates,
+            bot_paused_until: intent.pauseUntil,
+            next_followup_at: intent.pauseUntil,
+            __inline_sent: true,
+          } as any,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[postpone] interceptor erro:", (e as any)?.message);
+  }
+
 
   // ═══════════════════════════════════════════════════════════════════
   // G: INTERCEPÇÃO OFF-TOPIC durante coleta/edição.
