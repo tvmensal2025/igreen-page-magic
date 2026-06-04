@@ -33,8 +33,33 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
       <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
 
       <div className="relative z-10 mx-auto w-full max-w-[1180px] px-5 sm:px-8 lg:px-10">
-        {/* Video mockup — TOPO */}
-        <div className="relative max-w-4xl mx-auto mb-10 md:mb-14">
+        <div className="flex flex-col items-center text-center">
+          {/* Badge */}
+          <div className="badge-green animate-fade-in mb-6">
+            <span className="glow-dot" />
+            <span>Economia garantida</span>
+          </div>
+
+          {/* Title */}
+          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[1.75rem] sm:text-4xl md:text-5xl lg:text-[3.5rem] max-w-[20ch] mx-auto text-foreground">
+            Receba até <span className="text-gradient-green">20% de desconto</span> na sua conta de luz todo mês
+          </h1>
+
+          {/* Subtitle */}
+          <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            Energia solar por assinatura, sem instalar placas, sem obras e sem custos. Conheça a oportunidade da iGreen Energy para sua casa, comércio ou empresa.
+          </p>
+
+          {/* CTA único */}
+          <div className="mt-8">
+            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => handleClick("cadastro")}>
+              Faça seu cadastro <ArrowRight className="w-5 h-5" />
+            </a>
+          </div>
+        </div>
+
+        {/* Video mockup — abaixo do título estratégico */}
+        <div className="relative max-w-4xl mx-auto mt-10 md:mt-14">
           <div className="mockup-window">
             <div className="mockup-bar">
               <span className="mockup-dot bg-red-400/70" />
@@ -57,33 +82,7 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
           </div>
         </div>
 
-        <div className="flex flex-col items-center text-center">
-          {/* Badge */}
-          <div className="badge-green animate-fade-in mb-6">
-            <span className="glow-dot" />
-            <span>Economia garantida</span>
-          </div>
 
-          {/* Title */}
-          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[1.65rem] sm:text-4xl md:text-5xl lg:text-[3.5rem] max-w-[20ch] mx-auto text-foreground">
-            Receba até <span className="text-gradient-green">20% de desconto</span> na sua conta de luz todo mês
-          </h1>
-
-          {/* Subtitle */}
-          <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Energia solar por assinatura, sem instalar placas, sem obras e sem custos. Conheça a oportunidade da iGreen Energy para sua casa, comércio ou empresa.
-          </p>
-
-          {/* CTA buttons */}
-          <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
-            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => handleClick("cadastro")}>
-              Faça seu cadastro <ArrowRight className="w-5 h-5" />
-            </a>
-            <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-whatsapp" onClick={() => handleClick("whatsapp")}>
-              💬 Atendimento no WhatsApp
-            </a>
-          </div>
-        </div>
 
 
         {/* Social proof */}
