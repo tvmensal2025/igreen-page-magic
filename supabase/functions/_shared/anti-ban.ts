@@ -39,7 +39,34 @@ export async function checkSendQuota(
       console.warn(`[checkSendQuota] RPC error for ${instance}:`, error.message);
       return { allowed: false, reason: "rpc_error" };
     }
-    return (data as SendQuotaResult) ?? { allowed: false, reason: "empty_response" };
+    const quota = (data as SendQuotaResult) ?? { allowed: false, reason: "empty_response" };
+
+    // Se o hard-lock já foi limpo e a instância está conectada, sinais antigos
+    // de disconnect_fatal não podem continuar bloqueando o envio para sempre.
+    if (!quota.allowed && quota.reason === "fatal_disconnect_pending_confirmation") {
+      try {
+        const { data: inst } = await supabase
+          .from("whatsapp_instances")
+          .select("status, manual_review_required, fatal_lock_until")
+          .eq("instance_name", instance)
+          .maybeSingle();
+        const lockActive = !!inst?.manual_review_required ||
+          (!!inst?.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date());
+        if (inst?.status === "connected" && !lockActive) {
+          await supabase
+            .from("instance_risk_signals")
+            .delete()
+            .eq("instance_name", instance)
+            .eq("signal_type", "disconnect_fatal");
+          const retry = await supabase.rpc("check_send_quota", { p_instance: instance });
+          if (!retry.error && retry.data) return retry.data as SendQuotaResult;
+        }
+      } catch (e: any) {
+        console.warn(`[checkSendQuota] stale fatal cleanup failed for ${instance}:`, e?.message);
+      }
+    }
+
+    return quota;
   } catch (e: any) {
     console.warn(`[checkSendQuota] exception:`, e?.message);
     return { allowed: false, reason: "exception" };
