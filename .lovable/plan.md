@@ -1,50 +1,81 @@
-## Diagnóstico
+# Auditoria do plano implementado vs. operação real do [rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)
 
-**Estado atual**
+## 1. O que foi implementado (recap)
 
-- A função `public.seed_default_camila_flow(consultant_id)` (migration `20260603140208_…`) é executada pelo trigger no INSERT de `consultants` e cria um **Fluxo da Camila** hardcoded com 6 passos (welcome → qualificacao → checkin → club → duvidas → handoff), sem botões.
-- O **tvmensal01** tem exatamente esse seed: 1 fluxo, variante D, 6 passos.
-- O **[rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)** (consultor `0c2711ad-4836-41e6-afba-edd94f698ae3`, superadmin) tem 3 fluxos ativos; o Fluxo D dele é `Fluxo Whapi (botões)` (`320bf22c-e383-4f53-a3c0-b88b89b02558`) com **16 passos** — esse é o que você quer como template oficial.
+- Migration adicionou `voice_templates.is_public` + RLS público.
+- Marcou as 43 mídias do superadmin (`0c2711ad…`) em `ai_media_library` como `is_public=true`.
+- Função `clone_superadmin_flow_d_steps()` + reescrita do `seed_default_camila_flow()` para clonar passos da variante D do rafael.
+- Backfill do `tvmensal01` (`b539a8a2…`): fluxo antigo de 6 passos substituído por clone de 16 passos.
+- `bot-flow.ts` (evolution-webhook): busca mídia do próprio consultor; se vazio, cai em `ai_media_library` `is_public=true` pelo `slot_key`.
+- `MediaColumn.tsx`: botão Globe para superadmin marcar mídia como pública.
 
-**Causa do "fluxo errado"**: o seed instala um fluxo hardcoded em vez de clonar o Fluxo D do rafael.ids. Por isso o D do tvmensal01 só tem 6 passos sem botões e está totalmente diferente do de referência.
+## 2. O que está OK
 
-## Plano
+- Clone estrutural funcionou: tvmensal01 tem os 16 passos com `step_key`, `step_type`, `position`, `slot_key`, `message_text`, `transitions` idênticos ao template do rafael.
+- `seed_default_camila_flow()` agora é idempotente e usa o template do superadmin.
+- Fallback público no `evolution-webhook` está implementado e logado.
+- Toggle Globe na UI está restrito a superadmin.
 
-### 1. Reescrever o seed para clonar o Fluxo D do rafael.ids
+## 3. Problemas críticos encontrados
 
-Migração que substitui `public.seed_default_camila_flow(uuid)`:
+### 3.1 O fallback de mídia público cobre apenas 3 dos 16 passos
 
-- Localiza o `template_flow_id` = fluxo ATIVO de variante D do consultor `0c2711ad-4836-41e6-afba-edd94f698ae3` ([rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)).
-- Se o consultor alvo já tem fluxo D ativo com ≥1 passo → retorna o id existente (idempotente, não sobrescreve trabalho).
-- Caso contrário:
-  - Cria um `bot_flows` (variant=D, is_active=true, name = `Fluxo Padrão (D)` ou copia o nome do template).
-  - Clona todos os `bot_flow_steps` do template gerando novos UUIDs e reescrevendo os `goto_step_id` dentro de `transitions` (jsonb) usando um mapa `old_id → new_id`. Preserva: `position`, `step_type`, `step_key`, `title`, `summary`, `icon`, `message_text`, `slot_key`, `captures`, `fallback`, `media_order`, `layout`, `text_delay_ms`, `wait_for`, `wait_seconds`, `condition_text`, `auto_detect_doc_type`, `persuasive_text`, `respect_business_hours`, `pause_on_weekend`, `pause_on_holiday`, `business_hour_start`, `business_hour_end`, `is_active`.
-  - Mídias (`bot_flow_step_media` se existir) — clonar referência para o consultor novo, sem duplicar binário (mesmo `ai_media_library_id`). Vou conferir essa tabela na migração antes de aplicar.
-- Salvaguarda: se o consultor alvo == rafael.ids, **não roda** (evita auto-clone).
-- Salvaguarda: se template não existir / sem passos, faz fallback para o seed antigo de 6 passos (mantém comportamento atual em vez de quebrar).
+A clonagem preserva `slot_key`, mas o lookup runtime (`ai_media_library` por `consultant_id + slot_key + active=true`) só encontra mídia pública em:
 
-### 2. Backfill do tvmensal01 (`953f7e48-509b-4069-9822-bdad9902be09`)
 
-Mesma migração, ao final:
+| slot_key         | mídias públicas ativas |
+| ---------------- | ---------------------- |
+| `como_funciona`  | 2                      |
+| `passo_mpagqq3g` | 1                      |
+| `(null)`         | 3                      |
 
-- Apaga os 6 passos do fluxo `b539a8a2-3ba2-4d36-9d7b-0f3d3df129b3` (Fluxo da Camila D do tvmensal01) — preserva o `bot_flows` row para não invalidar foreign keys em `customers.conversation_step` ou logs.
-- Renomeia para `Fluxo Padrão (D)` e roda o clone do template dentro desse mesmo `flow_id`.
-- Zera `customers.conversation_step` dos leads desse consultor que estavam apontando para os steps antigos (UPDATE com WHERE conversation_step IN (lista dos 6 step_keys antigos)), assim o motor reinicia no firstActive do novo D.
 
-### 3. Sem mudança no runtime
+Os outros 13 `slot_key`s usados pelo fluxo D (`passo_mp8yc0bp`, `passo_mp74xnmn`, `fazenda_solar`, `passo_mp7o985n`, `passo_mpa3yr6a`, `prova_social`, `passo_d_simular_valor`, `passo_d_simular_resultado`, `passo_d_simular_pedir_conta`, …) **não retornam nenhuma mídia pública** porque, mesmo após o backfill, no `ai_media_library` do rafael apenas **6 itens estão `active=true**` (o resto está `active=false` ou com `slot_key=null`). O `is_public=true` foi aplicado em tudo, mas o filtro `active=true` no dispatcher elimina a maioria.
 
-- Nenhuma edge function precisa mudar — o motor já roda `bot_flow_steps` do flow ativo da variante. Trocando os steps, o D já passa a operar como o do rafael.ids automaticamente.
-- Whapi e Evolution intocados.
+**Efeito prático:** o fluxo do tvmensal01 vai disparar passos com apenas o `message_text`, sem áudio/vídeo/imagem que o rafael envia no Whapi. O usuário verá uma conversa “seca” em comparação.
 
-## O que NÃO vou tocar
+### 3.2 [rafael.ids@icloud.com](mailto:rafael.ids@icloud.com) NÃO roda no `evolution-webhook`
 
-- Fluxos A e B do tvmensal01 ou de outros consultores.
-- Fluxos do rafael.ids (fonte da verdade — você edita lá e novos consultores herdam).
-- Trigger `trg_seed_camila_flow`, índices, RLS.
-- Tabela `whatsapp_instances`, `customers` exceto reset de `conversation_step` do tvmensal01.
+Rafael opera via Whapi (`whapi-webhook`), enquanto tvmensal01 e demais consultores rodam no `evolution-webhook`. As pipelines são separadas:
 
-## Risco
+- `whapi-webhook/handlers/conversational/index.ts` resolve mídia via `ai_media_library` por `consultant_id + slot_key` **sem fallback público**.
+- A precedência de ordem (`consultants.flow_step_media_order` → `step.media_order` → default) também é exclusiva do whapi handler.
+- A máquina de estados (`state-machine.ts` do whapi) usa step keys próprios (`welcome`, `qualificacao`, `checkin`, `club`, `duvidas`), distintos do D (`d_welcome`, `d_pedir_conta`, …). Logo, o fluxo D clonado **não recebe os ganchos conversacionais** que o rafael tem.
 
-- Se o Fluxo D do rafael referenciar mídias por `bot_flow_step_media` apontando para `ai_media_library` do consultor 0c2711ad, leads de outro consultor reproduzirão a mídia do superadmin. Isso é o **comportamento desejado** (template oficial) — mas vou conferir a estrutura antes de finalizar a migração e, se a coluna `consultant_id` for obrigatória em `ai_media_library`, manter referência cross-consultant (RLS já permite via service_role no edge sender).
+**Conclusão:** clonar “o fluxo do rafael” para um consultor Evolution copia a estrutura, mas não copia o comportamento real do Whapi.
 
-Você aprova essa abordagem? SIM, MAS ESTA FALTANDO AQUI OS VIDEOS E AUDIOS QUE DEVERIA ESTAR PUBLICO, OS TEMPLATE, AUDIOS E ATALHOS E VIDEOS E IMAGENS TUDO DO SUPERADMIN DEVERIA ESTAR PUBLICO, AJUSTE PARA TEUM BOTAO NO USUPER ADMIN, OQUE TEM QUE SER OPUBLICO EOQUE NAO DEVE, SE TIVER PUBLICO APARECE PARA TODOS OS CONSULTORES
+### 3.3 Atalhos / `message_templates` não foram clonados
+
+- Rafael tem 22 `message_templates` com `is_quick_reply=true`.
+- tvmensal01 e demais: 0.
+- A tabela não tem coluna `is_public` e nenhum mecanismo de compartilhamento foi adicionado.
+
+### 3.4 `voice_templates` continua privado
+
+Coluna `is_public` foi criada e indexada, mas dos 1 registro existente, **0 estão públicos**. A migration não populou nada.
+
+### 3.5 Risco para novos consultores
+
+`seed_default_camila_flow()` agora cria 16 passos D para qualquer novo consultor, mas como 3.1 mostra, eles vão receber um fluxo praticamente sem mídia. Pior que o fluxo de 6 passos antigo, que ao menos tinha textos coerentes.
+
+### 3.6 Instância do rafael no Evolution
+
+`whatsapp_instances` mostra `igreen-0c2711ad4836` com `status=needs_reconnect`. Mesmo que se quisesse reaproveitar o fluxo via Evolution, a instância do rafael não está conectada lá — ele opera via Whapi.
+
+## 4. Recomendações (próximo plano, requer aprovação)
+
+1. **Ativar mídia pública corretamente**: rodar UPDATE em `ai_media_library` setando `active=true` para o conjunto mínimo de mídias do rafael que cobrem os 13 `slot_key`s restantes do fluxo D — ou criar um “kit oficial” curado pelo superadmin via UI.
+2. **Unificar dispatchers**: extrair lógica de resolução de mídia em helper compartilhado para que `whapi-webhook` e `evolution-webhook` apliquem o mesmo fallback público e a mesma precedência de `media_order`.
+3. **Compartilhar atalhos**: adicionar `is_public` a `message_templates` (com RLS público de leitura para autenticados) e marcar os 22 do rafael como `is_public=true`. Atualizar a UI de atalhos para listar próprios + públicos.
+4. **Compartilhar voice_templates**: marcar o(s) template(s) oficial(is) do rafael como `is_public=true` (não foi feito na migration anterior).
+5. **Decidir o destino do fluxo D no Whapi vs Evolution**: ou portar a máquina de estados conversacional do Whapi para Evolution, ou aceitar que “fluxo padrão” = apenas script linear de passos (e documentar isso).
+6. **Reconectar instância Evolution do rafael** se for usado para QA do template.
+
+## 5. Itens técnicos detalhados
+
+- Step keys do D clonados: `d_welcome, d_pedir_conta, d_como_funciona, d_resultado, d_pedir_documento, d_pedir_email, d_confirmar_telefone, d_duvidas, d_handoff, d_finalizar, d_simular_valor, d_simular_resultado, d_escolher_simulacao, d_simular_pedir_conta, d_como_funciona_copy_in3s, d_como_funciona_copy_qwpu`.
+- Dispatcher relevante: `supabase/functions/evolution-webhook/handlers/bot-flow.ts` linhas 1161–1185 (fallback público).
+- Dispatcher Whapi (sem fallback): `supabase/functions/whapi-webhook/handlers/conversational/index.ts` linhas 218–235 e 406–420.
+- `consultants.flow_step_media_order`: usado só no whapi para reordenar `audio/video/image/text`; não replicado no evolution.  
+  
+DOU PERMISSAO PARA COLOCARTODOSAS MIDIAS USADAS NO SUPERADMIN COMO PUBLICO
