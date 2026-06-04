@@ -66,6 +66,17 @@ Deno.serve(async (req) => {
           _metadata: { stripe_event_id: event.id, gross_cents: amountCents, fee_cents: stripeFeeCents },
           _stripe_fee_cents: stripeFeeCents,
         });
+        // Realinha spend_cap das campanhas com o saldo novo + reativa as pausadas por saldo
+        try {
+          await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/facebook-realign-lifetime`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ consultant_id: consultantId, reactivate: true }),
+          });
+        } catch (re) { console.error("[wallet-webhook] realign failed", (re as Error).message); }
       }
     }
 
