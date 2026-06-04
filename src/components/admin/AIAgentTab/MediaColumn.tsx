@@ -143,7 +143,7 @@ function EditableLabel({ value, onSave }: { value: string; onSave: (v: string) =
 
 export function MediaColumn({ userId }: { userId: string }) {
   const { toast } = useToast();
-  const { isSuperAdmin } = useUserRole();
+  const { isSuperAdmin } = useUserRole(userId);
   const [view, setView] = useState<"mine" | "public">("mine");
   const [items, setItems] = useState<Media[]>([]);
   const [loading, setLoading] = useState(true);
