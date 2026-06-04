@@ -482,9 +482,14 @@ export function ConnectionPanel({
                 {phoneNumber && <p className="text-sm text-muted-foreground mt-1">{phoneNumber}</p>}
               </div>
             </div>
-            <Button onClick={() => setShowDisconnectConfirm(true)} variant="outline" size="sm" className="gap-2 rounded-xl text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400 transition-all">
-              <WifiOff className="w-4 h-4" /> Desconectar
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={onReconnect} variant="outline" size="sm" className="gap-2 rounded-xl text-primary border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all">
+                <RefreshCw className="w-4 h-4" /> Reconectar chip
+              </Button>
+              <Button onClick={() => setShowDisconnectConfirm(true)} variant="outline" size="sm" className="gap-2 rounded-xl text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400 transition-all">
+                <WifiOff className="w-4 h-4" /> Desconectar / trocar chip
+              </Button>
+            </div>
           </div>
         )}
 
