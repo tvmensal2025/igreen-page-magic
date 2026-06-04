@@ -1268,12 +1268,84 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   );
 
   const stepButtons = extractStepButtons(currentStep);
+  const _stepTypeStr = String(currentStep.step_type || "message");
+  const _isCaptureStep = _stepTypeStr.startsWith("capture_") || _stepTypeStr === "confirm_phone";
+  const _refusalCountKey = "ai_followups_count";
+  const _prevRefusals = Number((ctx.customer as any)[_refusalCountKey] || 0);
+
   if (stepButtons.length > 0 && !ctx.buttonId) {
     const intent = await matchButtonIntent(ctx.messageText || "", stepButtons, {
       apiKey: Deno.env.get("LOVABLE_API_KEY"),
     });
     console.log(`[conversational/evo] button-intent: ${JSON.stringify(intent)}`);
-    if (intent.match) ctx.buttonId = intent.match;
+    if (intent.match) {
+      ctx.buttonId = intent.match;
+    } else if (intent.refused) {
+      // Recusa explícita → despedida amigável + pausa (espelha whapi)
+      const nome = (ctx.customer as any)?.name || "";
+      const saida = `Tranquilo${nome ? `, ${nome}` : ""}! Quando quiser voltar é só me mandar uma mensagem. Tô por aqui 💚`;
+      return _finalize(stepKey, {
+        reply: saida,
+        updates: {
+          conversation_step: stepKey,
+          bot_paused: true,
+          bot_paused_reason: "lead_refused_softpause",
+          bot_paused_at: new Date().toISOString(),
+          ...restoreDetourUpdates,
+        },
+      });
+    } else if (intent.confused) {
+      // Confuso → nudge com menu numerado; após 2 tentativas, handoff
+      if (_prevRefusals >= 2) {
+        try {
+          await notifyHandoff(
+            consultantId || ctx.customer.consultant_id,
+            { id: ctx.customer.id, name: (ctx.customer as any).name, phone_whatsapp: (ctx.customer as any).phone_whatsapp, conversation_step: stepKey },
+            ctx.messageText || "",
+            "cliente_confuso_botoes",
+          ).catch(() => {});
+        } catch (_) { /* noop */ }
+        return _finalize(stepKey, {
+          reply: "Vou chamar alguém do time pra te ajudar — em instantes te respondem por aqui 🙌",
+          updates: {
+            conversation_step: stepKey,
+            bot_paused: true,
+            bot_paused_reason: "confused_after_retries",
+            bot_paused_at: new Date().toISOString(),
+            [_refusalCountKey]: 0,
+            ...restoreDetourUpdates,
+          },
+        });
+      }
+      const btnList = stepButtons.slice(0, 3).map((b, i) => `${i + 1}) ${b.title}`).join("\n");
+      const nudge = `Posso te ajudar com qualquer uma destas opções 👇\n\n${btnList}\n\nÉ só tocar no número ou me dizer qual 🙂`;
+      return _finalize(stepKey, {
+        reply: nudge,
+        updates: {
+          conversation_step: stepKey,
+          [_refusalCountKey]: _prevRefusals + 1,
+          ...restoreDetourUpdates,
+        },
+      });
+    }
+  }
+
+  // Passo de captura (foto da conta etc.) + texto livre → detecta recusa
+  if (_isCaptureStep && !ctx.buttonId) {
+    const intent = await matchButtonIntent(ctx.messageText || "", [], { apiKey: Deno.env.get("LOVABLE_API_KEY") });
+    if (intent.refused) {
+      const nome = (ctx.customer as any)?.name || "";
+      return _finalize(stepKey, {
+        reply: `Tranquilo${nome ? `, ${nome}` : ""}! Quando quiser dar continuidade é só me mandar a foto da conta. Tô por aqui 💚`,
+        updates: {
+          conversation_step: stepKey,
+          bot_paused: true,
+          bot_paused_reason: "lead_refused_softpause",
+          bot_paused_at: new Date().toISOString(),
+          ...restoreDetourUpdates,
+        },
+      });
+    }
   }
 
   // Sprint 1.5: honra threshold de handoff (conf < 0.5) — pausa bot, consultor assume.
