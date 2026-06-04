@@ -3,10 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Brain, RefreshCw, TrendingDown, TrendingUp, Zap } from "lucide-react";
+import { Brain, ChevronRight, RefreshCw, TrendingDown, TrendingUp, Zap } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { KpisRow } from "./KpisRow";
+import { ActionDrillDialog } from "./ActionDrillDialog";
 
 interface Diag {
   kpis: any;
@@ -30,6 +31,7 @@ export function IntelDiagnostic() {
   const [diag, setDiag] = useState<Diag | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [activeAction, setActiveAction] = useState<any | null>(null);
 
   async function load() {
     setLoading(true);
@@ -153,22 +155,36 @@ export function IntelDiagnostic() {
               </h3>
               <div className="grid sm:grid-cols-2 gap-2">
                 {diag.actions.map((a: any, i: number) => (
-                  <div key={i} className="rounded-lg border border-border/40 bg-background/40 p-3 hover:border-primary/50 transition">
+                  <button
+                    key={i}
+                    onClick={() => setActiveAction(a)}
+                    className="text-left rounded-lg border border-border/40 bg-background/40 p-3 hover:border-primary/60 hover:bg-background/60 transition group"
+                  >
                     <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className="text-xs font-bold text-foreground">{a.label}</p>
+                      <p className="text-xs font-bold text-foreground flex items-center gap-1">
+                        {a.label}
+                        <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
+                      </p>
                       <Badge variant={a.impact === "high" ? "default" : "outline"} className="text-[10px] shrink-0">
                         {a.impact === "high" ? "🔥" : a.impact === "medium" ? "⚡" : "·"} {a.impact}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">{a.detail}</p>
-                  </div>
+                  </button>
                 ))}
               </div>
+              <p className="text-[10px] text-muted-foreground italic mt-2">Clique numa ação para abrir os dados e executar.</p>
             </div>
           )}
 
         </>
       )}
+
+      <ActionDrillDialog
+        open={!!activeAction}
+        onOpenChange={(o) => !o && setActiveAction(null)}
+        action={activeAction}
+      />
     </div>
   );
 }
