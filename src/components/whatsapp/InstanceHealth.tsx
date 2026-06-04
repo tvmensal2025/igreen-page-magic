@@ -145,28 +145,6 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
     }
   };
 
-  const reconnectInstance = async () => {
-    setReconnectLoading(true);
-    setQrBase64(null);
-    setPairingCode(null);
-    setReconnectOpen(true);
-    try {
-      const { data, error } = await (supabase as any).functions.invoke("evolution-instance-reconnect", {
-        body: { instanceName, forceLogout: true },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      setQrBase64(data?.qr_base64 ?? null);
-      setPairingCode(data?.pairing_code ?? null);
-      toast({ title: "Sessão derrubada", description: "Escaneie o QR no WhatsApp do celular para reconectar." });
-      await load();
-    } catch (e: any) {
-      toast({ title: "Falha ao reconectar", description: e?.message, variant: "destructive" });
-      setReconnectOpen(false);
-    } finally {
-      setReconnectLoading(false);
-    }
-  };
 
   if (loading) {
     return (
