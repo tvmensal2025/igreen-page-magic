@@ -59,8 +59,14 @@ Deno.serve(async (req) => {
     const updated: any[] = [];
     const errors: any[] = [];
 
-    for (const c of camps || []) {
-      if (!c.fb_campaign_id) continue;
+    // RATEIO ANTI-PREJUÍZO: divide o orçamento extra da Meta entre TODAS as campanhas
+    // que vão receber cap (ativas + pausadas que serão reativadas). Sem dividir, cada
+    // campanha receberia o saldo total e N campanhas poderiam gastar N × saldo.
+    const eligible = (camps || []).filter((c: any) => c.fb_campaign_id);
+    const denom = Math.max(1, eligible.length);
+    const perCampaignExtra = Math.floor(extraMetaBudgetCents / denom);
+
+    for (const c of eligible) {
       try {
         const conn = await loadCampaignConnection(consultantId);
         if (!conn?.token) continue;
@@ -72,7 +78,7 @@ Deno.serve(async (req) => {
           currentSpendCents = toCents(r?.data?.[0]?.spend || 0);
         } catch (_) {}
 
-        const newCap = currentSpendCents + extraMetaBudgetCents;
+        const newCap = Math.max(1000, currentSpendCents + perCampaignExtra);
         // Atualiza spend_cap na Meta (campaign-level lifetime ceiling)
         try {
           await fbFetch(`/${c.fb_campaign_id}`, {
