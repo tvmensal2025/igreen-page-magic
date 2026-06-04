@@ -4362,6 +4362,7 @@ export type Database = {
           created_at: string | null
           id: string
           image_url: string | null
+          is_public: boolean
           is_quick_reply: boolean
           media_type: string | null
           media_url: string | null
@@ -4375,6 +4376,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           image_url?: string | null
+          is_public?: boolean
           is_quick_reply?: boolean
           media_type?: string | null
           media_url?: string | null
@@ -4388,6 +4390,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           image_url?: string | null
+          is_public?: boolean
           is_quick_reply?: boolean
           media_type?: string | null
           media_url?: string | null
