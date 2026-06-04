@@ -1159,7 +1159,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
 
       const slotKey = (stepRow as any).slot_key || stepKey;
-      const { data: mediaRows } = await supabase
+      // Busca mídia do próprio consultor PRIMEIRO; se vazio, cai no público
+      // (mídia do superadmin marcada como is_public=true). Isso permite que
+      // qualquer consultor reaproveite os templates oficiais sem ter que
+      // re-uppar áudios/vídeos.
+      const { data: personalRows } = await supabase
         .from("ai_media_library")
         .select("id, kind, url, slot_key, send_order, duration_sec, delay_before_ms")
         .eq("consultant_id", customer.consultant_id)
@@ -1167,7 +1171,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         .eq("active", true)
         .eq("is_draft", false)
         .order("send_order", { ascending: true });
-      let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
+      let medias = ((personalRows as any[]) || []).filter((m) => !!m?.url);
+      if (medias.length === 0) {
+        const { data: publicRows } = await supabase
+          .from("ai_media_library")
+          .select("id, kind, url, slot_key, send_order, duration_sec, delay_before_ms")
+          .eq("is_public", true)
+          .eq("slot_key", slotKey)
+          .eq("active", true)
+          .order("send_order", { ascending: true });
+        medias = ((publicRows as any[]) || []).filter((m) => !!m?.url);
+        if (medias.length > 0) console.log(`[dispatch:${stepKey}] fallback público (${medias.length} mídia(s))`);
+      }
       const _flowVariant = (customer as any)?.flow_variant || 'A';
       if (_flowVariant === 'B') {
         const _before = medias.length;

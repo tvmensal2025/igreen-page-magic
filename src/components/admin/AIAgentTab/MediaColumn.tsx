@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -142,6 +143,7 @@ function EditableLabel({ value, onSave }: { value: string; onSave: (v: string) =
 
 export function MediaColumn({ userId }: { userId: string }) {
   const { toast } = useToast();
+  const { isSuperAdmin } = useUserRole(userId);
   const [view, setView] = useState<"mine" | "public">("mine");
   const [items, setItems] = useState<Media[]>([]);
   const [loading, setLoading] = useState(true);
@@ -248,6 +250,25 @@ export function MediaColumn({ userId }: { userId: string }) {
   async function toggleActive(m: Media, v: boolean) {
     await supabase.from("ai_media_library").update({ active: v }).eq("id", m.id);
     loadList();
+  }
+
+  async function togglePublic(m: Media) {
+    const next = !m.is_public;
+    const { error } = await supabase
+      .from("ai_media_library")
+      .update({ is_public: next })
+      .eq("id", m.id);
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({
+      title: next ? "🌐 Mídia tornada pública" : "🔒 Mídia tornada privada",
+      description: next
+        ? `"${m.label}" agora aparece para todos os consultores como fallback.`
+        : `"${m.label}" não está mais disponível publicamente.`,
+    });
+    setItems((prev) => prev.map((x) => (x.id === m.id ? { ...x, is_public: next } : x)));
   }
 
   async function remove(m: Media) {
@@ -589,6 +610,22 @@ export function MediaColumn({ userId }: { userId: string }) {
                       title="Prioridade (maior = enviado primeiro)"
                     />
                     <TagEditor m={m} />
+                    {isSuperAdmin && (
+                      <button
+                        onClick={() => togglePublic(m)}
+                        className={`p-1.5 rounded transition-colors shrink-0 ${
+                          m.is_public
+                            ? "text-emerald-400 hover:text-emerald-300"
+                            : "text-muted-foreground hover:text-emerald-400"
+                        }`}
+                        title={m.is_public
+                          ? "Pública — clique para tornar privada"
+                          : "Privada — clique para tornar pública (todos os consultores poderão usar)"}
+                        aria-label="Alternar público"
+                      >
+                        <Globe className="w-4 h-4" />
+                      </button>
+                    )}
                     <Switch
                       checked={m.active}
                       onCheckedChange={(v) => toggleActive(m, v)}
