@@ -1,79 +1,60 @@
-# Auditoria pós-implementação — Fluxo D compartilhado
 
-## 1. O que está OK agora
+## Problema
 
+Quando você clica em **"Zerar conversa"** no painel do admin, o sistema:
+- apaga o histórico visível,
+- zera `conversation_step`, `capture_mode`, contadores e prompts,
+- **MAS NÃO** zera o handoff humano (`bot_paused=true`, `bot_paused_reason=humano_assumiu`, `assigned_human_id=<operador>`).
 
-| Item                                 | Estado                                           |
-| ------------------------------------ | ------------------------------------------------ |
-| `bot_flows` D do tvmensal01          | 16 passos clonados, `is_active=true`             |
-| `ai_media_library` rafael            | 43/43 `active=true` e `is_public=true`           |
-| `evolution-webhook` fallback público | Implementado em `bot-flow.ts` (linhas 1166–1185) |
-| `MediaColumn` toggle Globe           | Restrito a superadmin                            |
-| `seed_default_camila_flow()`         | Reescrito para clonar do rafael                  |
-| `clone_superadmin_flow_d_steps()`    | Disponível                                       |
+Resultado: a próxima mensagem do lead bate no webhook, vê o pause de takeover e responde no log `🤝 [handoff] bot pausado ... Skip auto-reply`. O fluxo D nunca arranca.
 
+Foi exatamente o que aconteceu com **5511989000650 (Rafael Ferreira)** no consultor `tvmensal01` agora há pouco.
 
-**Cobertura de mídia por passo do fluxo D do tvmensal01** (após ativar tudo):
+## Correção em 2 partes
 
+### 1. Destravar o lead específico agora (manual)
+
+Migration única que, **só para esse customer**, reseta o handoff e devolve para o ponto inicial do fluxo D:
+
+```sql
+UPDATE public.customers
+SET bot_paused = false,
+    bot_paused_reason = NULL,
+    bot_paused_at = NULL,
+    bot_paused_until = NULL,
+    assigned_human_id = NULL,
+    conversation_step = NULL,
+    capture_mode = 'auto',
+    custom_step_retries = 0,
+    custom_step_retries_step = NULL,
+    last_custom_prompt_at = NULL,
+    ai_followups_count = 0
+WHERE id = '937defb9-e206-4779-9855-92753883cf08';
+
+DELETE FROM public.ai_slot_dispatch_log
+ WHERE customer_id = '937defb9-e206-4779-9855-92753883cf08';
 ```
-d_welcome              5 mídias  ✔
-d_pedir_conta          1 mídia   ✔
-d_como_funciona        12 mídias ✔
-d_resultado            10 mídias ✔
-d_pedir_documento      1 mídia   ✔
-d_pedir_email          1 mídia   ✔
-d_confirmar_telefone   1 mídia   ✔
-d_duvidas              0  (slot_key nulo — só texto, by design)
-d_handoff              0  (slot_key nulo — só texto, by design)
-d_finalizar            2 mídias  ✔
-d_simular_valor        0  (slot_key passo_d_simular_valor sem mídia no rafael)
-d_simular_resultado    0  (slot_key passo_d_simular_resultado sem mídia no rafael)
-d_escolher_simulacao   0  (slot_key nulo — só texto, by design)
-d_simular_pedir_conta  1 mídia   ✔
-d_como_funciona_copy*  12 mídias ✔ (x2)
-```
 
-11 dos 13 passos com `slot_key` agora resolvem mídia pública. 3 passos só-texto eram intencionais. Os 2 passos `d_simular_*` ficaram sem mídia porque nem o próprio rafael tem mídia para esses `slot_key`s — não há o que copiar.
+Na próxima mensagem do Rafael, o webhook deve cair no fluxo D do `tvmensal01` (já cloneado do superadmin, `is_active=true`).
 
-## 2. Lacunas remanescentes (decidir se implementar)
+### 2. Corrigir o "Zerar conversa" para também liberar o bot
 
-### 2.1 Atalhos (`message_templates`) NÃO compartilhados — alto impacto
+Hoje a action `resetConversation` (em `src/services/resetConversation.ts`) limpa estado do funil mas **mantém** o pause. Ajustar para que, ao zerar:
 
-- Rafael: 22 atalhos / quick replies. Demais consultores: 0.
-- Tabela não tem `is_public` nem RLS público.
-- Proposta: adicionar `is_public boolean default false`, política RLS de leitura para `authenticated` quando `is_public=true`, marcar os 22 do rafael como públicos, e ajustar a UI de atalhos para listar próprios + públicos.
+- `bot_paused = false`
+- `bot_paused_reason = NULL`
+- `bot_paused_at = NULL`
+- `bot_paused_until = NULL`
+- `assigned_human_id = NULL`
+- limpar `ai_slot_dispatch_log` do customer (já é feito em alguns paths, garantir aqui)
 
-### 2.2 `voice_templates` continua sem nenhum item público
+Assim, "Zerar conversa" volta a significar "o bot recomeça do zero" — que é o que o toast já promete: *"O bot vai começar do zero."*
 
-- Coluna `is_public` existe, mas 0 dos 1 registros estão marcados.
-- Decidir: marcar o template oficial do rafael como `is_public=true`?
+### 3. Investigação à parte (não bloqueia)
 
-### 2.3 Whapi vs Evolution — dispatchers divergentes
+Existe um segundo `customer` com o mesmo número (`5f8be1a8...`) no consultor `rafael.ids` desde 30/05, também travado em `humano_assumiu_whatsapp`. Como o mesmo número conversa com 2 consultores diferentes via instâncias separadas, isso é esperado — mas vale revisar se um dos dois deveria ser arquivado/marcado `do_not_contact` para evitar dupla resposta caso ambas as instâncias estejam ativas para esse número.
 
-- `whapi-webhook/handlers/conversational/index.ts` (linhas 218–235, 406–420) NÃO tem fallback público nem usa `is_public`.
-- Se algum dia um consultor novo for criado no Whapi, ele não herda o template do rafael.
-- A máquina de estados conversacional (`state-machine.ts`) do whapi usa step keys `welcome/qualificacao/checkin/club/duvidas`, diferentes dos `d_*` do fluxo D. Logo, a inteligência conversacional do rafael NÃO acompanha o clone — consultores Evolution recebem só o script linear.
-- Proposta: extrair resolver de mídia em helper compartilhado e/ou portar a máquina de estados conversacional para o evolution-webhook.
+## Não escopo
 
-### 2.4 `consultants.flow_step_media_order`
-
-- Coluna usada só pelo whapi para reordenar `audio/video/image/text` por slot. Não replicada no evolution.
-- Sem isso, ordem de envio do tvmensal01 pode diferir do rafael mesmo com mesma mídia.
-
-### 2.5 `seed_default_camila_flow()` para novos consultores
-
-- Agora gera D linear com mídia pública. Validar com um QA em consultor de teste antes de liberar onboarding.
-
-### 2.6 Instância Evolution do rafael
-
-- `igreen-0c2711ad4836` em `needs_reconnect`. Sem impacto operacional (rafael usa Whapi), só impede QA do template no canal Evolution.
-
-## 3. Recomendação de próximas implantações (ordem de prioridade)
-
-1. **Atalhos públicos** (2.1) — maior valor percebido pelos consultores no dia-a-dia.
-2. **voice_templates público** (2.2) — uma linha de SQL.
-3. **Mídia faltante em `d_simular_***` — pedir ao rafael para uppar áudio/vídeo nesses 2 slot_keys via UI atual.
-4. **Unificar dispatcher Whapi↔Evolution** (2.3, 2.4) — refactor maior; agendar separado.
-5. **Reconectar Evolution do rafael** (2.6) — só se quiser QA visual.
-
-Diga quais desses itens devo implantar agora. MENOS O REFACTOR, ANTES DE APLICAR ANALISE O CODIGO SE REALEMTNE É ISSO MESMO PARA NAO TER ERRO. E NAO MECHER NO WHAPI
+- Não vou mexer no fluxo D em si (steps, mídia, templates) — ele está correto e cloneado.
+- Não vou mexer no auto-takeover (operador digitar = pause). A regra está correta; só a action de "Zerar conversa" precisa também limpar esse pause.
