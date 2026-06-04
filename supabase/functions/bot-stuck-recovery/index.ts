@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
 
     let query = supabase
       .from("customers")
-      .select("id, phone_whatsapp, consultant_id, conversation_step, last_bot_reply_at, name, rescue_attempts, last_rescue_at, status, next_rescue_allowed_at, bot_paused");
+      .select("id, phone_whatsapp, consultant_id, conversation_step, last_bot_reply_at, name, rescue_attempts, last_rescue_at, status, next_rescue_allowed_at, bot_paused, bot_paused_until");
 
     if (customerIds && customerIds.length > 0) {
       query = query.in("id", customerIds);
