@@ -62,6 +62,16 @@ export interface EvolutionInstance {
 export function createEvolutionSender(apiUrl: string, apiKey: string, instanceName: string) {
   const baseUrl = apiUrl.replace(/\/$/, "");
 
+  /**
+   * Evolution API v2 (/message/sendText, /sendButtons, /sendMedia,
+   * /sendWhatsAppAudio, /chat/sendPresence) espera `number` em dígitos puros.
+   * Quando recebe JID completo (`5511…@s.whatsapp.net`) responde 2xx mas
+   * Baileys silenciosamente NÃO entrega a mensagem. Normalize sempre aqui.
+   */
+  const toEvolutionNumber = (jid: string) =>
+    String(jid || "").split("@")[0].replace(/\D/g, "");
+
+
   // Retry helper para envios — exponential backoff (300ms, 900ms, 2.7s).
   //
   // Optional `idempotencyOpts`:
