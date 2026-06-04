@@ -1,21 +1,25 @@
 import { useEffect, useState, useCallback } from "react";
-import { Activity, ShieldAlert, ShieldCheck, PauseCircle, PlayCircle, AlertTriangle, Flame, Plug, Hourglass } from "lucide-react";
+import { Activity, ShieldAlert, ShieldCheck, PauseCircle, PlayCircle, AlertTriangle, Flame, Plug, Hourglass, AlertOctagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
 /**
- * Painel de saúde anti-ban da instância (Plano A — padrão Wazzap/Whapi/Chatarmin 2026).
+ * Painel de saúde anti-ban da instância.
  *
- * Mostra para o consultor — em tempo real — exatamente o que o backend
- * está permitindo/bloqueando para o chip dele:
+ * Mostra ao consultor o estado real do chip:
  *
- *   • Dia do warmup (D1..D14+) e cota usada / restante de hoje.
- *   • Modo recuperação (bloqueio pós-incidente de até 14 dias).
- *   • Sinais de risco ativos nas últimas 6h (reconexões, falhas, fatais).
+ *   • Dia do warmup e cota.
+ *   • Modo recuperação (pausa operacional).
+ *   • Revisão manual ativa (hard-lock após desconexão fatal 403/401/440).
+ *   • Sinais de risco ativos nas últimas 6h.
  *   • Kill switch manual ("Pausar envios por 24h").
- *   • Botão para sair do modo recuperação após reconectar o chip com sucesso.
+ *
+ * IMPORTANTE: o botão "Encerrar modo recuperação" só aparece quando NÃO há
+ * revisão manual ativa. Em revisão manual, a única coisa a fazer é aguardar
+ * (ou trocar de chip pelo painel de conexão acima). Liberar nesse estado pode
+ * acelerar um bloqueio definitivo do número.
  */
 
 interface InstanceHealthProps {
@@ -36,6 +40,10 @@ interface QuotaState {
 
 interface InstanceMeta {
   recovery_mode_until: string | null;
+  manual_review_required?: boolean | null;
+  fatal_disconnect_reason?: number | null;
+  fatal_disconnect_at?: string | null;
+  fatal_lock_until?: string | null;
 }
 
 interface RiskRow {
@@ -53,6 +61,7 @@ function fmtDateTime(iso: string | null | undefined) {
 
 function reasonLabel(reason?: string): string {
   switch (reason) {
+    case "fatal_lock_manual_review": return "Número em revisão manual (não reconectar agora)";
     case "recovery_mode": return "Modo recuperação ativo";
     case "fatal_disconnect_pending_confirmation": return "Desconexão grave — aguardando confirmação manual";
     case "too_many_reconnects": return "Muitas reconexões — circuit breaker ativo";
@@ -81,7 +90,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
         (supabase as any).rpc("check_send_quota", { p_instance: instanceName }),
         (supabase as any)
           .from("whatsapp_instances")
-          .select("recovery_mode_until")
+          .select("recovery_mode_until, manual_review_required, fatal_disconnect_reason, fatal_disconnect_at, fatal_lock_until")
           .eq("instance_name", instanceName)
           .maybeSingle(),
         (supabase as any)
@@ -127,7 +136,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
 
   const clearRecovery = async () => {
     if (!confirm(
-      "Só libere se você já reconectou o chip e o WhatsApp está funcionando normalmente.\n\n" +
+      "Só libere se você JÁ confirmou no app oficial do WhatsApp que o número está funcionando normalmente.\n\n" +
       "Liberar agora?"
     )) return;
     setActionLoading(true);
@@ -135,7 +144,17 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
       const { error } = await (supabase as any).rpc("clear_recovery_mode", {
         p_instance: instanceName,
       });
-      if (error) throw error;
+      if (error) {
+        if (String(error.message || "").includes("fatal_lock_active_admin_required")) {
+          toast({
+            title: "Não é possível liberar agora",
+            description: "Este número está em revisão manual após desconexão grave. Aguarde a liberação por um administrador ou troque de chip pelo painel acima.",
+            variant: "destructive",
+          });
+          return;
+        }
+        throw error;
+      }
       toast({ title: "Modo recuperação encerrado" });
       await load();
     } catch (e: any) {
@@ -157,6 +176,9 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
     );
   }
 
+  const fatalLocked =
+    !!meta?.manual_review_required ||
+    (!!meta?.fatal_lock_until && new Date(meta.fatal_lock_until) > new Date());
   const inRecovery = !!meta?.recovery_mode_until && new Date(meta.recovery_mode_until) > new Date();
   const reconnects = signals.filter(s => s.signal_type === "reconnect").length;
   const failures = signals.filter(s => s.signal_type === "send_failure").length;
@@ -167,7 +189,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
     <div className="mt-4 rounded-xl border border-border/50 bg-card/50 overflow-hidden">
       <div className="px-4 py-2.5 border-b border-border/40 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {quota?.allowed && !inRecovery
+          {quota?.allowed && !inRecovery && !fatalLocked
             ? <ShieldCheck className="w-4 h-4 text-green-400" />
             : <ShieldAlert className="w-4 h-4 text-yellow-400" />}
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -175,7 +197,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {!inRecovery && (
+          {!inRecovery && !fatalLocked && (
             <Button
               size="sm" variant="ghost"
               onClick={pauseNow} disabled={actionLoading}
@@ -188,16 +210,44 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
       </div>
 
       <div className="p-4 space-y-3">
-        {inRecovery && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 space-y-2">
+        {fatalLocked && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <Flame className="w-4 h-4 text-red-400" />
-              <span className="text-xs font-bold text-red-400">MODO RECUPERAÇÃO ATIVO</span>
+              <AlertOctagon className="w-4 h-4 text-red-400" />
+              <span className="text-xs font-bold text-red-400 uppercase tracking-wider">
+                Número em revisão manual
+              </span>
+            </div>
+            <p className="text-[12px] text-foreground leading-relaxed">
+              Este número sofreu uma desconexão grave
+              {meta?.fatal_disconnect_reason ? ` (código ${meta.fatal_disconnect_reason})` : ""}
+              {meta?.fatal_disconnect_at ? ` em ${fmtDateTime(meta.fatal_disconnect_at)}` : ""}.
+              O WhatsApp pode ter restringido ou bloqueado o chip.
+            </p>
+            <ul className="text-[11px] text-muted-foreground list-disc list-inside leading-relaxed space-y-0.5">
+              <li>Abra o WhatsApp no celular e verifique se o número está normal.</li>
+              <li><strong>Não reconecte aqui</strong> antes da confirmação manual.</li>
+              <li>Se quiser usar outro chip, vá em <strong>Desconectar / trocar chip</strong> no painel de conexão acima.</li>
+              <li>Os disparos automáticos estão bloqueados até liberação por administrador.</li>
+            </ul>
+            {meta?.fatal_lock_until && (
+              <p className="text-[11px] text-muted-foreground">
+                Trava ativa até: <strong>{fmtDateTime(meta.fatal_lock_until)}</strong>
+              </p>
+            )}
+          </div>
+        )}
+
+        {inRecovery && !fatalLocked && (
+          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Flame className="w-4 h-4 text-yellow-400" />
+              <span className="text-xs font-bold text-yellow-400">MODO RECUPERAÇÃO ATIVO</span>
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
               Todos os disparos automáticos estão bloqueados até <strong>{fmtDateTime(meta!.recovery_mode_until)}</strong>.
               Este botão <strong>não reconecta o chip</strong> — apenas destrava os envios automáticos.
-              Para gerar um QR novo / trocar de chip, use <strong>Reconectar chip</strong> no painel de conexão acima.
+              Só clique se você já confirmou no celular que o WhatsApp voltou ao normal há pelo menos 1h.
             </p>
             <Button
               size="sm" variant="outline"
@@ -240,7 +290,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
         )}
 
         {/* Status atual de envio */}
-        {!inRecovery && (
+        {!inRecovery && !fatalLocked && (
           <div className={`rounded-lg px-3 py-2 text-[11px] ${quota?.allowed ? "bg-green-500/5 border border-green-500/20 text-green-400" : "bg-yellow-500/5 border border-yellow-500/20 text-yellow-400"}`}>
             {quota?.allowed
               ? <>✓ Envios automáticos liberados ({quota.remaining} restantes hoje)</>
