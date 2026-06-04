@@ -569,6 +569,8 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       setPhoneNumber(null);
       setError(null);
       setHealth("healthy");
+      setFatalLocked(false);
+      setFatalReason(null);
       health.resetRecoveryCounter();
       instanceSavedRef.current = false;
       timeoutCountRef.current = 0;
