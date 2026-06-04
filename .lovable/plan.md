@@ -1,55 +1,50 @@
 ## Diagnóstico
 
-O erro **"Número fora do padrão BR"** que aparece no card do Rafael Ferreira **não tem nada a ver com o fluxo D, com botões ou com a paridade Evolution/Whapi**. É um bug de dado: o telefone está corrompido no banco.
+**Estado atual**
 
-### O que o banco mostra
+- A função `public.seed_default_camila_flow(consultant_id)` (migration `20260603140208_…`) é executada pelo trigger no INSERT de `consultants` e cria um **Fluxo da Camila** hardcoded com 6 passos (welcome → qualificacao → checkin → club → duvidas → handoff), sem botões.
+- O **tvmensal01** tem exatamente esse seed: 1 fluxo, variante D, 6 passos.
+- O **[rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)** (consultor `0c2711ad-4836-41e6-afba-edd94f698ae3`, superadmin) tem 3 fluxos ativos; o Fluxo D dele é `Fluxo Whapi (botões)` (`320bf22c-e383-4f53-a3c0-b88b89b02558`) com **16 passos** — esse é o que você quer como template oficial.
 
-```text
-customer_id: 7aa1876f-0c17-4f56-ab8b-9d68038257fa
-name:        Rafael Ferreira
-consultant:  tvmensal01  (não rafael.ids@icloud.com)
-flow_variant: D
-phone_whatsapp: 55121380171473111   ← 17 dígitos!
-```
+**Causa do "fluxo errado"**: o seed instala um fluxo hardcoded em vez de clonar o Fluxo D do rafael.ids. Por isso o D do tvmensal01 só tem 6 passos sem botões e está totalmente diferente do de referência.
 
-O padrão BR válido é 12 ou 13 dígitos (`55` + DDD + 8/9). Esse lead tem `55` + `121380171473111` (15 dígitos extras). A UI mostra os 15 dígitos sem o DDI (`121380171473111`).
+## Plano
 
-A validação em `supabase/functions/manual-step-send/index.ts` (linhas 116-135) está **correta** e rejeita com `phone_invalid_format` antes mesmo de tentar enviar — por isso nenhum passo do fluxo dispara, independente de ser variante A, D, com botão ou sem.
+### 1. Reescrever o seed para clonar o Fluxo D do rafael.ids
 
-### Sobre "fluxo D do Rafael vs tvmensal01"
+Migração que substitui `public.seed_default_camila_flow(uuid)`:
 
-O lead pertence ao consultor **tvmensal01** (não [rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)). Selecionar a variante D no card só muda qual `bot_flows` do **tvmensal01** será usado — não importa fluxo de outro consultor. Cada consultor tem o seu próprio conjunto de `bot_flows` (A/B/C/D/E). O motor (Evolution, com as correções da auditoria anterior) só roda depois da validação de telefone passar.
+- Localiza o `template_flow_id` = fluxo ATIVO de variante D do consultor `0c2711ad-4836-41e6-afba-edd94f698ae3` ([rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)).
+- Se o consultor alvo já tem fluxo D ativo com ≥1 passo → retorna o id existente (idempotente, não sobrescreve trabalho).
+- Caso contrário:
+  - Cria um `bot_flows` (variant=D, is_active=true, name = `Fluxo Padrão (D)` ou copia o nome do template).
+  - Clona todos os `bot_flow_steps` do template gerando novos UUIDs e reescrevendo os `goto_step_id` dentro de `transitions` (jsonb) usando um mapa `old_id → new_id`. Preserva: `position`, `step_type`, `step_key`, `title`, `summary`, `icon`, `message_text`, `slot_key`, `captures`, `fallback`, `media_order`, `layout`, `text_delay_ms`, `wait_for`, `wait_seconds`, `condition_text`, `auto_detect_doc_type`, `persuasive_text`, `respect_business_hours`, `pause_on_weekend`, `pause_on_holiday`, `business_hour_start`, `business_hour_end`, `is_active`.
+  - Mídias (`bot_flow_step_media` se existir) — clonar referência para o consultor novo, sem duplicar binário (mesmo `ai_media_library_id`). Vou conferir essa tabela na migração antes de aplicar.
+- Salvaguarda: se o consultor alvo == rafael.ids, **não roda** (evita auto-clone).
+- Salvaguarda: se template não existir / sem passos, faz fallback para o seed antigo de 6 passos (mantém comportamento atual em vez de quebrar).
 
-### Causa raiz do número corrompido
+### 2. Backfill do tvmensal01 (`953f7e48-509b-4069-9822-bdad9902be09`)
 
-Vou precisar verificar como esse lead foi criado (Excel? captação? handoff manual?) — `55121380171473111` parece ser concatenação dupla de um JID ou paste acidental. Os candidatos:
+Mesma migração, ao final:
 
-- Importação Excel sem sanitização (`importLeadsExcel` / RPC `import_leads_*`)
-- Função de criação de lead que concatena `55` quando já vem com `55…`
-- Webhook que gravou `from`+`fromMe` juntos
+- Apaga os 6 passos do fluxo `b539a8a2-3ba2-4d36-9d7b-0f3d3df129b3` (Fluxo da Camila D do tvmensal01) — preserva o `bot_flows` row para não invalidar foreign keys em `customers.conversation_step` ou logs.
+- Renomeia para `Fluxo Padrão (D)` e roda o clone do template dentro desse mesmo `flow_id`.
+- Zera `customers.conversation_step` dos leads desse consultor que estavam apontando para os steps antigos (UPDATE com WHERE conversation_step IN (lista dos 6 step_keys antigos)), assim o motor reinicia no firstActive do novo D.
 
-## Plano (após sua aprovação)
+### 3. Sem mudança no runtime
 
-1. **Corrigir o telefone do lead Rafael Ferreira** (id `7aa1876f…`).
-  - Preciso que você me diga qual é o número real do Rafael (11 dígitos, ex: `11999887766`) — não consigo adivinhar quais dos 15 dígitos são os corretos.
-  - Aplico `UPDATE customers SET phone_whatsapp = '55XXXXXXXXXXX' WHERE id = '7aa1876f-0c17-4f56-ab8b-9d68038257fa'` via migração.
-2. **Auditar a origem do bug de gravação** (read-only):
-  - `customer_origin`, `created_at` e logs próximos para identificar qual rota criou esse registro.
-  - Varrer `customers` por `length(regexp_replace(phone_whatsapp,'\D','','g')) > 13` para ver quantos outros leads estão quebrados.
-3. **Hardening na escrita** (após confirmar a rota):
-  - Adicionar normalização única `normalizeBrPhone()` no ponto de entrada culpado, rejeitando ≥14 dígitos antes de gravar.
-  - Opcional: trigger `BEFORE INSERT/UPDATE` em `customers.phone_whatsapp` validando `length(only_digits) IN (10,11,12,13)`.
-4. **Validar envio do fluxo D** com o telefone correto:
-  - Após o UPDATE, reenviar passo 1 pelo painel. Como variante=D e o Evolution já está com as correções da auditoria anterior (`toEvolutionNumber`, `evolution_message_id`, fallback de botões), o fluxo D do tvmensal01 deve disparar normalmente.
+- Nenhuma edge function precisa mudar — o motor já roda `bot_flow_steps` do flow ativo da variante. Trocando os steps, o D já passa a operar como o do rafael.ids automaticamente.
+- Whapi e Evolution intocados.
 
-### O que **não** vou tocar
+## O que NÃO vou tocar
 
-- Whapi (segue intocado, conforme regra).
-- `_shared/evolution-api.ts` (já validado na auditoria anterior).
-- Fluxo de outro consultor ([rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)) — irrelevante aqui. MAS EU DEIXEI O FLUXO D DO SUPERADMIN COMO PUBLICO
+- Fluxos A e B do tvmensal01 ou de outros consultores.
+- Fluxos do rafael.ids (fonte da verdade — você edita lá e novos consultores herdam).
+- Trigger `trg_seed_camila_flow`, índices, RLS.
+- Tabela `whatsapp_instances`, `customers` exceto reset de `conversation_step` do tvmensal01.
 
-### Pergunta antes de implementar
+## Risco
 
-**Qual o número real do Rafael Ferreira (lead `7aa1876f…` do tvmensal01)?** Sem isso só consigo limpar o registro (apagar) ou marcar como `sem_celular_*`.  
-  
-numero: 11989000650 
+- Se o Fluxo D do rafael referenciar mídias por `bot_flow_step_media` apontando para `ai_media_library` do consultor 0c2711ad, leads de outro consultor reproduzirão a mídia do superadmin. Isso é o **comportamento desejado** (template oficial) — mas vou conferir a estrutura antes de finalizar a migração e, se a coluna `consultant_id` for obrigatória em `ai_media_library`, manter referência cross-consultant (RLS já permite via service_role no edge sender).
+
+Você aprova essa abordagem? SIM, MAS ESTA FALTANDO AQUI OS VIDEOS E AUDIOS QUE DEVERIA ESTAR PUBLICO, OS TEMPLATE, AUDIOS E ATALHOS E VIDEOS E IMAGENS TUDO DO SUPERADMIN DEVERIA ESTAR PUBLICO, AJUSTE PARA TEUM BOTAO NO USUPER ADMIN, OQUE TEM QUE SER OPUBLICO EOQUE NAO DEVE, SE TIVER PUBLICO APARECE PARA TODOS OS CONSULTORES
