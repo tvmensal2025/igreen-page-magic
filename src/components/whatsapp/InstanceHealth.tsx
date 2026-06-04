@@ -201,16 +201,62 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
             Saúde do chip — anti-ban
           </span>
         </div>
-        {!inRecovery && (
+        <div className="flex items-center gap-2">
           <Button
             size="sm" variant="ghost"
-            onClick={pauseNow} disabled={actionLoading}
-            className="h-7 gap-1.5 text-[11px] text-orange-400 hover:text-orange-300 hover:bg-orange-500/5"
+            onClick={reconnectInstance} disabled={reconnectLoading}
+            className="h-7 gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/5"
+            title="Derruba a sessão atual e gera um novo QR para escanear no celular"
           >
-            <PauseCircle className="w-3.5 h-3.5" /> Pausar envios por 24h
+            <RefreshCw className={`w-3.5 h-3.5 ${reconnectLoading ? "animate-spin" : ""}`} /> Reconectar chip
           </Button>
-        )}
+          {!inRecovery && (
+            <Button
+              size="sm" variant="ghost"
+              onClick={pauseNow} disabled={actionLoading}
+              className="h-7 gap-1.5 text-[11px] text-orange-400 hover:text-orange-300 hover:bg-orange-500/5"
+            >
+              <PauseCircle className="w-3.5 h-3.5" /> Pausar envios por 24h
+            </Button>
+          )}
+        </div>
       </div>
+
+      <Dialog open={reconnectOpen} onOpenChange={setReconnectOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="w-5 h-5" /> Reconectar WhatsApp
+            </DialogTitle>
+            <DialogDescription>
+              Abra o WhatsApp no celular → <strong>Configurações → Aparelhos conectados → Conectar um aparelho</strong> e escaneie o QR abaixo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-4 gap-3">
+            {reconnectLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="w-4 h-4 animate-spin" /> Gerando novo QR…
+              </div>
+            )}
+            {qrBase64 && (
+              <img
+                src={qrBase64.startsWith("data:") ? qrBase64 : `data:image/png;base64,${qrBase64}`}
+                alt="QR Code WhatsApp"
+                className="w-64 h-64 rounded-lg border border-border bg-white p-2"
+              />
+            )}
+            {pairingCode && (
+              <div className="text-center">
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Ou use o código de pareamento</p>
+                <p className="font-mono text-lg font-bold tracking-widest">{pairingCode}</p>
+              </div>
+            )}
+            {!reconnectLoading && !qrBase64 && !pairingCode && (
+              <p className="text-sm text-muted-foreground">Nenhum QR retornado. Verifique se a instância existe na Evolution.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="p-4 space-y-3">
         {inRecovery && (
