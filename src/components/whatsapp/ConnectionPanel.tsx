@@ -337,9 +337,16 @@ export function ConnectionPanel({
               <p className="text-base font-heading font-bold text-foreground">Conexão perdida</p>
               <p className="text-sm text-muted-foreground max-w-xs">A reconexão automática não foi possível. Clique abaixo para reconectar.</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 justify-center">
               <Button onClick={onReconnect} variant="outline" className="gap-2 rounded-xl px-6 h-11 border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                <RefreshCw className="w-4 h-4" /> Reconectar
+                <RefreshCw className="w-4 h-4" /> Reconectar chip
+              </Button>
+              <Button
+                onClick={() => setShowDisconnectConfirm(true)}
+                variant="outline"
+                className="gap-2 rounded-xl px-6 h-11 text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400"
+              >
+                <WifiOff className="w-4 h-4" /> Desconectar / trocar chip
               </Button>
               {showResetButton && (
                 <Button
