@@ -3,6 +3,7 @@
 // off → dark → canary → on (ou rollback) automaticamente.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
+import { captureError } from "../_shared/audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
