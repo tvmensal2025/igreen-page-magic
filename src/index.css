@@ -213,7 +213,7 @@ html {
   }
 
   .btn-cta-lg {
-    @apply inline-flex items-center justify-center gap-2.5 px-8 py-4 text-base sm:text-lg font-semibold rounded-full transition-all duration-300 relative overflow-hidden;
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 text-sm sm:gap-2.5 sm:px-8 sm:py-4 sm:text-lg font-semibold rounded-full transition-all duration-300 relative overflow-hidden;
     background: var(--gradient-green);
     color: hsl(var(--primary-foreground));
     box-shadow: var(--shadow-green-lg);
