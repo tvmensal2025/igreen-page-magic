@@ -41,7 +41,7 @@ async function collectFunnel(sb: any, sinceIso: string) {
   const [viewsRes, customersRes, dealsRes, handoffRes] = await Promise.all([
     sb.from("page_views").select("id", { count: "exact", head: true }).gte("created_at", sinceIso),
     sb.from("customers").select("id, status, customer_origin, created_at").gte("created_at", sinceIso),
-    sb.from("crm_deals").select("id, stage, value_cents, created_at"),
+    sb.from("crm_deals").select("id, stage, created_at"),
     sb.from("bot_handoff_alerts").select("reason, created_at").gte("created_at", sinceIso),
   ]);
 
@@ -50,12 +50,16 @@ async function collectFunnel(sb: any, sinceIso: string) {
   const leads = customers.length;
   const approved = customers.filter((c: any) => c.status === "approved").length;
   const deals = dealsRes.data || [];
-  const openValue = deals.filter((d: any) => d.stage !== "venda_perdida" && d.stage !== "fechado").reduce((s: number, d: any) => s + (d.value_cents || 0), 0);
-  const wonValue = deals.filter((d: any) => d.stage === "fechado").reduce((s: number, d: any) => s + (d.value_cents || 0), 0);
+  const dealsOpenCount = deals.filter((d: any) => d.stage !== "venda_perdida" && d.stage !== "fechado" && d.stage !== "reprovado").length;
+  const dealsWonCount = deals.filter((d: any) => d.stage === "fechado").length;
 
-  const handoffReasons: Record<string, number> = {};
+  const handoffReasonsRaw: Record<string, number> = {};
   for (const h of (handoffRes.data || [])) {
-    handoffReasons[h.reason || "unknown"] = (handoffReasons[h.reason || "unknown"] || 0) + 1;
+    handoffReasonsRaw[h.reason || "unknown"] = (handoffReasonsRaw[h.reason || "unknown"] || 0) + 1;
+  }
+  const handoffReasons: Record<string, number> = {};
+  for (const [slug, n] of Object.entries(handoffReasonsRaw)) {
+    handoffReasons[humanizeReason(slug)] = n;
   }
 
   const stageCounts: Record<string, number> = {};
