@@ -352,7 +352,7 @@ export async function findContacts(instanceName: string): Promise<EvolutionConta
 // ─── Message Sending ───
 
 export async function sendTextMessage(instanceName: string, phone: string, text: string, gracefulTimeout = false) {
-  return request<{ key: { id: string } }>(
+  return request<{ key?: { id?: string }; status?: string; messageStatus?: string }>(
     `message/sendText/${instanceName}`,
     "POST",
     { number: phone, text },
