@@ -191,6 +191,13 @@ export function AdsCentralTab({ consultantId }: Props) {
         consultantId={consultantId}
         onCreated={() => setRefreshKey(k => k + 1)}
       />
+      <ExpressCampaignDialog
+        open={expressOpen}
+        onClose={() => setExpressOpen(false)}
+        consultantId={consultantId}
+        onCreated={() => { setRefreshKey(k => k + 1); setView("campaigns"); }}
+        onOpenAdvanced={() => setWizardOpen(true)}
+      />
     </div>
   );
 }
