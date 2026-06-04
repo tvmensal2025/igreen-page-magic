@@ -152,7 +152,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const sender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
+    const _rawSender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
+    const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+    const sender = wrapSenderWithGuard(_rawSender, { supabase, instanceName });
 
     // ─── Single ──────────────────────────────────────────────────────
     if (body.mode === "single") {

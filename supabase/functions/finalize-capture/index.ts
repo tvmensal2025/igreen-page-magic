@@ -57,12 +57,19 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
     const evoKey = settings.evolution_api_key || Deno.env.get("EVOLUTION_API_KEY") || "";
     if (evoUrl && evoKey && instanceName) {
       try {
-        const r = await fetch(`${evoUrl}/message/sendText/${instanceName}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", apikey: evoKey },
-          body: JSON.stringify({ number: normalized, text }),
-        });
-        if (r.ok) return;
+        // Anti-ban: bloqueia se instância em fatal_lock / recovery / quota
+        const { checkSendQuota, registerSend } = await import("../_shared/anti-ban.ts");
+        const quota = await checkSendQuota(supabase, instanceName);
+        if (!quota.allowed) {
+          console.warn(`🚫 [finalize-capture] evolution bloqueado instance=${instanceName} reason=${quota.reason} — fallback Whapi`);
+        } else {
+          const r = await fetch(`${evoUrl}/message/sendText/${instanceName}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", apikey: evoKey },
+            body: JSON.stringify({ number: normalized, text }),
+          });
+          if (r.ok) { await registerSend(supabase, instanceName); return; }
+        }
       } catch (e) { console.warn("[finalize-capture] evolution send failed", (e as any)?.message); }
     }
 

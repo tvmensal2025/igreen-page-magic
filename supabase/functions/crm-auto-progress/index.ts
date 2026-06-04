@@ -20,34 +20,52 @@ const REJECTED_PROGRESSION = [
   { days: 60, stage_key: "60_dias" },
 ];
 
-async function sendEvolutionText(instanceName: string, phone: string, text: string, apiUrl: string, apiKey: string) {
+import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+
+async function guardOk(supabase: any, instanceName: string, label: string): Promise<boolean> {
+  const quota = await checkSendQuota(supabase, instanceName);
+  if (!quota.allowed) {
+    console.warn(`🚫 [crm-auto-progress:${label}] bloqueado instance=${instanceName} reason=${quota.reason}`);
+    return false;
+  }
+  return true;
+}
+
+async function sendEvolutionText(supabase: any, instanceName: string, phone: string, text: string, apiUrl: string, apiKey: string) {
+  if (!(await guardOk(supabase, instanceName, "text"))) return;
   const res = await fetch(`${apiUrl}/message/sendText/${instanceName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: apiKey },
     body: JSON.stringify({ number: phone, text }),
   });
   if (!res.ok) console.error("Evolution sendText error:", await res.text());
+  else await registerSend(supabase, instanceName);
 }
 
-async function sendEvolutionMedia(instanceName: string, phone: string, mediaUrl: string, caption: string, mediatype: "image" | "video" | "document", apiUrl: string, apiKey: string) {
+async function sendEvolutionMedia(supabase: any, instanceName: string, phone: string, mediaUrl: string, caption: string, mediatype: "image" | "video" | "document", apiUrl: string, apiKey: string) {
+  if (!(await guardOk(supabase, instanceName, "media"))) return;
   const res = await fetch(`${apiUrl}/message/sendMedia/${instanceName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: apiKey },
     body: JSON.stringify({ number: phone, mediatype, media: mediaUrl, caption }),
   });
   if (!res.ok) console.error("Evolution sendMedia error:", await res.text());
+  else await registerSend(supabase, instanceName);
 }
 
-async function sendEvolutionAudio(instanceName: string, phone: string, audioUrl: string, apiUrl: string, apiKey: string) {
+async function sendEvolutionAudio(supabase: any, instanceName: string, phone: string, audioUrl: string, apiUrl: string, apiKey: string) {
+  if (!(await guardOk(supabase, instanceName, "audio"))) return;
   const res = await fetch(`${apiUrl}/message/sendWhatsAppAudio/${instanceName}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", apikey: apiKey },
     body: JSON.stringify({ number: phone, audio: audioUrl }),
   });
   if (!res.ok) console.error("Evolution sendAudio error:", await res.text());
+  else await registerSend(supabase, instanceName);
 }
 
 async function sendSingleMessage(
+  supabase: any,
   instanceName: string,
   phone: string,
   msg: { message_type: string; message_text: string | null; media_url: string | null; image_url: string | null },
@@ -63,18 +81,18 @@ async function sendSingleMessage(
 
   // Send optional image first
   if (msg.image_url && msgType !== "image") {
-    await sendEvolutionMedia(instanceName, phone, msg.image_url, "", "image", apiUrl, apiKey);
+    await sendEvolutionMedia(supabase, instanceName, phone, msg.image_url, "", "image", apiUrl, apiKey);
   }
 
   if (msgType === "audio" && msg.media_url) {
-    await sendEvolutionAudio(instanceName, phone, msg.media_url, apiUrl, apiKey);
-    if (messageText) await sendEvolutionText(instanceName, phone, messageText, apiUrl, apiKey);
+    await sendEvolutionAudio(supabase, instanceName, phone, msg.media_url, apiUrl, apiKey);
+    if (messageText) await sendEvolutionText(supabase, instanceName, phone, messageText, apiUrl, apiKey);
   } else if (msgType === "image" && msg.media_url) {
-    await sendEvolutionMedia(instanceName, phone, msg.media_url, messageText, "image", apiUrl, apiKey);
+    await sendEvolutionMedia(supabase, instanceName, phone, msg.media_url, messageText, "image", apiUrl, apiKey);
   } else if (msgType === "video" && msg.media_url) {
-    await sendEvolutionMedia(instanceName, phone, msg.media_url, messageText, "video", apiUrl, apiKey);
+    await sendEvolutionMedia(supabase, instanceName, phone, msg.media_url, messageText, "video", apiUrl, apiKey);
   } else if (messageText) {
-    await sendEvolutionText(instanceName, phone, messageText, apiUrl, apiKey);
+    await sendEvolutionText(supabase, instanceName, phone, messageText, apiUrl, apiKey);
   }
 
   return messageText || "[mídia]";
@@ -113,14 +131,14 @@ async function sendAutoMessages(
       if (i > 0 && msg.delay_seconds > 0) {
         await new Promise((r) => setTimeout(r, msg.delay_seconds * 1000));
       }
-      preview = await sendSingleMessage(instanceName, phone, msg, apiUrl, apiKey, customerName);
+      preview = await sendSingleMessage(supabase, instanceName, phone, msg, apiUrl, apiKey, customerName);
     }
     console.log(`Multi-messages (${filtered.length}) sent to ${phone} for stage ${stageData.label}`);
   } else {
     // Legacy single message
     const hasContent = stageData.auto_message_text || stageData.auto_message_media_url || stageData.auto_message_image_url;
     if (!hasContent) return "";
-    preview = await sendSingleMessage(instanceName, phone, {
+    preview = await sendSingleMessage(supabase, instanceName, phone, {
       message_type: stageData.auto_message_type,
       message_text: stageData.auto_message_text,
       media_url: stageData.auto_message_media_url,
