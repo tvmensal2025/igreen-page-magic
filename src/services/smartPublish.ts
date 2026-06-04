@@ -171,13 +171,20 @@ export async function smartPublish(opts: {
   // 4) Publicar
   const cityLabel = chosen.length === 1 ? chosen[0].name : `${chosen.length} cidades (${chosen.map(c => c.name).join(", ")})`;
   log("publish", `Publicando em ${cityLabel} — ${preset.nome}...`);
+  const creativeMode: "photo" | "video" = (template as any).creative_mode === "video" ? "video" : "photo";
+  const videoUrl = (template as any).video_url as string | null | undefined;
+  const videoThumb = (template as any).video_thumb_url as string | null | undefined;
   await createCampaign({
     template_id: template.id,
     name: `${template.title} — ${preset.nome} (${cityLabel})`,
     cities: chosen.map((c) => ({ key: c.key, name: c.name })),
     daily_budget_cents: template.suggested_daily_budget_cents,
     duration_days: null,
-    photos: template.photos,
+    creative_mode: creativeMode,
+    photos: creativeMode === "photo" ? template.photos : undefined,
+    video: creativeMode === "video" && videoUrl
+      ? { url: videoUrl, thumb_url: videoThumb || undefined }
+      : undefined,
     headline: template.headline,
     primary_text: template.primary_text,
     description: template.description_text || undefined,

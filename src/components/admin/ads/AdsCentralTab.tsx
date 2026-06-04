@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CreateCampaignWizard } from "./CreateCampaignWizard";
+import { ExpressCampaignDialog } from "./ExpressCampaignDialog";
 import { CampaignsList } from "./CampaignsList";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";
@@ -33,6 +34,7 @@ type View = "dashboard" | "gallery" | "campaigns" | "performance" | "intel" | "c
 export function AdsCentralTab({ consultantId }: Props) {
   const { toast } = useToast();
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [expressOpen, setExpressOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [view, setView] = useState<View>("dashboard");
   const [periodDays, setPeriodDays] = useState<number>(30);
@@ -84,8 +86,11 @@ export function AdsCentralTab({ consultantId }: Props) {
             onSynced={() => setRefreshKey((k) => k + 1)}
           />
           <WalletChip consultantId={consultantId} />
-          <Button size="sm" onClick={() => setWizardOpen(true)} className="gap-1.5 h-8">
-            <Plus className="w-3.5 h-3.5" /> Criar do zero
+          <Button size="sm" variant="outline" onClick={() => setWizardOpen(true)} className="gap-1.5 h-8 hidden sm:inline-flex">
+            <Plus className="w-3.5 h-3.5" /> Avançado
+          </Button>
+          <Button size="sm" onClick={() => setExpressOpen(true)} className="gap-1.5 h-8 shadow-md">
+            <Sparkles className="w-3.5 h-3.5" /> Criar campanha
           </Button>
         </div>
       </header>
@@ -185,6 +190,13 @@ export function AdsCentralTab({ consultantId }: Props) {
         onClose={() => setWizardOpen(false)}
         consultantId={consultantId}
         onCreated={() => setRefreshKey(k => k + 1)}
+      />
+      <ExpressCampaignDialog
+        open={expressOpen}
+        onClose={() => setExpressOpen(false)}
+        consultantId={consultantId}
+        onCreated={() => { setRefreshKey(k => k + 1); setView("campaigns"); }}
+        onOpenAdvanced={() => setWizardOpen(true)}
       />
     </div>
   );
