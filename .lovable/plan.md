@@ -1,409 +1,81 @@
-Primeiro: você está certo em cobrar. A frase “não vai bloquear” foi uma afirmação absoluta que eu não deveria ter feito. Com Evolution/Baileys, que usa sessão tipo WhatsApp Web e não a API oficial da Meta, nunca existe garantia técnica de “risco zero”. O plano novo precisa assumir isso e mudar a estratégia para máxima segurança.
+## Objetivo
 
-# Análise profunda do ocorrido
+Fechar as 4 pendências reconhecidas na auditoria para eliminar de vez o risco de ban e os bugs de UX dos botões.
 
-## Evidência dos logs e banco
+---
 
-### 1. O evento real foi fatal 403
-O log da `evolution-webhook` registrou:
+## 1. Aplicar `check_send_quota` em cada envio do bot (anti-ban real)
 
-```text
-CONNECTION_UPDATE: instance=igreen-953f7e48509b, state=close, reason=403
-Instância desconectou FATAL (reason=403). Marcando needs_reconnect + ativando recovery mode (14d).
-```
+**Problema:** o hard-lock cobre o caso fatal, mas durante operação normal o `bot-flow` chama `sendText`/`sendMedia` direto, sem respeitar:
 
-No padrão Baileys, `403` é `forbidden`. Isso deve ser tratado como possível bloqueio/restrição, não como simples queda de conexão.
+- intervalo mínimo entre mensagens (warmup),
+- quota diária,
+- janela de horário,
+- `recovery_mode` (modo lento).
 
-### 2. O banco já travou a instância
-A instância ficou assim:
+**Correção:**
 
-```text
-instance_name: igreen-953f7e48509b
-connected_phone: 5511946097469
-status: needs_reconnect
-recovery_mode_until: 2026-06-18 17:46:30 UTC
-```
+- Criar wrapper `safeSend(instanceId, to, fn)` em `supabase/functions/bot-flow/_send.ts` que:
+  1. chama RPC `check_send_quota(instance_id)` antes de enviar;
+  2. se bloqueado → retorna `{ ok:false, reason }` e NÃO avança `conversation_step`;
+  3. se ok → executa o envio, registra `register_message_sent(instance_id)` e respeita jitter (1.5–4s) + delay extra se `recovery_mode_until` ativo (8–15s).
+- Substituir todas as chamadas diretas a `sendText`/`sendMedia`/`sendButtons` em `bot-flow/index.ts` e handlers por `safeSend`.
+- Em caso de bloqueio por quota, logar em `bot_send_blocked_log` (nova tabela leve) para auditoria.
 
-Ou seja: o backend detectou fatal e ativou recovery de 14 dias.
+---
 
-### 3. Existe risco no plano anterior
-O plano anterior dizia para usar `evolution-instance-reconnect` com logout forçado + novo QR. Isso é perigoso após `403`.
+## 2. Não avançar `conversation_step` em falha de envio
 
-Arquivo crítico:
+**Problema:** ~12 pontos no `bot-flow` fazem `await sendText(...)` e logo depois `update conversation_step = X` mesmo se o envio retornou `false`. Lead fica preso em estado errado.
 
-```text
-supabase/functions/evolution-instance-reconnect/index.ts
-```
+**Correção:**
 
-Problemas encontrados:
+- `safeSend` retorna boolean/objeto; todo `update` de step passa a ser condicional:  
+`if (result.ok) await advanceStep(...)` else `await markRetry(...)`.
+- Adicionar tabela `bot_send_failures` (lead_id, step, error, retry_count, next_retry_at) e cron leve (1 min) que reprocessa pendentes até 3x.
+- Auditar e corrigir os 12 call sites (handlers de boas-vindas, OCR, indicação, agendamento, etc.).
 
-- Faz `DELETE /instance/logout/{instance}` por padrão.
-- Depois chama `GET /instance/connect/{instance}`.
-- Depois chama `clear_recovery_mode` automaticamente.
-- Apaga alguns sinais de risco.
+---
 
-Isso é o oposto do comportamento conservador esperado após `403`. Em fatal 403, o sistema deve bloquear reconexão automática, não limpar recovery.
+## 3. Botões reais (substituir fallback numerado)
 
-### 4. A UI ainda induz reconexão
-Pontos encontrados:
+**Problema:** `sendButtons` cai sempre em texto numerado ("1 - Sim / 2 - Não"), o que confunde leads e força digitação livre (mais erros, mais retrabalho do bot).
 
-- `ConnectionPanel.tsx`: ainda mostra `Reconectar chip` quando conectado e quando desconectado com instância.
-- `WhatsAppTab.tsx`: barra amarela ainda mostra `Reconectar`.
-- `ConnectionPanel.tsx`: QR expirado diz “Renovando QR Code...”, mas o comentário diz que não deve renovar automaticamente. Texto contraditório.
-- `InstanceHealth.tsx`: permite `Encerrar modo recuperação`, que chama `clear_recovery_mode`. Isso pode destravar envios cedo demais se o usuário estiver em bloqueio real.
-- `safeReset` em `useWhatsApp.ts` faz logout, delete e create novamente. Após 403 isso deve ser bloqueado.
+**Correção:**
 
-### 5. Os botões do WhatsApp não são garantidos via Evolution/Baileys
-Pela arquitetura atual:
+- Verificar se a Evolution API conectada suporta `/message/sendButtons` (Baileys legacy não, Cloud API sim).
+- Se Cloud API disponível → implementar envio nativo de buttons/list em `sendButtons` com fallback automático para texto numerado apenas se a API retornar 4xx.
+- Se só Baileys → implementar **list message** (`/message/sendList`) que ainda funciona em Baileys recentes, com fallback numerado.
+- Centralizar a detecção de capacidade em `instance_capabilities` (cacheada por 1h) para não pingar a API a cada envio.
 
-- Super admin/Whapi: aparece como “Botões reais do WhatsApp ativados”.
-- Evolution/Baileys: o código tem fallback para texto numerado.
+---
 
-Isso significa que, se o requisito é “tem que funcionar os botões”, a solução confiável não deve depender de Baileys. O caminho correto para botões reais é WhatsApp Business Platform / Cloud API ou um provedor oficial/compatível que use a API da Meta.
+## 4. Erro de hook no console (`RESET_BLANK_CHECK` / re-render)
 
-# Conclusão técnica
+**Problema:** após adicionar `useState(fatalLocked/fatalReason)` no `useWhatsApp`, surgiu warning de hook em HMR.
 
-## O Plano A atual reduz risco, mas não atende “nunca pode ser bloqueado”
-Evolution/Baileys não é API oficial da Meta. Ele depende de sessão Web. Portanto:
+**Correção:**
 
-- Pode desconectar.
-- Pode cair em 401/403/440.
-- Pode sofrer restrição do WhatsApp.
-- Não permite prometer “nunca bloqueia”.
-- Não é a melhor base para botões interativos confiáveis.
+- Revisar `useWhatsApp.ts`: garantir que `useState`/`useEffect` novos estejam no topo do hook (ordem fixa), nunca dentro de condicionais.
+- Mover leitura de `manual_review_required`/`fatal_lock_until` para o mesmo `useEffect` que já faz fetch da instância (evita effect duplicado).
+- Validar com reload da preview que warning some.
 
-## Para o requisito “não pode dar erro”, o plano precisa mudar
-A meta correta deve ser:
+---
 
-1. Nunca tentar recuperar agressivamente um número em estado fatal.
-2. Nunca limpar recovery automaticamente.
-3. Nunca mostrar botão que pareça seguro quando não é.
-4. Separar “conectar novo chip” de “reconectar mesmo número”.
-5. Migrar botões críticos para canal oficial Meta/Cloud API ou Whapi oficial.
-6. Evolution fica apenas como fallback/manual, não como base de automação agressiva.
+## Arquivos afetados
 
-# Novo plano recomendado: Plano B — Segurança máxima
+- `supabase/functions/bot-flow/index.ts` e handlers
+- `supabase/functions/bot-flow/_send.ts` (novo)
+- `supabase/functions/_shared/evolution.ts` (sendButtons/sendList)
+- `src/hooks/useWhatsApp.ts`
+- Migrations: `bot_send_blocked_log`, `bot_send_failures`, `instance_capabilities`, cron de retry.
 
-## Fase 0 — Agora, enquanto aguarda análise do WhatsApp
+## Critério de aceite
 
-### Ações operacionais
-- Não reconectar o número bloqueado via QR.
-- Não clicar em resetar/reconectar para esse número.
-- Aguardar a análise oficial do WhatsApp pelo celular.
-- Se o WhatsApp liberar, voltar com baixo volume e sem disparos automáticos por pelo menos 24h.
-- Se for usar outro número, conectar como chip novo e iniciar warmup do zero.
+- Nenhum `sendText` no bot-flow sem passar por `safeSend`.
+- `conversation_step` só avança em envio confirmado.
+- Botões nativos quando suportados; fallback só em erro real.
+- Console limpo de warnings de hook.
+- Instância `igreen-953f7e48509b` continua em hard-lock até 2026-06-18 (não tocada).
 
-### Ações no sistema
-- Manter a instância `igreen-953f7e48509b` em `needs_reconnect` e recovery até revisão manual real.
-- Não limpar `recovery_mode_until` automaticamente.
-- Não apagar `disconnect_fatal` automaticamente.
-
-## Fase 1 — Hard-lock para 403/401/440
-
-### Objetivo
-Quando o WhatsApp retorna fatal, o sistema deve parar tudo e impedir ações perigosas.
-
-### Implementação
-- Criar um estado de risco explícito para instância fatal:
-
-```text
-normal
-needs_qr
-manual_review_required
-blocked_or_restricted
-safe_to_replace_chip
-```
-
-- Para `statusReason=403`, marcar:
-
-```text
-status = needs_reconnect
-manual_review_required = true
-fatal_disconnect_reason = 403
-recovery_mode_until = now() + 14 days
-```
-
-- Enquanto estiver nesse estado:
-  - bloquear `Reconectar chip`;
-  - bloquear `Resetar conexão`;
-  - bloquear `Gerar novo QR` para o mesmo número;
-  - bloquear `Encerrar modo recuperação` sem confirmação administrativa forte;
-  - bloquear envios automáticos e manuais em massa;
-  - permitir apenas “Desconectar / trocar chip”.
-
-## Fase 2 — Remover reconexão agressiva
-
-### Arquivo crítico
-`supabase/functions/evolution-instance-reconnect/index.ts`
-
-### Mudanças
-- Renomear semanticamente a função ou alterar o contrato para não prometer “reconnect”.
-- Remover logout forçado por padrão.
-- Remover limpeza automática de recovery.
-- Remover exclusão automática de sinais de risco.
-- Antes de conectar, consultar o banco:
-  - se houver `disconnect_fatal` ativo;
-  - se `recovery_mode_until` estiver ativo;
-  - se o último reason for `403`, `401`, `440`, `409` ou `0`.
-- Se qualquer condição fatal existir, retornar erro seguro:
-
-```json
-{
-  "error": "manual_review_required",
-  "message": "Número com desconexão fatal. Não reconecte antes de revisar no app oficial do WhatsApp."
-}
-```
-
-## Fase 3 — Reorganizar botões da UI
-
-### Objetivo
-O usuário não pode ter dúvida nem clicar em ação de risco achando que é segura.
-
-### Nova matriz de botões
-
-```text
-Sem instância:
-  [Conectar novo WhatsApp]
-
-Conectado saudável:
-  [Desconectar / trocar chip]
-  [Pausar envios]
-  Não mostrar “Reconectar chip”
-
-Conectando com QR:
-  [Cancelar e desconectar]
-  [Gerar outro QR] somente manual, com cooldown visual
-
-Desconectado comum, sem fatal:
-  [Gerar QR novamente]
-  [Desconectar / trocar chip]
-
-Fatal 403/401/440:
-  [Desconectar / trocar chip]
-  [Ver instruções de revisão]
-  Não mostrar “Reconectar”
-  Não mostrar “Resetar”
-  Não mostrar “Encerrar recovery” para consultor comum
-
-Recovery manual:
-  [Pausar continua ativo]
-  [Encerrar recovery] somente se não houver fatal 403 ativo ou se admin liberar
-```
-
-### Textos obrigatórios
-Substituir qualquer promessa por texto correto:
-
-- Errado: “não bloqueia”.
-- Correto: “reduz risco, mas não elimina risco”.
-- Errado: “Reconectar chip”.
-- Correto: “Gerar novo QR” quando não fatal.
-- Correto em fatal: “Número em revisão/restrição. Não reconectar agora.”
-
-## Fase 4 — Corrigir o recovery mode
-
-### Problema atual
-`clear_recovery_mode` pode ser chamado pelo consultor e expira sinais fatais.
-
-### Mudança recomendada
-Separar dois tipos de pausa:
-
-1. `pause_sending_now`: pausa operacional, o consultor pode encerrar depois.
-2. `fatal_recovery_lock`: trava pós-fatal, somente admin ou regra segura libera.
-
-### Regra nova
-- `clear_recovery_mode` não deve limpar `disconnect_fatal` 403.
-- Para 403, criar uma função separada, por exemplo:
-
-```text
-admin_clear_fatal_lock(instance, reason_confirmed)
-```
-
-Essa função só deve liberar se:
-
-- usuário é admin/super_admin;
-- motivo da liberação foi registrado;
-- status oficial no celular foi confirmado;
-- opcionalmente passou um período mínimo de espera.
-
-## Fase 5 — Tornar botões reais confiáveis
-
-### Diagnóstico
-Se “botões” significa botões interativos reais dentro do WhatsApp, Evolution/Baileys não deve ser tratado como garantia.
-
-### Caminho seguro
-Implementar envio por canal oficial:
-
-- WhatsApp Cloud API da Meta; ou
-- Whapi/fornecedor que entregue pela Cloud API oficial; ou
-- manter Evolution apenas com fallback texto numerado.
-
-### Arquitetura proposta
-
-```text
-Canal oficial Meta/Whapi:
-  - botões reais
-  - templates aprovados
-  - webhooks oficiais
-  - menor risco por sessão Web
-
-Evolution/Baileys:
-  - conversas manuais/inbox
-  - fallback texto
-  - sem promessa de botões reais
-  - sem automação agressiva
-```
-
-### Regra de produto
-- Se a etapa do fluxo depende de botão, enviar via canal oficial.
-- Se estiver em Evolution, renderizar fallback seguro:
-
-```text
-1. Sim
-2. Não
-Responda com o número da opção.
-```
-
-E o parser deve aceitar:
-
-```text
-1, sim, quero, opção 1
-2, não, nao, opção 2
-```
-
-## Fase 6 — Corrigir erros mascarados
-
-### Problema encontrado
-Alguns adaptadores capturam erro e não falham explicitamente. Exemplo: `sendText` em `supabase/functions/_shared/whatsapp-api.ts` faz `console.error`, mas não propaga erro.
-
-### Mudança
-- Envio falhou deve retornar falha real.
-- Registrar `record_risk_signal` em falhas de envio reais.
-- Nunca mostrar mensagem como enviada se a API retornou timeout/falha.
-- Para UI manual, mostrar status:
-
-```text
-Enviando
-Enviado
-Falhou — tentar novamente
-Bloqueado por modo segurança
-```
-
-## Fase 7 — Auditoria dos disparadores automáticos
-
-Verificar e ajustar todos os pontos que enviam mensagem:
-
-- `bulk-scheduler`
-- `reactivation-send`
-- `reactivation-cron`
-- `send-scheduled-messages`
-- `ai-agent-router`
-- `evolution-webhook` respostas automáticas
-- `manual-step-send`
-- serviços frontend de envio manual
-
-Regra obrigatória:
-
-```text
-Antes de enviar:
-  check_send_quota
-  check fatal lock
-  check channel capability
-  check conversation window/template rules
-
-Depois de enviar:
-  register_send somente se envio confirmado
-  record_risk_signal se falhou
-```
-
-## Fase 8 — Plano de dados/migração
-
-Adicionar/ajustar campos em `whatsapp_instances`:
-
-```text
-manual_review_required boolean
-fatal_disconnect_reason integer
-fatal_disconnect_at timestamptz
-fatal_lock_until timestamptz
-last_qr_requested_at timestamptz
-last_user_action text
-last_user_action_at timestamptz
-```
-
-Adicionar tabela de auditoria:
-
-```text
-whatsapp_instance_actions
-  instance_name
-  consultant_id
-  action
-  risk_level
-  blocked
-  reason
-  metadata
-```
-
-Essa tabela permitirá responder exatamente:
-
-- quem clicou;
-- em qual botão;
-- quando;
-- qual chamada foi feita;
-- se foi bloqueada;
-- por qual motivo.
-
-## Fase 9 — Testes obrigatórios antes de liberar
-
-### Testes de backend
-- `403` ativa fatal lock.
-- `403` impede reconnect.
-- `403` impede reset.
-- `403` não permite limpar recovery por consultor.
-- `disconnect/trocar chip` continua funcionando.
-- `connect novo chip` inicia warmup D1.
-
-### Testes de UI
-- Não existe botão “Reconectar chip” em estado fatal.
-- Só existe um caminho visual para conexão.
-- Em fatal, a tela mostra instrução clara.
-- Botão de trocar chip aparece mesmo desconectado.
-- QR expirado não diz “renovando” se não estiver renovando.
-
-### Testes de envio
-- Mensagem falha não aparece como sucesso.
-- Botões reais só aparecem em canal oficial.
-- Evolution usa fallback texto quando não suporta botão.
-- Recovery bloqueia bulk, agendamento e reativação.
-
-# Plano de execução recomendado
-
-## Etapa 1 — Contenção imediata
-- Bloquear reconexão/reset em fatal 403.
-- Remover `Reconectar chip` da UI em estados conectados/fatais.
-- Ajustar texto de QR/recovery.
-- Impedir `evolution-instance-reconnect` de limpar recovery.
-
-## Etapa 2 — Segurança estrutural
-- Criar campos/tabela de auditoria.
-- Separar pausa operacional de fatal lock.
-- Registrar todas as ações de conexão/desconexão.
-
-## Etapa 3 — Botões confiáveis
-- Definir canal oficial para botões reais.
-- Onde não houver canal oficial, usar fallback numerado.
-- Ajustar fluxo para parser aceitar respostas textuais.
-
-## Etapa 4 — Validação pesada
-- Rodar testes de Edge Functions.
-- Verificar logs do webhook.
-- Simular 403, 401, 440, timeout e connection closed.
-- Só liberar quando os estados perigosos estiverem bloqueados.
-
-# Recomendação final
-
-Para cumprir “nunca pode ser bloqueado” no sentido mais próximo possível, a decisão correta é:
-
-- Não usar Evolution/Baileys para automação crítica de número antigo/importante.
-- Usar API oficial Meta/Cloud API ou Whapi oficial para botões e fluxos críticos.
-- Manter Evolution apenas como canal auxiliar/manual e sempre com hard-lock em fatal.
-
-O sistema pode ser muito mais seguro, mas não deve mais prometer risco zero em Evolution. A promessa correta é: se houver sinal fatal, o sistema para antes de piorar a situação.
+Posso prosseguir? Sim
