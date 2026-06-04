@@ -52,12 +52,12 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
           </p>
 
           {/* CTA */}
-          <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row gap-3 justify-center items-center">
-            <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => handleClick("whatsapp")}>
-              Quero ser Licenciado <ArrowRight className="w-5 h-5" />
+          <div className="mt-6 sm:mt-8 grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:gap-3 justify-center items-stretch sm:items-center w-full sm:w-auto max-w-md">
+            <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-cta-lg !px-3 !py-3 !text-xs sm:!px-8 sm:!py-4 sm:!text-lg animate-pulse-green" onClick={() => handleClick("whatsapp")}>
+              Ser Licenciado <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
             </a>
-            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-whatsapp hidden sm:inline-flex" onClick={() => handleClick("cadastro")}>
-              Fazer cadastro
+            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-whatsapp !px-3 !py-3 !text-xs sm:!px-7 sm:!py-3.5 sm:!text-base" onClick={() => handleClick("cadastro")}>
+              Cadastro
             </a>
           </div>
         </div>

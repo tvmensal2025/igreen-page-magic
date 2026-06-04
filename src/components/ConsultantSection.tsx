@@ -76,12 +76,12 @@ const ConsultantSection = ({
               </div>
             </div>
 
-            <div className="flex flex-col gap-4">
-              <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-cta-lg text-center animate-pulse-green" onClick={() => handleClick("cadastro")}>
-                ⚡ Faça seu cadastro
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
+              <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-cta-lg !px-3 !py-3 !text-xs sm:!text-sm text-center animate-pulse-green" onClick={() => handleClick("cadastro")}>
+                ⚡ Cadastro
               </a>
-              <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-whatsapp text-center !py-5 !rounded-xl !text-base" onClick={() => handleClick("whatsapp")}>
-                💬 Atendimento no WhatsApp
+              <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-whatsapp !px-3 !py-3 !text-xs sm:!text-sm text-center" onClick={() => handleClick("whatsapp")}>
+                💬 WhatsApp
               </a>
             </div>
           </div>
