@@ -32,6 +32,7 @@ const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
 import { CookieBanner } from "@/components/CookieBanner";
+import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
 
 
 const queryClient = new QueryClient();
@@ -92,6 +93,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
             <CookieBanner />
+            <RechargeRequiredDialog />
           </Suspense>
         </BrowserRouter>
         </ConfirmDialogProvider>

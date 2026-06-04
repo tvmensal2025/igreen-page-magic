@@ -164,28 +164,30 @@ Deno.serve(async (req) => {
 
     // GUARDRAIL: saldo da carteira precisa cobrir pelo menos N dias do orçamento
     // (com o markup já aplicado), senão a campanha pausa antes de gerar resultado.
-    if (!isAdmin) {
-      const admin = adminDb;
-      const { data: ps } = await admin.from("platform_settings").select("*").eq("id", true).maybeSingle();
-      const feePct = Number(ps?.platform_fee_percent ?? 20) / 100;
-      // Mínimo de 3 dias (era 7) — permite teste rápido "gastar pouco para validar".
-      // O usuário pode subir o orçamento depois quando o anúncio começar a entregar.
-      const minDays = 3;
-      const safety = Math.max(Number(ps?.campaign_safety_multiplier ?? 1.0), minDays);
-      const minBalance = Number(ps?.min_balance_to_create_campaign_cents ?? 3000);
-      const requiredCents = Math.max(minBalance, Math.round(body.daily_budget_cents * (1 + feePct) * safety));
-      const { data: w } = await admin.from("consultant_wallet")
-        .select("balance_cents").eq("consultant_id", auth.id).maybeSingle();
-      const balance = Number(w?.balance_cents ?? 0);
-      if (balance < requiredCents) {
-        return new Response(JSON.stringify({
-          error: `Saldo insuficiente. Mínimo recomendado para esta campanha: R$ ${(requiredCents/100).toFixed(2)} (você tem R$ ${(balance/100).toFixed(2)}). Recarregue na carteira.`,
-          code: "INSUFFICIENT_WALLET_BALANCE",
-          required_cents: requiredCents,
-          balance_cents: balance,
-        }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
+    // Admin TAMBÉM precisa ter saldo no consultor — sem bypass, pra evitar prejuízo.
+    const admin = adminDb;
+    const { data: ps } = await admin.from("platform_settings").select("*").eq("id", true).maybeSingle();
+    const feePct = Number(ps?.platform_fee_percent ?? 20) / 100;
+    // Mínimo de 3 dias (era 7) — permite teste rápido "gastar pouco para validar".
+    const minDays = 3;
+    const safety = Math.max(Number(ps?.campaign_safety_multiplier ?? 1.0), minDays);
+    const minBalance = Number(ps?.min_balance_to_create_campaign_cents ?? 3000);
+    const requiredCents = Math.max(minBalance, Math.round(body.daily_budget_cents * (1 + feePct) * safety));
+    const { data: w } = await admin.from("consultant_wallet")
+      .select("balance_cents,debt_cents").eq("consultant_id", auth.id).maybeSingle();
+    const balance = Number(w?.balance_cents ?? 0);
+    const debt = Number((w as any)?.debt_cents ?? 0);
+    const liquid = Math.max(0, balance - debt);
+    if (liquid < requiredCents) {
+      return new Response(JSON.stringify({
+        error: `Saldo insuficiente. Mínimo para esta campanha: R$ ${(requiredCents/100).toFixed(2)} (você tem R$ ${(liquid/100).toFixed(2)}). Recarregue na carteira.`,
+        code: "INSUFFICIENT_WALLET_BALANCE",
+        required_cents: requiredCents,
+        balance_cents: liquid,
+      }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    // spend_cap (teto absoluto na Meta) = saldo líquido / (1 + fee) — o que sobra pra Meta após o markup.
+    const lifetimeCapCents = Math.max(1000, Math.floor(liquid / (1 + feePct)));
 
     // Carrega a conta Facebook ÚNICA da plataforma (admin) — todos consultores
     // rodam ads na mesma ad account/página/pixel, mudando só o telefone do CTA.
@@ -222,18 +224,10 @@ Deno.serve(async (req) => {
         code: "WHATSAPP_INVALID_FORMAT",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Trava de saldo: precisa cobrir budget × duração (default 3 dias se omitido).
+    // Trava de saldo já validada acima (linha ~165) com fee e safety. Aqui só
+    // garantimos a wallet existe; remoção do bypass admin pra zero prejuízo.
     const wallet = await getOrCreateWallet(auth.id);
-    const dur = body.duration_days && body.duration_days > 0 ? body.duration_days : 3;
-    const requiredCents = body.daily_budget_cents * dur;
-    if (!isAdmin && wallet.balance_cents < requiredCents) {
-      return new Response(JSON.stringify({
-        error: `Saldo insuficiente. Você precisa de R$ ${(requiredCents / 100).toFixed(2)} mas tem R$ ${(wallet.balance_cents / 100).toFixed(2)}. Adicione crédito antes de publicar.`,
-        code: "INSUFFICIENT_BALANCE",
-        balance_cents: wallet.balance_cents,
-        required_cents: requiredCents,
-      }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
+    void wallet;
     // Adapter: mantém o resto do código falando com "conn".
     // PIXEL TRAVADO: todo novo anúncio sai com o pixel oficial da plataforma,
     // independente do que estiver salvo em platform_facebook_account.pixel_id.
@@ -324,6 +318,9 @@ Deno.serve(async (req) => {
         status: "PAUSED",
         buying_type: "AUCTION",
         daily_budget: String(body.daily_budget_cents),
+        // spend_cap = teto absoluto que a Meta vai gastar. Mesmo que nosso sync
+        // atrase, a Meta pausa sozinha quando bater nesse valor → zero prejuízo.
+        spend_cap: String(lifetimeCapCents),
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
         ...(adlabelsParam ? { adlabels: adlabelsParam } : {}),
         access_token: conn.token,
@@ -893,6 +890,7 @@ Deno.serve(async (req) => {
       age_min: ageMin,
       age_max: ageMax,
       daily_budget_cents: body.daily_budget_cents,
+      lifetime_cap_cents: lifetimeCapCents,
       duration_days: body.duration_days ?? null,
       status: "pending_review",
       started_at: new Date().toISOString(),
