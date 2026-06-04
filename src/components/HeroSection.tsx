@@ -22,7 +22,7 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
   };
 
   return (
-    <section id="top" className="relative overflow-hidden pt-28 md:pt-36 pb-16 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
+    <section id="top" className="relative overflow-hidden pt-24 md:pt-28 pb-16 md:pb-24" style={{ background: 'var(--gradient-hero)' }}>
       <LandingNav
         ctaLabel="Falar no WhatsApp"
         ctaHref={WHATSAPP}
@@ -33,6 +33,30 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
       <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
 
       <div className="relative z-10 mx-auto w-full max-w-[1180px] px-5 sm:px-8 lg:px-10">
+        {/* Video mockup — TOPO */}
+        <div className="relative max-w-4xl mx-auto mb-10 md:mb-14">
+          <div className="mockup-window">
+            <div className="mockup-bar">
+              <span className="mockup-dot bg-red-400/70" />
+              <span className="mockup-dot bg-yellow-400/70" />
+              <span className="mockup-dot bg-green-400/70" />
+              <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
+            </div>
+            <video
+              controls
+              playsInline
+              autoPlay
+              muted
+              loop
+              preload="metadata"
+              className="w-full aspect-video block"
+            >
+              <source src="/videos/Green_Energy.mp4" type="video/mp4" />
+              Seu navegador não suporta vídeos.
+            </video>
+          </div>
+        </div>
+
         <div className="flex flex-col items-center text-center">
           {/* Badge */}
           <div className="badge-green animate-fade-in mb-6">
@@ -41,7 +65,7 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
           </div>
 
           {/* Title */}
-          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[2.2rem] sm:text-5xl md:text-6xl lg:text-[4rem] max-w-[18ch] mx-auto text-foreground">
+          <h1 className="font-heading font-black tracking-[-0.03em] leading-[1.05] text-[1.65rem] sm:text-4xl md:text-5xl lg:text-[3.5rem] max-w-[20ch] mx-auto text-foreground">
             Receba até <span className="text-gradient-green">20% de desconto</span> na sua conta de luz todo mês
           </h1>
 
@@ -61,21 +85,6 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
           </div>
         </div>
 
-        {/* Video mockup */}
-        <div className="relative mt-14 md:mt-20 max-w-4xl mx-auto">
-          <div className="mockup-window">
-            <div className="mockup-bar">
-              <span className="mockup-dot bg-red-400/70" />
-              <span className="mockup-dot bg-yellow-400/70" />
-              <span className="mockup-dot bg-green-400/70" />
-              <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
-            </div>
-            <video controls playsInline autoPlay muted className="w-full aspect-video block" poster="">
-              <source src="/videos/Green_Energy.mp4" type="video/mp4" />
-              Seu navegador não suporta vídeos.
-            </video>
-          </div>
-        </div>
 
         {/* Social proof */}
         <div className="grid grid-cols-3 gap-2 sm:gap-6 md:gap-12 max-w-3xl mx-auto mt-16 md:mt-20 pt-10 border-t border-border px-2">
