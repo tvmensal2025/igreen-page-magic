@@ -175,8 +175,8 @@ Analise os dados abaixo e produza um diagnóstico ACIONÁVEL focado em PARAR DE 
 # Funil (últimos 30 dias)
 ${JSON.stringify(funnelData.funnel, null, 2)}
 
-# Conversão por variante de fluxo (A=áudio, B=sem áudio, C=vídeo)
-${JSON.stringify(variants, null, 2)}
+# Conversão por variante de fluxo (apenas variantes com ≥5 leads — ignore o resto)
+${JSON.stringify(variantsForAI, null, 2)}
 
 # Motivos de handoff (bot pediu humano)
 ${JSON.stringify(funnelData.handoff_reasons, null, 2)}
