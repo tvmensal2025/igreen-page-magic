@@ -51,16 +51,10 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
             Energia solar por assinatura, sem instalar placas, sem obras e sem custos. Conheça a oportunidade da iGreen Energy para sua casa, comércio ou empresa.
           </p>
 
-          {/* CTA único */}
-          <div className="mt-8">
-            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-cta-lg animate-pulse-green" onClick={() => handleClick("cadastro")}>
-              Faça seu cadastro <ArrowRight className="w-5 h-5" />
-            </a>
-          </div>
         </div>
 
         {/* Video mockup — abaixo do título estratégico */}
-        <div className="relative max-w-4xl mx-auto mt-10 md:mt-14">
+        <div className="relative max-w-4xl mx-auto mt-8 md:mt-12">
           <div className="mockup-window">
             <div className="mockup-bar">
               <span className="mockup-dot bg-red-400/70" />
@@ -81,6 +75,16 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
               Seu navegador não suporta vídeos.
             </video>
           </div>
+        </div>
+
+        {/* CTAs — abaixo do vídeo, lado a lado */}
+        <div className="mt-6 sm:mt-8 grid grid-cols-2 gap-2 sm:gap-3 justify-center items-stretch max-w-md mx-auto">
+          <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-cta-lg !px-3 !py-3 !text-xs sm:!px-6 sm:!py-3.5 sm:!text-base animate-pulse-green text-center" onClick={() => handleClick("cadastro")}>
+            ⚡ Cadastro
+          </a>
+          <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-whatsapp !px-3 !py-3 !text-xs sm:!px-6 sm:!py-3.5 sm:!text-base text-center" onClick={() => handleClick("whatsapp")}>
+            💬 WhatsApp
+          </a>
         </div>
 
 

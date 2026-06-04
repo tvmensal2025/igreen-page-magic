@@ -51,19 +51,10 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
             O mercado de energia solar está explodindo no Brasil. Quem está aproveitando agora já está faturando — <strong className="text-foreground">esse é o seu momento.</strong>
           </p>
 
-          {/* CTA */}
-          <div className="mt-6 sm:mt-8 grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:gap-3 justify-center items-stretch sm:items-center w-full sm:w-auto max-w-md">
-            <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-cta-lg !px-3 !py-3 !text-xs sm:!px-8 sm:!py-4 sm:!text-lg animate-pulse-green" onClick={() => handleClick("whatsapp")}>
-              Ser Licenciado <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
-            </a>
-            <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-whatsapp !px-3 !py-3 !text-xs sm:!px-7 sm:!py-3.5 sm:!text-base" onClick={() => handleClick("cadastro")}>
-              Cadastro
-            </a>
-          </div>
         </div>
 
         {/* Video mockup */}
-        <div className="relative mt-10 md:mt-20 max-w-4xl mx-auto">
+        <div className="relative mt-8 md:mt-14 max-w-4xl mx-auto">
           <div className="mockup-window">
             <div className="mockup-bar">
               <span className="mockup-dot bg-red-400/70" />
@@ -75,6 +66,16 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
               <source src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/imagine-licenciado.mp4" type="video/mp4" />
             </video>
           </div>
+        </div>
+
+        {/* CTA — abaixo do vídeo, lado a lado */}
+        <div className="mt-6 sm:mt-8 grid grid-cols-2 gap-2 sm:gap-3 justify-center items-stretch max-w-md mx-auto">
+          <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-cta-lg !px-3 !py-3 !text-xs sm:!px-6 sm:!py-3.5 sm:!text-base animate-pulse-green text-center" onClick={() => handleClick("whatsapp")}>
+            Ser Licenciado
+          </a>
+          <a href={CADASTRO} target="_blank" rel="noopener noreferrer" className="btn-whatsapp !px-3 !py-3 !text-xs sm:!px-6 sm:!py-3.5 sm:!text-base text-center" onClick={() => handleClick("cadastro")}>
+            Cadastro
+          </a>
         </div>
 
         {/* Social proof stats */}
