@@ -27,7 +27,7 @@ const AdminMetaAds = lazy(() => import("./pages/AdminMetaAds"));
 const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
 const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const NotFound = lazy(() => import("./pages/NotFound"));
-const Campanhas = lazy(() => import("./pages/Campanhas"));
+
 const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
@@ -68,7 +68,7 @@ const App = () => (
               <Route path="/admin/reaquecimento" element={<AdminReaquecimento />} />
               <Route path="/admin/conversao" element={<AdminConversao />} />
               <Route path="/admin/meta-ads" element={<AdminMetaAds />} />
-              <Route path="/admin/campanhas" element={<Campanhas />} />
+              
               <Route path="/admin/faq" element={<Navigate to="/admin/conhecimento?tab=ia" replace />} />
               <Route path="/admin/fluxos-legado" element={<Navigate to="/admin/fluxos" replace />} />
               <Route path="/admin/fluxos-antigo" element={<Navigate to="/admin/fluxos" replace />} />

@@ -142,15 +142,16 @@ export function AddressRadiusPicker({ value, onChange }: Props) {
       <div>
         <Label className="flex justify-between">
           <span>Raio: <strong className="text-primary">{radius} km</strong></span>
-          <span className="text-[10px] text-muted-foreground">{radius <= 1 ? "≈ quarteirão" : radius <= 3 ? "≈ bairro" : radius <= 10 ? "≈ região da cidade" : "≈ cidade inteira"}</span>
+          <span className="text-[10px] text-muted-foreground">{radius <= 1 ? "≈ quarteirão" : radius <= 3 ? "≈ bairro" : radius <= 10 ? "≈ região da cidade" : radius <= 25 ? "≈ cidade inteira" : "≈ região metropolitana"}</span>
         </Label>
-        <Slider min={1} max={50} step={1} value={[radius]} onValueChange={(v) => setRadius(v[0])} />
+        <Slider min={1} max={80} step={1} value={[radius]} onValueChange={(v) => setRadius(v[0])} />
         <div className="flex flex-wrap gap-1 mt-2">
           {[
-            { l: "Quarteirão (1 km)", v: 1 },
             { l: "Bairro (3 km)", v: 3 },
             { l: "Região (10 km)", v: 10 },
             { l: "Cidade (25 km)", v: 25 },
+            { l: "Metropolitana (50 km)", v: 50 },
+            { l: "Máximo (80 km)", v: 80 },
           ].map((p) => (
             <button
               key={p.v}
@@ -162,6 +163,11 @@ export function AddressRadiusPicker({ value, onChange }: Props) {
             </button>
           ))}
         </div>
+        {radius > 50 && (
+          <p className="text-[10px] text-muted-foreground mt-1.5">
+            Para cobertura &gt;80 km (várias cidades vizinhas), prefira o modo <strong>Cidades inteiras</strong>.
+          </p>
+        )}
       </div>
 
       {pending && (
