@@ -171,6 +171,21 @@ export function ConnectionPanel({
   const [qrExpired, setQrExpired] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  // ⚠️ Anti-spam: pedir QR várias vezes em poucos segundos é interpretado
+  // pelo WhatsApp como comportamento de bot. Forçamos um cooldown de 10s
+  // entre cliques nos botões "Atualizar agora" / "Gerar novo QR".
+  const [refreshCooldownLeft, setRefreshCooldownLeft] = useState(0);
+  const refreshDisabled = isLoading || refreshCooldownLeft > 0;
+  const handleSafeRefresh = async () => {
+    if (refreshDisabled || !onRefreshQr) return;
+    setRefreshCooldownLeft(10);
+    try { await onRefreshQr(); } finally { /* cooldown corre independente */ }
+  };
+  useEffect(() => {
+    if (refreshCooldownLeft <= 0) return;
+    const t = setInterval(() => setRefreshCooldownLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [refreshCooldownLeft]);
   const showDiagnostic = connectionLog.length > 0 && (isLoading || error || connectionStatus === "connecting" || operationalHealth !== "healthy");
   const isAutoReconnecting = isLoading && connectionLog.some((l) => l.includes("🔄"));
   // ⚠️ Reset/reconnect totalmente bloqueados quando há revisão manual ativa.
