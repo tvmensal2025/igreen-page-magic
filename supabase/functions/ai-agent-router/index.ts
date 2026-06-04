@@ -212,7 +212,9 @@ Deno.serve(async (req) => {
           question: user_input || "",
           consultantId,
         });
-        const sender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instance_name);
+        const _raw = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instance_name);
+        const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+        const sender = wrapSenderWithGuard(_raw, { supabase, instanceName: instance_name });
 
         if (lookup.found && lookup.text) {
           // Envia texto da base.
@@ -706,7 +708,9 @@ RESPONDA APENAS com o JSON do schema. reply_text deve ser CURTO (1-3 frases). Se
     }
 
     // 10) Executar ações
-    const sender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instance_name);
+    const _rawSender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instance_name);
+    const { wrapSenderWithGuard: _wrap } = await import("../_shared/sender-guard.ts");
+    const sender = _wrap(_rawSender, { supabase, instanceName: instance_name });
     const updates: Record<string, any> = {};
 
     // Persistir insights da IA no customer

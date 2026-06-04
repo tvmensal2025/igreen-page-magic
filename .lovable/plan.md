@@ -1,81 +1,54 @@
-## Objetivo
+## Auditoria — resultado
 
-Fechar as 4 pendências reconhecidas na auditoria para eliminar de vez o risco de ban e os bugs de UX dos botões.
+### ✅ Tudo que foi aplicado e está correto
 
----
+- **Hard-lock no banco**: `check_send_quota` retorna `fatal_lock_manual_review` quando `manual_review_required=true` ou `fatal_lock_until>now()` — verificado no SQL da função.
+- **Instância `igreen-953f7e48509b**` continua travada até **2026-06-18 17:46 UTC** (reason 403).
+- **Sender-guard** ativo em `evolution-webhook/index.ts` → cobre 100% do fluxo conversacional (~50 callsites em conversational/*, bot-flow.ts).
+- **Frontend**: `fatalLocked` propagado em `useWhatsApp`, `WhatsAppTab`, `ConnectionPanel`, `InstanceHealth`. Botões de reconectar bloqueados.
+- **Webhook**: gate de hard-lock na entrada (`evolution-webhook/index.ts:299-313`) impede o bot-flow inteiro.
+- **Reconnect endpoint**: retorna `423 Locked`.
 
-## 1. Aplicar `check_send_quota` em cada envio do bot (anti-ban real)
+### ⚠️ Gaps encontrados — Edge Functions que criam sender SEM guard
 
-**Problema:** o hard-lock cobre o caso fatal, mas durante operação normal o `bot-flow` chama `sendText`/`sendMedia` direto, sem respeitar:
+Estes ainda chamam `createEvolutionSender` direto e podem disparar mensagens mesmo com a instância em hard-lock, alimentando o ban:
 
-- intervalo mínimo entre mensagens (warmup),
-- quota diária,
-- janela de horário,
-- `recovery_mode` (modo lento).
 
-**Correção:**
+| Function                                | Risco     | O que envia                                   |
+| --------------------------------------- | --------- | --------------------------------------------- |
+| `ai-agent-router` (linhas 215, 709)     | 🔴 ALTO   | Respostas IA disparadas por triggers internos |
+| `bot-stuck-recovery` (linha 268)        | 🔴 ALTO   | "Rescue" automático de leads parados          |
+| `outbound-media-flush-cron` (linha 148) | 🔴 ALTO   | Flush de mídia pendente em lote               |
+| `worker-callback` (linha 94)            | 🟡 MÉDIO  | Confirmação após processo externo             |
+| `ai-daily-digest` (linha 167)           | 🟢 BAIXO  | Relatório ao consultor (não ao lead)          |
+| `manual-step-send` (linhas 207, 595)    | 🟢 manter | Envio manual do operador — bypass intencional |
 
-- Criar wrapper `safeSend(instanceId, to, fn)` em `supabase/functions/bot-flow/_send.ts` que:
-  1. chama RPC `check_send_quota(instance_id)` antes de enviar;
-  2. se bloqueado → retorna `{ ok:false, reason }` e NÃO avança `conversation_step`;
-  3. se ok → executa o envio, registra `register_message_sent(instance_id)` e respeita jitter (1.5–4s) + delay extra se `recovery_mode_until` ativo (8–15s).
-- Substituir todas as chamadas diretas a `sendText`/`sendMedia`/`sendButtons` em `bot-flow/index.ts` e handlers por `safeSend`.
-- Em caso de bloqueio por quota, logar em `bot_send_blocked_log` (nova tabela leve) para auditoria.
 
----
+### Plano de correção
 
-## 2. Não avançar `conversation_step` em falha de envio
+Aplicar `wrapSenderWithGuard` nos 4 pontos críticos + 1 médio:
 
-**Problema:** ~12 pontos no `bot-flow` fazem `await sendText(...)` e logo depois `update conversation_step = X` mesmo se o envio retornou `false`. Lead fica preso em estado errado.
+1. `**ai-agent-router/index.ts**` — envolver ambos os senders (215, 709). Disparos IA respeitam quota/fatal-lock.
+2. `**bot-stuck-recovery/index.ts:268**` — envolver. Recovery cron NUNCA deve enviar em instância travada.
+3. `**outbound-media-flush-cron/index.ts:148**` — envolver. Maior risco: rajada de mídia em instância suspeita = ban garantido.
+4. `**worker-callback/index.ts:94**` — envolver. Confirmações pós-processamento entram na fila normal.
+5. `**ai-daily-digest**` e `**manual-step-send**`: deixar como estão (digest é admin, manual é intencional do operador).
 
-**Correção:**
+### Padrão de edit (idêntico ao já aplicado em evolution-webhook)
 
-- `safeSend` retorna boolean/objeto; todo `update` de step passa a ser condicional:  
-`if (result.ok) await advanceStep(...)` else `await markRetry(...)`.
-- Adicionar tabela `bot_send_failures` (lead_id, step, error, retry_count, next_retry_at) e cron leve (1 min) que reprocessa pendentes até 3x.
-- Auditar e corrigir os 12 call sites (handlers de boas-vindas, OCR, indicação, agendamento, etc.).
+```ts
+const rawSender = createEvolutionSender(url, key, instanceName);
+const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
+const sender = wrapSenderWithGuard(rawSender, { supabase, instanceName });
+```
 
----
+### Critério de aceite
 
-## 3. Botões reais (substituir fallback numerado)
+- Toda função automatizada (cron, webhook, IA) passa por `check_send_quota`.
+- `manual-step-send` mantém bypass (é o operador clicando manualmente).
+- Instância `igreen-953f7e48509b` permanece intocada (lock até 18/06).
+- Nenhum envio adicional possível para essa instância via qualquer caminho automatizado.
 
-**Problema:** `sendButtons` cai sempre em texto numerado ("1 - Sim / 2 - Não"), o que confunde leads e força digitação livre (mais erros, mais retrabalho do bot).
+Posso aplicar? sim pode
 
-**Correção:**
-
-- Verificar se a Evolution API conectada suporta `/message/sendButtons` (Baileys legacy não, Cloud API sim).
-- Se Cloud API disponível → implementar envio nativo de buttons/list em `sendButtons` com fallback automático para texto numerado apenas se a API retornar 4xx.
-- Se só Baileys → implementar **list message** (`/message/sendList`) que ainda funciona em Baileys recentes, com fallback numerado.
-- Centralizar a detecção de capacidade em `instance_capabilities` (cacheada por 1h) para não pingar a API a cada envio.
-
----
-
-## 4. Erro de hook no console (`RESET_BLANK_CHECK` / re-render)
-
-**Problema:** após adicionar `useState(fatalLocked/fatalReason)` no `useWhatsApp`, surgiu warning de hook em HMR.
-
-**Correção:**
-
-- Revisar `useWhatsApp.ts`: garantir que `useState`/`useEffect` novos estejam no topo do hook (ordem fixa), nunca dentro de condicionais.
-- Mover leitura de `manual_review_required`/`fatal_lock_until` para o mesmo `useEffect` que já faz fetch da instância (evita effect duplicado).
-- Validar com reload da preview que warning some.
-
----
-
-## Arquivos afetados
-
-- `supabase/functions/bot-flow/index.ts` e handlers
-- `supabase/functions/bot-flow/_send.ts` (novo)
-- `supabase/functions/_shared/evolution.ts` (sendButtons/sendList)
-- `src/hooks/useWhatsApp.ts`
-- Migrations: `bot_send_blocked_log`, `bot_send_failures`, `instance_capabilities`, cron de retry.
-
-## Critério de aceite
-
-- Nenhum `sendText` no bot-flow sem passar por `safeSend`.
-- `conversation_step` só avança em envio confirmado.
-- Botões nativos quando suportados; fallback só em erro real.
-- Console limpo de warnings de hook.
-- Instância `igreen-953f7e48509b` continua em hard-lock até 2026-06-18 (não tocada).
-
-Posso prosseguir? Sim
+&nbsp;
