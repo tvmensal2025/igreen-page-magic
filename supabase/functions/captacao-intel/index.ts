@@ -80,8 +80,8 @@ async function collectFunnel(sb: any, sinceIso: string) {
     views,
     approved,
     deals_count: deals.length,
-    wallet_open_cents: openValue,
-    wallet_won_cents: wonValue,
+    deals_open_count: dealsOpenCount,
+    deals_won_count: dealsWonCount,
     handoff_reasons: handoffReasons,
     deals_by_stage: stageCounts,
   };
