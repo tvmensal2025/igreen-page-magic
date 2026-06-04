@@ -252,6 +252,25 @@ export function MediaColumn({ userId }: { userId: string }) {
     loadList();
   }
 
+  async function togglePublic(m: Media) {
+    const next = !m.is_public;
+    const { error } = await supabase
+      .from("ai_media_library")
+      .update({ is_public: next })
+      .eq("id", m.id);
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({
+      title: next ? "🌐 Mídia tornada pública" : "🔒 Mídia tornada privada",
+      description: next
+        ? `"${m.label}" agora aparece para todos os consultores como fallback.`
+        : `"${m.label}" não está mais disponível publicamente.`,
+    });
+    setItems((prev) => prev.map((x) => (x.id === m.id ? { ...x, is_public: next } : x)));
+  }
+
   async function remove(m: Media) {
     if (!confirm(`Excluir "${m.label}"?`)) return;
     if (m.url && m.consultant_id === userId) {
