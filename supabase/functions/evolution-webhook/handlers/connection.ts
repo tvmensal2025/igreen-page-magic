@@ -28,8 +28,12 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
 
   const connState = body.data?.state || body.state;
   const connInstance = body.instance || body.data?.instance || fallbackInstance;
-  const statusReason = body.data?.statusReason || 0;
-  console.log(`📡 CONNECTION_UPDATE: instance=${connInstance}, state=${connState}, reason=${statusReason}`);
+  // ⚠️ Preserva `undefined`/`null` (campo ausente) para que classifyDisconnect
+  // diferencie "Evolution não mandou motivo" (transiente) de "0 explícito" (fatal).
+  const rawReason = body.data?.statusReason;
+  const statusReason: number | null | undefined =
+    rawReason === undefined || rawReason === null ? rawReason : Number(rawReason);
+  console.log(`📡 CONNECTION_UPDATE: instance=${connInstance}, state=${connState}, reason=${statusReason ?? "(missing)"}`);
 
   if (connState === "open" && connInstance) {
     const ownerJid = body.data?.ownerJid || body.ownerJid || "";
