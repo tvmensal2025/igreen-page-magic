@@ -54,7 +54,7 @@ const LandingNav = ({ items = [], ctaLabel, ctaHref, onCtaClick }: LandingNavPro
             target="_blank"
             rel="noopener noreferrer"
             onClick={onCtaClick}
-            className="btn-cta !px-5 !py-2.5 !text-sm"
+            className="btn-cta !px-3 !py-2 !text-xs sm:!px-5 sm:!py-2.5 sm:!text-sm whitespace-nowrap"
           >
             {ctaLabel}
           </a>
