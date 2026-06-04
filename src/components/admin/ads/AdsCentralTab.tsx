@@ -34,7 +34,6 @@ type View = "dashboard" | "gallery" | "campaigns" | "performance" | "intel" | "c
 export function AdsCentralTab({ consultantId }: Props) {
   const { toast } = useToast();
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardOpen, setWizardOpen] = useState(false);
   const [expressOpen, setExpressOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [view, setView] = useState<View>("dashboard");
