@@ -330,9 +330,11 @@ export default function FluxoBuilder() {
           layout: r.layout ?? null,
         })) as Step[];
         setSteps(parsed);
+        setStepsSourceFlowId(stepsSourceFlowId);
         if (parsed.length && !selectedId) setSelectedId(parsed[0].id);
       } else {
         setSteps([]);
+        setStepsSourceFlowId(null);
         setSelectedId(null);
       }
 
