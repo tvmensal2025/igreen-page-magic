@@ -1,11 +1,14 @@
 import { useRef, useState, useCallback } from "react";
-import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, Play } from "lucide-react";
+import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, Play, FilePlus2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import { uploadMedia, formatFileSize } from "@/services/minioUpload";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import type { PreparedMedia, MediaKind } from "./types";
+import type { MessageTemplate } from "@/types/whatsapp";
 import { renderFinal } from "./spintax";
 
 function inferKind(mime: string, name: string): MediaKind | null {
@@ -26,6 +29,7 @@ interface Props {
   onMediaChange: (m: PreparedMedia | null) => void;
   previewName?: string;
   previewBill?: number;
+  templates?: MessageTemplate[];
 }
 
 const VARS = [
