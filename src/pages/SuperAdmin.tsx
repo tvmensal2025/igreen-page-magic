@@ -538,7 +538,9 @@ const SuperAdmin = () => {
             <AIControlPanel />
             <ABResultsPanel />
             <LearnedPatternsPanel />
+            <FaqComparativoPanel />
             <AIAuditPanel />
+
             <AIKnowledgePanel />
           </div>
         )}
