@@ -48,7 +48,7 @@ const TEMPLATES: Record<
     src: "/images/mutirao-lei-14300-parceiro.jpg",
     qrX: 30,
     qrY: 91,
-    qrSize: 17,
+    qrSize: 15,
     footerY: 96,
   },
   banner: {
