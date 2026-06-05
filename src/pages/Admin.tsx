@@ -256,12 +256,16 @@ const AdminContent = () => {
         onLogout={handleLogout}
         open={sidebarOpen}
         onOpenChange={setSidebarOpen}
+        collapsed={sidebarCollapsed}
+        onCollapse={collapseSidebar}
       />
 
       <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
         <AppTopbar
           title={currentMeta.title}
           subtitle={form.name ? `${currentMeta.subtitle} • ${form.name}` : currentMeta.subtitle}
+          onToggleSidebar={toggleSidebarCollapsed}
+          sidebarCollapsed={sidebarCollapsed}
           onOpenSidebar={() => setSidebarOpen(true)}
           privacyMode={privacyMode}
           onTogglePrivacy={togglePrivacy}
