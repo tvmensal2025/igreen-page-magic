@@ -1,11 +1,14 @@
 import { useRef, useState, useCallback } from "react";
-import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, Play } from "lucide-react";
+import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, Play, FilePlus2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import { uploadMedia, formatFileSize } from "@/services/minioUpload";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import type { PreparedMedia, MediaKind } from "./types";
+import type { MessageTemplate } from "@/types/whatsapp";
 import { renderFinal } from "./spintax";
 
 function inferKind(mime: string, name: string): MediaKind | null {
@@ -26,6 +29,7 @@ interface Props {
   onMediaChange: (m: PreparedMedia | null) => void;
   previewName?: string;
   previewBill?: number;
+  templates?: MessageTemplate[];
 }
 
 const VARS = [
@@ -36,7 +40,22 @@ const VARS = [
   { tag: "{saudacao}", label: "Bom dia / tarde / noite" },
 ];
 
-export function MessageEditor({ consultantId, text, onTextChange, media, onMediaChange, previewName, previewBill }: Props) {
+export function MessageEditor({ consultantId, text, onTextChange, media, onMediaChange, previewName, previewBill, templates = [] }: Props) {
+  const [tplQuery, setTplQuery] = useState("");
+  const [tplOpen, setTplOpen] = useState(false);
+  const filteredTemplates = templates.filter(t => {
+    const q = tplQuery.trim().toLowerCase();
+    if (!q) return true;
+    return t.name.toLowerCase().includes(q) || (t.content || "").toLowerCase().includes(q);
+  });
+  const applyTemplate = (t: MessageTemplate) => {
+    if (text.trim() && !confirm("Substituir a mensagem atual pelo template?")) return;
+    onTextChange(t.content || "");
+    if (t.media_url && t.media_type && t.media_type !== "text") {
+      onMediaChange({ url: t.media_url, kind: t.media_type as any, fileName: t.name });
+    }
+    setTplOpen(false);
+  };
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [pct, setPct] = useState(0);
@@ -105,6 +124,67 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
 
   return (
     <div className="space-y-4">
+      {/* Template picker */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-[#c9a84c]/30 bg-[#c9a84c]/5 px-3 py-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <FilePlus2 className="w-4 h-4 text-[#c9a84c] shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-[#064e3b]">Templates salvos</p>
+            <p className="text-[10px] text-[#064e3b]/60 truncate">
+              {templates.length === 0 ? "Você ainda não tem templates" : `${templates.length} template${templates.length === 1 ? "" : "s"} disponíveis`}
+            </p>
+          </div>
+        </div>
+        <Popover open={tplOpen} onOpenChange={setTplOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              disabled={templates.length === 0}
+              className="bg-[#0d7a5f] hover:bg-[#064e3b] text-white gap-1.5 rounded-lg shrink-0"
+            >
+              <FilePlus2 className="w-3.5 h-3.5" /> Usar template
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[360px] p-0" sideOffset={6}>
+            <div className="p-2 border-b">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  value={tplQuery}
+                  onChange={(e) => setTplQuery(e.target.value)}
+                  placeholder="Buscar template..."
+                  className="h-8 pl-7 text-sm"
+                />
+              </div>
+            </div>
+            <div className="max-h-72 overflow-auto py-1">
+              {filteredTemplates.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6">Nenhum template encontrado</p>
+              ) : (
+                filteredTemplates.map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => applyTemplate(t)}
+                    className="w-full text-left px-3 py-2 hover:bg-muted/60 border-b border-border/30 last:border-0 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <p className="text-sm font-semibold text-foreground truncate">{t.name}</p>
+                      {t.media_type && t.media_type !== "text" && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600">{t.media_type}</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground line-clamp-2">{t.content || "(sem texto)"}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+
       {/* Variables toolbar */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[11px] text-muted-foreground mr-1">Inserir:</span>

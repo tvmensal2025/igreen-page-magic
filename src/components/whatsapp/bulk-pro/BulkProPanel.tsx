@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowRight, ArrowLeft, Download, RotateCw, AlertTriangle, Users, MessageSquare, Settings2, Activity, PlayCircle } from "lucide-react";
+import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowRight, ArrowLeft, Download, RotateCw, AlertTriangle, Users, MessageSquare, Settings2, Activity, PlayCircle, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
@@ -138,6 +138,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   const [filterStatus, setFilterStatus] = useState<"all" | "sent" | "failed">("all");
   const [history, setHistory] = useState<PersistedCampaignRow[]>([]);
   const [campaignName, setCampaignName] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setExpanded(false); };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [expanded]);
 
   // Load history
   useEffect(() => {
@@ -416,62 +426,88 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   }, [targets, filterStatus]);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-emerald-950/10">
-      <div className="absolute -top-20 -right-20 w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="relative p-5 sm:p-7 space-y-5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 flex items-center justify-center border border-emerald-500/30">
-              <Megaphone className="w-5 h-5 text-emerald-400" />
+    <div
+      className={
+        expanded
+          ? "fixed inset-2 sm:inset-4 z-[60] overflow-hidden rounded-3xl border border-emerald-900/20 bg-[#f5f0e0] shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+          : "relative overflow-hidden rounded-3xl border border-emerald-900/15 bg-[#f5f0e0] shadow-lg"
+      }
+      style={{ fontFamily: "'Figtree', system-ui, sans-serif" }}
+    >
+      <div className={`relative flex flex-col ${expanded ? "h-full" : ""}`}>
+        {/* Header bar — deep emerald */}
+        <div className="bg-[#064e3b] text-white px-5 sm:px-7 py-4 sm:py-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#c9a84c]/20 border border-[#c9a84c]/40 flex items-center justify-center">
+                <Megaphone className="w-5 h-5 text-[#c9a84c]" />
+              </div>
+              <div>
+                <h3 className="text-lg sm:text-xl font-bold tracking-tight" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
+                  <span className="text-[#c9a84c]">Disparo</span> PRO
+                </h3>
+                <p className="text-[11px] text-emerald-100/70 hidden sm:block">Mensagens em massa com mídia, agendamento e anti-bloqueio</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-heading font-bold text-foreground text-lg">Disparo PRO</h3>
-              <p className="text-xs text-muted-foreground">Mensagens em massa com mídia, agendamento e anti-bloqueio</p>
+            <div className="flex items-center gap-2">
+              {(running || done) && (
+                <div className="text-right pr-2 border-r border-white/15 mr-1">
+                  <p className="text-[10px] text-emerald-100/60 uppercase tracking-wide">Progresso</p>
+                  <p className="text-sm font-bold">{stats.sent + stats.failed}/{stats.total}</p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setExpanded(v => !v)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-xs font-semibold"
+                title={expanded ? "Reduzir (Esc)" : "Expandir tela"}
+              >
+                {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                <span className="hidden sm:inline">{expanded ? "Reduzir" : "Expandir"}</span>
+              </button>
             </div>
           </div>
-          {(running || done) && (
-            <div className="text-right">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Progresso</p>
-              <p className="text-sm font-bold text-foreground">
-                {stats.sent + stats.failed}/{stats.total}
-              </p>
-            </div>
-          )}
-        </div>
 
-        {/* Stepper */}
-        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1">
-          {STEPS.map((s, i) => {
-            const Icon = s.icon;
-            const active = step === s.n;
-            const past = step > s.n;
-            return (
-              <div key={s.n} className="flex items-center gap-1 sm:gap-2">
+          {/* Stepper */}
+          <div className="mt-5 sm:mt-6 flex items-center justify-between max-w-3xl mx-auto relative">
+            <div className="absolute top-4 left-0 w-full h-0.5 bg-white/15 -translate-y-1/2" />
+            {STEPS.map((s) => {
+              const Icon = s.icon;
+              const active = step === s.n;
+              const past = step > s.n;
+              const clickable = !running && s.n <= step;
+              return (
                 <button
+                  key={s.n}
                   type="button"
-                  disabled={running}
-                  onClick={() => { if (!running && s.n <= step) setStep(s.n); }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                    active ? "bg-primary text-primary-foreground"
-                    : past ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
-                    : "bg-secondary/30 text-muted-foreground"
-                  }`}
+                  disabled={!clickable}
+                  onClick={() => clickable && setStep(s.n)}
+                  className={`relative z-10 flex flex-col items-center gap-1.5 group ${clickable ? "cursor-pointer" : "cursor-default"}`}
                 >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-                    active ? "bg-primary-foreground/20" : past ? "bg-emerald-500/30" : "bg-secondary"
-                  }`}>{past ? "✓" : s.n}</span>
-                  <Icon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{s.label}</span>
+                  <span
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                      active
+                        ? "bg-[#c9a84c] text-[#064e3b] ring-4 ring-[#c9a84c]/25"
+                        : past
+                        ? "bg-emerald-500/40 text-white"
+                        : "bg-white/15 text-white/60"
+                    }`}
+                  >
+                    {past ? "✓" : s.n}
+                  </span>
+                  <span className={`text-[10px] sm:text-xs font-semibold uppercase tracking-wider whitespace-nowrap ${active ? "text-white" : "text-white/60"}`}>
+                    <Icon className="w-3 h-3 inline mr-1 -mt-0.5" />{s.label}
+                  </span>
                 </button>
-                {i < STEPS.length - 1 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
-        {/* Body */}
-        <div className="min-h-[200px]">
+        {/* Body container */}
+        <div className={`relative ${expanded ? "flex-1 overflow-auto" : ""} bg-white px-5 sm:px-7 py-5 sm:py-6 space-y-5 ${expanded ? "min-h-full" : "min-h-[200px]"}`}>
+
+
           {step === 1 && (
             <div className="space-y-3">
               <ContactImporter
@@ -480,18 +516,18 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                 onContactsChange={setContacts}
                 instanceName={instanceName}
               />
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-secondary/20 border border-border/40 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase">Selecionados</p>
-                  <p className="text-lg font-bold text-foreground">{deduped.length}</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-xl bg-[#0d7a5f]/5 border border-[#0d7a5f]/20 p-3 text-center">
+                  <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Selecionados</p>
+                  <p className="text-2xl font-bold text-[#0d7a5f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{deduped.length}</p>
                 </div>
-                <div className="rounded-lg bg-secondary/20 border border-border/40 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase">Duplicados</p>
-                  <p className="text-lg font-bold text-yellow-400">{dupCount}</p>
+                <div className="rounded-xl bg-[#c9a84c]/10 border border-[#c9a84c]/30 p-3 text-center">
+                  <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Duplicados</p>
+                  <p className="text-2xl font-bold text-[#a8862f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{dupCount}</p>
                 </div>
-                <div className="rounded-lg bg-secondary/20 border border-border/40 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase">Inválidos</p>
-                  <p className="text-lg font-bold text-red-400">{contacts.length - validContacts.length}</p>
+                <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-center">
+                  <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Inválidos</p>
+                  <p className="text-2xl font-bold text-red-600" style={{ fontFamily: "'Outfit', sans-serif" }}>{contacts.length - validContacts.length}</p>
                 </div>
               </div>
 
@@ -561,6 +597,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
               onMediaChange={setMedia}
               previewName={deduped[0]?.name}
               previewBill={deduped[0]?.electricity_bill_value}
+              templates={templates}
             />
           )}
 
@@ -690,7 +727,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
               )}
             </div>
           )}
-        </div>
+
+
 
         {/* Footer navigation */}
         {step < 4 && !running && (
@@ -734,6 +772,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
             </p>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
