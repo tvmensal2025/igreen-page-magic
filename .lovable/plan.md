@@ -1,104 +1,62 @@
-## Objetivo
-Cada consultor deve executar o **mesmo fluxo do template público do superadmin** (mesma estrutura, textos, botões, transições, regras). Diferenças permitidas:
-- **Mídias** (áudio/vídeo/imagem) são per-consultor — trocar uma mídia só afeta esse consultor.
-- **Evolution renderiza botões como lista numerada 1️⃣2️⃣3️⃣** — já funciona em runtime (`appendButtonsToText` em `evolution-webhook/handlers/conversational/index.ts:245`), zero código novo.
+# Reconciliação "100% igual ao público"
 
-Toggle no topo de `/admin/fluxos`: ligar = "100% igual ao público" (estrutura travada, mídias livres). Desligar = fork (libera edição de estrutura, mas perde sincronia automática).
+## Diagnóstico
 
-Bônus: o "Passo removido" da tela atual some sozinho porque o consultor passa a ler os steps do template público, que é internamente consistente (verifiquei no banco: todas as 16 transições do flow público `320bf22c` resolvem; o flow do consultor `b539a8a2` tem step_keys e slot_keys 100% alinhados com o público).
+Hoje o consultor `tvmensal01` (e qualquer flow consultor existente antes da última migração) está marcado como `sync_mode = 'custom'`. A migração preservou edições antigas como custom, mas o resultado é que esses consultores **não** seguem o template público — eles veem uma cópia congelada e divergente (steps duplicados, regras antigas, mídias defasadas).
 
-## Arquitetura: `bot_flows.sync_mode`
+Estrutura atual:
 
-Coluna nova: `bot_flows.sync_mode text NOT NULL DEFAULT 'public' CHECK (sync_mode IN ('public','custom'))`.
+| Flow | sync_mode | steps | observação |
+|---|---|---|---|
+| Público D (super-admin) | custom | 16 | fonte da verdade |
+| tvmensal01 D | **custom** | 16 | cópia antiga, não atualiza |
+| Outros consultores | custom | varia | mesmo problema |
 
-- `'public'`: ao resolver o fluxo em runtime/editor, **carregar steps do `bot_flows` com `is_public=true` da mesma variante**. Linha do consultor existe só pra carregar metadados (sync_mode, variant, consultant_id) e para preservar identidade.
-- `'custom'`: comportamento atual, lê os próprios `bot_flow_steps`.
+Quando `sync_mode='public'`, `resolveFlowId` e o `FluxoBuilder` já redirecionam para os steps do template público — isso está correto. Falta apenas **virar o default** para os consultores existentes.
 
-Mídias permanecem em `ai_media_library` filtradas por `consultant_id + slot_key` (já é assim — verifiquei que `slot_key` casa 1:1 entre público e consultor: `como_funciona`, `passo_mpagqq3g`, `prova_social`, etc.).
+## Mudanças
 
-## Mudanças mínimas
+### 1. Migration: re-sincronizar consultores
 
-### 1) Migration (1 arquivo SQL)
-```sql
-ALTER TABLE public.bot_flows
-  ADD COLUMN IF NOT EXISTS sync_mode text NOT NULL DEFAULT 'public'
-  CHECK (sync_mode IN ('public','custom'));
-
--- Preservar edições existentes: quem já tem fluxo próprio fica em 'custom'
-UPDATE public.bot_flows SET sync_mode = 'custom'
-  WHERE consultant_id IS NOT NULL AND is_public = false;
-
--- O template do superadmin é a fonte da verdade — sempre 'custom'
-UPDATE public.bot_flows SET sync_mode = 'custom' WHERE is_public = true;
+```text
+UPDATE bot_flows
+SET sync_mode = 'public'
+WHERE is_public = false
+  AND consultant_id <> '<super-admin uuid>';
 ```
-Nenhuma mudança em RLS (a coluna não muda regras de acesso).
 
-### 2) Runtime: `supabase/functions/_shared/resolve-flow.ts` (1 arquivo, ~15 linhas)
-Mudar `resolveFlowId` para, depois de achar o fluxo do consultor, consultar `sync_mode`. Se `'public'`, retornar o `id` do fluxo público da mesma variante. Devolve só `{ id }` (assinatura inalterada) — assim os **40+ call sites** em `evolution-webhook/handlers/bot-flow.ts` e `whapi-webhook/handlers/bot-flow.ts` não precisam ser tocados.
+- Não apaga nada do `bot_flow_steps` do consultor (a coluna fica como backup).
+- Super-admin permanece `custom` — ele edita o template público.
+- Consultor que quiser divergir clica no toggle "Personalizar" → `fork_flow_from_public` re-popula os steps.
 
-```ts
-const { data: own } = await supabase
-  .from("bot_flows")
-  .select("id, sync_mode")
-  .eq("consultant_id", consultantId).eq("is_active", true).eq("variant", v)
-  .order("created_at").limit(1).maybeSingle();
-if (own?.id) {
-  if (own.sync_mode === "public") {
-    const { data: pub } = await supabase
-      .from("bot_flows").select("id")
-      .eq("is_public", true).eq("is_active", true).eq("variant", v)
-      .limit(1).maybeSingle();
-    if (pub?.id) return { id: pub.id };
-  }
-  return { id: own.id };
-}
-```
-Mídia/FAQ continuam por `consultant_id` (já são) → mudança transparente.
+### 2. Garantir paridade em runtime (revisão)
 
-### 3) Editor `src/pages/FluxoBuilder.tsx`
+Conferir nos 3 caminhos abaixo que, quando `sync_mode='public'`, **estrutura** vem do flow público e **mídias** seguem a regra "consultor primeiro, público como fallback":
 
-**A) `reload()` (linha 247-296):** após buscar o fluxo do consultor (`flows[0]`), também ler `sync_mode`. Se `'public'`, fazer 2ª query para pegar o **id do fluxo público** da mesma variante e carregar `bot_flow_steps WHERE flow_id = <publicId>` em vez do próprio. Guardar `syncMode` e `publicFlowId` em estado.
+- `_shared/resolve-flow.ts` → já redireciona ✅
+- `_shared/engine/loader.ts` → `ai_media_library` lê `consultant_id OR is_public=true` ✅
+- `evolution-webhook/handlers/bot-flow.ts` e `whapi-webhook/handlers/bot-flow.ts` → confirmar que o lookup direto por `media_id` também respeita `active=true` e que, na ausência da mídia do consultor para um slot, usa a pública.
 
-**B) Header novo (acima de `StepListToolbar`):** um `<Switch>` "Seguir modelo público do superadmin" + badge "Sincronizado" / "Personalizado". Banner amarelo quando ligado:
-> "Estrutura sincronizada com o modelo público. Você pode trocar apenas as **mídias** dos passos. Alterações do superadmin aparecem automaticamente."
+Qualquer divergência encontrada nessa revisão (ex.: duração de áudio, ordem de envio, regras de transição) é corrigida editando o template público — passa a refletir em todos automaticamente.
 
-**C) Read-only quando `syncMode==='public'`:**
-- Desabilitar: drag-and-drop (`sensors` desativados), botões "Adicionar passo", "Duplicar", "Remover", "Editar transições", "Editar texto/botões/captures" no `StepInspector`.
-- **Manter habilitado:** `StepMediaPanel` (linha 475 do `StepInspector.tsx`) — ele grava em `ai_media_library` por `consultant_id`, comportamento desejado.
+### 3. FluxoBuilder: feedback visual claro
 
-**D) Toggle handlers:**
-- **Desligar (público → custom):** modal "Vai perder a sincronia. Continuar?". Ao confirmar, RPC `fork_flow_from_public(consultant_id, variant)` que: (1) clona todos `bot_flow_steps` do público para o flow do consultor; (2) seta `sync_mode='custom'`. Recarregar.
-- **Ligar (custom → público):** modal "Suas edições nos passos serão ignoradas (não apagadas). Mídias preservadas. Continuar?". Update `sync_mode='public'`. Recarregar (passa a renderizar steps do público).
+- Banner no topo quando `sync_mode='public'`: "Você está vendo o modelo do super-admin. Mídias podem ser personalizadas; estrutura e regras seguem o template."
+- Botão "Personalizar este fluxo" (já existe) com confirmação explícita: "Ao personalizar, você perde atualizações futuras do super-admin nesse fluxo".
+- Para super-admin, esconder o toggle (já feito).
 
-### 4) RPC `fork_flow_from_public` (na mesma migration)
-Função SECURITY DEFINER que copia `bot_flow_steps` do público para o flow do consultor (re-gerando UUIDs e remapeando `goto_step_id` nas transitions). Chamada só pelo editor. Idempotente: se o consultor já tem steps, faz `DELETE` antes do `INSERT` (com confirm no UI).
+### 4. Limpeza opcional do template público
 
-### 5) Seed para novos consultores
-Atualizar trigger/RPC `seed_default_camila_flow` para criar a linha em `bot_flows` com `sync_mode='public'` e **sem clonar steps** (não precisa — runtime lê do público).
-
-## O que NÃO muda
-- Schema de `bot_flow_steps`, `ai_media_library`, `bot_flow_qa_media`, `customer_flow_state`.
-- `sender-guard` + burst-bypass (já implementado).
-- Whapi continua editando o template em `'custom'` (superadmin).
-- `appendButtonsToText` no Evolution (já transforma botões em 1️⃣2️⃣3️⃣).
-- Os 40+ call sites de `resolveFlowId` (assinatura preservada).
+Os steps `d_como_funciona_copy_in3s` ("Como funciona (2)") e `d_como_funciona_copy_qwpu` ("Como funciona (3)") parecem duplicatas órfãs no template público. Confirmar com o usuário se devem ser removidos do template — se sim, sai do público uma única vez e desaparece para todos os consultores em modo `public`.
 
 ## Validação
-1. Após migration: consultor `tvmensal01` (`953f7e48`) está em `'custom'` (preservou edições). Toggle desligado.
-2. Ligar toggle → confirma → editor recarrega mostrando os 16 passos do público, **sem "Passo removido"**, drag-and-drop e edição estrutural desabilitados, mídias editáveis.
-3. Trocar áudio do passo "Como funciona" → salva em `ai_media_library` (consultor_id = tvmensal01) → outros consultores não afetados.
-4. Lead manda "oi" no Evolution → recebe boas-vindas do template público com botões "1️⃣ 2️⃣ 3️⃣". Clica "2" → recebe áudio do consultor + vídeo do consultor + texto com lista numerada **no mesmo turno** (burst-bypass).
-5. Superadmin edita texto do passo "Boas-vindas" no público → próximo lead de qualquer consultor em `'public'` vê a mudança.
-6. Desligar toggle em outro consultor → fork copia steps do público → consultor edita à vontade sem afetar os demais.
 
-## Escopo: arquivos tocados
-- 1 migration nova (ADD COLUMN + UPDATE + função `fork_flow_from_public`)
-- `supabase/functions/_shared/resolve-flow.ts` (lookup do sync_mode)
-- `src/pages/FluxoBuilder.tsx` (reload + header toggle + read-only gating)
-- `src/components/admin/flow-builder/StepInspector.tsx` (desabilitar edição quando read-only)
-- `src/components/admin/flow-builder/StepTimelineItem.tsx` (esconder botões de edição em read-only)
-- (opcional) atualizar `seed_default_camila_flow` para novos consultores nascerem `'public'`
+1. Após a migration, abrir `/admin/fluxos` como `tvmensal01` → toggle aparece como "Sincronizado", lista mostra exatamente os 16 steps do super-admin, edição bloqueada.
+2. Editar um texto/regra no template público (logado como super-admin) → recarregar como `tvmensal01` → mudança aparece imediatamente.
+3. Subir uma mídia nova como `tvmensal01` no slot `como_funciona` → runtime envia a mídia do consultor; outros consultores continuam recebendo a pública.
+4. Clicar "Personalizar" como `tvmensal01` → `fork_flow_from_public` roda, steps clonados, edição liberada, super-admin para de propagar.
 
-## Risco
-- **Baixo.** Mudança no `resolve-flow` é transparente para callers. Consultores existentes ficam em `'custom'` (zero efeito). Novos consultores e quem ligar o toggle usam o caminho `'public'`.
-- A coluna nova é compatível: código antigo que não conhece `sync_mode` continua funcionando (UPDATE só preenche valores existentes; default cobre INSERTs futuros).
+## Pontos abertos para o usuário
+
+- **Remover as duplicatas "Como funciona (2)" e "(3)"** do template público? (item 4)
+- Confirmar lista de consultores que devem permanecer em `custom` (se houver algum que já personalizou de propósito).
