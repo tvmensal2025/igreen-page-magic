@@ -6274,6 +6274,10 @@ export type Database = {
         Args: { _customer_id: string; _seconds?: number }
         Returns: boolean
       }
+      try_lock_step_dispatch: {
+        Args: { p_customer_id: string; p_step_key: string }
+        Returns: boolean
+      }
       try_log_media_send: {
         Args: {
           _consultant_id: string
