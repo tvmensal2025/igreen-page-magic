@@ -903,10 +903,12 @@ export default function FluxoBuilder() {
             </>
           )}
 
-          <Button variant="outline" className="w-full" onClick={() => { void addStep(); }}>
-            <Plus className="mr-1 h-4 w-4" />
-            Adicionar passo
-          </Button>
+          {!isReadOnly && (
+            <Button variant="outline" className="w-full" onClick={() => { void addStep(); }}>
+              <Plus className="mr-1 h-4 w-4" />
+              Adicionar passo
+            </Button>
+          )}
         </section>
 
         {/* Coluna esquerda — Modo_Diagrama (lazy-loaded, R1.2/R1.5) */}
