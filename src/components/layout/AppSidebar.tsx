@@ -80,6 +80,8 @@ interface AppSidebarProps {
   onLogout?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  collapsed?: boolean;
+  onCollapse?: () => void;
 }
 
 export function AppSidebar({
@@ -92,7 +94,22 @@ export function AppSidebar({
   onLogout,
   open = true,
   onOpenChange,
+  collapsed = false,
+  onCollapse,
 }: AppSidebarProps) {
+  const handleItemClick = (item: NavItem) => {
+    if (item.href && onNavigate) {
+      onNavigate(item.href);
+    } else {
+      onTabChange(item.id);
+    }
+    onOpenChange?.(false);
+    // Auto-collapse on desktop after navigation
+    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
+      onCollapse?.();
+    }
+  };
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -106,37 +123,42 @@ export function AppSidebar({
       )}
 
       <aside
-        className={`pe-sidebar fixed lg:sticky lg:top-0 left-0 top-0 z-40 h-[100dvh] w-72 shrink-0 flex flex-col shadow-2xl transition-transform duration-300 ${
+        className={`pe-sidebar ${collapsed ? "is-collapsed" : ""} fixed lg:sticky lg:top-0 left-0 top-0 z-40 h-[100dvh] shrink-0 flex flex-col shadow-2xl transition-all duration-300 ${
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
+        } ${collapsed ? "w-[72px]" : "w-72"}`}
       >
         {/* Brand */}
-        <div className="px-6 pt-7 pb-6 flex items-center gap-3 shrink-0">
-          <div className="w-11 h-11 rounded-2xl p-[2px]" style={{ background: "linear-gradient(135deg, #e6cf85, #c9a84c, #8a6f1f)" }}>
-            <div className="w-full h-full rounded-2xl flex items-center justify-center" style={{ background: "#052e23" }}>
-              <span className="pe-heading text-base font-bold" style={{ color: "#c9a84c" }}>iG</span>
+        <div className={`${collapsed ? "px-2 justify-center" : "px-5"} pt-6 pb-5 flex items-center gap-3 shrink-0`}>
+          <div className="w-10 h-10 rounded-xl p-[2px] shrink-0" style={{ background: "linear-gradient(135deg, var(--pe-accent-soft), var(--pe-accent), var(--pe-accent-deep))" }}>
+            <div className="w-full h-full rounded-[10px] flex items-center justify-center" style={{ background: "var(--pe-emerald-strong)" }}>
+              <span className="pe-heading text-sm font-bold" style={{ color: "var(--pe-accent)" }}>iG</span>
             </div>
           </div>
-          <div className="min-w-0">
-            <p className="pe-heading text-xl font-bold text-white tracking-tight">iGreen</p>
-            <p className="text-[10px] uppercase tracking-[0.2em]" style={{ color: "rgba(201,168,76,0.7)" }}>Painel Elite</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange?.(false)}
-            className="lg:hidden ml-auto p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10"
-            aria-label="Recolher"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
+          {!collapsed && (
+            <>
+              <div className="min-w-0">
+                <p className="pe-heading text-lg font-bold text-white tracking-tight leading-none">iGreen</p>
+                <p className="text-[9px] mt-1 uppercase tracking-[0.22em]" style={{ color: "rgba(16,185,129,0.7)" }}>Painel Elite</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenChange?.(false)}
+                className="lg:hidden ml-auto p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10"
+                aria-label="Recolher"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 pb-4 overflow-y-auto overflow-x-hidden">
+        <nav className={`flex-1 ${collapsed ? "px-1" : "px-3"} pb-4 overflow-y-auto overflow-x-hidden`}>
           {NAV_GROUPS.map((group) => (
             <div key={group.label}>
-              <div className="pe-sidebar-section">{group.label}</div>
-              <div className="space-y-1">
+              {!collapsed && <div className="pe-sidebar-section">{group.label}</div>}
+              {collapsed && <div className="my-2 mx-3 h-px bg-white/5" />}
+              <div className="space-y-0.5">
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
@@ -144,20 +166,14 @@ export function AppSidebar({
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => {
-                        if (item.href && onNavigate) {
-                          onNavigate(item.href);
-                        } else {
-                          onTabChange(item.id);
-                          onOpenChange?.(false);
-                        }
-                      }}
+                      onClick={() => handleItemClick(item)}
                       className={`pe-nav-item w-full text-left ${isActive ? "is-active" : ""}`}
                       aria-current={isActive ? "page" : undefined}
+                      title={collapsed ? item.label : undefined}
                     >
-                      <Icon className="w-5 h-5 shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                      {item.badge !== undefined && (
+                      <Icon className="w-[18px] h-[18px] shrink-0" />
+                      {!collapsed && <span className="truncate">{item.label}</span>}
+                      {!collapsed && item.badge !== undefined && (
                         <span className="pe-badge">{item.badge}</span>
                       )}
                     </button>
@@ -169,44 +185,69 @@ export function AppSidebar({
         </nav>
 
         {/* Footer profile card */}
-        <div className="p-4 shrink-0">
-          <div
-            className="rounded-2xl p-3 flex items-center gap-3 border"
-            style={{
-              background: "rgba(5, 46, 35, 0.65)",
-              borderColor: "rgba(201,168,76,0.18)",
-            }}
-          >
-            <div
-              className="w-10 h-10 rounded-full overflow-hidden shrink-0 border-2"
-              style={{ borderColor: "#c9a84c" }}
-            >
-              {consultantPhoto ? (
-                <img src={consultantPhoto} alt={consultantName} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-sm font-bold" style={{ background: "#052e23", color: "#c9a84c" }}>
-                  {consultantName.slice(0, 1).toUpperCase()}
-                </div>
+        <div className={`${collapsed ? "p-2" : "p-3"} shrink-0`}>
+          {collapsed ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-9 h-9 rounded-full overflow-hidden border-2" style={{ borderColor: "var(--pe-accent)" }} title={consultantName}>
+                {consultantPhoto ? (
+                  <img src={consultantPhoto} alt={consultantName} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xs font-bold" style={{ background: "var(--pe-emerald-strong)", color: "var(--pe-accent)" }}>
+                    {consultantName.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  aria-label="Sair"
+                  title="Sair"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               )}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{consultantName}</p>
-              <p className="text-[10px] font-bold uppercase tracking-wider truncate" style={{ color: "#c9a84c" }}>
-                {consultantLevel}
-              </p>
-            </div>
-            {onLogout && (
-              <button
-                type="button"
-                onClick={onLogout}
-                className="p-2 rounded-lg text-white/50 hover:text-[#c9a84c] hover:bg-white/5 transition-colors"
-                aria-label="Sair"
-                title="Sair"
+          ) : (
+            <div
+              className="rounded-xl p-2.5 flex items-center gap-3 border"
+              style={{
+                background: "rgba(2, 44, 34, 0.6)",
+                borderColor: "rgba(16, 185, 129, 0.15)",
+              }}
+            >
+              <div
+                className="w-9 h-9 rounded-full overflow-hidden shrink-0 border-2"
+                style={{ borderColor: "var(--pe-accent)" }}
               >
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+                {consultantPhoto ? (
+                  <img src={consultantPhoto} alt={consultantName} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-sm font-bold" style={{ background: "var(--pe-emerald-strong)", color: "var(--pe-accent)" }}>
+                    {consultantName.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{consultantName}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--pe-accent-soft)" }}>
+                  {consultantLevel}
+                </p>
+              </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  aria-label="Sair"
+                  title="Sair"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </aside>
     </>
