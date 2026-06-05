@@ -95,13 +95,16 @@ export function wrapSenderWithGuard<T extends Record<string, any>>(
   sender: T,
   opts: GuardedSenderOpts,
 ): T {
+  // Estado de burst compartilhado entre todos os métodos de envio do mesmo
+  // wrapper. Como o wrapper é criado uma vez por invocação do webhook,
+  // a janela cobre apenas o turno corrente.
+  const burstState = { until: 0 };
   const wrapped: any = { ...sender };
-  wrapped.sendText = wrapSendFn(sender.sendText, opts, "text");
-  wrapped.sendMedia = wrapSendFn(sender.sendMedia, opts, "media");
-  wrapped.sendButtons = wrapSendFn(sender.sendButtons, opts, "buttons");
-  wrapped.sendAudio = wrapSendFn(sender.sendAudio, opts, "audio");
+  wrapped.sendText = wrapSendFn(sender.sendText, opts, "text", burstState);
+  wrapped.sendMedia = wrapSendFn(sender.sendMedia, opts, "media", burstState);
+  wrapped.sendButtons = wrapSendFn(sender.sendButtons, opts, "buttons", burstState);
+  wrapped.sendAudio = wrapSendFn(sender.sendAudio, opts, "audio", burstState);
   // sendTextDetailed é chamado internamente por sendText → não embrulha
-  // (caso contrário, contaríamos 2x). Se algum chamador externo precisar,
-  // o guard pode ser adicionado depois.
+  // (caso contrário, contaríamos 2x).
   return wrapped as T;
 }
