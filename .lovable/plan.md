@@ -1,62 +1,43 @@
-# Reconciliação "100% igual ao público"
+# Corrigir "Passo removido" nos steps 16–20 (fallback)
 
-## Diagnóstico
+## Causa raiz confirmada
 
-Hoje o consultor `tvmensal01` (e qualquer flow consultor existente antes da última migração) está marcado como `sync_mode = 'custom'`. A migração preservou edições antigas como custom, mas o resultado é que esses consultores **não** seguem o template público — eles veem uma cópia congelada e divergente (steps duplicados, regras antigas, mídias defasadas).
+- A RPC `fork_flow_from_public` **já remapeia** `transitions[].goto_step_id` e `fallback.goto_step_id`, mas **não remapeia** `fallback.success_goto_step_id`.
+- Fluxos de consultor forkados antes do remapeamento de `fallback` ganharem cobertura (ou para `success_goto_step_id`) ficaram com UUIDs apontando para steps do fluxo público — que não existem dentro do próprio `flow_id` do consultor. O editor mostra esses ponteiros como "Passo removido".
+- Caso do `tvmensal01` (flow `b539a8a2-…`): steps 16, 17, 19, 20 têm `fallback.goto_step_id` apontando para IDs do template público. Step 18 está correto.
 
-Estrutura atual:
+## Frente 1 — Migração de saneamento (roda 1x, conserta o histórico)
 
-| Flow | sync_mode | steps | observação |
-|---|---|---|---|
-| Público D (super-admin) | custom | 16 | fonte da verdade |
-| tvmensal01 D | **custom** | 16 | cópia antiga, não atualiza |
-| Outros consultores | custom | varia | mesmo problema |
+Para cada `bot_flow_steps.fallback` que contenha `goto_step_id` ou `success_goto_step_id`:
+1. Verificar se o UUID existe em `bot_flow_steps.id` **dentro do mesmo `flow_id`**.
+2. Se não existir, procurar no mesmo `flow_id` um step com o mesmo `step_key` do step original (resolvido via `step_key` correspondente no fluxo público, fazendo lookup pelo UUID quebrado).
+3. Reescrever o campo com o novo UUID. Se nenhum equivalente for encontrado, remover só aquele campo (deixar o restante do `fallback` intacto) e logar `step_id` + chave removida em um `RAISE NOTICE` para auditoria.
 
-Quando `sync_mode='public'`, `resolveFlowId` e o `FluxoBuilder` já redirecionam para os steps do template público — isso está correto. Falta apenas **virar o default** para os consultores existentes.
+Implementado como uma função PL/pgSQL one-shot executada na própria migração, varrendo todos os fluxos não públicos. Idempotente — pode rodar de novo sem efeito.
 
-## Mudanças
+## Frente 2 — Patch em `fork_flow_from_public`
 
-### 1. Migration: re-sincronizar consultores
+Adicionar, no segundo passe, o remapeamento de `fallback.success_goto_step_id` usando o mesmo `v_id_map` já usado para `goto_step_id`. Mantém a lógica existente; só estende o bloco que monta `remapped_fallback`:
 
-```text
-UPDATE bot_flows
-SET sync_mode = 'public'
-WHERE is_public = false
-  AND consultant_id <> '<super-admin uuid>';
+```
+IF remapped_fallback ? 'success_goto_step_id'
+   AND v_id_map ? (remapped_fallback->>'success_goto_step_id') THEN
+  remapped_fallback := remapped_fallback
+    || jsonb_build_object('success_goto_step_id',
+         v_id_map ->> (remapped_fallback->>'success_goto_step_id'));
+END IF;
 ```
 
-- Não apaga nada do `bot_flow_steps` do consultor (a coluna fica como backup).
-- Super-admin permanece `custom` — ele edita o template público.
-- Consultor que quiser divergir clica no toggle "Personalizar" → `fork_flow_from_public` re-popula os steps.
+Assim, futuros forks (e re-syncs) não recriam o bug.
 
-### 2. Garantir paridade em runtime (revisão)
+## Fora de escopo
 
-Conferir nos 3 caminhos abaixo que, quando `sync_mode='public'`, **estrutura** vem do flow público e **mídias** seguem a regra "consultor primeiro, público como fallback":
-
-- `_shared/resolve-flow.ts` → já redireciona ✅
-- `_shared/engine/loader.ts` → `ai_media_library` lê `consultant_id OR is_public=true` ✅
-- `evolution-webhook/handlers/bot-flow.ts` e `whapi-webhook/handlers/bot-flow.ts` → confirmar que o lookup direto por `media_id` também respeita `active=true` e que, na ausência da mídia do consultor para um slot, usa a pública.
-
-Qualquer divergência encontrada nessa revisão (ex.: duração de áudio, ordem de envio, regras de transição) é corrigida editando o template público — passa a refletir em todos automaticamente.
-
-### 3. FluxoBuilder: feedback visual claro
-
-- Banner no topo quando `sync_mode='public'`: "Você está vendo o modelo do super-admin. Mídias podem ser personalizadas; estrutura e regras seguem o template."
-- Botão "Personalizar este fluxo" (já existe) com confirmação explícita: "Ao personalizar, você perde atualizações futuras do super-admin nesse fluxo".
-- Para super-admin, esconder o toggle (já feito).
-
-### 4. Limpeza opcional do template público
-
-Os steps `d_como_funciona_copy_in3s` ("Como funciona (2)") e `d_como_funciona_copy_qwpu` ("Como funciona (3)") parecem duplicatas órfãs no template público. Confirmar com o usuário se devem ser removidos do template — se sim, sai do público uma única vez e desaparece para todos os consultores em modo `public`.
+- Nenhuma mudança no front-end (`StepTimelineItem`, `flowExits`) — assim que os IDs forem corrigidos no banco, os cards param de mostrar "Passo removido".
+- Sem alteração em `transitions` (RPC já trata; varredura confirma que só `fallback` está quebrado nesses consultores).
 
 ## Validação
 
-1. Após a migration, abrir `/admin/fluxos` como `tvmensal01` → toggle aparece como "Sincronizado", lista mostra exatamente os 16 steps do super-admin, edição bloqueada.
-2. Editar um texto/regra no template público (logado como super-admin) → recarregar como `tvmensal01` → mudança aparece imediatamente.
-3. Subir uma mídia nova como `tvmensal01` no slot `como_funciona` → runtime envia a mídia do consultor; outros consultores continuam recebendo a pública.
-4. Clicar "Personalizar" como `tvmensal01` → `fork_flow_from_public` roda, steps clonados, edição liberada, super-admin para de propagar.
-
-## Pontos abertos para o usuário
-
-- **Remover as duplicatas "Como funciona (2)" e "(3)"** do template público? (item 4)
-- Confirmar lista de consultores que devem permanecer em `custom` (se houver algum que já personalizou de propósito).
+1. Antes da migração: `SELECT step_key FROM bot_flow_steps WHERE flow_id='b539a8a2-…' AND fallback->>'goto_step_id' NOT IN (SELECT id::text FROM bot_flow_steps WHERE flow_id='b539a8a2-…')` deve retornar steps 16, 17, 19, 20.
+2. Depois da migração: a mesma query retorna 0 linhas.
+3. Recarregar o editor logado como `tvmensal01` — os badges "Passo removido" nos cards 16–20 desaparecem.
+4. Forkar um novo consultor de teste e conferir que `fallback.success_goto_step_id` aponta para IDs do próprio flow.
