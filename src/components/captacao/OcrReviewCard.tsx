@@ -117,11 +117,25 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
         ocr_review_pending: null,
         ocr_review_decided_at: nowIso,
         ocr_review_decided_by: "consultant",
+        // Despausa o bot — se o lead caiu no watchdog antes do OCR, esse é o
+        // momento de liberar pra ele voltar ao fluxo.
+        bot_paused: false,
+        bot_paused_reason: null,
+        bot_paused_at: null,
+        bot_paused_until: null,
       };
       await supabase.from("customers").update(updatePayload).eq("id", customer.id);
 
+      // Avança o fluxo: simulação (até 20%) + próximo capture step.
+      // Erros aqui não revertem a confirmação — log e segue.
+      try {
+        await dispatchPostBillConfirm({ customer, kind, continueFlowOnNextCapture: true });
+      } catch (dispatchErr: any) {
+        console.warn("[ocr-review] dispatchPostBillConfirm falhou:", dispatchErr?.message);
+      }
+
       haptics.success();
-      toast({ title: "✓ Dados confirmados", description: "Salvo internamente — nada foi enviado ao cliente", duration: 2200 });
+      toast({ title: "✓ Dados confirmados", description: "Bot vai seguir o fluxo automaticamente", duration: 2200 });
       onDecided?.();
     } catch (e: any) {
       haptics.error();
