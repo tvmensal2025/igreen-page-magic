@@ -1488,6 +1488,30 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         }
         const btnList = stepButtons.slice(0, 3).map((b, i) => `${i + 1}) ${b.title}`).join("\n");
         const nudge = `Posso te ajudar com qualquer uma destas opções 👇\n\n${btnList}\n\nÉ só tocar no botão ou responder com o número 🙂`;
+        // 🛡️ Anti-duplicação: se o mesmo nudge saiu pro lead há <30s, não reenvia.
+        try {
+          const since = new Date(Date.now() - 30_000).toISOString();
+          const { data: dup } = await ctx.supabase
+            .from("conversations")
+            .select("id")
+            .eq("customer_id", ctx.customer.id)
+            .eq("message_direction", "outbound")
+            .ilike("message_text", "Posso te ajudar com qualquer uma%")
+            .gte("created_at", since)
+            .limit(1)
+            .maybeSingle();
+          if (dup) {
+            console.log(`[conversational/whapi] ⏭️ nudge confused suprimido (já enviado <30s)`);
+            return _finalize(stepKey, {
+              reply: "",
+              updates: {
+                conversation_step: stepKey,
+                [refusalCountKey]: prevRefusals + 1,
+                ...restoreDetourUpdates,
+              },
+            });
+          }
+        } catch (_e) { /* fail-open */ }
         return _finalize(stepKey, {
           reply: nudge,
           updates: {
@@ -1514,6 +1538,18 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             ...restoreDetourUpdates,
           },
         });
+      }
+    }
+
+    // 🛡️ Fix 3 (2026-06-05): se o lead faz PERGUNTA em passo de captura
+    // (foto da conta / doc), força o intent pra "tem_duvida" — assim o
+    // bloco FAQ abaixo responde em vez de re-emitir o pedido do passo.
+    if (isCaptureStep && !ctx.buttonId && ctx.messageText && cls.intent !== "tem_duvida") {
+      const t = String(ctx.messageText || "").trim();
+      const isQuestion = t.includes("?") || /^(quanto|como|quando|onde|qual|por que|porque|pq|o que|tem|posso|precisa|preciso|vai demorar|demora|tempo|prazo|cad[eê]|quem)\b/i.test(t);
+      if (isQuestion) {
+        console.log(`[conversational/whapi] 🔀 pergunta em capture step → forçando tem_duvida (step=${stepKey})`);
+        cls.intent = "tem_duvida" as any;
       }
     }
 

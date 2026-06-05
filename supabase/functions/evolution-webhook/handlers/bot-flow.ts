@@ -237,7 +237,7 @@ async function urlExists(url: string): Promise<boolean> {
   }
 }
 
-const NON_NAME_RESPONSES = /^(oi|ola|olá|hey|opa|bom dia|boa tarde|boa noite|sim|nao|não|ok|tudo bem|pode|quero|cadastrar|humano|atendente|menu|reset|recomecar|recomeçar|nao sou eu|não sou eu|como funciona|me explica|o que é|que é isso|quanto custa|é caro|preço|valor|tem taxa|minha distribuidora|qual distribuidora|atende aqui|cidade)$/i;
+const NON_NAME_RESPONSES = /^(oi|ola|olá|hey|opa|bom dia|boa tarde|boa noite|sim|nao|não|ok|tudo bem|pode|quero|cadastrar|humano|atendente|menu|reset|recomecar|recomeçar|nao sou eu|não sou eu|como funciona|me explica|o que é|que é isso|quanto custa|é caro|preço|valor|tem taxa|minha distribuidora|qual distribuidora|atende aqui|cidade|golpe|fraude|engana[cç][aã]o|enrola[cç][aã]o|spam|propaganda|virus|v[ií]rus|risco|seguro|confiavel|confiável|verdade|mentira|fake|falso|suspeito|pegadinha|robo|robô|bot|teste|testando|negativo|talvez|depende|nada|tanto faz|nao quero|não quero|cancelar|sair|parar|chega|esquece|esqueça|porque|pq|aff|hmm|hum|nossa|caramba|sei la|sei lá|nao sei|não sei)$/i;
 const RE_GREETING_ONLY = /^(oi|ol[aá]|opa|bom dia|boa tarde|boa noite|hey)$/i;
 // Reapresentação: "me chamo X", "meu nome é X", "sou (a|o) X", "aqui (é|eh) (a|o) X", "(eu )?sou X" — captura o primeiro nome.
 const RE_SELF_INTRO = /(?:me\s+chamo|meu\s+nome\s+(?:é|eh|e)|aqui\s+(?:é|eh|e)\s+(?:o|a)|(?:eu\s+)?sou\s+(?:o|a))\s+([A-Za-zÀ-ÖØ-öø-ÿ]{2,30})/i;
@@ -249,7 +249,9 @@ function isPositiveCheckinIntent(text: string): boolean {
 }
 
 function isClubProgressIntent(text: string): boolean {
-  return isPositiveCheckinIntent(text) || /^(pode seguir|sem duvida|nenhuma|nao tenho|não tenho|nao|não|tudo certo|partiu|segue)\b/i.test(text) || /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(text);
+  // ⚠️ "nao|não" sozinho NÃO conta como progresso (regressão fixed 2026-06-05) —
+  // se o lead disser apenas "não", é recusa, não avanço pra documento.
+  return isPositiveCheckinIntent(text) || /^(pode seguir|sem duvida|nenhuma|nao tenho|não tenho|tudo certo|partiu|segue)\b/i.test(text) || /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(text);
 }
 
 function isComoFuncionaStep(row: any): boolean {
@@ -276,15 +278,29 @@ function buildMissingDocPrompt(label: string, merged: any): string {
   return `Consegui ler o documento, mas alguns dados ficaram ilegíveis.\n\nMe envie em uma única mensagem:\n${missing.map((m) => `• ${m}`).join("\n")}`;
 }
 
+// Verbos/interrogativas que indicam PERGUNTA, não nome.
+const RE_LOOKS_LIKE_QUESTION = /^(quanto|como|quando|onde|por que|porque|pq|o que|qual|sera|será|tem|posso|preciso|precisa|vou|vai|da|dá|nao|não|sim|ok|cade|cadê|quem|cmo)\b/i;
+
 function normalizeLeadName(rawText: string | null | undefined): string | null {
-  const raw = String(rawText || "").trim().replace(/[.!?,;:"']/g, "").replace(/\s+/g, " ");
+  const rawWithPunct = String(rawText || "").trim();
+  // 🚧 Pergunta nunca é nome — checa ANTES de remover pontuação.
+  if (rawWithPunct.includes("?") || RE_LOOKS_LIKE_QUESTION.test(rawWithPunct)) {
+    console.log(`[name-capture] ⏭️ rejeitado (question): "${rawWithPunct.slice(0, 40)}"`);
+    return null;
+  }
+  const raw = rawWithPunct.replace(/[.!?,;:"']/g, "").replace(/\s+/g, " ");
   const looksLikeName =
     raw.length >= 2 &&
     raw.length <= 60 &&
     /^[A-Za-zÀ-ÖØ-öø-ÿ' ]+$/.test(raw) &&
     raw.split(/\s+/).length <= 4 &&
     !NON_NAME_RESPONSES.test(raw);
-  if (!looksLikeName) return null;
+  if (!looksLikeName) {
+    if (raw && raw.length > 0) {
+      console.log(`[name-capture] ⏭️ rejeitado (stopword/length/non_alpha): "${raw.slice(0, 40)}"`);
+    }
+    return null;
+  }
   return raw
     .toLowerCase()
     .split(/\s+/)
