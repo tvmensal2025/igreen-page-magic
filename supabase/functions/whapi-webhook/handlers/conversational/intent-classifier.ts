@@ -214,6 +214,7 @@ export async function classifyIntent(
     latencyMs: Date.now() - t0,
     traceId: ctx?.traceId ?? null,
     aiOutput: { action: result.action },
+    channel: "whapi",
   });
 
   return result;
