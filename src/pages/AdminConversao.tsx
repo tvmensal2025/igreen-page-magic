@@ -333,10 +333,10 @@ export default function AdminConversao() {
                 <Sparkles className="h-6 w-6 text-amber-400" />
               </div>
               <div className="flex-1 min-w-[200px]">
-                <div className="text-2xl font-semibold text-amber-100">
+                <div className="text-2xl font-semibold text-black">
                   {unclassified} {unclassified === 1 ? "lead aguardando" : "leads aguardando"} classificação
                 </div>
-                <div className="text-xs text-amber-200/70 mt-0.5">
+                <div className="text-xs mt-0.5 text-black">
                   A IA vai analisar a conversa, definir temperatura e sugerir a próxima mensagem.
                 </div>
               </div>
