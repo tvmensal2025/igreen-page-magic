@@ -770,6 +770,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
             </p>
           </div>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );
