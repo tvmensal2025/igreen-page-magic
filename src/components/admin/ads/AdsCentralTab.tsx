@@ -141,7 +141,7 @@ export function AdsCentralTab({ consultantId }: Props) {
             <div className="flex items-center gap-2 flex-wrap">
               <AdAccountSwitcher userId={consultantId} value={adAccountId} onChange={setAdAccountId} />
               <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
-                <SelectTrigger className="h-8 w-[150px] text-xs bg-[hsl(var(--ads-surface))] border-[hsl(var(--ads-border))] text-[hsl(var(--ads-cream))]">
+                <SelectTrigger className="h-8 w-[150px] text-xs bg-[hsl(var(--ads-surface))] border-[hsl(var(--ads-border))] text-[hsl(var(--ads-emerald-2))]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -249,9 +249,9 @@ export function AdsCentralTab({ consultantId }: Props) {
             <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--ads-gold))] mt-0.5 shrink-0" />
             <div>
               Recarregue sua carteira no botão acima e escolha um modelo pronto na{" "}
-              <strong className="text-[hsl(var(--ads-cream))]">Galeria</strong>. A campanha sobe
+              <strong className="text-[hsl(var(--ads-emerald-2))]">Galeria</strong>. A campanha sobe
               pré-otimizada em seu nome e os leads caem no WhatsApp já conectado em{" "}
-              <strong className="text-[hsl(var(--ads-cream))]">Dados</strong>.
+              <strong className="text-[hsl(var(--ads-emerald-2))]">Dados</strong>.
             </div>
           </div>
         )}

@@ -746,30 +746,31 @@ html {
    Scoped tokens & utilities used only inside .ads-central-2026
    ═══════════════════════════════════════════════════════════ */
 .ads-central-2026 {
-  --ads-bg:        222 47% 4%;
-  --ads-surface:   158 64% 8%;
-  --ads-surface-2: 158 50% 12%;
-  --ads-border:    158 30% 18%;
-  --ads-border-strong: 158 40% 28%;
-  --ads-emerald:   158 84% 30%;
-  --ads-emerald-2: 162 88% 22%;
-  --ads-gold:      43  53% 54%;
-  --ads-gold-soft: 43  40% 40%;
+  /* Light Emerald Prestige — bright, legible, premium */
+  --ads-bg:        45 55% 96%;     /* cream paper */
+  --ads-surface:   0  0% 100%;     /* pure white tiles */
+  --ads-surface-2: 45 45% 98%;     /* warm white */
+  --ads-border:    158 25% 82%;
+  --ads-border-strong: 158 30% 65%;
+  --ads-emerald:   162 75% 28%;    /* deep emerald for accents on light */
+  --ads-emerald-2: 162 85% 18%;    /* darkest emerald for headings */
+  --ads-gold:      40  72% 42%;    /* rich gold, readable on white */
+  --ads-gold-soft: 40  60% 55%;
   --ads-cream:     45  60% 92%;
-  --ads-text:      45  20% 96%;
-  --ads-muted:     158 15% 65%;
-  --ads-danger:    0   72% 55%;
+  --ads-text:      162 45% 12%;    /* dark emerald ink */
+  --ads-muted:     162 18% 38%;
+  --ads-danger:    0   72% 45%;
 
-  --ads-shadow-emerald: 0 20px 60px -20px hsl(var(--ads-emerald-2) / .6);
-  --ads-shadow-tile: 0 1px 0 0 hsl(var(--ads-border)) inset, 0 10px 30px -15px rgb(0 0 0 / .8);
+  --ads-shadow-emerald: 0 20px 50px -20px hsl(var(--ads-emerald-2) / .25);
+  --ads-shadow-tile: 0 1px 0 0 hsl(var(--ads-border)) inset, 0 8px 24px -16px hsl(var(--ads-emerald-2) / .35);
   --ads-gradient-tile: linear-gradient(180deg, hsl(var(--ads-surface)) 0%, hsl(var(--ads-surface-2)) 100%);
   --ads-gradient-gold: linear-gradient(135deg, hsl(var(--ads-gold)) 0%, hsl(var(--ads-gold-soft)) 100%);
   --ads-gradient-emerald: linear-gradient(135deg, hsl(var(--ads-emerald)) 0%, hsl(var(--ads-emerald-2)) 100%);
 
   font-family: 'DM Sans', system-ui, sans-serif;
   color: hsl(var(--ads-text));
-  background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald-2) / .25), transparent 60%),
-              radial-gradient(800px 400px at 100% 0%, hsl(var(--ads-gold) / .08), transparent 60%),
+  background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald) / .10), transparent 60%),
+              radial-gradient(800px 400px at 100% 0%, hsl(var(--ads-gold) / .10), transparent 60%),
               hsl(var(--ads-bg));
   min-height: 100%;
 }
@@ -817,7 +818,7 @@ html {
   font-family: 'Space Grotesk', sans-serif;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: hsl(var(--ads-cream));
+  color: hsl(var(--ads-emerald-2));
 }
 .ads-central-2026 .ads-num-gold { color: hsl(var(--ads-gold)); }
 .ads-central-2026 .ads-delta-up { color: hsl(var(--ads-gold)); }
@@ -843,7 +844,7 @@ html {
   font-weight: 600;
   font-size: 0.95rem;
   letter-spacing: -.01em;
-  color: hsl(var(--ads-cream));
+  color: hsl(var(--ads-emerald-2));
   display: inline-flex;
   align-items: center;
   gap: .5rem;
@@ -852,12 +853,12 @@ html {
   content: "";
   width: 8px; height: 8px; border-radius: 999px;
   background: var(--ads-gradient-gold);
-  box-shadow: 0 0 12px hsl(var(--ads-gold) / .6);
+  box-shadow: 0 0 12px hsl(var(--ads-gold) / .5);
 }
 
 .ads-central-2026 .ads-cta-gold {
   background: var(--ads-gradient-gold);
-  color: hsl(162 88% 10%);
+  color: hsl(162 88% 8%);
   font-weight: 600;
   border-radius: .625rem;
   padding: .5rem .9rem;
@@ -865,13 +866,13 @@ html {
   display: inline-flex;
   align-items: center;
   gap: .375rem;
-  border: 1px solid hsl(var(--ads-gold) / .6);
-  box-shadow: 0 6px 20px -6px hsl(var(--ads-gold) / .5);
+  border: 1px solid hsl(var(--ads-gold) / .7);
+  box-shadow: 0 6px 20px -6px hsl(var(--ads-gold) / .55);
   transition: transform .15s ease, box-shadow .25s ease;
 }
 .ads-central-2026 .ads-cta-gold:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px -6px hsl(var(--ads-gold) / .65);
+  box-shadow: 0 10px 28px -6px hsl(var(--ads-gold) / .7);
 }
 
 .ads-central-2026 .ads-nav-pill {
@@ -880,8 +881,9 @@ html {
   padding: .25rem;
   border-radius: .875rem;
   border: 1px solid hsl(var(--ads-border));
-  background: hsl(var(--ads-surface) / .7);
+  background: hsl(var(--ads-surface));
   overflow-x: auto;
+  box-shadow: var(--ads-shadow-tile);
 }
 .ads-central-2026 .ads-nav-btn {
   position: relative;
@@ -896,10 +898,10 @@ html {
   white-space: nowrap;
   transition: color .2s ease, background .2s ease;
 }
-.ads-central-2026 .ads-nav-btn:hover { color: hsl(var(--ads-cream)); }
+.ads-central-2026 .ads-nav-btn:hover { color: hsl(var(--ads-emerald-2)); background: hsl(var(--ads-emerald) / .08); }
 .ads-central-2026 .ads-nav-btn.is-active {
-  color: hsl(var(--ads-cream));
-  background: hsl(var(--ads-emerald-2) / .55);
+  color: hsl(45 60% 95%);
+  background: var(--ads-gradient-emerald);
 }
 .ads-central-2026 .ads-nav-btn.is-active::after {
   content: "";
@@ -919,13 +921,13 @@ html {
   border-radius: 999px;
   font-size: .75rem;
   font-weight: 500;
-  color: hsl(var(--ads-muted));
-  background: hsl(var(--ads-surface) / .7);
+  color: hsl(var(--ads-emerald-2));
+  background: hsl(var(--ads-surface));
   border: 1px solid hsl(var(--ads-border));
-  transition: color .2s ease, border-color .2s ease;
+  transition: color .2s ease, border-color .2s ease, background .2s ease;
 }
 .ads-central-2026 .ads-chip:hover {
-  color: hsl(var(--ads-cream));
+  background: hsl(var(--ads-emerald) / .08);
   border-color: hsl(var(--ads-border-strong));
 }
 
@@ -941,9 +943,23 @@ html {
   .ads-central-2026 .ads-bento { grid-template-columns: 1fr; }
 }
 
-/* Override generic shadcn Card backgrounds inside ads-central-2026 to match tiles */
+/* Force readable colors on light theme — overrides app's dark shadcn tokens
+   that components inside the ads scope inherit. */
 .ads-central-2026 .bg-card\/60,
-.ads-central-2026 [class*="bg-card/"] {
+.ads-central-2026 [class*="bg-card/"],
+.ads-central-2026 .bg-card {
   background: var(--ads-gradient-tile) !important;
   border-color: hsl(var(--ads-border)) !important;
+  color: hsl(var(--ads-text)) !important;
 }
+.ads-central-2026 .text-foreground,
+.ads-central-2026 .text-card-foreground { color: hsl(var(--ads-text)) !important; }
+.ads-central-2026 .text-muted-foreground { color: hsl(var(--ads-muted)) !important; }
+.ads-central-2026 .text-primary { color: hsl(var(--ads-emerald)) !important; }
+.ads-central-2026 .border-border,
+.ads-central-2026 .border-border\/40,
+.ads-central-2026 [class*="border-border"] { border-color: hsl(var(--ads-border)) !important; }
+.ads-central-2026 .bg-muted,
+.ads-central-2026 .bg-muted\/50 { background: hsl(var(--ads-surface-2)) !important; }
+.ads-central-2026 .ads-num { color: hsl(var(--ads-emerald-2)); }
+.ads-central-2026 .ads-num-gold { color: hsl(var(--ads-gold)); }
