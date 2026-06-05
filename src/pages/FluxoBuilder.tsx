@@ -508,6 +508,10 @@ export default function FluxoBuilder() {
   async function addStep(
     initialPosition?: { x: number; y: number },
   ): Promise<Step | null> {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para adicionar passos.");
+      return null;
+    }
     if (!flowId) return null;
     const maxPos = steps.reduce((m, s) => Math.max(m, s.position), 0);
     const newKey = `passo_${Date.now().toString(36)}`;
