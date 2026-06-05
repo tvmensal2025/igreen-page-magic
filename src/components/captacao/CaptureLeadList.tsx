@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Search, UserPlus, Clock, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
+import { usePrompt } from "@/components/ui/prompt-dialog";
+import { toast } from "sonner";
 
 interface LeadRow {
   id: string;
