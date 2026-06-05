@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Loader2, Plus, Trash2, Upload, X, Eye, EyeOff, ImageIcon, Pencil, Sparkles, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
 import {
   AdTemplate, AdTemplatePhoto, listAdTemplates, upsertAdTemplate,
@@ -63,6 +64,7 @@ function readImageDims(file: File): Promise<{ w: number; h: number }> {
 
 export function AdTemplatesPanel() {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [items, setItems] = useState<AdTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<AdTemplate> | null>(null);
@@ -159,7 +161,8 @@ export function AdTemplatesPanel() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Excluir este template? Campanhas já criadas não são afetadas.")) return;
+    const ok = await confirm({ title: "Excluir este template?", description: "Campanhas já criadas não são afetadas.", confirmText: "Excluir", tone: "danger" });
+    if (!ok) return;
     try { await deleteAdTemplate(id); await reload(); }
     catch (e: any) { toast({ title: "Erro", description: e.message, variant: "destructive" }); }
   }

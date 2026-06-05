@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Loader2, Play, Pause, AlertTriangle, RotateCcw, CheckCircle2 } from "lucide-react";
 
 type Flag = "off" | "dark" | "canary" | "on";
@@ -57,6 +58,7 @@ const FLAG_STYLE: Record<Flag, string> = {
 
 export function RolloutPanel() {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [cfg, setCfg] = useState<Cfg | null>(null);
@@ -109,7 +111,8 @@ export function RolloutPanel() {
   };
 
   const forceRollback = async () => {
-    if (!confirm("Voltar TODOS os consultores para 'off'? Isso desliga o Flow Engine V3 globalmente.")) return;
+    const ok = await confirm({ title: "Voltar TODOS os consultores para 'off'?", description: "Isso desliga o Flow Engine V3 globalmente.", confirmText: "Confirmar rollback", tone: "danger" });
+    if (!ok) return;
     const { error } = await supabase.from("consultants").update({ flow_engine_v3: "off", flow_reliability_v2: "off" }).eq("approved", true);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     await supabase.from("rollout_audit").insert(

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Copy, Power, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface DownInstance {
   id: string;
@@ -38,6 +39,7 @@ function timeAgo(iso: string | null): string {
 }
 
 export function SystemHealthPanel() {
+  const confirm = useConfirm();
   const [data, setData] = useState<Health | null>(null);
   const [loading, setLoading] = useState(false);
   const [unpausing, setUnpausing] = useState(false);
@@ -87,7 +89,8 @@ export function SystemHealthPanel() {
   }, []);
 
   async function unpauseGlobal() {
-    if (!confirm(`Religar bot para ${data?.pausedGlobal ?? 0} conversas pausadas globalmente?`)) return;
+    const ok = await confirm({ title: `Religar bot para ${data?.pausedGlobal ?? 0} conversas pausadas?`, description: "Conversas pausadas globalmente voltarão a receber respostas automáticas.", confirmText: "Religar", tone: "info" });
+    if (!ok) return;
     setUnpausing(true);
     const { data: affected, error } = await supabase.rpc("admin_unpause_global_bot" as any);
     setUnpausing(false);
