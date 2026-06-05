@@ -18,18 +18,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, Image, Video, Mic, X, Check, Bold, Upload, Loader2, Plus, Trash2, GripVertical } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  MessageSquare,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  X,
+  Check,
+  Upload,
+  Loader2,
+  Plus,
+  Trash2,
+  Settings2,
+  Sparkles,
+  FileText,
+  Mic2,
+  ChevronDown,
+} from "lucide-react";
 import { uploadMedia, getAcceptString, formatFileSize } from "@/services/minioUpload";
 import { useToast } from "@/hooks/use-toast";
 import { REJECTION_REASONS } from "./DropConfirmDialog";
 import { MediaLibraryPicker, type MediaKind } from "./MediaLibraryPicker";
+import { TemplatePickerPopover, type PickedTemplate } from "./TemplatePickerPopover";
 
 interface StageAutoMessageConfigProps {
   stageId: string;
   stageLabel: string;
   stageKey: string;
   consultantId: string;
-  /** Legacy single-message fields (for migration display) */
   autoMessageText: string | null;
   autoMessageType: string;
   autoMessageMediaUrl: string | null;
@@ -47,6 +68,8 @@ interface AutoMessage {
   delay_seconds: number;
   rejection_reason: string;
   deal_origin: string;
+  voice_template_id?: string | null;
+  voice_template_name?: string | null;
 }
 
 const DEAL_ORIGIN_OPTIONS = [
@@ -57,7 +80,7 @@ const DEAL_ORIGIN_OPTIONS = [
 
 const MESSAGE_TYPES = [
   { key: "text", label: "Texto", icon: MessageSquare },
-  { key: "image", label: "Imagem", icon: Image },
+  { key: "image", label: "Imagem", icon: ImageIcon },
   { key: "video", label: "Vídeo", icon: Video },
   { key: "audio", label: "Áudio", icon: Mic },
 ];
@@ -65,6 +88,7 @@ const MESSAGE_TYPES = [
 function MessageItem({
   msg,
   index,
+  total,
   onChange,
   onRemove,
   showRejectionReason,
@@ -73,6 +97,7 @@ function MessageItem({
 }: {
   msg: AutoMessage;
   index: number;
+  total: number;
   onChange: (updated: AutoMessage) => void;
   onRemove: () => void;
   showRejectionReason: boolean;
@@ -81,9 +106,12 @@ function MessageItem({
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  const TypeIcon = MESSAGE_TYPES.find((m) => m.key === msg.message_type)?.icon || MessageSquare;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -91,7 +119,7 @@ function MessageItem({
     setUploading(true);
     try {
       const result = await uploadMedia(file, undefined, { scope: "template", kind: file.type.startsWith("image/") ? "image" : "audio" });
-      onChange({ ...msg, media_url: result.url });
+      onChange({ ...msg, media_url: result.url, voice_template_id: null, voice_template_name: null });
       toast({ title: "Upload concluído", description: `${file.name} (${formatFileSize(file.size)})` });
     } catch {
       toast({ title: "Erro no upload", variant: "destructive" });
@@ -106,7 +134,7 @@ function MessageItem({
     if (!file) return;
     setUploadingImage(true);
     try {
-      const result = await uploadMedia(file, undefined, { scope: "template", kind: file.type.startsWith("image/") ? "image" : "audio" });
+      const result = await uploadMedia(file, undefined, { scope: "template", kind: "image" });
       onChange({ ...msg, image_url: result.url });
       toast({ title: "Imagem enviada" });
     } catch {
@@ -117,183 +145,222 @@ function MessageItem({
     }
   };
 
+  const isVoiceTemplate = !!msg.voice_template_id;
+
   return (
-    <div className="border border-border rounded-lg p-3 space-y-2 bg-secondary/20">
-      <div className="flex items-center gap-2">
-        <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50" />
-        <Badge variant="secondary" className="text-[9px]">Msg {index + 1}</Badge>
-        {msg.rejection_reason && (
-          <Badge variant="outline" className="text-[8px]">
-            {REJECTION_REASONS.find((r) => r.value === msg.rejection_reason)?.label || msg.rejection_reason}
-          </Badge>
-        )}
-        {msg.deal_origin && (
-          <Badge variant="outline" className="text-[8px]">
-            {DEAL_ORIGIN_OPTIONS.find((o) => o.value === msg.deal_origin)?.label || msg.deal_origin}
-          </Badge>
-        )}
-
-        {/* Delay */}
-        {index > 0 && (
-          <div className="flex items-center gap-1 ml-auto">
-            <span className="text-[9px] text-muted-foreground">Delay:</span>
-            <Input
-              type="number"
-              min={0}
-              value={msg.delay_seconds}
-              onChange={(e) => onChange({ ...msg, delay_seconds: parseInt(e.target.value) || 0 })}
-              className="h-6 w-16 text-[10px]"
-            />
-            <span className="text-[9px] text-muted-foreground">seg</span>
+    <div className="rounded-xl border border-border bg-card shadow-sm hover:shadow transition-shadow overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-muted/40 border-b border-border">
+        <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center">
+          <TypeIcon className="h-4 w-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground">Mensagem {index + 1} <span className="text-muted-foreground font-normal">de {total}</span></p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {isVoiceTemplate && (
+              <Badge variant="outline" className="text-[9px] bg-emerald-500/10 border-emerald-500/30 text-emerald-400">
+                <Mic2 className="h-2.5 w-2.5 mr-0.5" /> Voz: {msg.voice_template_name}
+              </Badge>
+            )}
+            {msg.rejection_reason && (
+              <Badge variant="outline" className="text-[9px]">
+                {REJECTION_REASONS.find((r) => r.value === msg.rejection_reason)?.label || msg.rejection_reason}
+              </Badge>
+            )}
+            {msg.deal_origin && msg.deal_origin !== "all" && (
+              <Badge variant="outline" className="text-[9px]">
+                {DEAL_ORIGIN_OPTIONS.find((o) => o.value === msg.deal_origin)?.label}
+              </Badge>
+            )}
+            {index > 0 && msg.delay_seconds > 0 && (
+              <Badge variant="outline" className="text-[9px]">
+                ⏱ {msg.delay_seconds}s após anterior
+              </Badge>
+            )}
           </div>
-        )}
-
-        <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive ml-auto" onClick={onRemove}>
-          <Trash2 className="h-3 w-3" />
+        </div>
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={onRemove}>
+          <Trash2 className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* Type selector */}
-      <div className="flex gap-1">
-        {MESSAGE_TYPES.map((mt) => {
-          const Icon = mt.icon;
-          return (
-            <Button
-              key={mt.key}
-              variant={msg.message_type === mt.key ? "default" : "outline"}
-              size="sm"
-              className="h-6 text-[9px] gap-0.5 flex-1"
-              onClick={() => onChange({ ...msg, message_type: mt.key })}
-            >
-              <Icon className="h-2.5 w-2.5" />
-              {mt.label}
-            </Button>
-          );
-        })}
-      </div>
-
-      {/* Media upload */}
-      {msg.message_type !== "text" && (
-        <div className="space-y-1">
-          <input ref={fileRef} type="file" accept={getAcceptString(msg.message_type)} onChange={handleFileUpload} className="hidden" />
-          <div className="flex gap-1.5">
-            <Input
-              value={msg.media_url}
-              onChange={(e) => onChange({ ...msg, media_url: e.target.value })}
-              placeholder="URL da mídia, biblioteca ou upload →"
-              className="h-7 text-[10px] flex-1"
-            />
-            <MediaLibraryPicker
-              kind={msg.message_type as MediaKind}
-              consultantId={consultantId}
-              onSelect={(url) => onChange({ ...msg, media_url: url })}
-              triggerLabel="Biblioteca"
-            />
-            <Button variant="outline" size="sm" className="h-7 text-[9px] gap-0.5" disabled={uploading} onClick={() => fileRef.current?.click()}>
-              {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-              {uploading ? "..." : "Upload"}
-            </Button>
+      <div className="p-4 space-y-4">
+        {/* Type selector */}
+        <div>
+          <p className="text-[11px] font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">Tipo</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {MESSAGE_TYPES.map((mt) => {
+              const Icon = mt.icon;
+              const active = msg.message_type === mt.key;
+              return (
+                <Button
+                  key={mt.key}
+                  variant={active ? "default" : "outline"}
+                  size="sm"
+                  className={`h-9 text-xs gap-1.5 ${active ? "bg-primary text-primary-foreground" : ""}`}
+                  onClick={() => onChange({ ...msg, message_type: mt.key, voice_template_id: null, voice_template_name: null })}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {mt.label}
+                </Button>
+              );
+            })}
           </div>
-          {msg.media_url && (msg.message_type === "image" || msg.message_type === "video") && (
-            <div className="flex items-center gap-1.5 mt-1">
-              {msg.message_type === "image" ? (
-                <img src={msg.media_url} alt="" className="h-10 w-10 rounded object-cover border border-border/40" onError={(e) => { (e.target as HTMLImageElement).style.opacity = "0.3"; }} />
-              ) : (
-                <video src={msg.media_url} className="h-10 w-10 rounded object-cover bg-black border border-border/40" muted preload="metadata" />
+        </div>
+
+        {/* Content */}
+        <div>
+          <p className="text-[11px] font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">Conteúdo</p>
+
+          {isVoiceTemplate ? (
+            <div className="flex items-center gap-2 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
+              <Mic2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold">{msg.voice_template_name}</p>
+                <p className="text-[10px] text-muted-foreground">Áudio será costurado com o nome do lead no envio</p>
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 text-[10px]" onClick={() => onChange({ ...msg, voice_template_id: null, voice_template_name: null })}>
+                Remover
+              </Button>
+            </div>
+          ) : msg.message_type !== "text" ? (
+            <div className="space-y-2">
+              <input ref={fileRef} type="file" accept={getAcceptString(msg.message_type)} onChange={handleFileUpload} className="hidden" />
+              <div className="flex gap-1.5">
+                <Input
+                  value={msg.media_url}
+                  onChange={(e) => onChange({ ...msg, media_url: e.target.value })}
+                  placeholder="URL da mídia"
+                  className="h-9 text-xs flex-1"
+                />
+                <MediaLibraryPicker
+                  kind={msg.message_type as MediaKind}
+                  consultantId={consultantId}
+                  onSelect={(url) => onChange({ ...msg, media_url: url })}
+                  triggerLabel="Biblioteca"
+                />
+                <Button variant="outline" size="sm" className="h-9 text-xs gap-1" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                  {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  {uploading ? "..." : "Upload"}
+                </Button>
+              </div>
+              {msg.media_url && (msg.message_type === "image" || msg.message_type === "video") && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 border border-border/40">
+                  {msg.message_type === "image" ? (
+                    <img src={msg.media_url} alt="" className="h-14 w-14 rounded object-cover" />
+                  ) : (
+                    <video src={msg.media_url} className="h-14 w-14 rounded object-cover bg-black" muted preload="metadata" />
+                  )}
+                  <span className="text-xs text-muted-foreground flex-1 truncate">Mídia pronta para envio</span>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onChange({ ...msg, media_url: "" })}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               )}
-              <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={() => onChange({ ...msg, media_url: "" })}>
-                <X className="h-3 w-3" />
-              </Button>
+              {msg.media_url && msg.message_type === "audio" && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 border border-border/40">
+                  <Mic className="h-4 w-4 text-primary shrink-0" />
+                  <audio src={msg.media_url} controls className="h-8 flex-1" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onChange({ ...msg, media_url: "" })}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
-          {msg.media_url && msg.message_type === "audio" && (
-            <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-muted/30 rounded border border-border/40">
-              <Mic className="h-3 w-3 text-primary shrink-0" />
-              <audio src={msg.media_url} controls className="h-7 flex-1 max-w-[280px]" />
-              <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={() => onChange({ ...msg, media_url: "" })}>
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+          ) : null}
 
-      {/* Optional image (sent before main message) */}
-      {msg.message_type !== "image" && (
-        <div className="space-y-1">
-          <input ref={imgRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-          <p className="text-[9px] text-muted-foreground">📷 Imagem opcional (antes da mensagem)</p>
-          <div className="flex gap-1.5">
-            <Input
-              value={msg.image_url}
-              onChange={(e) => onChange({ ...msg, image_url: e.target.value })}
-              placeholder="URL da imagem ou escolha da biblioteca →"
-              className="h-7 text-[10px] flex-1"
-            />
-            <MediaLibraryPicker
-              kind="image"
-              consultantId={consultantId}
-              onSelect={(url) => onChange({ ...msg, image_url: url })}
-              triggerLabel="Biblioteca"
-            />
-            <Button variant="outline" size="sm" className="h-7 text-[9px] gap-0.5" disabled={uploadingImage} onClick={() => imgRef.current?.click()}>
-              {uploadingImage ? <Loader2 className="h-3 w-3 animate-spin" /> : <Image className="h-3 w-3" />}
-              Img
+          <Textarea
+            value={msg.message_text}
+            onChange={(e) => onChange({ ...msg, message_text: e.target.value })}
+            placeholder={isVoiceTemplate ? "Legenda opcional para o áudio…" : "Texto da mensagem (use *negrito*, _itálico_, {{nome}}, {{telefone}})"}
+            className="min-h-[80px] text-xs resize-none mt-2"
+          />
+        </div>
+
+        {/* Advanced options */}
+        <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1 text-muted-foreground hover:text-foreground -mx-2">
+              <Settings2 className="h-3 w-3" />
+              {advancedOpen ? "Ocultar" : "Mostrar"} opções avançadas
+              <ChevronDown className={`h-3 w-3 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
             </Button>
-          </div>
-          {msg.image_url && (
-            <div className="flex items-center gap-1">
-              <img src={msg.image_url} alt="" className="h-8 w-8 rounded object-cover border border-border/40" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              <Button variant="ghost" size="icon" className="h-4 w-4 text-destructive" onClick={() => onChange({ ...msg, image_url: "" })}>
-                <X className="h-2.5 w-2.5" />
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3 pt-2">
+            {/* Delay */}
+            {index > 0 && (
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1">⏱ Delay após a mensagem anterior (segundos)</p>
+                <Input
+                  type="number"
+                  min={0}
+                  value={msg.delay_seconds}
+                  onChange={(e) => onChange({ ...msg, delay_seconds: parseInt(e.target.value) || 0 })}
+                  className="h-8 w-24 text-xs"
+                />
+              </div>
+            )}
 
-      {/* Rejection reason (only for reprovado stages) */}
-      {showRejectionReason && (
-        <div className="space-y-1">
-          <p className="text-[9px] text-muted-foreground">🏷 Motivo (só dispara para este motivo):</p>
-          <Select value={msg.rejection_reason || "all"} onValueChange={(v) => onChange({ ...msg, rejection_reason: v === "all" ? "" : v })}>
-            <SelectTrigger className="h-7 text-[10px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="text-[10px]">Todos os motivos</SelectItem>
-              {REJECTION_REASONS.map((r) => (
-                <SelectItem key={r.value} value={r.value} className="text-[10px]">{r.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+            {/* Optional image before message */}
+            {msg.message_type !== "image" && !isVoiceTemplate && (
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1">📷 Imagem opcional (enviada antes da mensagem)</p>
+                <input ref={imgRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                <div className="flex gap-1.5">
+                  <Input
+                    value={msg.image_url}
+                    onChange={(e) => onChange({ ...msg, image_url: e.target.value })}
+                    placeholder="URL da imagem"
+                    className="h-8 text-xs flex-1"
+                  />
+                  <MediaLibraryPicker kind="image" consultantId={consultantId} onSelect={(url) => onChange({ ...msg, image_url: url })} triggerLabel="Biblioteca" />
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1" disabled={uploadingImage} onClick={() => imgRef.current?.click()}>
+                    {uploadingImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                    Img
+                  </Button>
+                </div>
+                {msg.image_url && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <img src={msg.image_url} alt="" className="h-9 w-9 rounded object-cover border border-border/40" />
+                    <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={() => onChange({ ...msg, image_url: "" })}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
 
-      {/* Deal origin (for time-based stages like 30, 60, 90, 120 dias) */}
-      {showDealOrigin && (
-        <div className="space-y-1">
-          <p className="text-[9px] text-muted-foreground">🔄 Origem (só dispara para leads desta origem):</p>
-          <Select value={msg.deal_origin || "all"} onValueChange={(v) => onChange({ ...msg, deal_origin: v === "all" ? "" : v })}>
-            <SelectTrigger className="h-7 text-[10px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DEAL_ORIGIN_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value} className="text-[10px]">{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+            {showRejectionReason && (
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1">🏷 Motivo (só dispara para este motivo de reprovação)</p>
+                <Select value={msg.rejection_reason || "all"} onValueChange={(v) => onChange({ ...msg, rejection_reason: v === "all" ? "" : v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">Todos os motivos</SelectItem>
+                    {REJECTION_REASONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value} className="text-xs">{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-      {/* Text */}
-      <Textarea
-        value={msg.message_text}
-        onChange={(e) => onChange({ ...msg, message_text: e.target.value })}
-        placeholder="Texto da mensagem (use *negrito*, _itálico_, {{nome}}, {{telefone}})"
-        className="min-h-[60px] text-[10px] resize-none"
-      />
+            {showDealOrigin && (
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1">🔄 Origem (só dispara para leads desta origem)</p>
+                <Select value={msg.deal_origin || "all"} onValueChange={(v) => onChange({ ...msg, deal_origin: v === "all" ? "" : v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {DEAL_ORIGIN_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
     </div>
   );
 }
@@ -323,6 +390,16 @@ export function StageAutoMessageConfig({
       .order("position", { ascending: true });
 
     if (data && data.length > 0) {
+      // Load voice template names for any messages that have a voice_template_id
+      const voiceIds = data.map((d: any) => d.voice_template_id).filter(Boolean);
+      let voiceMap: Record<string, string> = {};
+      if (voiceIds.length > 0) {
+        const { data: vt } = await supabase
+          .from("voice_templates")
+          .select("id, name")
+          .in("id", voiceIds);
+        voiceMap = Object.fromEntries((vt || []).map((v: any) => [v.id, v.name]));
+      }
       setMessages(
         data.map((d: any) => ({
           id: d.id,
@@ -333,7 +410,9 @@ export function StageAutoMessageConfig({
           image_url: d.image_url || "",
           delay_seconds: d.delay_seconds || 0,
           rejection_reason: d.rejection_reason || "",
-          deal_origin: (d as any).deal_origin || "",
+          deal_origin: d.deal_origin || "",
+          voice_template_id: d.voice_template_id || null,
+          voice_template_name: d.voice_template_id ? voiceMap[d.voice_template_id] || null : null,
         }))
       );
     } else if (autoMessageText || autoMessageMediaUrl || autoMessageImageUrl) {
@@ -358,18 +437,20 @@ export function StageAutoMessageConfig({
     if (open) fetchMessages();
   }, [open, fetchMessages]);
 
-  const addMessage = () => {
+  const addMessage = (preset?: PickedTemplate) => {
     setMessages((prev) => [
       ...prev,
       {
         position: prev.length,
-        message_type: "text",
-        message_text: "",
-        media_url: "",
-        image_url: "",
+        message_type: preset?.message_type || "text",
+        message_text: preset?.message_text || "",
+        media_url: preset?.media_url || "",
+        image_url: preset?.image_url || "",
         delay_seconds: prev.length > 0 ? 5 : 0,
         rejection_reason: "",
         deal_origin: "",
+        voice_template_id: preset?.voice_template_id || null,
+        voice_template_name: preset?.voice_template_name || null,
       },
     ]);
   };
@@ -385,14 +466,8 @@ export function StageAutoMessageConfig({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Delete existing messages for this stage
-      await supabase
-        .from("stage_auto_messages")
-        .delete()
-        .eq("stage_id", stageId)
-        .eq("consultant_id", consultantId);
+      await supabase.from("stage_auto_messages").delete().eq("stage_id", stageId).eq("consultant_id", consultantId);
 
-      // Insert new messages
       if (messages.length > 0) {
         const inserts = messages.map((m, i) => ({
           stage_id: stageId,
@@ -405,12 +480,12 @@ export function StageAutoMessageConfig({
           delay_seconds: m.delay_seconds,
           rejection_reason: m.rejection_reason.trim() || null,
           deal_origin: m.deal_origin.trim() || null,
+          voice_template_id: m.voice_template_id || null,
         }));
-        const { error } = await supabase.from("stage_auto_messages").insert(inserts);
+        const { error } = await supabase.from("stage_auto_messages").insert(inserts as any);
         if (error) throw error;
       }
 
-      // Also update legacy fields on kanban_stages for backward compat
       const first = messages[0];
       onSave(
         first?.message_text?.trim() || null,
@@ -442,51 +517,94 @@ export function StageAutoMessageConfig({
           <MessageSquare className="h-3 w-3" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-sm flex items-center gap-2">
-            Mensagens Automáticas
-            <Badge variant="secondary" className="text-[10px]">{stageLabel}</Badge>
-          </DialogTitle>
+      <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+              <Sparkles className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <DialogTitle className="text-base flex items-center gap-2">
+                Mensagens Automáticas
+                <Badge variant="secondary" className="text-[10px]">{stageLabel}</Badge>
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Configure mensagens enviadas em sequência quando um lead entrar nesta coluna.
+              </p>
+            </div>
+          </div>
         </DialogHeader>
 
-        <p className="text-[10px] text-muted-foreground -mt-1">
-          Configure múltiplas mensagens para envio sequencial quando um lead entrar nesta coluna.
-        </p>
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          {messages.length === 0 ? (
+            <div className="text-center py-10 px-4 rounded-xl border-2 border-dashed border-border bg-muted/20">
+              <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                <MessageSquare className="h-6 w-6 text-primary" />
+              </div>
+              <p className="text-sm font-semibold mb-1">Nenhuma mensagem configurada</p>
+              <p className="text-xs text-muted-foreground mb-4 max-w-sm mx-auto">
+                Adicione uma mensagem em branco ou escolha de um template salvo.
+              </p>
+              <div className="flex gap-2 justify-center flex-wrap">
+                <Button size="sm" className="gap-1.5" onClick={() => addMessage()}>
+                  <Plus className="h-4 w-4" /> Criar em branco
+                </Button>
+                <TemplatePickerPopover
+                  consultantId={consultantId}
+                  onPick={(tpl) => addMessage(tpl)}
+                  trigger={
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <FileText className="h-4 w-4" /> Usar template salvo
+                    </Button>
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            messages.map((msg, i) => (
+              <MessageItem
+                key={i}
+                msg={msg}
+                index={i}
+                total={messages.length}
+                onChange={(updated) => updateMessage(i, updated)}
+                onRemove={() => removeMessage(i)}
+                showRejectionReason={stageKey === "reprovado"}
+                showDealOrigin={["30_dias", "60_dias", "90_dias", "120_dias"].includes(stageKey)}
+                consultantId={consultantId}
+              />
+            ))
+          )}
 
-        <div className="space-y-3">
-          {messages.map((msg, i) => (
-            <MessageItem
-              key={i}
-              msg={msg}
-              index={i}
-              onChange={(updated) => updateMessage(i, updated)}
-              onRemove={() => removeMessage(i)}
-              showRejectionReason={stageKey === "reprovado"}
-              showDealOrigin={["30_dias", "60_dias", "90_dias", "120_dias"].includes(stageKey)}
-              consultantId={consultantId}
-            />
-          ))}
+          {messages.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <Button variant="outline" size="sm" className="h-10 gap-1.5 border-dashed" onClick={() => addMessage()}>
+                <Plus className="h-4 w-4" /> Adicionar em branco
+              </Button>
+              <TemplatePickerPopover
+                consultantId={consultantId}
+                onPick={(tpl) => addMessage(tpl)}
+                trigger={
+                  <Button variant="outline" size="sm" className="h-10 gap-1.5 border-dashed">
+                    <FileText className="h-4 w-4" /> Usar template salvo
+                  </Button>
+                }
+              />
+            </div>
+          )}
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full h-7 text-[10px] gap-1 border-dashed"
-          onClick={addMessage}
-        >
-          <Plus className="h-3 w-3" />
-          Adicionar Mensagem
-        </Button>
-
-        <div className="flex gap-2 justify-end pt-2">
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setOpen(false)}>
-            Cancelar
-          </Button>
-          <Button size="sm" className="h-8 text-xs gap-1" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-            Salvar
-          </Button>
+        <div className="px-6 py-4 border-t border-border bg-card/80 backdrop-blur flex items-center justify-between gap-2">
+          <p className="text-[10px] text-muted-foreground">
+            {messages.length} {messages.length === 1 ? "mensagem" : "mensagens"} configurada{messages.length === 1 ? "" : "s"}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button size="sm" className="gap-1.5" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Salvar mensagens
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
