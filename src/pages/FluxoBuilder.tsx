@@ -760,7 +760,48 @@ export default function FluxoBuilder() {
           />
         )}
 
+        {/* Modo "Seguir modelo público" — toggle exclusivo do consultor.
+            Quando ligado: estrutura é a do template do super-admin (sempre
+            atualizada). O usuário continua dono das próprias mídias. */}
+        {userId && !isSuperAdmin && syncMode !== null && (
+          <div
+            className={`border-t px-4 py-3 ${
+              isReadOnly
+                ? "bg-amber-50 dark:bg-amber-950/30"
+                : "bg-muted/30"
+            }`}
+          >
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                {isReadOnly ? (
+                  <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                ) : (
+                  <Unlock className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="text-sm font-medium">
+                  Seguir modelo público do super-admin
+                </span>
+                <Badge variant={isReadOnly ? "secondary" : "outline"} className="text-[10px]">
+                  {isReadOnly ? "Sincronizado" : "Personalizado"}
+                </Badge>
+              </div>
+              <Switch
+                checked={isReadOnly}
+                disabled={togglingSync || !flowId}
+                onCheckedChange={(v) => { void handleToggleSync(v); }}
+                aria-label="Seguir modelo público"
+              />
+              <p className="flex-1 text-xs text-muted-foreground min-w-[240px]">
+                {isReadOnly
+                  ? "Estrutura travada ao modelo público. Você só pode trocar as mídias dos passos — mudanças do super-admin aparecem aqui automaticamente. No Evolution, os botões viram lista numerada (1️⃣ 2️⃣ 3️⃣) automaticamente."
+                  : "Você está editando a sua própria versão do fluxo. Mudanças do super-admin não chegam mais automaticamente."}
+              </p>
+            </div>
+          </div>
+        )}
+
       </header>
+
 
       {/*
         task 10.2 — Render condicional Lista vs Diagrama (R1.2, R1.3, R1.5).
