@@ -137,7 +137,7 @@ export function AppSidebar({
           {!collapsed && (
             <>
               <div className="min-w-0">
-                <p className="pe-heading text-lg font-bold text-white tracking-tight leading-none">iGreen</p>
+                <p className="pe-heading text-lg font-bold tracking-tight leading-none text-sky-50">iGreen</p>
                 <p className="text-[9px] mt-1 uppercase tracking-[0.22em]" style={{ color: "rgba(16,185,129,0.7)" }}>Painel Elite</p>
               </div>
               <button
