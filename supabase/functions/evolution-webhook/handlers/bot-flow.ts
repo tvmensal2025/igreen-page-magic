@@ -35,6 +35,7 @@ import {
 } from "../../_shared/utils.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
+import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
 import {
   getReplyForStep,
