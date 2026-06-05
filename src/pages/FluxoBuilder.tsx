@@ -132,6 +132,10 @@ export default function FluxoBuilder() {
   const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [togglingSync, setTogglingSync] = useState(false);
+  // Flow real de onde os steps mostrados vêm. Quando syncMode='public', é o id do
+  // template público; caso contrário, é o flow do próprio consultor. Usado para
+  // abrir a subscription realtime em bot_flow_steps no flow certo.
+  const [stepsSourceFlowId, setStepsSourceFlowId] = useState<string | null>(null);
 
   const isReadOnly = syncMode === "public";
   
