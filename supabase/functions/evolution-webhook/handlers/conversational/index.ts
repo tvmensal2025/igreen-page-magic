@@ -1372,6 +1372,20 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     }
   }
 
+  // 🛡️ Fix 3 (2026-06-05): se o lead faz PERGUNTA em passo de captura
+  // (foto da conta / doc), força o intent pra "tem_duvida" — assim o
+  // bloco FAQ abaixo responde em vez de re-emitir o pedido do passo.
+  if (_isCaptureStep && !ctx.buttonId && ctx.messageText && cls.intent !== "tem_duvida") {
+    const t = String(ctx.messageText || "").trim();
+    const isQuestion = t.includes("?") || /^(quanto|como|quando|onde|qual|por que|porque|pq|o que|tem|posso|precisa|preciso|vai demorar|demora|tempo|prazo|cad[eê]|quem)\b/i.test(t);
+    if (isQuestion) {
+      console.log(`[conversational/evo] 🔀 pergunta em capture step → forçando tem_duvida (step=${stepKey})`);
+      cls.intent = "tem_duvida" as any;
+    }
+  }
+
+
+
   // Sprint 1.5: honra threshold de handoff (conf < 0.5) — pausa bot, consultor assume.
   if (cls.action === "handoff" && cls.intent !== "tem_duvida" && !ctx.buttonId) {
     // 🛡️ GUARDA DETERMINÍSTICA (2026-05-30): se o texto casa uma transição
