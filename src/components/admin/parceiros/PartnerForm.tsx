@@ -10,7 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { X, AlertTriangle } from "lucide-react";
+import { X, AlertTriangle, Trash2, Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 
 interface PartnerFormProps {
@@ -23,15 +26,20 @@ interface PartnerFormProps {
     keywords: string[];
     qr_phrase: string | null;
   }) => void;
+  onDelete?: (id: string) => void;
 }
 
-export function PartnerForm({ open, partner, onClose, onSave }: PartnerFormProps) {
+export function PartnerForm({ open, partner, onClose, onSave, onDelete }: PartnerFormProps) {
   const [nome, setNome] = useState("");
   const [cli, setCli] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
   const [qrPhrase, setQrPhrase] = useState("");
   const [errors, setErrors] = useState<{ nome?: string; cli?: string }>({});
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiExample, setAiExample] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const { toast } = useToast();
 
   const isEdit = !!partner;
 
@@ -48,6 +56,7 @@ export function PartnerForm({ open, partner, onClose, onSave }: PartnerFormProps
       setQrPhrase("");
     }
     setErrors({});
+    setAiExample(null);
   }, [partner, open]);
 
   const addKeyword = () => {
@@ -66,6 +75,38 @@ export function PartnerForm({ open, partner, onClose, onSave }: PartnerFormProps
     if (e.key === "Enter") {
       e.preventDefault();
       addKeyword();
+    }
+  };
+
+  const generateExample = async () => {
+    const kw = keywordInput.trim() || keywords[keywords.length - 1] || "";
+    if (!kw) {
+      toast({
+        title: "Digite uma palavra-chave",
+        description: "Escreva ou adicione uma palavra-chave antes de gerar.",
+      });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "ai-generate-partner-example",
+        { body: { keyword: kw, partner_name: nome || partner?.nome } },
+      );
+      if (error) throw error;
+      const text = (data as any)?.example as string | undefined;
+      if (!text) throw new Error("Resposta vazia da IA");
+      setAiExample(text);
+    } catch (e: any) {
+      const msg = e?.message || "Falha ao gerar exemplo";
+      if (msg.includes("429"))
+        toast({ title: "Limite de IA atingido", description: "Tente em alguns segundos.", variant: "destructive" });
+      else if (msg.includes("402"))
+        toast({ title: "Créditos de IA esgotados", description: "Adicione créditos no workspace.", variant: "destructive" });
+      else
+        toast({ title: "Erro ao gerar exemplo", description: msg, variant: "destructive" });
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -88,13 +129,41 @@ export function PartnerForm({ open, partner, onClose, onSave }: PartnerFormProps
     onClose();
   };
 
+  const handleDelete = async () => {
+    if (!partner || !onDelete) return;
+    const ok = await confirm({
+      title: "Excluir parceiro?",
+      description: `O parceiro "${partner.nome}" será removido e deixará de receber atribuição de novos leads. Esta ação não pode ser desfeita pela interface.`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
+    onDelete(partner.id);
+    onClose();
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {isEdit ? "Editar Parceiro" : "Novo Parceiro Indicador"}
-          </DialogTitle>
+          <div className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle>
+              {isEdit ? "Editar Parceiro" : "Novo Parceiro Indicador"}
+            </DialogTitle>
+            {isEdit && onDelete && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleDelete}
+                className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                title="Excluir parceiro"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -152,6 +221,22 @@ export function PartnerForm({ open, partner, onClose, onSave }: PartnerFormProps
               <Button type="button" variant="secondary" onClick={addKeyword} size="sm">
                 Adicionar
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={generateExample}
+                size="sm"
+                disabled={aiLoading}
+                className="gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                title="Gerar exemplo de mensagem do lead com IA"
+              >
+                {aiLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                IA
+              </Button>
             </div>
             {keywords.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -167,6 +252,36 @@ export function PartnerForm({ open, partner, onClose, onSave }: PartnerFormProps
                     </button>
                   </Badge>
                 ))}
+              </div>
+            )}
+
+            {aiExample && (
+              <div className="mt-2 p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-primary/80 flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" /> Exemplo de mensagem do lead
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={generateExample}
+                    disabled={aiLoading}
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-primary"
+                  >
+                    {aiLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-foreground/90 leading-relaxed italic">
+                  "{aiExample}"
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Se o lead escrever assim no WhatsApp, este parceiro será atribuído automaticamente.
+                </p>
               </div>
             )}
           </div>
