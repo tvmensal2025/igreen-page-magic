@@ -14,6 +14,7 @@ import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
 import { useUserRole } from "@/hooks/useUserRole";
 import { adminHardResetPhone, adminHardResetPhoneTraceCounts } from "@/services/resetConversation";
 import { StatCard } from "./StatCard";
+import { HardResetPhoneCard } from "./HardResetPhoneCard";
 import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
 import { GeographyCard } from "./GeographyCard";
@@ -309,37 +310,7 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
       </div>
 
       {/* MANUTENÇÃO — Hard reset por telefone (admin only, temporário) */}
-      {isAdmin && (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-3 sm:p-4 space-y-2">
-          <div className="flex items-center gap-2 text-destructive">
-            <Trash2 className="w-4 h-4" />
-            <span className="text-sm font-semibold">Manutenção: reset geral por telefone</span>
-            <span className="text-[10px] uppercase tracking-wide bg-destructive/20 text-destructive px-2 py-0.5 rounded-full">temporário</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Apaga TODOS os rastros do número (customers, mensagens, fluxo, IA, CRM, deals, logs, eventos). Não pode ser desfeito.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Input
-              value={resetPhone}
-              onChange={(e) => setResetPhone(e.target.value)}
-              placeholder="Ex.: 11971254913 ou 5511971254913"
-              className="h-9 text-sm"
-              disabled={resetting}
-            />
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleHardResetPhone}
-              disabled={resetting || !resetPhone.trim()}
-              className="h-9 gap-2"
-            >
-              {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              {resetting ? "Resetando..." : "Resetar telefone"}
-            </Button>
-          </div>
-        </div>
-      )}
+      <HardResetPhoneCard userId={userId} />
 
 
       {/* Toggle Líder */}

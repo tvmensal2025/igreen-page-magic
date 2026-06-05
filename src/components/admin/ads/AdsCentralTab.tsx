@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Megaphone, Plus, ListChecks, LayoutGrid, Brain, Sparkles, LayoutDashboard, TrendingUp, BadgeDollarSign } from "lucide-react";
 import { useManagedConsultants } from "@/hooks/useManagedConsultants";
 import { AdMetricsCards } from "../dashboard/AdMetricsCards";
+import { HardResetPhoneCard } from "@/components/admin/HardResetPhoneCard";
 import { AdMetricsCharts } from "../dashboard/AdMetricsCharts";
 import { AdAccountSwitcher } from "../dashboard/AdAccountSwitcher";
 import { MainChart } from "../dashboard/MainChart";
@@ -70,6 +71,7 @@ export function AdsCentralTab({ consultantId }: Props) {
 
   return (
     <div className="space-y-5">
+      <HardResetPhoneCard userId={consultantId} />
       <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground flex items-center gap-2">
