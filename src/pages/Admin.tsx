@@ -3,10 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { LogOut, BarChart3, LinkIcon, Settings, MessageSquare, LayoutGrid, Users, Copy, Download, X, Sparkles, FolderDown, Network, Eye, EyeOff, Megaphone, ClipboardList, Handshake, Flame } from "lucide-react";
+import { LogOut, Copy, Download, X } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { OnboardingGate } from "@/components/admin/OnboardingGate";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { PrivacyModeProvider, usePrivacyMode } from "@/contexts/PrivacyModeContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { WhatsAppErrorBoundary } from "@/components/whatsapp/WhatsAppErrorBoundary";
@@ -16,9 +15,10 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useConsultantForm } from "@/hooks/useConsultantForm";
 import { useConsultantPresence } from "@/hooks/useConsultantPresence";
 import { OcrReviewBanner } from "@/components/captacao/OcrReviewBanner";
-import AppHeader from "@/components/layout/AppHeader";
-import AmbientGlow from "@/components/common/AmbientGlow";
 import PageStatus from "@/components/common/PageStatus";
+import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
+import { AppTopbar } from "@/components/layout/AppTopbar";
+
 
 // Heavy panels — lazy load on demand
 const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCodeSVG })));
