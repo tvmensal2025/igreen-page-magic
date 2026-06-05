@@ -653,7 +653,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (consultantId) {
+    // Track if credentials came from request body — if so, do NOT override with DB values
+    let credsFromBody = false;
+    try {
+      // Re-check: if body provided email+password, we already assigned them above
+      // We need to know if they came from body to avoid silently replacing with stale DB values.
+      // (cannot re-read req.json — body already consumed; rely on env fallback check)
+      credsFromBody = portalEmail !== Deno.env.get("IGREEN_PORTAL_EMAIL");
+    } catch (_) { /* noop */ }
+
+    if (consultantId && !credsFromBody) {
       const { data: cred } = await supabase
         .from("consultants")
         .select("igreen_portal_email, igreen_portal_password")
@@ -662,8 +671,10 @@ Deno.serve(async (req) => {
       if (cred?.igreen_portal_email && cred?.igreen_portal_password) {
         portalEmail = cred.igreen_portal_email;
         portalPassword = cred.igreen_portal_password;
-        console.log(`Loaded credentials from DB for consultant: ${consultantId}`);
+        console.log(`[creds] Loaded from DB for consultant: ${consultantId}`);
       }
+    } else if (credsFromBody) {
+      console.log(`[creds] Using credentials from request body (not DB)`);
     }
 
     if (!consultantId && portalEmail) {
