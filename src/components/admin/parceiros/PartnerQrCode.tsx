@@ -46,9 +46,9 @@ const TEMPLATES: Record<
   a4: {
     label: "Sulfite A4",
     src: "/images/mutirao-lei-14300-parceiro.jpg",
-    qrX: 24,
-    qrY: 90,
-    qrSize: 22,
+    qrX: 30.5,
+    qrY: 89,
+    qrSize: 21,
     footerY: 96,
   },
   banner: {

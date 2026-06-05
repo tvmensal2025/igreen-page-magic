@@ -26,7 +26,7 @@ const A4_BG_W = 853;
 const A4_BG_H = 1280;
 const A4_W = A4_BG_W * A4_SCALE;
 const A4_H = A4_BG_H * A4_SCALE;
-const A4_QR_BOX = { x: 32, y: 855, size: 170 };
+const A4_QR_BOX = { x: 113, y: 1130, size: 150 };
 
 // ============ FORMATO BANNER (504mm x 904mm) ============
 // O canvas mantém exatamente a mesma proporção física do PDF para preview/export/print baterem.
