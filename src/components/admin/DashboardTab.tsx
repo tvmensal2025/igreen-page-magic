@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
 import { useUserRole } from "@/hooks/useUserRole";
-import { adminHardResetPhone } from "@/services/resetConversation";
+import { adminHardResetPhone, adminHardResetPhoneTraceCounts } from "@/services/resetConversation";
 import { StatCard } from "./StatCard";
 import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
@@ -238,9 +238,23 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
         .filter(([, n]) => typeof n === "number" && n > 0)
         .map(([k, n]) => `${k}: ${n}`)
         .join(" · ");
+      const trace = await adminHardResetPhoneTraceCounts(phone);
+      if (trace.ok && trace.totalRemaining > 0) {
+        const remaining = Object.entries(trace.counts)
+          .filter(([, n]) => Number(n) > 0)
+          .map(([k, n]) => `${k}: ${n}`)
+          .join(" · ");
+        toast({
+          title: "Reset incompleto",
+          description: `Ainda restam ${trace.totalRemaining} rastros: ${remaining}`,
+          variant: "destructive",
+        });
+        queryClient.invalidateQueries();
+        return;
+      }
       toast({
-        title: "✅ Telefone resetado",
-        description: `${res.phoneNormalized} — ${totals || "nada a apagar"}`,
+        title: "✅ Telefone zerado confirmado",
+        description: `${trace.ok ? trace.phoneNormalized : res.phoneNormalized} — ${totals || "nada a apagar"}`,
       });
       queryClient.invalidateQueries();
     } catch (err: unknown) {
