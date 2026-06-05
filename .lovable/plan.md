@@ -1,80 +1,73 @@
-## Direção escolhida
-**Elite Emerald Dashboard** (v2): sidebar escura `#064e3b` 240–288px com grupos (Visão Geral · Gestão Comercial · Recursos), item ativo em pílula `bg-emerald-900/40` + texto dourado `#c9a84c` + borda âmbar; topbar branca 80–96px com saudação + breadcrumb + status pill + busca + notificações; conteúdo em bento de cards `rounded-[2rem]` com bordas `stone-200` e sombras esmeralda suaves.
+# Plano — Refinamento Painel Elite v3
 
-## Tokens (LOCKED — copiar verbatim)
-- Cores HSL no `index.css`: `--background 60 33% 97%` (cream), `--card 0 0% 100%`, `--primary 158 84% 16%` (#064e3b), `--primary-foreground 0 0% 100%`, `--accent 43 53% 54%` (#c9a84c), `--secondary 158 47% 26%` (#0d7a5f), `--muted 60 9% 96%`, `--border 30 6% 90%`.
-- Tipografia: Space Grotesk (headings, números KPI), DM Sans (corpo). Carregar via `<link>` no `index.html`.
-- Raios: cards `rounded-[2rem]`, pílulas `rounded-2xl`, badges `rounded-lg`.
-- Sombras: `shadow-sm` padrão, `hover:shadow-xl hover:shadow-emerald-900/5`.
+## Objetivos
+1. **Paleta refinada** (Emerald escuro + accent verde vivo, sem dourado dominando).
+2. **Sidebar colapsável** com botão fixo no topbar + auto-recolhe ao clicar em qualquer item de navegação.
+3. **Interior das páginas mais profissional** (densidade Stripe Dashboard).
 
-## Arquitetura do shell
+## 1. Paleta nova (`src/styles/painel-elite.css`)
 
-```text
-src/
-  components/
-    layout/
-      AppShell.tsx          ← novo: SidebarProvider + grid sidebar+main
-      AppSidebar.tsx        ← novo: nav agrupado (3 seções, 11 itens)
-      AppTopbar.tsx         ← novo: saudação, status, busca, sino, avatar
-    modules/                ← shells por módulo (header + bento body)
-      ModuleHeader.tsx
-      ModuleBento.tsx
+Substitui os tokens atuais por:
+
+```
+--pe-bg:            #f7f9f8   /* near-white com tint verde */
+--pe-surface:       #ffffff
+--pe-surface-muted: #f1f5f3
+--pe-border:        #e3e8e5
+--pe-border-strong: #cdd5d0
+
+--pe-emerald:        #064e3b   /* sidebar / primary */
+--pe-emerald-strong: #022c22   /* hover / dark surfaces */
+--pe-emerald-soft:   #047857
+--pe-accent:         #10b981   /* CTAs, active, números KPI */
+--pe-accent-soft:    #34d399
+--pe-accent-glow:    rgba(16,185,129,0.18)
+
+--pe-text:       #0b1f1a
+--pe-text-muted: #5b6b65
+--pe-text-dim:   #94a39d
 ```
 
-- `AppShell` envolve `Outlet` em `SidebarProvider` (shadcn `sidebar.tsx`) com `collapsible="icon"` (recolhe pra 64px mantendo ícones).
-- `AppSidebar` usa `NavLink` do `react-router-dom` pra detectar rota ativa; grupos `Visão Geral` (Dashboard, CRM, Conversão, Clientes), `Gestão Comercial` (Captação, Parceiros, Rede, WhatsApp), `Recursos` (Central de Anúncios, Links, Materiais). Item ativo aplica `bg-emerald-900/40 text-[#c9a84c] border border-[#c9a84c]/20`. Badges numéricos opcionais (ex.: Conversão "12").
-- Rodapé do sidebar: card com avatar contornado em dourado + nome + nível ("Líder Diamante") + botão logout.
-- `AppTopbar` 96px sticky: à esquerda título da rota + subtítulo dinâmico; à direita pill "Status Operacional" com pulse, hora, sino c/ dot âmbar, busca global.
+Mudanças visíveis:
+- Gold (#c9a84c) sai como token primário; sobra só como `--pe-accent-warm` para o badge "Elite" do logo.
+- Item ativo da sidebar passa a usar `bg-[--pe-emerald-strong]` + borda esquerda 3px `--pe-accent` + texto branco (não mais dourado).
+- KPI numbers em `--pe-accent` sobre `--pe-emerald-strong` (alto contraste).
+- Background geral mais claro/neutro, menos amarelado.
 
-## Aplicação por módulo (11 telas)
+## 2. Sidebar colapsável
 
-Cada módulo mantém **toda lógica/dados/serviços existentes** — apenas troca o chrome e o agrupamento visual. Padrão para todas:
+Refatorar `src/components/layout/AppSidebar.tsx` + `Admin.tsx`:
 
-1. `ModuleHeader` (h1 Space Grotesk + subtitle + ações primárias à direita).
-2. Faixa de 4 KPI cards (`rounded-[2rem]`, 1 card destaque escuro com glow âmbar).
-3. Bento body 2/3 + 1/3 (gráfico/lista principal + side rail com call-to-action dourado e ranking).
+- Adicionar prop `collapsed: boolean` controlada por `Admin.tsx` (estado `sidebarCollapsed`, default `false` em desktop).
+- Larguras: `w-72` (expandido) ↔ `w-[72px]` (recolhido) com `transition-all duration-300`.
+- Quando recolhida: esconder labels, seções, perfil expandido; mostrar só ícones centralizados + avatar mini + logout. Tooltip nativo (`title`) em cada item.
+- **Auto-recolhe**: ao clicar em qualquer `pe-nav-item`, chamar `onCollapse?.()` (apenas em desktop ≥lg). Mobile mantém comportamento de fechar drawer.
+- **Botão expandir/recolher no topbar** (`AppTopbar.tsx`): ícone `PanelLeftClose` / `PanelLeftOpen`, sempre visível em desktop, à esquerda do título. Substitui o atual botão mobile-only `Menu` por um botão único que funciona nos dois modos.
+- Persistir estado em `localStorage` (`pe:sidebar-collapsed`) para lembrar entre reloads.
 
-Mapeamento:
-- **Dashboard** (`AdminMetaAds`?/Index): KPIs Receita/Leads/Conversão/Meta, gráfico Performance Semanal, Líderes do Mês, card âmbar "Dica do Dia".
-- **CRM**: KPIs por estágio do funil; bento = kanban (col 2/3) + atividades recentes (col 1/3). Cards de lead em `rounded-2xl` com avatar e tags douradas.
-- **Conversão** (`AdminConversao`): KPIs taxa/abandono/tempo médio; gráfico funil + lista de gargalos.
-- **Clientes** (`WhatsAppClientsPage`): KPIs ativos/inativos/aprovados; tabela densa em card branco + side com filtros chips dourados.
-- **Captação**: KPIs leads/mês, custo/lead; bento com formulário de captação destacado em card escuro + histórico.
-- **Parceiros**: grid de cards de parceiros estilo bento, filtros segmentados.
-- **Rede**: árvore/lista hierárquica com indentação esmeralda + KPIs de profundidade.
-- **WhatsApp** (`ConsultantPage` aba): mantém subnav atual (Dashboard, Conversas, Atendente IA, Envio em Massa, Templates, Agendamentos, Histórico) re-skinada como segmented tabs sob o ModuleHeader; painel Disparo PRO já está no padrão.
-- **Central de Anúncios** (`AdminMetaAds`): KPIs campanhas/CTR/CPL; lista de campanhas + gráfico de gasto.
-- **Links**: grid de cards de link com ações copy/QR; KPIs cliques/conversões.
-- **Materiais**: grid bento de materiais (imagem + título + tag), filtros por categoria.
+## 3. Páginas internas mais profissionais
 
-## Migração da navegação
+Aplicar padrão "Stripe Dashboard" — sem reescrever lógica, só chrome:
 
-- Remover tabs horizontais atuais do topo do `ConsultantPage` (ou similar) e mover para o `AppSidebar`.
-- Rotas: introduzir rotas filhas sob `/admin` (ex.: `/admin/dashboard`, `/admin/crm`, `/admin/whatsapp/...`) usando `<Outlet/>` em `AppShell`. Manter backward-compat redirecionando rotas legadas.
-- Cada subnav existente (ex.: WhatsApp) vira um row de segmented tabs no `ModuleHeader` daquele módulo.
+- **Cards KPI**: reduzir radius de 24px → 16px, padding `p-5`, borda `1px solid --pe-border` em vez de sombra pesada, número grande em `--pe-accent`, label em uppercase 10px `--pe-text-muted`, mini-sparkline ou delta `+12%` em verde/vermelho.
+- **Headers de seção**: linha divisória `border-b --pe-border` + título `text-base font-semibold` + ações à direita (botão ghost compacto).
+- **Tabelas**: linhas 44px, hover `bg-[--pe-surface-muted]`, header sticky uppercase 11px.
+- **Toolbars/filtros**: chips compactos `h-8 rounded-lg border --pe-border`, ícone 14px + label, sem sombras.
+- **Toast/banner de manutenção** (visível no print): reduzir para faixa fina amber `border-l-4`, não card grande vermelho.
+- **Espaçamentos**: gap entre seções 24px (não 32+), max-width content `1400px`, padding lateral `px-8`.
 
-## Mobile/responsive
+Componentes a tocar (apenas wrapper visual, lógica intacta):
+- `src/components/admin/*KPI*`, `*Header*` se existir; senão estilizar inline nas páginas Dashboard/CRM/Clientes/etc.
+- `src/styles/painel-elite.css` ganha novas utility classes: `.pe-card-kpi`, `.pe-section-header`, `.pe-table`, `.pe-toolbar`.
 
-- `<lg`: sidebar vira off-canvas (`Sheet`), topbar mantém `SidebarTrigger` à esquerda.
-- KPIs colapsam de 4 → 2 → 1 col.
-- Bento body 2/3+1/3 colapsa para coluna única.
+## 4. Escopo
 
-## Acessibilidade / qualidade
-
-- Contraste AA: texto branco sobre `#064e3b` e dourado sobre escuro validados.
-- `aria-current="page"` no link ativo.
-- Foco visível com ring `#c9a84c`.
-- Sem cores hard-coded em componentes: tudo via tokens do `index.css` + classes utilitárias.
-
-## Escopo / fora de escopo
-
-**Inclui:** AppShell, AppSidebar, AppTopbar, tokens do index.css/tailwind.config, refator do chrome dos 11 módulos, segmented subnavs, mobile sheet.
-**Não inclui:** mudanças em queries Supabase, edge functions, lógica de envio/agendamento, autenticação, schema. Apenas camada de apresentação.
+✅ Inclui: tokens CSS, AppSidebar/AppTopbar refactor, novas classes utilitárias, aplicação nos cards KPI do Dashboard como referência.  
+❌ Não inclui: mudanças em queries, edge functions, lógica de envio, esquema DB, ou nas páginas públicas (landing/licenciada).
 
 ## Ordem de execução
-
-1. Tokens + fontes + Tailwind config.
-2. `AppShell` + `AppSidebar` + `AppTopbar` + roteamento.
-3. Migrar Dashboard (template de referência).
-4. Aplicar template aos outros 10 módulos em paralelo, respeitando dados/componentes existentes.
-5. Polimento responsivo + revisão de contraste.
+1. Atualizar tokens em `painel-elite.css` (paleta + novas classes utilitárias).
+2. Refatorar `AppSidebar.tsx` (modo collapsed, auto-collapse).
+3. Refatorar `AppTopbar.tsx` (botão toggle único + ícones PanelLeft).
+4. Atualizar `Admin.tsx` (estado + persistência localStorage + props).
+5. Aplicar classes `.pe-card-kpi` / `.pe-section-header` nos KPIs e headers do Dashboard como template; demais módulos herdam via tokens.
