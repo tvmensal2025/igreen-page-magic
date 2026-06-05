@@ -1795,29 +1795,34 @@ Deno.serve(async (req) => {
     // because __inline_sent was only honored on the empty-reply branch.
     // The new contract is universal: __inline_sent === true means the
     // handler took full responsibility for this turn's outbound, period.
+    // 🛡️ Contador determinístico do sender-guard: incrementado em cada
+    // sendText/sendMedia/sendButtons/sendAudio bem-sucedido neste turno.
+    // Substitui a heurística antiga baseada em consulta racy a `conversations`
+    // e na flag manual __inline_sent (que ~50 call sites esqueciam de marcar).
+    const senderOutboundCount = Number((sender as any).__turnOutbound || 0);
+
     if (__inline_sent_flag) {
-      // 🛡️ Anti-silêncio (2026-06-04): só confia em __inline_sent quando
-      // existe outbound REAL recente desse customer (≤ 30s) — texto/mídia
-      // de verdade, não outro marcador `[inline-sent]`/`[failed:*]`. Sem
-      // essa checagem, um handler que devolva `__inline_sent=true` por
-      // engano (ex.: dedupe duplicado) faz o cliente nunca receber nada
-      // e o histórico mostra só `[inline-sent]`.
-      let realOutboundExists = false;
-      try {
-        const sinceIso = new Date(Date.now() - 30_000).toISOString();
-        const { data: realRow } = await supabase
-          .from("conversations")
-          .select("id, message_text, message_type")
-          .eq("customer_id", customer.id)
-          .eq("message_direction", "outbound")
-          .gte("created_at", sinceIso)
-          .not("message_text", "like", "[inline-sent]%")
-          .not("message_text", "like", "[failed:%")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        realOutboundExists = !!realRow;
-      } catch (_) { /* fail-open para o fallback abaixo */ }
+      // Confia em __inline_sent se o contador (ou fallback DB) confirmar
+      // outbound real recente — caso contrário, é violação de contrato e
+      // continua pro fallback para garantir que o cliente receba algo.
+      let realOutboundExists = senderOutboundCount > 0;
+      if (!realOutboundExists) {
+        try {
+          const sinceIso = new Date(Date.now() - 30_000).toISOString();
+          const { data: realRow } = await supabase
+            .from("conversations")
+            .select("id")
+            .eq("customer_id", customer.id)
+            .eq("message_direction", "outbound")
+            .gte("created_at", sinceIso)
+            .not("message_text", "like", "[inline-sent]%")
+            .not("message_text", "like", "[failed:%")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          realOutboundExists = !!realRow;
+        } catch (_) { /* fail-open para o fallback abaixo */ }
+      }
 
       if (realOutboundExists) {
         jsonLog("info", "inline_sent_skipped", {
@@ -1826,37 +1831,31 @@ Deno.serve(async (req) => {
           step: stepToSend ? stripPrefix(String(stepToSend)) : undefined,
           reply_was_set: reply !== "",
           v2_flag: v2Flag,
+          sender_outbound_count: senderOutboundCount,
         });
         return new Response(JSON.stringify({ ok: true, mode: "inline_sent" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Handler afirmou inline_sent mas não há outbound real → contrato
-      // violado. Loga ERRO e NÃO retorna: deixa cair no fallback abaixo
-      // pra garantir que o cliente receba pelo menos uma resposta.
       jsonLog("warn", "inline_sent_contract_violation", {
         customer_id: customer.id,
         consultant_id: instanceData.consultant_id,
         step: stepToSend ? stripPrefix(String(stepToSend)) : undefined,
         reply_was_set: reply !== "",
         v2_flag: v2Flag,
-        note: "handler set __inline_sent=true but no real outbound found in last 30s",
+        sender_outbound_count: senderOutboundCount,
+        note: "handler set __inline_sent=true but no real outbound found",
       });
-      // Limpa a flag pra não duplicar o fallback como inline depois.
     }
 
 
-    // GARANTIA: nunca deixar o cliente sem resposta. Se reply vazio E nenhum
-    // outbound real foi gravado nos últimos 30s, injeta mensagem mínima.
-    //
-    // 🔒 ANTES: `handlerSentInline = reply === "" && updates não vazio` —
-    // mascarava silêncio em qualquer handler que só mudasse `conversation_step`.
-    // AGORA: só consideramos "inline enviado" quando o gate acima confirmou
-    // outbound real (e neste ponto a função já retornou). Aqui, se chegamos
-    // com reply vazio, precisamos checar conversations e injetar fallback.
-    let realOutboundExistsFinal = false;
-    if (!reply) {
+    // GARANTIA: nunca deixar o cliente sem resposta. Detecção em 3 camadas:
+    //  1) Contador in-memory do sender-guard (determinístico, sem race).
+    //  2) Flag manual __inline_sent (retrocompat).
+    //  3) Fallback DB em conversations (race-prone, último recurso).
+    let realOutboundExistsFinal = senderOutboundCount > 0;
+    if (!realOutboundExistsFinal && !reply) {
       try {
         const sinceIso = new Date(Date.now() - 30_000).toISOString();
         const { data: realRow } = await supabase
@@ -1876,33 +1875,55 @@ Deno.serve(async (req) => {
     const handlerSentInline = !reply && realOutboundExistsFinal;
     let finalReply = reply;
     if (!finalReply && !handlerSentInline) {
-      // Sem resposta do bot E nada inline foi enviado.
-      // Em vez do antigo "🤖 Estou aqui!..." (robotizado), fazemos handoff silencioso:
-      // - se faz <30min desde a última resposta, manda um cumprimento curto humano só 1x
-      // - senão, pausa o bot pra um humano assumir, sem avisar o cliente
-      const lastReplyAt = (customer as any).last_bot_reply_at
-        ? new Date((customer as any).last_bot_reply_at).getTime()
-        : 0;
-      const thirtyMin = 30 * 60_000;
-      const recentlyReplied = lastReplyAt && (Date.now() - lastReplyAt) < thirtyMin;
-      console.warn(`⚠️ [empty-reply] step="${stepToSend}" customer=${customer.id} recentlyReplied=${!!recentlyReplied}`);
+      // 🛟 Camada 2: nunca pausa o bot. Re-prompt humano e segue.
+      console.warn(`⚠️ [empty-reply-safety] step="${stepToSend}" customer=${customer.id} → re-prompting`);
       captureError(new Error(`Bot empty reply at step ${stepToSend}`), {
         tags: { function: "evolution-webhook", kind: "empty_reply_safety" },
-        extra: { customer_id: customer.id, step: stepToSend },
+        extra: { customer_id: customer.id, step: stepToSend, sender_outbound_count: senderOutboundCount },
       });
-      if (!recentlyReplied) {
-        finalReply = "oii 😊";
-      } else {
-        // pausa silenciosa, sem mensagem robotizada
+
+      // 🔁 Camada 3: anti-loop. Conta quantas vezes esta safety-net já
+      // disparou no MESMO step nos últimos 5 min. Se ≥2 (esta seria a 3ª),
+      // pausa pra humano com `anti_loop` em vez de gerar re-prompt infinito.
+      let loopCount = 0;
+      try {
+        const sinceIso = new Date(Date.now() - 5 * 60_000).toISOString();
+        const { count } = await supabase
+          .from("conversations")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_id", customer.id)
+          .eq("conversation_step", String(stepToSend ?? ""))
+          .eq("message_text", "[empty-reply-safety]")
+          .gte("created_at", sinceIso);
+        loopCount = count ?? 0;
+      } catch (_) { /* fail-open: assume sem loop */ }
+
+      // Grava sentinel (best-effort) pra próxima iteração contar.
+      try {
+        await supabase.from("conversations").insert({
+          customer_id: customer.id,
+          message_direction: "outbound",
+          message_type: "system",
+          message_text: "[empty-reply-safety]",
+          conversation_step: stepToSend ? String(stepToSend) : null,
+        });
+      } catch (_) { /* noop */ }
+
+      if (loopCount >= 2) {
+        console.error(`🛑 [anti-loop] customer=${customer.id} step="${stepToSend}" empty-reply ${loopCount + 1}x em 5min → pausando bot`);
         try {
           await supabase.from("customers").update({
             bot_paused: true,
-            bot_paused_reason: "silent_handoff_empty_reply",
+            bot_paused_reason: "anti_loop",
             bot_paused_at: new Date().toISOString(),
           }).eq("id", customer.id);
         } catch (_) { /* noop */ }
+        // Não envia nada — handoff silencioso só quando vira loop comprovado.
+      } else {
+        finalReply = "oii 😊";
       }
     }
+
     let isDuplicate = false;
     if (finalReply) {
       // 🛡️ Anti-duplicação universal: mesmo texto enviado nos últimos 60s → skip.
