@@ -45,11 +45,11 @@ const TEMPLATES: Record<
 > = {
   a4: {
     label: "Sulfite A4",
-    src: "/images/mutirao-lei-14300-base.jpg",
-    qrX: 18,
-    qrY: 60,
+    src: "/images/mutirao-lei-14300-parceiro.jpg",
+    qrX: 24,
+    qrY: 90,
     qrSize: 22,
-    footerY: 82,
+    footerY: 96,
   },
   banner: {
     label: "Banner 504×940mm",
