@@ -7,6 +7,7 @@ import {
   type AdImageLibraryItem, type AdImageFormat,
 } from "@/services/adImageLibrary";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface Props {
   consultantId: string;
@@ -23,6 +24,7 @@ const FORMAT_LABEL: Record<AdImageFormat, string> = {
 
 export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick }: Props) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [items, setItems] = useState<AdImageLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | AdImageFormat>(format);
@@ -39,7 +41,8 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
   useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [consultantId]);
 
   async function handleRemove(it: AdImageLibraryItem) {
-    if (!confirm("Excluir essa imagem da biblioteca?")) return;
+    const ok = await confirm({ title: "Excluir essa imagem da biblioteca?", confirmText: "Excluir", tone: "danger" });
+    if (!ok) return;
     setDeletingId(it.id);
     try {
       await removeFromAdImageLibrary(it.id, it.storage_path);

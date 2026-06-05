@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAnalytics } from "@/hooks/useAnalytics";
@@ -47,6 +48,7 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
     scope === "team" && isLeader ? teamIds : null,
   );
   const { toast } = useToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [syncingDashboard, setSyncingDashboard] = useState(false);
   const [syncCooldown, setSyncCooldown] = useState(0);
@@ -203,7 +205,13 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   };
 
   const handleResetPerformance = async () => {
-    if (!confirm("Apagar todo o histórico de visitas, cliques e eventos das suas landing pages? Clientes e mensagens NÃO serão apagados. Esta ação não pode ser desfeita.")) return;
+    const ok = await confirm({
+      title: "Apagar todo o histórico de performance?",
+      description: "Apaga visitas, cliques e eventos das suas landing pages. Clientes e mensagens NÃO serão apagados. Esta ação não pode ser desfeita.",
+      confirmText: "Apagar histórico",
+      tone: "danger",
+    });
+    if (!ok) return;
     setResettingPerf(true);
     try {
       const { data, error } = await supabase.rpc("reset_consultant_analytics" as any, { _consultant_id: userId });
@@ -227,7 +235,13 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
       toast({ title: "Informe um telefone", variant: "destructive" });
       return;
     }
-    if (!confirm(`APAGAR TODOS os rastros do telefone ${phone}?\n\nIsto apaga customers, mensagens, fluxo, IA, CRM, logs e eventos relacionados. NÃO pode ser desfeito.`)) return;
+    const ok = await confirm({
+      title: `Apagar todos os rastros do telefone ${phone}?`,
+      description: "Isto apaga customers, mensagens, fluxo, IA, CRM, logs e eventos relacionados. NÃO pode ser desfeito.",
+      confirmText: "Apagar tudo",
+      tone: "danger",
+    });
+    if (!ok) return;
     setResetting(true);
     try {
       const res = await adminHardResetPhone(phone);
