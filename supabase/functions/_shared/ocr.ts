@@ -540,18 +540,8 @@ REGRAS:
 Retorne APENAS este JSON, sem markdown:
 {"cpf":""}`;
 
-    const gemRes = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-          generationConfig: { temperature: 0, maxOutputTokens: 256, responseMimeType: "application/json" },
-        }),
-        timeout: TIMEOUT_GEMINI,
-      },
-    );
+    const gemRes = await callGeminiViaLovable(prompt, img, { maxTokens: 256, responseJson: true });
+
     if (!gemRes.ok) return "";
     const gemData = await gemRes.json();
     const text = gemData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
