@@ -1729,7 +1729,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // Texto ainda não enviado: aplica text_delay e devolve como reply (asReply)
     // ou envia inline como cascade (último recurso, sem ordem configurada).
     if (textDelay > 0 && !isTestMode()) {
-      await new Promise((r) => setTimeout(r, textDelay));
+      await new Promise((r) => setTimeout(r, Math.min(textDelay, 2_000)));
     }
     if (asReply) {
       return { replyText: text, inlineSent: inlineMedia };
