@@ -358,6 +358,9 @@ const AdminContent = () => {
       </main>
 
       </OnboardingGate>
+      </div>
+
+
 
       {/* Settings Sheet (Dados) */}
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
