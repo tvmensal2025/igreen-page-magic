@@ -371,6 +371,60 @@ export default function FluxoBuilder() {
     }
   }, [selectedId, steps, consultantName, existingVariants, flowId, mediaCounts]);
 
+  // Alterna o modo de sincronia com o template público.
+  // - 'custom' → 'public': apenas atualiza a coluna. Edições do consultor
+  //   ficam preservadas em `bot_flow_steps` (apenas ignoradas pelo runtime).
+  // - 'public' → 'custom': RPC `fork_flow_from_public` clona os steps
+  //   atuais do público para o flow do consultor, remapeando UUIDs.
+  const handleToggleSync = useCallback(async (nextChecked: boolean) => {
+    if (!userId || !flowId || togglingSync) return;
+    const nextMode: "public" | "custom" = nextChecked ? "public" : "custom";
+    if (nextMode === syncMode) return;
+    if (nextMode === "public") {
+      const ok = await confirm({
+        title: "Seguir o modelo público?",
+        description: "Suas edições nos passos serão ignoradas (não apagadas). As mídias que você subiu continuam funcionando. Toda mudança do super-admin passa a aparecer aqui automaticamente.",
+        confirmText: "Sim, seguir o público",
+      });
+      if (!ok) return;
+      setTogglingSync(true);
+      try {
+        const { error } = await (supabase as any)
+          .from("bot_flows")
+          .update({ sync_mode: "public" })
+          .eq("id", flowId);
+        if (error) throw error;
+        toast.success("Agora você segue o modelo público.");
+        await reload(userId, editingVariant);
+      } catch (err: any) {
+        toast.error(err?.message ?? "Não foi possível ativar o modo público");
+      } finally {
+        setTogglingSync(false);
+      }
+    } else {
+      const ok = await confirm({
+        title: "Personalizar seu fluxo?",
+        description: "Vamos copiar o modelo público para o seu fluxo. A partir daí, mudanças do super-admin não chegam mais automaticamente — você fica responsável pela sua versão.",
+        confirmText: "Sim, personalizar",
+      });
+      if (!ok) return;
+      setTogglingSync(true);
+      try {
+        const { error } = await supabase.rpc("fork_flow_from_public", {
+          _consultant_id: userId,
+          _variant: editingVariant,
+        } as any);
+        if (error) throw error;
+        toast.success("Fluxo personalizado criado a partir do público.");
+        await reload(userId, editingVariant);
+      } catch (err: any) {
+        toast.error(err?.message ?? "Não foi possível personalizar o fluxo");
+      } finally {
+        setTogglingSync(false);
+      }
+    }
+  }, [userId, flowId, syncMode, editingVariant, togglingSync, confirm, reload]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
