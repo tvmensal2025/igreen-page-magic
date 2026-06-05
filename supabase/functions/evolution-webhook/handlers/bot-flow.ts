@@ -1242,24 +1242,62 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const configuredOrder = uiOrder || stepOrder || ["audio", "image", "video", "text", "document"];
       items.sort(makeKindComparator((it: Item) => it.kind, configuredOrder));
 
+      // ─── BOTÕES (carregamos cedo p/ unir com o último texto, espelhando Whapi) ──
+      // Antes: enviávamos texto e DEPOIS um segundo `sendText` com a lista numerada.
+      // Em chamadas back-to-back, o segundo envio podia falhar silenciosamente
+      // (bug do número 11971254913 — d_como_funciona perdia o texto final).
+      // Agora: se o último item da sequência é texto e o passo tem _buttons,
+      // disparamos UMA única chamada via sendButtons (que no Evolution já anexa
+      // a lista numerada no próprio texto).
+      let _buttons: { id: string; title: string }[] = [];
+      try {
+        const captures = Array.isArray((stepRow as any).captures) ? (stepRow as any).captures : [];
+        const buttonsCapture = captures.find((c: any) => c?.field === "_buttons" && Array.isArray(c?.value));
+        if (buttonsCapture && Array.isArray(buttonsCapture.value)) {
+          _buttons = buttonsCapture.value
+            .map((b: any) => ({
+              id: String(b?.id || "").trim(),
+              title: applyVars(String(b?.title || "")).trim().slice(0, 60),
+            }))
+            .filter((b: any) => b.id && b.title)
+            .slice(0, 3);
+        }
+      } catch (_) { /* noop */ }
+
       let sent = false;
       let videoFailed = false;
       let hadVideo = false;
+      let buttonsSent = false;
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
         const isLast = i === items.length - 1;
 
         if (it.kind === "text" && it.text) {
+          const useButtonsHere = isLast && _buttons.length > 0;
+          const finalText = useButtonsHere
+            ? it.text
+            : it.text;
           try {
-            await sendText(remoteJid, it.text);
-            await supabase.from("conversations").insert({
-              customer_id: customer.id,
-              message_direction: "outbound",
-              message_text: it.text,
-              message_type: "text",
-              conversation_step: stepKey,
-            });
-            sent = true;
+            let okSend = false;
+            if (useButtonsHere) {
+              // sendButtons no Evolution já formata "1. opt …" no próprio texto
+              okSend = (await sendButtons(remoteJid, finalText, _buttons)) !== false;
+              if (okSend) buttonsSent = true;
+            } else {
+              okSend = (await sendText(remoteJid, finalText)) !== false;
+            }
+            if (okSend) {
+              await supabase.from("conversations").insert({
+                customer_id: customer.id,
+                message_direction: "outbound",
+                message_text: finalText,
+                message_type: useButtonsHere ? "buttons" : "text",
+                conversation_step: stepKey,
+              });
+              sent = true;
+            } else {
+              console.warn(`[dispatch:${stepKey}] envio de texto retornou false (useButtons=${useButtonsHere})`);
+            }
             if (!isLast) await new Promise((r) => setTimeout(r, 800));
           } catch (e) {
             console.warn(`[dispatch:${stepKey}] envio de texto falhou:`, (e as any)?.message);
@@ -1329,34 +1367,30 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
       }
 
-      // ─── BOTÕES INTERATIVOS ──────────────────────────────────────────
-      // Se o passo tem botões configurados (captures._buttons), envia
-      // como mensagem com opções numeradas DEPOIS do conteúdo principal.
-      // Isso permite que passos de simulação/conversão tenham CTAs claros
-      // ("✅ Quero finalizar", "❓ Tenho dúvidas", "👤 Falar com humano").
-      try {
-        const captures = Array.isArray((stepRow as any).captures) ? (stepRow as any).captures : [];
-        const buttonsCapture = captures.find((c: any) => c?.field === "_buttons" && Array.isArray(c?.value));
-        const buttons = buttonsCapture?.value || [];
-        if (buttons.length > 0 && sent) {
-          // Pequena pausa pra separar o conteúdo dos botões visualmente
+      // ─── BOTÕES INTERATIVOS (fallback) ───────────────────────────────
+      // Se os botões NÃO foram anexados ao último texto (porque a ordem
+      // configurada coloca texto antes de mídia, ex.: text→audio→video),
+      // disparamos a lista numerada como mensagem curta separada.
+      // Anti-duplicação: pula se já enviamos via sendButtons acima.
+      if (sent && _buttons.length > 0 && !buttonsSent) {
+        try {
           await new Promise((r) => setTimeout(r, 600));
-          // Evolution não suporta botões reais — envia como opções numeradas
-          const buttonText = buttons.map((b: any, i: number) => `${i + 1}. ${b.title}`).join("\n");
-          const ctaText = `\n*Toque numa opção (ou digite o número):*\n${buttonText}`;
-          await sendText(remoteJid, ctaText);
+          const promptText = "👇 *Escolha uma opção:*";
+          await sendButtons(remoteJid, promptText, _buttons);
           await supabase.from("conversations").insert({
             customer_id: customer.id,
             message_direction: "outbound",
-            message_text: ctaText,
-            message_type: "text",
+            message_text: promptText,
+            message_type: "buttons",
             conversation_step: stepKey,
           });
-          console.log(`[dispatch:${stepKey}] enviou ${buttons.length} botão(ões) como CTA`);
+          buttonsSent = true;
+          console.log(`[dispatch:${stepKey}] enviou ${_buttons.length} botão(ões) como CTA (fallback pós-mídia)`);
+        } catch (e) {
+          console.warn(`[dispatch:${stepKey}] envio dos botões (fallback) falhou:`, (e as any)?.message);
         }
-      } catch (e) {
-        console.warn(`[dispatch:${stepKey}] envio de botões falhou:`, (e as any)?.message);
       }
+
 
       return sent;
     } catch (e) {
