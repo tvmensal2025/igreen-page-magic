@@ -585,6 +585,10 @@ export default function FluxoBuilder() {
   }
 
   async function deleteStep(id: string) {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para remover passos.");
+      return;
+    }
     const ok = await confirm({
       title: "Remover este passo?",
       description: "As regras que apontavam para ele serão limpas.",
