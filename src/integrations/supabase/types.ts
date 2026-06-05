@@ -5288,6 +5288,7 @@ export type Database = {
           position: number
           rejection_reason: string | null
           stage_id: string
+          voice_template_id: string | null
         }
         Insert: {
           consultant_id: string
@@ -5302,6 +5303,7 @@ export type Database = {
           position?: number
           rejection_reason?: string | null
           stage_id: string
+          voice_template_id?: string | null
         }
         Update: {
           consultant_id?: string
@@ -5316,6 +5318,7 @@ export type Database = {
           position?: number
           rejection_reason?: string | null
           stage_id?: string
+          voice_template_id?: string | null
         }
         Relationships: [
           {
@@ -5323,6 +5326,13 @@ export type Database = {
             columns: ["stage_id"]
             isOneToOne: false
             referencedRelation: "kanban_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_auto_messages_voice_template_id_fkey"
+            columns: ["voice_template_id"]
+            isOneToOne: false
+            referencedRelation: "voice_templates"
             referencedColumns: ["id"]
           },
         ]
