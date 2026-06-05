@@ -30,30 +30,53 @@ export interface GuardedSenderOpts {
 
 type AnyFn = (...args: any[]) => any;
 
+/**
+ * Janela de "burst" por wrapper (per-invocation): após o primeiro envio
+ * autorizado, permite que envios subsequentes do MESMO turno bypassem
+ * `min_interval_not_elapsed` por até BURST_TTL_MS. Outras razões de bloqueio
+ * (cap diário, recovery, fatal, warmup) continuam sendo respeitadas.
+ *
+ * Motivação: um passo do Flow Builder pode enviar áudio+vídeo+texto-com-botões
+ * em sequência. O `min_interval` (8s no day 1) bloqueava a 2ª e 3ª mensagens
+ * do MESMO turno, deixando o lead com mídia parcial e sem o texto/botões.
+ */
+const BURST_TTL_MS = 20_000;
+
 function wrapSendFn(
   fn: AnyFn | undefined,
   opts: GuardedSenderOpts,
   kind: string,
+  burstState: { until: number },
 ): AnyFn | undefined {
   if (typeof fn !== "function") return fn;
   return async (...args: any[]) => {
     const quota = await checkSendQuota(opts.supabase, opts.instanceName);
     if (!quota.allowed) {
-      console.warn(
-        `🚫 [sender-guard] bloqueado kind=${kind} instance=${opts.instanceName} reason=${quota.reason ?? "?"}` +
-        (quota.next_allowed_at ? ` next=${quota.next_allowed_at}` : "") +
-        (quota.until ? ` until=${quota.until}` : ""),
-      );
-      return false;
+      const isMinInterval = quota.reason === "min_interval_not_elapsed";
+      const inBurst = Date.now() < burstState.until;
+      if (isMinInterval && inBurst) {
+        console.log(
+          `⚡ [sender-guard] burst-bypass kind=${kind} instance=${opts.instanceName} ` +
+          `(janela expira em ${Math.max(0, burstState.until - Date.now())}ms)`,
+        );
+        // segue para enviar — não retorna false
+      } else {
+        console.warn(
+          `🚫 [sender-guard] bloqueado kind=${kind} instance=${opts.instanceName} reason=${quota.reason ?? "?"}` +
+          (quota.next_allowed_at ? ` next=${quota.next_allowed_at}` : "") +
+          (quota.until ? ` until=${quota.until}` : ""),
+        );
+        return false;
+      }
     }
     let result: any = false;
     try {
       result = await fn(...args);
     } finally {
-      // register_send só conta quando algo realmente foi enviado.
       const ok = result === true || (result && typeof result === "object" && result.ok === true);
       if (ok) {
         await registerSend(opts.supabase, opts.instanceName);
+        burstState.until = Date.now() + BURST_TTL_MS;
       }
     }
     return result;
