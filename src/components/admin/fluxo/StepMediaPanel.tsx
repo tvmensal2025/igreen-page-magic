@@ -602,6 +602,19 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
 
       {(["audio", "image", "video"] as Kind[]).map(renderKindBlock)}
 
+      {/* R5 (2026-06-05): badge quando a ordem inclui um slot sem mídia uploadada — o webhook
+          pode despachar o slot e enviar "nada" (ou pior, uma URL órfã residual). */}
+      {(() => {
+        const presentKinds = new Set(items.filter(m => !pendingDeletes.has(m.id)).map(m => m.kind));
+        const missingSlots = order.filter(s => s !== "text" && !presentKinds.has(s as Kind));
+        if (missingSlots.length === 0) return null;
+        return (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+            ⚠️ A ordem de envio inclui <strong>{missingSlots.join(", ")}</strong> mas nenhum arquivo desse tipo foi enviado neste passo. Remova da ordem ou faça upload — caso contrário o bot pode pular ou enviar mídia errada.
+          </div>
+        );
+      })()}
+
       {/* Ordem de envio */}
       <div className="rounded-md bg-muted/30 p-3">
         <div className="flex items-center justify-between mb-2">
