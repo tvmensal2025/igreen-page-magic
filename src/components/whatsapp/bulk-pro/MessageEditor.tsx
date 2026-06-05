@@ -3,6 +3,7 @@ import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, P
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { uploadMedia, formatFileSize } from "@/services/minioUpload";
