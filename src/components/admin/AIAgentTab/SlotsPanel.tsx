@@ -106,6 +106,8 @@ export function SlotsPanel({ userId }: Props) {
 
 function SuperAdminSlotsModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [slots, setSlots] = useState<any[]>([]);
   const [defaultMedia, setDefaultMedia] = useState<Record<string, { url: string | null; id: string | null }>>({});
   const [availableVideos, setAvailableVideos] = useState<VideoOption[]>([]);
