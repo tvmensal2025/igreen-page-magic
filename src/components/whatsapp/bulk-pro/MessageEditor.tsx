@@ -123,7 +123,9 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
   }[media.kind]) : null;
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 items-start">
+      <div className="space-y-4 min-w-0">
+
       {/* Template picker */}
       <div className="flex items-center justify-between gap-3 rounded-xl border border-[#c9a84c]/30 bg-[#c9a84c]/5 px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -282,15 +284,18 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
         <input ref={fileRef} type="file" hidden onChange={handleFile} />
       </div>
 
-      {/* Live WhatsApp mobile preview */}
-      <div className="rounded-2xl border border-[#064e3b]/15 bg-gradient-to-b from-[#f5f0e0]/60 to-white p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] font-bold text-[#064e3b] uppercase tracking-wider">Pré-visualização ao vivo</p>
-          <span className="text-[10px] text-[#064e3b]/50 font-medium">como aparece no WhatsApp</span>
+      </div>
+
+      {/* Live WhatsApp mobile preview - side column */}
+      <div className="lg:sticky lg:top-4 rounded-2xl border border-[#064e3b]/15 bg-gradient-to-b from-[#f5f0e0]/60 to-white p-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] font-bold text-[#064e3b] uppercase tracking-wider">Pré-visualização</p>
+          <span className="text-[9px] text-[#064e3b]/50 font-medium">ao vivo</span>
         </div>
 
         <div className="flex justify-center">
-          <div className="w-[280px] rounded-[2.2rem] border-[10px] border-[#0b1f1a] bg-[#e5ddd5] shadow-xl overflow-hidden">
+          <div className="w-full max-w-[260px] rounded-[1.8rem] border-[8px] border-[#0b1f1a] bg-[#e5ddd5] shadow-xl overflow-hidden">
+
             {/* phone header */}
             <div className="bg-[#075e54] text-white px-3 py-2 flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">
@@ -367,9 +372,10 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
           </div>
         </div>
 
-        <p className="text-[10px] text-center text-[#064e3b]/50 mt-3">
-          Atualiza em tempo real conforme você escreve ou anexa mídia
+        <p className="text-[9px] text-center text-[#064e3b]/50 mt-2">
+          Atualiza em tempo real
         </p>
+
       </div>
     </div>
   );
