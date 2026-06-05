@@ -142,6 +142,12 @@ function sanitizeHumanReply(text: string, step: string, input: string): string {
   return msg;
 }
 
+function isShortOpeningGreeting(input: string, step: string): boolean {
+  const isOpeningStep = step === "welcome" || step === "menu_inicial" || !step;
+  if (!isOpeningStep) return false;
+  return /^(oi|ol[aá]|opa|bom dia|boa tarde|boa noite|tudo bem|eai|e aí)[!?.\s]*$/i.test((input || "").trim());
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const t0 = Date.now();
@@ -206,6 +212,25 @@ Deno.serve(async (req) => {
 
     if (kbOnlyMode) {
       try {
+        if (isShortOpeningGreeting(user_input || "", customer.conversation_step || "welcome")) {
+          try {
+            await supabase.from("ai_agent_logs").insert({
+              consultant_id: consultantId,
+              customer_id,
+              phone: customer.phone_whatsapp,
+              step_before: customer.conversation_step,
+              step_after: customer.conversation_step,
+              llm_output: { kb_only: true, skipped: "opening_greeting" },
+              handoff: false,
+              latency_ms: Date.now() - t0,
+            });
+          } catch (_) { /* swallow */ }
+          return new Response(
+            JSON.stringify({ ok: true, mode: "kb_only", skipped: "opening_greeting" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
         const { lookupKnowledge } = await import("../_shared/knowledge-lookup.ts");
         const lookup = await lookupKnowledge({
           supabase,
