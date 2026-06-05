@@ -58,6 +58,8 @@ export interface CaptureCustomer {
   bill_owner_relationship?: string | null;
   phone_contact_confirmed?: boolean | null;
   bot_paused?: boolean | null;
+  ocr_review_pending?: "bill" | "doc" | null;
+  ocr_review_started_at?: string | null;
   created_at: string;
 }
 
