@@ -1,6 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isConsultantAIDisabled, isPausedByPhone } from "../_shared/bot/paused.ts";
+import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+import { getAdapter, type ChannelAdapter, type SendContext } from "../_shared/channels/index.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,7 +22,63 @@ const REJECTED_PROGRESSION = [
   { days: 60, stage_key: "60_dias" },
 ];
 
-import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+// ─────────────────────────────────────────────────────────────────────
+// Channel resolver — escolhe Evolution (per-consultor) ou Whapi (plataforma)
+// ─────────────────────────────────────────────────────────────────────
+
+interface ResolvedChannel {
+  kind: "evolution" | "whapi";
+  /** Identificador usado no anti-ban (`whatsapp_send_log.instance_name`). */
+  instanceName: string;
+  adapter: ChannelAdapter;
+}
+
+interface ChannelEnv {
+  evolutionUrl: string | undefined;
+  evolutionKey: string | undefined;
+  whapiToken: string;
+}
+
+async function resolveChannel(
+  supabase: any,
+  consultantId: string,
+  env: ChannelEnv,
+): Promise<ResolvedChannel | null> {
+  // 1. Tenta Evolution (consultor com instância dedicada)
+  const { data: instance } = await supabase
+    .from("whatsapp_instances")
+    .select("instance_name")
+    .eq("consultant_id", consultantId)
+    .limit(1)
+    .maybeSingle();
+
+  if (instance?.instance_name && env.evolutionUrl && env.evolutionKey) {
+    const adapter = getAdapter({
+      kind: "evolution",
+      input: {
+        apiUrl: env.evolutionUrl,
+        apiKey: env.evolutionKey,
+        instanceName: instance.instance_name,
+      },
+    });
+    return { kind: "evolution", instanceName: instance.instance_name, adapter };
+  }
+
+  // 2. Fallback Whapi (canal compartilhado da plataforma)
+  if (env.whapiToken) {
+    const adapter = getAdapter({
+      kind: "whapi",
+      input: { apiToken: env.whapiToken, instanceName: "whapi-superadmin" },
+    });
+    return { kind: "whapi", instanceName: "whapi-superadmin", adapter };
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Send helpers (com guard anti-ban preservado)
+// ─────────────────────────────────────────────────────────────────────
 
 async function guardOk(supabase: any, instanceName: string, label: string): Promise<boolean> {
   const quota = await checkSendQuota(supabase, instanceName);
@@ -31,47 +89,68 @@ async function guardOk(supabase: any, instanceName: string, label: string): Prom
   return true;
 }
 
-async function sendEvolutionText(supabase: any, instanceName: string, phone: string, text: string, apiUrl: string, apiKey: string) {
-  if (!(await guardOk(supabase, instanceName, "text"))) return;
-  const res = await fetch(`${apiUrl}/message/sendText/${instanceName}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: apiKey },
-    body: JSON.stringify({ number: phone, text }),
-  });
-  if (!res.ok) console.error("Evolution sendText error:", await res.text());
-  else await registerSend(supabase, instanceName);
+function ctx(consultantId: string, customerId: string, stage: string): SendContext {
+  return {
+    customerId: customerId || "auto-progress",
+    consultantId,
+    stepId: `crm_auto_progress:${stage}`,
+    idempotencyKey: `${consultantId}:${customerId}:${stage}:${Date.now()}`,
+  };
 }
 
-async function sendEvolutionMedia(supabase: any, instanceName: string, phone: string, mediaUrl: string, caption: string, mediatype: "image" | "video" | "document", apiUrl: string, apiKey: string) {
-  if (!(await guardOk(supabase, instanceName, "media"))) return;
-  const res = await fetch(`${apiUrl}/message/sendMedia/${instanceName}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: apiKey },
-    body: JSON.stringify({ number: phone, mediatype, media: mediaUrl, caption }),
-  });
-  if (!res.ok) console.error("Evolution sendMedia error:", await res.text());
-  else await registerSend(supabase, instanceName);
+async function sendText(
+  supabase: any,
+  channel: ResolvedChannel,
+  jid: string,
+  text: string,
+  sendCtx: SendContext,
+) {
+  if (!(await guardOk(supabase, channel.instanceName, "text"))) return;
+  const r = await channel.adapter.sendText(jid, text, sendCtx);
+  if (!r.ok) console.error(`[${channel.kind}] sendText failed:`, (r as any).detail);
+  else await registerSend(supabase, channel.instanceName);
 }
 
-async function sendEvolutionAudio(supabase: any, instanceName: string, phone: string, audioUrl: string, apiUrl: string, apiKey: string) {
-  if (!(await guardOk(supabase, instanceName, "audio"))) return;
-  const res = await fetch(`${apiUrl}/message/sendWhatsAppAudio/${instanceName}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: apiKey },
-    body: JSON.stringify({ number: phone, audio: audioUrl }),
-  });
-  if (!res.ok) console.error("Evolution sendAudio error:", await res.text());
-  else await registerSend(supabase, instanceName);
+async function sendMedia(
+  supabase: any,
+  channel: ResolvedChannel,
+  jid: string,
+  url: string,
+  caption: string,
+  kind: "image" | "video" | "document",
+  sendCtx: SendContext,
+) {
+  if (!(await guardOk(supabase, channel.instanceName, kind))) return;
+  const media =
+    kind === "document"
+      ? { kind, url, filename: "arquivo", caption }
+      : { kind, url, caption };
+  const r = await channel.adapter.sendMedia(jid, media as any, sendCtx);
+  if (!r.ok) console.error(`[${channel.kind}] sendMedia(${kind}) failed:`, (r as any).detail);
+  else await registerSend(supabase, channel.instanceName);
+}
+
+async function sendAudio(
+  supabase: any,
+  channel: ResolvedChannel,
+  jid: string,
+  url: string,
+  sendCtx: SendContext,
+) {
+  if (!(await guardOk(supabase, channel.instanceName, "audio"))) return;
+  const r = await channel.adapter.sendMedia(jid, { kind: "audio", url, ptt: true }, sendCtx);
+  if (!r.ok) console.error(`[${channel.kind}] sendAudio failed:`, (r as any).detail);
+  else await registerSend(supabase, channel.instanceName);
 }
 
 async function sendSingleMessage(
   supabase: any,
-  instanceName: string,
+  channel: ResolvedChannel,
+  jid: string,
   phone: string,
   msg: { message_type: string; message_text: string | null; media_url: string | null; image_url: string | null },
-  apiUrl: string,
-  apiKey: string,
-  customerName?: string
+  sendCtx: SendContext,
+  customerName?: string,
 ) {
   const displayName = customerName || phone;
   const messageText = (msg.message_text || "")
@@ -79,20 +158,20 @@ async function sendSingleMessage(
     .replace(/\{\{telefone\}\}/g, phone);
   const msgType = msg.message_type || "text";
 
-  // Send optional image first
+  // Imagem extra antes do conteúdo principal
   if (msg.image_url && msgType !== "image") {
-    await sendEvolutionMedia(supabase, instanceName, phone, msg.image_url, "", "image", apiUrl, apiKey);
+    await sendMedia(supabase, channel, jid, msg.image_url, "", "image", sendCtx);
   }
 
   if (msgType === "audio" && msg.media_url) {
-    await sendEvolutionAudio(supabase, instanceName, phone, msg.media_url, apiUrl, apiKey);
-    if (messageText) await sendEvolutionText(supabase, instanceName, phone, messageText, apiUrl, apiKey);
+    await sendAudio(supabase, channel, jid, msg.media_url, sendCtx);
+    if (messageText) await sendText(supabase, channel, jid, messageText, sendCtx);
   } else if (msgType === "image" && msg.media_url) {
-    await sendEvolutionMedia(supabase, instanceName, phone, msg.media_url, messageText, "image", apiUrl, apiKey);
+    await sendMedia(supabase, channel, jid, msg.media_url, messageText, "image", sendCtx);
   } else if (msgType === "video" && msg.media_url) {
-    await sendEvolutionMedia(supabase, instanceName, phone, msg.media_url, messageText, "video", apiUrl, apiKey);
+    await sendMedia(supabase, channel, jid, msg.media_url, messageText, "video", sendCtx);
   } else if (messageText) {
-    await sendEvolutionText(supabase, instanceName, phone, messageText, apiUrl, apiKey);
+    await sendText(supabase, channel, jid, messageText, sendCtx);
   }
 
   return messageText || "[mídia]";
@@ -100,23 +179,25 @@ async function sendSingleMessage(
 
 async function sendAutoMessages(
   supabase: any,
-  instanceName: string,
+  channel: ResolvedChannel,
+  jid: string,
   phone: string,
   stageData: any,
-  apiUrl: string,
-  apiKey: string,
+  consultantId: string,
+  customerId: string,
   rejectionReason?: string | null,
   dealOrigin?: string | null,
-  customerName?: string
+  customerName?: string,
 ): Promise<string> {
-  // Try multi-message table first
+  const sendCtx = ctx(consultantId, customerId, stageData.stage_key);
+
+  // Multi-message table primeiro
   const { data: multiMsgs } = await supabase
     .from("stage_auto_messages")
     .select("*")
     .eq("stage_id", stageData.id)
     .order("position", { ascending: true });
 
-  // Filter by rejection_reason and deal_origin
   const filtered = multiMsgs?.filter((m: any) => {
     const reasonMatch = !m.rejection_reason || m.rejection_reason === rejectionReason;
     const originMatch = !m.deal_origin || m.deal_origin === dealOrigin;
@@ -131,20 +212,19 @@ async function sendAutoMessages(
       if (i > 0 && msg.delay_seconds > 0) {
         await new Promise((r) => setTimeout(r, msg.delay_seconds * 1000));
       }
-      preview = await sendSingleMessage(supabase, instanceName, phone, msg, apiUrl, apiKey, customerName);
+      preview = await sendSingleMessage(supabase, channel, jid, phone, msg, sendCtx, customerName);
     }
-    console.log(`Multi-messages (${filtered.length}) sent to ${phone} for stage ${stageData.label}`);
+    console.log(`[${channel.kind}] Multi-messages (${filtered.length}) sent to ${phone} for stage ${stageData.label}`);
   } else {
-    // Legacy single message
     const hasContent = stageData.auto_message_text || stageData.auto_message_media_url || stageData.auto_message_image_url;
     if (!hasContent) return "";
-    preview = await sendSingleMessage(supabase, instanceName, phone, {
+    preview = await sendSingleMessage(supabase, channel, jid, phone, {
       message_type: stageData.auto_message_type,
       message_text: stageData.auto_message_text,
       media_url: stageData.auto_message_media_url,
       image_url: stageData.auto_message_image_url,
-    }, apiUrl, apiKey, customerName);
-    console.log(`Legacy auto-message sent to ${phone} for stage ${stageData.label}`);
+    }, sendCtx, customerName);
+    console.log(`[${channel.kind}] Legacy auto-message sent to ${phone} for stage ${stageData.label}`);
   }
 
   return preview;
@@ -173,6 +253,99 @@ function normalizePhone(raw: string): string {
   return digits;
 }
 
+/** Garante formato canônico `5511…@s.whatsapp.net` para o adapter. */
+function toJid(raw: string): string {
+  if (!raw) return raw;
+  if (raw.includes("@")) return raw;
+  return `${normalizePhone(raw)}@s.whatsapp.net`;
+}
+
+async function processDeal(
+  supabase: any,
+  env: ChannelEnv,
+  deal: any,
+  targetStageKey: string,
+  rejectionReason: string | null,
+  defaultOrigin: string,
+): Promise<{ moved: boolean }> {
+  const { data: stageData } = await supabase
+    .from("kanban_stages")
+    .select("*")
+    .eq("consultant_id", deal.consultant_id)
+    .eq("stage_key", targetStageKey)
+    .single();
+  if (!stageData) return { moved: false };
+
+  const { error } = await supabase.from("crm_deals").update({ stage: targetStageKey }).eq("id", deal.id);
+  if (error) { console.error("Failed to move deal:", deal.id, error); return { moved: false }; }
+
+  if (!stageData.auto_message_enabled) return { moved: true };
+  if (!isValidJid(deal.remote_jid)) return { moved: true };
+
+  const phone = deal.remote_jid.split("@")[0];
+  if (await isConsultantAIDisabled(supabase, deal.consultant_id)) return { moved: true };
+  if (await isPausedByPhone(supabase, phone, deal.consultant_id)) return { moved: true };
+
+  // Resolver canal (Evolution se houver instância, senão Whapi compartilhado)
+  const channel = await resolveChannel(supabase, deal.consultant_id, env);
+  if (!channel) {
+    console.warn(`[auto_progress] sem canal disponível consultor=${deal.consultant_id} deal=${deal.id}`);
+    await supabase.from("crm_auto_message_log").insert({
+      deal_id: deal.id,
+      consultant_id: deal.consultant_id,
+      stage_key: targetStageKey,
+      remote_jid: deal.remote_jid,
+      message_preview: null,
+      status: "no_channel",
+    });
+    return { moved: true };
+  }
+
+  // Resolver nome do cliente
+  let customerName = "";
+  let customerId = deal.customer_id || "";
+  if (deal.customer_id) {
+    const { data: customer } = await supabase.from("customers").select("name").eq("id", deal.customer_id).single();
+    customerName = customer?.name || "";
+  }
+  if (!customerName) {
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("id, name")
+      .eq("phone_whatsapp", phone)
+      .limit(1)
+      .maybeSingle();
+    customerName = customer?.name || "";
+    if (!customerId) customerId = customer?.id || "";
+  }
+
+  const jid = toJid(deal.remote_jid);
+  const preview = await sendAutoMessages(
+    supabase,
+    channel,
+    jid,
+    phone,
+    stageData,
+    deal.consultant_id,
+    customerId,
+    rejectionReason,
+    deal.deal_origin || defaultOrigin,
+    customerName,
+  );
+
+  await supabase.from("crm_auto_message_log").insert({
+    deal_id: deal.id,
+    consultant_id: deal.consultant_id,
+    stage_key: targetStageKey,
+    remote_jid: deal.remote_jid,
+    customer_name: customerName || null,
+    message_preview: preview ? `[${channel.kind}] ${preview}`.slice(0, 200) : `[${channel.kind}]`,
+    status: "sent",
+  });
+
+  return { moved: true };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -185,19 +358,30 @@ Deno.serve(async (req) => {
     });
   }
 
-
-
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const evolutionUrl = Deno.env.get("EVOLUTION_API_URL");
-    const evolutionKey = Deno.env.get("EVOLUTION_API_KEY");
+    const evolutionUrl = Deno.env.get("EVOLUTION_API_URL") || undefined;
+    const evolutionKey = Deno.env.get("EVOLUTION_API_KEY") || undefined;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Carrega whapi_token de settings (mesma fonte do whapi-webhook)
+    const { data: settingsRows } = await supabase.from("settings").select("key, value");
+    const settings: Record<string, string> = {};
+    settingsRows?.forEach((s: any) => { settings[s.key] = s.value; });
+    const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
+
+    const env: ChannelEnv = { evolutionUrl, evolutionKey, whapiToken };
+
+    if (!evolutionUrl && !whapiToken) {
+      console.warn("[auto_progress] nenhum canal configurado — só vai mover stages");
+    }
+
     const now = Date.now();
     let movedCount = 0;
 
-    // ── 0. Link customer_id on deals that are missing it ──
+    // ── 0. Linkar customer_id em deals órfãos ──
     const { data: unlinkedDeals } = await supabase
       .from("crm_deals")
       .select("id, remote_jid, consultant_id")
@@ -210,7 +394,6 @@ Deno.serve(async (req) => {
       const phone = normalizePhone(deal.remote_jid.split("@")[0]);
       if (!phone || phone.length < 10) continue;
 
-      // Try exact match first, then partial
       const { data: customer } = await supabase
         .from("customers")
         .select("id")
@@ -226,7 +409,7 @@ Deno.serve(async (req) => {
     }
     if (linkedCount > 0) console.log(`Linked ${linkedCount} deals to customers`);
 
-    // ── 1. Approved deals progression ──
+    // ── 1. Aprovados ──
     const { data: approvedDeals } = await supabase
       .from("crm_deals")
       .select("*")
@@ -238,56 +421,11 @@ Deno.serve(async (req) => {
       const targetStageKey = findTargetStage(daysSince, APPROVED_PROGRESSION);
       if (!targetStageKey || targetStageKey === deal.stage) continue;
 
-      const { data: stageData } = await supabase
-        .from("kanban_stages")
-        .select("*")
-        .eq("consultant_id", deal.consultant_id)
-        .eq("stage_key", targetStageKey)
-        .single();
-      if (!stageData) continue;
-
-      const { error } = await supabase.from("crm_deals").update({ stage: targetStageKey }).eq("id", deal.id);
-      if (error) { console.error("Failed to move deal:", deal.id, error); continue; }
-      movedCount++;
-
-      if (stageData.auto_message_enabled && isValidJid(deal.remote_jid) && evolutionUrl && evolutionKey
-        && !(await isConsultantAIDisabled(supabase, deal.consultant_id))
-        && !(await isPausedByPhone(supabase, deal.remote_jid.split("@")[0], deal.consultant_id))) {
-        let customerName = "";
-        if (deal.customer_id) {
-          const { data: customer } = await supabase.from("customers").select("name").eq("id", deal.customer_id).single();
-          customerName = customer?.name || "";
-        }
-        if (!customerName) {
-          const phone = deal.remote_jid.split("@")[0];
-          const { data: customer } = await supabase.from("customers").select("name").eq("phone_whatsapp", phone).limit(1).maybeSingle();
-          customerName = customer?.name || "";
-        }
-
-        const { data: instance } = await supabase
-          .from("whatsapp_instances")
-          .select("instance_name")
-          .eq("consultant_id", deal.consultant_id)
-          .limit(1)
-          .single();
-        if (instance) {
-          const preview = await sendAutoMessages(supabase, instance.instance_name, deal.remote_jid.split("@")[0], stageData, evolutionUrl, evolutionKey, null, deal.deal_origin || "aprovado", customerName);
-
-          // Log the auto-message
-          await supabase.from("crm_auto_message_log").insert({
-            deal_id: deal.id,
-            consultant_id: deal.consultant_id,
-            stage_key: targetStageKey,
-            remote_jid: deal.remote_jid,
-            customer_name: customerName || null,
-            message_preview: preview ? preview.slice(0, 200) : null,
-            status: "sent",
-          });
-        }
-      }
+      const r = await processDeal(supabase, env, deal, targetStageKey, null, "aprovado");
+      if (r.moved) movedCount++;
     }
 
-    // ── 2. Rejected deals progression ──
+    // ── 2. Reprovados ──
     const { data: rejectedDeals } = await supabase
       .from("crm_deals")
       .select("*")
@@ -299,53 +437,8 @@ Deno.serve(async (req) => {
       const targetStageKey = findTargetStage(daysSince, REJECTED_PROGRESSION);
       if (!targetStageKey || targetStageKey === deal.stage) continue;
 
-      const { data: stageData } = await supabase
-        .from("kanban_stages")
-        .select("*")
-        .eq("consultant_id", deal.consultant_id)
-        .eq("stage_key", targetStageKey)
-        .single();
-      if (!stageData) continue;
-
-      const { error } = await supabase.from("crm_deals").update({ stage: targetStageKey }).eq("id", deal.id);
-      if (error) { console.error("Failed to move rejected deal:", deal.id, error); continue; }
-      movedCount++;
-
-      if (stageData.auto_message_enabled && isValidJid(deal.remote_jid) && evolutionUrl && evolutionKey
-        && !(await isConsultantAIDisabled(supabase, deal.consultant_id))
-        && !(await isPausedByPhone(supabase, deal.remote_jid.split("@")[0], deal.consultant_id))) {
-        let customerName = "";
-        if (deal.customer_id) {
-          const { data: customer } = await supabase.from("customers").select("name").eq("id", deal.customer_id).single();
-          customerName = customer?.name || "";
-        }
-        if (!customerName) {
-          const phone = deal.remote_jid.split("@")[0];
-          const { data: customer } = await supabase.from("customers").select("name").eq("phone_whatsapp", phone).limit(1).maybeSingle();
-          customerName = customer?.name || "";
-        }
-
-        const { data: instance } = await supabase
-          .from("whatsapp_instances")
-          .select("instance_name")
-          .eq("consultant_id", deal.consultant_id)
-          .limit(1)
-          .single();
-        if (instance) {
-          const preview = await sendAutoMessages(supabase, instance.instance_name, deal.remote_jid.split("@")[0], stageData, evolutionUrl, evolutionKey, deal.rejection_reason, deal.deal_origin || "reprovado", customerName);
-
-          // Log the auto-message
-          await supabase.from("crm_auto_message_log").insert({
-            deal_id: deal.id,
-            consultant_id: deal.consultant_id,
-            stage_key: targetStageKey,
-            remote_jid: deal.remote_jid,
-            customer_name: customerName || null,
-            message_preview: preview ? preview.slice(0, 200) : null,
-            status: "sent",
-          });
-        }
-      }
+      const r = await processDeal(supabase, env, deal, targetStageKey, deal.rejection_reason, "reprovado");
+      if (r.moved) movedCount++;
     }
 
     const totalChecked = (approvedDeals?.length || 0) + (rejectedDeals?.length || 0);
