@@ -143,12 +143,36 @@ async function sendAudio(
   else await registerSend(supabase, channel.instanceName);
 }
 
+async function renderVoiceTemplate(
+  supabase: any,
+  voiceTemplateId: string,
+  name: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke("voice-template-stitch", {
+      body: { action: "render", template_id: voiceTemplateId, name: name || "", variables: {} },
+    });
+    if (error) {
+      console.error("[voice-template render] error:", error);
+      return null;
+    }
+    if ((data as any)?.error) {
+      console.warn("[voice-template render] returned error:", (data as any).error);
+      return null;
+    }
+    return (data as any)?.url || null;
+  } catch (e) {
+    console.error("[voice-template render] exception:", e);
+    return null;
+  }
+}
+
 async function sendSingleMessage(
   supabase: any,
   channel: ResolvedChannel,
   jid: string,
   phone: string,
-  msg: { message_type: string; message_text: string | null; media_url: string | null; image_url: string | null },
+  msg: { message_type: string; message_text: string | null; media_url: string | null; image_url: string | null; voice_template_id?: string | null },
   sendCtx: SendContext,
   customerName?: string,
 ) {
@@ -163,8 +187,16 @@ async function sendSingleMessage(
     await sendMedia(supabase, channel, jid, msg.image_url, "", "image", sendCtx);
   }
 
-  if (msgType === "audio" && msg.media_url) {
-    await sendAudio(supabase, channel, jid, msg.media_url, sendCtx);
+  // Voice template: renderiza áudio costurado com nome do lead na hora
+  let audioUrl = msg.media_url;
+  if (msgType === "audio" && msg.voice_template_id) {
+    const rendered = await renderVoiceTemplate(supabase, msg.voice_template_id, customerName || "");
+    if (rendered) audioUrl = rendered;
+    else console.warn(`[voice-template ${msg.voice_template_id}] render failed — skipping audio for ${phone}`);
+  }
+
+  if (msgType === "audio" && audioUrl) {
+    await sendAudio(supabase, channel, jid, audioUrl, sendCtx);
     if (messageText) await sendText(supabase, channel, jid, messageText, sendCtx);
   } else if (msgType === "image" && msg.media_url) {
     await sendMedia(supabase, channel, jid, msg.media_url, messageText, "image", sendCtx);
@@ -176,6 +208,7 @@ async function sendSingleMessage(
 
   return messageText || "[mídia]";
 }
+
 
 async function sendAutoMessages(
   supabase: any,
