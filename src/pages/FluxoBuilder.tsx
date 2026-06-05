@@ -260,27 +260,21 @@ export default function FluxoBuilder() {
     const prevFlowId = flowId;
     const prevMediaCounts = mediaCounts;
     try {
-      const [{ data: cons }, { data: flows }, { data: allFlows }] = await Promise.all([
+      const [{ data: cons }, { data: flows }, { data: allFlows }, { data: superAdminRes }] = await Promise.all([
         supabase.from("consultants").select("conversational_flow_enabled, name").eq("id", uid).maybeSingle(),
-        (supabase as any).from("bot_flows").select("id").eq("consultant_id", uid).eq("is_active", true).eq("variant", variant).order("created_at").limit(1),
+        (supabase as any).from("bot_flows").select("id, sync_mode").eq("consultant_id", uid).eq("is_active", true).eq("variant", variant).order("created_at").limit(1),
         supabase.from("bot_flows").select("variant").eq("consultant_id", uid).eq("is_active", true),
+        supabase.rpc("is_super_admin", { _user_id: uid }),
       ]);
 
       setConsultantName((cons as any)?.name ?? "");
+      setIsSuperAdmin(Boolean(superAdminRes));
 
-      // Isolamento estrito de variantes: a barra só lista variantes que
-      // existem de fato em `bot_flows`. Antes forçávamos "A" no Set, o que
-      // mostrava uma A fantasma para consultores nascidos em D — e o
-      // fallback de seed abaixo acabava reaproveitando o flow_id de D.
       const ex = new Set<Variant>();
       for (const r of ((allFlows as any[]) || [])) {
         if (ALL_VARIANTS.includes(r.variant)) ex.add(r.variant);
       }
 
-      // Provisionamento inicial: se o consultor não tem NENHUM fluxo,
-      // semeamos a variante padrão D (a função já filtra por variant='D').
-      // Nunca semeamos como fallback de A — isso causava o vazamento entre
-      // variantes (mexer em A alterava D).
       let seededD = false;
       if (ex.size === 0) {
         const { data: seededId } = await supabase.rpc("seed_default_camila_flow", { _consultant_id: uid });
@@ -291,25 +285,37 @@ export default function FluxoBuilder() {
       }
       setExistingVariants(ALL_VARIANTS.filter((v) => ex.has(v)));
 
-      // Se a variante pedida não existe, não inventamos flow_id. O builder
-      // mostra estado vazio e o usuário pode criar via "Adicionar variante".
       let fid: string | null = flows?.[0]?.id ?? null;
+      let mode: "public" | "custom" = (flows?.[0]?.sync_mode === "custom" ? "custom" : "public");
       if (!fid && seededD && variant === "D") {
         const { data: dFlow } = await (supabase as any)
-          .from("bot_flows").select("id")
+          .from("bot_flows").select("id, sync_mode")
           .eq("consultant_id", uid).eq("is_active", true).eq("variant", "D")
           .order("created_at").limit(1).maybeSingle();
         fid = (dFlow as any)?.id ?? null;
+        mode = (dFlow as any)?.sync_mode === "custom" ? "custom" : "public";
       }
       setFlowId(fid);
 
-      if (fid) {
-        // task 10.4 — `select *` já traz a coluna `layout` adicionada pela
-        // migration `20260601000000_add_layout_to_bot_flow_steps.sql`.
-        // Mapeamos para `layout: r.layout ?? null` para garantir tipagem
-        // correta (`StepLayout | null`) em `Step.layout`.
+      // Super-admin edita o template público — não faz sentido aplicar o modo
+      // "seguir público" para ele próprio. Forçamos custom na UI.
+      const effectiveMode: "public" | "custom" = Boolean(superAdminRes) ? "custom" : mode;
+      setSyncMode(fid ? effectiveMode : null);
+
+      // Resolve de onde vêm os steps renderizados.
+      let stepsSourceFlowId: string | null = fid;
+      if (fid && effectiveMode === "public") {
+        const { data: pub } = await (supabase as any)
+          .from("bot_flows").select("id")
+          .eq("is_public", true).eq("is_active", true).eq("variant", variant)
+          .limit(1).maybeSingle();
+        if ((pub as any)?.id) stepsSourceFlowId = (pub as any).id as string;
+      }
+      setStepsFlowId(stepsSourceFlowId);
+
+      if (stepsSourceFlowId) {
         const { data: rows, error: rowsError } = await supabase
-          .from("bot_flow_steps").select("*").eq("flow_id", fid).order("position");
+          .from("bot_flow_steps").select("*").eq("flow_id", stepsSourceFlowId).order("position");
         if (rowsError) throw rowsError;
         const parsed = (rows ?? []).map((r: any) => ({
           ...r,
@@ -319,9 +325,6 @@ export default function FluxoBuilder() {
           captures: parseCaptures(r.captures),
           fallback: parseFallback(r.fallback, r.transitions),
           auto_detect_doc_type: r.auto_detect_doc_type !== false,
-          // task 10.4 — coordenadas manuais do Modo_Diagrama. `null` indica
-          // "não posicionado manualmente"; o `useDiagramLayout` aplica
-          // dagre como fallback. Engine de runtime ignora.
           layout: r.layout ?? null,
         })) as Step[];
         setSteps(parsed);
