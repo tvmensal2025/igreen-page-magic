@@ -94,6 +94,7 @@ export function ParceirosTab({
         partner={editingPartner}
         onClose={handleCloseForm}
         onSave={handleSave}
+        onDelete={handleDelete}
       />
 
       {qrPartner && (
