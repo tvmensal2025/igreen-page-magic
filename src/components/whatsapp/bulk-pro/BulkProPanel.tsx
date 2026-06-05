@@ -3,6 +3,7 @@ import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowR
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { ContactImporter } from "../ContactImporter";
 import { sendWhatsAppMessage } from "@/services/messageSender";
