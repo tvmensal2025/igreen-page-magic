@@ -516,18 +516,18 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                 onContactsChange={setContacts}
                 instanceName={instanceName}
               />
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-secondary/20 border border-border/40 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase">Selecionados</p>
-                  <p className="text-lg font-bold text-foreground">{deduped.length}</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-xl bg-[#0d7a5f]/5 border border-[#0d7a5f]/20 p-3 text-center">
+                  <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Selecionados</p>
+                  <p className="text-2xl font-bold text-[#0d7a5f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{deduped.length}</p>
                 </div>
-                <div className="rounded-lg bg-secondary/20 border border-border/40 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase">Duplicados</p>
-                  <p className="text-lg font-bold text-yellow-400">{dupCount}</p>
+                <div className="rounded-xl bg-[#c9a84c]/10 border border-[#c9a84c]/30 p-3 text-center">
+                  <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Duplicados</p>
+                  <p className="text-2xl font-bold text-[#a8862f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{dupCount}</p>
                 </div>
-                <div className="rounded-lg bg-secondary/20 border border-border/40 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase">Inválidos</p>
-                  <p className="text-lg font-bold text-red-400">{contacts.length - validContacts.length}</p>
+                <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-center">
+                  <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Inválidos</p>
+                  <p className="text-2xl font-bold text-red-600" style={{ fontFamily: "'Outfit', sans-serif" }}>{contacts.length - validContacts.length}</p>
                 </div>
               </div>
 
