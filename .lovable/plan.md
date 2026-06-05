@@ -1,35 +1,55 @@
-## Objetivo
+# Plano — Reduzir latência do Fluxo D no Evolution
 
-No `evolution-webhook`, hoje o bot espera **100% da duração** do áudio/vídeo antes de mandar o próximo passo (áudio de 50s = 50s parado). Isso é a principal causa da percepção de lentidão (ex.: 51s entre o "1" do cliente e a próxima resposta). Vamos cortar para cadência fixa curta, igual ao modo simulador.
+Objetivo: trazer a 1ª msg após botão de ~7-52s para ~2-3s. Whapi **não muda**.
 
-## Mudança
+## Mudança 1 — `humanDelayMs` fixo em 800ms
 
-**Arquivo:** `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (linhas 85-98)
+**Arquivo:** `supabase/functions/evolution-webhook/index.ts` (linhas 2040-2051)
 
-Substituir a função `sleepForMedia` para usar tempos fixos curtos, ignorando a duração real da mídia:
+Hoje calcula `min(14000, max(3500, 3000 + chars*60))` = 3.5–14s por reply, com loop renovando "composing" a cada 2.8s.
 
-| Tipo | Antes | Depois |
-|---|---|---|
-| audio | duração real (até 120s) | **5s** |
-| video | duração real (até 90s) | **3s** |
-| image/text/outros | 1500ms | **1000ms** |
-| testMode | 0s | 0s (mantém) |
+Substituir por:
 
-Whapi **não é alterado** — mantém comportamento atual (espera duração real).
+```ts
+// Apenas 1 "digitando" curto para não parecer instantâneo
+const humanDelayMs = 800;
+try { await (sender as any).sendPresence?.(remoteJid, "composing", humanDelayMs); } catch (_) { /* noop */ }
+await new Promise((r) => setTimeout(r, humanDelayMs));
+```
 
-## Impacto esperado
+Remove o `while` de renovação (não precisa para 800ms).
 
-- Áudio de 50s: cliente recebe próximo passo em ~5s em vez de 50s.
-- Risco: cliente pode receber a próxima mensagem enquanto o áudio ainda toca. Aceito porque o WhatsApp empilha mensagens e o áudio continua disponível pra ouvir depois.
-- Aplica em **todos** os passos do bot do Evolution (welcome, fluxo D, capture_conta, capture_documento, etc.) — `sleepForMedia` é chamada em 4 lugares e todas pegam o novo valor.
+**Ganho:** 3-13s por reply de texto.
+
+## Mudança 2 — `text_delay_ms` teto 2s
+
+**Arquivo:** `supabase/functions/evolution-webhook/handlers/conversational/index.ts`
+
+Dois pontos:
+- Linha 529: `const wait = Math.max(0, Math.min(item.delayMs, 12_000));` → `Math.min(item.delayMs, 2_000)`
+- Linha 1732-1733: `if (textDelay > 0 ...) await ... textDelay;` → encapsular em `Math.min(textDelay, 2_000)`
+
+**Ganho:** até 10s em passos que tenham `text_delay_ms` alto configurado.
+
+## Mudança 3 — Reduzir `min_interval` anti-ban para 3s
+
+Hoje o `check_send_quota` (RPC) bloqueia envios por 30-45s quando 2 sends acontecem próximos. Investigar onde está o valor armazenado:
+
+1. Ler RPC `check_send_quota` (migration anterior) para descobrir tabela/coluna que guarda `min_interval`.
+2. Atualizar via migration o registro da(s) instância(s) Evolution ativas para `min_interval = 3 segundos` (ou ajustar a função RPC se for hardcoded).
+3. Manter as outras proteções (cap por hora, warmup) intactas.
+
+**Ganho:** elimina os spikes de 47s observados nos logs.
 
 ## Validação pós-deploy
 
-1. Disparar um lead novo no Evolution e cronometrar tempo entre "áudio de boas-vindas" → "próxima mensagem". Esperado: ~5s.
-2. Conferir nos logs de edge function que não há erro novo.
-3. Confirmar que Whapi segue inalterado (comparar com lead no Whapi).
+1. Lead novo no Evolution: cronometrar clique → primeira msg. Esperado: ~2-3s.
+2. Logs: confirmar ausência de `min_interval_not_elapsed` em sequência normal.
+3. Comparar com Whapi (deve continuar inalterado).
+4. Monitorar 24h para sinais de bloqueio da instância (warmup/anti-ban).
 
-## Riscos / Observações
+## Riscos
 
-- Se o áudio for crítico pra entender o próximo passo (ex.: "ouça este áudio antes de responder"), a UX pode sofrer. Recomendo monitorar a taxa de resposta nos próximos leads.
-- Reversão simples: trocar os 3 números (5000/3000/1000) de volta pra `duration*1000`.
+- **humanDelayMs 800ms**: bot fica mais "robótico". Aceito porque o ganho de UX é maior.
+- **min_interval 3s**: pequena chance de aumentar suspeita do WhatsApp. Instância `tvmensal01` já madura — risco baixo. Reversão: rodar migration inversa.
+- **text_delay_ms teto 2s**: consultor que configurou pausa longa no Flow Builder deixa de ter efeito além de 2s no Evolution (Whapi mantém).

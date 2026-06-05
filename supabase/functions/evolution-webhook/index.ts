@@ -2037,18 +2037,13 @@ Deno.serve(async (req) => {
 
     if (finalReply && !isDuplicate) {
       try {
-        // Simular humano: presença "digitando…" + delay proporcional ao tamanho da resposta.
-        const humanDelayMs = Math.min(14000, Math.max(3500, 3000 + finalReply.length * 60));
+        // 🚀 2026-06-05: humanDelayMs fixo em 800ms (era 3.5-14s proporcional).
+        // Antes o "digitando…" segurava a resposta por até 14s antes do sendText,
+        // somando ~7-52s entre clique do botão e msg chegar. Agora mostra
+        // "composing" 1x curto só para não parecer instantâneo. Whapi não muda.
+        const humanDelayMs = 800;
         try { await (sender as any).sendPresence?.(remoteJid, "composing", humanDelayMs); } catch (_) { /* noop */ }
-        let waited = 0;
-        while (waited < humanDelayMs) {
-          const slice = Math.min(2800, humanDelayMs - waited);
-          await new Promise((r) => setTimeout(r, slice));
-          waited += slice;
-          if (waited < humanDelayMs) {
-            try { await (sender as any).sendPresence?.(remoteJid, "composing", humanDelayMs - waited); } catch (_) { /* noop */ }
-          }
-        }
+        await new Promise((r) => setTimeout(r, humanDelayMs));
         let idemKey = "";
         let payloadHash = "";
         try {
