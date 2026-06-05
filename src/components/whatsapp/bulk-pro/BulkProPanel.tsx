@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowRight, ArrowLeft, Download, RotateCw, AlertTriangle, Users, MessageSquare, Settings2, Activity, PlayCircle } from "lucide-react";
+import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowRight, ArrowLeft, Download, RotateCw, AlertTriangle, Users, MessageSquare, Settings2, Activity, PlayCircle, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
