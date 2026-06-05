@@ -92,7 +92,7 @@
 
 .painel-elite .pe-heading,
 .painel-elite h1, .painel-elite h2, .painel-elite h3, .painel-elite h4 {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-family: 'Outfit', system-ui, sans-serif;
   letter-spacing: -0.01em;
   color: var(--pe-text);
 }
