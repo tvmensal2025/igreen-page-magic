@@ -1,52 +1,80 @@
-# Redesign do "Envio em Massa" (Disparo PRO)
+## Direção escolhida
+**Elite Emerald Dashboard** (v2): sidebar escura `#064e3b` 240–288px com grupos (Visão Geral · Gestão Comercial · Recursos), item ativo em pílula `bg-emerald-900/40` + texto dourado `#c9a84c` + borda âmbar; topbar branca 80–96px com saudação + breadcrumb + status pill + busca + notificações; conteúdo em bento de cards `rounded-[2rem]` com bordas `stone-200` e sombras esmeralda suaves.
 
-Aplica a direção escolhida (Split-screen + preview WhatsApp) com paleta Emerald Prestige e tipografia Outfit/Figtree, e resolve os 3 pedidos: clareza visual, botão de expandir e templates pré-criados.
+## Tokens (LOCKED — copiar verbatim)
+- Cores HSL no `index.css`: `--background 60 33% 97%` (cream), `--card 0 0% 100%`, `--primary 158 84% 16%` (#064e3b), `--primary-foreground 0 0% 100%`, `--accent 43 53% 54%` (#c9a84c), `--secondary 158 47% 26%` (#0d7a5f), `--muted 60 9% 96%`, `--border 30 6% 90%`.
+- Tipografia: Space Grotesk (headings, números KPI), DM Sans (corpo). Carregar via `<link>` no `index.html`.
+- Raios: cards `rounded-[2rem]`, pílulas `rounded-2xl`, badges `rounded-lg`.
+- Sombras: `shadow-sm` padrão, `hover:shadow-xl hover:shadow-emerald-900/5`.
 
-## O que muda
+## Arquitetura do shell
 
-### 1. Layout split-screen no `BulkProPanel`
-- Header verde-escuro (`#064e3b`) com título "Disparo PRO" (acento dourado em "Disparo") e botão **Expandir Tela** (ícone Maximize2) à direita.
-- Stepper horizontal de 4 etapas (Contatos / Mensagem / Envio / Acompanhar) com bolinhas, conector linear, ativo em dourado (`#c9a84c`), inativos translúcidos.
-- Corpo dividido em duas colunas: esquerda 1/3 (seleção de contatos), direita 2/3 (conteúdo da etapa). Em mobile vira coluna única.
-- Footer fixo com "Voltar" e "Próxima Etapa" (botão verde com seta dourada).
+```text
+src/
+  components/
+    layout/
+      AppShell.tsx          ← novo: SidebarProvider + grid sidebar+main
+      AppSidebar.tsx        ← novo: nav agrupado (3 seções, 11 itens)
+      AppTopbar.tsx         ← novo: saudação, status, busca, sino, avatar
+    modules/                ← shells por módulo (header + bento body)
+      ModuleHeader.tsx
+      ModuleBento.tsx
+```
 
-### 2. Modo Expandir
-- Estado `expanded` no `BulkProPanel`. Quando ativo, o painel sai do fluxo normal e vira `fixed inset-2 z-50` (overlay quase fullscreen) com `Esc` para fechar.
-- Ícone alterna entre Maximize2 ↔ Minimize2. Transição 200ms.
-- Aplica-se em qualquer etapa, mas é mais útil na etapa 1 (lista) e 4 (acompanhar).
+- `AppShell` envolve `Outlet` em `SidebarProvider` (shadcn `sidebar.tsx`) com `collapsible="icon"` (recolhe pra 64px mantendo ícones).
+- `AppSidebar` usa `NavLink` do `react-router-dom` pra detectar rota ativa; grupos `Visão Geral` (Dashboard, CRM, Conversão, Clientes), `Gestão Comercial` (Captação, Parceiros, Rede, WhatsApp), `Recursos` (Central de Anúncios, Links, Materiais). Item ativo aplica `bg-emerald-900/40 text-[#c9a84c] border border-[#c9a84c]/20`. Badges numéricos opcionais (ex.: Conversão "12").
+- Rodapé do sidebar: card com avatar contornado em dourado + nome + nível ("Líder Diamante") + botão logout.
+- `AppTopbar` 96px sticky: à esquerda título da rota + subtítulo dinâmico; à direita pill "Status Operacional" com pulse, hora, sino c/ dot âmbar, busca global.
 
-### 3. Lista de contatos espaçada (etapa 1)
-- Reorganizar `ContactImporter` ou criar wrapper que renderize:
-  - Busca grande (h-11) no topo com ícone Search.
-  - Tabs de fonte (Base / Extrair / Colar / Importar) menores e como segmented control.
-  - Chips de filtro (Todos / Aprovado / Reprovado / Pendente / Últimas 48h / DDD).
-  - Linhas de contato com 56px mín., avatar com iniciais, nome + telefone empilhados, badge de status à direita, checkbox visível à esquerda. Linha selecionada com `bg-primary/5` + borda esquerda dourada.
-- Painel direito da etapa 1 mostra os 3 cards de resumo (Selecionados / Duplicados / Inválidos) maiores, com ícones, e o histórico de disparos abaixo (já existente).
+## Aplicação por módulo (11 telas)
 
-### 4. Templates pré-criados (etapa 2)
-- A prop `templates: MessageTemplate[]` já chega no `BulkProPanel`. Repassar para `MessageEditor`.
-- Adicionar no topo do `MessageEditor`:
-  - Botão/Popover **"Usar template existente"** que abre um `Command`/`Dialog` listando templates do consultor com nome, prévia (2 linhas) e indicador se tem mídia.
-  - Ao escolher: preenche `text` (e `media` se o template tiver `image_url`/etc.). Pergunta de confirmação se o textarea já tem conteúdo.
-  - Botão "Salvar como template" abre dialog simples (nome) e usa a tabela existente de `message_templates` para persistir.
+Cada módulo mantém **toda lógica/dados/serviços existentes** — apenas troca o chrome e o agrupamento visual. Padrão para todas:
 
-### 5. Tokens de design
-- Em `src/index.css` (e `tailwind.config.ts`), adicionar/ajustar tokens HSL para a paleta Emerald Prestige só no escopo do Disparo PRO via classe wrapper (`.disparo-pro`) para não impactar o resto do app:
-  - `--dp-bg: 45 56% 92%` (cream)
-  - `--dp-surface: 0 0% 100%`
-  - `--dp-primary: 160 80% 26%` (deep emerald)
-  - `--dp-primary-strong: 160 87% 16%`
-  - `--dp-accent: 44 53% 54%` (dourado)
-- Tipografia: carregar Outfit + Figtree via `<link>` no `index.html` e mapear `font-heading` → Outfit, `font-body` → Figtree dentro do wrapper.
+1. `ModuleHeader` (h1 Space Grotesk + subtitle + ações primárias à direita).
+2. Faixa de 4 KPI cards (`rounded-[2rem]`, 1 card destaque escuro com glow âmbar).
+3. Bento body 2/3 + 1/3 (gráfico/lista principal + side rail com call-to-action dourado e ranking).
 
-## Arquivos afetados
-- `src/components/whatsapp/bulk-pro/BulkProPanel.tsx` — header, stepper, layout split, botão expandir, passagem de `templates` ao editor.
-- `src/components/whatsapp/bulk-pro/MessageEditor.tsx` — botão "Usar template" + dialog + "Salvar como template".
-- `src/components/whatsapp/ContactImporter.tsx` — ajustes de espaçamento/busca grande/linhas 56px (mudanças visuais, não altera lógica de seleção).
-- `src/index.css`, `tailwind.config.ts` — tokens `--dp-*` e fontes.
-- `index.html` — `<link>` Google Fonts (Outfit, Figtree).
+Mapeamento:
+- **Dashboard** (`AdminMetaAds`?/Index): KPIs Receita/Leads/Conversão/Meta, gráfico Performance Semanal, Líderes do Mês, card âmbar "Dica do Dia".
+- **CRM**: KPIs por estágio do funil; bento = kanban (col 2/3) + atividades recentes (col 1/3). Cards de lead em `rounded-2xl` com avatar e tags douradas.
+- **Conversão** (`AdminConversao`): KPIs taxa/abandono/tempo médio; gráfico funil + lista de gargalos.
+- **Clientes** (`WhatsAppClientsPage`): KPIs ativos/inativos/aprovados; tabela densa em card branco + side com filtros chips dourados.
+- **Captação**: KPIs leads/mês, custo/lead; bento com formulário de captação destacado em card escuro + histórico.
+- **Parceiros**: grid de cards de parceiros estilo bento, filtros segmentados.
+- **Rede**: árvore/lista hierárquica com indentação esmeralda + KPIs de profundidade.
+- **WhatsApp** (`ConsultantPage` aba): mantém subnav atual (Dashboard, Conversas, Atendente IA, Envio em Massa, Templates, Agendamentos, Histórico) re-skinada como segmented tabs sob o ModuleHeader; painel Disparo PRO já está no padrão.
+- **Central de Anúncios** (`AdminMetaAds`): KPIs campanhas/CTR/CPL; lista de campanhas + gráfico de gasto.
+- **Links**: grid de cards de link com ações copy/QR; KPIs cliques/conversões.
+- **Materiais**: grid bento de materiais (imagem + título + tag), filtros por categoria.
 
-## Fora de escopo
-- Não mexer em backend, edge functions, lógica de envio, persistência, agendamento, anti-bloqueio, retomada de campanha, healthcheck de instância.
-- Não alterar as abas vizinhas (Dashboard / Conversas / Atendente IA / Templates / Agendamentos / Histórico) — só o painel "Envio em Massa".
-- Não adicionar IA, analytics ou novos campos no banco.
+## Migração da navegação
+
+- Remover tabs horizontais atuais do topo do `ConsultantPage` (ou similar) e mover para o `AppSidebar`.
+- Rotas: introduzir rotas filhas sob `/admin` (ex.: `/admin/dashboard`, `/admin/crm`, `/admin/whatsapp/...`) usando `<Outlet/>` em `AppShell`. Manter backward-compat redirecionando rotas legadas.
+- Cada subnav existente (ex.: WhatsApp) vira um row de segmented tabs no `ModuleHeader` daquele módulo.
+
+## Mobile/responsive
+
+- `<lg`: sidebar vira off-canvas (`Sheet`), topbar mantém `SidebarTrigger` à esquerda.
+- KPIs colapsam de 4 → 2 → 1 col.
+- Bento body 2/3+1/3 colapsa para coluna única.
+
+## Acessibilidade / qualidade
+
+- Contraste AA: texto branco sobre `#064e3b` e dourado sobre escuro validados.
+- `aria-current="page"` no link ativo.
+- Foco visível com ring `#c9a84c`.
+- Sem cores hard-coded em componentes: tudo via tokens do `index.css` + classes utilitárias.
+
+## Escopo / fora de escopo
+
+**Inclui:** AppShell, AppSidebar, AppTopbar, tokens do index.css/tailwind.config, refator do chrome dos 11 módulos, segmented subnavs, mobile sheet.
+**Não inclui:** mudanças em queries Supabase, edge functions, lógica de envio/agendamento, autenticação, schema. Apenas camada de apresentação.
+
+## Ordem de execução
+
+1. Tokens + fontes + Tailwind config.
+2. `AppShell` + `AppSidebar` + `AppTopbar` + roteamento.
+3. Migrar Dashboard (template de referência).
+4. Aplicar template aos outros 10 módulos em paralelo, respeitando dados/componentes existentes.
+5. Polimento responsivo + revisão de contraste.
