@@ -1354,6 +1354,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const delayMs = Number(m.delay_before_ms || 0);
         if (delayMs > 0) await new Promise((r) => setTimeout(r, Math.min(delayMs, 10_000)));
 
+        // R3 (2026-06-05): HEAD-check para mídia pública evita enviar URL órfã
+        // do MinIO. Em falha 4xx/5xx, marca active=false e pula o item.
+        try {
+          const isPublic = !m.consultant_id || m.is_public === true;
+          if (isPublic) {
+            const reachable = await urlExists(String(m.url));
+            if (!reachable) {
+              console.warn(`[dispatch:${stepKey}] ⚠️ mídia pública órfã (id=${m.id}) — desativando e pulando`);
+              try { await supabase.from("ai_media_library").update({ active: false }).eq("id", m.id); } catch (_) { /* noop */ }
+              continue;
+            }
+          }
+        } catch (_) { /* HEAD é best-effort */ }
+
+
         try {
           const ok = await sendMedia(remoteJid, m.url, "", kind, Number(m.duration_sec || 0) || undefined);
           if (ok !== false) {
