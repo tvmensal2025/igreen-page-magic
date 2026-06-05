@@ -54,6 +54,21 @@ const AdminContent = () => {
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("pe:sidebar-collapsed") === "1";
+  });
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try { window.localStorage.setItem("pe:sidebar-collapsed", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+  const collapseSidebar = () => {
+    setSidebarCollapsed(true);
+    try { window.localStorage.setItem("pe:sidebar-collapsed", "1"); } catch {}
+  };
   const [activeTab, setActiveTab] = useState<AdminTabId>(() => {
     if (typeof window !== "undefined") {
       const tab = new URLSearchParams(window.location.search).get("tab");
