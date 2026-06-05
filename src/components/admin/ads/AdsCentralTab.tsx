@@ -70,28 +70,26 @@ export function AdsCentralTab({ consultantId }: Props) {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="pe-page space-y-6">
       <HardResetPhoneCard userId={consultantId} />
-      <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+
+      <header className="pe-page-header">
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground flex items-center gap-2">
-            <Megaphone className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
+          <h2 className="pe-page-title flex items-center gap-2">
+            <Megaphone className="w-5 h-5 text-[--pe-accent] shrink-0" />
             Central de Anúncios
           </h2>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            Tudo de anúncios em um só lugar: dashboard, modelos prontos, campanhas, performance e inteligência.
+          <p className="pe-page-sub">
+            Dashboard, modelos prontos, campanhas, performance e inteligência num só lugar.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
-          <SyncMetricsButton
-            consultantId={consultantId}
-            onSynced={() => setRefreshKey((k) => k + 1)}
-          />
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <SyncMetricsButton consultantId={consultantId} onSynced={() => setRefreshKey((k) => k + 1)} />
           <WalletChip consultantId={consultantId} />
-          <Button size="sm" variant="outline" onClick={() => setWizardOpen(true)} className="gap-1.5 h-8 hidden sm:inline-flex">
+          <button type="button" onClick={() => setWizardOpen(true)} className="pe-chip hidden sm:inline-flex">
             <Plus className="w-3.5 h-3.5" /> Avançado
-          </Button>
-          <Button size="sm" onClick={() => setExpressOpen(true)} className="gap-1.5 h-8 shadow-md">
+          </button>
+          <Button size="sm" onClick={() => setExpressOpen(true)} className="gap-1.5 h-8">
             <Sparkles className="w-3.5 h-3.5" /> Criar campanha
           </Button>
         </div>
@@ -104,33 +102,28 @@ export function AdsCentralTab({ consultantId }: Props) {
         onPublished={() => { setRefreshKey((k) => k + 1); setView("campaigns"); }}
       />
 
-
-
-
-
-      <div className="flex items-center gap-1 rounded-lg bg-secondary p-1 w-full sm:w-fit overflow-x-auto">
+      <div className="pe-toolbar overflow-x-auto">
         {navItems.map((n) => {
           const Icon = n.icon;
           return (
-            <Button
+            <button
               key={n.id}
-              size="sm"
-              variant={view === n.id ? "default" : "ghost"}
+              type="button"
               onClick={() => setView(n.id)}
-              className="h-8 gap-1.5 shrink-0"
+              className={`pe-chip ${view === n.id ? "is-active" : ""}`}
             >
               <Icon className="w-3.5 h-3.5" /> {n.label}
-            </Button>
+            </button>
           );
         })}
       </div>
 
       {view === "dashboard" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap p-2 rounded-xl bg-card/40 border border-border/40 backdrop-blur">
+          <div className="pe-toolbar">
             <AdAccountSwitcher userId={consultantId} value={adAccountId} onChange={setAdAccountId} />
             <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
-              <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="7">Últimos 7 dias</SelectItem>
                 <SelectItem value="15">Últimos 15 dias</SelectItem>
