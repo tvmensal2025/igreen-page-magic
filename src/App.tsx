@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog";
+import { PromptDialogProvider } from "@/components/ui/prompt-dialog";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 
 const CRMLandingPage = lazy(() => import("./pages/CRMLandingPage"));
@@ -42,6 +43,7 @@ const App = () => (
     <ThemeProvider>
       <TooltipProvider>
         <ConfirmDialogProvider>
+        <PromptDialogProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
@@ -96,6 +98,7 @@ const App = () => (
             <RechargeRequiredDialog />
           </Suspense>
         </BrowserRouter>
+        </PromptDialogProvider>
         </ConfirmDialogProvider>
       </TooltipProvider>
     </ThemeProvider>
