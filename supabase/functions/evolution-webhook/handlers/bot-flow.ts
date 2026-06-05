@@ -35,6 +35,7 @@ import {
 } from "../../_shared/utils.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
+import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
 import {
   getReplyForStep,
@@ -1194,8 +1195,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           .eq("slot_key", slotKey)
           .eq("active", true)
           .order("send_order", { ascending: true });
-        medias = ((publicRows as any[]) || []).filter((m) => !!m?.url);
-        if (medias.length > 0) console.log(`[dispatch:${stepKey}] fallback público (${medias.length} mídia(s))`);
+        // B2 (2026-06-05): NÃO usar áudio público quando consultor não subiu mídia
+        // própria. Áudio é a mídia "íntima" (voz alheia confunde lead).
+        // Imagem/vídeo público continua liberado.
+        medias = ((publicRows as any[]) || [])
+          .filter((m) => !!m?.url)
+          .filter((m) => String(m.kind).toLowerCase() !== "audio");
+        if (medias.length > 0) console.log(`[dispatch:${stepKey}] fallback público sem áudio (${medias.length} mídia(s))`);
       }
       const _flowVariant = (customer as any)?.flow_variant || 'A';
       if (_flowVariant === 'B') {
@@ -1204,18 +1210,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (_before !== medias.length) console.log(`[dispatch:${stepKey}] variant=B: removed ${_before - medias.length} audio media(s)`);
       }
 
-      const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
-      const vars: Record<string, string> = {
-        "{nome}": firstName,
-        "{{nome}}": firstName,
-        "{nome_completo}": String((customer as any).name || ""),
-        "{{nome_completo}}": String((customer as any).name || ""),
-        "{representante}": nomeRepresentante || "",
-        "{{representante}}": nomeRepresentante || "",
-        ...extraVars,
-      };
+      // B1 (2026-06-05): usar renderTemplateVars para cobrir {{valor_conta}},
+      // {{economia_range}}, {{economia_mensal}}, {{economia_anual}} além de
+      // {{nome}}/{{representante}}. Antes só nome/representante eram trocados
+      // e d_resultado vazava "R$ {{valor_conta}}" literal pro cliente.
+      const _billValue = Number((customer as any).electricity_bill_value || 0);
       const applyVars = (s: string) =>
-        Object.entries(vars).reduce((acc, [k, v]) => acc.split(k).join(v), s);
+        renderTemplateVars(s, {
+          name: (customer as any).name,
+          phone: (customer as any).phone_whatsapp,
+          cpf: (customer as any).cpf,
+          representante: nomeRepresentante,
+          valor_conta: _billValue > 0 ? _billValue : null,
+          extra: extraVars as Record<string, string>,
+        });
 
       type Item = { kind: string; text?: string; media?: any };
       const items: Item[] = medias.map((m) => ({
