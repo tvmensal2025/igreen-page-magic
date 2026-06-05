@@ -362,6 +362,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
             </Button>
           </div>
         </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
