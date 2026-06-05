@@ -4,9 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play } from "lucide-react";
+import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
@@ -122,6 +123,17 @@ export default function FluxoBuilder() {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
+  // Modo de sincronia com o template público (super-admin).
+  //  - 'public': estrutura travada — usuário só edita mídias. Render dos
+  //    steps vem do flow `is_public=true` da mesma variante. Toda mudança
+  //    do super-admin chega automaticamente.
+  //  - 'custom': fork — usuário edita livremente seus próprios steps.
+  //  - null: ainda carregando OU consultor é super-admin (público é dele).
+  const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [togglingSync, setTogglingSync] = useState(false);
+
+  const isReadOnly = syncMode === "public";
   
   const [editingVariant, setEditingVariant] = useState<Variant>("A");
   const [existingVariants, setExistingVariants] = useState<Variant[]>(["A"]);
@@ -167,6 +179,8 @@ export default function FluxoBuilder() {
       setSuggestingStepId(null);
     }
   }, [flowId]);
+
+
 
 
   // PR4 — busca/filtro da lista de steps
@@ -244,27 +258,21 @@ export default function FluxoBuilder() {
     const prevFlowId = flowId;
     const prevMediaCounts = mediaCounts;
     try {
-      const [{ data: cons }, { data: flows }, { data: allFlows }] = await Promise.all([
+      const [{ data: cons }, { data: flows }, { data: allFlows }, { data: superAdminRes }] = await Promise.all([
         supabase.from("consultants").select("conversational_flow_enabled, name").eq("id", uid).maybeSingle(),
-        (supabase as any).from("bot_flows").select("id").eq("consultant_id", uid).eq("is_active", true).eq("variant", variant).order("created_at").limit(1),
+        (supabase as any).from("bot_flows").select("id, sync_mode").eq("consultant_id", uid).eq("is_active", true).eq("variant", variant).order("created_at").limit(1),
         supabase.from("bot_flows").select("variant").eq("consultant_id", uid).eq("is_active", true),
+        supabase.rpc("is_super_admin", { _user_id: uid }),
       ]);
 
       setConsultantName((cons as any)?.name ?? "");
+      setIsSuperAdmin(Boolean(superAdminRes));
 
-      // Isolamento estrito de variantes: a barra só lista variantes que
-      // existem de fato em `bot_flows`. Antes forçávamos "A" no Set, o que
-      // mostrava uma A fantasma para consultores nascidos em D — e o
-      // fallback de seed abaixo acabava reaproveitando o flow_id de D.
       const ex = new Set<Variant>();
       for (const r of ((allFlows as any[]) || [])) {
         if (ALL_VARIANTS.includes(r.variant)) ex.add(r.variant);
       }
 
-      // Provisionamento inicial: se o consultor não tem NENHUM fluxo,
-      // semeamos a variante padrão D (a função já filtra por variant='D').
-      // Nunca semeamos como fallback de A — isso causava o vazamento entre
-      // variantes (mexer em A alterava D).
       let seededD = false;
       if (ex.size === 0) {
         const { data: seededId } = await supabase.rpc("seed_default_camila_flow", { _consultant_id: uid });
@@ -275,25 +283,37 @@ export default function FluxoBuilder() {
       }
       setExistingVariants(ALL_VARIANTS.filter((v) => ex.has(v)));
 
-      // Se a variante pedida não existe, não inventamos flow_id. O builder
-      // mostra estado vazio e o usuário pode criar via "Adicionar variante".
       let fid: string | null = flows?.[0]?.id ?? null;
+      let mode: "public" | "custom" = (flows?.[0]?.sync_mode === "custom" ? "custom" : "public");
       if (!fid && seededD && variant === "D") {
         const { data: dFlow } = await (supabase as any)
-          .from("bot_flows").select("id")
+          .from("bot_flows").select("id, sync_mode")
           .eq("consultant_id", uid).eq("is_active", true).eq("variant", "D")
           .order("created_at").limit(1).maybeSingle();
         fid = (dFlow as any)?.id ?? null;
+        mode = (dFlow as any)?.sync_mode === "custom" ? "custom" : "public";
       }
       setFlowId(fid);
 
-      if (fid) {
-        // task 10.4 — `select *` já traz a coluna `layout` adicionada pela
-        // migration `20260601000000_add_layout_to_bot_flow_steps.sql`.
-        // Mapeamos para `layout: r.layout ?? null` para garantir tipagem
-        // correta (`StepLayout | null`) em `Step.layout`.
+      // Super-admin edita o template público — não faz sentido aplicar o modo
+      // "seguir público" para ele próprio. Forçamos custom na UI.
+      const effectiveMode: "public" | "custom" = Boolean(superAdminRes) ? "custom" : mode;
+      setSyncMode(fid ? effectiveMode : null);
+
+      // Resolve de onde vêm os steps renderizados.
+      let stepsSourceFlowId: string | null = fid;
+      if (fid && effectiveMode === "public") {
+        const { data: pub } = await (supabase as any)
+          .from("bot_flows").select("id")
+          .eq("is_public", true).eq("is_active", true).eq("variant", variant)
+          .limit(1).maybeSingle();
+        if ((pub as any)?.id) stepsSourceFlowId = (pub as any).id as string;
+      }
+      
+
+      if (stepsSourceFlowId) {
         const { data: rows, error: rowsError } = await supabase
-          .from("bot_flow_steps").select("*").eq("flow_id", fid).order("position");
+          .from("bot_flow_steps").select("*").eq("flow_id", stepsSourceFlowId).order("position");
         if (rowsError) throw rowsError;
         const parsed = (rows ?? []).map((r: any) => ({
           ...r,
@@ -303,9 +323,6 @@ export default function FluxoBuilder() {
           captures: parseCaptures(r.captures),
           fallback: parseFallback(r.fallback, r.transitions),
           auto_detect_doc_type: r.auto_detect_doc_type !== false,
-          // task 10.4 — coordenadas manuais do Modo_Diagrama. `null` indica
-          // "não posicionado manualmente"; o `useDiagramLayout` aplica
-          // dagre como fallback. Engine de runtime ignora.
           layout: r.layout ?? null,
         })) as Step[];
         setSteps(parsed);
@@ -349,6 +366,60 @@ export default function FluxoBuilder() {
       setLoading(false);
     }
   }, [selectedId, steps, consultantName, existingVariants, flowId, mediaCounts]);
+
+  // Alterna o modo de sincronia com o template público.
+  // - 'custom' → 'public': apenas atualiza a coluna. Edições do consultor
+  //   ficam preservadas em `bot_flow_steps` (apenas ignoradas pelo runtime).
+  // - 'public' → 'custom': RPC `fork_flow_from_public` clona os steps
+  //   atuais do público para o flow do consultor, remapeando UUIDs.
+  const handleToggleSync = useCallback(async (nextChecked: boolean) => {
+    if (!userId || !flowId || togglingSync) return;
+    const nextMode: "public" | "custom" = nextChecked ? "public" : "custom";
+    if (nextMode === syncMode) return;
+    if (nextMode === "public") {
+      const ok = await confirm({
+        title: "Seguir o modelo público?",
+        description: "Suas edições nos passos serão ignoradas (não apagadas). As mídias que você subiu continuam funcionando. Toda mudança do super-admin passa a aparecer aqui automaticamente.",
+        confirmText: "Sim, seguir o público",
+      });
+      if (!ok) return;
+      setTogglingSync(true);
+      try {
+        const { error } = await (supabase as any)
+          .from("bot_flows")
+          .update({ sync_mode: "public" })
+          .eq("id", flowId);
+        if (error) throw error;
+        toast.success("Agora você segue o modelo público.");
+        await reload(userId, editingVariant);
+      } catch (err: any) {
+        toast.error(err?.message ?? "Não foi possível ativar o modo público");
+      } finally {
+        setTogglingSync(false);
+      }
+    } else {
+      const ok = await confirm({
+        title: "Personalizar seu fluxo?",
+        description: "Vamos copiar o modelo público para o seu fluxo. A partir daí, mudanças do super-admin não chegam mais automaticamente — você fica responsável pela sua versão.",
+        confirmText: "Sim, personalizar",
+      });
+      if (!ok) return;
+      setTogglingSync(true);
+      try {
+        const { error } = await supabase.rpc("fork_flow_from_public", {
+          _consultant_id: userId,
+          _variant: editingVariant,
+        } as any);
+        if (error) throw error;
+        toast.success("Fluxo personalizado criado a partir do público.");
+        await reload(userId, editingVariant);
+      } catch (err: any) {
+        toast.error(err?.message ?? "Não foi possível personalizar o fluxo");
+      } finally {
+        setTogglingSync(false);
+      }
+    }
+  }, [userId, flowId, syncMode, editingVariant, togglingSync, confirm, reload]);
 
   useEffect(() => {
     let alive = true;
@@ -462,12 +533,17 @@ export default function FluxoBuilder() {
 
 
   async function patchStep(id: string, patch: Partial<Step>) {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue o toggle no topo para personalizar.");
+      return;
+    }
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     const { error } = await supabase.from("bot_flow_steps").update(patch as any).eq("id", id);
     if (error) toast.error("Erro ao salvar: " + error.message);
   }
 
   async function handleDragEnd(e: DragEndEvent) {
+    if (isReadOnly) return;
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIdx = steps.findIndex((s) => s.id === active.id);
@@ -484,6 +560,10 @@ export default function FluxoBuilder() {
   async function addStep(
     initialPosition?: { x: number; y: number },
   ): Promise<Step | null> {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para adicionar passos.");
+      return null;
+    }
     if (!flowId) return null;
     const maxPos = steps.reduce((m, s) => Math.max(m, s.position), 0);
     const newKey = `passo_${Date.now().toString(36)}`;
@@ -530,6 +610,10 @@ export default function FluxoBuilder() {
   }
 
   async function duplicateStep(id: string) {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para duplicar passos.");
+      return;
+    }
     const orig = steps.find((s) => s.id === id);
     if (!orig || !flowId) return;
     const maxPos = steps.reduce((m, s) => Math.max(m, s.position), 0);
@@ -553,6 +637,10 @@ export default function FluxoBuilder() {
   }
 
   async function deleteStep(id: string) {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para remover passos.");
+      return;
+    }
     const ok = await confirm({
       title: "Remover este passo?",
       description: "As regras que apontavam para ele serão limpas.",
@@ -668,7 +756,48 @@ export default function FluxoBuilder() {
           />
         )}
 
+        {/* Modo "Seguir modelo público" — toggle exclusivo do consultor.
+            Quando ligado: estrutura é a do template do super-admin (sempre
+            atualizada). O usuário continua dono das próprias mídias. */}
+        {userId && !isSuperAdmin && syncMode !== null && (
+          <div
+            className={`border-t px-4 py-3 ${
+              isReadOnly
+                ? "bg-amber-50 dark:bg-amber-950/30"
+                : "bg-muted/30"
+            }`}
+          >
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                {isReadOnly ? (
+                  <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                ) : (
+                  <Unlock className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="text-sm font-medium">
+                  Seguir modelo público do super-admin
+                </span>
+                <Badge variant={isReadOnly ? "secondary" : "outline"} className="text-[10px]">
+                  {isReadOnly ? "Sincronizado" : "Personalizado"}
+                </Badge>
+              </div>
+              <Switch
+                checked={isReadOnly}
+                disabled={togglingSync || !flowId}
+                onCheckedChange={(v) => { void handleToggleSync(v); }}
+                aria-label="Seguir modelo público"
+              />
+              <p className="flex-1 text-xs text-muted-foreground min-w-[240px]">
+                {isReadOnly
+                  ? "Estrutura travada ao modelo público. Você só pode trocar as mídias dos passos — mudanças do super-admin aparecem aqui automaticamente. No Evolution, os botões viram lista numerada (1️⃣ 2️⃣ 3️⃣) automaticamente."
+                  : "Você está editando a sua própria versão do fluxo. Mudanças do super-admin não chegam mais automaticamente."}
+              </p>
+            </div>
+          </div>
+        )}
+
       </header>
+
 
       {/*
         task 10.2 — Render condicional Lista vs Diagrama (R1.2, R1.3, R1.5).
@@ -770,10 +899,12 @@ export default function FluxoBuilder() {
             </>
           )}
 
-          <Button variant="outline" className="w-full" onClick={() => { void addStep(); }}>
-            <Plus className="mr-1 h-4 w-4" />
-            Adicionar passo
-          </Button>
+          {!isReadOnly && (
+            <Button variant="outline" className="w-full" onClick={() => { void addStep(); }}>
+              <Plus className="mr-1 h-4 w-4" />
+              Adicionar passo
+            </Button>
+          )}
         </section>
 
         {/* Coluna esquerda — Modo_Diagrama (lazy-loaded, R1.2/R1.5) */}
