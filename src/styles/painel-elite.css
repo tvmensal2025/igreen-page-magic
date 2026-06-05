@@ -3,60 +3,96 @@
    ═══════════════════════════════════════════════════════════════ */
 
 .painel-elite {
-  /* surfaces */
-  --pe-bg: #f7f9f8;
+  /* ───── Painel tokens (Emerald Refinado — alto contraste) ───── */
+  --pe-bg: #f6f8f7;
   --pe-surface: #ffffff;
-  --pe-surface-muted: #f1f5f3;
-  --pe-surface-sunken: #eef2f0;
+  --pe-surface-muted: #eef2f0;
+  --pe-surface-sunken: #e7ece9;
 
-  /* borders */
-  --pe-border: #e6ebe8;
-  --pe-border-strong: #cdd5d0;
-  --pe-border-focus: #10b981;
+  --pe-border: #d8ded9;
+  --pe-border-strong: #b9c2bc;
+  --pe-border-focus: #059669;
 
-  /* emerald */
   --pe-emerald: #064e3b;
-  --pe-emerald-strong: #022c22;
+  --pe-emerald-strong: #033025;
   --pe-emerald-soft: #047857;
   --pe-emerald-50: rgba(6, 78, 59, 0.05);
   --pe-emerald-10: rgba(6, 78, 59, 0.10);
   --pe-emerald-20: rgba(6, 78, 59, 0.20);
 
-  /* accent + states */
-  --pe-accent: #10b981;
+  --pe-accent: #059669;
   --pe-accent-soft: #34d399;
   --pe-accent-deep: #047857;
-  --pe-accent-glow: rgba(16, 185, 129, 0.12);
+  --pe-accent-glow: rgba(5, 150, 105, 0.10);
   --pe-accent-warm: #c9a84c;
-  --pe-success: #059669;
-  --pe-warning: #d97706;
-  --pe-danger: #dc2626;
-  --pe-info: #0284c7;
+  --pe-success: #047857;
+  --pe-warning: #b45309;
+  --pe-danger: #b91c1c;
+  --pe-info: #0369a1;
 
-  /* text */
-  --pe-text: #0b1f1a;
-  --pe-text-muted: #5b6b65;
-  --pe-text-dim: #94a39d;
-  --pe-text-label: #6b7a73;
+  /* texto — alto contraste WCAG AA */
+  --pe-text: #0a1f1a;
+  --pe-text-muted: #475a52;
+  --pe-text-dim: #6b7a73;
+  --pe-text-label: #475a52;
 
-  /* radius */
   --pe-radius-sm: 8px;
   --pe-radius: 12px;
   --pe-radius-lg: 16px;
 
-  /* shadow (one only) */
   --pe-shadow-card: 0 1px 2px rgba(11, 31, 26, 0.04), 0 1px 0 rgba(11, 31, 26, 0.02);
   --pe-shadow-hover: 0 4px 12px rgba(11, 31, 26, 0.06);
 
-  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  /* ───── Override shadcn tokens DENTRO do painel (independe de .dark global) ───── */
+  --background: 150 14% 97%;
+  --foreground: 160 35% 8%;
+  --card: 0 0% 100%;
+  --card-foreground: 160 35% 8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 160 35% 8%;
+  --primary: 160 84% 24%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 150 14% 94%;
+  --secondary-foreground: 160 35% 12%;
+  --muted: 150 12% 93%;
+  --muted-foreground: 160 10% 35%;
+  --accent: 152 76% 24%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 42%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 150 10% 86%;
+  --input: 150 10% 86%;
+  --ring: 160 84% 28%;
+  --sidebar-background: 158 60% 8%;
+  --sidebar-foreground: 150 25% 92%;
+  --sidebar-primary: 160 84% 36%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 158 50% 14%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 158 40% 18%;
+  --sidebar-ring: 160 84% 36%;
+
+  font-family: 'Figtree', system-ui, -apple-system, sans-serif;
   background: var(--pe-bg);
   color: var(--pe-text);
   font-size: 14px;
 }
 
+/* Garante que TODO descendente herde o esquema claro do painel,
+   mesmo se o <html> global estiver em .dark */
+.painel-elite,
+.painel-elite * {
+  border-color: hsl(var(--border));
+}
+.painel-elite [data-state],
+.painel-elite .bg-background { background-color: hsl(var(--background)); }
+.painel-elite .bg-card { background-color: hsl(var(--card)); color: hsl(var(--card-foreground)); }
+.painel-elite .text-foreground { color: hsl(var(--foreground)); }
+.painel-elite .text-muted-foreground { color: hsl(var(--muted-foreground)); }
+
 .painel-elite .pe-heading,
 .painel-elite h1, .painel-elite h2, .painel-elite h3, .painel-elite h4 {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-family: 'Outfit', system-ui, sans-serif;
   letter-spacing: -0.01em;
   color: var(--pe-text);
 }
@@ -154,7 +190,7 @@
   flex-wrap: wrap;
 }
 .painel-elite .pe-page-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -182,7 +218,7 @@
 .painel-elite .pe-section-header h2,
 .painel-elite .pe-section-header h3,
 .painel-elite .pe-section-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 15px;
   font-weight: 600;
   color: var(--pe-text);
@@ -226,7 +262,7 @@
   color: var(--pe-text-label);
 }
 .painel-elite .pe-kpi-value {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 600;
   font-size: 26px;
   line-height: 1.1;
@@ -398,7 +434,7 @@
   text-transform: uppercase;
 }
 .painel-elite .pe-kpi {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 600;
   font-size: 26px;
   letter-spacing: -0.02em;
