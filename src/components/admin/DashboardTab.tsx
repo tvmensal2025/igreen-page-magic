@@ -11,6 +11,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
+import { useUserRole } from "@/hooks/useUserRole";
+import { adminHardResetPhone } from "@/services/resetConversation";
 import { StatCard } from "./StatCard";
 import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
@@ -55,6 +57,9 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   const [exporting, setExporting] = useState(false);
   const [resettingPerf, setResettingPerf] = useState(false);
   const [sharedAccountCount, setSharedAccountCount] = useState(0);
+  const { isAdmin } = useUserRole(userId);
+  const [resetPhone, setResetPhone] = useState("");
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("sync_cooldown_until");
@@ -212,6 +217,36 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
       toast({ title: "Erro ao resetar", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
     } finally {
       setResettingPerf(false);
+    }
+  };
+
+  const handleHardResetPhone = async () => {
+    const phone = resetPhone.trim();
+    if (!phone) {
+      toast({ title: "Informe um telefone", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`APAGAR TODOS os rastros do telefone ${phone}?\n\nIsto apaga customers, mensagens, fluxo, IA, CRM, logs e eventos relacionados. NÃO pode ser desfeito.`)) return;
+    setResetting(true);
+    try {
+      const res = await adminHardResetPhone(phone);
+      if (!res.ok) {
+        toast({ title: "Erro no reset", description: res.error, variant: "destructive" });
+        return;
+      }
+      const totals = Object.entries(res.deleted)
+        .filter(([, n]) => typeof n === "number" && n > 0)
+        .map(([k, n]) => `${k}: ${n}`)
+        .join(" · ");
+      toast({
+        title: "✅ Telefone resetado",
+        description: `${res.phoneNormalized} — ${totals || "nada a apagar"}`,
+      });
+      queryClient.invalidateQueries();
+    } catch (err: unknown) {
+      toast({ title: "Erro no reset", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    } finally {
+      setResetting(false);
     }
   };
 
