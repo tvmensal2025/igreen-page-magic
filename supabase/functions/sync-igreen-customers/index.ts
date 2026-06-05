@@ -181,11 +181,14 @@ async function syncOneConsultant(
   consultantId: string | null,
   mode: string,
 ): Promise<Record<string, unknown>> {
-  console.log(`Logging in to iGreen API for ${portalEmail}...`);
+  const emailNorm = String(portalEmail || "").trim().toLowerCase();
+  const passwordNorm = String(portalPassword || "");
+  console.log(`Logging in to iGreen API for ${emailNorm} (pwd_len=${passwordNorm.length})...`);
   const browserHeaders = {
     "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
     "Origin": "https://escritorio.igreenenergy.com.br",
     "Referer": "https://escritorio.igreenenergy.com.br/",
   };
@@ -194,7 +197,7 @@ async function syncOneConsultant(
     return await fetch(`${API_BASE}/login`, {
       method: "POST",
       headers: browserHeaders,
-      body: JSON.stringify({ email: portalEmail, password: portalPassword }),
+      body: JSON.stringify({ email: emailNorm, password: passwordNorm }),
     });
   }
 
@@ -207,10 +210,10 @@ async function syncOneConsultant(
 
   if (!loginRes.ok) {
     const errText = await loginRes.text();
-    console.error(`Login failed for ${portalEmail}: ${loginRes.status} - ${errText}`);
+    console.error(`Login failed for ${emailNorm}: ${loginRes.status} - ${errText}`);
     let friendly: string;
     if (loginRes.status === 401 || loginRes.status === 403) {
-      friendly = "Email ou senha do portal iGreen incorretos. Confira na aba Dados.";
+      friendly = "O portal iGreen recusou o login. Os dados estão salvos, mas o portal não aceitou essa combinação. Confira se a senha foi alterada no portal e atualize na aba Dados.";
     } else if (loginRes.status === 429 || errText.toLowerCase().includes("muitas tentativas")) {
       friendly = "Portal iGreen bloqueou temporariamente por excesso de tentativas. Aguarde 1 minuto e tente de novo.";
     } else {
@@ -218,7 +221,7 @@ async function syncOneConsultant(
     }
     return {
       success: false,
-      email: portalEmail,
+      email: emailNorm,
       error: friendly,
       login_status: loginRes.status,
       login_body: errText.slice(0, 200),
@@ -568,11 +571,12 @@ Deno.serve(async (req) => {
     let consultantId: string | null = null;
     let mode = "sync";
     let source = "";
+    let credsFromBody = false;
 
     try {
       const body = await req.json();
-      if (body.portal_email) portalEmail = body.portal_email;
-      if (body.portal_password) portalPassword = body.portal_password;
+      if (body.portal_email) { portalEmail = body.portal_email; credsFromBody = true; }
+      if (body.portal_password) { portalPassword = body.portal_password; credsFromBody = true; }
       if (body.consultant_id) consultantId = body.consultant_id;
       if (body.mode) mode = body.mode;
       if (body.source) source = body.source;
@@ -650,7 +654,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (consultantId) {
+    // If credentials came from request body, do NOT override with stale DB values.
+
+
+    if (consultantId && !credsFromBody) {
       const { data: cred } = await supabase
         .from("consultants")
         .select("igreen_portal_email, igreen_portal_password")
@@ -659,8 +666,10 @@ Deno.serve(async (req) => {
       if (cred?.igreen_portal_email && cred?.igreen_portal_password) {
         portalEmail = cred.igreen_portal_email;
         portalPassword = cred.igreen_portal_password;
-        console.log(`Loaded credentials from DB for consultant: ${consultantId}`);
+        console.log(`[creds] Loaded from DB for consultant: ${consultantId}`);
       }
+    } else if (credsFromBody) {
+      console.log(`[creds] Using credentials from request body (not DB)`);
     }
 
     if (!consultantId && portalEmail) {

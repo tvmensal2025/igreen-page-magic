@@ -1,58 +1,38 @@
-# Auditoria — por que não baixou clientes nem rede
+Diagnóstico encontrado:
 
-## O que encontrei no código atual
+- As credenciais estão salvas no banco para o consultor Rafael.
+- A função `sync-igreen-customers` está carregando essas credenciais salvas corretamente.
+- O erro real vem do próprio portal iGreen no login: `401 - Unauthorized action`.
+- Portanto, o problema não é que o app perdeu os dados; o portal está recusando a autenticação feita pela função.
 
-### 1. Salvar credenciais só dispara sync de CLIENTES (não a rede)
+Plano de correção:
 
-`src/components/admin/DashboardTab.tsx` → `handleSaveCredentialsAndSync` (linha 174) e `runSync` (linha 158) chamam `sync-igreen-customers` **sem `mode`**, ou seja, modo "clientes". A função tem dois modos:
+1. Ajustar o login da função iGreen
+   - Normalizar email e senha antes de enviar ao portal.
+   - Testar variações seguras do payload de login aceitas pelo portal, mantendo compatibilidade com o formato atual.
+   - Melhorar os headers para se aproximar mais da chamada real do portal.
 
-- default → `/customer-map/{id}` (clientes)
-- `mode: "sync_network"` → `/network-map` (rede)
+2. Evitar usar credencial antiga por engano
+   - Quando o usuário informar email/senha na tela, a função deve tentar primeiro os dados enviados naquele momento.
+   - Se não vierem dados no corpo da chamada, aí sim usa os dados salvos no banco.
+   - Isso evita que a sincronização use uma senha antiga salva anteriormente.
 
-A rede só é puxada quando o usuário entra na aba **Rede** e clica em "Sincronizar" (`NetworkPanel.tsx` linha 572). Por isso, no fluxo "conectei email/senha", a rede simplesmente nunca é chamada.
+3. Melhorar a mensagem na tela
+   - Se o portal retornar `401 Unauthorized action`, mostrar uma mensagem mais clara: “O portal iGreen recusou o login. Os dados estão salvos, mas o portal não aceitou essa combinação agora.”
+   - Mostrar também quando o app está usando dados salvos ou dados recém-digitados.
 
-### 2. Sync de clientes do `tvmensal01` não rodou com sucesso
+4. Adicionar logs seguros para diagnóstico
+   - Registrar qual origem da credencial foi usada: `body` ou `database`.
+   - Registrar status HTTP e resposta curta do portal.
+   - Nunca exibir nem registrar a senha.
 
-Banco confirma:
-- `tvmensal01` (consultor `953f7e48…`): tem email + senha salvos, **3 clientes**, **0 membros de rede**, nenhum com `customer_origin='igreen_sync'`.
-- `Rafael Ferreira` (já com sync funcional): 993 clientes, 56 membros.
+Arquivos envolvidos:
 
-Sem logs recentes da função `sync-igreen-customers` no Edge Logs → a chamada ou nunca chegou ao backend, ou falhou no login do portal (`api-voffice.igreenenergy.com.br/v1/login`) e o erro virou um toast genérico.
+- `supabase/functions/sync-igreen-customers/index.ts`
+- `src/components/admin/DashboardTab.tsx`
+- `src/components/admin/NetworkPanel.tsx`
 
-### 3. Mensagens de erro mascaradas
+Resultado esperado:
 
-A função retorna `{ success:false, error:"Login falhou" }` mas o frontend mostra "Erro desconhecido" em vários caminhos, e nunca exibe o status HTTP nem o corpo da resposta do portal iGreen — impossível para o usuário saber se foi senha errada, 429 (rate limit) ou token ausente.
-
----
-
-# Plano de correção
-
-## A. `sync-igreen-customers/index.ts` — diagnóstico melhor
-- No retorno de `syncOneConsultant`, incluir `login_status` (HTTP code) e `login_body` (primeiros 200 chars) quando o login falhar, para que o toast mostre a causa real.
-- Quando login retornar 401/403, devolver mensagem clara: "Email ou senha do portal incorretos" em vez de "Login falhou".
-- Quando for 429, devolver "Portal iGreen bloqueou temporariamente — tente novamente em 1 minuto".
-
-## B. `DashboardTab.tsx` — sync unificado ao salvar credenciais
-- Trocar `handleSaveCredentialsAndSync` para chamar a função **duas vezes em sequência**: primeiro `mode: undefined` (clientes), depois `mode: "sync_network"` (rede), com 3s de intervalo para evitar rate-limit.
-- Trocar `runSync` (botão "Sincronizar" do dashboard) para o mesmo fluxo combinado.
-- Toast unificado: "✅ X clientes e Y membros da rede sincronizados".
-- Em caso de erro, exibir o `data.error` real (não só "Erro desconhecido").
-
-## C. `NetworkPanel.tsx` — alinhar com o mesmo padrão
-- O botão Sincronizar da rede continua chamando só `mode:"sync_network"` (rápido), mas passa a exibir `data.error` real quando falhar.
-
-## D. Validação
-- Após o deploy, rodar manualmente o sync do consultor `tvmensal01` pelo painel e ver no Edge Logs:
-  - Se aparecer "Login failed for …: 401" → senha realmente errada (orientar o usuário).
-  - Se aparecer 429 → ajustar throttle.
-  - Se aparecer "Login OK" + clientes baixados → confirma fix.
-
-## Fora de escopo
-- Não mexer no cron mode (`source:"cron"`) — está funcionando para o Rafael.
-- Não mexer no schema do banco — `network_members`/`customers` já estão corretos.
-- Não criar novo botão na UI — só corrigir os dois fluxos existentes.
-
-## Arquivos tocados
-- `supabase/functions/sync-igreen-customers/index.ts` (mensagens de erro)
-- `src/components/admin/DashboardTab.tsx` (sync combinado clientes+rede)
-- `src/components/admin/NetworkPanel.tsx` (surfaçar erro real)
+- Se a senha estiver realmente válida para o endpoint atual do portal, a sincronização passa a baixar clientes e rede.
+- Se o portal continuar recusando, a tela vai mostrar o motivo real e ficará claro que os dados estão salvos, mas o login foi negado pelo iGreen.
