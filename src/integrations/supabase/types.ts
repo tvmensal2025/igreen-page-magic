@@ -999,6 +999,7 @@ export type Database = {
       ai_decisions: {
         Row: {
           ai_output: Json | null
+          channel: string | null
           confidence: number | null
           consultant_id: string
           created_at: string
@@ -1022,6 +1023,7 @@ export type Database = {
         }
         Insert: {
           ai_output?: Json | null
+          channel?: string | null
           confidence?: number | null
           consultant_id: string
           created_at?: string
@@ -1045,6 +1047,7 @@ export type Database = {
         }
         Update: {
           ai_output?: Json | null
+          channel?: string | null
           confidence?: number | null
           consultant_id?: string
           created_at?: string
