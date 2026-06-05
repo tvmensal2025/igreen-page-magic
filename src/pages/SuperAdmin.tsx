@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 const AIKnowledgePanel = lazy(() => import("@/components/superadmin/AIKnowledgePanel").then(m => ({ default: m.AIKnowledgePanel })));
 const AIControlPanel = lazy(() => import("@/components/superadmin/AIControlPanel").then(m => ({ default: m.AIControlPanel })));
 const AIAuditPanel = lazy(() => import("@/components/superadmin/AIAuditPanel").then(m => ({ default: m.AIAuditPanel })));
+const FaqComparativoPanel = lazy(() => import("@/components/superadmin/FaqComparativoPanel").then(m => ({ default: m.FaqComparativoPanel })));
 const ABResultsPanel = lazy(() => import("@/components/superadmin/ABResultsPanel").then(m => ({ default: m.ABResultsPanel })));
 const LearnedPatternsPanel = lazy(() => import("@/components/superadmin/LearnedPatternsPanel").then(m => ({ default: m.LearnedPatternsPanel })));
 const CrmAnalyticsTab = lazy(() => import("@/components/superadmin/CrmAnalyticsTab").then(m => ({ default: m.CrmAnalyticsTab })));
@@ -537,7 +538,9 @@ const SuperAdmin = () => {
             <AIControlPanel />
             <ABResultsPanel />
             <LearnedPatternsPanel />
+            <FaqComparativoPanel />
             <AIAuditPanel />
+
             <AIKnowledgePanel />
           </div>
         )}

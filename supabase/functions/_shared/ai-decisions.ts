@@ -22,6 +22,7 @@ export interface AiDecisionEntry {
   reasoning?: string | null;
   traceId?: string | null;
   aiOutput?: Record<string, any> | null;
+  channel?: string | null;        // "evolution" | "whapi" | null
 }
 
 function trunc(v: string | null | undefined, n: number): string | null {
@@ -59,6 +60,7 @@ export function logAiDecision(entry: AiDecisionEntry): void {
       reasoning: trunc(entry.reasoning ?? null, 1000),
       trace_id: trunc(entry.traceId ?? null, 100),
       ai_output: entry.aiOutput ?? null,
+      channel: trunc(entry.channel ?? null, 20),
     };
     sb.from("ai_decisions").insert(row).then(({ error }) => {
       if (error) console.warn("[ai-decisions] insert failed:", error.message);
