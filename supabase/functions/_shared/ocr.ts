@@ -201,28 +201,9 @@ Retorne APENAS JSON válido:
 
 Se não encontrar um campo, use "". NÃO invente dados.`;
 
-    console.log("🔍 OCR Conta - Chamando Gemini 2.5 Flash...");
+    console.log("🔍 OCR Conta - Chamando Lovable AI Gateway (google/gemini-2.5-flash)...");
     const gemRes = await withRetry(
-      () =>
-        fetchWithTimeout(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-              // ⚠️ FIX 2026-06-02: Gemini 2.5 Flash tem "thinking" ligado por default e
-              // gasta o orçamento de tokens raciocinando ANTES de emitir o JSON. Com
-              // maxOutputTokens=2048 + responseMimeType=json o output saía truncado
-              // (sem `}` final) → regex não casava → "Não extraiu JSON". Caso real:
-              // conta da DAIANE FERNANDA DA SILVA HORACIO (PDF CPFL 761KB) falhou 2x
-              // mesmo o OCR tendo extraído nome+endereço+valor corretamente. Fix:
-              // thinkingBudget=0 desliga o raciocínio interno e budget maior dá folga.
-              generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
-            }),
-            timeout: TIMEOUT_GEMINI,
-          }
-        ),
+      () => callGeminiViaLovable(prompt, img, { maxTokens: 4096, responseJson: true }),
       {
         maxAttempts: 2,
         retryOn: (e) => {
@@ -231,6 +212,7 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
         },
       }
     );
+
 
     const gemData = await gemRes.json();
     console.log("🔍 OCR Conta - Gemini status:", gemRes.status);
