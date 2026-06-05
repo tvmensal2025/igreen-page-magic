@@ -84,14 +84,12 @@ export function PartnerDashboard({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="pe-page space-y-6">
       {/* Topo — botão Parceiros (abre popup) + Novo */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight">
-            Dashboard de Parceiros
-          </h2>
-          <p className="text-sm text-muted-foreground">
+      <div className="pe-page-header">
+        <div className="min-w-0">
+          <h2 className="pe-page-title">Dashboard de Parceiros</h2>
+          <p className="pe-page-sub">
             Performance de indicação, conversão e cashback em tempo real
           </p>
         </div>
@@ -99,7 +97,7 @@ export function PartnerDashboard({
           <Button
             variant="outline"
             onClick={() => setOpenList(true)}
-            className="gap-2 relative"
+            className="gap-2 relative h-8"
           >
             <Handshake className="h-4 w-4" />
             Parceiros ({partners.length})
@@ -109,7 +107,7 @@ export function PartnerDashboard({
               </span>
             )}
           </Button>
-          <Button onClick={onNew} className="gap-2">
+          <Button onClick={onNew} className="gap-2 h-8">
             <Plus className="h-4 w-4" /> Novo Parceiro
           </Button>
         </div>

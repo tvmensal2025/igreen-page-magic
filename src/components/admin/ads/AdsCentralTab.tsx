@@ -120,10 +120,10 @@ export function AdsCentralTab({ consultantId }: Props) {
 
       {view === "dashboard" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap p-2 rounded-xl bg-card/40 border border-border/40 backdrop-blur">
+          <div className="pe-toolbar">
             <AdAccountSwitcher userId={consultantId} value={adAccountId} onChange={setAdAccountId} />
             <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
-              <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="7">Últimos 7 dias</SelectItem>
                 <SelectItem value="15">Últimos 15 dias</SelectItem>
