@@ -571,11 +571,12 @@ Deno.serve(async (req) => {
     let consultantId: string | null = null;
     let mode = "sync";
     let source = "";
+    let credsFromBody = false;
 
     try {
       const body = await req.json();
-      if (body.portal_email) portalEmail = body.portal_email;
-      if (body.portal_password) portalPassword = body.portal_password;
+      if (body.portal_email) { portalEmail = body.portal_email; credsFromBody = true; }
+      if (body.portal_password) { portalPassword = body.portal_password; credsFromBody = true; }
       if (body.consultant_id) consultantId = body.consultant_id;
       if (body.mode) mode = body.mode;
       if (body.source) source = body.source;
