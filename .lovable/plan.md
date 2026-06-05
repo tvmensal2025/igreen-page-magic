@@ -1,102 +1,106 @@
-## Achados da auditoria
+## Diagnóstico
 
-- O número `5511971254913` ainda aparece em 2 leads ativos na tabela `customers`:
-  - `d2984682-26f2-45fa-9f12-17a41f5e53b0`, consultor `953f7e48-509b-4069-9822-bdad9902be09`, com `bot_paused=true` e `bot_paused_reason=ai_no_kb_match`.
-  - `a446c6de-7815-4ea9-bfc3-c886bcabc1f8`, consultor `0c2711ad-4836-41e6-afba-edd94f698ae3`, destravado.
-- Depois do reset anterior, entrou uma nova mensagem `Oi`; por isso parece que “não resetou”, mas na prática o fluxo reiniciou e travou novamente por `ai_no_kb_match`.
-- A função atual `reset_lead_conversation` limpa bastante coisa, mas ainda deixa rastros por telefone/JID em tabelas que não dependem só de `customer_id`.
-- Rastros encontrados para esse telefone:
-  - `conversations`: 1 registro novo.
-  - `ai_agent_logs`: 1 registro.
-  - `bot_step_transitions`: 7 registros antigos por telefone, ligados a customers antigos já apagados.
-  - `crm_deals`: 2 registros.
-  - `bot_handoff_alerts`: 5 registros.
-  - `capture_field_events`: 11 registros.
-  - `outbound_message_log`: 5 registros.
-- O reset atual apaga principalmente por `customer_id`; para um hard reset real precisa também apagar por telefone normalizado e `remote_jid` (`5511971254913@s.whatsapp.net`).
+O lead `11971254913` foi recriado depois da limpeza, então ele aparece novamente no banco. O registro atual é novo:
 
-## Plano de implementação
+- `customers.id = 05b72342-afc8-4b02-8e92-5fc8318a267f`
+- `phone_whatsapp = 5511971254913`
+- `conversation_step = welcome`
+- `bot_paused = true`
+- `bot_paused_reason = ai_no_kb_match`
+- criado às `2026-06-05 02:44:14`
 
-### 1. Limpeza imediata do número informado
+O fluxo não inicia porque, no `evolution-webhook`, antes de rodar `runConversationalFlow`/`runBotFlow`, existe um gate que manda mensagens em `welcome` para `ai-agent-router` quando `ai_agent_config.enabled=true`.
 
-Executar uma limpeza completa no Supabase para `11971254913` / `5511971254913`:
+No `ai-agent-router`, o modo `ai_kb_only_mode` está ligado por padrão. Para uma mensagem simples como `Oi`, ele tenta achar resposta na base de conhecimento; se não acha, ele pausa o bot com `ai_no_kb_match`. Resultado: o lead fica em `welcome`, mas pausado, e o fluxo nunca roda.
 
-- Localizar todos os `customer_id` atuais e antigos relacionados ao telefone.
-- Apagar registros derivados em:
-  - `customer_flow_state`
-  - `customer_memory`
-  - `customer_processing_lock`
-  - `whatsapp_message_buffer`
-  - `conversations`
-  - `ai_slot_dispatch_log`
-  - `ai_decisions`
-  - `ai_agent_logs`
-  - `bot_step_transitions`
-  - `bot_handoff_alerts`
-  - `ai_usage_log`
-  - `capture_field_events`
-  - `capture_field_suggestions`
-  - `inbound_media_failures`
-  - `inbound_media_retry`
-  - `lead_insights`
-  - `outbound_message_log`
-  - `pending_outbound_media`
-  - `portal2_audit_traces`
-  - `worker_phase_logs`
-  - `facebook_capi_events`
-  - `scheduled_messages`
-  - `crm_auto_message_log`
-  - `customer_tags`
-  - `crm_deals`
-- Apagar também os `customers` atuais do telefone para que a próxima mensagem recrie o lead do zero.
-- Validar com uma consulta final mostrando zero rastros relevantes.
+Também encontrei que o consultor da instância `igreen-953f7e48509b` (`953f7e48-509b-4069-9822-bdad9902be09`) tem:
 
-### 2. Corrigir a função de reset no banco
+- `ai_agent_config.enabled = true`
+- `flow_reliability_v2 = off`
+- fluxo D ativo com 15 passos
 
-Criar/ajustar uma RPC de hard reset, por exemplo `admin_hard_reset_phone`, para uso temporário no painel:
+Com `flow_reliability_v2=off`, a detecção de “tem passo de abertura no fluxo” só loga, mas não impede a IA de tomar a primeira mensagem. Por isso até números novos travam.
 
-- Entrada: telefone bruto (`11971254913`, `+55...`, etc.).
-- Normalização automática para `55DDDNÚMERO` e `remote_jid`.
-- Permissão somente para `admin` ou `super_admin`.
-- Varredura por:
-  - `customer_id` atual.
-  - `customer_id` antigo encontrado em logs por telefone.
-  - `phone` normalizado.
-  - `remote_jid`.
-- Retorno com contagem por tabela apagada.
-- Registro em `admin_audit_log` via função existente quando possível.
+## Plano de correção
 
-### 3. Adicionar botão temporário no dashboard
+### 1. Destravar imediatamente o número de teste
 
-Adicionar no `DashboardTab` um bloco discreto de manutenção temporária:
+Limpar novamente o `11971254913`/`5511971254913`, incluindo o registro novo criado depois do último reset:
 
-- Campo para digitar o telefone.
-- Botão perigoso: `Reset geral do telefone`.
-- Confirmação nativa antes de apagar.
-- Chamada para a RPC nova.
-- Toast com resumo das tabelas limpas.
-- Invalidar caches do dashboard/CRM/WhatsApp após sucesso.
-- Exibir somente para usuário admin/super-admin, para evitar que consultores comuns apaguem leads por engano.
+- `customers`
+- `conversations`
+- `ai_agent_logs`
+- `bot_handoff_alerts`
+- `crm_deals`
+- `webhook_rate_limit`
+- demais tabelas já cobertas pela função de hard reset
 
-### 4. Teste e validação
+Depois validar com consulta final mostrando zero registros para as variações:
 
-Após implementar:
+- `11971254913`
+- `5511971254913`
+- `+5511971254913`
+- `5511971254913@s.whatsapp.net`
 
-- Rodar a limpeza do número `11971254913`.
-- Consultar novamente as tabelas principais para confirmar zero rastros.
-- Conferir que o botão aparece no dashboard para admin.
-- Confirmar que a RPC recusa usuário sem permissão.
+### 2. Corrigir a causa: fluxo deve vencer a IA na abertura
 
-## Arquivos que serão alterados
+Ajustar o `evolution-webhook` para que, em mensagens de abertura (`welcome`, `menu_inicial` ou sem step), se o consultor tiver fluxo ativo com primeiro passo configurado, o webhook rode o fluxo determinístico/conversacional em vez de chamar `ai-agent-router`.
 
-- `src/components/admin/DashboardTab.tsx`
-  - Adicionar UI temporária do hard reset.
+Na prática, mudar a regra atual:
+
+```text
+IA vence a abertura quando flow_reliability_v2=off
+```
+
+para:
+
+```text
+Fluxo ativo do consultor sempre vence a abertura
+IA só entra depois, em etapas conversacionais não iniciais, quando aplicável
+```
+
+Isso evita que `Oi` caia no KB-only e pause antes do roteiro começar.
+
+### 3. Ajustar segurança de fallback do AI KB-only
+
+No `ai-agent-router`, manter o comportamento de handoff para perguntas reais sem match, mas não pausar automaticamente em saudações curtas de abertura como:
+
+- `oi`
+- `olá`
+- `bom dia`
+- `boa tarde`
+- `boa noite`
+
+Se uma saudação chegar ao router por qualquer motivo, ele deve retornar `skipped/opening_greeting` ou uma resposta segura sem pausar, para não quebrar o funil.
+
+### 4. Tornar o botão de reset confiável para você ver o resultado
+
+No botão temporário do dashboard:
+
+- Após chamar `admin_hard_reset_phone`, fazer uma verificação de rastros para o telefone.
+- Se ainda existir customer/log/deal, mostrar toast de erro com “ainda restam X registros”.
+- Se zerou, mostrar “telefone zerado confirmado”.
+
+Isso impede o cenário atual: o botão informa sucesso, mas logo depois o número reaparece porque entrou nova mensagem e o sistema pausou de novo.
+
+### 5. Validar com dados reais
+
+Depois de implementar:
+
+1. Limpar `11971254913`.
+2. Confirmar zero rastros.
+3. Enviar `Oi` desse número.
+4. Confirmar que o lead novo fica `bot_paused=false`.
+5. Confirmar que `conversation_step` avança pelo fluxo D em vez de ficar em `welcome` com `ai_no_kb_match`.
+
+## Arquivos envolvidos
+
+- `supabase/functions/evolution-webhook/index.ts`
+- `supabase/functions/ai-agent-router/index.ts`
 - `src/services/resetConversation.ts`
-  - Adicionar função frontend para chamar a RPC por telefone.
-- Banco Supabase
-  - Criar/ajustar RPC segura para hard reset por telefone.
-  - Nenhuma nova tabela será criada.
+- `src/components/admin/DashboardTab.tsx`
+- Supabase: executar uma limpeza de dados do telefone específico após o ajuste
 
-## Observação importante
+## Observação
 
-Esse botão será propositalmente temporário e perigoso. A implementação deve deixar isso claro no texto do botão e na confirmação, mas restringir por permissão no banco é o ponto principal de segurança.
+O reset em si apaga. O que está dando a sensação de que “não resetou” é que uma nova mensagem recria o lead e ele trava de novo no mesmo motivo (`ai_no_kb_match`). A correção principal é impedir a IA KB-only de interceptar a abertura quando existe fluxo ativo.
