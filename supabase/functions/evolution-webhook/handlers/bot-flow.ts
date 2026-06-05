@@ -82,19 +82,17 @@ function trigramSim(a: string, b: string): number {
 }
 
 // ── Sleep based on media duration (lets audio finish before sending video) ──
-async function sleepForMedia(kind: string, durationSec?: number | null): Promise<void> {
+async function sleepForMedia(kind: string, _durationSec?: number | null): Promise<void> {
   if (isTestMode()) return; // 🧪 modo teste: zero espera entre mídias
-  if (kind === "audio") {
-    const ms = Math.min(((durationSec && durationSec > 0) ? durationSec : 90) * 1000, 120_000);
-    await new Promise((r) => setTimeout(r, ms));
-    return;
-  }
-  if (kind === "video") {
-    const ms = Math.min(((durationSec && durationSec > 0) ? durationSec : 30) * 1000, 90_000);
-    await new Promise((r) => setTimeout(r, ms));
-    return;
-  }
-  await new Promise((r) => setTimeout(r, 1500));
+  // 🚀 2026-06-05: cadência fixa curta (ignora duração real da mídia).
+  // Antes esperava 100% do áudio/vídeo (até 120s/90s), causando latência
+  // percebida enorme (ex.: áudio de 50s = 50s parado entre passos).
+  // WhatsApp empilha mensagens; áudio continua disponível pra ouvir depois.
+  // Whapi MANTÉM comportamento antigo — só Evolution muda.
+  let ms = 1000;
+  if (kind === "audio") ms = 5000;
+  else if (kind === "video") ms = 3000;
+  await new Promise((r) => setTimeout(r, ms));
 }
 
 // ── Resolve o destino EXPLÍCITO configurado no capture_conta após o SIM ──
