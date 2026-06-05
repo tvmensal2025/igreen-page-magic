@@ -47,6 +47,7 @@ function wrapSendFn(
   opts: GuardedSenderOpts,
   kind: string,
   burstState: { until: number },
+  counterRef: { count: number },
 ): AnyFn | undefined {
   if (typeof fn !== "function") return fn;
   return async (...args: any[]) => {
@@ -77,11 +78,13 @@ function wrapSendFn(
       if (ok) {
         await registerSend(opts.supabase, opts.instanceName);
         burstState.until = Date.now() + BURST_TTL_MS;
+        try { counterRef.count++; } catch { /* noop */ }
       }
     }
     return result;
   };
 }
+
 
 /**
  * Embrulha um sender (objeto `{ sendText, sendMedia, sendButtons, ... }`)
@@ -99,12 +102,23 @@ export function wrapSenderWithGuard<T extends Record<string, any>>(
   // wrapper. Como o wrapper é criado uma vez por invocação do webhook,
   // a janela cobre apenas o turno corrente.
   const burstState = { until: 0 };
+  // Contador determinístico de envios bem-sucedidos neste turno. Lido
+  // pela rede de segurança em evolution-webhook/index.ts para decidir se
+  // o handler já emitiu algo, sem depender da flag manual __inline_sent
+  // nem de uma consulta racy em `conversations`.
+  const counterRef = { count: 0 };
   const wrapped: any = { ...sender };
-  wrapped.sendText = wrapSendFn(sender.sendText, opts, "text", burstState);
-  wrapped.sendMedia = wrapSendFn(sender.sendMedia, opts, "media", burstState);
-  wrapped.sendButtons = wrapSendFn(sender.sendButtons, opts, "buttons", burstState);
-  wrapped.sendAudio = wrapSendFn(sender.sendAudio, opts, "audio", burstState);
+  wrapped.sendText = wrapSendFn(sender.sendText, opts, "text", burstState, counterRef);
+  wrapped.sendMedia = wrapSendFn(sender.sendMedia, opts, "media", burstState, counterRef);
+  wrapped.sendButtons = wrapSendFn(sender.sendButtons, opts, "buttons", burstState, counterRef);
+  wrapped.sendAudio = wrapSendFn(sender.sendAudio, opts, "audio", burstState, counterRef);
   // sendTextDetailed é chamado internamente por sendText → não embrulha
   // (caso contrário, contaríamos 2x).
+  Object.defineProperty(wrapped, "__turnOutbound", {
+    get() { return counterRef.count; },
+    enumerable: false,
+    configurable: false,
+  });
   return wrapped as T;
 }
+
