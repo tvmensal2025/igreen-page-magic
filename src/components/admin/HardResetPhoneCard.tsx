@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { useUserRole } from "@/hooks/useUserRole";
-import { useAuth } from "@/contexts/AuthContext";
 import {
   adminHardResetPhone,
   adminHardResetPhoneTraceCounts,
@@ -22,9 +22,15 @@ interface HardResetPhoneCardProps {
  * Para remover do app, basta deletar este arquivo e seus imports/usos.
  */
 export function HardResetPhoneCard({ userId, className }: HardResetPhoneCardProps) {
-  const { user } = useAuth();
-  const effectiveUserId = userId ?? user?.id ?? "";
-  const { isAdmin } = useUserRole(effectiveUserId);
+  const [authUserId, setAuthUserId] = useState<string>(userId ?? "");
+  useEffect(() => {
+    if (userId) {
+      setAuthUserId(userId);
+      return;
+    }
+    supabase.auth.getUser().then(({ data }) => setAuthUserId(data.user?.id ?? ""));
+  }, [userId]);
+  const { isAdmin } = useUserRole(authUserId);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [resetPhone, setResetPhone] = useState("11971254913");
