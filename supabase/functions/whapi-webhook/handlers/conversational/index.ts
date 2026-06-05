@@ -1488,6 +1488,30 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         }
         const btnList = stepButtons.slice(0, 3).map((b, i) => `${i + 1}) ${b.title}`).join("\n");
         const nudge = `Posso te ajudar com qualquer uma destas opções 👇\n\n${btnList}\n\nÉ só tocar no botão ou responder com o número 🙂`;
+        // 🛡️ Anti-duplicação: se o mesmo nudge saiu pro lead há <30s, não reenvia.
+        try {
+          const since = new Date(Date.now() - 30_000).toISOString();
+          const { data: dup } = await ctx.supabase
+            .from("conversations")
+            .select("id")
+            .eq("customer_id", ctx.customer.id)
+            .eq("message_direction", "outbound")
+            .ilike("message_text", "Posso te ajudar com qualquer uma%")
+            .gte("created_at", since)
+            .limit(1)
+            .maybeSingle();
+          if (dup) {
+            console.log(`[conversational/whapi] ⏭️ nudge confused suprimido (já enviado <30s)`);
+            return _finalize(stepKey, {
+              reply: "",
+              updates: {
+                conversation_step: stepKey,
+                [refusalCountKey]: prevRefusals + 1,
+                ...restoreDetourUpdates,
+              },
+            });
+          }
+        } catch (_e) { /* fail-open */ }
         return _finalize(stepKey, {
           reply: nudge,
           updates: {
