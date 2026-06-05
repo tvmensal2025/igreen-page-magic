@@ -3,6 +3,7 @@ import { Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -44,12 +45,13 @@ export function HardResetPhoneCard({ userId, className }: HardResetPhoneCardProp
       toast({ title: "Informe um telefone", variant: "destructive" });
       return;
     }
-    if (
-      !confirm(
-        `APAGAR TODOS os rastros do telefone ${phone}?\n\nIsto apaga customers, mensagens, fluxo, IA, CRM, logs e eventos relacionados. NÃO pode ser desfeito.`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Apagar todos os rastros do telefone ${phone}?`,
+      description: "Isto apaga customers, mensagens, fluxo, IA, CRM, logs e eventos relacionados. NÃO pode ser desfeito.",
+      confirmText: "Apagar tudo",
+      tone: "danger",
+    });
+    if (!ok) return;
     setResetting(true);
     try {
       const res = await adminHardResetPhone(phone);
