@@ -1496,16 +1496,41 @@ Deno.serve(async (req) => {
       if (_looksLikeFlowStep && !_isCadastroStepGuard) {
         try {
           const variant = String((customer as any)?.flow_variant || "A").toUpperCase();
-          const { data: stepLookup } = await supabase
-            .from("bot_flow_steps")
-            .select("id, flow_id, is_active, bot_flows!inner(variant, is_active, consultant_id)")
-            .or(`id.eq.${_stepRaw},step_key.eq.${_stepRaw}`)
+          // Aceita steps do fluxo do consultor OU do template PÚBLICO da mesma
+          // variante quando o consultor está em sync_mode='public' (resolveFlowId
+          // redireciona o roteamento para o público, então conversation_step
+          // pode apontar para UUIDs de steps do template).
+          const { data: ownFlow } = await supabase
+            .from("bot_flows")
+            .select("id, sync_mode")
+            .eq("consultant_id", instanceData.consultant_id)
+            .eq("variant", variant)
             .eq("is_active", true)
-            .eq("bot_flows.is_active", true)
-            .eq("bot_flows.consultant_id", instanceData.consultant_id)
-            .eq("bot_flows.variant", variant)
-            .limit(1);
-          const found = Array.isArray(stepLookup) && stepLookup.length > 0;
+            .maybeSingle();
+          const allowedFlowIds: string[] = [];
+          if ((ownFlow as any)?.id) allowedFlowIds.push((ownFlow as any).id);
+          const ownSync = String((ownFlow as any)?.sync_mode ?? "public").toLowerCase();
+          if (!ownFlow || ownSync === "public") {
+            const { data: pubFlow } = await supabase
+              .from("bot_flows")
+              .select("id")
+              .eq("is_public", true)
+              .eq("is_active", true)
+              .eq("variant", variant)
+              .maybeSingle();
+            if ((pubFlow as any)?.id) allowedFlowIds.push((pubFlow as any).id);
+          }
+          let found = false;
+          if (allowedFlowIds.length > 0) {
+            const { data: stepLookup } = await supabase
+              .from("bot_flow_steps")
+              .select("id")
+              .or(`id.eq.${_stepRaw},step_key.eq.${_stepRaw}`)
+              .eq("is_active", true)
+              .in("flow_id", allowedFlowIds)
+              .limit(1);
+            found = Array.isArray(stepLookup) && stepLookup.length > 0;
+          }
           if (!found) {
             console.warn(
               `🩹 [step-mismatch-cure] customer=${customer.id} step="${_stepRaw}" ` +
