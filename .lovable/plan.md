@@ -1,148 +1,89 @@
-# Plano: paridade Evolution × Whapi (sem tocar superadmin)
 
-Mexe apenas em arquivos do `evolution-webhook`. O `whapi-webhook` (superadmin), `_shared/step-media-order.ts` e `_shared/notify-consultant.ts` ficam intactos.
+# Migrar OCR para Lovable AI Gateway
 
----
+## Objetivo
+Trocar as chamadas diretas a `generativelanguage.googleapis.com` (Gemini key própria, hoje com créditos zerados) por chamadas ao **Lovable AI Gateway** (`https://ai.gateway.lovable.dev/v1/chat/completions`) usando `LOVABLE_API_KEY`. Mesmo modelo (`google/gemini-2.5-flash`), mesma qualidade, billing centralizado.
 
-## Item 1 — Reduzir o "digitando…" entre mensagens
+## Escopo (somente `supabase/functions/_shared/ocr.ts`)
+Todas as 6 chamadas Gemini dentro de `ocr.ts`:
 
-**Arquivo**: `supabase/functions/evolution-webhook/handlers/conversational/index.ts`
+1. `ocrContaEnergia` (linha ~145) — OCR de conta de energia
+2. `ocrDocumento` (linha ~385) — OCR de RG/CNH frente+verso
+3. Helper `extractTextFromImage` (linha ~511) — fallback de texto
+4. Helper `gemFocado` (linha ~549) — usado por:
+   - `ocrRgFocado`
+   - `ocrCpfFocado`
+   - `ocrNomeFocado`
+   - `ocrNascimentoFocado`
 
-### Como está hoje
+Nada fora de `ocr.ts` muda. Callers continuam passando `geminiApiKey` — vamos manter a assinatura, mas internamente preferir `LOVABLE_API_KEY` (env), com fallback para a key recebida se a env não existir.
 
-Áudio de 14s → bot espera `0,9 × 14s + 600ms = 13.2s` → manda vídeo de 15s → espera `0,9 × 15s + 600ms = 14.1s` → manda texto.
-Total de "digitando…" em 1 áudio + 1 vídeo + 1 texto: **~28 segundos**.
+## Mudanças técnicas
 
-```text
-[áudio 14s]  →  digitando 13.2s  →  [vídeo 15s]  →  digitando 14.1s  →  [texto]
+### 1. Novo helper interno `callLovableVision`
+Centraliza a chamada ao gateway no formato OpenAI:
+
+```ts
+async function callLovableVision(opts: {
+  prompt: string;
+  image: { mime: string; b64: string };
+  maxTokens?: number;
+  responseJson?: boolean;
+}): Promise<{ ok: boolean; status: number; text: string; raw: any }> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY") ?? "";
+  const body: any = {
+    model: "google/gemini-2.5-flash",
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: opts.prompt },
+        { type: "image_url", image_url: { url: `data:${opts.image.mime};base64,${opts.image.b64}` } },
+      ],
+    }],
+    temperature: 0,
+    max_tokens: opts.maxTokens ?? 4096,
+  };
+  if (opts.responseJson) body.response_format = { type: "json_object" };
+
+  const res = await withRetry(
+    () => fetchWithTimeout("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GEMINI,
+    }),
+    { maxAttempts: 2, retryOn: (e) => /429|500|502|503|timeout|abort/.test(String(e)) },
+  );
+
+  const raw = await res.json().catch(() => ({}));
+  const text = raw?.choices?.[0]?.message?.content ?? "";
+  return { ok: res.ok, status: res.status, text, raw };
+}
 ```
 
-Linhas que produzem isso:
-- `sleepForMedia` (222-235): piso 600ms (texto/imagem) / 800ms (áudio/vídeo), cap 5s.
-- `sendStepMedia` (596-612): fórmula `min(0,9·duração_anterior + 600ms, 12s)`.
+### 2. Substituir as 6 chamadas
+Cada uma deixa de montar `contents/parts/inline_data` e passa a chamar `callLovableVision`. Tratamento de erro mantém a mesma forma (`{ sucesso, erro }`), mas mensagens 402/429 do gateway são propagadas — quando aparecerem, indicam créditos do workspace, não do Google.
 
-### Como vai ficar
+### 3. Variável `geminiApiKey` nas assinaturas
+**Mantida** para não tocar nos callers (`bot-flow.ts`, `whapi-webhook`, etc.). O parâmetro vira ignorado quando `LOVABLE_API_KEY` está presente (que é sempre, no Lovable Cloud). Pequeno comentário no topo de cada função explicando.
 
-Pausas curtas e fixas. WhatsApp já entrega na ordem; não precisa esperar a duração inteira.
+### 4. Garantir secret
+Validar que `LOVABLE_API_KEY` existe via `fetch_secrets`. Se faltar, criar com `lovable_api_key--create` (não precisa pedir ao usuário).
 
-| Item anterior | Pausa antes do próximo |
-|---|---|
-| texto / imagem | 400ms |
-| áudio / vídeo | 900ms |
-| `delay_before_ms` configurado | `min(cfg, 4000ms)` |
+## O que NÃO muda
+- Nenhuma alteração no `evolution-webhook/handlers/bot-flow.ts`.
+- Nenhuma alteração no fluxo do `whapi-webhook`.
+- Nenhuma alteração nos prompts (mesma extração, mesmo JSON de saída).
+- Variável de ambiente `GEMINI_API_KEY` permanece configurada (não removo) — vira fallback inerte.
 
-`sleepForMedia` passa a usar piso 400ms e cap 2500ms.
+## Validação pós-deploy
+1. Deploy de `evolution-webhook` e `whapi-webhook` (importam `_shared/ocr.ts`).
+2. Enviar uma conta de luz real pelo WhatsApp e checar logs:
+   - Esperado: `🔍 OCR Conta - Imagem OK ...` seguido de status 200 e `sucesso: true`.
+   - Se aparecer 402: créditos do workspace Lovable esgotados (avisar usuário).
+3. Repetir com PDF e com foto de RG.
 
-```text
-[áudio 14s]  →  900ms  →  [vídeo 15s]  →  900ms  →  [texto]
-```
-
-Total: **~1.8 segundos** entre mensagens. O lead segue sentindo a digitação humana (presença renovada por `withTypingPresence`, que continua intacta), mas sem o gap eterno.
-
----
-
-## Item 2 — Lead que diz "não quero" ou fica confuso
-
-**Arquivo**: `supabase/functions/evolution-webhook/handlers/conversational/index.ts` (mesmo do #1)
-
-### Como está hoje
-
-Lead recebe um passo com botões `[Quero simular] [Tenho dúvida] [Falar com humano]` e digita "ah não, deixa pra lá".
-
-1. Evolution chama `matchButtonIntent` (linha 1273).
-2. Se a IA não casar com nenhum botão → cai no bloco de baixa confiança (linhas 1281-1312) → pausa silenciosa: `reply: ""` + `bot_paused: true`.
-3. **Lead recebe SILÊNCIO**. Não sabe se o bot quebrou, se foi ignorado, se deve esperar.
-
-Mesmo cenário com "humm, não entendi, repete?": vai pra handoff direto, sem reenviar o menu.
-
-### Como vai ficar
-
-Espelha o padrão do whapi (linhas 1430-1545), adaptado para o Evolution (sem `sendButtons` nativo — usa lista numerada):
-
-**A. Lead recusou** (`intent.refused`):
-```
-Tranquilo, João! Quando quiser voltar é só me mandar uma mensagem. Tô por aqui 💚
-```
-+ `bot_paused = true`, motivo `lead_refused_softpause`. Consultor vê no CRM.
-
-**B. Lead confuso** (`intent.confused`), 1ª e 2ª vez:
-```
-Posso te ajudar com qualquer uma destas opções 👇
-
-1) Quero simular
-2) Tenho dúvida
-3) Falar com humano
-
-É só tocar no número ou me dizer qual 🙂
-```
-Contador `ai_followups_count` (já existe no schema) incrementa.
-
-**C. Lead confuso pela 3ª vez**:
-```
-Vou chamar alguém do time pra te ajudar — em instantes te respondem por aqui 🙌
-```
-+ `notifyHandoff(consultantId, lead, msg, "confused_after_retries")` → consultor recebe alerta no WhatsApp.
-+ `bot_paused = true`.
-
-**D. Passo de captura (foto de conta) com recusa**:
-```
-Tranquilo, João! Quando quiser dar continuidade é só me mandar a foto da conta. Tô por aqui 💚
-```
-+ pausa.
-
-### Garantia de não quebrar
-
-- `notifyHandoff` tem dedupe interno (5 min em memória + 30 min persistido) → impossível enviar dois alertas seguidos pro consultor mesmo se o lead spamar.
-- Inserido **antes** do bloco existente de baixa confiança (linha 1281), preservando o caminho atual para casos não cobertos.
-- Usa a assinatura correta `(consultantId, lead, lastQuestion, reason)` — mesma do whapi:1470, validada na auditoria.
-
----
-
-## Item 3 — Template com `{{representante}}` vazio
-
-**Arquivo**: `supabase/functions/evolution-webhook/handlers/conversational/templates.ts`
-
-### Como está hoje
-
-Quando o consultor não tem nome cadastrado (`vars.representante` vazio ou nulo), o texto sai:
-
-```
-Bom dia! Eu sou o assistente do consultor.
-```
-
-E quando o template tem markdown WhatsApp em volta da variável (`do *{{representante}}*`), com variável vazia sai:
-
-```
-Bom dia! Eu sou o assistente do * *
-```
-
-(asterisco órfão, fica feio).
-
-### Como vai ficar
-
-Mesmo comportamento do whapi:
-- Fallback de `representante` muda de `"consultor"` para `"iGreen Energy"`.
-- Após render, aplica 3 regex de limpeza: `\*\s*\*` → "", `_\s*_` → "", `~\s*~` → "".
-
-Resultado:
-```
-Bom dia! Eu sou o assistente da iGreen Energy.
-```
-
-Mudança: 6 linhas. Sem risco — é cópia literal do whapi.
-
----
-
-## Verificação após deploy
-
-1. Enviar "Oi" para um lead do `tvmensal01@gmail.com` (consultor de teste).
-2. Conferir no painel `/admin/whatsapp` que o intervalo entre áudio → vídeo → texto está em ~1-2s (não mais 25s).
-3. Responder "não quero" no passo com botões → conferir despedida amigável + `bot_paused`.
-4. Responder "hã?" três vezes seguidas → conferir 2 nudges com menu numerado e depois handoff.
-5. Conferir que o whapi (superadmin) continua idêntico — mandar "Oi" para o número do superadmin e validar timing/texto inalterados.
-
-## Fora do escopo (não vamos mexer agora)
-
-- Saudação no meio do funil — risco de quebrar passos sem template; revisitar só se houver reclamação.
-- Trocar `answerFaqWithAI` por `conversational-orchestrator` — custo de IA sobe 3-5×; sem evidência de problema.
-- Bug latente em `whapi-webhook/.../index.ts:1618` (`notifyHandoff` com argumentos errados) — pré-existente no superadmin; registrar para arrumar em outro plano.
+## Risco
+**Baixo.** Mudança isolada em 1 arquivo, mantém assinaturas públicas, mesmo modelo subjacente. Rollback = reverter `ocr.ts`. Tempo estimado: ~15 min de edição + deploy.
+</content>
+</invoke>

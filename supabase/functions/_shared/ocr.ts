@@ -4,6 +4,69 @@ import { captureError } from "./sentry.ts";
 import { isMockMode, mockBillOcr, mockDocOcr, shouldForceOcrFail, isTestMode } from "./test-mode.ts";
 import { normalizeDistribuidora, isHoldingName } from "./distribuidoras.ts";
 
+// ─── Lovable AI Gateway shim ────────────────────────────────────────
+// Substitui chamadas diretas a generativelanguage.googleapis.com pelo
+// Lovable AI Gateway (mesmo modelo google/gemini-2.5-flash, billing
+// centralizado via LOVABLE_API_KEY). O retorno é moldado como o payload
+// nativo do Gemini (`candidates[0].content.parts[0].text`) para que o
+// código de parsing existente continue funcionando sem alteração.
+type GeminiLikeResponse = {
+  ok: boolean;
+  status: number;
+  json: () => Promise<any>;
+};
+
+async function callGeminiViaLovable(
+  prompt: string,
+  img: { mime: string; b64: string },
+  opts: { maxTokens?: number; responseJson?: boolean } = {},
+): Promise<GeminiLikeResponse> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY") ?? "";
+  if (!apiKey) {
+    return {
+      ok: false,
+      status: 500,
+      json: async () => ({ error: { message: "LOVABLE_API_KEY ausente" } }),
+    };
+  }
+  const body: Record<string, unknown> = {
+    model: "google/gemini-2.5-flash",
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: `data:${img.mime};base64,${img.b64}` } },
+      ],
+    }],
+    temperature: 0,
+    max_tokens: opts.maxTokens ?? 4096,
+  };
+  if (opts.responseJson) body.response_format = { type: "json_object" };
+
+  const res = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    timeout: TIMEOUT_GEMINI,
+  });
+
+  let raw: any = {};
+  try { raw = await res.json(); } catch { /* ignore */ }
+  const text = raw?.choices?.[0]?.message?.content ?? "";
+  const finishReason = raw?.choices?.[0]?.finish_reason ?? null;
+  const errorMsg = raw?.error?.message ?? (res.ok ? undefined : `HTTP ${res.status}`);
+  const shaped = res.ok
+    ? { candidates: [{ content: { parts: [{ text }] }, finishReason }] }
+    : { error: { message: errorMsg } };
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    json: async () => shaped,
+  };
+}
+
+
 // ─── Baixar imagem (Evolution API ou URL direta) ────────────────────
 export async function baixarImagem(
   url: string | null,
@@ -138,28 +201,9 @@ Retorne APENAS JSON válido:
 
 Se não encontrar um campo, use "". NÃO invente dados.`;
 
-    console.log("🔍 OCR Conta - Chamando Gemini 2.5 Flash...");
+    console.log("🔍 OCR Conta - Chamando Lovable AI Gateway (google/gemini-2.5-flash)...");
     const gemRes = await withRetry(
-      () =>
-        fetchWithTimeout(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-              // ⚠️ FIX 2026-06-02: Gemini 2.5 Flash tem "thinking" ligado por default e
-              // gasta o orçamento de tokens raciocinando ANTES de emitir o JSON. Com
-              // maxOutputTokens=2048 + responseMimeType=json o output saía truncado
-              // (sem `}` final) → regex não casava → "Não extraiu JSON". Caso real:
-              // conta da DAIANE FERNANDA DA SILVA HORACIO (PDF CPFL 761KB) falhou 2x
-              // mesmo o OCR tendo extraído nome+endereço+valor corretamente. Fix:
-              // thinkingBudget=0 desliga o raciocínio interno e budget maior dá folga.
-              generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
-            }),
-            timeout: TIMEOUT_GEMINI,
-          }
-        ),
+      () => callGeminiViaLovable(prompt, img, { maxTokens: 4096, responseJson: true }),
       {
         maxAttempts: 2,
         retryOn: (e) => {
@@ -168,6 +212,7 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
         },
       }
     );
+
 
     const gemData = await gemRes.json();
     console.log("🔍 OCR Conta - Gemini status:", gemRes.status);
@@ -378,22 +423,9 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
 
     const prompt = buildPromptDocumento(tipo, isVerso);
 
-    console.log("🔍 OCR Doc - Chamando Gemini 2.5 Flash...");
+    console.log("🔍 OCR Doc - Chamando Lovable AI Gateway (google/gemini-2.5-flash)...");
     const gemRes = await withRetry(
-      () =>
-        fetchWithTimeout(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-              // ⚠️ Mesmo fix do ocrContaEnergia: thinkingBudget=0 + budget maior.
-              generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
-            }),
-            timeout: TIMEOUT_GEMINI,
-          }
-        ),
+      () => callGeminiViaLovable(prompt, img, { maxTokens: 4096, responseJson: true }),
       {
         maxAttempts: 2,
         retryOn: (e) => {
@@ -402,6 +434,7 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
         },
       }
     );
+
 
     const gemData = await gemRes.json();
     console.log("🔍 OCR Doc - Gemini status:", gemRes.status);
@@ -507,18 +540,8 @@ REGRAS:
 Retorne APENAS este JSON, sem markdown:
 {"cpf":""}`;
 
-    const gemRes = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-          generationConfig: { temperature: 0, maxOutputTokens: 256, responseMimeType: "application/json" },
-        }),
-        timeout: TIMEOUT_GEMINI,
-      },
-    );
+    const gemRes = await callGeminiViaLovable(prompt, img, { maxTokens: 256, responseJson: true });
+
     if (!gemRes.ok) return "";
     const gemData = await gemRes.json();
     const text = gemData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -545,18 +568,8 @@ Retorne APENAS este JSON, sem markdown:
 
 async function gemFocado(prompt: string, img: { mime: string; b64: string }, geminiApiKey: string, maxTokens = 256): Promise<any | null> {
   try {
-    const res = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-          generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
-        }),
-        timeout: TIMEOUT_GEMINI,
-      },
-    );
+    const res = await callGeminiViaLovable(prompt, img, { maxTokens, responseJson: true });
+
     if (!res.ok) return null;
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
