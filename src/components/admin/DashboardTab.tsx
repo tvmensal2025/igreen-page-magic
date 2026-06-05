@@ -158,12 +158,37 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   const runSync = async (email: string, password: string) => {
     setSyncingDashboard(true); startCooldown();
     try {
-      const { data, error } = await supabase.functions.invoke("sync-igreen-customers", { body: { portal_email: email, portal_password: password, consultant_id: userId } });
-      if (error) throw error;
-      if (data?.success) { toast({ title: "✅ Sincronização concluída!", description: `${data.processed} clientes processados, ${data.updated} atualizados.` }); queryClient.invalidateQueries({ queryKey: ["analytics"] }); }
-      else toast({ title: "Erro na sincronização", description: data?.error || "Erro desconhecido", variant: "destructive" });
-    } catch (err: unknown) { toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" }); }
-    finally { setSyncingDashboard(false); }
+      // 1) Clientes
+      const { data: cData, error: cErr } = await supabase.functions.invoke("sync-igreen-customers", {
+        body: { portal_email: email, portal_password: password, consultant_id: userId },
+      });
+      if (cErr) throw cErr;
+      if (!cData?.success) {
+        toast({ title: "Erro ao sincronizar clientes", description: cData?.error || "Erro desconhecido", variant: "destructive" });
+        return;
+      }
+      // 2) Rede (delay 3s p/ evitar rate-limit do portal)
+      await new Promise((r) => setTimeout(r, 3000));
+      const { data: nData, error: nErr } = await supabase.functions.invoke("sync-igreen-customers", {
+        body: { portal_email: email, portal_password: password, consultant_id: userId, mode: "sync_network" },
+      });
+      if (nErr) throw nErr;
+      if (!nData?.success) {
+        toast({
+          title: "Clientes OK, mas falhou a rede",
+          description: nData?.error || "Erro desconhecido ao sincronizar a rede.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "✅ Sincronização concluída!",
+          description: `${cData.processed ?? cData.updated ?? 0} clientes • ${nData.total_members ?? 0} membros da rede`,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["analytics"] });
+    } catch (err: unknown) {
+      toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
+    } finally { setSyncingDashboard(false); }
   };
 
   const handleDashboardSync = () => {
@@ -178,7 +203,7 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
       if (error) throw error;
       onFormUpdate({ igreen_portal_email: credForm.email, igreen_portal_password: credForm.password });
       setShowCredentialsDialog(false);
-      toast({ title: "✅ Credenciais salvas!" });
+      toast({ title: "✅ Credenciais salvas!", description: "Baixando clientes e rede do portal iGreen…" });
       runSync(credForm.email, credForm.password);
     } catch (err: unknown) { toast({ title: "Erro ao salvar credenciais", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
   };
