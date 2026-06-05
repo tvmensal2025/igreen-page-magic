@@ -58,7 +58,7 @@ import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/docum
 import { detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
 import { uploadMediaToMinio, OCR_CONFIDENCE_THRESHOLD } from "../_helpers.ts";
 import { jsonLog } from "../../_shared/audit.ts";
-import { isTestMode } from "../../_shared/test-mode.ts";
+import { isTestMode, isCustomerSandbox } from "../../_shared/test-mode.ts";
 import { notifyHandoff } from "../../_shared/notify-consultant.ts";
 import { recordFlowDAlert } from "../../_shared/captation/flow-d-alerts.ts";
 import type { BotContext, BotResult } from "./types.ts";
@@ -3115,13 +3115,44 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
           updates.conversation_step = "confirmando_dados_conta";
 
-          // Sempre pausa pro card de revisão no painel. Cron de 5 min
-          // libera automaticamente se o consultor não decidir.
-          console.log(`[ocr-bill] 📥 marcando review pendente (customer=${customer.id})`);
-          updates.ocr_review_pending = "bill";
-          updates.ocr_review_started_at = new Date().toISOString();
-          updates.ocr_review_decided_at = null;
-          updates.ocr_review_decided_by = null;
+          // 🧪 sandbox: pula a fila de revisão e envia confirmação direto.
+          if (isCustomerSandbox(customer)) {
+            const merged = { ...customer, ...updates };
+            await sendOptions(remoteJid, buildConfirmacaoConta(merged), [
+              { id: "sim_conta", title: "✅ SIM" },
+              { id: "nao_conta", title: "❌ NÃO" },
+              { id: "editar_conta", title: "✏️ EDITAR" },
+            ]);
+            reply = "";
+            break;
+          }
+
+          // 📌 REGRA DE NEGÓCIO (paridade com whapi 2026-05-28):
+          // - capture_mode='auto' (IA ligada): vai DIRETO pro cliente confirmar
+          //   com botões — sem passar pelo consultor.
+          // - capture_mode='manual' (consultor disparou 1-a-1): pausa para
+          //   modal blocking no painel. Cron libera se não decidir.
+          const captureMode = String((customer as any)?.capture_mode || "auto").toLowerCase();
+
+          if (captureMode === "manual") {
+            console.log(`[ocr-bill] 🔒 [manual] marcando review pendente — consultor decide (customer=${customer.id})`);
+            updates.ocr_review_pending = "bill";
+            updates.ocr_review_started_at = new Date().toISOString();
+            updates.ocr_review_decided_at = null;
+            updates.ocr_review_decided_by = null;
+            reply = "";
+            break;
+          }
+
+          // Modo automático → manda direto pro cliente confirmar (com botões).
+          console.log(`[ocr-bill] 🤖 [auto] enviando confirmação direto pro cliente (customer=${customer.id})`);
+          const _merged = { ...customer, ...updates };
+          await sendOptions(remoteJid, buildConfirmacaoConta(_merged), [
+            { id: "sim_conta", title: "✅ SIM" },
+            { id: "nao_conta", title: "❌ NÃO" },
+            { id: "editar_conta", title: "✏️ EDITAR" },
+          ]);
+          updates.bill_data_confirmation_by = "awaiting_client";
           reply = "";
           break;
 
@@ -3891,12 +3922,40 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
           updates.conversation_step = "confirmando_dados_doc";
 
-          // Sempre pausa pro card de revisão no painel. Cron de 5 min libera.
-          console.log(`[ocr-doc] 📥 marcando review pendente (customer=${customer.id})`);
-          updates.ocr_review_pending = "doc";
-          updates.ocr_review_started_at = new Date().toISOString();
-          updates.ocr_review_decided_at = null;
-          updates.ocr_review_decided_by = null;
+          // 🧪 sandbox: pula a fila de revisão e envia confirmação direto.
+          if (isCustomerSandbox(customer)) {
+            const merged = { ...customer, ...updates };
+            await sendOptions(remoteJid, buildConfirmacaoDoc(merged), [
+              { id: "sim_doc", title: "✅ SIM" },
+              { id: "nao_doc", title: "❌ NÃO" },
+              { id: "editar_doc", title: "✏️ EDITAR" },
+            ]);
+            reply = "";
+            break;
+          }
+
+          // 📌 REGRA DE NEGÓCIO (paridade com whapi 2026-05-28): mesmo de capture_conta.
+          // auto → direto pro cliente; manual → card de revisão pro consultor.
+          const captureModeDoc = String((customer as any)?.capture_mode || "auto").toLowerCase();
+
+          if (captureModeDoc === "manual") {
+            console.log(`[ocr-doc] 🔒 [manual] marcando review pendente — consultor decide (customer=${customer.id})`);
+            updates.ocr_review_pending = "doc";
+            updates.ocr_review_started_at = new Date().toISOString();
+            updates.ocr_review_decided_at = null;
+            updates.ocr_review_decided_by = null;
+            reply = "";
+            break;
+          }
+
+          console.log(`[ocr-doc] 🤖 [auto] enviando confirmação direto pro cliente (customer=${customer.id})`);
+          const _mergedDoc = { ...customer, ...updates };
+          await sendOptions(remoteJid, buildConfirmacaoDoc(_mergedDoc), [
+            { id: "sim_doc", title: "✅ SIM" },
+            { id: "nao_doc", title: "❌ NÃO" },
+            { id: "editar_doc", title: "✏️ EDITAR" },
+          ]);
+          (updates as any).doc_data_confirmation_by = "awaiting_client";
           reply = "";
           break;
 
