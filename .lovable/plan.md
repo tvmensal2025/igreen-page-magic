@@ -1,135 +1,72 @@
-# Redesign — Interior das páginas /admin
+# Resetar daily cap no "Resetar telefone"
 
-Escopo: **só o conteúdo interno** das páginas (header de página, KPIs, gráficos, tabelas, toolbars, listas). Sidebar e topbar permanecem como estão. Sem mudanças de lógica, queries, edge functions ou DB.
+## Causa raiz
 
-## 1. Refinar tokens (`src/styles/painel-elite.css`)
-
-Manter paleta Emerald Refinado, mas adicionar escala completa para o interior:
+Logs do `evolution-webhook` (16:59) mostram tudo bloqueado por `daily_cap_reached`:
 
 ```
-/* superfícies */
---pe-bg:            #f7f9f8
---pe-surface:       #ffffff
---pe-surface-muted: #f1f5f3
---pe-surface-sunken:#eef2f0   /* nova — fundo de tabela header / chips */
-
-/* bordas */
---pe-border:        #e6ebe8   /* mais clara, hairline real */
---pe-border-strong: #cdd5d0
---pe-border-focus:  #10b981
-
-/* texto */
---pe-text:       #0b1f1a
---pe-text-muted: #5b6b65
---pe-text-dim:   #94a39d
---pe-text-label: #6b7a73   /* uppercase labels */
-
-/* accent + estados */
---pe-accent:        #10b981
---pe-accent-strong: #047857
---pe-success:       #059669
---pe-warning:       #d97706
---pe-danger:        #dc2626
---pe-info:          #0284c7
-
-/* escala tipográfica fixa (interior) */
---pe-fs-kpi:    28px   /* número grande KPI */
---pe-fs-h1:     22px   /* título de página */
---pe-fs-h2:     16px   /* section header */
---pe-fs-body:   14px
---pe-fs-meta:   12px
---pe-fs-label:  11px   /* uppercase 0.06em */
-
-/* radius + shadow */
---pe-radius-sm: 8px
---pe-radius:    12px    /* padrão cards */
---pe-radius-lg: 16px
---pe-shadow-card: 0 1px 2px rgba(11,31,26,0.04), 0 1px 0 rgba(11,31,26,0.02)
---pe-shadow-hover:0 4px 12px rgba(11,31,26,0.06)
+🚫 [sender-guard] bloqueado kind=media reason=daily_cap_reached  (audio)
+🚫 [sender-guard] bloqueado kind=media reason=daily_cap_reached  (video)
+🚫 [sender-guard] bloqueado kind=text  reason=daily_cap_reached
 ```
 
-## 2. Novas utility classes (mesmo arquivo)
+`check_send_quota` consulta `public.instance_send_counters(instance_name, day, sent_count)`. Para `igreen-953f7e48509b` no dia `2026-06-05` há `sent_count = 20`, e a instância está no **warmup_day 1** cujo cap é **20**. O `admin_hard_reset_phone` zera o lead, mas **não** zera esse contador (que é por instância, não por telefone). Resultado: o 1º texto saiu, e tudo depois (áudio, vídeo, texto+botões) cai no guard.
 
+A correção que acabamos de fazer no dispatcher do `evolution-webhook` está OK — ela não tem como ajudar quando o guard nega antes do envio.
+
+## Mudança
+
+Estender o RPC `admin_hard_reset_phone` para que, depois de identificar os `consultant_id`s afetados pelo telefone, também zere o contador de hoje das instâncias daqueles consultores. Sem mexer em warmup, risk signals, cap configurado nem na lógica do guard.
+
+### Migration (uma só)
+
+Recriar `public.admin_hard_reset_phone(_phone text)` mantendo todo o comportamento atual e adicionando, ao final, antes do `RETURN`:
+
+```sql
+-- Zera o contador diário de envios das instâncias dos consultores afetados,
+-- para que o "Resetar telefone" libere imediatamente novos envios em testes.
+WITH affected_consultants AS (
+  SELECT DISTINCT consultant_id
+  FROM public.customers
+  WHERE id = ANY(v_customer_ids)              -- já calculado acima no RPC
+),
+affected_instances AS (
+  SELECT wi.instance_name
+  FROM public.whatsapp_instances wi
+  JOIN affected_consultants ac ON ac.consultant_id = wi.consultant_id
+)
+DELETE FROM public.instance_send_counters
+WHERE day = (now() AT TIME ZONE 'UTC')::date
+  AND instance_name IN (SELECT instance_name FROM affected_instances)
+RETURNING 1
+-- contagem agregada vai para v_deleted->'instance_send_counters_today'
+;
 ```
-.pe-page         { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
-.pe-page-header  { display:flex; justify-between; pb-4 mb-6 border-b }
-.pe-page-title   { font: 600 22px Space Grotesk; letter-spacing:-.01em }
-.pe-page-sub     { 13px --pe-text-muted mt-1 }
 
-.pe-section      { mb-8 }
-.pe-section-head { flex between items-end pb-3 mb-4 border-b }
-.pe-section-title{ 16px 600 Space Grotesk }
+Acumular a contagem no JSON `deleted` que o RPC já devolve, sob a chave nova `instance_send_counters_today`, para o `HardResetPhoneCard` exibir no toast existente sem mudança de UI.
 
-.pe-card         { bg surface, 1px border, radius 12, shadow-card }
-.pe-card-kpi     { p-5, hover: border --pe-accent/40 + shadow-hover }
-.pe-kpi-label    { 11px uppercase 0.06em --pe-text-label }
-.pe-kpi-value    { 28px 600 tabular-nums --pe-text }
-.pe-kpi-delta-up { 12px --pe-success bg-success/8 px-1.5 py-0.5 radius-sm }
-.pe-kpi-delta-dn { 12px --pe-danger bg-danger/8 ... }
-.pe-kpi-spark    { h-8 mt-3 (sparkline opcional) }
+Os nomes exatos das variáveis internas (`v_customer_ids`, `v_deleted`, etc.) serão lidos do corpo atual do RPC antes de escrever a migration; o efeito final é o descrito acima.
 
-.pe-table              { w-full text-sm }
-.pe-table thead th     { sticky top-0 bg --pe-surface-sunken, 11px uppercase 0.06em --pe-text-label, h-9, px-3, border-b }
-.pe-table tbody tr     { h-11, border-b --pe-border, hover bg --pe-surface-muted }
-.pe-table td           { px-3 14px }
+### Frontend
 
-.pe-toolbar            { flex gap-2 flex-wrap mb-4 }
-.pe-chip               { h-8 px-3 radius-lg border --pe-border 13px hover bg-muted }
-.pe-chip-active        { bg --pe-emerald-strong text-white border-transparent }
+Nenhuma alteração obrigatória. O toast `✅ Telefone zerado confirmado` já lista as chaves de `deleted`, então `instance_send_counters_today: 1` aparece sozinho.
 
-.pe-status-dot         { w-1.5 h-1.5 rounded-full inline-block mr-1.5 }
-.pe-badge-success/warn/danger/info  { 11px px-2 py-0.5 radius-sm uppercase 0.05em }
-```
+### Fora de escopo
 
-## 3. Aplicar em páginas-template
+- Não muda `check_send_quota`, caps por warmup_day, `min_interval_ms`, nem `instance_risk_signals`.
+- Não muda o dispatcher do `evolution-webhook` (já consertado na rodada anterior).
+- Não toca em `whapi-webhook`, schema, RLS, ou no botão "Zerar" por-conversa do `ChatView` (ele é por lead, não por telefone admin).
 
-Não refatorar tudo de uma vez — aplicar como **template** em 3 superfícies de referência, e o resto herda via tokens automaticamente:
+## Validação
 
-### a) `src/components/admin/StatCard.tsx`
-Reescrever visual (lógica intacta):
-- Remover `feature-card` antigo (sombra pesada, radius 24)
-- Usar `.pe-card .pe-card-kpi`
-- Estrutura: label uppercase no topo, número grande accent, delta + sparkline abaixo
-- Ícone vira chip pequeno 24px canto sup. dir. (não badge 56px gigante)
+1. Rodar a migration (aprovação do usuário no fluxo padrão).
+2. No `/admin`, clicar **Resetar telefone** em `11971254913`.
+3. Conferir no toast a chave `instance_send_counters_today` ≥ 1.
+4. Pelo WhatsApp, mandar `Oi` → `2` no número da instância e confirmar a sequência completa: **áudio → vídeo → texto + botões**.
+5. Conferir nos logs do `evolution-webhook` ausência de `daily_cap_reached` e presença de `sendButtons ok=true`.
 
-### b) `src/components/admin/ads/AdsCentralTab.tsx` (header + nav + toolbar)
-- Wrap em `.pe-page`
-- Título com `.pe-page-header` + `.pe-page-title`
-- Substituir `rounded-lg bg-secondary p-1` (abas pill) por linha de chips `.pe-chip` + `.pe-chip-active`, sem fundo cinza
-- Toolbar de período/conta em faixa `.pe-toolbar` (chips altura 32, sem card com backdrop-blur)
+## Risco
 
-### c) `src/components/admin/parceiros/PartnerDashboard.tsx` (header + ranking table)
-- `.pe-page-header` no topo
-- Card "Ranking detalhado" usando `.pe-section-head` em vez de `CardHeader/CardTitle` do shadcn
-- Tabela interna recebe classes `.pe-table`
-
-### d) Banner de manutenção (visível no print anterior)
-- Reduzir para faixa fina `border-l-4 border-warning bg-warning/5 px-3 py-2 text-xs`, não card vermelho gigante
-
-## 4. Ajustes de tamanho/respiro globais
-
-Auditar em `painel-elite.css`:
-- Gap entre seções: **24px** (não 32+)
-- Padding interno de card padrão: **20px** (não 24-32)
-- Radius de cards: **12px** (não 16-24)
-- Sombras: **uma só** (`--pe-shadow-card`), sem múltiplas camadas
-- Hover de card: borda + shadow leve, sem `scale` nem `translate-y`
-
-## 5. Fora de escopo
-
-- ❌ Sidebar (`AppSidebar.tsx`) e topbar (`AppTopbar.tsx`) — já aprovados
-- ❌ Páginas públicas (landing, licenciada)
-- ❌ Lógica, queries, hooks, edge functions
-- ❌ Componentes shadcn base (`Card`, `Button` etc.) — usar wrappers `.pe-*` por cima
-
-## Ordem de execução
-
-1. Atualizar tokens + adicionar utilities em `painel-elite.css`
-2. Reescrever visual de `StatCard.tsx` como referência de KPI
-3. Refatorar header/nav/toolbar de `AdsCentralTab.tsx`
-4. Refatorar header de `PartnerDashboard.tsx` + classes de tabela no ranking
-5. Substituir banner de manutenção pelo padrão hairline
-
-## Nota técnica
-
-`.lovable/` está no `.gitignore` — este plano em `.lovable/plan.md` não é commitado e se perde no próximo snapshot. Quer que eu remova essa entrada do `.gitignore` para o plano persistir?
+- Baixo. O DELETE é restrito a `day = hoje` e às instâncias dos consultores do telefone resetado.
+- Reset manual é uma ação admin já destrutiva; zerar o contador de hoje está alinhado com a expectativa de "deixar como se o lead nunca tivesse existido".
+- Em produção real, se o operador resetar um telefone, ele também consome a proteção de cap daquele dia para a instância — aceitável porque o botão já é admin-only e usado para QA.
