@@ -25,6 +25,7 @@ interface Props {
 
 export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = false }: Props) {
 
+  const prompt = usePrompt();
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
@@ -145,10 +146,15 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
       </div>
       <div className="p-1.5 border-t border-border flex items-center gap-1 shrink-0">
         <Button size="sm" variant="default" className="flex-1 h-7 text-[11px] gap-1" onClick={async () => {
-          const phone = window.prompt("Telefone do lead (com DDD) para entrar em captação:");
+          const phone = await prompt({
+            title: "Entrar em captação manual",
+            description: "Informe o telefone do lead (com DDD).",
+            placeholder: "Ex: 11971254913",
+            confirmText: "Entrar",
+          });
           if (!phone) return;
           const digits = phone.replace(/\D/g, "");
-          if (digits.length < 10) { alert("Telefone inválido"); return; }
+          if (digits.length < 10) { toast.error("Telefone inválido"); return; }
           const { data: existing } = await supabase.from("customers").select("id").eq("consultant_id", consultantId).ilike("phone_whatsapp", `%${digits}%`).maybeSingle();
           if (existing?.id) {
             await supabase.from("customers").update({ capture_mode: "manual", capture_started_at: new Date().toISOString() }).eq("id", existing.id);
