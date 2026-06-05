@@ -138,6 +138,16 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
   const [filterStatus, setFilterStatus] = useState<"all" | "sent" | "failed">("all");
   const [history, setHistory] = useState<PersistedCampaignRow[]>([]);
   const [campaignName, setCampaignName] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setExpanded(false); };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [expanded]);
 
   // Load history
   useEffect(() => {
