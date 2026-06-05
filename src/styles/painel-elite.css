@@ -190,7 +190,7 @@
   flex-wrap: wrap;
 }
 .painel-elite .pe-page-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -218,7 +218,7 @@
 .painel-elite .pe-section-header h2,
 .painel-elite .pe-section-header h3,
 .painel-elite .pe-section-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 15px;
   font-weight: 600;
   color: var(--pe-text);
@@ -262,7 +262,7 @@
   color: var(--pe-text-label);
 }
 .painel-elite .pe-kpi-value {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 600;
   font-size: 26px;
   line-height: 1.1;
@@ -434,7 +434,7 @@
   text-transform: uppercase;
 }
 .painel-elite .pe-kpi {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 600;
   font-size: 26px;
   letter-spacing: -0.02em;
