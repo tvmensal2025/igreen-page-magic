@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   ArrowLeft, BookOpen, Plus, Search, Sparkles, Save, Trash2, Copy, Eye,
   Shield, AlertCircle, Loader2, FileUp, MessageSquare, ChevronDown, ChevronRight,
@@ -49,6 +50,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
 export default function AdminFaq({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -164,7 +166,8 @@ export default function AdminFaq({ embedded = false }: { embedded?: boolean } = 
   }
 
   async function deleteSection(id: string) {
-    if (!confirm("Excluir esta seção? Não tem volta.")) return;
+    const ok = await confirm({ title: "Excluir esta seção?", description: "Não tem volta.", confirmText: "Excluir", tone: "danger" });
+    if (!ok) return;
     const { error } = await supabase.from("ai_knowledge_sections").delete().eq("id", id);
     if (error) {
       toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });

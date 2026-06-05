@@ -91,6 +91,7 @@ function downloadCsv(rows: CampaignTarget[]) {
 
 export function BulkProPanel({ instanceName, customers, templates, consultantId }: Props) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [step, setStep] = useState<Step>(1);
   const [contacts, setContacts] = useState<BulkContact[]>([]);
   const [text, setText] = useState("");
@@ -571,7 +572,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                           )}
                           <button
                             onClick={async () => {
-                              if (!confirm(`Apagar "${h.name}"?`)) return;
+                              const ok = await confirm({ title: `Apagar "${h.name}"?`, confirmText: "Apagar", tone: "danger" });
+                              if (!ok) return;
                               await deleteCampaign(h.id);
                               setHistory(prev => prev.filter(x => x.id !== h.id));
                             }}
