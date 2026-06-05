@@ -1,72 +1,61 @@
-# Resetar daily cap no "Resetar telefone"
 
-## Causa raiz
+# Auditoria revisada — fluxo D step `d_resultado` (lead 5511971254913)
 
-Logs do `evolution-webhook` (16:59) mostram tudo bloqueado por `daily_cap_reached`:
+Estado real do lead: `previous_conversation_step = d_resultado`, slot `fazenda_solar`, consultor `igreen-953f7e48509b`. Texto cru do step:
 
 ```
-🚫 [sender-guard] bloqueado kind=media reason=daily_cap_reached  (audio)
-🚫 [sender-guard] bloqueado kind=media reason=daily_cap_reached  (video)
-🚫 [sender-guard] bloqueado kind=text  reason=daily_cap_reached
+Pronto, {{nome}}! 🎉
+💡 Sua conta hoje: *R$ {{valor_conta}}*
+💚 Economia estimada: *{{economia_range}}* por mês
+…
 ```
 
-`check_send_quota` consulta `public.instance_send_counters(instance_name, day, sent_count)`. Para `igreen-953f7e48509b` no dia `2026-06-05` há `sent_count = 20`, e a instância está no **warmup_day 1** cujo cap é **20**. O `admin_hard_reset_phone` zera o lead, mas **não** zera esse contador (que é por instância, não por telefone). Resultado: o 1º texto saiu, e tudo depois (áudio, vídeo, texto+botões) cai no guard.
+## Bugs confirmados (5)
 
-A correção que acabamos de fazer no dispatcher do `evolution-webhook` está OK — ela não tem como ajudar quando o guard nega antes do envio.
+### B1 — Placeholders `{{valor_conta}}` e `{{economia_range}}` vão crus para o WhatsApp
+`bot-flow.ts` linhas 1208-1218: o dispatch monta um `vars` local **só com `{{nome}}`, `{{nome_completo}}`, `{{representante}}`** e usa um `applyVars` ad-hoc. As variáveis de economia só são injetadas em outros dois caminhos (linhas 2489 e 3295) — não no dispatcher principal de `d_resultado`. `_shared/render-vars.ts` já sabe calcular `economia_range` a partir de `valor_conta` (linha 110), mas não é chamado aqui. Por isso o lead leu `R$ {{valor_conta}}` literal.
 
-## Mudança
+### B2 — Áudio público enviado num step onde o consultor não subiu mídia
+`ai_media_library` para `consultant_id=953f…` + `slot=fazenda_solar` = 0 linhas. Fallback público (linha 1188-1198) acha 1 item ativo: áudio `fazenda_solar_1778939279397.ogg`. Resultado: bot enviou áudio "alheio".
 
-Estender o RPC `admin_hard_reset_phone` para que, depois de identificar os `consultant_id`s afetados pelo telefone, também zere o contador de hoje das instâncias daqueles consultores. Sem mexer em warmup, risk signals, cap configurado nem na lógica do guard.
+### B3 — Mensagem duplicada
+Dedupe atual (`canSendMediaOnce`) só cobre **mídia**, não texto/step inteiro. Reentradas próximas (típico quando o usuário toca botão e digita) re-disparam o dispatcher e re-enviam texto + áudio.
 
-### Migration (uma só)
+### B4 — Áudio "atrasado" / fluxo fora de ordem
+`media_order = [audio, image, video, text]`, mas só existem áudio (público) + texto. Sleep de 5000ms + `duration_sec=44s` é aplicado antes do próximo item mesmo quando o item foi pulado, então o texto aparece muito depois do áudio.
 
-Recriar `public.admin_hard_reset_phone(_phone text)` mantendo todo o comportamento atual e adicionando, ao final, antes do `RETURN`:
+### B5 — `customers.conversation_step` salvo como `flow:<uuid>` em vez de `step_key`
+Valor atual: `flow:dfa0e6d9-9a3e-4750-9be1-6dcfa6e72ad9` (id do flow, não do step). Quebra `bot-stuck-recovery`, auditoria e retomada — e provavelmente é o que permitiu o reentry de B3.
 
-```sql
--- Zera o contador diário de envios das instâncias dos consultores afetados,
--- para que o "Resetar telefone" libere imediatamente novos envios em testes.
-WITH affected_consultants AS (
-  SELECT DISTINCT consultant_id
-  FROM public.customers
-  WHERE id = ANY(v_customer_ids)              -- já calculado acima no RPC
-),
-affected_instances AS (
-  SELECT wi.instance_name
-  FROM public.whatsapp_instances wi
-  JOIN affected_consultants ac ON ac.consultant_id = wi.consultant_id
-)
-DELETE FROM public.instance_send_counters
-WHERE day = (now() AT TIME ZONE 'UTC')::date
-  AND instance_name IN (SELECT instance_name FROM affected_instances)
-RETURNING 1
--- contagem agregada vai para v_deleted->'instance_send_counters_today'
-;
-```
+## O plano anterior cobre B2/B3/B4/B5 mas **não cobre B1**
 
-Acumular a contagem no JSON `deleted` que o RPC já devolve, sob a chave nova `instance_send_counters_today`, para o `HardResetPhoneCard` exibir no toast existente sem mudança de UI.
+| Bug | Plano anterior | Cobre? |
+|-----|---------------|--------|
+| B1 placeholders | — | ❌ |
+| B2 áudio público | item 1 (bloquear fallback de áudio) + item 2 (HEAD-check) | ✅ |
+| B3 duplicação | item 3 (dedupe de step) | ✅ |
+| B4 sleep cego | item 5 (sleep só se anterior=sent) | ✅ |
+| B5 conversation_step | item 4 (gravar step_key real) | ✅ |
 
-Os nomes exatos das variáveis internas (`v_customer_ids`, `v_deleted`, etc.) serão lidos do corpo atual do RPC antes de escrever a migration; o efeito final é o descrito acima.
+## Plano atualizado (a aplicar após aprovação)
 
-### Frontend
+1. **Trocar `applyVars` ad-hoc por `renderVars()` de `_shared/render-vars.ts`** em `bot-flow.ts` (~linhas 1208-1218 do dispatcher principal e ~5017 do caminho legado), passando `{ nome, representante, valor_conta: customer.electricity_bill_value }`. `renderVars` já calcula `economia_range`, `economia_mensal`, `economia_anual`. ⇒ Corrige B1.
 
-Nenhuma alteração obrigatória. O toast `✅ Telefone zerado confirmado` já lista as chaves de `deleted`, então `instance_send_counters_today: 1` aparece sozinho.
+2. **Bloquear fallback público de áudio quando o consultor não subiu mídia pessoal no slot.** Em `bot-flow.ts` ~1191, após `publicRows`, filtrar `kind==="audio"`. ⇒ Corrige B2.
 
-### Fora de escopo
+3. **HEAD-check em URLs públicas antes de `sendAudio/sendMedia`** e auto-desativar (`active=false`) registros que retornarem 4xx/5xx — limpa o `84aee314…` se já estiver órfão no MinIO. ⇒ Reforça B2.
 
-- Não muda `check_send_quota`, caps por warmup_day, `min_interval_ms`, nem `instance_risk_signals`.
-- Não muda o dispatcher do `evolution-webhook` (já consertado na rodada anterior).
-- Não toca em `whapi-webhook`, schema, RLS, ou no botão "Zerar" por-conversa do `ChatView` (ele é por lead, não por telefone admin).
+4. **Dedupe por step inteiro** (`canDispatchStepOnce(customer_id, step_key, window=10s)`), estendendo `media-dedupe.ts`. ⇒ Corrige B3.
 
-## Validação
+5. **Persistir `conversation_step` com o `step_key` real**, nunca `flow:<uuid>`. Auditar todos os `update({ conversation_step })` do `bot-flow.ts`. ⇒ Corrige B5.
 
-1. Rodar a migration (aprovação do usuário no fluxo padrão).
-2. No `/admin`, clicar **Resetar telefone** em `11971254913`.
-3. Conferir no toast a chave `instance_send_counters_today` ≥ 1.
-4. Pelo WhatsApp, mandar `Oi` → `2` no número da instância e confirmar a sequência completa: **áudio → vídeo → texto + botões**.
-5. Conferir nos logs do `evolution-webhook` ausência de `daily_cap_reached` e presença de `sendButtons ok=true`.
+6. **Sleep proporcional só se item anterior foi `sent=true`**; pular sleep se item anterior foi descartado. ⇒ Corrige B4.
+
+## Validação pós-fix
+- Reset do telefone `11971254913` → `Oi` → `2`.
+- Esperado em `d_resultado`: **texto único** com "Sua conta hoje: R$ 250,00" e "Economia estimada: R$ 35,00 – R$ 60,00 por mês" (renderizados), **sem áudio**, sem duplicação.
+- `customers.conversation_step = 'd_resultado'` (não `flow:…`).
+- `outbound_message_log`: exatamente 1 linha por step.
 
 ## Risco
-
-- Baixo. O DELETE é restrito a `day = hoje` e às instâncias dos consultores do telefone resetado.
-- Reset manual é uma ação admin já destrutiva; zerar o contador de hoje está alinhado com a expectativa de "deixar como se o lead nunca tivesse existido".
-- Em produção real, se o operador resetar um telefone, ele também consome a proteção de cap daquele dia para a instância — aceitável porque o botão já é admin-only e usado para QA.
+Baixo. Todas as mudanças em `bot-flow.ts` + `media-dedupe.ts` + `render-vars.ts` (sem alterar schema, sem alterar RLS, sem mexer em RPCs admin).
