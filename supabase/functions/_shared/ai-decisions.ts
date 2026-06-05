@@ -22,6 +22,7 @@ export interface AiDecisionEntry {
   reasoning?: string | null;
   traceId?: string | null;
   aiOutput?: Record<string, any> | null;
+  channel?: string | null;        // "evolution" | "whapi" | null
 }
 
 function trunc(v: string | null | undefined, n: number): string | null {
