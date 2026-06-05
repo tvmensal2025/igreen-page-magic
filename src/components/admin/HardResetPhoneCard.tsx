@@ -33,6 +33,7 @@ export function HardResetPhoneCard({ userId, className }: HardResetPhoneCardProp
   }, [userId]);
   const { isAdmin } = useUserRole(authUserId);
   const { toast } = useToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [resetPhone, setResetPhone] = useState("11971254913");
   const [resetting, setResetting] = useState(false);
