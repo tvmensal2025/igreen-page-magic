@@ -254,7 +254,13 @@ export default function AdminFaq({ embedded = false }: { embedded?: boolean } = 
 
   async function applyProposal() {
     if (!proposal) return;
-    if (!confirm(`Substituir as ${sections.filter((s) => s.is_active).length} seções ativas pelas ${proposal.sections.length} novas? As atuais serão desativadas (não excluídas).`)) return;
+    const ok = await confirm({
+      title: "Substituir seções ativas pela proposta?",
+      description: `${sections.filter((s) => s.is_active).length} seções ativas serão desativadas (não excluídas) e ${proposal.sections.length} novas entrarão no lugar.`,
+      confirmText: "Substituir",
+      tone: "info",
+    });
+    if (!ok) return;
     setOrganizing(true);
     // 1. desativa todas as ativas atuais
     const { error: e1 } = await supabase
