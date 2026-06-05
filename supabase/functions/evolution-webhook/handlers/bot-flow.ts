@@ -4048,6 +4048,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             { id: "editar_doc", title: "✏️ EDITAR" },
           ]);
           (updates as any).doc_data_confirmation_by = "awaiting_client";
+          (updates as any).__inline_sent = true;
           reply = "";
           break;
 
