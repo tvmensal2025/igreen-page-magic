@@ -1,34 +1,52 @@
-# Sincronização tempo-real e padrão público para todos os consultores
+# Redesign do "Envio em Massa" (Disparo PRO)
 
-## Estado atual (confirmado)
+Aplica a direção escolhida (Split-screen + preview WhatsApp) com paleta Emerald Prestige e tipografia Outfit/Figtree, e resolve os 3 pedidos: clareza visual, botão de expandir e templates pré-criados.
 
-- `bot_flows.sync_mode` default já é `'public'` — novos consultores nascem sincronizados.
-- Runtime do bot (`resolve-flow.ts`) e editor (`FluxoBuilder.tsx`) já leem os steps direto do flow público quando `sync_mode='public'`. Então **quando o super-admin altera um passo, o bot dos consultores em modo público responde com a mudança na próxima mensagem**.
-- O editor (UI) atualiza só ao recarregar — não tem subscription realtime ainda.
-- Consultores **criados antes** da migração de 05/jun ficaram com `sync_mode='custom'` (backfill preservou edições deles). É por isso que "não estão todos no público".
-- Hook `useFlowSteps.ts` (usado em `ManualStepDialog` e `LiveConversationsPanel`) ignora `sync_mode` — mostra steps do flow do próprio consultor mesmo quando ele segue o público.
+## O que muda
 
-## O que vou mudar
+### 1. Layout split-screen no `BulkProPanel`
+- Header verde-escuro (`#064e3b`) com título "Disparo PRO" (acento dourado em "Disparo") e botão **Expandir Tela** (ícone Maximize2) à direita.
+- Stepper horizontal de 4 etapas (Contatos / Mensagem / Envio / Acompanhar) com bolinhas, conector linear, ativo em dourado (`#c9a84c`), inativos translúcidos.
+- Corpo dividido em duas colunas: esquerda 1/3 (seleção de contatos), direita 2/3 (conteúdo da etapa). Em mobile vira coluna única.
+- Footer fixo com "Voltar" e "Próxima Etapa" (botão verde com seta dourada).
 
-### 1. Migração: colocar todos os consultores em `sync_mode='public'`
-`UPDATE bot_flows SET sync_mode='public' WHERE consultant_id IS NOT NULL AND is_public=false AND sync_mode<>'public'`. O consultor pode desativar pelo toggle existente (`FluxoBuilder` linhas 759-797) a qualquer momento.
+### 2. Modo Expandir
+- Estado `expanded` no `BulkProPanel`. Quando ativo, o painel sai do fluxo normal e vira `fixed inset-2 z-50` (overlay quase fullscreen) com `Esc` para fechar.
+- Ícone alterna entre Maximize2 ↔ Minimize2. Transição 200ms.
+- Aplica-se em qualquer etapa, mas é mais útil na etapa 1 (lista) e 4 (acompanhar).
 
-### 2. Realtime no editor (`FluxoBuilder.tsx`)
-Adicionar uma subscription Supabase em `bot_flow_steps` filtrada por `flow_id=stepsSourceFlowId`:
-- Quando `sync_mode='public'` (ou o usuário é super-admin), escuta `postgres_changes` (INSERT/UPDATE/DELETE) e refaz o `SELECT * FROM bot_flow_steps WHERE flow_id=...` com debounce de ~400ms, atualizando `setSteps`.
-- Não interrompe edição local: se houver `isDirty` no inspetor, só mostra um toast "Template atualizado — recarregue para ver" em vez de sobrescrever (modo público é read-only, então isso só importa para o super-admin editando o próprio template).
-- Cleanup do canal no `useEffect` return.
+### 3. Lista de contatos espaçada (etapa 1)
+- Reorganizar `ContactImporter` ou criar wrapper que renderize:
+  - Busca grande (h-11) no topo com ícone Search.
+  - Tabs de fonte (Base / Extrair / Colar / Importar) menores e como segmented control.
+  - Chips de filtro (Todos / Aprovado / Reprovado / Pendente / Últimas 48h / DDD).
+  - Linhas de contato com 56px mín., avatar com iniciais, nome + telefone empilhados, badge de status à direita, checkbox visível à esquerda. Linha selecionada com `bg-primary/5` + borda esquerda dourada.
+- Painel direito da etapa 1 mostra os 3 cards de resumo (Selecionados / Duplicados / Inválidos) maiores, com ícones, e o histórico de disparos abaixo (já existente).
 
-### 3. Corrigir `useFlowSteps.ts` para respeitar `sync_mode`
-Ler `bot_flows.sync_mode` junto com o flow do consultor; se `public`, trocar `flow_id` para o do template público antes de buscar os steps. Mesma lógica do `FluxoBuilder` e `resolve-flow.ts`, mantendo as três superfícies coerentes.
+### 4. Templates pré-criados (etapa 2)
+- A prop `templates: MessageTemplate[]` já chega no `BulkProPanel`. Repassar para `MessageEditor`.
+- Adicionar no topo do `MessageEditor`:
+  - Botão/Popover **"Usar template existente"** que abre um `Command`/`Dialog` listando templates do consultor com nome, prévia (2 linhas) e indicador se tem mídia.
+  - Ao escolher: preenche `text` (e `media` se o template tiver `image_url`/etc.). Pergunta de confirmação se o textarea já tem conteúdo.
+  - Botão "Salvar como template" abre dialog simples (nome) e usa a tabela existente de `message_templates` para persistir.
+
+### 5. Tokens de design
+- Em `src/index.css` (e `tailwind.config.ts`), adicionar/ajustar tokens HSL para a paleta Emerald Prestige só no escopo do Disparo PRO via classe wrapper (`.disparo-pro`) para não impactar o resto do app:
+  - `--dp-bg: 45 56% 92%` (cream)
+  - `--dp-surface: 0 0% 100%`
+  - `--dp-primary: 160 80% 26%` (deep emerald)
+  - `--dp-primary-strong: 160 87% 16%`
+  - `--dp-accent: 44 53% 54%` (dourado)
+- Tipografia: carregar Outfit + Figtree via `<link>` no `index.html` e mapear `font-heading` → Outfit, `font-body` → Figtree dentro do wrapper.
+
+## Arquivos afetados
+- `src/components/whatsapp/bulk-pro/BulkProPanel.tsx` — header, stepper, layout split, botão expandir, passagem de `templates` ao editor.
+- `src/components/whatsapp/bulk-pro/MessageEditor.tsx` — botão "Usar template" + dialog + "Salvar como template".
+- `src/components/whatsapp/ContactImporter.tsx` — ajustes de espaçamento/busca grande/linhas 56px (mudanças visuais, não altera lógica de seleção).
+- `src/index.css`, `tailwind.config.ts` — tokens `--dp-*` e fontes.
+- `index.html` — `<link>` Google Fonts (Outfit, Figtree).
 
 ## Fora de escopo
-- Não mexer no toggle UI (já existe e funciona).
-- Não mexer na RPC `fork_flow_from_public` (já patcheada).
-- Sem alterações no template público em si.
-
-## Validação
-1. Antes da migração: `SELECT COUNT(*) FROM bot_flows WHERE consultant_id IS NOT NULL AND is_public=false AND sync_mode='custom'` → mostra o N atual.
-2. Depois: a mesma query → 0 (ou só os que pediram custom explicitamente, mas como o pedido é "todos", vai para 0).
-3. Abrir `FluxoBuilder` como consultor `tvmensal01`, e em outra aba alterar um título de passo como super-admin. O título deve atualizar sozinho no consultor em ≤1s.
-4. Abrir `ManualStepDialog` num consultor em modo público e conferir que lista os passos do template público.
+- Não mexer em backend, edge functions, lógica de envio, persistência, agendamento, anti-bloqueio, retomada de campanha, healthcheck de instância.
+- Não alterar as abas vizinhas (Dashboard / Conversas / Atendente IA / Templates / Agendamentos / Histórico) — só o painel "Envio em Massa".
+- Não adicionar IA, analytics ou novos campos no banco.
