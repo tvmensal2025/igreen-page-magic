@@ -27,6 +27,7 @@ interface Props {
 }
 
 export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) {
+  const confirm = useConfirm();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -104,7 +105,8 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
   }
 
   async function deleteTemplate(id: string) {
-    if (!confirm("Remover este template? Os envios passados ficam preservados.")) return;
+    const ok = await confirm({ title: "Remover este template?", description: "Os envios passados ficam preservados.", confirmText: "Remover", tone: "danger" });
+    if (!ok) return;
     const { error } = await (supabase as any)
       .from("reactivation_templates")
       .delete()
