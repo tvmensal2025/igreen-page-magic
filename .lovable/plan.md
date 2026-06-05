@@ -1,149 +1,83 @@
-# Auditoria do plano anterior + correções (contexto: venda)
+## Diagnóstico
 
-## Achados da auditoria
+Reproduzi o caso do lead **JOSE FELICIO (5511971254913)** consultando `conversations` e `customers`:
 
+```
+19:30:24  bot →  d_resultado (simulação + botão "Quero me cadastrar")
+19:30:56  lead → "1"
+19:31:02  bot →  d_welcome (reset! "Olá! 👋 ... 1️⃣ Quero simular ...")
+```
 
-| #   | Problema                                                                                                                                                                                                                                                 | Evidência                                                | Severidade |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------- |
-| 1   | `**"oii 😊"` quebra contexto de venda** — lead que mandou foto da conta recebe um "oii" do nada, parece bot quebrado                                                                                                                                     | `index.ts:1894` (versão antiga) e `:1880` (versão atual) | 🔴 Alta    |
-| 2   | **Sentinel `[empty-reply-safety]` aparece no histórico do admin** — admin chat view não filtra `message_type='system'` (`grep` confirmou)                                                                                                                | `src/components/whatsapp/*` não filtra `system`          | 🔴 Alta    |
-| 3   | `**getTemplate(stepToSend, "default")` não funcionaria** — o argumento é `template_key`, não variant; e só ~10 steps têm row em `bot_messages` (consultado agora). Steps como `aguardando_conta`, `d_resultado`, `aguardando_documento` não têm template | `templates.ts:99` + query em `bot_messages`              | 🟡 Média   |
-| 4   | **Anti-loop usa `message_text='[empty-reply-safety]'**` — se mudarmos o sentinel pra system message invisível, a query do count quebra silenciosamente; precisa de chave estável                                                                         | Auto-referência no `index.ts:1888-1898`                  | 🟡 Média   |
+O lead clicou/digitou "1" para continuar o cadastro, mas o bot **voltou para o welcome** em vez de avançar para `d_pedir_documento` (transição correta configurada no passo `d_resultado`).
 
+### Causa raiz
 
-## Solução (Camada 2 re-projetada)
+Em `supabase/functions/evolution-webhook/index.ts:1486-1542` existe um guard chamado **"AUTO-CURA DE STEP ÓRFÃO ENTRE VARIANTES"**. Ele faz lookup do step atual filtrando:
 
-### Estratégia: re-enviar a última pergunta real do bot
+```sql
+WHERE bot_flows.consultant_id = <instance.consultant_id>
+  AND bot_flows.variant = <customer.flow_variant>
+  AND is_active = true
+```
 
-Em vez de inventar texto, o bot **re-emite a última pergunta que ele mesmo fez** ao lead, com um prefixo humano leve. Isso preserva 100% o contexto da venda — se o passo era pedir conta de luz, ele repete pedindo conta de luz.
+Se não encontrar, considera o step órfão e força `conversation_step = 'welcome'`.
 
-**Pseudocódigo da Camada 2:**
+Mas o consultor da instância (`953f7e48-...`) tem o próprio `bot_flows` com **`sync_mode='public'`**, o que faz `resolveFlowId` (`_shared/resolve-flow.ts`) redirecionar TODO o roteamento para o fluxo PÚBLICO (`consultant_id=0c2711ad-...`, `is_public=true`). Logo, o bot grava `conversation_step` apontando para UUIDs de steps que pertencem ao consultor do template público — e a "cura" não enxerga esses steps porque filtra só pelo consultor da instância.
+
+Resultado: TODO passo do fluxo D rodando em modo `sync_mode='public'` cai como "órfão" e o lead é resetado para welcome em cada turno. Hoje funciona "às vezes" só porque outras camadas (`runEngineV3`, `runConversationalFlow`, redirect por mídia) interceptam antes em certos cenários — mas quando o usuário responde texto puro num passo `flow:<uuid>`, o reset dispara.
+
+## Correção
+
+Alinhar a query da "cura" com a lógica do `resolveFlowId`: aceitar o step se ele pertencer ao fluxo do consultor **OU** ao fluxo PÚBLICO da mesma variante (quando o consultor está em `sync_mode='public'`).
+
+### Mudança única — `supabase/functions/evolution-webhook/index.ts`
+
+No bloco `step-mismatch-cure` (~linha 1496-1542), substituir a query atual por uma que aceite as duas fontes válidas de steps:
 
 ```ts
-if (!finalReply && !handlerSentInline) {
-  // 1) Busca o ÚLTIMO outbound real (não sentinel, não inline-marker)
-  //    enviado a este customer nos últimos 30 min, com texto não vazio.
-  const { data: lastReal } = await supabase
-    .from("conversations")
-    .select("message_text, conversation_step, created_at")
-    .eq("customer_id", customer.id)
-    .eq("message_direction", "outbound")
-    .neq("message_type", "system")          // ignora sentinels
-    .not("message_text", "like", "[inline-sent]%")
-    .not("message_text", "like", "[failed:%")
-    .not("message_text", "is", null)
-    .gte("created_at", new Date(Date.now() - 30 * 60_000).toISOString())
-    .order("created_at", { ascending: false })
-    .limit(1)
+const { data: ownFlow } = await supabase
+  .from("bot_flows")
+  .select("id, sync_mode")
+  .eq("consultant_id", instanceData.consultant_id)
+  .eq("variant", variant)
+  .eq("is_active", true)
+  .maybeSingle();
+
+const allowedFlowIds: string[] = [];
+if (ownFlow?.id) allowedFlowIds.push(ownFlow.id);
+// Se o consultor está em sync_mode='public', os steps reais vêm do template público
+if (!ownFlow || String(ownFlow.sync_mode ?? "public").toLowerCase() === "public") {
+  const { data: pubFlow } = await supabase
+    .from("bot_flows")
+    .select("id")
+    .eq("is_public", true)
+    .eq("is_active", true)
+    .eq("variant", variant)
     .maybeSingle();
-
-  let repromptText: string | null = null;
-
-  if (lastReal?.message_text && lastReal.message_text.trim()) {
-    // 2a) Prefixo humano + última pergunta real. Curto, sem robotice.
-    const firstName = (customer.name || "").split(" ")[0];
-    const greet = firstName ? `${firstName}, ` : "";
-    repromptText = `${greet}voltando aqui 👇\n\n${lastReal.message_text}`;
-  } else {
-    // 2b) Sem histórico recente → tenta template do step atual em bot_messages.
-    //     Convenção: template_key="reprompt" (criamos abaixo). Se não houver,
-    //     cai em "menu_inicial:reforco" que já existe e é tom de venda.
-    try {
-      repromptText = await getTemplate(
-        supabase,
-        String(stepToSend ?? "menu_inicial"),
-        "reprompt",
-        { nome: customer.name, representante: nomeRepresentante,
-          valor_conta: customer.electricity_bill_value },
-      );
-    } catch { /* fallback no catch abaixo */ }
-    if (!repromptText || repromptText.trim() === "") {
-      repromptText = await getTemplate(
-        supabase, "menu_inicial", "reforco",
-        { nome: customer.name, representante: nomeRepresentante },
-      );
-    }
-  }
-
-  finalReply = repromptText || `${(customer.name||"").split(" ")[0] || "Oi"}, posso te ajudar a continuar?`;
+  if (pubFlow?.id) allowedFlowIds.push(pubFlow.id);
 }
+
+const { data: stepLookup } = await supabase
+  .from("bot_flow_steps")
+  .select("id")
+  .or(`id.eq.${_stepRaw},step_key.eq.${_stepRaw}`)
+  .eq("is_active", true)
+  .in("flow_id", allowedFlowIds)
+  .limit(1);
+
+const found = Array.isArray(stepLookup) && stepLookup.length > 0;
 ```
 
-### Bloqueio de variáveis órfãs
+O resto da lógica (reset para welcome quando realmente órfão, log, insert em `bot_step_transitions`) permanece igual.
 
-`renderTemplate` em `templates.ts:57` já limpa pares órfãos (`**`, `,,`, etc.), mas **não limpa `{{xxx}}` desconhecido**. Adicionamos uma checagem pós-render:
+### Validação
 
-```ts
-// Em templates.ts no fim de renderTemplate, antes do return:
-if (/\{\{\s*\w+\s*\}\}/.test(out)) {
-  // Há variável não resolvida — não usar este texto cru no re-prompt.
-  // Devolvemos string vazia para o caller cair no próximo fallback.
-  return "";
-}
-```
+1. Reexecutar mentalmente o turno do lead JOSE: `_stepRaw="4df1f90a-..."`, variant=D → query agora inclui flow público `320bf22c` → step encontrado → cura NÃO dispara → engine processa transição → "1" casa `trigger_phrases=["1",...]` → `goto_step_id=58f0a7e2` (`d_pedir_documento`) ✅
+2. Cenário órfão real (lead com step de variante antiga após troca): step não está nem no fluxo do consultor nem no público da variante atual → cura ainda dispara, reset para welcome preservado ✅
+3. Consultor com fluxo próprio (`sync_mode='custom'`): query NÃO inclui público → comportamento atual preservado ✅
 
-Aplicado **só dentro de `renderTemplate**`, evita que um template novo com variável errada vaze `{{cpf}}` pro cliente.
+### Notas
 
-### Sentinel invisível para o admin
-
-Mudar o sentinel pra um marcador que admin filtra. Como o admin **não filtra `message_type='system'**`, em vez de criar mais filtros no frontend, fazemos o sentinel com **prefixo textual reservado** já filtrado em todas as queries de display:
-
-```ts
-await supabase.from("conversations").insert({
-  customer_id: customer.id,
-  message_direction: "outbound",
-  message_type: "system",
-  message_text: "[__safety_ping__]",   // novo marker, não-localizado
-  conversation_step: stepToSend ? String(stepToSend) : null,
-});
-```
-
-E **adicionamos um filtro no admin chat view** (componentes que listam `conversations` ordenados por `created_at`) para excluir `message_text LIKE '[__safety_ping__]%'` E `message_text LIKE '[inline-sent]%'` E `message_text LIKE '[failed:%'`. Vou listar os componentes exatos no momento do build (`grep "from(\"conversations\")"` nos `src/`).
-
-### Camada 3 (anti-loop) ajustada
-
-Mesmo critério (3× em 5min), mas chave estável usando o novo marker:
-
-```ts
-const { count } = await supabase
-  .from("conversations")
-  .select("id", { count: "exact", head: true })
-  .eq("customer_id", customer.id)
-  .eq("conversation_step", String(stepToSend ?? ""))
-  .eq("message_text", "[__safety_ping__]")
-  .gte("created_at", new Date(Date.now() - 5 * 60_000).toISOString());
-
-if ((count ?? 0) >= 2) {
-  // Pausa pra humano com motivo claro
-  await supabase.from("customers").update({
-    bot_paused: true,
-    bot_paused_reason: "anti_loop_empty_reply",
-    bot_paused_at: new Date().toISOString(),
-  }).eq("id", customer.id);
-  // E grava 1 outbound visível avisando que humano vai assumir:
-  finalReply = `${(customer.name||"").split(" ")[0] || ""}, vou chamar um consultor humano agora mesmo pra continuar com você 🤝`.trim();
-}
-```
-
-Diferença vs. plano anterior: quando pausa por loop, o cliente **recebe um aviso humano** em vez de silêncio total — silêncio em venda perde lead.
-
-## Arquivos a alterar (build mode)
-
-1. `supabase/functions/evolution-webhook/index.ts` — substituir bloco Camada 2 (linhas ~1878-1925 da versão atual) pela lógica acima.
-2. `supabase/functions/evolution-webhook/handlers/conversational/templates.ts` — adicionar guard de `{{}}` órfão no fim de `renderTemplate`.
-3. **Sem migração nova obrigatória**, mas opcional: SQL pra inserir `reprompt` templates para os steps mais críticos (`aguardando_conta`, `aguardando_documento`, `d_resultado`, `dados_basicos`). Posso listar os textos pra você aprovar antes de inserir.
-4. **Filtro no frontend admin chat**: localizar (`grep`) e atualizar 1-3 componentes que listam `conversations` pra excluir `[__safety_ping__]%`, `[inline-sent]%`, `[failed:%`.
-
-## Validação
-
-1. **Lead após mandar conta + cair em empty-reply**: deve ver `"João, voltando aqui 👇\n\nManda uma foto ou PDF…"` em vez de `"oii"`.
-2. **Lead novo sem histórico**: cai em `menu_inicial:reforco` ("ainda quer entender como funciona o desconto?") — tom de venda.
-3. **Sentinel `[__safety_ping__]**` invisível no painel admin após o filtro.
-4. **3× empty-reply em 5min** no mesmo step → pausa com `anti_loop_empty_reply` + mensagem "vou chamar um consultor humano".
-5. **Template com `{{erro}}` não resolvido** → `renderTemplate` retorna vazio, cai no próximo fallback, nunca chega ao cliente.
-
-## Itens NÃO incluídos
-
-- Re-prompt via IA generativa (custo + latência sem ganho claro vs. re-emit do último real).
-- Inserção em massa de templates `reprompt` por step — proposto como opcional, aguardando aprovação dos textos.
-
+- Mudança cirúrgica num único bloco. Sem migração de schema.
+- Não toca em `resolveFlowId`, runner v3, nem no classificador de intent — o problema está exclusivamente na "cura" do orquestrador.
+- Após o deploy, rodar uma query para identificar leads atualmente travados em `conversation_step='welcome'` com `previous_conversation_step` apontando para UUID, e opcionalmente avisar suporte.
