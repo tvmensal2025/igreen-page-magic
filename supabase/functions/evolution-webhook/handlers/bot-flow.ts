@@ -3244,6 +3244,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             { id: "editar_conta", title: "✏️ EDITAR" },
           ]);
           updates.bill_data_confirmation_by = "awaiting_client";
+          (updates as any).__inline_sent = true;
           reply = "";
           break;
 
