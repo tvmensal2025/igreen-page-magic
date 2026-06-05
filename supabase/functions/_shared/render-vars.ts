@@ -105,9 +105,10 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     if (CPF_KEYS.has(key)) return cpfFmt;
     if (REP_KEYS.has(key)) return rep;
     if (BILL_KEYS.has(key)) return billStr;
-    if (key === "economia_mensal" && hasBill) return fmtBRL(billNum * 0.20);
-    if (key === "economia_anual" && hasBill) return fmtBRL(billNum * 0.20 * 12);
-    if ((key === "economia_range" || key === "economia_faixa") && hasBill) {
+    if (key === "economia_mensal") return hasBill ? fmtBRL(billNum * 0.20) : "";
+    if (key === "economia_anual") return hasBill ? fmtBRL(billNum * 0.20 * 12) : "";
+    if (key === "economia_range" || key === "economia_faixa") {
+      if (!hasBill) return "";
       const min = Math.max(1, Math.floor(billNum * 0.08));
       const max = Math.max(min + 1, Math.ceil(billNum * 0.20));
       return `R$ ${min} a R$ ${max}`;
