@@ -1,55 +1,63 @@
-# Plano — Reduzir latência do Fluxo D no Evolution
+## Objetivo
+Permitir que um único turno do bot (resposta a UMA mensagem do lead) envie 2-4 itens consecutivos (áudio + vídeo + texto-com-botões) sem ser bloqueado por `min_interval_not_elapsed`, **sem afetar** as outras proteções anti-ban (cap diário, recovery mode, fatal_lock, warmup).
 
-Objetivo: trazer a 1ª msg após botão de ~7-52s para ~2-3s. Whapi **não muda**.
+## Causa raiz (já diagnosticada)
+No passo "Como funciona" do Evolution:
+- 13:01:54 áudio enviado → registra `last_send_at`
+- 13:01:56 vídeo tentado → `min_interval_not_elapsed` (faltam 6s) → BLOQUEADO
+- 13:01:58 retry vídeo → bloqueado novamente → `video_failed`
+- texto+botões também não sai (mesmo motivo)
 
-## Mudança 1 — `humanDelayMs` fixo em 800ms
+O `min_interval` foi desenhado para evitar disparos em massa (campanha), não para fragmentar uma resposta multi-mídia legítima.
 
-**Arquivo:** `supabase/functions/evolution-webhook/index.ts` (linhas 2040-2051)
+## Mudança (1 arquivo)
 
-Hoje calcula `min(14000, max(3500, 3000 + chars*60))` = 3.5–14s por reply, com loop renovando "composing" a cada 2.8s.
+`supabase/functions/_shared/sender-guard.ts`
 
-Substituir por:
+Adicionar uma janela de "burst" local à closure do wrapper:
 
-```ts
-// Apenas 1 "digitando" curto para não parecer instantâneo
-const humanDelayMs = 800;
-try { await (sender as any).sendPresence?.(remoteJid, "composing", humanDelayMs); } catch (_) { /* noop */ }
-await new Promise((r) => setTimeout(r, humanDelayMs));
-```
+````text
+wrapSenderWithGuard(rawSender, opts)
+  └── closure: burstUntilTs = 0
+  └── wrapSendFn(...):
+       1. quota = checkSendQuota(...)
+       2. SE !quota.allowed:
+            - SE reason === "min_interval_not_elapsed" E Date.now() < burstUntilTs:
+                 → bypass: prossegue para enviar (loga "burst-bypass")
+            - SENÃO (cap diário, recovery, fatal, warmup, etc.):
+                 → bloqueia normalmente (return false)
+       3. envia via fn(...args)
+       4. SE result === true:
+            - registerSend(...)
+            - burstUntilTs = Date.now() + BURST_TTL_MS (20s)
+````
 
-Remove o `while` de renovação (não precisa para 800ms).
+Constantes:
+- `BURST_TTL_MS = 20_000` — janela de 20s suficiente para 4 mídias do mesmo turno; depois disso volta a respeitar `min_interval`.
 
-**Ganho:** 3-13s por reply de texto.
+## Por que isso é seguro
+1. **Escopo per-invocation**: o wrapper é criado uma vez por chamada do `evolution-webhook` (`const sender = wrapSenderWithGuard(...)` em index.ts:344). A closure `burstUntilTs` vive só durante essa invocação → a janela de 20s naturalmente cobre só o turno atual.
+2. **Outras proteções intactas**: `daily_cap_reached`, `recovery_mode`, `fatal_disconnect_pending_confirmation`, `warmup_exceeded` continuam bloqueando — só `min_interval_not_elapsed` é flexibilizado e somente dentro da janela.
+3. **`registerSend` continua sendo chamado**: o contador diário não é afetado; só pulamos a checagem de intervalo mínimo.
+4. **Próximo turno do mesmo lead**: vem como nova invocação do webhook → wrapper novo → `burstUntilTs=0` → primeira mensagem do próximo turno respeita `min_interval` normalmente.
+5. **Whapi não é afetado** (não usa esse guard).
 
-## Mudança 2 — `text_delay_ms` teto 2s
+## O que NÃO muda
+- Schema do banco (nenhuma migration).
+- `check_send_quota` RPC.
+- `min_interval` por warmup day (mantém 8s/5s/4s/3s já configurados).
+- Whapi webhook.
+- Frontend, Flow Builder, conteúdo dos passos.
+- Demais edge functions que usam `checkSendQuota` (reactivation, bulk, scheduled) — elas chamam direto a função, não usam o wrapper, então continuam com anti-ban estrito (correto para campanhas).
 
-**Arquivo:** `supabase/functions/evolution-webhook/handlers/conversational/index.ts`
+## Validação
+1. Lead novo manda "oi" → recebe boas-vindas.
+2. Lead clica "Como funciona" / responde "2".
+3. Esperado nos logs:
+   - `audio` enviado
+   - `video` enviado (com 1 log `[sender-guard] burst-bypass kind=media`)
+   - `text` enviado (com `burst-bypass kind=text`) contendo "Hoje já somos…" + 1️⃣2️⃣3️⃣
+4. Conferir `conversations`: 3 outbound do mesmo `conversation_step=d_como_funciona`, sem `video_failed`.
 
-Dois pontos:
-- Linha 529: `const wait = Math.max(0, Math.min(item.delayMs, 12_000));` → `Math.min(item.delayMs, 2_000)`
-- Linha 1732-1733: `if (textDelay > 0 ...) await ... textDelay;` → encapsular em `Math.min(textDelay, 2_000)`
-
-**Ganho:** até 10s em passos que tenham `text_delay_ms` alto configurado.
-
-## Mudança 3 — Reduzir `min_interval` anti-ban para 3s
-
-Hoje o `check_send_quota` (RPC) bloqueia envios por 30-45s quando 2 sends acontecem próximos. Investigar onde está o valor armazenado:
-
-1. Ler RPC `check_send_quota` (migration anterior) para descobrir tabela/coluna que guarda `min_interval`.
-2. Atualizar via migration o registro da(s) instância(s) Evolution ativas para `min_interval = 3 segundos` (ou ajustar a função RPC se for hardcoded).
-3. Manter as outras proteções (cap por hora, warmup) intactas.
-
-**Ganho:** elimina os spikes de 47s observados nos logs.
-
-## Validação pós-deploy
-
-1. Lead novo no Evolution: cronometrar clique → primeira msg. Esperado: ~2-3s.
-2. Logs: confirmar ausência de `min_interval_not_elapsed` em sequência normal.
-3. Comparar com Whapi (deve continuar inalterado).
-4. Monitorar 24h para sinais de bloqueio da instância (warmup/anti-ban).
-
-## Riscos
-
-- **humanDelayMs 800ms**: bot fica mais "robótico". Aceito porque o ganho de UX é maior.
-- **min_interval 3s**: pequena chance de aumentar suspeita do WhatsApp. Instância `tvmensal01` já madura — risco baixo. Reversão: rodar migration inversa.
-- **text_delay_ms teto 2s**: consultor que configurou pausa longa no Flow Builder deixa de ter efeito além de 2s no Evolution (Whapi mantém).
+## Risco
+Baixíssimo. O burst só relaxa `min_interval`, não permite mais envios totais (cap diário mantém). Pior caso: uma rajada de 4 mensagens chega ao lead em ~2-3s em vez de espaçada em 8s — exatamente o comportamento que o consultor configurou no Flow Builder.
