@@ -28,11 +28,27 @@ export function useFlowSteps(consultantId: string | null | undefined) {
     (async () => {
       const { data: flows } = await supabase
         .from("bot_flows")
-        .select("id")
+        .select("id, variant, sync_mode")
         .eq("consultant_id", consultantId)
         .eq("is_active", true);
       if (!flows || flows.length === 0) { if (mounted) setSteps([]); return; }
-      const flowIds = flows.map((f) => f.id);
+
+      // Espelha a lógica do FluxoBuilder/resolve-flow: quando sync_mode='public',
+      // os steps reais vivem no flow público da mesma variant.
+      const resolvedIds: string[] = [];
+      for (const f of flows as any[]) {
+        const mode = String(f.sync_mode ?? "public").toLowerCase();
+        if (mode === "public") {
+          const { data: pub } = await supabase
+            .from("bot_flows").select("id")
+            .eq("is_public", true).eq("is_active", true).eq("variant", f.variant)
+            .limit(1).maybeSingle();
+          resolvedIds.push((pub as any)?.id ?? f.id);
+        } else {
+          resolvedIds.push(f.id);
+        }
+      }
+      const flowIds = Array.from(new Set(resolvedIds));
       const { data } = await supabase
         .from("bot_flow_steps")
         .select("id, flow_id, position, title, step_key")
@@ -42,6 +58,7 @@ export function useFlowSteps(consultantId: string | null | undefined) {
     })();
     return () => { mounted = false; };
   }, [consultantId]);
+
 
   const customStepMap = useMemo<CustomStepMap>(() => {
     const map: CustomStepMap = new Map();
