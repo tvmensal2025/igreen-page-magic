@@ -481,12 +481,17 @@ export default function FluxoBuilder() {
 
 
   async function patchStep(id: string, patch: Partial<Step>) {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue o toggle no topo para personalizar.");
+      return;
+    }
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     const { error } = await supabase.from("bot_flow_steps").update(patch as any).eq("id", id);
     if (error) toast.error("Erro ao salvar: " + error.message);
   }
 
   async function handleDragEnd(e: DragEndEvent) {
+    if (isReadOnly) return;
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIdx = steps.findIndex((s) => s.id === active.id);
