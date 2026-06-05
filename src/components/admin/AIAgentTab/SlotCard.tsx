@@ -3,6 +3,7 @@ import { Upload, Trash2, Sparkles, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { AudioRecorderInline } from "./AudioRecorderInline";
 
@@ -38,6 +39,7 @@ type Props = {
 
 export function SlotCard({ userId, slot, defaultMedia, personalMedia, onChange }: Props) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const hasPersonal = !!(personalMedia && personalMedia.url && !personalMedia.is_draft);
   // Princípio único: usa o áudio personalizado se existir, senão o padrão.
   const activeMedia = hasPersonal ? personalMedia : defaultMedia;
@@ -97,7 +99,8 @@ export function SlotCard({ userId, slot, defaultMedia, personalMedia, onChange }
 
   async function removePersonal() {
     if (!personalMedia) return;
-    if (!confirm("Remover seu áudio e voltar ao padrão da Camila?")) return;
+    const ok = await confirm({ title: "Remover seu áudio e voltar ao padrão da Camila?", confirmText: "Remover", tone: "danger" });
+    if (!ok) return;
     const { error } = await supabase.from("ai_media_library").delete().eq("id", personalMedia.id);
     if (error) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
