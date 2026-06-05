@@ -309,7 +309,7 @@ export default function FluxoBuilder() {
           .limit(1).maybeSingle();
         if ((pub as any)?.id) stepsSourceFlowId = (pub as any).id as string;
       }
-      setStepsFlowId(stepsSourceFlowId);
+      
 
       if (stepsSourceFlowId) {
         const { data: rows, error: rowsError } = await supabase
