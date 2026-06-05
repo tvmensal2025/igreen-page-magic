@@ -1361,11 +1361,10 @@ Deno.serve(async (req) => {
     // Em aguardando_conta, se o cliente mandou MÍDIA (foto da conta), NÃO chamar IA;
     // o bot hardcoded faz OCR + envia botões SIM/NÃO/EDITAR.
     //
-    // §2.17: quando o consultor tem passo de abertura E a flag v2 está ativa
-    // (`canary`/`on`), o roteiro do consultor vence — `aiShouldHandle=false` e
-    // o motor cai no caminho de `runConversationalFlow` abaixo. Sob `dark`, a
-    // detecção é apenas logada e o caminho legado (IA) prossegue para não
-    // alterar comportamento em produção. Sob `off`, comportamento legado puro.
+    // §2.17 atualizado: quando o consultor tem passo de abertura configurado,
+    // o roteiro do consultor SEMPRE vence na abertura. Antes isso dependia da
+    // flag v2 e deixava a IA KB-only interceptar "Oi", pausar o lead por
+    // `ai_no_kb_match` e impedir o fluxo de iniciar.
     //
     // §2.10: o `if (aiShouldHandle)` abaixo retorna 200 imediatamente após
     // disparar o `ai-agent-router`. Como `runConversationalFlow`/`runBotFlow`
@@ -1379,10 +1378,10 @@ Deno.serve(async (req) => {
       aiCfg?.enabled === true &&
       CONVERSATIONAL_STEPS.has(currentStep) &&
       !(currentStep === "aguardando_conta" && isFile) &&
-      !(consultantHasOpeningStep && isV2Active(v2Flag));
+      !(consultantHasOpeningStep && isOpeningTurn);
 
-    if (consultantHasOpeningStep && !isV2Active(v2Flag)) {
-      jsonLog("info", "consultant_opening_step_dark_skip", {
+    if (consultantHasOpeningStep && isOpeningTurn) {
+      jsonLog("info", "consultant_opening_step_ai_bypassed", {
         consultant_id: instanceData.consultant_id,
         customer_id: customer.id,
         v2_flag: v2Flag,
