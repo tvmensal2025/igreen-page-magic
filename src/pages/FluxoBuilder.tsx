@@ -130,10 +130,6 @@ export default function FluxoBuilder() {
   //  - 'custom': fork — usuário edita livremente seus próprios steps.
   //  - null: ainda carregando OU consultor é super-admin (público é dele).
   const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
-  // Quando syncMode='public', o `flowId` (linha em bot_flows do consultor)
-  // continua sendo o do consultor, mas `stepsFlowId` (de onde vêm os passos
-  // renderizados) é o do público. Quando 'custom', os dois coincidem.
-  const [stepsFlowId, setStepsFlowId] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [togglingSync, setTogglingSync] = useState(false);
 
