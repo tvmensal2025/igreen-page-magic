@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -143,6 +144,7 @@ function EditableLabel({ value, onSave }: { value: string; onSave: (v: string) =
 
 export function MediaColumn({ userId }: { userId: string }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const { isSuperAdmin } = useUserRole(userId);
   const [view, setView] = useState<"mine" | "public">("mine");
   const [items, setItems] = useState<Media[]>([]);
@@ -272,7 +274,8 @@ export function MediaColumn({ userId }: { userId: string }) {
   }
 
   async function remove(m: Media) {
-    if (!confirm(`Excluir "${m.label}"?`)) return;
+    const ok = await confirm({ title: `Excluir "${m.label}"?`, confirmText: "Excluir", tone: "danger" });
+    if (!ok) return;
     if (m.url && m.consultant_id === userId) {
       // best effort: derive storage path from public URL
       const marker = "/ai-agent-media/";

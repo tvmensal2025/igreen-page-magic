@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadOpusRecorder } from "@/lib/opusRecorderLoader";
+import { toast } from "sonner";
 
 type Props = {
   onRecorded: (blob: Blob, durationSec: number) => Promise<void> | void;
@@ -47,7 +48,7 @@ export function AudioRecorderInline({ onRecorded, disabled }: Props) {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     } catch (e) {
       console.error("mic error", e);
-      alert("Falha ao iniciar gravação. Verifique a permissão do microfone.");
+      toast.error("Falha ao iniciar gravação. Verifique a permissão do microfone.");
     }
   }
 
@@ -67,8 +68,8 @@ export function AudioRecorderInline({ onRecorded, disabled }: Props) {
 
   async function save() {
     if (!previewBlob) return;
-    if (seconds < 3) { alert("Áudio muito curto (mínimo 3s)."); return; }
-    if (seconds > 600) { alert("Áudio muito longo (máximo 10 minutos)."); return; }
+    if (seconds < 3) { toast.error("Áudio muito curto (mínimo 3s)."); return; }
+    if (seconds > 600) { toast.error("Áudio muito longo (máximo 10 minutos)."); return; }
     setSaving(true);
     try {
       await onRecorded(previewBlob, seconds);

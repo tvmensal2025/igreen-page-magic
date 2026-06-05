@@ -3,6 +3,7 @@ import { Megaphone, Send, Loader2, Pause, Play, X, CheckCircle2, XCircle, ArrowR
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { ContactImporter } from "../ContactImporter";
 import { sendWhatsAppMessage } from "@/services/messageSender";
@@ -90,6 +91,7 @@ function downloadCsv(rows: CampaignTarget[]) {
 
 export function BulkProPanel({ instanceName, customers, templates, consultantId }: Props) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [step, setStep] = useState<Step>(1);
   const [contacts, setContacts] = useState<BulkContact[]>([]);
   const [text, setText] = useState("");
@@ -570,7 +572,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                           )}
                           <button
                             onClick={async () => {
-                              if (!confirm(`Apagar "${h.name}"?`)) return;
+                              const ok = await confirm({ title: `Apagar "${h.name}"?`, confirmText: "Apagar", tone: "danger" });
+                              if (!ok) return;
                               await deleteCampaign(h.id);
                               setHistory(prev => prev.filter(x => x.id !== h.id));
                             }}

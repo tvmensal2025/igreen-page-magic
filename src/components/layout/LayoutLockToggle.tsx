@@ -3,12 +3,14 @@ import { Lock, Unlock, RotateCcw } from "lucide-react";
 import { useLayoutLock } from "@/hooks/useLayoutLock";
 import { useResetLayoutSizes } from "@/hooks/useResetLayoutSizes";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const HINT_KEY = "igreen:layout-lock-hint-seen";
 
 export function LayoutLockToggle({ className }: { className?: string }) {
   const { locked, toggle } = useLayoutLock();
   const resetSizes = useResetLayoutSizes();
+  const confirm = useConfirm();
   const [pulse, setPulse] = useState(false);
 
   // Pulso sutil na 1ª visita para sinalizar que o ajuste existe.
@@ -58,7 +60,10 @@ export function LayoutLockToggle({ className }: { className?: string }) {
       {!locked && (
         <button
           type="button"
-          onClick={() => { if (confirm("Resetar todos os tamanhos das colunas para o padrão?")) resetSizes(); }}
+          onClick={async () => {
+            const ok = await confirm({ title: "Resetar tamanhos das colunas?", description: "Volta todas as colunas para o tamanho padrão.", confirmText: "Resetar" });
+            if (ok) resetSizes();
+          }}
           title="Resetar tamanhos das colunas"
           aria-label="Resetar tamanhos das colunas"
           className="p-1.5 sm:p-2 rounded-xl text-muted-foreground hover:text-primary hover:bg-secondary transition-all"

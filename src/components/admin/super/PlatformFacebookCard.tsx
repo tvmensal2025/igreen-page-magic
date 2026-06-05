@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { getPlatformFacebookStatus, listFacebookAssets, selectFacebookAssets, startFacebookOAuth, type FbAssets, type PlatformFacebookStatus } from "@/services/facebookAds";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +41,7 @@ function fmt(cents: number | undefined, currency = "BRL") {
 
 export function PlatformFacebookCard() {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [status, setStatus] = useState<PlatformFacebookStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<PlatformBalance | null>(null);
@@ -100,7 +102,8 @@ export function PlatformFacebookCard() {
     if (!diagData?.adsets) return;
     const wrong = diagData.adsets.filter((a: any) => a.adset_id && a.is_correct === false);
     if (wrong.length === 0) return;
-    if (!confirm(`Migrar ${wrong.length} adset(s) para o pixel correto? Isso reseta aprendizado.`)) return;
+    const ok = await confirm({ title: `Migrar ${wrong.length} adset(s) para o pixel correto?`, description: "Isso reseta o aprendizado.", confirmText: "Migrar", tone: "info" });
+    if (!ok) return;
     setMigratingAll(true);
     let okCount = 0, failCount = 0;
     for (const a of wrong) {

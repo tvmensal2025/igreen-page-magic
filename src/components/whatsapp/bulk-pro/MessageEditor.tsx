@@ -3,6 +3,7 @@ import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, P
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { uploadMedia, formatFileSize } from "@/services/minioUpload";
@@ -41,6 +42,7 @@ const VARS = [
 ];
 
 export function MessageEditor({ consultantId, text, onTextChange, media, onMediaChange, previewName, previewBill, templates = [] }: Props) {
+  const confirm = useConfirm();
   const [tplQuery, setTplQuery] = useState("");
   const [tplOpen, setTplOpen] = useState(false);
   const filteredTemplates = templates.filter(t => {
@@ -48,8 +50,11 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
     if (!q) return true;
     return t.name.toLowerCase().includes(q) || (t.content || "").toLowerCase().includes(q);
   });
-  const applyTemplate = (t: MessageTemplate) => {
-    if (text.trim() && !confirm("Substituir a mensagem atual pelo template?")) return;
+  const applyTemplate = async (t: MessageTemplate) => {
+    if (text.trim()) {
+      const ok = await confirm({ title: "Substituir a mensagem atual pelo template?", confirmText: "Substituir" });
+      if (!ok) return;
+    }
     onTextChange(t.content || "");
     if (t.media_url && t.media_type && t.media_type !== "text") {
       onMediaChange({ url: t.media_url, kind: t.media_type as any, fileName: t.name });

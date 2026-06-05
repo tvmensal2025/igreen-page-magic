@@ -6,11 +6,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useVoiceTemplates } from "@/hooks/useVoiceTemplates";
 import { VoiceTemplateEditor } from "./VoiceTemplateEditor";
 import { VoiceNamesLibrary } from "./VoiceNamesLibrary";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface Props { consultantId: string; }
 
 export function VoiceTemplatesPanel({ consultantId }: Props) {
   const vt = useVoiceTemplates(consultantId);
+  const confirm = useConfirm();
   const [newName, setNewName] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -68,7 +70,11 @@ export function VoiceTemplatesPanel({ consultantId }: Props) {
                         <Edit3 className="w-3.5 h-3.5 text-muted-foreground" />
                         <Button
                           size="icon" variant="ghost" className="h-7 w-7 text-destructive"
-                          onClick={(e) => { e.stopPropagation(); if (confirm(`Apagar template "${t.name}"?`)) vt.deleteTemplate(t.id); }}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const ok = await confirm({ title: `Apagar template "${t.name}"?`, confirmText: "Apagar", tone: "danger" });
+                            if (ok) vt.deleteTemplate(t.id);
+                          }}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertCircle, Wallet, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 /**
  * Popup obrigatório quando o saldo da carteira de anúncios zera ou tem campanha
@@ -19,6 +20,7 @@ import { toast } from "sonner";
  */
 export function RechargeRequiredDialog() {
   const guard = useWalletGuard();
+  const confirm = useConfirm();
   const [amount, setAmount] = useState<string>("100");
   const [loading, setLoading] = useState(false);
 
@@ -51,7 +53,8 @@ export function RechargeRequiredDialog() {
   }
 
   async function handleArchiveAll() {
-    if (!confirm(`Arquivar ${guard.pausedCampaigns.length} campanha(s) pausada(s)? Isso encerra elas definitivamente.`)) return;
+    const ok = await confirm({ title: `Arquivar ${guard.pausedCampaigns.length} campanha(s) pausada(s)?`, description: "Isso encerra elas definitivamente.", confirmText: "Arquivar", tone: "danger" });
+    if (!ok) return;
     setLoading(true);
     try {
       const ids = guard.pausedCampaigns.map((c) => c.id);
