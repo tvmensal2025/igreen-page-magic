@@ -1092,6 +1092,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         return false;
       }
 
+      // R6 (2026-06-05): step que depende de valor_conta NÃO pode disparar sem
+      // a captura — antes vazava "{{economia_range}}" literal. Detecta pelo
+      // texto referenciando as chaves de economia/valor.
+      const _stepText = String((stepRow as any).message_text || "");
+      const _needsBill = /\{\{?\s*(valor_conta|economia_range|economia_faixa|economia_mensal|economia_anual|valor)\s*\}?\}/i.test(_stepText);
+      const _hasBill = Number((customer as any).electricity_bill_value || 0) >= 30;
+      if (_needsBill && !_hasBill) {
+        console.warn(`[dispatch:${stepKey}] bloqueado: step exige valor_conta mas lead não tem (electricity_bill_value=${(customer as any).electricity_bill_value}). Redirecionando para aguardando_conta.`);
+        try {
+          await supabase
+            .from("customers")
+            .update({ conversation_step: "aguardando_conta", updated_at: new Date().toISOString() })
+            .eq("id", customer.id);
+        } catch (_) { /* best-effort */ }
+        try {
+          const nudge = `Antes de calcular sua economia, me conta: *quanto vem em média a sua conta de luz por mês?* 💡`;
+          await sendText(remoteJid, nudge);
+        } catch (_) { /* segue */ }
+        return false;
+      }
+
       // ─── AI ANSWER MODE: passos de "esclarecer dúvidas" ──────────────
       // Espelho da lógica do whapi-webhook: passos *duvid* ou slot
       // "esclarecer_duvidas" respondem via Gemini 3.1 Pro com texto puro
