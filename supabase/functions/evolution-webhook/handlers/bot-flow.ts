@@ -1281,7 +1281,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             let okSend = false;
             if (useButtonsHere) {
               // sendButtons no Evolution já formata "1. opt …" no próprio texto
-              okSend = (await sender.sendButtons(remoteJid, finalText, _buttons)) !== false;
+              okSend = (await sendButtons(remoteJid, finalText, _buttons)) !== false;
               if (okSend) buttonsSent = true;
             } else {
               okSend = (await sendText(remoteJid, finalText)) !== false;
@@ -1376,7 +1376,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         try {
           await new Promise((r) => setTimeout(r, 600));
           const promptText = "👇 *Escolha uma opção:*";
-          await sender.sendButtons(remoteJid, promptText, _buttons);
+          await sendButtons(remoteJid, promptText, _buttons);
           await supabase.from("conversations").insert({
             customer_id: customer.id,
             message_direction: "outbound",
