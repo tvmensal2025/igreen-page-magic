@@ -1,161 +1,149 @@
-# Plano (auditado v2): eliminar `silent_handoff_empty_reply` para qualquer cliente
+# Auditoria do plano anterior + correções (contexto: venda)
 
-## Correções da auditoria vs. plano anterior
+## Achados da auditoria
 
-| Ponto antigo | Verdade no código | Impacto |
-|---|---|---|
-| "~50 call sites em bot-flow.ts" | **68** sites (`await sendText/sendOptions/sendButtons/sendMedia/sendAudio/ctx.sender…`) | Reescrever 68 por mão é inviável → reforça que a Camada 1 (counter automático) é o caminho certo |
-| "Espelhar em whapi-webhook" | `whapi-webhook/index.ts` **não contém** `silent_handoff_empty_reply` — bug é exclusivo de Evolution | Remove escopo do whapi |
-| "Wrappers em `_shared/channels/*`" | Já existe `_shared/sender-guard.ts` → `wrapSenderWithGuard` que embrulha `sendText/sendMedia/sendButtons/sendAudio` no boot do webhook (`index.ts:344`) | Lugar **único e óbvio** para colocar o contador; ganha cobertura total sem tocar handlers |
-| "sendOptions precisa ser instrumentado" | `sendOptions` é helper local em `bot-flow.ts:1037` que apenas chama `sendText` por baixo | Instrumentar só os 4 métodos base já cobre `sendOptions`, `sendButtons`, etc. |
-| "`BotContext` ganha campo `__turnOutbound`" | `BotContext.sender` é `any` (`handlers/types.ts:17`) | Pendurar o contador **no próprio objeto sender** (não na raiz do ctx) é menos invasivo e não muda a interface |
 
-## Causa raiz (re-confirmada)
+| #   | Problema                                                                                                                                                                                                                                                 | Evidência                                                | Severidade |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------- |
+| 1   | `**"oii 😊"` quebra contexto de venda** — lead que mandou foto da conta recebe um "oii" do nada, parece bot quebrado                                                                                                                                     | `index.ts:1894` (versão antiga) e `:1880` (versão atual) | 🔴 Alta    |
+| 2   | **Sentinel `[empty-reply-safety]` aparece no histórico do admin** — admin chat view não filtra `message_type='system'` (`grep` confirmou)                                                                                                                | `src/components/whatsapp/*` não filtra `system`          | 🔴 Alta    |
+| 3   | `**getTemplate(stepToSend, "default")` não funcionaria** — o argumento é `template_key`, não variant; e só ~10 steps têm row em `bot_messages` (consultado agora). Steps como `aguardando_conta`, `d_resultado`, `aguardando_documento` não têm template | `templates.ts:99` + query em `bot_messages`              | 🟡 Média   |
+| 4   | **Anti-loop usa `message_text='[empty-reply-safety]'**` — se mudarmos o sentinel pra system message invisível, a query do count quebra silenciosamente; precisa de chave estável                                                                         | Auto-referência no `index.ts:1888-1898`                  | 🟡 Média   |
 
-`evolution-webhook/index.ts:1850-1905` tem uma rede de segurança que pausa o bot quando: (a) handler retorna `reply=""`, (b) updates não tem `__inline_sent: true`, (c) consulta em `conversations` nos últimos 30s (excluindo `[inline-sent]%` / `[failed:%`) não acha outbound real. Falha quando:
 
-1. Handler chamou sender inline mas esqueceu de marcar a flag (achado real de hoje no OCR conta/doc).
-2. Envio gravou em `conversations` como `[inline-sent]` ou `[failed:pending]` → o filtro do safety-check exclui essas linhas (`index.ts:1814-1815, 1868-1869`).
-3. Race: handler chamou `sendText` mas a row ainda não persistiu quando o pipeline consulta.
+## Solução (Camada 2 re-projetada)
 
-## Solução
+### Estratégia: re-enviar a última pergunta real do bot
 
-### Camada 1 — Contador determinístico no sender-guard (fix estrutural)
+Em vez de inventar texto, o bot **re-emite a última pergunta que ele mesmo fez** ao lead, com um prefixo humano leve. Isso preserva 100% o contexto da venda — se o passo era pedir conta de luz, ele repete pedindo conta de luz.
 
-**Arquivo:** `supabase/functions/_shared/sender-guard.ts`
-
-Modificar `wrapSendFn` para incrementar um contador escondido no objeto `wrapped` toda vez que a função retornar com sucesso (qualquer valor que não seja literalmente `false` ou throw).
-
-```ts
-// dentro de wrapSenderWithGuard, antes de retornar `wrapped`:
-Object.defineProperty(wrapped, "__turnOutbound", {
-  value: 0, writable: true, enumerable: false, configurable: false,
-});
-
-// dentro de wrapSendFn, no caller:
-const result = await origFn.apply(this, args);
-if (result !== false) {
-  try { (wrapped as any).__turnOutbound++; } catch { /* noop */ }
-}
-return result;
-```
-
-**Arquivo:** `supabase/functions/evolution-webhook/index.ts` (linhas 1858-1905)
-
-Trocar a heurística atual por leitura do contador antes do DB-check:
-
-```ts
-const senderOutboundCount = Number((sender as any).__turnOutbound || 0);
-let realOutboundExistsFinal = senderOutboundCount > 0;
-if (!realOutboundExistsFinal && !reply) {
-  // fallback: consulta DB como antes
-  try {
-    const sinceIso = new Date(Date.now() - 30_000).toISOString();
-    const { data: realRow } = await supabase
-      .from("conversations")
-      .select("id")
-      .eq("customer_id", customer.id)
-      .eq("message_direction", "outbound")
-      .gte("created_at", sinceIso)
-      .not("message_text", "like", "[inline-sent]%")
-      .not("message_text", "like", "[failed:%")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    realOutboundExistsFinal = !!realRow;
-  } catch { /* fail-open */ }
-}
-const handlerSentInline =
-  !reply && (
-    (updates as any).__inline_sent === true ||
-    senderOutboundCount > 0 ||
-    realOutboundExistsFinal
-  );
-```
-
-O mesmo `senderOutboundCount` substitui o gate equivalente no bloco `if (__inline_sent_flag)` (linhas 1798-1846) — assim quando o handler marca `__inline_sent: true` mas por algum bug não enviou nada, o contador detecta e o `inline_sent_contract_violation` continua disparando como hoje.
-
-**Como o reset do contador acontece:** o `sender` é instanciado uma vez por request (`index.ts:344`), então o contador nasce em 0 a cada turno automaticamente. Não precisa reset manual.
-
-### Camada 2 — Rede de segurança nunca pausa o bot
-
-**Arquivo:** `supabase/functions/evolution-webhook/index.ts` (linhas 1893-1904)
-
-Remover o `bot_paused = true` + `bot_paused_reason = "silent_handoff_empty_reply"`. No lugar, **re-prompt do step atual**:
+**Pseudocódigo da Camada 2:**
 
 ```ts
 if (!finalReply && !handlerSentInline) {
-  console.error(`🚨 [empty-reply-safety] step="${stepToSend}" customer=${customer.id} → re-prompting`);
-  captureError(new Error(`Bot empty reply at step ${stepToSend}`), {
-    tags: { function: "evolution-webhook", kind: "empty_reply_safety" },
-    extra: { customer_id: customer.id, step: stepToSend },
-  });
-  // Tenta re-emitir o template do step atual; se não houver template, usa cumprimento humano.
-  try {
-    const repromptText = await getTemplate(
-      supabase, String(stepToSend), "default",
-      { nome: customer.name, representante: nomeRepresentante },
-    );
-    finalReply = (repromptText && repromptText.trim()) || "oii 😊";
-  } catch {
-    finalReply = "oii 😊";
+  // 1) Busca o ÚLTIMO outbound real (não sentinel, não inline-marker)
+  //    enviado a este customer nos últimos 30 min, com texto não vazio.
+  const { data: lastReal } = await supabase
+    .from("conversations")
+    .select("message_text, conversation_step, created_at")
+    .eq("customer_id", customer.id)
+    .eq("message_direction", "outbound")
+    .neq("message_type", "system")          // ignora sentinels
+    .not("message_text", "like", "[inline-sent]%")
+    .not("message_text", "like", "[failed:%")
+    .not("message_text", "is", null)
+    .gte("created_at", new Date(Date.now() - 30 * 60_000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let repromptText: string | null = null;
+
+  if (lastReal?.message_text && lastReal.message_text.trim()) {
+    // 2a) Prefixo humano + última pergunta real. Curto, sem robotice.
+    const firstName = (customer.name || "").split(" ")[0];
+    const greet = firstName ? `${firstName}, ` : "";
+    repromptText = `${greet}voltando aqui 👇\n\n${lastReal.message_text}`;
+  } else {
+    // 2b) Sem histórico recente → tenta template do step atual em bot_messages.
+    //     Convenção: template_key="reprompt" (criamos abaixo). Se não houver,
+    //     cai em "menu_inicial:reforco" que já existe e é tom de venda.
+    try {
+      repromptText = await getTemplate(
+        supabase,
+        String(stepToSend ?? "menu_inicial"),
+        "reprompt",
+        { nome: customer.name, representante: nomeRepresentante,
+          valor_conta: customer.electricity_bill_value },
+      );
+    } catch { /* fallback no catch abaixo */ }
+    if (!repromptText || repromptText.trim() === "") {
+      repromptText = await getTemplate(
+        supabase, "menu_inicial", "reforco",
+        { nome: customer.name, representante: nomeRepresentante },
+      );
+    }
   }
+
+  finalReply = repromptText || `${(customer.name||"").split(" ")[0] || "Oi"}, posso te ajudar a continuar?`;
 }
 ```
 
-A enum `silent_handoff_empty_reply` em `customer-flow-state.ts:24` **fica** (compatibilidade com dados antigos) mas nunca mais é escrita pelo bot.
+### Bloqueio de variáveis órfãs
 
-### Camada 3 — Anti-loop (rede da rede de segurança)
+`renderTemplate` em `templates.ts:57` já limpa pares órfãos (`**`, `,,`, etc.), mas **não limpa `{{xxx}}` desconhecido**. Adicionamos uma checagem pós-render:
 
-Se o mesmo `customer_id + conversation_step` cair na Camada 2 **≥3 vezes em 5 min**, aí sim pausa para humano com `bot_paused_reason = "anti_loop"` (enum já existe). Critério verificado por:
+```ts
+// Em templates.ts no fim de renderTemplate, antes do return:
+if (/\{\{\s*\w+\s*\}\}/.test(out)) {
+  // Há variável não resolvida — não usar este texto cru no re-prompt.
+  // Devolvemos string vazia para o caller cair no próximo fallback.
+  return "";
+}
+```
+
+Aplicado **só dentro de `renderTemplate**`, evita que um template novo com variável errada vaze `{{cpf}}` pro cliente.
+
+### Sentinel invisível para o admin
+
+Mudar o sentinel pra um marcador que admin filtra. Como o admin **não filtra `message_type='system'**`, em vez de criar mais filtros no frontend, fazemos o sentinel com **prefixo textual reservado** já filtrado em todas as queries de display:
+
+```ts
+await supabase.from("conversations").insert({
+  customer_id: customer.id,
+  message_direction: "outbound",
+  message_type: "system",
+  message_text: "[__safety_ping__]",   // novo marker, não-localizado
+  conversation_step: stepToSend ? String(stepToSend) : null,
+});
+```
+
+E **adicionamos um filtro no admin chat view** (componentes que listam `conversations` ordenados por `created_at`) para excluir `message_text LIKE '[__safety_ping__]%'` E `message_text LIKE '[inline-sent]%'` E `message_text LIKE '[failed:%'`. Vou listar os componentes exatos no momento do build (`grep "from(\"conversations\")"` nos `src/`).
+
+### Camada 3 (anti-loop) ajustada
+
+Mesmo critério (3× em 5min), mas chave estável usando o novo marker:
 
 ```ts
 const { count } = await supabase
   .from("conversations")
   .select("id", { count: "exact", head: true })
   .eq("customer_id", customer.id)
-  .eq("conversation_step", String(stepToSend))
-  .eq("message_text", "[empty-reply-safety]")
+  .eq("conversation_step", String(stepToSend ?? ""))
+  .eq("message_text", "[__safety_ping__]")
   .gte("created_at", new Date(Date.now() - 5 * 60_000).toISOString());
-if ((count ?? 0) >= 2) { /* pausa com anti_loop */ }
-// e grava 1 row sentinel `[empty-reply-safety]` por ocorrência.
+
+if ((count ?? 0) >= 2) {
+  // Pausa pra humano com motivo claro
+  await supabase.from("customers").update({
+    bot_paused: true,
+    bot_paused_reason: "anti_loop_empty_reply",
+    bot_paused_at: new Date().toISOString(),
+  }).eq("id", customer.id);
+  // E grava 1 outbound visível avisando que humano vai assumir:
+  finalReply = `${(customer.name||"").split(" ")[0] || ""}, vou chamar um consultor humano agora mesmo pra continuar com você 🤝`.trim();
+}
 ```
 
-### Camada 4 — Backfill one-off
+Diferença vs. plano anterior: quando pausa por loop, o cliente **recebe um aviso humano** em vez de silêncio total — silêncio em venda perde lead.
 
-Migração que despausa todos os leads atualmente travados pelo bug:
+## Arquivos a alterar (build mode)
 
-```sql
-UPDATE customers
-SET bot_paused = false,
-    bot_paused_reason = null,
-    bot_paused_at = null
-WHERE bot_paused_reason = 'silent_handoff_empty_reply';
-```
+1. `supabase/functions/evolution-webhook/index.ts` — substituir bloco Camada 2 (linhas ~1878-1925 da versão atual) pela lógica acima.
+2. `supabase/functions/evolution-webhook/handlers/conversational/templates.ts` — adicionar guard de `{{}}` órfão no fim de `renderTemplate`.
+3. **Sem migração nova obrigatória**, mas opcional: SQL pra inserir `reprompt` templates para os steps mais críticos (`aguardando_conta`, `aguardando_documento`, `d_resultado`, `dados_basicos`). Posso listar os textos pra você aprovar antes de inserir.
+4. **Filtro no frontend admin chat**: localizar (`grep`) e atualizar 1-3 componentes que listam `conversations` pra excluir `[__safety_ping__]%`, `[inline-sent]%`, `[failed:%`.
 
 ## Validação
 
-1. **Teste unitário Deno** em `supabase/functions/_shared/__tests__/sender-guard.turn-counter.test.ts`: chama `wrapSenderWithGuard` com mock, executa 3 `sendText` e asserta `wrapped.__turnOutbound === 3`. Testa caminho `false` (não incrementa).
-2. **Teste de integração** em `evolution-webhook/__tests__/empty-reply-safety.test.ts`: stub do handler que faz `sender.sendText(...)` e retorna `{reply:"", updates:{}}` (sem flag). Asserta que `customers.bot_paused` continua `false` e que o cliente recebeu a mensagem.
-3. **Smoke manual:** reset do `11971254913`, `Oi → 1 → foto da conta → 1` → segue para `aguardando_documento` sem pausar.
-4. **Monitor pós-deploy:** alerta no Sentry para `empty_reply_safety` — se subir, sinaliza handler com bug real (não mais falso-positivo).
+1. **Lead após mandar conta + cair em empty-reply**: deve ver `"João, voltando aqui 👇\n\nManda uma foto ou PDF…"` em vez de `"oii"`.
+2. **Lead novo sem histórico**: cai em `menu_inicial:reforco` ("ainda quer entender como funciona o desconto?") — tom de venda.
+3. **Sentinel `[__safety_ping__]**` invisível no painel admin após o filtro.
+4. **3× empty-reply em 5min** no mesmo step → pausa com `anti_loop_empty_reply` + mensagem "vou chamar um consultor humano".
+5. **Template com `{{erro}}` não resolvido** → `renderTemplate` retorna vazio, cai no próximo fallback, nunca chega ao cliente.
 
-## Riscos & mitigações
+## Itens NÃO incluídos
 
-| Risco | Mitigação |
-|---|---|
-| Contador conta envio que **falhou silenciosamente** (sender retornou `true` mas Evolution não entregou) | Mantemos o DB-check como 2º fallback; `evolution_send_pending` continua sendo `warn` no Sentry |
-| Re-prompt com `getTemplate` pode lançar exceção e quebrar a Camada 2 | Bloco `try/catch` que cai em `"oii 😊"` |
-| Sender é re-criado por chamada interna em algum handler (perderia o contador) | Audit confirma: sender é construído **só** em `index.ts:344` e passado como referência via `ctx.sender`. Nenhum handler reinstancia (`grep wrapSenderWithGuard`/`new Sender` em handlers = 0 hits) |
-| Camada 3 (anti-loop) pode pausar legítimo se 3 turnos seguidos forem do mesmo step | Threshold 3× em 5min é tolerante; em fluxo normal o step muda a cada turno |
+- Re-prompt via IA generativa (custo + latência sem ganho claro vs. re-emit do último real).
+- Inserção em massa de templates `reprompt` por step — proposto como opcional, aguardando aprovação dos textos.
 
-## Escopo NÃO incluído
-
-- `whapi-webhook` (bug não existe lá — confirmado).
-- Reescrita dos 68 call sites com `__inline_sent` (Camada 1 torna a flag opcional; quem já tem fica como reforço documental).
-- Lint estático de regressão (Camada 3 anterior) — substituído pelo monitor Sentry, mais barato e detecta runtime de verdade.
-- `dispatcher/` e `conversational/index.ts` — eles já inserem em `conversations` corretamente e não disparam o safety.
-
-## Aviso
-
-`.lovable/` está no `.gitignore`, então este plano **não persiste** após o snapshot. Se quiser mantê-lo versionado, posso remover essa entrada — me avise.
