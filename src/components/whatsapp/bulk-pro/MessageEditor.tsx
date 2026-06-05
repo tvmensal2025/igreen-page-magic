@@ -123,7 +123,9 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
   }[media.kind]) : null;
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 items-start">
+      <div className="space-y-4 min-w-0">
+
       {/* Template picker */}
       <div className="flex items-center justify-between gap-3 rounded-xl border border-[#c9a84c]/30 bg-[#c9a84c]/5 px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
