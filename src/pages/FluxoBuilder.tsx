@@ -4,9 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play } from "lucide-react";
+import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
@@ -122,6 +123,21 @@ export default function FluxoBuilder() {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
+  // Modo de sincronia com o template público (super-admin).
+  //  - 'public': estrutura travada — usuário só edita mídias. Render dos
+  //    steps vem do flow `is_public=true` da mesma variante. Toda mudança
+  //    do super-admin chega automaticamente.
+  //  - 'custom': fork — usuário edita livremente seus próprios steps.
+  //  - null: ainda carregando OU consultor é super-admin (público é dele).
+  const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
+  // Quando syncMode='public', o `flowId` (linha em bot_flows do consultor)
+  // continua sendo o do consultor, mas `stepsFlowId` (de onde vêm os passos
+  // renderizados) é o do público. Quando 'custom', os dois coincidem.
+  const [stepsFlowId, setStepsFlowId] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [togglingSync, setTogglingSync] = useState(false);
+
+  const isReadOnly = syncMode === "public";
   
   const [editingVariant, setEditingVariant] = useState<Variant>("A");
   const [existingVariants, setExistingVariants] = useState<Variant[]>(["A"]);
