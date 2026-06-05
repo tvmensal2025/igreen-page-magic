@@ -430,9 +430,11 @@ export interface EvolutionGroupParticipant {
 
 export async function fetchAllGroups(instanceName: string): Promise<EvolutionGroup[]> {
   try {
-    return await request<EvolutionGroup[]>(`group/fetchAllGroups/${instanceName}`, "GET");
+    // Evolution API exige ?getParticipants=true|false explicitamente.
+    return await request<EvolutionGroup[]>(`group/fetchAllGroups/${instanceName}?getParticipants=false`, "GET");
   } catch { return []; }
 }
+
 
 export async function getGroupParticipants(instanceName: string, groupJid: string): Promise<EvolutionGroupParticipant[]> {
   try {
