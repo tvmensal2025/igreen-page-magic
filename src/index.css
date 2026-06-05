@@ -746,30 +746,31 @@ html {
    Scoped tokens & utilities used only inside .ads-central-2026
    ═══════════════════════════════════════════════════════════ */
 .ads-central-2026 {
-  --ads-bg:        222 47% 4%;
-  --ads-surface:   158 64% 8%;
-  --ads-surface-2: 158 50% 12%;
-  --ads-border:    158 30% 18%;
-  --ads-border-strong: 158 40% 28%;
-  --ads-emerald:   158 84% 30%;
-  --ads-emerald-2: 162 88% 22%;
-  --ads-gold:      43  53% 54%;
-  --ads-gold-soft: 43  40% 40%;
+  /* Light Emerald Prestige — bright, legible, premium */
+  --ads-bg:        45 55% 96%;     /* cream paper */
+  --ads-surface:   0  0% 100%;     /* pure white tiles */
+  --ads-surface-2: 45 45% 98%;     /* warm white */
+  --ads-border:    158 25% 82%;
+  --ads-border-strong: 158 30% 65%;
+  --ads-emerald:   162 75% 28%;    /* deep emerald for accents on light */
+  --ads-emerald-2: 162 85% 18%;    /* darkest emerald for headings */
+  --ads-gold:      40  72% 42%;    /* rich gold, readable on white */
+  --ads-gold-soft: 40  60% 55%;
   --ads-cream:     45  60% 92%;
-  --ads-text:      45  20% 96%;
-  --ads-muted:     158 15% 65%;
-  --ads-danger:    0   72% 55%;
+  --ads-text:      162 45% 12%;    /* dark emerald ink */
+  --ads-muted:     162 18% 38%;
+  --ads-danger:    0   72% 45%;
 
-  --ads-shadow-emerald: 0 20px 60px -20px hsl(var(--ads-emerald-2) / .6);
-  --ads-shadow-tile: 0 1px 0 0 hsl(var(--ads-border)) inset, 0 10px 30px -15px rgb(0 0 0 / .8);
+  --ads-shadow-emerald: 0 20px 50px -20px hsl(var(--ads-emerald-2) / .25);
+  --ads-shadow-tile: 0 1px 0 0 hsl(var(--ads-border)) inset, 0 8px 24px -16px hsl(var(--ads-emerald-2) / .35);
   --ads-gradient-tile: linear-gradient(180deg, hsl(var(--ads-surface)) 0%, hsl(var(--ads-surface-2)) 100%);
   --ads-gradient-gold: linear-gradient(135deg, hsl(var(--ads-gold)) 0%, hsl(var(--ads-gold-soft)) 100%);
   --ads-gradient-emerald: linear-gradient(135deg, hsl(var(--ads-emerald)) 0%, hsl(var(--ads-emerald-2)) 100%);
 
   font-family: 'DM Sans', system-ui, sans-serif;
   color: hsl(var(--ads-text));
-  background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald-2) / .25), transparent 60%),
-              radial-gradient(800px 400px at 100% 0%, hsl(var(--ads-gold) / .08), transparent 60%),
+  background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald) / .10), transparent 60%),
+              radial-gradient(800px 400px at 100% 0%, hsl(var(--ads-gold) / .10), transparent 60%),
               hsl(var(--ads-bg));
   min-height: 100%;
 }
