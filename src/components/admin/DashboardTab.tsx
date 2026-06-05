@@ -230,7 +230,7 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
     setResetting(true);
     try {
       const res = await adminHardResetPhone(phone);
-      if (!res.ok) {
+      if (res.ok !== true) {
         toast({ title: "Erro no reset", description: res.error, variant: "destructive" });
         return;
       }
