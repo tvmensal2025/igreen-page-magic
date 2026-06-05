@@ -592,7 +592,10 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
         toast({ title: "✅ Rede sincronizada!", description: `${data.total_members} licenciados encontrados.` });
         await fetchMembers();
       } else {
-        toast({ title: "⚠️ Erro", description: data?.error || "Erro desconhecido", variant: "destructive" });
+        const desc = data?.login_status === 401 || data?.login_status === 403
+          ? "O portal iGreen recusou o login. A senha pode ter mudado — atualize na aba Dados."
+          : (data?.error || "Erro desconhecido");
+        toast({ title: "⚠️ Erro ao sincronizar rede", description: desc, variant: "destructive" });
       }
     } catch (err) {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
