@@ -1078,6 +1078,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
       } catch (_e) { /* ignora — anti-rep é best-effort */ }
 
+      // R1 (2026-06-05): advisory lock por (customer, step) — fecha race
+      // condition entre 2 webhooks concorrentes do Evolution.
+      try {
+        const { data: gotLock } = await supabase.rpc("try_lock_step_dispatch", {
+          p_customer_id: customer.id,
+          p_step_key: stepKey,
+        });
+        if (gotLock === false) {
+          console.log(`[dispatch:${stepKey}] 🔒 lock ocupado por outro webhook — skip`);
+          return true;
+        }
+      } catch (e) {
+        console.warn(`[dispatch:${stepKey}] try_lock_step_dispatch falhou (segue sem lock):`, (e as any)?.message);
+      }
+
       const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (!flow?.id) return false;
 
