@@ -597,6 +597,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
               onMediaChange={setMedia}
               previewName={deduped[0]?.name}
               previewBill={deduped[0]?.electricity_bill_value}
+              templates={templates}
             />
           )}
 
