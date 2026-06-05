@@ -132,6 +132,10 @@ export default function FluxoBuilder() {
   const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [togglingSync, setTogglingSync] = useState(false);
+  // Flow real de onde os steps mostrados vêm. Quando syncMode='public', é o id do
+  // template público; caso contrário, é o flow do próprio consultor. Usado para
+  // abrir a subscription realtime em bot_flow_steps no flow certo.
+  const [stepsSourceFlowId, setStepsSourceFlowId] = useState<string | null>(null);
 
   const isReadOnly = syncMode === "public";
   
@@ -326,9 +330,11 @@ export default function FluxoBuilder() {
           layout: r.layout ?? null,
         })) as Step[];
         setSteps(parsed);
+        setStepsSourceFlowId(stepsSourceFlowId);
         if (parsed.length && !selectedId) setSelectedId(parsed[0].id);
       } else {
         setSteps([]);
+        setStepsSourceFlowId(null);
         setSelectedId(null);
       }
 
@@ -451,6 +457,47 @@ export default function FluxoBuilder() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingVariants]);
+
+  // Realtime: quando o super-admin altera o template público, consultores em
+  // modo público veem a mudança aparecer sem precisar recarregar. Também
+  // mantém o próprio super-admin sincronizado entre abas. Refaz o SELECT dos
+  // steps com debounce ao receber qualquer INSERT/UPDATE/DELETE no flow atual.
+  useEffect(() => {
+    if (!stepsSourceFlowId || !userId) return;
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
+    const refetch = async () => {
+      const { data: rows } = await supabase
+        .from("bot_flow_steps").select("*").eq("flow_id", stepsSourceFlowId).order("position");
+      const parsed = (rows ?? []).map((r: any) => ({
+        ...r,
+        icon: r.icon ?? "msg",
+        title: r.title ?? "Sem título",
+        transitions: parseTransitions(r.transitions),
+        captures: parseCaptures(r.captures),
+        fallback: parseFallback(r.fallback, r.transitions),
+        auto_detect_doc_type: r.auto_detect_doc_type !== false,
+        layout: r.layout ?? null,
+      })) as Step[];
+      setSteps(parsed);
+    };
+    const channel = supabase
+      .channel(`flow-steps-${stepsSourceFlowId}`)
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "bot_flow_steps", filter: `flow_id=eq.${stepsSourceFlowId}` },
+        () => {
+          if (debounceId) clearTimeout(debounceId);
+          debounceId = setTimeout(() => { void refetch(); }, 400);
+        },
+      )
+      .subscribe();
+    return () => {
+      if (debounceId) clearTimeout(debounceId);
+      void supabase.removeChannel(channel);
+    };
+  }, [stepsSourceFlowId, userId]);
+
+
 
 
   const selected = useMemo(() => steps.find((s) => s.id === selectedId) ?? null, [steps, selectedId]);
