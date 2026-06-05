@@ -1211,7 +1211,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (medias.length === 0) {
         const { data: publicRows } = await supabase
           .from("ai_media_library")
-          .select("id, kind, url, slot_key, send_order, duration_sec, delay_before_ms")
+          .select("id, kind, url, slot_key, send_order, duration_sec, delay_before_ms, consultant_id, is_public")
           .eq("is_public", true)
           .eq("slot_key", slotKey)
           .eq("active", true)
