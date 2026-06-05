@@ -726,7 +726,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
               )}
             </div>
           )}
-        </div>
+
+
 
         {/* Footer navigation */}
         {step < 4 && !running && (
