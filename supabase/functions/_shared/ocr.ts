@@ -568,18 +568,8 @@ Retorne APENAS este JSON, sem markdown:
 
 async function gemFocado(prompt: string, img: { mime: string; b64: string }, geminiApiKey: string, maxTokens = 256): Promise<any | null> {
   try {
-    const res = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-          generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
-        }),
-        timeout: TIMEOUT_GEMINI,
-      },
-    );
+    const res = await callGeminiViaLovable(prompt, img, { maxTokens, responseJson: true });
+
     if (!res.ok) return null;
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
