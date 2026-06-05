@@ -42,3 +42,37 @@ export async function resetLeadConversation(opts: {
     return { ok: false, error: e instanceof Error ? e.message : "Falha ao resetar" };
   }
 }
+
+/**
+ * HARD RESET por telefone (admin/super-admin).
+ * Apaga TODOS os rastros do número em todas as tabelas relacionadas
+ * (customers, mensagens, fluxo, IA, CRM, logs, eventos).
+ *
+ * Use somente em manutenção; o botão no dashboard chama essa função.
+ */
+export async function adminHardResetPhone(
+  phone: string,
+): Promise<
+  | { ok: true; phoneNormalized: string; deleted: Record<string, number>; customerIds: string[] }
+  | { ok: false; error: string }
+> {
+  try {
+    const { data, error } = await supabase.rpc("admin_hard_reset_phone" as any, {
+      _phone: phone,
+    });
+    if (error) return { ok: false, error: error.message };
+    const r = (data || {}) as {
+      phone_normalized?: string;
+      deleted?: Record<string, number>;
+      customer_ids?: string[];
+    };
+    return {
+      ok: true,
+      phoneNormalized: r.phone_normalized ?? "",
+      deleted: r.deleted ?? {},
+      customerIds: r.customer_ids ?? [],
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Falha no reset" };
+  }
+}
