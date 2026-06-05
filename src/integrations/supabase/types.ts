@@ -1672,6 +1672,7 @@ export type Database = {
           is_public: boolean
           name: string
           strict_mode: boolean
+          sync_mode: string
           updated_at: string
           variant: string
         }
@@ -1683,6 +1684,7 @@ export type Database = {
           is_public?: boolean
           name?: string
           strict_mode?: boolean
+          sync_mode?: string
           updated_at?: string
           variant?: string
         }
@@ -1694,6 +1696,7 @@ export type Database = {
           is_public?: boolean
           name?: string
           strict_mode?: boolean
+          sync_mode?: string
           updated_at?: string
           variant?: string
         }
@@ -6060,6 +6063,10 @@ export type Database = {
       }
       flow_engine_housekeeping: { Args: never; Returns: Json }
       fork_ad_template: { Args: { _origin_id: string }; Returns: string }
+      fork_flow_from_public: {
+        Args: { _consultant_id: string; _variant: string }
+        Returns: string
+      }
       fork_message_template: { Args: { _origin_id: string }; Returns: string }
       fork_public_ai_media: { Args: { _media_id: string }; Returns: string }
       get_coverage_summary: {
