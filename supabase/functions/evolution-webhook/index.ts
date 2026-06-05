@@ -1876,15 +1876,20 @@ Deno.serve(async (req) => {
     let finalReply = reply;
     if (!finalReply && !handlerSentInline) {
       // 🛟 Camada 2: nunca pausa o bot. Re-prompt humano e segue.
+      // Estratégia: re-emite a ÚLTIMA pergunta real do bot (preserva contexto
+      // de venda) em vez de "oii" genérico. Se não houver histórico, cai em
+      // template de step / reforço de menu.
       console.warn(`⚠️ [empty-reply-safety] step="${stepToSend}" customer=${customer.id} → re-prompting`);
       captureError(new Error(`Bot empty reply at step ${stepToSend}`), {
         tags: { function: "evolution-webhook", kind: "empty_reply_safety" },
         extra: { customer_id: customer.id, step: stepToSend, sender_outbound_count: senderOutboundCount },
       });
 
-      // 🔁 Camada 3: anti-loop. Conta quantas vezes esta safety-net já
-      // disparou no MESMO step nos últimos 5 min. Se ≥2 (esta seria a 3ª),
-      // pausa pra humano com `anti_loop` em vez de gerar re-prompt infinito.
+      const firstName = String((customer as any).name || "").split(" ")[0] || "";
+      const SAFETY_MARKER = "[__safety_ping__]";
+
+      // 🔁 Camada 3: anti-loop. Conta sentinels já gravados no MESMO step
+      // nos últimos 5 min. ≥2 → esta é a 3ª → pausa com aviso humano.
       let loopCount = 0;
       try {
         const sinceIso = new Date(Date.now() - 5 * 60_000).toISOString();
@@ -1893,7 +1898,7 @@ Deno.serve(async (req) => {
           .select("id", { count: "exact", head: true })
           .eq("customer_id", customer.id)
           .eq("conversation_step", String(stepToSend ?? ""))
-          .eq("message_text", "[empty-reply-safety]")
+          .eq("message_text", SAFETY_MARKER)
           .gte("created_at", sinceIso);
         loopCount = count ?? 0;
       } catch (_) { /* fail-open: assume sem loop */ }
@@ -1904,7 +1909,7 @@ Deno.serve(async (req) => {
           customer_id: customer.id,
           message_direction: "outbound",
           message_type: "system",
-          message_text: "[empty-reply-safety]",
+          message_text: SAFETY_MARKER,
           conversation_step: stepToSend ? String(stepToSend) : null,
         });
       } catch (_) { /* noop */ }
@@ -1914,15 +1919,72 @@ Deno.serve(async (req) => {
         try {
           await supabase.from("customers").update({
             bot_paused: true,
-            bot_paused_reason: "anti_loop",
+            bot_paused_reason: "anti_loop_empty_reply",
             bot_paused_at: new Date().toISOString(),
           }).eq("id", customer.id);
         } catch (_) { /* noop */ }
-        // Não envia nada — handoff silencioso só quando vira loop comprovado.
+        // Aviso humano visível (sem silêncio): venda não pode sumir.
+        finalReply = (firstName ? `${firstName}, ` : "") +
+          "vou chamar um consultor humano agora mesmo pra continuar com você 🤝";
       } else {
-        finalReply = "oii 😊";
+        // ── Re-prompt inteligente ──────────────────────────────────────
+        let repromptText: string | null = null;
+
+        // 1) Última pergunta REAL do bot nos últimos 30 min (ignora sentinels,
+        //    inline markers, failed markers). Re-emite com prefixo humano.
+        try {
+          const sinceIso = new Date(Date.now() - 30 * 60_000).toISOString();
+          const { data: lastReal } = await supabase
+            .from("conversations")
+            .select("message_text")
+            .eq("customer_id", customer.id)
+            .eq("message_direction", "outbound")
+            .neq("message_type", "system")
+            .not("message_text", "is", null)
+            .not("message_text", "like", "[inline-sent]%")
+            .not("message_text", "like", "[failed:%")
+            .not("message_text", "like", "[__safety_ping__]%")
+            .gte("created_at", sinceIso)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const lastText = lastReal?.message_text?.trim();
+          // Guarda: ignora variáveis {{...}} não resolvidas remanescentes
+          if (lastText && lastText.length >= 8 && !/\{\{\s*\w+\s*\}\}/.test(lastText)) {
+            const greet = firstName ? `${firstName}, ` : "";
+            repromptText = `${greet}voltando aqui 👇\n\n${lastText}`;
+          }
+        } catch (_) { /* sem histórico, segue para fallback */ }
+
+        // 2) Sem histórico utilizável → tenta template do step (`reprompt`),
+        //    depois reforço genérico de venda.
+        if (!repromptText) {
+          try {
+            const { getTemplate } = await import("./handlers/conversational/templates.ts");
+            const stepKey = String(stepToSend ?? "menu_inicial");
+            const vars = {
+              nome: (customer as any).name,
+              representante: nomeRepresentante,
+              valor_conta: (customer as any).electricity_bill_value,
+            };
+            let t = await getTemplate(supabase, stepKey, "reprompt", vars);
+            if (!t || !t.trim()) {
+              t = await getTemplate(supabase, "menu_inicial", "reforco", vars);
+            }
+            if (t && t.trim()) repromptText = t.trim();
+          } catch (_) { /* segue para fallback hardcoded */ }
+        }
+
+        // 3) Último recurso — ainda contextual de venda, não "oii".
+        if (!repromptText) {
+          repromptText = (firstName ? `${firstName}, ` : "") +
+            "posso te ajudar a continuar? 🤝";
+        }
+
+        finalReply = repromptText;
       }
     }
+
 
     let isDuplicate = false;
     if (finalReply) {
