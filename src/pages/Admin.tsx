@@ -53,17 +53,19 @@ const AdminContent = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<"materiais" | "dashboard" | "links" | "whatsapp" | "crm" | "clientes" | "rede" | "central-anuncios" | "captacao" | "parceiros">(() => {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<AdminTabId>(() => {
     if (typeof window !== "undefined") {
       const tab = new URLSearchParams(window.location.search).get("tab");
       if (tab === "performance" || tab === "anuncios" || tab === "central-anuncios") return "central-anuncios";
       if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros") return tab as any;
+      if (tab === "crm" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros") return tab as AdminTabId;
     }
     return "dashboard";
   });
+
   const [pendingChatPhone, setPendingChatPhone] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("phone");
