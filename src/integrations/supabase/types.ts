@@ -2362,9 +2362,15 @@ export type Database = {
           flow_step_media_order: Json
           google_analytics_id: string | null
           id: string
+          igreen_access_token: string | null
+          igreen_connect_code: string | null
+          igreen_consultor_id: string | null
           igreen_id: string | null
           igreen_portal_email: string | null
           igreen_portal_password: string | null
+          igreen_token_expired: boolean
+          igreen_token_expires_at: string | null
+          igreen_token_updated_at: string | null
           licenciada_cadastro_url: string | null
           license: string
           name: string
@@ -2397,9 +2403,15 @@ export type Database = {
           flow_step_media_order?: Json
           google_analytics_id?: string | null
           id: string
+          igreen_access_token?: string | null
+          igreen_connect_code?: string | null
+          igreen_consultor_id?: string | null
           igreen_id?: string | null
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
+          igreen_token_expired?: boolean
+          igreen_token_expires_at?: string | null
+          igreen_token_updated_at?: string | null
           licenciada_cadastro_url?: string | null
           license: string
           name: string
@@ -2432,9 +2444,15 @@ export type Database = {
           flow_step_media_order?: Json
           google_analytics_id?: string | null
           id?: string
+          igreen_access_token?: string | null
+          igreen_connect_code?: string | null
+          igreen_consultor_id?: string | null
           igreen_id?: string | null
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
+          igreen_token_expired?: boolean
+          igreen_token_expires_at?: string | null
+          igreen_token_updated_at?: string | null
           licenciada_cadastro_url?: string | null
           license?: string
           name?: string
