@@ -505,8 +505,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
         </div>
 
         {/* Body container */}
-        <div className={`relative ${expanded ? "flex-1 overflow-auto" : ""} bg-white px-5 sm:px-7 py-5 sm:py-6 space-y-5`}>
-          <div className={expanded ? "min-h-full" : "min-h-[200px]"}>
+        <div className={`relative ${expanded ? "flex-1 overflow-auto" : ""} bg-white px-5 sm:px-7 py-5 sm:py-6 space-y-5 ${expanded ? "min-h-full" : "min-h-[200px]"}`}>
+
 
           {step === 1 && (
             <div className="space-y-3">
