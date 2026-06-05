@@ -4,6 +4,69 @@ import { captureError } from "./sentry.ts";
 import { isMockMode, mockBillOcr, mockDocOcr, shouldForceOcrFail, isTestMode } from "./test-mode.ts";
 import { normalizeDistribuidora, isHoldingName } from "./distribuidoras.ts";
 
+// ─── Lovable AI Gateway shim ────────────────────────────────────────
+// Substitui chamadas diretas a generativelanguage.googleapis.com pelo
+// Lovable AI Gateway (mesmo modelo google/gemini-2.5-flash, billing
+// centralizado via LOVABLE_API_KEY). O retorno é moldado como o payload
+// nativo do Gemini (`candidates[0].content.parts[0].text`) para que o
+// código de parsing existente continue funcionando sem alteração.
+type GeminiLikeResponse = {
+  ok: boolean;
+  status: number;
+  json: () => Promise<any>;
+};
+
+async function callGeminiViaLovable(
+  prompt: string,
+  img: { mime: string; b64: string },
+  opts: { maxTokens?: number; responseJson?: boolean } = {},
+): Promise<GeminiLikeResponse> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY") ?? "";
+  if (!apiKey) {
+    return {
+      ok: false,
+      status: 500,
+      json: async () => ({ error: { message: "LOVABLE_API_KEY ausente" } }),
+    };
+  }
+  const body: Record<string, unknown> = {
+    model: "google/gemini-2.5-flash",
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: `data:${img.mime};base64,${img.b64}` } },
+      ],
+    }],
+    temperature: 0,
+    max_tokens: opts.maxTokens ?? 4096,
+  };
+  if (opts.responseJson) body.response_format = { type: "json_object" };
+
+  const res = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    timeout: TIMEOUT_GEMINI,
+  });
+
+  let raw: any = {};
+  try { raw = await res.json(); } catch { /* ignore */ }
+  const text = raw?.choices?.[0]?.message?.content ?? "";
+  const finishReason = raw?.choices?.[0]?.finish_reason ?? null;
+  const errorMsg = raw?.error?.message ?? (res.ok ? undefined : `HTTP ${res.status}`);
+  const shaped = res.ok
+    ? { candidates: [{ content: { parts: [{ text }] }, finishReason }] }
+    : { error: { message: errorMsg } };
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    json: async () => shaped,
+  };
+}
+
+
 // ─── Baixar imagem (Evolution API ou URL direta) ────────────────────
 export async function baixarImagem(
   url: string | null,
