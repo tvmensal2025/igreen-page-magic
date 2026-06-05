@@ -76,3 +76,34 @@ export async function adminHardResetPhone(
     return { ok: false, error: e instanceof Error ? e.message : "Falha no reset" };
   }
 }
+
+export async function adminHardResetPhoneTraceCounts(
+  phone: string,
+): Promise<
+  | { ok: true; phoneNormalized: string; counts: Record<string, number>; totalRemaining: number }
+  | { ok: false; error: string }
+> {
+  try {
+    const { data, error } = await supabase.rpc("admin_hard_reset_phone_trace_counts" as any, {
+      _phone: phone,
+    });
+    if (error) return { ok: false, error: error.message };
+    const r = (data || {}) as {
+      phone_normalized?: string;
+      counts?: Record<string, number>;
+    };
+    const counts = r.counts ?? {};
+    const totalRemaining = Object.values(counts).reduce(
+      (sum, n) => sum + (typeof n === "number" ? n : Number(n) || 0),
+      0,
+    );
+    return {
+      ok: true,
+      phoneNormalized: r.phone_normalized ?? "",
+      counts,
+      totalRemaining,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Falha ao verificar rastros" };
+  }
+}
