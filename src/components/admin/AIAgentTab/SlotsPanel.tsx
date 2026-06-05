@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Loader2, Settings, X, Save, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { usePrompt } from "@/components/ui/prompt-dialog";
 import { Button } from "@/components/ui/button";
 import { SlotCard, type SlotRow, type SlotMedia } from "./SlotCard";
 import { AudioRecorderInline } from "./AudioRecorderInline";
@@ -13,6 +15,8 @@ type VideoOption = { id: string; label: string; url: string | null; is_public: b
 
 export function SlotsPanel({ userId }: Props) {
   const { toast } = useToast();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [loading, setLoading] = useState(true);
   const [slots, setSlots] = useState<SlotRow[]>([]);
   const [mediaIndex, setMediaIndex] = useState<Record<string, MediaIndexEntry>>({});
@@ -192,9 +196,12 @@ function SuperAdminSlotsModal({ onClose }: { onClose: () => void }) {
   }
 
   async function addNewSlot() {
-    const rawKey = window.prompt(
-      "Identificador da nova pergunta (sem espaços, ex: garantia_contrato):"
-    );
+    const rawKey = await prompt({
+      title: "Nova pergunta",
+      description: "Identificador (sem espaços, ex: garantia_contrato):",
+      placeholder: "garantia_contrato",
+      confirmText: "Criar",
+    });
     if (!rawKey) return;
     const slot_key = rawKey
       .toLowerCase()
@@ -211,7 +218,13 @@ function SuperAdminSlotsModal({ onClose }: { onClose: () => void }) {
       toast({ title: "Já existe um slot com esse identificador", variant: "destructive" });
       return;
     }
-    const label = window.prompt("Nome da pergunta (ex: Garantia do contrato):", slot_key) || slot_key;
+    const labelInput = await prompt({
+      title: "Nome da pergunta",
+      description: "Ex: Garantia do contrato",
+      defaultValue: slot_key,
+      confirmText: "Salvar",
+    });
+    const label = labelInput || slot_key;
     const nextPosition = (slots.reduce((m, s) => Math.max(m, s.position || 0), 0) || 0) + 1;
     const { error } = await supabase.from("ai_agent_slots").insert({
       slot_key,
@@ -233,7 +246,13 @@ function SuperAdminSlotsModal({ onClose }: { onClose: () => void }) {
   }
 
   async function deleteSlot(slotKey: string) {
-    if (!window.confirm(`Excluir a pergunta "${slotKey}"? Essa ação não pode ser desfeita.`)) return;
+    const ok = await confirm({
+      title: `Excluir a pergunta "${slotKey}"?`,
+      description: "Essa ação não pode ser desfeita.",
+      confirmText: "Excluir",
+      tone: "danger",
+    });
+    if (!ok) return;
     const { error } = await supabase.from("ai_agent_slots").delete().eq("slot_key", slotKey);
     if (error) {
       toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
