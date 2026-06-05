@@ -3,6 +3,7 @@ import { ResultsDashboard } from "./ResultsDashboard";
 import { WalletChip } from "./WalletChip";
 import { SyncMetricsButton } from "./SyncMetricsButton";
 import { TrendingUp } from "lucide-react";
+import { HardResetPhoneCard } from "@/components/admin/HardResetPhoneCard";
 
 interface Props {
   consultantId: string;
@@ -15,6 +16,7 @@ export function PerformanceTab({ consultantId, onGoToCentral }: Props) {
 
   return (
     <div className="space-y-5">
+      <HardResetPhoneCard userId={consultantId} />
       <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground flex items-center gap-2">

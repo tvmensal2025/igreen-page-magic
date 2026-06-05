@@ -7,6 +7,7 @@ import {
   type ReferralPartner,
 } from "./hooks/useReferralPartners";
 import { useToast } from "@/hooks/use-toast";
+import { HardResetPhoneCard } from "@/components/admin/HardResetPhoneCard";
 
 interface ParceirosTabProps {
   consultantPhone: string;
@@ -78,6 +79,7 @@ export function ParceirosTab({
 
   return (
     <>
+      <HardResetPhoneCard className="mb-4" />
       <PartnerDashboard
         partners={partners}
         isLoading={isLoading}
