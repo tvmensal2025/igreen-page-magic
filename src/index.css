@@ -818,7 +818,7 @@ html {
   font-family: 'Space Grotesk', sans-serif;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: hsl(var(--ads-cream));
+  color: hsl(var(--ads-emerald-2));
 }
 .ads-central-2026 .ads-num-gold { color: hsl(var(--ads-gold)); }
 .ads-central-2026 .ads-delta-up { color: hsl(var(--ads-gold)); }
