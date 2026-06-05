@@ -77,9 +77,13 @@ export function CaptureConversationFeed({ customerId, limit = 12, gameOn = false
         .from("conversations")
         .select("id, message_direction, message_text, message_type, created_at, slot_key")
         .eq("customer_id", customerId)
+        .not("message_text", "like", "[__safety_ping__]%")
+        .not("message_text", "like", "[inline-sent]%")
+        .not("message_text", "like", "[failed:%")
         .order("created_at", { ascending: false })
         .limit(limit);
       if (!mounted) return;
+
       setRows(sortRows((data as ConvRow[]) || [], limit));
       setLoading(false);
     };

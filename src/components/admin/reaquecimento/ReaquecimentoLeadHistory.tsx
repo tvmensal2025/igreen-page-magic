@@ -30,8 +30,12 @@ export function ReaquecimentoLeadHistory({ customerId }: Props) {
         .from("conversations")
         .select("id, message_direction, message_text, message_type, conversation_step, created_at")
         .eq("customer_id", customerId)
+        .not("message_text", "like", "[__safety_ping__]%")
+        .not("message_text", "like", "[inline-sent]%")
+        .not("message_text", "like", "[failed:%")
         .order("created_at", { ascending: false })
         .limit(20);
+
       if (!alive) return;
       if (error) {
         setError(error.message);

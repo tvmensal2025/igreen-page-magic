@@ -93,8 +93,13 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/^[\s,;:]+/gm, (s) => s.replace(/[,;:]/g, ""))
     .trim();
+  // 🛡️ Guard anti-vazamento: se ainda restar {{var}} não resolvida, devolve
+  // string vazia para o caller cair no próximo fallback — nunca expõe
+  // placeholders crus ao cliente em contexto de venda.
+  if (/\{\{\s*\w+\s*\}\}/.test(out)) return "";
   return out;
 }
+
 
 export async function getTemplate(
   // deno-lint-ignore no-explicit-any
