@@ -5952,6 +5952,7 @@ export type Database = {
         Args: { p_instance: string; p_reason: string }
         Returns: undefined
       }
+      admin_hard_reset_phone: { Args: { _phone: string }; Returns: Json }
       admin_unpause_global_bot: { Args: never; Returns: number }
       ai_cooldown_check_and_set: {
         Args: { p_key: string; p_reason: string; p_ttl_ms: number }
