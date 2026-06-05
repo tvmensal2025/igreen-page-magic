@@ -5,18 +5,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, Wallet, Loader2 } from "lucide-react";
+import { AlertCircle, Wallet, Loader2, Clock, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
 /**
- * Popup obrigatório quando o saldo da carteira de anúncios zera ou tem campanha
- * pausada por falta de saldo. Bloqueia a UI até o consultor:
- *   1. Recarregar (Stripe checkout, valor livre)
- *   2. Encerrar/arquivar as campanhas pausadas
- *   3. "Lembrar em 24h" (snooze) — escritório bloqueado, campanha continua pausada
- *
- * Montado globalmente em App.tsx. Só dispara quando há sessão ativa.
+ * Popup obrigatório quando o saldo da carteira zera ou há campanha pausada.
+ * Visual: Emerald Prestige — verde esmeralda + dourado, destructive só em débito.
  */
 export function RechargeRequiredDialog() {
   const guard = useWalletGuard();
@@ -27,7 +22,7 @@ export function RechargeRequiredDialog() {
   if (!guard.open || !guard.consultantId) return null;
 
   const sumDaily = guard.pausedCampaigns.reduce((s, c) => s + (c.daily_budget_cents || 0), 0);
-  const suggested = Math.max(5000, sumDaily * 7); // 7 dias do total pausado, mín R$ 50
+  const suggested = Math.max(5000, sumDaily * 7);
 
   async function handleRecharge() {
     const amountCents = Math.round(Number(amount || 0) * 100);
@@ -53,7 +48,12 @@ export function RechargeRequiredDialog() {
   }
 
   async function handleArchiveAll() {
-    const ok = await confirm({ title: `Arquivar ${guard.pausedCampaigns.length} campanha(s) pausada(s)?`, description: "Isso encerra elas definitivamente.", confirmText: "Arquivar", tone: "danger" });
+    const ok = await confirm({
+      title: `Arquivar ${guard.pausedCampaigns.length} campanha(s) pausada(s)?`,
+      description: "Isso encerra elas definitivamente.",
+      confirmText: "Arquivar",
+      tone: "danger",
+    });
     if (!ok) return;
     setLoading(true);
     try {
@@ -72,88 +72,160 @@ export function RechargeRequiredDialog() {
     }
   }
 
-  const title = guard.reason === "balance_zero"
-    ? "Carteira em débito"
-    : "Campanhas pausadas — sem saldo";
+  const inDebt = guard.reason === "balance_zero" || guard.debtCents > 0;
+  const title = inDebt ? "Carteira em débito" : "Campanhas pausadas";
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) guard.snooze24h(); }}>
-      <DialogContent className="max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-            <AlertCircle className="h-6 w-6 text-destructive" />
+      <DialogContent
+        className="max-w-md p-0 overflow-hidden bg-card border-border/60"
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
+        {/* Header com gradiente esmeralda */}
+        <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border-b border-border/40 px-6 pt-8 pb-5">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/15 ring-4 ring-primary/5">
+            <AlertCircle className="h-6 w-6 text-primary" />
           </div>
-          <DialogTitle className="text-center">{title}</DialogTitle>
-          <DialogDescription className="text-center">
-            {guard.debtCents > 0
-              ? `Sua carteira está com dívida de R$ ${(guard.debtCents/100).toFixed(2)}. Recarregue para reativar.`
-              : `${guard.pausedCampaigns.length} campanha(s) foram pausadas automaticamente porque o saldo zerou.`}
-          </DialogDescription>
-        </DialogHeader>
+          <DialogHeader className="space-y-1.5">
+            <DialogTitle className="text-center text-lg font-semibold text-foreground">
+              {title}
+            </DialogTitle>
+            <DialogDescription className="text-center text-sm text-muted-foreground leading-relaxed">
+              {inDebt
+                ? `Carteira com dívida de R$ ${(guard.debtCents / 100).toFixed(2)}. Recarregue para reativar.`
+                : `${guard.pausedCampaigns.length} campanha(s) pausada(s) por saldo insuficiente.`}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1 text-muted-foreground"><Wallet className="h-3.5 w-3.5" /> Saldo atual</span>
-            <span className={guard.balanceCents <= 0 ? "font-bold text-destructive" : "font-semibold"}>
-              R$ {(guard.balanceCents/100).toFixed(2)}
-            </span>
+        <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* Saldo */}
+          <div className="rounded-xl border border-border/50 bg-muted/30 p-3.5 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Wallet className="h-3.5 w-3.5" /> Saldo atual
+              </span>
+              <span className={`font-semibold tabular-nums ${guard.balanceCents <= 0 ? "text-destructive" : "text-foreground"}`}>
+                R$ {(guard.balanceCents / 100).toFixed(2)}
+              </span>
+            </div>
+            {guard.debtCents > 0 && (
+              <div className="flex items-center justify-between text-sm pt-2 border-t border-border/40">
+                <span className="text-destructive">Dívida pendente</span>
+                <span className="font-semibold tabular-nums text-destructive">
+                  R$ {(guard.debtCents / 100).toFixed(2)}
+                </span>
+              </div>
+            )}
           </div>
-          {guard.debtCents > 0 && (
-            <div className="mt-1 flex items-center justify-between text-destructive">
-              <span>Dívida pendente</span>
-              <span className="font-semibold">R$ {(guard.debtCents/100).toFixed(2)}</span>
+
+          {/* Pausadas */}
+          {guard.pausedCampaigns.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Pausadas ({guard.pausedCampaigns.length})
+              </p>
+              <ul className="max-h-32 space-y-1 overflow-y-auto rounded-lg border border-border/50 bg-background p-2">
+                {guard.pausedCampaigns.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/40"
+                  >
+                    <span className="truncate min-w-0 flex-1 text-foreground" title={c.name}>
+                      {c.name}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground tabular-nums">
+                      R$ {(c.daily_budget_cents / 100).toFixed(2)}/dia
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
-        </div>
 
-        {guard.pausedCampaigns.length > 0 && (
-          <div className="space-y-1 text-xs">
-            <p className="font-medium text-muted-foreground">Pausadas:</p>
-            <ul className="max-h-24 space-y-0.5 overflow-y-auto rounded border bg-background p-2">
-              {guard.pausedCampaigns.map((c) => (
-                <li key={c.id} className="truncate">
-                  • {c.name} <span className="text-muted-foreground">(R$ {(c.daily_budget_cents/100).toFixed(2)}/dia)</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <Label className="text-xs">Valor para recarregar (R$)</Label>
-          <div className="flex gap-2">
-            <Input
-              type="number" min={50} step={10} value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={loading}
-            />
-            <Button variant="outline" size="sm" onClick={() => setAmount(String(suggested/100))} disabled={loading}>
-              Sugerido R$ {(suggested/100).toFixed(0)}
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {[50, 100, 200, 500, 1000].map((v) => (
-              <Button key={v} variant="ghost" size="sm" className="h-7 px-2 text-xs"
-                onClick={() => setAmount(String(v))} disabled={loading}>
-                R$ {v}
+          {/* Valor */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Valor para recarregar
+            </Label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R$</span>
+                <Input
+                  type="number"
+                  min={50}
+                  step={10}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={loading}
+                  className="pl-9 font-semibold tabular-nums"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAmount(String(suggested / 100))}
+                disabled={loading}
+                className="shrink-0 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
+              >
+                Sugerido {(suggested / 100).toFixed(0)}
               </Button>
-            ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[50, 100, 200, 500, 1000].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setAmount(String(v))}
+                  disabled={loading}
+                  className={`h-7 px-2.5 rounded-md text-xs font-medium border transition ${
+                    Number(amount) === v
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background border-border/60 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  }`}
+                >
+                  R$ {v}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="grid gap-2">
-          <Button onClick={handleRecharge} disabled={loading} size="lg" className="w-full">
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        {/* Footer */}
+        <div className="px-6 pb-5 pt-1 space-y-2 border-t border-border/40 bg-muted/20 pt-4">
+          <Button
+            onClick={handleRecharge}
+            disabled={loading}
+            size="lg"
+            className="w-full bg-gradient-to-r from-primary to-primary/85 hover:from-primary/90 hover:to-primary/75 text-primary-foreground font-semibold shadow-sm"
+          >
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wallet className="mr-2 h-4 w-4" />}
             Recarregar R$ {Number(amount || 0).toFixed(2)}
           </Button>
-          {guard.pausedCampaigns.length > 0 && (
-            <Button onClick={handleArchiveAll} variant="outline" size="sm" disabled={loading}>
-              Arquivar campanhas pausadas
+          <div className="flex gap-2">
+            {guard.pausedCampaigns.length > 0 && (
+              <Button
+                onClick={handleArchiveAll}
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                className="flex-1 text-xs"
+              >
+                <Archive className="mr-1.5 h-3.5 w-3.5" />
+                Arquivar
+              </Button>
+            )}
+            <Button
+              onClick={guard.snooze24h}
+              variant="ghost"
+              size="sm"
+              disabled={loading}
+              className="flex-1 text-xs text-muted-foreground"
+            >
+              <Clock className="mr-1.5 h-3.5 w-3.5" />
+              Lembrar em 24h
             </Button>
-          )}
-          <Button onClick={guard.snooze24h} variant="ghost" size="sm" disabled={loading}>
-            Lembrar em 24h (campanhas continuam pausadas)
-          </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
