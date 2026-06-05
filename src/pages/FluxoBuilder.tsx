@@ -558,6 +558,10 @@ export default function FluxoBuilder() {
   }
 
   async function duplicateStep(id: string) {
+    if (isReadOnly) {
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para duplicar passos.");
+      return;
+    }
     const orig = steps.find((s) => s.id === id);
     if (!orig || !flowId) return;
     const maxPos = steps.reduce((m, s) => Math.max(m, s.position), 0);
