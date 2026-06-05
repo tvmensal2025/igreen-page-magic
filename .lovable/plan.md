@@ -1,83 +1,117 @@
-## Diagnóstico
+# Redesign — Central de Anúncios 2026
 
-Reproduzi o caso do lead **JOSE FELICIO (5511971254913)** consultando `conversations` e `customers`:
+Pé na areia: paleta **Emerald Prestige** (verde esmeralda + dourado), tipografia **Space Grotesk + DM Sans**, layout **Bento Grid**. Tema escuro, autoridade tranquila estilo Bloomberg Terminal / Linear / Ramp.
 
-```
-19:30:24  bot →  d_resultado (simulação + botão "Quero me cadastrar")
-19:30:56  lead → "1"
-19:31:02  bot →  d_welcome (reset! "Olá! 👋 ... 1️⃣ Quero simular ...")
-```
+## Escopo
 
-O lead clicou/digitou "1" para continuar o cadastro, mas o bot **voltou para o welcome** em vez de avançar para `d_pedir_documento` (transição correta configurada no passo `d_resultado`).
+Apenas o componente `src/components/admin/ads/AdsCentralTab.tsx` e seus filhos visuais diretos do Dashboard (cards de métrica, charts wrappers, header). **Não altero** lógica de negócio, hooks, edge functions, RLS, ou contratos de dados — só apresentação.
 
-### Causa raiz
+## Tokens de design (novos)
 
-Em `supabase/functions/evolution-webhook/index.ts:1486-1542` existe um guard chamado **"AUTO-CURA DE STEP ÓRFÃO ENTRE VARIANTES"**. Ele faz lookup do step atual filtrando:
+Adicionar em `src/index.css` um escopo `.ads-central-2026` com tokens próprios — não polui o resto do app:
 
-```sql
-WHERE bot_flows.consultant_id = <instance.consultant_id>
-  AND bot_flows.variant = <customer.flow_variant>
-  AND is_active = true
-```
-
-Se não encontrar, considera o step órfão e força `conversation_step = 'welcome'`.
-
-Mas o consultor da instância (`953f7e48-...`) tem o próprio `bot_flows` com **`sync_mode='public'`**, o que faz `resolveFlowId` (`_shared/resolve-flow.ts`) redirecionar TODO o roteamento para o fluxo PÚBLICO (`consultant_id=0c2711ad-...`, `is_public=true`). Logo, o bot grava `conversation_step` apontando para UUIDs de steps que pertencem ao consultor do template público — e a "cura" não enxerga esses steps porque filtra só pelo consultor da instância.
-
-Resultado: TODO passo do fluxo D rodando em modo `sync_mode='public'` cai como "órfão" e o lead é resetado para welcome em cada turno. Hoje funciona "às vezes" só porque outras camadas (`runEngineV3`, `runConversationalFlow`, redirect por mídia) interceptam antes em certos cenários — mas quando o usuário responde texto puro num passo `flow:<uuid>`, o reset dispara.
-
-## Correção
-
-Alinhar a query da "cura" com a lógica do `resolveFlowId`: aceitar o step se ele pertencer ao fluxo do consultor **OU** ao fluxo PÚBLICO da mesma variante (quando o consultor está em `sync_mode='public'`).
-
-### Mudança única — `supabase/functions/evolution-webhook/index.ts`
-
-No bloco `step-mismatch-cure` (~linha 1496-1542), substituir a query atual por uma que aceite as duas fontes válidas de steps:
-
-```ts
-const { data: ownFlow } = await supabase
-  .from("bot_flows")
-  .select("id, sync_mode")
-  .eq("consultant_id", instanceData.consultant_id)
-  .eq("variant", variant)
-  .eq("is_active", true)
-  .maybeSingle();
-
-const allowedFlowIds: string[] = [];
-if (ownFlow?.id) allowedFlowIds.push(ownFlow.id);
-// Se o consultor está em sync_mode='public', os steps reais vêm do template público
-if (!ownFlow || String(ownFlow.sync_mode ?? "public").toLowerCase() === "public") {
-  const { data: pubFlow } = await supabase
-    .from("bot_flows")
-    .select("id")
-    .eq("is_public", true)
-    .eq("is_active", true)
-    .eq("variant", variant)
-    .maybeSingle();
-  if (pubFlow?.id) allowedFlowIds.push(pubFlow.id);
-}
-
-const { data: stepLookup } = await supabase
-  .from("bot_flow_steps")
-  .select("id")
-  .or(`id.eq.${_stepRaw},step_key.eq.${_stepRaw}`)
-  .eq("is_active", true)
-  .in("flow_id", allowedFlowIds)
-  .limit(1);
-
-const found = Array.isArray(stepLookup) && stepLookup.length > 0;
+```text
+--ads-bg:        222 47% 4%       (quase preto, vidro fosco)
+--ads-surface:   158 64% 8%       (esmeralda profundo p/ tiles)
+--ads-surface-2: 158 50% 12%      (tiles secundários)
+--ads-border:    158 30% 18%
+--ads-emerald:   158 84% 30%      (#0d7a5f — ação)
+--ads-emerald-2: 162 88% 22%      (#064e3b — profundo)
+--ads-gold:      43  53% 54%      (#c9a84c — destaque numérico)
+--ads-cream:     45  60% 92%      (#f5f0e0 — texto premium)
+--ads-text:      45  20% 96%
+--ads-muted:     158 15% 65%
+--shadow-emerald: 0 20px 60px -20px hsl(var(--ads-emerald-2) / .6)
+--shadow-tile:    0 1px 0 0 hsl(var(--ads-border)) inset, 0 10px 30px -15px #000
+--gradient-tile:  linear-gradient(180deg, hsl(var(--ads-surface)) 0%, hsl(var(--ads-surface-2)) 100%)
+--gradient-gold:  linear-gradient(135deg, hsl(var(--ads-gold)) 0%, hsl(45 40% 40%) 100%)
 ```
 
-O resto da lógica (reset para welcome quando realmente órfão, log, insert em `bot_step_transitions`) permanece igual.
+Fontes: importar Space Grotesk e DM Sans via `<link>` no `index.html` (ou já está? checar antes) e mapear `.ads-central-2026 { font-family: 'DM Sans', system-ui; } .ads-central-2026 h1, h2, h3, .ads-display { font-family: 'Space Grotesk', sans-serif; font-feature-settings: 'ss01'; }`.
 
-### Validação
+## Estrutura — Bento Grid
 
-1. Reexecutar mentalmente o turno do lead JOSE: `_stepRaw="4df1f90a-..."`, variant=D → query agora inclui flow público `320bf22c` → step encontrado → cura NÃO dispara → engine processa transição → "1" casa `trigger_phrases=["1",...]` → `goto_step_id=58f0a7e2` (`d_pedir_documento`) ✅
-2. Cenário órfão real (lead com step de variante antiga após troca): step não está nem no fluxo do consultor nem no público da variante atual → cura ainda dispara, reset para welcome preservado ✅
-3. Consultor com fluxo próprio (`sync_mode='custom'`): query NÃO inclui público → comportamento atual preservado ✅
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ HEADER STICKY (vidro escuro, blur)                              │
+│  iGreen·Anúncios   ·  período   ·  conta   ·  💰 saldo   [+ Criar]│
+├─────────────────────────────────────────────────────────────────┤
+│ NAV PILL (Dashboard · Modelos · Campanhas · Performance · ...)  │
+├─────────────────────────────────────────────────────────────────┤
+│ ┌──────── HERO TILE (col-span 8, row-span 2) ──────┐ ┌── CPL ──┐│
+│ │  Gasto x Leads — line chart grande, eixo dourado │ │ donut + ││
+│ │  Big number: R$ 12.430 · 184 leads · CPL R$ 67   │ │ delta % ││
+│ └──────────────────────────────────────────────────┘ └─────────┘│
+│ ┌─KPI─┐ ┌─KPI─┐ ┌─KPI─┐ ┌─KPI─┐  ┌──── Funil (col-4, row-2)──┐│
+│ │ Imp │ │Cliq │ │ CTR │ │Conv │  │ Visita→WA→Lead→Aprovado    ││
+│ └─────┘ └─────┘ └─────┘ └─────┘  │ barras verticais douradas  ││
+│ ┌──── Estágios CRM (donut) ───┐  └────────────────────────────┘│
+│ │  6 fatias verde+dourado     │  ┌── Replicar Uberlândia ──┐  │
+│ └─────────────────────────────┘  │ card destaque com CTA   │  │
+│ ┌──── Cliques recentes (lista compacta col-12) ──────────────┐│
+│ │  hora · campanha · cidade · device                         ││
+│ └────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### Notas
+Grid: `grid-cols-12 gap-3 md:gap-4`. Mobile colapsa para `grid-cols-1`.
 
-- Mudança cirúrgica num único bloco. Sem migração de schema.
-- Não toca em `resolveFlowId`, runner v3, nem no classificador de intent — o problema está exclusivamente na "cura" do orquestrador.
-- Após o deploy, rodar uma query para identificar leads atualmente travados em `conversation_step='welcome'` com `previous_conversation_step` apontando para UUID, e opcionalmente avisar suporte.
+## Tile component
+
+Novo `AdsTile` interno (não exportado) substitui os `Card` shadcn no contexto desta tela:
+- Borda 1px `--ads-border`, raio `xl`, fundo `--gradient-tile`, sombra `--shadow-tile`
+- Hover: borda dourada sutil + `--shadow-emerald`
+- Header do tile: label minúsculo uppercase tracking-wide em `--ads-muted` + ícone monocromático verde
+- Conteúdo principal: número grande em Space Grotesk tabular-nums; delta % em dourado quando positivo
+
+## Header sticky
+
+- Fundo `bg-[hsl(var(--ads-bg))]/80 backdrop-blur-xl border-b border-[hsl(var(--ads-border))]`
+- Wordmark `iGreen · Anúncios` em Space Grotesk medium
+- WalletChip estilizado com fundo esmeralda profundo e número em dourado
+- CTA `Criar campanha` virá com `bg-gradient-gold text-emerald-950 font-semibold`
+
+## Nav pill
+
+Substituir `pe-toolbar` chips por nav pill única: container arredondado escuro com 6 botões; ativo ganha fundo esmeralda + texto creme; inativos só ícone+label muted; underline dourado de 2px no ativo.
+
+## Cards onboarding
+
+`CtwaConnectGuide` e `ReplicateUberlandiaCard` migram para tiles do bento (não mais banners largos), só aparecem quando relevantes — `CtwaConnectGuide` ocupa banner sticky abaixo do header **apenas** se não conectado; senão some.
+
+## Charts (Recharts)
+
+Reestilizar wrappers em `AdMetricsCharts.tsx` para usar tokens locais:
+- Linhas/áreas: stroke `--ads-emerald` (primária) e `--ads-gold` (secundária)
+- Grid: `--ads-border` opacity 0.4
+- Tooltip: fundo `--ads-surface`, borda dourada 1px, fonte DM Sans
+- Pie/donut: paleta `[emerald, gold, emerald-2, cream, sage, muted-emerald]`
+
+Sem mexer na lógica dos hooks (`useAdMetrics`, etc).
+
+## Motion
+
+Stagger no mount dos tiles via CSS `animation-delay` (50ms × index) — sem framer-motion novo. Hover transform `translateY(-2px)` 200ms.
+
+## Tipografia loading
+
+Adicionar `<link rel="preconnect" href="https://fonts.googleapis.com">` + `<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">` em `index.html` se ainda não houver.
+
+## Arquivos tocados
+
+1. `src/index.html` — fontes (se faltarem)
+2. `src/index.css` — bloco `.ads-central-2026 { ... }` com tokens + classes utilitárias `.ads-tile`, `.ads-display`, `.ads-nav-pill`
+3. `src/components/admin/ads/AdsCentralTab.tsx` — reescrever JSX da view dashboard + header + nav (mesma API de props, mesmos handlers, mesmas chamadas a subcomponentes)
+4. `src/components/admin/dashboard/AdMetricsCards.tsx` — re-skin para `.ads-tile` quando renderizado dentro do escopo
+5. `src/components/admin/dashboard/AdMetricsCharts.tsx` — paleta nova nos charts
+6. Novo `src/components/admin/ads/AdsTile.tsx` — wrapper visual reutilizável
+
+## Fora de escopo
+
+- Não mexo em Modelos/Campanhas/Performance/Intel/Comissões internamente (cada view continua usando seus componentes atuais; só ganham o frame novo).
+- Sem mudanças de dados, RLS, edge functions, contratos.
+- Sem light theme (a página fica forçada em dark).
+
+## Quality bar
+
+Antes de encerrar: abrir `/admin?tab=ads` no preview, verificar bento responsivo em 1440 e 768, conferir contraste do dourado sobre fundo escuro (WCAG AA para números grandes), e garantir que charts ainda recebem dados (sem regressão).
