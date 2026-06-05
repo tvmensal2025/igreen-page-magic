@@ -372,9 +372,10 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
           </div>
         </div>
 
-        <p className="text-[10px] text-center text-[#064e3b]/50 mt-3">
-          Atualiza em tempo real conforme você escreve ou anexa mídia
+        <p className="text-[9px] text-center text-[#064e3b]/50 mt-2">
+          Atualiza em tempo real
         </p>
+
       </div>
     </div>
   );
