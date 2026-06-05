@@ -522,11 +522,10 @@ async function sendStepMedia(
 
     if (item.kind === "text") {
       // ⏱️ Respeita text_delay_ms antes do texto.
-      // Teto duro de 12s para não estourar o limite de 60s da Edge Function
-      // quando uma sequência tem 4+ itens. Consultor que precisa de pausa
-      // maior deve quebrar em dois passos.
+      // 🚀 2026-06-05: teto reduzido para 2s (era 12s) — corte de latência
+      // no Evolution. Consultor que precisa pausa maior deve quebrar o passo.
       if (!isTestMode()) {
-        const wait = Math.max(0, Math.min(item.delayMs, 12_000));
+        const wait = Math.max(0, Math.min(item.delayMs, 2_000));
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       }
       try {
