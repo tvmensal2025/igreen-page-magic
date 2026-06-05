@@ -654,14 +654,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Track if credentials came from request body — if so, do NOT override with DB values
-    let credsFromBody = false;
-    try {
-      // Re-check: if body provided email+password, we already assigned them above
-      // We need to know if they came from body to avoid silently replacing with stale DB values.
-      // (cannot re-read req.json — body already consumed; rely on env fallback check)
-      credsFromBody = portalEmail !== Deno.env.get("IGREEN_PORTAL_EMAIL");
-    } catch (_) { /* noop */ }
+    // If credentials came from request body, do NOT override with stale DB values.
+
 
     if (consultantId && !credsFromBody) {
       const { data: cred } = await supabase
