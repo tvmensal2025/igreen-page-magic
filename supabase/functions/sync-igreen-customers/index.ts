@@ -180,10 +180,11 @@ async function syncOneConsultant(
   portalPassword: string,
   consultantId: string | null,
   mode: string,
+  savedToken?: string | null,
+  savedConsultorId?: string | null,
 ): Promise<Record<string, unknown>> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
-  console.log(`Logging in to iGreen API for ${emailNorm} (pwd_len=${passwordNorm.length})...`);
   const browserHeaders = {
     "Content-Type": "application/json",
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -193,6 +194,72 @@ async function syncOneConsultant(
     "Referer": "https://escritorio.igreenenergy.com.br/",
   };
 
+  let token: string | null = null;
+  let consultorIdFromToken: string | null = null;
+  let usedSavedToken = false;
+
+  // ===== Strategy 1: try the token captured by the consultant's browser =====
+  if (savedToken && typeof savedToken === "string" && savedToken.length > 20) {
+    console.log(`Trying saved iGreen token for consultant ${consultantId || emailNorm}...`);
+    const testHeaders = {
+      "Authorization": `Bearer ${savedToken}`,
+      "Content-Type": "application/json",
+      "User-Agent": browserHeaders["User-Agent"],
+      "Accept": "application/json, text/plain, */*",
+      "Origin": "https://escritorio.igreenenergy.com.br",
+      "Referer": "https://escritorio.igreenenergy.com.br/",
+    };
+    try {
+      // Validate token by calling /consultant (cheap) unless we already cached consultorId
+      if (savedConsultorId) {
+        // quick probe to confirm token still valid: HEAD-like GET against a small endpoint
+        const probe = await fetch(`${API_BASE}/customer-map/${savedConsultorId}?page=1&pageSize=1`, { headers: testHeaders });
+        if (probe.ok) {
+          token = savedToken;
+          consultorIdFromToken = savedConsultorId;
+          usedSavedToken = true;
+          console.log("Saved token is valid (cached consultorId).");
+        } else if (probe.status === 401 || probe.status === 403) {
+          console.log("Saved token rejected (401/403). Marking expired and falling back to login.");
+          if (consultantId) {
+            await supabase.from("consultants").update({ igreen_token_expired: true }).eq("id", consultantId);
+          }
+        } else {
+          console.log(`Saved token probe returned ${probe.status}. Falling back to login.`);
+        }
+        await probe.text().catch(() => {});
+      } else {
+        const cRes = await fetch(`${API_BASE}/consultant`, { headers: testHeaders });
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          const cid = cData.idconsultor || cData.id || cData.data?.id || cData.consultant?.id
+            || cData.user?.id || cData.consultor?.id || cData._id || cData.data?._id
+            || cData.uid || cData.userId || cData.user_id;
+          if (cid) {
+            token = savedToken;
+            consultorIdFromToken = String(cid);
+            usedSavedToken = true;
+            if (consultantId) {
+              await supabase.from("consultants").update({ igreen_consultor_id: String(cid) }).eq("id", consultantId);
+            }
+            console.log(`Saved token valid. Cached consultorId=${cid}.`);
+          }
+        } else if (cRes.status === 401 || cRes.status === 403) {
+          console.log("Saved token rejected by /consultant. Marking expired.");
+          if (consultantId) {
+            await supabase.from("consultants").update({ igreen_token_expired: true }).eq("id", consultantId);
+          }
+          await cRes.text().catch(() => {});
+        } else {
+          await cRes.text().catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error("Saved token probe error:", err);
+    }
+  }
+
+  // ===== Strategy 2: fallback to email/password login (legacy path) =====
   async function attemptLogin(): Promise<Response> {
     return await fetch(`${API_BASE}/login`, {
       method: "POST",
@@ -200,6 +267,10 @@ async function syncOneConsultant(
       body: JSON.stringify({ email: emailNorm, password: passwordNorm }),
     });
   }
+
+  if (!token) {
+    console.log(`Logging in to iGreen API for ${emailNorm} (pwd_len=${passwordNorm.length})...`);
+
 
   let loginRes = await attemptLogin();
   if (loginRes.status === 429 || (await loginRes.clone().text()).toLowerCase().includes("muitas tentativas")) {
