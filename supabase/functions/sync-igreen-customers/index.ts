@@ -208,13 +208,31 @@ async function syncOneConsultant(
   if (!loginRes.ok) {
     const errText = await loginRes.text();
     console.error(`Login failed for ${portalEmail}: ${loginRes.status} - ${errText}`);
-    return { success: false, email: portalEmail, error: "Login falhou" };
+    let friendly: string;
+    if (loginRes.status === 401 || loginRes.status === 403) {
+      friendly = "Email ou senha do portal iGreen incorretos. Confira na aba Dados.";
+    } else if (loginRes.status === 429 || errText.toLowerCase().includes("muitas tentativas")) {
+      friendly = "Portal iGreen bloqueou temporariamente por excesso de tentativas. Aguarde 1 minuto e tente de novo.";
+    } else {
+      friendly = `Login no portal falhou (HTTP ${loginRes.status}). Resposta: ${errText.slice(0, 200)}`;
+    }
+    return {
+      success: false,
+      email: portalEmail,
+      error: friendly,
+      login_status: loginRes.status,
+      login_body: errText.slice(0, 200),
+    };
   }
 
   const loginData = await loginRes.json();
   const token = loginData.accessToken || loginData.token || loginData.access_token;
   if (!token) {
-    return { success: false, email: portalEmail, error: "Sem token" };
+    return {
+      success: false,
+      email: portalEmail,
+      error: "Portal respondeu sem token de acesso. Avise o suporte.",
+    };
   }
   console.log(`Login OK for ${portalEmail}`);
 
