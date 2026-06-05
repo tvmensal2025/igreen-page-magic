@@ -40,8 +40,8 @@ const PanfletoModal = lazy(() => import("@/components/admin/PanfletoModal").then
 const AdsCentralTab = lazy(() => import("@/components/admin/ads/AdsCentralTab").then(m => ({ default: m.AdsCentralTab })));
 const CaptacaoPanel = lazy(() => import("@/components/captacao/CaptacaoPanel").then(m => ({ default: m.CaptacaoPanel })));
 const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTab").then(m => ({ default: m.ParceirosTab })));
-const InstallPwaButton = lazy(() => import("@/components/admin/InstallPwaButton").then(m => ({ default: m.InstallPwaButton })));
-import { LayoutLockToggle } from "@/components/layout/LayoutLockToggle";
+
+
 
 import { SupportChatButton } from "@/components/support/SupportChatButton";
 
