@@ -194,21 +194,21 @@ const AdminContent = () => {
   const baseUrl = "igreen.cloud";
   const slug = form.license || "sua-licenca";
 
-  const tabs: Array<{ id: string; label: string; icon: any; href?: string; external?: boolean }> = [
-    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
-    { id: "crm", label: "CRM", icon: LayoutGrid },
-    { id: "conversao", label: "Conversão", icon: Flame, href: "/admin/conversao" },
-    { id: "clientes", label: "Clientes", icon: Users },
-    { id: "captacao", label: "Captação", icon: ClipboardList },
-    { id: "parceiros", label: "Parceiros", icon: Handshake },
-    { id: "rede", label: "Rede", icon: Network },
-    { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
-    { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
-    
-    { id: "links", label: "Links", icon: LinkIcon },
-    { id: "materiais", label: "Materiais", icon: FolderDown },
-  ];
-
+  // Labels e subtítulos por aba — alimenta o AppTopbar
+  const TAB_META: Record<AdminTabId, { title: string; subtitle: string }> = {
+    "dashboard": { title: "Dashboard", subtitle: "Resumo operacional do dia" },
+    "crm": { title: "CRM", subtitle: "Funil de oportunidades e relacionamento" },
+    "conversao": { title: "Conversão", subtitle: "Análise de funil e gargalos" },
+    "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
+    "captacao": { title: "Captação", subtitle: "Novos leads e originação" },
+    "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
+    "rede": { title: "Rede", subtitle: "Sua estrutura e hierarquia" },
+    "whatsapp": { title: "WhatsApp", subtitle: "Atendimento, automação e disparo" },
+    "central-anuncios": { title: "Central de Anúncios", subtitle: "Performance de campanhas" },
+    "links": { title: "Links", subtitle: "Sua landing, QR Codes e materiais" },
+    "materiais": { title: "Materiais", subtitle: "Biblioteca de assets de divulgação" },
+  };
+  const currentMeta = TAB_META[activeTab];
 
   if (loading) {
     return <PageStatus title="Carregando painel..." pulse />;
@@ -230,36 +230,29 @@ const AdminContent = () => {
   const effectivePhotoPreview = localPhotoPreview || photoPreview;
 
   return (
-    <div className="h-[100dvh] bg-background relative overflow-hidden flex flex-col">
-      {/* Ambient gradient for ultrawide screens — evita fundo preto vazio nas laterais */}
-      <AmbientGlow variant="panel" className="fixed" />
-      {/* Header */}
-      <AppHeader
-        title="Painel do Consultor"
-        subtitle={form.name || "Bem-vindo"}
-        subtitleSensitive
-        actions={
-          <>
-            <button
-              onClick={togglePrivacy}
-              className={`relative p-1.5 sm:p-2 rounded-xl transition-all duration-200 ${privacyMode ? 'text-primary bg-primary/15' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}
-              aria-label={privacyMode ? "Mostrar dados sensíveis" : "Ocultar dados sensíveis"}
-              title={privacyMode ? "Modo privacidade ATIVO — clique para desativar" : "Ocultar dados sensíveis para gravação"}
-            >
-              {privacyMode ? <EyeOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Eye className="h-4 w-4 sm:h-5 sm:w-5" />}
-            </button>
-            <div className="hidden sm:block"><ThemeToggle /></div>
-            <button
-              onClick={() => setAiChatOpen(true)}
-              className="hidden sm:inline-flex relative p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
-              aria-label="Assistente iGreen IA"
-              title="Assistente iGreen IA"
-            >
-              <Sparkles className="h-5 w-5" />
-            </button>
-            <Suspense fallback={null}><InstallPwaButton /></Suspense>
-            <LayoutLockToggle />
+    <div className="painel-elite h-[100dvh] flex overflow-hidden">
+      <AppSidebar
+        activeTab={activeTab}
+        onTabChange={(t) => setActiveTab(t)}
+        onNavigate={(href) => navigate(href)}
+        consultantName={form.name || "Consultor"}
+        consultantLevel={form.igreen_id ? `ID ${form.igreen_id}` : "iGreen Energy"}
+        consultantPhoto={effectivePhotoPreview || undefined}
+        onLogout={handleLogout}
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+      />
 
+      <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
+        <AppTopbar
+          title={currentMeta.title}
+          subtitle={form.name ? `${currentMeta.subtitle} • ${form.name}` : currentMeta.subtitle}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          privacyMode={privacyMode}
+          onTogglePrivacy={togglePrivacy}
+          onOpenAi={() => setAiChatOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          notificationSlot={
             <Suspense fallback={<div className="w-9 h-9" />}>
               <NotificationCenter
                 notifications={notifications}
@@ -273,65 +266,24 @@ const AdminContent = () => {
                 }}
               />
             </Suspense>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="relative p-1.5 sm:p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200"
-              aria-label="Configurações"
-              title="Configurações"
-            >
-              <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground hover:text-foreground gap-2 rounded-xl px-2 sm:px-3">
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Sair</span>
-            </Button>
-          </>
-        }
-      />
+          }
+        />
 
       <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSave}>
 
-      {/* Tab Navigation */}
-      <nav className="shrink-0 border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="max-w-[1920px] mx-auto px-2 sm:px-5 lg:px-8">
-          <div className="flex overflow-x-auto no-scrollbar -mx-2 sm:mx-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button key={tab.id} onClick={() => {
-                  if (tab.href) { navigate(tab.href); return; }
-                  setActiveTab(tab.id as any);
-                }}
-                  className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-sm font-medium whitespace-nowrap border-b-2 transition-all duration-200 shrink-0 min-w-[56px] sm:min-w-0 ${
-                    isActive 
-                      ? "border-primary text-primary" 
-                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-                  }`}
-                  title={tab.label}
-                  aria-label={tab.label}>
-                  <Icon className={`w-5 h-5 sm:w-4 sm:h-4 ${isActive ? "text-primary" : ""}`} />
-                  <span className="leading-tight">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </nav>
-
       {/* Content */}
       <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm"
-        ? "w-full flex-1 min-h-0 px-1 sm:px-1.5 lg:px-2 py-1 overflow-hidden flex flex-col gap-1"
-        : "flex-1 min-h-0 overflow-y-auto max-w-[1920px] mx-auto w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6 sm:py-8 space-y-6 overflow-x-hidden"}>
-        {/* OCR Review Banner — aparece quando há leads aguardando o consultor
-            decidir entre "Eu confirmo" / "Pedir ao cliente" os dados extraídos
-            da conta de luz ou do documento. Sempre no topo, em qualquer aba. */}
+        ? "w-full flex-1 min-h-0 px-2 sm:px-3 py-2 overflow-hidden flex flex-col gap-2"
+        : "flex-1 min-h-0 overflow-y-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6 overflow-x-hidden"}>
+        {/* OCR Review Banner */}
         <OcrReviewBanner consultantId={userId} />
 
-        <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>}>
+        <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-4 border-[var(--pe-emerald)] border-t-transparent rounded-full" /></div>}>
           {activeTab === "dashboard" && userId && (
             <DashboardTab userId={userId} form={form} onFormUpdate={handleFormChange} periodDays={periodDays} onPeriodChange={setPeriodDays} />
           )}
+
+
 
           {activeTab === "links" && (
             <LinksTab
