@@ -282,16 +282,94 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
         <input ref={fileRef} type="file" hidden onChange={handleFile} />
       </div>
 
-      {/* Live preview */}
-      <div className="rounded-xl border border-border/40 bg-emerald-950/10 p-3 space-y-2">
-        <p className="text-[11px] font-bold text-emerald-300/80 uppercase tracking-wide">Pré-visualização (3 variações)</p>
-        <div className="space-y-2">
-          {previews.map((p, i) => (
-            <div key={i} className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-sm text-foreground whitespace-pre-wrap">
-              {p || <span className="text-muted-foreground italic">(escreva uma mensagem acima)</span>}
-            </div>
-          ))}
+      {/* Live WhatsApp mobile preview */}
+      <div className="rounded-2xl border border-[#064e3b]/15 bg-gradient-to-b from-[#f5f0e0]/60 to-white p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[11px] font-bold text-[#064e3b] uppercase tracking-wider">Pré-visualização ao vivo</p>
+          <span className="text-[10px] text-[#064e3b]/50 font-medium">como aparece no WhatsApp</span>
         </div>
+
+        <div className="flex justify-center">
+          <div className="w-[280px] rounded-[2.2rem] border-[10px] border-[#0b1f1a] bg-[#e5ddd5] shadow-xl overflow-hidden">
+            {/* phone header */}
+            <div className="bg-[#075e54] text-white px-3 py-2 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold">
+                {(previewName || "C").slice(0, 1).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-semibold truncate">{previewName || "Contato"}</p>
+                <p className="text-[9px] opacity-70">online</p>
+              </div>
+            </div>
+
+            {/* chat body with WhatsApp pattern */}
+            <div
+              className="px-3 py-4 min-h-[320px] max-h-[480px] overflow-auto"
+              style={{
+                backgroundImage:
+                  "radial-gradient(circle at 25% 25%, rgba(0,0,0,0.04) 1px, transparent 1px), radial-gradient(circle at 75% 75%, rgba(0,0,0,0.04) 1px, transparent 1px)",
+                backgroundSize: "16px 16px",
+              }}
+            >
+              <div className="ml-auto max-w-[88%] bg-[#dcf8c6] rounded-lg shadow-sm overflow-hidden">
+                {/* media block */}
+                {media?.kind === "image" && (
+                  <img src={media.url} alt="preview" className="w-full max-h-[180px] object-cover" />
+                )}
+                {media?.kind === "video" && (
+                  <video src={media.url} className="w-full max-h-[180px] object-cover bg-black" muted />
+                )}
+                {media?.kind === "audio" && (
+                  <div className="px-3 py-2 bg-[#d1efb5] flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-[#075e54] flex items-center justify-center">
+                      <Play className="w-3 h-3 text-white fill-white" />
+                    </div>
+                    <div className="flex-1 h-1 bg-[#075e54]/30 rounded-full">
+                      <div className="h-full w-1/3 bg-[#075e54] rounded-full" />
+                    </div>
+                    <span className="text-[9px] text-[#075e54]/70">0:12</span>
+                  </div>
+                )}
+                {media?.kind === "document" && (
+                  <div className="px-3 py-2 bg-[#d1efb5] flex items-center gap-2 border-b border-[#0d7a5f]/10">
+                    <FileText className="w-4 h-4 text-[#075e54]" />
+                    <p className="text-[10px] font-medium text-[#064e3b] truncate flex-1">{media.fileName || "documento.pdf"}</p>
+                  </div>
+                )}
+
+                {/* text */}
+                <div className="px-3 py-2">
+                  <p className="text-[12px] leading-snug text-gray-800 whitespace-pre-wrap break-words">
+                    {previews[0] || (
+                      <span className="text-gray-400 italic">{media ? "(sem legenda)" : "Comece a escrever sua mensagem..."}</span>
+                    )}
+                  </p>
+                  <p className="text-[9px] text-gray-500 text-right mt-1">
+                    {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ✓✓
+                  </p>
+                </div>
+              </div>
+
+              {/* additional variations (spintax preview) */}
+              {previews[1] && previews[1] !== previews[0] && (
+                <div className="ml-auto max-w-[88%] bg-[#dcf8c6]/60 rounded-lg shadow-sm px-3 py-2 mt-3 border border-dashed border-[#075e54]/20">
+                  <p className="text-[9px] uppercase font-bold text-[#075e54]/70 mb-1">Variação 2</p>
+                  <p className="text-[11px] leading-snug text-gray-700 whitespace-pre-wrap break-words">{previews[1]}</p>
+                </div>
+              )}
+              {previews[2] && previews[2] !== previews[0] && previews[2] !== previews[1] && (
+                <div className="ml-auto max-w-[88%] bg-[#dcf8c6]/60 rounded-lg shadow-sm px-3 py-2 mt-3 border border-dashed border-[#075e54]/20">
+                  <p className="text-[9px] uppercase font-bold text-[#075e54]/70 mb-1">Variação 3</p>
+                  <p className="text-[11px] leading-snug text-gray-700 whitespace-pre-wrap break-words">{previews[2]}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-center text-[#064e3b]/50 mt-3">
+          Atualiza em tempo real conforme você escreve ou anexa mídia
+        </p>
       </div>
     </div>
   );
