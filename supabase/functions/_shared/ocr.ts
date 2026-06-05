@@ -423,22 +423,9 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
 
     const prompt = buildPromptDocumento(tipo, isVerso);
 
-    console.log("🔍 OCR Doc - Chamando Gemini 2.5 Flash...");
+    console.log("🔍 OCR Doc - Chamando Lovable AI Gateway (google/gemini-2.5-flash)...");
     const gemRes = await withRetry(
-      () =>
-        fetchWithTimeout(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: img.mime, data: img.b64 } }] }],
-              // ⚠️ Mesmo fix do ocrContaEnergia: thinkingBudget=0 + budget maior.
-              generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
-            }),
-            timeout: TIMEOUT_GEMINI,
-          }
-        ),
+      () => callGeminiViaLovable(prompt, img, { maxTokens: 4096, responseJson: true }),
       {
         maxAttempts: 2,
         retryOn: (e) => {
@@ -447,6 +434,7 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
         },
       }
     );
+
 
     const gemData = await gemRes.json();
     console.log("🔍 OCR Doc - Gemini status:", gemRes.status);
