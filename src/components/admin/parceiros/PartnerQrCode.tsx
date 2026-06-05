@@ -64,7 +64,7 @@ const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
 
 /** Layouts travados (não-editáveis) — garantem que o impresso bate 1:1 com o preview. */
 const DEFAULT_LOCKED: Record<TemplateId, boolean> = {
-  a4: false,
+  a4: true,
   banner: true,
 };
 
