@@ -187,12 +187,21 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !publishing && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" /> Modo Express — 5 cliques pra publicar
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="ads-central-2026 max-w-3xl max-h-[92vh] overflow-y-auto p-0 border-[hsl(var(--ads-border))]">
+        <div className="relative px-6 pt-6 pb-4 border-b border-[hsl(var(--ads-border))] bg-[var(--ads-gradient-tile)]">
+          <div className="absolute inset-x-0 top-0 h-1 bg-[var(--ads-gradient-gold)]" />
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[hsl(var(--ads-emerald-2))] font-semibold">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--ads-gradient-emerald)] text-[hsl(45_60%_95%)] shadow-sm">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              Modo Express
+              <span className="text-xs font-normal text-[hsl(var(--ads-muted))]">— 5 passos, 1 publicação</span>
+            </DialogTitle>
+          </DialogHeader>
+        </div>
+        <div className="px-6 pb-6 pt-2">
+
 
         <div className="space-y-5 mt-2">
           {/* 1) ONDE */}
