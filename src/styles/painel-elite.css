@@ -1,0 +1,160 @@
+/* ═══════════════════════════════════════════════════════════════
+   PAINEL ELITE — Emerald Prestige + Space Grotesk/DM Sans
+   Tokens escopados ao wrapper .painel-elite, sem afetar landing.
+   ═══════════════════════════════════════════════════════════════ */
+
+.painel-elite {
+  /* Cores LOCKED da direção Elite Emerald */
+  --pe-bg: #f6f5ef;            /* cream surface */
+  --pe-surface: #ffffff;
+  --pe-surface-muted: #f3f1e8;
+  --pe-border: #e7e3d6;
+  --pe-border-strong: #d6d0bd;
+
+  --pe-emerald: #064e3b;       /* primary */
+  --pe-emerald-strong: #052e23;
+  --pe-emerald-soft: #0d7a5f;  /* secondary */
+  --pe-emerald-50: rgba(6, 78, 59, 0.05);
+  --pe-emerald-10: rgba(6, 78, 59, 0.10);
+  --pe-emerald-20: rgba(6, 78, 59, 0.20);
+
+  --pe-gold: #c9a84c;          /* accent */
+  --pe-gold-soft: #e6cf85;
+  --pe-gold-20: rgba(201, 168, 76, 0.20);
+
+  --pe-text: #0b1f1a;
+  --pe-text-muted: #6b6657;
+  --pe-text-dim: #9a9580;
+
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  background: var(--pe-bg);
+  color: var(--pe-text);
+}
+
+.painel-elite .pe-heading,
+.painel-elite h1, .painel-elite h2, .painel-elite h3, .painel-elite h4 {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* ─── Sidebar ─── */
+.painel-elite .pe-sidebar {
+  background: var(--pe-emerald);
+  border-right: 1px solid rgba(201, 168, 76, 0.15);
+  color: #ecfdf5;
+}
+.painel-elite .pe-sidebar-section {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(201, 168, 76, 0.7);
+  padding: 0 1rem;
+  margin: 1rem 0 0.5rem;
+}
+.painel-elite .pe-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border-radius: 14px;
+  color: rgba(236, 253, 245, 0.65);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  position: relative;
+  border: 1px solid transparent;
+}
+.painel-elite .pe-nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+.painel-elite .pe-nav-item.is-active {
+  background: rgba(5, 46, 35, 0.65);
+  color: var(--pe-gold);
+  border-color: rgba(201, 168, 76, 0.25);
+  box-shadow: inset 0 1px 0 rgba(201, 168, 76, 0.1);
+}
+.painel-elite .pe-nav-item .pe-badge {
+  margin-left: auto;
+  background: var(--pe-gold);
+  color: var(--pe-emerald-strong);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+/* ─── Topbar ─── */
+.painel-elite .pe-topbar {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--pe-border);
+}
+
+/* ─── Surfaces ─── */
+.painel-elite .pe-card {
+  background: var(--pe-surface);
+  border: 1px solid var(--pe-border);
+  border-radius: 24px;
+  box-shadow: 0 1px 2px rgba(6, 78, 59, 0.04);
+  transition: all 0.2s ease;
+}
+.painel-elite .pe-card:hover {
+  box-shadow: 0 12px 32px rgba(6, 78, 59, 0.06);
+}
+.painel-elite .pe-card-dark {
+  background: var(--pe-emerald);
+  border: 1px solid rgba(201, 168, 76, 0.2);
+  color: #ffffff;
+  border-radius: 24px;
+  box-shadow: 0 12px 40px rgba(6, 78, 59, 0.2);
+}
+.painel-elite .pe-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: var(--pe-emerald-50);
+  border: 1px solid var(--pe-emerald-10);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pe-emerald);
+}
+.painel-elite .pe-chip-gold {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 8px;
+  background: rgba(201, 168, 76, 0.15);
+  color: #8a6f1f;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ─── KPI number ─── */
+.painel-elite .pe-kpi {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 1.875rem;
+  letter-spacing: -0.02em;
+  color: var(--pe-emerald-strong);
+}
+
+/* Scrollbar polishing inside sidebar */
+.painel-elite .pe-sidebar nav::-webkit-scrollbar { width: 4px; }
+.painel-elite .pe-sidebar nav::-webkit-scrollbar-thumb { background: rgba(201, 168, 76, 0.2); border-radius: 4px; }
+
+/* Hide ambient glow inside .painel-elite (cream theme doesn't need it) */
+.painel-elite .ambient-glow { display: none !important; }
+
+/* Smooth focus ring (gold) */
+.painel-elite *:focus-visible {
+  outline: 2px solid var(--pe-gold);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
