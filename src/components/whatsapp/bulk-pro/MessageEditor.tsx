@@ -40,7 +40,22 @@ const VARS = [
   { tag: "{saudacao}", label: "Bom dia / tarde / noite" },
 ];
 
-export function MessageEditor({ consultantId, text, onTextChange, media, onMediaChange, previewName, previewBill }: Props) {
+export function MessageEditor({ consultantId, text, onTextChange, media, onMediaChange, previewName, previewBill, templates = [] }: Props) {
+  const [tplQuery, setTplQuery] = useState("");
+  const [tplOpen, setTplOpen] = useState(false);
+  const filteredTemplates = templates.filter(t => {
+    const q = tplQuery.trim().toLowerCase();
+    if (!q) return true;
+    return t.name.toLowerCase().includes(q) || (t.content || "").toLowerCase().includes(q);
+  });
+  const applyTemplate = (t: MessageTemplate) => {
+    if (text.trim() && !confirm("Substituir a mensagem atual pelo template?")) return;
+    onTextChange(t.content || "");
+    if (t.media_url && t.media_type && t.media_type !== "text") {
+      onMediaChange({ url: t.media_url, kind: t.media_type as any, fileName: t.name });
+    }
+    setTplOpen(false);
+  };
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [pct, setPct] = useState(0);
