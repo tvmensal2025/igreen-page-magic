@@ -844,7 +844,7 @@ html {
   font-weight: 600;
   font-size: 0.95rem;
   letter-spacing: -.01em;
-  color: hsl(var(--ads-cream));
+  color: hsl(var(--ads-emerald-2));
   display: inline-flex;
   align-items: center;
   gap: .5rem;
@@ -853,12 +853,12 @@ html {
   content: "";
   width: 8px; height: 8px; border-radius: 999px;
   background: var(--ads-gradient-gold);
-  box-shadow: 0 0 12px hsl(var(--ads-gold) / .6);
+  box-shadow: 0 0 12px hsl(var(--ads-gold) / .5);
 }
 
 .ads-central-2026 .ads-cta-gold {
   background: var(--ads-gradient-gold);
-  color: hsl(162 88% 10%);
+  color: hsl(162 88% 8%);
   font-weight: 600;
   border-radius: .625rem;
   padding: .5rem .9rem;
@@ -866,13 +866,13 @@ html {
   display: inline-flex;
   align-items: center;
   gap: .375rem;
-  border: 1px solid hsl(var(--ads-gold) / .6);
-  box-shadow: 0 6px 20px -6px hsl(var(--ads-gold) / .5);
+  border: 1px solid hsl(var(--ads-gold) / .7);
+  box-shadow: 0 6px 20px -6px hsl(var(--ads-gold) / .55);
   transition: transform .15s ease, box-shadow .25s ease;
 }
 .ads-central-2026 .ads-cta-gold:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px -6px hsl(var(--ads-gold) / .65);
+  box-shadow: 0 10px 28px -6px hsl(var(--ads-gold) / .7);
 }
 
 .ads-central-2026 .ads-nav-pill {
@@ -881,8 +881,9 @@ html {
   padding: .25rem;
   border-radius: .875rem;
   border: 1px solid hsl(var(--ads-border));
-  background: hsl(var(--ads-surface) / .7);
+  background: hsl(var(--ads-surface));
   overflow-x: auto;
+  box-shadow: var(--ads-shadow-tile);
 }
 .ads-central-2026 .ads-nav-btn {
   position: relative;
@@ -897,10 +898,10 @@ html {
   white-space: nowrap;
   transition: color .2s ease, background .2s ease;
 }
-.ads-central-2026 .ads-nav-btn:hover { color: hsl(var(--ads-cream)); }
+.ads-central-2026 .ads-nav-btn:hover { color: hsl(var(--ads-emerald-2)); background: hsl(var(--ads-emerald) / .08); }
 .ads-central-2026 .ads-nav-btn.is-active {
-  color: hsl(var(--ads-cream));
-  background: hsl(var(--ads-emerald-2) / .55);
+  color: hsl(45 60% 95%);
+  background: var(--ads-gradient-emerald);
 }
 .ads-central-2026 .ads-nav-btn.is-active::after {
   content: "";
@@ -920,13 +921,13 @@ html {
   border-radius: 999px;
   font-size: .75rem;
   font-weight: 500;
-  color: hsl(var(--ads-muted));
-  background: hsl(var(--ads-surface) / .7);
+  color: hsl(var(--ads-emerald-2));
+  background: hsl(var(--ads-surface));
   border: 1px solid hsl(var(--ads-border));
-  transition: color .2s ease, border-color .2s ease;
+  transition: color .2s ease, border-color .2s ease, background .2s ease;
 }
 .ads-central-2026 .ads-chip:hover {
-  color: hsl(var(--ads-cream));
+  background: hsl(var(--ads-emerald) / .08);
   border-color: hsl(var(--ads-border-strong));
 }
 
@@ -942,9 +943,23 @@ html {
   .ads-central-2026 .ads-bento { grid-template-columns: 1fr; }
 }
 
-/* Override generic shadcn Card backgrounds inside ads-central-2026 to match tiles */
+/* Force readable colors on light theme — overrides app's dark shadcn tokens
+   that components inside the ads scope inherit. */
 .ads-central-2026 .bg-card\/60,
-.ads-central-2026 [class*="bg-card/"] {
+.ads-central-2026 [class*="bg-card/"],
+.ads-central-2026 .bg-card {
   background: var(--ads-gradient-tile) !important;
   border-color: hsl(var(--ads-border)) !important;
+  color: hsl(var(--ads-text)) !important;
 }
+.ads-central-2026 .text-foreground,
+.ads-central-2026 .text-card-foreground { color: hsl(var(--ads-text)) !important; }
+.ads-central-2026 .text-muted-foreground { color: hsl(var(--ads-muted)) !important; }
+.ads-central-2026 .text-primary { color: hsl(var(--ads-emerald)) !important; }
+.ads-central-2026 .border-border,
+.ads-central-2026 .border-border\/40,
+.ads-central-2026 [class*="border-border"] { border-color: hsl(var(--ads-border)) !important; }
+.ads-central-2026 .bg-muted,
+.ads-central-2026 .bg-muted\/50 { background: hsl(var(--ads-surface-2)) !important; }
+.ads-central-2026 .ads-num { color: hsl(var(--ads-emerald-2)); }
+.ads-central-2026 .ads-num-gold { color: hsl(var(--ads-gold)); }
