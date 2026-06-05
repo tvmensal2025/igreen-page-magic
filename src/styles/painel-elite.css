@@ -3,13 +3,18 @@
    ═══════════════════════════════════════════════════════════════ */
 
 .painel-elite {
+  /* surfaces */
   --pe-bg: #f7f9f8;
   --pe-surface: #ffffff;
   --pe-surface-muted: #f1f5f3;
   --pe-surface-sunken: #eef2f0;
-  --pe-border: #e3e8e5;
-  --pe-border-strong: #cdd5d0;
 
+  /* borders */
+  --pe-border: #e6ebe8;
+  --pe-border-strong: #cdd5d0;
+  --pe-border-focus: #10b981;
+
+  /* emerald */
   --pe-emerald: #064e3b;
   --pe-emerald-strong: #022c22;
   --pe-emerald-soft: #047857;
@@ -17,29 +22,43 @@
   --pe-emerald-10: rgba(6, 78, 59, 0.10);
   --pe-emerald-20: rgba(6, 78, 59, 0.20);
 
+  /* accent + states */
   --pe-accent: #10b981;
   --pe-accent-soft: #34d399;
-  --pe-accent-deep: #059669;
-  --pe-accent-glow: rgba(16, 185, 129, 0.18);
-  --pe-accent-warm: #c9a84c; /* reservado p/ badge Elite */
+  --pe-accent-deep: #047857;
+  --pe-accent-glow: rgba(16, 185, 129, 0.12);
+  --pe-accent-warm: #c9a84c;
+  --pe-success: #059669;
+  --pe-warning: #d97706;
+  --pe-danger: #dc2626;
+  --pe-info: #0284c7;
 
+  /* text */
   --pe-text: #0b1f1a;
   --pe-text-muted: #5b6b65;
   --pe-text-dim: #94a39d;
+  --pe-text-label: #6b7a73;
 
-  --pe-danger: #dc2626;
-  --pe-warning: #d97706;
-  --pe-info: #0284c7;
+  /* radius */
+  --pe-radius-sm: 8px;
+  --pe-radius: 12px;
+  --pe-radius-lg: 16px;
+
+  /* shadow (one only) */
+  --pe-shadow-card: 0 1px 2px rgba(11, 31, 26, 0.04), 0 1px 0 rgba(11, 31, 26, 0.02);
+  --pe-shadow-hover: 0 4px 12px rgba(11, 31, 26, 0.06);
 
   font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   background: var(--pe-bg);
   color: var(--pe-text);
+  font-size: 14px;
 }
 
 .painel-elite .pe-heading,
 .painel-elite h1, .painel-elite h2, .painel-elite h3, .painel-elite h4 {
   font-family: 'Space Grotesk', system-ui, sans-serif;
   letter-spacing: -0.01em;
+  color: var(--pe-text);
 }
 
 /* ─── Sidebar ─── */
@@ -81,9 +100,7 @@
   border-left-color: var(--pe-accent);
   font-weight: 600;
 }
-.painel-elite .pe-nav-item.is-active svg {
-  color: var(--pe-accent);
-}
+.painel-elite .pe-nav-item.is-active svg { color: var(--pe-accent); }
 .painel-elite .pe-nav-item .pe-badge {
   margin-left: auto;
   background: var(--pe-accent);
@@ -94,7 +111,7 @@
   border-radius: 999px;
 }
 
-/* Sidebar collapsed mode */
+/* Sidebar collapsed */
 .painel-elite .pe-sidebar.is-collapsed .pe-nav-item {
   justify-content: center;
   padding: 0.6rem 0;
@@ -111,131 +128,251 @@
 
 /* ─── Topbar ─── */
 .painel-elite .pe-topbar {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--pe-border);
 }
 
-/* ─── Surfaces ─── */
+/* ─── Page shell ─── */
+.painel-elite .pe-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 32px;
+}
+@media (max-width: 768px) {
+  .painel-elite .pe-page { padding: 16px; }
+}
+.painel-elite .pe-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--pe-border);
+  flex-wrap: wrap;
+}
+.painel-elite .pe-page-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--pe-text);
+  line-height: 1.2;
+}
+.painel-elite .pe-page-sub {
+  font-size: 13px;
+  color: var(--pe-text-muted);
+  margin-top: 4px;
+}
+
+/* Section header */
+.painel-elite .pe-section { margin-bottom: 24px; }
+.painel-elite .pe-section-header,
+.painel-elite .pe-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--pe-border);
+  margin-bottom: 16px;
+}
+.painel-elite .pe-section-header h2,
+.painel-elite .pe-section-header h3,
+.painel-elite .pe-section-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--pe-text);
+  letter-spacing: -0.005em;
+}
+
+/* ─── Cards ─── */
 .painel-elite .pe-card {
   background: var(--pe-surface);
   border: 1px solid var(--pe-border);
-  border-radius: 14px;
-  box-shadow: 0 1px 2px rgba(2, 44, 34, 0.03);
+  border-radius: var(--pe-radius);
+  box-shadow: var(--pe-shadow-card);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 .painel-elite .pe-card:hover {
   border-color: var(--pe-border-strong);
-  box-shadow: 0 4px 14px rgba(2, 44, 34, 0.06);
+  box-shadow: var(--pe-shadow-hover);
 }
 
-/* KPI card — Stripe-grade */
+/* KPI card */
 .painel-elite .pe-card-kpi {
   background: var(--pe-surface);
   border: 1px solid var(--pe-border);
-  border-radius: 14px;
-  padding: 1.1rem 1.25rem;
+  border-radius: var(--pe-radius);
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  transition: border-color 0.18s ease;
+  gap: 8px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
 }
-.painel-elite .pe-card-kpi:hover { border-color: var(--pe-accent-soft); }
-.painel-elite .pe-card-kpi .pe-kpi-label {
+.painel-elite .pe-card-kpi:hover {
+  border-color: var(--pe-accent);
+  box-shadow: var(--pe-shadow-hover);
+}
+.painel-elite .pe-kpi-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--pe-text-muted);
+  color: var(--pe-text-label);
 }
-.painel-elite .pe-card-kpi .pe-kpi-value {
+.painel-elite .pe-kpi-value {
   font-family: 'Space Grotesk', sans-serif;
-  font-weight: 700;
-  font-size: 1.875rem;
+  font-weight: 600;
+  font-size: 26px;
   line-height: 1.1;
-  letter-spacing: -0.025em;
-  color: var(--pe-emerald-strong);
+  letter-spacing: -0.02em;
+  color: var(--pe-text);
+  font-variant-numeric: tabular-nums;
 }
-.painel-elite .pe-card-kpi .pe-kpi-delta-up {
-  color: var(--pe-accent-deep);
-  font-size: 12px;
-  font-weight: 600;
-}
-.painel-elite .pe-card-kpi .pe-kpi-delta-down {
-  color: var(--pe-danger);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* Section header */
-.painel-elite .pe-section-header {
-  display: flex;
+.painel-elite .pe-kpi-icon {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--pe-border);
-  margin-bottom: 1rem;
+  justify-content: center;
+  background: var(--pe-accent-glow);
+  color: var(--pe-emerald-soft);
 }
-.painel-elite .pe-section-header h2,
-.painel-elite .pe-section-header h3 {
-  font-size: 1rem;
+.painel-elite .pe-kpi-icon svg { width: 14px; height: 14px; }
+.painel-elite .pe-kpi-delta-up {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--pe-success);
+  background: rgba(5, 150, 105, 0.08);
+  font-size: 11px;
   font-weight: 600;
-  color: var(--pe-emerald-strong);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.painel-elite .pe-kpi-delta-down {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--pe-danger);
+  background: rgba(220, 38, 38, 0.08);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.painel-elite .pe-kpi-sub {
+  font-size: 12px;
+  color: var(--pe-text-muted);
 }
 
 /* Toolbar / filter chips */
 .painel-elite .pe-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 8px;
   align-items: center;
+  margin-bottom: 16px;
 }
 .painel-elite .pe-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 6px;
   height: 32px;
-  padding: 0 0.7rem;
+  padding: 0 12px;
   border-radius: 8px;
   border: 1px solid var(--pe-border);
   background: var(--pe-surface);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--pe-text);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
 }
 .painel-elite .pe-chip:hover { border-color: var(--pe-border-strong); background: var(--pe-surface-muted); }
 .painel-elite .pe-chip.is-active {
-  border-color: var(--pe-accent);
-  background: var(--pe-accent-glow);
-  color: var(--pe-emerald-strong);
+  border-color: var(--pe-emerald-strong);
+  background: var(--pe-emerald-strong);
+  color: #ffffff;
 }
+.painel-elite .pe-chip.is-active svg { color: var(--pe-accent); }
 
 /* Table */
-.painel-elite .pe-table { width: 100%; border-collapse: collapse; }
+.painel-elite .pe-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .painel-elite .pe-table thead th {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--pe-text-muted);
+  color: var(--pe-text-label);
   text-align: left;
-  padding: 0.6rem 1rem;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--pe-border);
-  background: var(--pe-surface-muted);
+  background: var(--pe-surface-sunken);
+  height: 36px;
 }
 .painel-elite .pe-table tbody td {
-  padding: 0.7rem 1rem;
+  padding: 12px;
   border-bottom: 1px solid var(--pe-border);
   font-size: 13px;
   color: var(--pe-text);
+  height: 44px;
 }
+.painel-elite .pe-table tbody tr { transition: background 0.12s ease; }
 .painel-elite .pe-table tbody tr:hover { background: var(--pe-surface-muted); }
 
-/* Pills / chips */
+/* Status badges */
+.painel-elite .pe-badge-success,
+.painel-elite .pe-badge-warning,
+.painel-elite .pe-badge-danger,
+.painel-elite .pe-badge-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.painel-elite .pe-badge-success { color: var(--pe-success); background: rgba(5, 150, 105, 0.10); }
+.painel-elite .pe-badge-warning { color: var(--pe-warning); background: rgba(217, 119, 6, 0.10); }
+.painel-elite .pe-badge-danger  { color: var(--pe-danger);  background: rgba(220, 38, 38, 0.10); }
+.painel-elite .pe-badge-info    { color: var(--pe-info);    background: rgba(2, 132, 199, 0.10); }
+
+/* Maintenance / inline banner — hairline */
+.painel-elite .pe-banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border-left: 3px solid var(--pe-warning);
+  background: rgba(217, 119, 6, 0.06);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--pe-text);
+}
+.painel-elite .pe-banner.is-danger {
+  border-left-color: var(--pe-danger);
+  background: rgba(220, 38, 38, 0.05);
+}
+.painel-elite .pe-banner.is-info {
+  border-left-color: var(--pe-info);
+  background: rgba(2, 132, 199, 0.05);
+}
+
+/* Legacy pills */
 .painel-elite .pe-pill {
   display: inline-flex;
   align-items: center;
@@ -260,14 +397,13 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-
-/* KPI legacy alias */
 .painel-elite .pe-kpi {
   font-family: 'Space Grotesk', sans-serif;
-  font-weight: 700;
-  font-size: 1.875rem;
+  font-weight: 600;
+  font-size: 26px;
   letter-spacing: -0.02em;
-  color: var(--pe-emerald-strong);
+  color: var(--pe-text);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Scrollbar polishing inside sidebar */
