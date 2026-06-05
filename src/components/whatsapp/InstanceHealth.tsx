@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 /**
  * Painel de saúde anti-ban da instância.
@@ -77,6 +78,7 @@ function reasonLabel(reason?: string): string {
 }
 
 export function InstanceHealth({ instanceName }: InstanceHealthProps) {
+  const confirm = useConfirm();
   const [quota, setQuota] = useState<QuotaState | null>(null);
   const [meta, setMeta] = useState<InstanceMeta | null>(null);
   const [signals, setSignals] = useState<RiskRow[]>([]);
@@ -118,7 +120,8 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
   }, [load]);
 
   const pauseNow = async () => {
-    if (!confirm("Pausar todos os envios automáticos por 24h?")) return;
+    const ok = await confirm({ title: "Pausar todos os envios automáticos por 24h?", confirmText: "Pausar 24h", tone: "danger" });
+    if (!ok) return;
     setActionLoading(true);
     try {
       const { error } = await (supabase as any).rpc("pause_sending_now", {
@@ -135,10 +138,13 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
   };
 
   const clearRecovery = async () => {
-    if (!confirm(
-      "Só libere se você JÁ confirmou no app oficial do WhatsApp que o número está funcionando normalmente.\n\n" +
-      "Liberar agora?"
-    )) return;
+    const ok = await confirm({
+      title: "Liberar modo recuperação?",
+      description: "Só libere se você JÁ confirmou no app oficial do WhatsApp que o número está funcionando normalmente.",
+      confirmText: "Liberar",
+      tone: "info",
+    });
+    if (!ok) return;
     setActionLoading(true);
     try {
       const { error } = await (supabase as any).rpc("clear_recovery_mode", {
