@@ -1,7 +1,10 @@
 name: Sync iGreen Portal
 
-# Disparado pela edge function sync-igreen-customers via repository_dispatch.
+# Disparado pela edge function sync-igreen-customers via workflow_dispatch.
 # Roda em IPs da Microsoft Azure — não bloqueados pelo Cloudflare do portal iGreen.
+#
+# Secrets necessários (Settings → Secrets → Actions):
+#   SUPABASE_SERVICE_ROLE_KEY  — service role key do Supabase
 
 on:
   workflow_dispatch:
@@ -19,12 +22,6 @@ on:
         description: 'sync_customers ou sync_network'
         required: false
         default: 'sync_customers'
-      supabase_url:
-        description: 'URL do Supabase'
-        required: true
-      supabase_service_key:
-        description: 'Service role key do Supabase'
-        required: true
 
 concurrency:
   group: sync-igreen-${{ github.event.inputs.consultant_id }}
@@ -57,6 +54,6 @@ jobs:
           PORTAL_PASSWORD: ${{ github.event.inputs.portal_password }}
           CONSULTANT_ID: ${{ github.event.inputs.consultant_id }}
           MODE: ${{ github.event.inputs.mode }}
-          SUPABASE_URL: ${{ github.event.inputs.supabase_url }}
-          SUPABASE_SERVICE_KEY: ${{ github.event.inputs.supabase_service_key }}
+          SUPABASE_URL: 'https://zlzasfhcxcznaprrragl.supabase.co'
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node run-sync.mjs
