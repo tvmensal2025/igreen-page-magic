@@ -53,6 +53,7 @@ export interface FluxoBState {
   simulacao_apresentada?: boolean;
   interesse_confirmado?: boolean;
   cadastro_finalizado?: boolean;
+  abertura_feita?: boolean;
 }
 
 export interface MemoryBlock {
