@@ -3165,12 +3165,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             step = "finalizando";
           }
         } else {
-          // UUID/step_key órfão (passo deletado, fluxo trocado): tenta redispatch idempotente
-          console.warn(`[custom-step-resolver] step "${step}" não encontrado no fluxo ativo — tentando redispatch e mantendo`);
-          if (!stepIsUuid) {
-            await dispatchStepFromFlow(step).catch(() => false);
+          // UUID/step_key órfão (passo deletado, fluxo trocado ou step de OUTRO consultor)
+          console.warn(`[custom-step-resolver] step "${step}" não encontrado no fluxo ativo — tentando recuperar`);
+          // 🛡️ FIX 2026-06-06: se já temos a conta e o lead respondeu algo
+          // afirmativo (1/sim/cadastrar/...), avança para pedir documento em
+          // vez de cair em welcome.
+          const _afterBill = !!(customer as any)?.electricity_bill_value;
+          const _t = String(messageText || "").trim().toLowerCase();
+          const _afirm = /^(1|sim|s|ok|claro|quero|cadastrar|cadastrar.?me|quero\s+me\s+cadastrar|continuar|bora|vamos)\b/.test(_t)
+            || /^(btn_)?(quero_cadastrar|cadastrar)\b/.test(String(buttonId || "").toLowerCase());
+          if (_afterBill && _afirm) {
+            console.log(`[custom-step-resolver] órfão+afirm → avançando para aguardando_doc_auto`);
+            step = "aguardando_doc_auto";
+          } else {
+            if (!stepIsUuid) {
+              await dispatchStepFromFlow(step).catch(() => false);
+            }
+            return { reply: "", updates: { __inline_sent: true } as any };
           }
-          return { reply: "", updates: { __inline_sent: true } as any };
         }
       }
     } catch (e) {
@@ -3800,8 +3812,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             const _successId = resolvePostBillNextStepId(_fb);
             const _successSource = _fb.success_goto_step_id ? "success_goto_step_id" : "fallback.goto_step_id";
             if (_successId) {
+              // 🛡️ FIX 2026-06-06: PRENDE ao flow_id ativo. Sem esse filtro
+              // o success_goto podia apontar para step de outro consultor
+              // e contaminar conversation_step com UUID órfão.
               const { data: _target } = await supabase
                 .from("bot_flow_steps").select("*")
+                .eq("flow_id", (_flowRowSuccess as any).id)
                 .eq("id", _successId).eq("is_active", true).maybeSingle();
               if (_target) {
                 if (isComoFuncionaStep(_target)) {
@@ -3821,6 +3837,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 }
                 _hasExplicitSuccessGoto = true;
                 console.log(`[post-confirm-conta] ${_successSource}=${_successId} → ${(nextCustom as any).step_key} (CHAIN amplo será pulado)`);
+              } else {
+                console.warn(`[post-confirm-conta] success_goto ${_successId} NÃO pertence ao flow ativo ${(_flowRowSuccess as any).id} — ignorando`);
               }
             }
           }
