@@ -16,11 +16,11 @@ REGRAS DURAS:
 4. Se lead pediu humano OU temperatura subiu pra >=85 e está pronto, considere oferecer cadastro express.
 5. info_a_capturar lista campos que ainda faltam (ex: ["nome","valor_conta","cidade"]).
 
-Etapas válidas: interesse, nome, valor, simulacao, foto_conta, doc, finalizando, pos_cadastro.
+Etapas válidas: interesse, nome, valor, simulacao, foto_conta, doc, email, finalizando, pos_cadastro.
 
 Devolva APENAS este JSON:
 {
-  "etapa_atual": "interesse|nome|valor|simulacao|foto_conta|doc|finalizando|pos_cadastro",
+  "etapa_atual": "interesse|nome|valor|simulacao|foto_conta|doc|email|finalizando|pos_cadastro",
   "proxima_jogada": "string curta",
   "tom": "consultivo_seguro|energetico_direto|objetivo|acolhedor_firme|empatico|leve_direto|transparente",
   "info_a_capturar": ["..."],
@@ -86,7 +86,7 @@ Decida a próxima jogada em JSON.`;
   }
 }
 
-const ETAPAS: Etapa[] = ["interesse","nome","valor","simulacao","foto_conta","doc","finalizando","pos_cadastro"];
+const ETAPAS: Etapa[] = ["interesse","nome","valor","simulacao","foto_conta","doc","email","finalizando","pos_cadastro"];
 
 function normalize(p: any, currentEtapa: Etapa): PlannerOutput {
   const etapa: Etapa = ETAPAS.includes(p?.etapa_atual) ? p.etapa_atual : currentEtapa;

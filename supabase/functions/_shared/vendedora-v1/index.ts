@@ -10,6 +10,7 @@ import { escrever } from "./writer.ts";
 import { criticar } from "./critico.ts";
 import { readState, writeState } from "./state.ts";
 import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
+import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import type { Etapa, SupabaseClient } from "./types.ts";
 
 export interface VendedoraInput {
@@ -36,12 +37,15 @@ export interface VendedoraResult {
     criticoProblemas: string[];
     stateBefore: any;
     stateAfter: any;
+    checklist?: any;
+    closer?: any;
   };
 }
 
 const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
   foto_conta: "aguardando_conta",
   doc: "aguardando_documento",
+  email: "aguardando_email",
   finalizando: "cadastro_finalizando",
 };
 
@@ -90,12 +94,35 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
   const state = readState(customer);
   const memory = readMemory(customer);
 
+  // 1.1 Detecta mídia recém-recebida (foto da conta / documento) e avança
+  // a etapa automaticamente. Sem isso, a v1 ignorava o avanço quando o webhook
+  // só passava "[imagem]" como inboundText.
+  const novaMidia = detectarMidiaNova(customer, state);
+  if (novaMidia.conta || novaMidia.doc_frente || novaMidia.doc_verso) {
+    state.midia_recebida = {
+      ...(state.midia_recebida || {}),
+      conta: state.midia_recebida?.conta || novaMidia.conta,
+      doc_frente: state.midia_recebida?.doc_frente || novaMidia.doc_frente,
+      doc_verso: state.midia_recebida?.doc_verso || novaMidia.doc_verso,
+    };
+    if (novaMidia.conta && (state.etapa === "interesse" || state.etapa === "nome" || state.etapa === "valor" || state.etapa === "simulacao" || state.etapa === "foto_conta")) {
+      state.etapa = "doc";
+      state.tentativas_etapa = 0;
+    } else if (novaMidia.doc_frente && (state.etapa === "doc" || state.etapa === "foto_conta")) {
+      state.etapa = customer.email ? "finalizando" : "email";
+      state.tentativas_etapa = 0;
+    }
+  }
+
   const knownFacts: string[] = [];
   if (customer.name) knownFacts.push(`Nome: ${customer.name}`);
+  if (customer.email) knownFacts.push(`E-mail: ${customer.email}`);
   if (customer.electricity_bill_value) knownFacts.push(`Valor da conta: R$ ${Number(customer.electricity_bill_value).toFixed(2)}`);
   if (customer.address_city) knownFacts.push(`Cidade: ${customer.address_city}`);
   if (customer.address_state) knownFacts.push(`Estado: ${customer.address_state}`);
   if (customer.distribuidora) knownFacts.push(`Distribuidora: ${customer.distribuidora}`);
+  if (state.midia_recebida?.conta) knownFacts.push(`Foto da conta: já recebida ✅`);
+  if (state.midia_recebida?.doc_frente) knownFacts.push(`Documento (frente): já recebido ✅`);
   for (const [k, v] of Object.entries(state.info || {})) {
     if (v) knownFacts.push(`${k}: ${v}`);
   }
@@ -189,6 +216,7 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
   const updates: Record<string, any> = {};
   let conversationStepUpdate: string | null = STEP_BY_ETAPA[plano.etapa_atual] || null;
   let shouldHandoff = false;
+  let pediuFinalizar = false;
 
   for (const tc of writerResult.toolCalls) {
     toolsApplied.push(tc.name);
@@ -199,6 +227,20 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
       } else if (tc.name === "registrar_valor_conta" && typeof tc.arguments?.valor === "number") {
         const v = Number(tc.arguments.valor);
         if (v > 0 && v < 100000) updates.electricity_bill_value = v;
+      } else if (tc.name === "registrar_email" && tc.arguments?.email) {
+        const email = String(tc.arguments.email).trim().toLowerCase().slice(0, 120);
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          updates.email = email;
+          // após capturar o e-mail, etapa avança pra finalizando
+          if (state.etapa === "email" || state.etapa === "doc") {
+            state.etapa = "finalizando";
+            state.tentativas_etapa = 0;
+            conversationStepUpdate = "cadastro_finalizando";
+          }
+        }
+      } else if (tc.name === "confirmar_telefone" && tc.arguments?.telefone) {
+        const tel = String(tc.arguments.telefone).replace(/\D/g, "").slice(0, 14);
+        if (tel.length >= 10) updates.phone_whatsapp = tel;
       } else if (tc.name === "registrar_info" && tc.arguments?.campo && tc.arguments?.valor) {
         const campo = String(tc.arguments.campo).trim().toLowerCase().slice(0, 40);
         const valor = String(tc.arguments.valor).trim().slice(0, 200);
@@ -216,16 +258,16 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
         conversationStepUpdate = "aguardando_documento";
         state.etapa = "doc";
       } else if (tc.name === "finalizar_cadastro") {
+        pediuFinalizar = true;
         conversationStepUpdate = "cadastro_finalizando";
         state.etapa = "finalizando";
       } else if (tc.name === "agendar_followup" && tc.arguments?.quando_iso) {
-        updates.followup_at = String(tc.arguments.quando_iso);
+        const iso = String(tc.arguments.quando_iso);
+        // Coluna do banco é next_followup_at; mantém compat com followup_at se existir
+        updates.next_followup_at = iso;
         updates.followup_hook = String(tc.arguments?.gancho || "").slice(0, 240);
       } else if (tc.name === "marcar_quente") {
         updates.lead_priority = "hot";
-      } else if (tc.name === "oferecer_cadastro_express") {
-        conversationStepUpdate = "aguardando_conta";
-        state.etapa = "foto_conta";
       } else if (tc.name === "pedir_humano_proativo" || tc.name === "escalar_humano") {
         shouldHandoff = true;
         updates.bot_paused = true;
@@ -257,6 +299,30 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
     await supabase.from("customers").update(updates).eq("id", customerId);
   } else {
     await writeState(supabase, customerId, state);
+  }
+
+  // 8. Fecha cadastro de verdade
+  // Dispara `finalize-capture` quando:
+  //  - o Writer pediu via tool `finalizar_cadastro`; OU
+  //  - a etapa virou `finalizando` (via mídia ou e-mail); OU
+  //  - o checklist mínimo da IA já está completo (atalho oportunista).
+  let closerResult: Awaited<ReturnType<typeof tentarFechar>> | null = null;
+  const checklist = checklistMinimo({ ...customer, ...updates });
+  const deveTentar = pediuFinalizar || state.etapa === "finalizando" || checklist.pronto;
+  if (deveTentar && !shouldHandoff) {
+    closerResult = await tentarFechar(supabase, customerId);
+    if (closerResult.ok && closerResult.acionou) {
+      // Sucesso real — atualiza step (finalize-capture já marcou portal_submitting)
+      updates.conversation_step = "portal_submitting";
+    } else if (!closerResult.ok && closerResult.portalMissing?.length) {
+      // Portal rejeitou — pausa bot pra humano corrigir
+      shouldHandoff = true;
+      await supabase.from("customers").update({
+        bot_paused: true,
+        bot_paused_reason: `vendedora_v1: cadastro incompleto pelo portal — ${closerResult.portalMissing.slice(0, 4).join(", ")}`,
+        bot_paused_at: new Date().toISOString(),
+      }).eq("id", customerId);
+    }
   }
 
   // Logging
@@ -312,6 +378,8 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
       criticoProblemas: critico.problemas,
       stateBefore,
       stateAfter: state,
+      checklist,
+      closer: closerResult,
     },
   };
 }
@@ -350,6 +418,7 @@ function buildFallback(etapa: Etapa, customer: any, updates: Record<string, any>
   }
   if (etapa === "foto_conta") return "Pode me enviar a foto ou PDF da sua última conta de luz? 📷";
   if (etapa === "doc") return "Agora só preciso da foto da frente do seu RG ou CNH pra finalizar 📄";
+  if (etapa === "email") return "Última info: me passa seu melhor e-mail pra eu travar seu cadastro 📧";
   if (etapa === "finalizando") return "Tudo pronto! Estou finalizando seu cadastro agora ✅";
   return "Bora seguir com seu cadastro? Me confirma a próxima informação que pedi.";
 }

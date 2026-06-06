@@ -51,8 +51,15 @@ export const PLAYBOOK: Record<Etapa, Partial<Record<Perfil, PlaybookEntry>>> = {
     cetico:      T("pedir_doc_explicando_seguranca", "transparente", "Dados ANEEL, criptografia. Frente do RG/CNH."),
     interessado: T("pedir_doc_direto", "leve_direto", "'Foto da frente do RG ou CNH 📄'"),
     comprador:   T("pedir_doc_direto", "objetivo", ""),
-    indeciso:    T("pedir_doc_reforcando_proximidade", "acolhedor_firme", "'Última etapa, doc e tá feito.'"),
+    indeciso:    T("pedir_doc_reforcando_proximidade", "acolhedor_firme", "'Quase lá, só falta doc e e-mail.'"),
     reclamao:    T("pedir_doc_acalmando", "empatico", ""),
+  },
+  email: {
+    cetico:      T("pedir_email_explicando_uso", "transparente", "E-mail é só pra receber o contrato e 2ª via."),
+    interessado: T("pedir_email_direto", "leve_direto", "'Me passa seu melhor e-mail pra eu travar seu cadastro 📧'"),
+    comprador:   T("pedir_email_direto", "objetivo", ""),
+    indeciso:    T("pedir_email_reforcando_fim", "acolhedor_firme", "'Última info: e-mail e tá tudo certo.'"),
+    reclamao:    T("pedir_email_acalmando", "empatico", "'Falta só o e-mail e finalizo seu cadastro agora.'"),
   },
   finalizando: {
     cetico:      T("confirmar_e_resumir", "transparente", ""),

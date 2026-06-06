@@ -10,6 +10,7 @@ export type Etapa =
   | "simulacao"
   | "foto_conta"
   | "doc"
+  | "email"
   | "finalizando"
   | "pos_cadastro";
 
@@ -46,6 +47,8 @@ export interface FluxoBState {
   ultima_jogada?: string | null;
   temperatura_max?: number;
   ultimo_perfil?: PerfilOutput | null;
+  /** Marcador interno — campos que o webhook injetou nesta call (conta, doc) */
+  midia_recebida?: { conta?: boolean; doc_frente?: boolean; doc_verso?: boolean };
 }
 
 export interface MemoryBlock {

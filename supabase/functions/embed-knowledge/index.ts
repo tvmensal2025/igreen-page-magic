@@ -38,19 +38,32 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Auth: precisa de bearer válido + role admin
-    const authz = req.headers.get("authorization") || "";
-    const jwt = authz.replace(/^Bearer\s+/i, "");
-    if (!jwt) return json({ error: "unauthorized" }, 401);
-    const { data: userData, error: userErr } = await supabase.auth.getUser(jwt);
-    if (userErr || !userData.user) return json({ error: "unauthorized" }, 401);
-    const { data: roleRow } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userData.user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (!roleRow) return json({ error: "forbidden" }, 403);
+    // Auth: aceita (a) admin via Bearer JWT do usuário OU
+    //       (b) chamada interna via header x-internal-secret (trigger pg_net).
+    //       O token interno é lido tanto da env quanto da tabela settings
+    //       (key="embed_internal_token") para casar com o trigger.
+    const internalSecret = req.headers.get("x-internal-secret") || "";
+    let expectedInternal = Deno.env.get("EMBED_INTERNAL_SECRET") || "";
+    if (!expectedInternal) {
+      const { data: s } = await supabase.from("settings").select("value").eq("key", "embed_internal_token").maybeSingle();
+      expectedInternal = String(s?.value || "");
+    }
+    const isInternal = !!expectedInternal && !!internalSecret && internalSecret === expectedInternal;
+
+    if (!isInternal) {
+      const authz = req.headers.get("authorization") || "";
+      const jwt = authz.replace(/^Bearer\s+/i, "");
+      if (!jwt) return json({ error: "unauthorized" }, 401);
+      const { data: userData, error: userErr } = await supabase.auth.getUser(jwt);
+      if (userErr || !userData.user) return json({ error: "unauthorized" }, 401);
+      const { data: roleRow } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userData.user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (!roleRow) return json({ error: "forbidden" }, 403);
+    }
 
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const table = body?.table || "ai_knowledge_sections";
