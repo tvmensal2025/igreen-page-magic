@@ -239,16 +239,19 @@ async function callGeminiViaLovable(prompt: string, imagePart: any, model: strin
 }
 
 async function callGemini(prompt: string, imagePart: any, apiKey: string, model: string): Promise<string> {
+  // Se não temos chave Gemini, vai direto para o Lovable Gateway.
+  if (!apiKey || apiKey === "__no_gemini__") {
+    const gw = await callGeminiViaLovable(prompt, imagePart, model);
+    if (gw) console.log(`[detectDocumentType] ✅ Lovable Gateway (sem chave Gemini)`);
+    return gw;
+  }
   const direct = await callGeminiDirect(prompt, imagePart, apiKey, model);
   if (direct.text) return direct.text;
-  // Fallback p/ Lovable Gateway quando quota/5xx/timeout/empty
-  const shouldFallback = direct.status === 429 || direct.status === 0 || direct.status >= 500 || direct.status === 200;
-  if (shouldFallback) {
-    const gw = await callGeminiViaLovable(prompt, imagePart, model);
-    if (gw) {
-      console.log(`[detectDocumentType] ✅ fallback Lovable Gateway respondeu (direct status=${direct.status})`);
-      return gw;
-    }
+  // Fallback p/ Lovable Gateway em qualquer falha (429, 5xx, timeout, resposta vazia).
+  const gw = await callGeminiViaLovable(prompt, imagePart, model);
+  if (gw) {
+    console.log(`[detectDocumentType] ✅ fallback Lovable Gateway respondeu (direct status=${direct.status})`);
+    return gw;
   }
   return "";
 }
