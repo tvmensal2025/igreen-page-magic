@@ -6271,6 +6271,10 @@ export type Database = {
         Args: { p_max_age_seconds?: number }
         Returns: number
       }
+      sync_flow_from_public: {
+        Args: { _consultant_id: string; _variant: string }
+        Returns: string
+      }
       try_acquire_customer_lock: {
         Args: { p_customer: string; p_ttl_ms: number }
         Returns: string

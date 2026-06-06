@@ -427,6 +427,33 @@ export default function FluxoBuilder() {
     }
   }, [userId, flowId, syncMode, editingVariant, togglingSync, confirm, reload]);
 
+  // Copia agora a estrutura do super admin para o flow do consultor, mantendo
+  // sync_mode='public' para continuar recebendo updates automáticos. Útil
+  // quando o consultor desconfia que está vendo algo diferente do super admin.
+  const handleSyncNow = useCallback(async () => {
+    if (!userId || !flowId || togglingSync) return;
+    const ok = await confirm({
+      title: "Sincronizar agora com o super admin?",
+      description: "Vamos copiar a versão atual do super admin para o seu fluxo. Suas edições locais nos passos serão substituídas. As mídias que você subiu continuam funcionando.",
+      confirmText: "Sim, sincronizar agora",
+    });
+    if (!ok) return;
+    setTogglingSync(true);
+    try {
+      const { error } = await supabase.rpc("sync_flow_from_public", {
+        _consultant_id: userId,
+        _variant: editingVariant,
+      } as any);
+      if (error) throw error;
+      toast.success("Fluxo sincronizado com o super admin.");
+      await reload(userId, editingVariant);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Não foi possível sincronizar com o super admin");
+    } finally {
+      setTogglingSync(false);
+    }
+  }, [userId, flowId, editingVariant, togglingSync, confirm, reload]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -842,6 +869,16 @@ export default function FluxoBuilder() {
                 onCheckedChange={(v) => { void handleToggleSync(v); }}
                 aria-label="Seguir modelo público"
               />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={togglingSync || !flowId}
+                onClick={() => void handleSyncNow()}
+              >
+                {togglingSync ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                Sincronizar agora com o super admin
+              </Button>
               <p className="flex-1 text-xs text-muted-foreground min-w-[240px]">
                 {isReadOnly
                   ? "Estrutura travada ao modelo público. Você só pode trocar as mídias dos passos — mudanças do super-admin aparecem aqui automaticamente. No Evolution, os botões viram lista numerada (1️⃣ 2️⃣ 3️⃣) automaticamente."
