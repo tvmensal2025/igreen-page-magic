@@ -691,7 +691,9 @@ export default function FluxoBuilder() {
 
   async function deleteStep(id: string) {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para remover passos.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para remover passos.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return;
     }
     const ok = await confirm({
