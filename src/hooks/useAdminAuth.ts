@@ -76,7 +76,7 @@ export function useAdminAuth() {
         cadastro_url: id ? `https://digital.igreenenergy.com.br/?id=${id}&sendcontract=true` : (consultant.cadastro_url as string) || "",
         licenciada_cadastro_url: id ? `https://expansao.igreenenergy.com.br/?id=${id}&checkout=true` : (consultant.licenciada_cadastro_url as string) || "",
         facebook_pixel_id: (consultant.facebook_pixel_id as string) || "", google_analytics_id: (consultant.google_analytics_id as string) || "",
-        igreen_portal_email: (consultant.igreen_portal_email as string) || "", igreen_portal_password: (consultant.igreen_portal_password as string) || "",
+        igreen_portal_email: (consultant.igreen_portal_email as string) || "", igreen_portal_password: "",
         portal_kind: ((consultant.portal_kind as string) === "autoconexao" ? "autoconexao" : "digital"),
       });
       if (consultant.photo_url) setPhotoPreview(consultant.photo_url as string);
