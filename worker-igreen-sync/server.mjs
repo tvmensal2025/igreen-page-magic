@@ -177,37 +177,37 @@ async function loginAndGetToken(email, password) {
     dbg('[login] token 2captcha obtido — injetando...');
 
     await page.evaluate((token) => {
-      // Injeta no textarea oculto (cria se não existir)
-      let ta = document.getElementById('g-recaptcha-response');
-      if (!ta) {
-        ta = document.createElement('textarea');
-        ta.id = 'g-recaptcha-response';
-        ta.name = 'g-recaptcha-response';
-        ta.style.display = 'none';
-        document.body.appendChild(ta);
-      }
-      ta.value = token;
+      // Injeta o token em TODOS os campos g-recaptcha-response (widget 0 e 1)
+      const fields = document.querySelectorAll('textarea[id^="g-recaptcha-response"], textarea[name="g-recaptcha-response"], #g-recaptcha-response, #g-recaptcha-response-1');
+      fields.forEach(ta => { ta.value = token; ta.innerHTML = token; });
 
-      // reCAPTCHA Enterprise: também injeta no campo enterprise
-      let taEnt = document.getElementById('g-recaptcha-response-100000');
-      if (taEnt) taEnt.value = token;
+      // Cria os campos se não existirem
+      ['g-recaptcha-response', 'g-recaptcha-response-1'].forEach(id => {
+        if (!document.getElementById(id)) {
+          const ta = document.createElement('textarea');
+          ta.id = id; ta.name = 'g-recaptcha-response';
+          ta.style.display = 'none'; ta.value = token;
+          document.body.appendChild(ta);
+        }
+      });
 
-      // Dispara todos os callbacks registrados (v2 e enterprise)
+      // Dispara TODOS os callbacks registrados (grecaptcha.enterprise)
       try {
         const cfg = window.___grecaptcha_cfg;
         if (cfg && cfg.clients) {
           for (const client of Object.values(cfg.clients)) {
             const stack = [client];
+            const seen = new Set();
             while (stack.length) {
               const obj = stack.pop();
-              if (!obj || typeof obj !== 'object') continue;
+              if (!obj || typeof obj !== 'object' || seen.has(obj)) continue;
+              seen.add(obj);
               for (const val of Object.values(obj)) {
                 if (val && typeof val === 'object') {
                   if (typeof val.callback === 'function') {
                     try { val.callback(token); } catch (_) {}
-                  } else {
-                    stack.push(val);
                   }
+                  stack.push(val);
                 }
               }
             }
@@ -215,11 +215,17 @@ async function loginAndGetToken(email, password) {
         }
       } catch (_) {}
 
+      // Habilita o botão Entrar (estava disabled aguardando o captcha)
+      document.querySelectorAll('button[type="submit"], button:disabled').forEach(b => {
+        b.disabled = false;
+        b.removeAttribute('disabled');
+      });
+
       if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
       if (typeof window.onRecaptchaSuccess === 'function') window.onRecaptchaSuccess(token);
     }, captchaToken);
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
 
     // Submit
     const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
