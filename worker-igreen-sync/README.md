@@ -82,6 +82,34 @@ rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
 
 Depois clique em deploy novamente no Easypanel.
 
+### Erro no Easypanel: `No such image: easypanel/igreen/worker-igreen:latest`
+
+Esse erro acontece quando o Easypanel tenta iniciar o app, mas a imagem Docker local ainda não existe. Ou seja: o build não terminou com sucesso, não rodou, ou o app está configurado como **Docker Image** em vez de **Github**.
+
+Verifique no app `worker-igreen`:
+
+```text
+Source: Github
+Proprietário: tvmensal25
+Repositório: portal-oficial-igreen
+Ramo: main
+Caminho de Build: worker-igreen-sync
+Porta: 3102
+```
+
+Depois clique em **Deploy** e acompanhe os logs até o fim. A imagem só existirá quando o build concluir e taggear algo como `easypanel/igreen/worker-igreen:latest`.
+
+Se o app estiver preso nesse estado, recrie apenas o app `worker-igreen` no Easypanel com Source = **Github**. Não use Source = **Docker Image**, porque nesse modo o Easypanel tentará puxar uma imagem pronta que não existe.
+
+Na VPS, você pode confirmar com:
+
+```bash
+docker images | grep worker-igreen
+docker images | grep easypanel/igreen
+```
+
+Se não aparecer imagem, o build ainda não gerou nada; é preciso fazer um deploy/rebuild pelo Easypanel.
+
 ## Configurar no Supabase (lado da edge function)
 
 ```sql
