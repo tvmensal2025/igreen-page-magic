@@ -75,14 +75,18 @@ export function useConsultantForm(
         cadastro_url: form.cadastro_url, igreen_id: form.igreen_id || null,
         licenciada_cadastro_url: form.licenciada_cadastro_url || null,
         facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
-        igreen_portal_email: form.igreen_portal_email || null, igreen_portal_password: form.igreen_portal_password || null,
+        igreen_portal_email: form.igreen_portal_email || null,
         portal_kind: form.portal_kind === "autoconexao" ? "autoconexao" : "digital",
       };
+      // Só envia a senha se o usuário digitou um valor novo (campo vem vazio do banco por segurança).
+      if (form.igreen_portal_password && form.igreen_portal_password.trim()) {
+        consultantFields.igreen_portal_password = form.igreen_portal_password;
+      }
       if (photo_url) consultantFields.photo_url = photo_url;
       const saveConsultant = async (licenseToSave: string) => {
         const fieldsToSave = { ...consultantFields, license: licenseToSave };
         if (existingConsultant) {
-          return supabase.from("consultants").update(fieldsToSave).eq("id", userId).select("*").single();
+          return supabase.from("consultants").update(fieldsToSave).eq("id", userId).select("license, photo_url").single();
         }
         const insertPayload: Database["public"]["Tables"]["consultants"]["Insert"] = {
           id: userId, name: form.name, license: licenseToSave, phone: form.phone.replace(/\D/g, ""),
@@ -90,11 +94,12 @@ export function useConsultantForm(
           cadastro_url: form.cadastro_url, igreen_id: form.igreen_id || null,
           licenciada_cadastro_url: form.licenciada_cadastro_url || null,
           facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
-          igreen_portal_email: form.igreen_portal_email || null, igreen_portal_password: form.igreen_portal_password || null,
+          igreen_portal_email: form.igreen_portal_email || null,
           portal_kind: form.portal_kind === "autoconexao" ? "autoconexao" : "digital",
+          ...(form.igreen_portal_password && form.igreen_portal_password.trim() ? { igreen_portal_password: form.igreen_portal_password } : {}),
           ...(photo_url ? { photo_url } : {}),
         };
-        return supabase.from("consultants").insert(insertPayload).select("*").single();
+        return supabase.from("consultants").insert(insertPayload).select("license, photo_url").single();
       };
       let { data: savedConsultant, error } = await saveConsultant(finalLicense);
       if (error?.code === "23505" && `${error.message || ""}`.includes("consultants_license_key")) {
