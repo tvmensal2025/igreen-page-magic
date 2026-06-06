@@ -89,9 +89,27 @@ export const WRITER_TOOLS = [
   {
     type: "function",
     function: {
-      name: "oferecer_cadastro_express",
-      description: "Quando lead está pronto, pula etapas e pede foto da conta + documento juntos.",
-      parameters: { type: "object", properties: { motivo: { type: "string" } }, required: ["motivo"], additionalProperties: false },
+      name: "registrar_email",
+      description: "Salva o e-mail do lead. SEMPRE chame quando o lead enviar um e-mail válido. Validação básica feita no servidor.",
+      parameters: {
+        type: "object",
+        properties: { email: { type: "string", description: "e-mail do lead" } },
+        required: ["email"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "confirmar_telefone",
+      description: "Quando o lead confirma que o WhatsApp atual é o melhor contato OU passa outro número. Telefone só com dígitos (DDI+DDD+número).",
+      parameters: {
+        type: "object",
+        properties: { telefone: { type: "string" } },
+        required: ["telefone"],
+        additionalProperties: false,
+      },
     },
   },
   {
