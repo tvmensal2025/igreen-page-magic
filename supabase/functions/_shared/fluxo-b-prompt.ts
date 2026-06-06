@@ -120,7 +120,7 @@ export function buildFluxoBSystemPrompt(
 ): string {
   const prompt = (basePrompt && basePrompt.trim()) || DEFAULT_PROMPT;
   const filled = prompt
-    .replace(/\{\{\s*representante\s*\}\}/gi, ctx.representante || "Rafael")
+    .replace(/\{\{\s*representante\s*\}\}/gi, ctx.representante?.trim() || "da iGreen")
     .replace(/\{\{\s*nome_cliente\s*\}\}/gi, ctx.nomeCliente || "(ainda não sei o nome)")
     .replace(/\{\{\s*nome\s*\}\}/gi, ctx.nomeCliente || "")
     .replace(/\{\{\s*valor_conta\s*\}\}/gi, ctx.valorConta ? `R$ ${ctx.valorConta.toFixed(2)}` : "(ainda não sei)");
