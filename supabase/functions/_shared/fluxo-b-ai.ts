@@ -39,6 +39,8 @@ export interface FluxoBRunResult {
   modelUsed: string;
   latencyMs: number;
   customerUpdates: Record<string, any>;       // campos persistidos no customer (útil pro tester dryRun)
+  variantId?: string | null;                  // qual variante foi sorteada/usada
+  debug?: any;                                // debug interno (somente v1, útil pro tester)
 }
 
 const FLASH_MODEL = "google/gemini-3-flash-preview";
