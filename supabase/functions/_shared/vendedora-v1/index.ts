@@ -49,6 +49,23 @@ const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
   finalizando: "cadastro_finalizando",
 };
 
+function fallbackPorEtapa(etapa: Etapa, nome?: string | null): string {
+  const n = nome ? `, *${nome}*` : "";
+  switch (etapa) {
+    case "interesse": return `Olá! 😊 Aqui é da *iGreen Energy*. Você passa a pagar *menos* todo mês na conta de luz, sem obra e sem trocar de distribuidora ⚡\nPosso te chamar como?`;
+    case "nome": return `Pra eu te atender direitinho, qual o seu nome?`;
+    case "valor": return `Show${n}! Qual o *valor médio* da sua conta de luz?`;
+    case "simulacao": return `${nome ? `${nome}, com base no seu valor, ` : "Com base no seu valor, "}o desconto fica entre *8% e 20%* ao mês ⚡\nFaz sentido pra você?`;
+    case "foto_conta": return `${nome ? `Perfeito${n}! ` : ""}Me manda a *foto da sua conta de luz* 📷`;
+    case "doc": return `Agora preciso da foto da *frente do seu RG ou CNH* 📄`;
+    case "email": return `Pra finalizar, qual o seu melhor *e-mail* 📧?`;
+    case "finalizando": return `${nome ? `${nome}, ` : ""}tá tudo certo pra finalizar seu cadastro. Posso seguir?`;
+    case "pos_cadastro": return `Cadastro feito${n}! Em breve te mando os próximos passos ✅`;
+    default: return `Pode me contar um pouco mais pra eu te ajudar melhor?`;
+  }
+}
+
+
 export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraResult> {
   const t0 = Date.now();
   const { supabase, customerId, inboundText } = input;
