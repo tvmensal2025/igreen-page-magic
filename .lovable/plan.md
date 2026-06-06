@@ -1,121 +1,143 @@
-## Novo erro: `No such image: easypanel/igreen/worker-igreen:latest`
+## Confirmação do propósito do worker
 
-Esse erro é **diferente** do anterior (`curl: (23)` / `Unexpected EOF`).
-
-Agora o GitHub Archive foi baixado e extraído. O problema é que o Easypanel está tentando **rodar** o container, mas a **imagem Docker não existe** localmente.
+O `worker-igreen-sync` é, e continua sendo:
 
 ```text
-No such image: easypanel/igreen/worker-igreen:latest
+Worker Playwright que LÊ dados de clientes e rede do
+portal iGreen (escritorio.igreenenergy.com.br),
+chamado pela edge function sync-igreen-customers.
 ```
 
-Isso significa: o **build não terminou com sucesso**, ou nunca rodou, ou rodou mas não taggeou a imagem com esse nome. O Easypanel pulou direto para a etapa de "start" usando uma imagem que ainda não foi construída.
-
-## Causa mais provável
-
-1. O build do Dockerfile falhou silenciosamente e o Easypanel mesmo assim tentou subir.
-2. O `Build Path` está apontando para uma pasta sem `Dockerfile` válido — então não há nada para construir, mas o Easypanel tenta iniciar a imagem mesmo assim.
-3. O usuário clicou em **Deploy/Start** antes de **Build**, ou o build foi cancelado.
-4. Existe um app antigo `worker-igreen` em estado inconsistente apontando para uma imagem que nunca foi criada.
-
-## O que precisa ser verificado no Easypanel
-
-No app `worker-igreen`, conferir:
-
-### 1. Source
+Não tem nada de Facebook. Endpoints existentes:
 
 ```text
-Type: Github (NÃO "Docker Image")
+GET  /health
+POST /sync-customers   → JSON cru de /customer-map
+POST /sync-network     → JSON cru de /network-map
+```
+
+Conectado em `https://api-voffice.igreenenergy.com.br/v1`. Isso está correto no `server.mjs` atual e não precisa mudar.
+
+## O erro real que está bloqueando o deploy
+
+O erro recebido do Easypanel é:
+
+```text
+curl: (23) Failure writing output to destination, passed 1370 returned 0
+gzip: stdin: unexpected end of file
+tar: Unexpected EOF in archive
+```
+
+Isso acontece **antes do Dockerfile rodar**. O Easypanel baixa só ~1.3 KB do GitHub e tenta descompactar como `.tar.gz`. 1.3 KB nunca é um repositório real — quase sempre é uma resposta de erro do GitHub (404, página de login, permissão negada) sendo tratada como tar.
+
+Ou seja: continuar mexendo no Dockerfile ou no `server.mjs` **não vai resolver**.
+
+## Achado importante na auditoria
+
+A documentação atual do `worker-igreen-sync/README.md` manda configurar o Easypanel apontando para:
+
+```text
 Owner: tvmensal25
 Repository: portal-oficial-igreen
-Branch: main
-Build Path: worker-igreen-sync
 ```
 
-Confirmar que `Build Path` é exatamente `worker-igreen-sync` (sem `/`, sem `/Dockerfile`).
+Mas todo o histórico do projeto, e o próprio commit que o Lovable está empurrando agora, usam:
 
-Se o Source estiver como **Docker Image** em vez de **Github**, o Easypanel não vai buildar — ele vai só tentar `docker pull` numa imagem que não existe. Esse é provavelmente o problema.
+```text
+Owner: tvmensal2025
+Repository: viana-replica-vault
+```
 
-### 2. Build
+Se o Easypanel estiver configurado em `tvmensal25/portal-oficial-igreen` e esse repo não existir / não tiver permissão / não tiver a pasta `worker-igreen-sync`, o GitHub responde algo curtinho, o curl grava só ~1.3 KB e o tar quebra — exatamente o erro atual.
 
-Ir na aba **Deployments** / **Build Logs** do app e verificar:
+## Plano de correção
 
-- Houve build recente?
-- O build terminou com `Successfully tagged ...` ou com erro?
-- Se nunca rodou um build com sucesso, a imagem `easypanel/igreen/worker-igreen:latest` simplesmente não existe no Docker da VPS.
+### 1. Confirmar o repositório GitHub correto
 
-### 3. Verificar imagens existentes na VPS
+Você precisa me dizer qual destes dois é o repositório vivo onde o código do Lovable aterrissa:
 
-Via SSH:
+```text
+A) tvmensal2025/viana-replica-vault       (histórico do projeto)
+B) tvmensal25/portal-oficial-igreen       (README atual)
+C) outro                                  (qual?)
+```
+
+Sem essa confirmação, qualquer mudança de doc/config seria chute.
+
+### 2. Validar manualmente o archive na VPS
+
+Antes de mexer no Easypanel, rodar via SSH (substituindo pelo repo confirmado):
 
 ```bash
-docker images | grep worker-igreen
-docker images | grep easypanel/igreen
+curl -L -o /tmp/igreen.tar.gz \
+  https://github.com/<owner>/<repo>/archive/refs/heads/main.tar.gz
+ls -lh /tmp/igreen.tar.gz
+file /tmp/igreen.tar.gz
+tar -tzf /tmp/igreen.tar.gz | grep worker-igreen-sync/Dockerfile
 ```
 
-Se não aparecer nada, confirma que o build nunca produziu a imagem.
-
-## Ações recomendadas
-
-### Ação 1 — Forçar rebuild
-
-No Easypanel, no app `worker-igreen`:
-
-1. Garantir que Source = **Github** com os campos acima.
-2. Clicar em **Deploy** (não em **Start**).
-3. Acompanhar **Build Logs** até o final.
-4. Só vai funcionar quando aparecer algo como `Successfully tagged easypanel/igreen/worker-igreen:latest`.
-
-### Ação 2 — Recriar o app
-
-Se o app está em estado quebrado, o caminho mais limpo é:
-
-1. Deletar o app `worker-igreen` no Easypanel.
-2. Criar de novo:
+Esperado:
 
 ```text
-Projeto: igreen
-Nome: worker-igreen
-Source: Github
-Owner: tvmensal25
-Repository: portal-oficial-igreen
+arquivo com tamanho real (centenas de KB ou mais)
+file: gzip compressed data
+tar lista worker-igreen-sync/Dockerfile
+```
+
+Se vier 1.3 KB, abrir o conteúdo com `cat /tmp/igreen.tar.gz` mostra exatamente qual a resposta do GitHub (404, login, etc).
+
+### 3. Corrigir o app `worker-igreen` no Easypanel
+
+Após confirmar o repo correto, ajustar o app:
+
+```text
+Source: Github          (não Docker Image)
+Owner: <owner correto>
+Repository: <repo correto>
 Branch: main
 Build Path: worker-igreen-sync
 Port: 3102
 ```
 
-3. Adicionar env vars:
+Variáveis:
 
 ```text
 PORT=3102
 NODE_ENV=production
 PLAYWRIGHT_HEADLESS=true
-WORKER_TOKEN=<segredo>
+WORKER_TOKEN=<segredo longo, mesmo valor do IGREEN_SYNC_WORKER_SECRET no Supabase>
 ```
 
-4. Clicar em **Deploy** e aguardar o build completo.
-
-### Ação 3 — Limpar resíduos na VPS
-
-Via SSH, se necessário:
+Limpar cache de código quebrado:
 
 ```bash
-docker ps -a | grep worker-igreen
-docker rm -f $(docker ps -aq --filter "name=worker-igreen") 2>/dev/null
-docker images | grep worker-igreen
-docker rmi -f $(docker images -q --filter "reference=easypanel/igreen/worker-igreen") 2>/dev/null
 rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
 ```
 
-Depois redeploy no Easypanel.
+Clicar em **Deploy** e acompanhar os logs até aparecer `Successfully tagged easypanel/igreen/worker-igreen:latest`.
 
-## Resumo
+### 4. Quando você aprovar, atualizo no código
 
-- O erro mudou. Agora não é mais download do GitHub — é **imagem Docker inexistente**.
-- Causa principal: build nunca rodou com sucesso, ou o app está configurado como Docker Image em vez de Github.
-- Verificar Source, rodar Deploy, ler os Build Logs até o final.
-- Se continuar quebrado, deletar e recriar o app no Easypanel.
-- Nada precisa mudar no código do `worker-igreen-sync/` nesta etapa.
+Assim que o deploy funcionar, eu devo (em build mode):
 
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+```text
+- Corrigir worker-igreen-sync/README.md com o owner/repo verdadeiros
+- Atualizar a seção de erro "curl: (23)" para explicar que
+  "passed 1370" indica archive HTML/404/permissão, não disco cheio
+- Remover do .lovable/plan.md a configuração antiga suspeita
+- Manter server.mjs e Dockerfile como estão (já estão corretos)
+```
+
+## O que NÃO vou tocar
+
+```text
+- worker-portal-2  (não tem relação com esse erro)
+- worker-portal    (não tem relação com esse erro)
+- supabase/functions/sync-igreen-customers (já está correto,
+  só consome /sync-customers do worker quando ele estiver no ar)
+```
+
+## Pergunta para destravar
+
+Confirma qual é o repositório GitHub real onde esse projeto está sincronizando? Sem isso eu não consigo apontar o Easypanel para o lugar certo.  
+[https://github.com/tvmensal2025/igreen-official-portal](https://github.com/tvmensal2025/igreen-official-portal)
