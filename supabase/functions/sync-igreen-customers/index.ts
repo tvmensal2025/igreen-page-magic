@@ -271,44 +271,48 @@ async function syncOneConsultant(
   if (!token) {
     console.log(`Logging in to iGreen API for ${emailNorm} (pwd_len=${passwordNorm.length})...`);
 
-
-  let loginRes = await attemptLogin();
-  if (loginRes.status === 429 || (await loginRes.clone().text()).toLowerCase().includes("muitas tentativas")) {
-    console.log("Rate limited (429). Waiting 30s before retry...");
-    await new Promise((r) => setTimeout(r, 30000));
-    loginRes = await attemptLogin();
-  }
-
-  if (!loginRes.ok) {
-    const errText = await loginRes.text();
-    console.error(`Login failed for ${emailNorm}: ${loginRes.status} - ${errText}`);
-    let friendly: string;
-    if (loginRes.status === 401 || loginRes.status === 403) {
-      friendly = "O portal iGreen recusou o login. Os dados estão salvos, mas o portal não aceitou essa combinação. Confira se a senha foi alterada no portal e atualize na aba Dados.";
-    } else if (loginRes.status === 429 || errText.toLowerCase().includes("muitas tentativas")) {
-      friendly = "Portal iGreen bloqueou temporariamente por excesso de tentativas. Aguarde 1 minuto e tente de novo.";
-    } else {
-      friendly = `Login no portal falhou (HTTP ${loginRes.status}). Resposta: ${errText.slice(0, 200)}`;
+    let loginRes = await attemptLogin();
+    if (loginRes.status === 429 || (await loginRes.clone().text()).toLowerCase().includes("muitas tentativas")) {
+      console.log("Rate limited (429). Waiting 30s before retry...");
+      await new Promise((r) => setTimeout(r, 30000));
+      loginRes = await attemptLogin();
     }
-    return {
-      success: false,
-      email: emailNorm,
-      error: friendly,
-      login_status: loginRes.status,
-      login_body: errText.slice(0, 200),
-    };
-  }
 
-  const loginData = await loginRes.json();
-  const token = loginData.accessToken || loginData.token || loginData.access_token;
-  if (!token) {
-    return {
-      success: false,
-      email: portalEmail,
-      error: "Portal respondeu sem token de acesso. Avise o suporte.",
-    };
+    if (!loginRes.ok) {
+      const errText = await loginRes.text();
+      console.error(`Login failed for ${emailNorm}: ${loginRes.status} - ${errText}`);
+      let friendly: string;
+      if (loginRes.status === 401 || loginRes.status === 403) {
+        friendly = usedSavedToken === false && savedToken
+          ? "Token iGreen expirou e o login direto também falhou (Cloudflare/captcha). Reconecte o iGreen na aba de conexões."
+          : "O portal iGreen recusou o login. Os dados estão salvos, mas o portal não aceitou essa combinação. Confira se a senha foi alterada no portal e atualize na aba Dados.";
+      } else if (loginRes.status === 429 || errText.toLowerCase().includes("muitas tentativas")) {
+        friendly = "Portal iGreen bloqueou temporariamente por excesso de tentativas. Aguarde 1 minuto e tente de novo.";
+      } else if (loginRes.status === 403 || errText.toLowerCase().includes("cloudflare") || errText.toLowerCase().includes("blocked")) {
+        friendly = "Cloudflare bloqueou o login direto. Use a opção 'Conectar iGreen' para enviar seu token pelo navegador.";
+      } else {
+        friendly = `Login no portal falhou (HTTP ${loginRes.status}). Resposta: ${errText.slice(0, 200)}`;
+      }
+      return {
+        success: false,
+        email: emailNorm,
+        error: friendly,
+        login_status: loginRes.status,
+        login_body: errText.slice(0, 200),
+      };
+    }
+
+    const loginData = await loginRes.json();
+    token = loginData.accessToken || loginData.token || loginData.access_token;
+    if (!token) {
+      return {
+        success: false,
+        email: portalEmail,
+        error: "Portal respondeu sem token de acesso. Avise o suporte.",
+      };
+    }
+    console.log(`Login OK for ${portalEmail}`);
   }
-  console.log(`Login OK for ${portalEmail}`);
 
   const authHeaders = {
     "Authorization": `Bearer ${token}`,
@@ -319,31 +323,42 @@ async function syncOneConsultant(
     "Referer": "https://escritorio.igreenenergy.com.br/",
   };
 
-  const consultantRes = await fetch(`${API_BASE}/consultant`, { headers: authHeaders });
-  if (!consultantRes.ok) {
-    return { success: false, email: portalEmail, error: "Não foi possível obter dados do consultor." };
-  }
-
-  const consultantData = await consultantRes.json();
-  console.log("Consultant API response keys:", JSON.stringify(Object.keys(consultantData)));
-  console.log("Consultant API response (truncated):", JSON.stringify(consultantData).substring(0, 500));
-
-  const consultorId = consultantData.idconsultor
-    || consultantData.id
-    || consultantData.data?.id
-    || consultantData.consultant?.id
-    || consultantData.user?.id
-    || consultantData.consultor?.id
-    || consultantData._id
-    || consultantData.data?._id
-    || consultantData.uid
-    || consultantData.userId
-    || consultantData.user_id;
-
-  console.log(`Consultant ID: ${consultorId}`);
+  let consultorId: string | null = consultorIdFromToken;
   if (!consultorId) {
-    return { success: false, email: portalEmail, error: "ID do consultor não encontrado" };
+    const consultantRes = await fetch(`${API_BASE}/consultant`, { headers: authHeaders });
+    if (!consultantRes.ok) {
+      if ((consultantRes.status === 401 || consultantRes.status === 403) && usedSavedToken && consultantId) {
+        await supabase.from("consultants").update({ igreen_token_expired: true }).eq("id", consultantId);
+      }
+      await consultantRes.text().catch(() => {});
+      return { success: false, email: portalEmail, error: "Não foi possível obter dados do consultor." };
+    }
+
+    const consultantData = await consultantRes.json();
+    console.log("Consultant API response keys:", JSON.stringify(Object.keys(consultantData)));
+
+    const cid = consultantData.idconsultor
+      || consultantData.id
+      || consultantData.data?.id
+      || consultantData.consultant?.id
+      || consultantData.user?.id
+      || consultantData.consultor?.id
+      || consultantData._id
+      || consultantData.data?._id
+      || consultantData.uid
+      || consultantData.userId
+      || consultantData.user_id;
+
+    if (!cid) {
+      return { success: false, email: portalEmail, error: "ID do consultor não encontrado" };
+    }
+    consultorId = String(cid);
+    if (consultantId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
   }
+  console.log(`Consultant ID: ${consultorId} (saved_token=${usedSavedToken})`);
+
 
   // === SYNC NETWORK MODE ===
   if (mode === "explore_network" || mode === "sync_network") {
