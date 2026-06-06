@@ -870,9 +870,33 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const firstActiveRaw = dbSteps.find((s) => s.is_active) || dbSteps[0];
   // Lookup robusto: tenta por id (preferido — estável) e por step_key (compat reversa).
   // O orchestrator passa stepKey já com prefixo strippado; pode ser UUID, "passo_xxx" ou nome canônico.
-  const currentStepRaw =
+  let currentStepRaw =
     dbSteps.find((s) => s.id === stepKey) ||
     dbSteps.find((s) => s.step_key === stepKey);
+
+  // Rede de segurança: stepKey é UUID que não existe no fluxo carregado
+  // (ex.: lead vinha de outro fluxo após republicação / mudança de sync_mode).
+  // Tenta recuperar pelo step_key equivalente antes de cair em restart.
+  if (!currentStepRaw && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(stepKey))) {
+    try {
+      const { data: orphan } = await ctx.supabase
+        .from("bot_flow_steps")
+        .select("step_key")
+        .eq("id", stepKey)
+        .maybeSingle();
+      const orphanKey = (orphan as any)?.step_key;
+      if (orphanKey) {
+        const recovered = dbSteps.find((s) => s.step_key === orphanKey && s.is_active);
+        if (recovered) {
+          console.log(`[conversational] 🛟 step_key recovery: UUID órfão "${stepKey}" → step_key="${orphanKey}" → id=${recovered.id}`);
+          currentStepRaw = recovered;
+          stepKey = recovered.id;
+        }
+      }
+    } catch (e) {
+      console.warn(`[conversational] step_key recovery failed: ${(e as Error)?.message}`);
+    }
+  }
 
   // ─── resolveLandingStep ────────────────────────────────────────────────
   // Se o passo atual existe SÓ pra capturar um dado que já temos (ex: Passo 1
