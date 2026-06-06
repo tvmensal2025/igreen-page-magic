@@ -1,52 +1,43 @@
-## Problema
+## Diagnóstico (confirmado nos dados)
 
-1. Ao tentar sair do "Modo público" (ou clicar em "Personalizar agora"), o RPC `fork_flow_from_public` quebra com `column reference "t" is ambiguous`.
-2. Mesmo com o toggle **Sincronizado** ligado, o consultor enxerga um fluxo que parece desalinhado do super admin — não há uma ação explícita de "puxar o que o super admin tem agora" para o flow do consultor.
+O bot reenvia o início depois da simulação porque dois handlers carregam fluxos diferentes:
 
-## Causa raiz
+- `handlers/bot-flow.ts` (post-confirm-conta) usa `resolveFlowId`, que respeita `sync_mode`. Para um consultor em `sync_mode='public'`, lê o fluxo PÚBLICO do superadmin e grava o UUID do passo público (`d_resultado` = `4df1f90a...`) em `conversation_step`.
+- `handlers/conversational/index.ts` (`loadFlow`) carrega só o fluxo PRÓPRIO do consultor (`b539a8a2...`). O UUID público não existe ali. Cai em `unknown step → restart at firstActive` e dispara o welcome de novo.
 
-### Erro SQL
-O `fork_flow_from_public` (migration `20260605141030_*`) declara uma variável `t jsonb;` no `DECLARE` e depois usa `FROM jsonb_array_elements(...) t` dentro de um subselect. O Postgres confunde a variável PL/pgSQL `t` com o alias da tabela `t`, gerando `column reference "t" is ambiguous`. Resultado: o RPC falha sempre que o consultor tenta personalizar ou re-sincronizar.
+Validação no banco:
+- Passo `4df1f90a` → `is_public=true`, consultor `0c2711ad` (superadmin).
+- Lead afetado: `sync_mode='public'` apontando para o próprio fluxo `b539a8a2`.
+- 4 consultores ativos hoje em `sync_mode='public'` (1 A, 1 B, 2 D) — todos reproduzem o bug.
+- Em `sync_mode='custom'` ambos os handlers já leem o mesmo fluxo; a correção não muda o comportamento deles.
 
-### Sensação de "diferente do super admin"
-Hoje:
-- Quando `sync_mode='public'`, a UI lê os steps direto do `bot_flow` público (correto).
-- Mas o flow do próprio consultor (`bot_flow_steps` ligado ao `bot_flow` dele) fica com a versão antiga "congelada". Se o usuário olhar pelo diagrama, pelo runtime de algum cron antigo, ou se alternar modos, vê drift.
-- Não existe um botão "puxar agora a versão do super admin para dentro do meu fluxo".
+## Plano
 
-## Solução
+1. Unificar carregamento no `conversational`
+   - Em `supabase/functions/evolution-webhook/handlers/conversational/index.ts` e no espelho `supabase/functions/whapi-webhook/handlers/conversational/index.ts`, substituir o `loadFlow` por `resolveFlowId` + leitura dos steps pelo `flow_id` retornado.
+   - Resultado: em `sync_mode='public'` carrega o fluxo do superadmin; em `sync_mode='custom'` segue carregando o próprio. Mesma fonte de verdade do `bot-flow`.
 
-### 1. Corrigir o RPC `fork_flow_from_public`
-Migration que recria a função:
-- Remove o `DECLARE t jsonb;`.
-- No subselect que remapeia transitions, usa um alias diferente do alias externo (ex.: `FROM jsonb_array_elements(...) AS _tr`).
-- Mantém o resto da lógica idêntica (remap de `goto_step_id`, `success_goto_step_id`, fallback, posições, `sync_mode='custom'` ao final na variante de "fork").
+2. Rede de segurança contra UUID órfão (por `step_key`)
+   - No bloco `unknown step` do `conversational`, antes do restart, tentar localizar um step ativo com o mesmo `step_key` no fluxo carregado.
+   - Cobre os 11 leads em `sync_mode='custom'` com UUID antigo (republicações) sem perder o lugar deles.
 
-### 2. Novo RPC `sync_flow_from_public`
-Idêntico ao `fork_flow_from_public`, mas no final faz:
-```sql
-UPDATE bot_flows SET sync_mode='public' WHERE id = v_target_flow;
-```
-Ou seja: copia toda a estrutura do super admin para dentro do flow do consultor **e mantém o modo público ligado**. Garante que UI, diagrama e qualquer leitura por `consultant_id` mostrem exatamente os mesmos passos do super admin, sem perder a sincronização automática futura.
+3. Manter `bot-flow` como está
+   - O lookup de `success_goto`/`fallback.goto_step_id` já filtra por `flow_id`. Sem mudança de schema.
 
-### 3. UI no `FluxoBuilder.tsx`
-No bloco do toggle "Seguir modelo público" (linhas ~806-844), adicionar um botão secundário **"Sincronizar agora com o super admin"** (visível apenas quando `!isSuperAdmin && flowId`). Ao clicar:
-- `confirm()` com aviso: "Vamos copiar a versão atual do super admin para o seu fluxo. Suas edições locais nos passos serão substituídas. As mídias que você subiu continuam funcionando."
-- Chama `supabase.rpc("sync_flow_from_public", { _consultant_id: userId, _variant: editingVariant })`.
-- Em sucesso: `toast.success("Fluxo sincronizado com o super admin")` e `reload()`.
+4. Validação
+   - Rodar `bot-flow_test.ts` e `step-namespace_test.ts`.
+   - Conferir nos logs do `evolution-webhook` que após `[post-confirm-conta] next=d_resultado` o próximo turno NÃO emite `[conversational] unknown step`.
 
-### 4. Validação
-Após aplicar a migration:
-- Conferir no SQL Editor que `SELECT proname FROM pg_proc WHERE proname IN ('fork_flow_from_public','sync_flow_from_public')` retorna as duas.
-- Clicar em "Personalizar agora" no toast — não deve mais dar erro.
-- Clicar em "Sincronizar agora com o super admin" — os 16 passos do consultor devem ficar idênticos (mesmo `step_key`, `position`, `title`, `message_text`) aos do flow público `320bf22c-…`.
+## Impacto em consultores novos
 
-## Arquivos tocados
+- Consultor cria do zero (default `sync_mode='public'`): passa a funcionar igual ao superadmin, sem reenviar welcome após a simulação.
+- Consultor personaliza (`sync_mode='custom'`): nenhuma mudança visível — `resolveFlowId` devolve o próprio fluxo.
+- Leads antigos com UUID inválido: a rede por `step_key` evita restart cego.
 
-- `supabase/migrations/<novo>.sql` — recria `fork_flow_from_public` (sem ambiguidade do `t`) e cria `sync_flow_from_public`.
-- `src/pages/FluxoBuilder.tsx` — botão "Sincronizar agora com o super admin" e handler que chama o novo RPC.
+## Arquivos
 
-## Fora do escopo
+- `supabase/functions/evolution-webhook/handlers/conversational/index.ts` — `loadFlow` passa a usar `resolveFlowId(supabase, consultantId, variant)` e carregar `bot_flow_steps` pelo id retornado; `strict_mode` continua sendo lido do fluxo resolvido.
+- `supabase/functions/whapi-webhook/handlers/conversational/index.ts` — mesma mudança.
+- No bloco `if (!currentStep)`: fallback `dbSteps.find(s => s.step_key === stepKey && s.is_active)` antes do restart.
 
-- Não mexer no runtime do webhook (resolver já está correto, lendo do flow público).
-- Não mexer em mídias (continuam por `consultant_id`).
+Sem migração de banco.
