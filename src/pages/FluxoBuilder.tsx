@@ -427,6 +427,33 @@ export default function FluxoBuilder() {
     }
   }, [userId, flowId, syncMode, editingVariant, togglingSync, confirm, reload]);
 
+  // Copia agora a estrutura do super admin para o flow do consultor, mantendo
+  // sync_mode='public' para continuar recebendo updates automáticos. Útil
+  // quando o consultor desconfia que está vendo algo diferente do super admin.
+  const handleSyncNow = useCallback(async () => {
+    if (!userId || !flowId || togglingSync) return;
+    const ok = await confirm({
+      title: "Sincronizar agora com o super admin?",
+      description: "Vamos copiar a versão atual do super admin para o seu fluxo. Suas edições locais nos passos serão substituídas. As mídias que você subiu continuam funcionando.",
+      confirmText: "Sim, sincronizar agora",
+    });
+    if (!ok) return;
+    setTogglingSync(true);
+    try {
+      const { error } = await supabase.rpc("sync_flow_from_public", {
+        _consultant_id: userId,
+        _variant: editingVariant,
+      } as any);
+      if (error) throw error;
+      toast.success("Fluxo sincronizado com o super admin.");
+      await reload(userId, editingVariant);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Não foi possível sincronizar com o super admin");
+    } finally {
+      setTogglingSync(false);
+    }
+  }, [userId, flowId, editingVariant, togglingSync, confirm, reload]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
