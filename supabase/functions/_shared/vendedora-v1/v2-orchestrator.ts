@@ -108,7 +108,8 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   if (interesseExt) { state.interesse_confirmado = true; toolsApplied.push("classificar_interesse"); }
 
   // 4) State machine decide etapa SOMENTE com dados confirmados
-  const etapaDecidida = decideEtapa(customer, state);
+  const semHistorico = historyMsgs.length === 0;
+  const etapaDecidida = decideEtapa(customer, state, { semHistorico });
   if (etapaDecidida !== state.etapa) {
     state.etapa = etapaDecidida;
     state.tentativas_etapa = 0;
