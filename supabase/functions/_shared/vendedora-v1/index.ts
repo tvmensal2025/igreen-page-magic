@@ -43,6 +43,7 @@ export interface VendedoraResult {
 const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
   foto_conta: "aguardando_conta",
   doc: "aguardando_documento",
+  email: "aguardando_email",
   finalizando: "cadastro_finalizando",
 };
 
