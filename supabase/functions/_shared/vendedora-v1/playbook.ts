@@ -13,7 +13,7 @@ const T = (jogada: string, tom: string, detalhe: string): PlaybookEntry => ({ jo
 
 export const PLAYBOOK: Record<Etapa, Partial<Record<Perfil, PlaybookEntry>>> = {
   interesse: {
-    cetico:      T("provar_credibilidade", "consultivo_seguro", "ANEEL + 80mil clientes, sem obra. Pergunta de interesse no fim."),
+    cetico:      T("provar_credibilidade", "consultivo_seguro", "ANEEL, mesma distribuidora, sem obra. Pergunta de interesse no fim."),
     interessado: T("abrir_funil_simulacao", "energetico_direto", "Oferecer simulação imediata."),
     comprador:   T("ir_direto_ao_nome", "objetivo", "Pular conversa fiada, pedir nome."),
     indeciso:    T("provar_e_perguntar_interesse", "acolhedor_firme", "Tirar dúvida em 1 linha + CTA."),
