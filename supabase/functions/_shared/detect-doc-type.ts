@@ -156,7 +156,7 @@ function parseDetectJson(raw: string): { tipo: DetectedDocType; confianca: numbe
   }
 }
 
-async function callGemini(prompt: string, imagePart: any, apiKey: string, model: string): Promise<string> {
+async function callGeminiDirect(prompt: string, imagePart: any, apiKey: string, model: string): Promise<{ text: string; status: number }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15_000);
   try {
@@ -171,8 +171,6 @@ async function callGemini(prompt: string, imagePart: any, apiKey: string, model:
             temperature: 0,
             maxOutputTokens: 2048,
             responseMimeType: "application/json",
-            // Crítico: desliga o "thinking" do gemini-2.5. Sem isto o thinking
-            // consome todo o orçamento de tokens e a resposta visível volta vazia.
             thinkingConfig: { thinkingBudget: 0 },
           },
         }),
@@ -181,16 +179,78 @@ async function callGemini(prompt: string, imagePart: any, apiKey: string, model:
     );
     if (!resp.ok) {
       console.warn(`[detectDocumentType] gemini ${model} status`, resp.status);
+      return { text: "", status: resp.status };
+    }
+    const json: any = await resp.json();
+    return { text: (json?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim(), status: 200 };
+  } catch (e) {
+    console.warn(`[detectDocumentType] erro chamando gemini ${model}:`, (e as Error).message);
+    return { text: "", status: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Fallback via Lovable AI Gateway quando o Gemini direto retorna 429/5xx/timeout.
+// O OCR principal (ocr.ts) já usa esse gateway com sucesso — o classificador
+// estava sem essa rota e por isso travava todo o passo de documento quando a
+// chave Gemini direta entrava em quota.
+async function callGeminiViaLovable(prompt: string, imagePart: any, model: string): Promise<string> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY") || "";
+  if (!apiKey) return "";
+  const mime = imagePart?.inline_data?.mime_type || "image/jpeg";
+  const b64 = imagePart?.inline_data?.data || "";
+  if (!b64) return "";
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15_000);
+  // Lovable Gateway aceita modelos no formato "google/<id>"
+  const gwModel = model.startsWith("google/") ? model : `google/${model}`;
+  try {
+    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: gwModel,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } },
+          ],
+        }],
+        temperature: 0,
+        max_tokens: 2048,
+        response_format: { type: "json_object" },
+      }),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) {
+      console.warn(`[detectDocumentType] lovable-gateway ${gwModel} status`, resp.status);
       return "";
     }
     const json: any = await resp.json();
-    return (json?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+    return String(json?.choices?.[0]?.message?.content || "").trim();
   } catch (e) {
-    console.warn(`[detectDocumentType] erro chamando gemini ${model}:`, (e as Error).message);
+    console.warn(`[detectDocumentType] erro lovable-gateway ${gwModel}:`, (e as Error).message);
     return "";
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function callGemini(prompt: string, imagePart: any, apiKey: string, model: string): Promise<string> {
+  const direct = await callGeminiDirect(prompt, imagePart, apiKey, model);
+  if (direct.text) return direct.text;
+  // Fallback p/ Lovable Gateway quando quota/5xx/timeout/empty
+  const shouldFallback = direct.status === 429 || direct.status === 0 || direct.status >= 500 || direct.status === 200;
+  if (shouldFallback) {
+    const gw = await callGeminiViaLovable(prompt, imagePart, model);
+    if (gw) {
+      console.log(`[detectDocumentType] ✅ fallback Lovable Gateway respondeu (direct status=${direct.status})`);
+      return gw;
+    }
+  }
+  return "";
 }
 
 /** Versão estruturada que retorna tipo + confiança + origem da decisão. */
