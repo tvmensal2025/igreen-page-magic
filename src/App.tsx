@@ -73,6 +73,8 @@ const App = () => (
               <Route path="/admin/reaquecimento" element={<AdminReaquecimento />} />
               <Route path="/admin/conversao" element={<AdminConversao />} />
               <Route path="/admin/meta-ads" element={<AdminMetaAds />} />
+              <Route path="/admin/igreen" element={<AdminIgreen />} />
+              <Route path="/igreen-connect" element={<IgreenConnect />} />
               
               <Route path="/admin/faq" element={<Navigate to="/admin/conhecimento?tab=ia" replace />} />
               <Route path="/admin/fluxos-legado" element={<Navigate to="/admin/fluxos" replace />} />
