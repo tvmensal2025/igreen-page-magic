@@ -574,18 +574,17 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
     try {
       const { data: consultant } = await supabase
         .from("consultants")
-        .select("igreen_portal_email, igreen_portal_password")
+        .select("igreen_portal_email")
         .eq("id", consultantId)
         .maybeSingle();
       const email = (consultant as any)?.igreen_portal_email;
-      const password = (consultant as any)?.igreen_portal_password;
-      if (!email || !password) {
+      if (!email) {
         toast({ title: "⚠️ Credenciais não configuradas", description: "Preencha email e senha do portal na aba Dados.", variant: "destructive" });
         setSyncing(false);
         return;
       }
       const { data, error } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { mode: "sync_network", consultant_id: consultantId, portal_email: email, portal_password: password },
+        body: { mode: "sync_network", consultant_id: consultantId },
       });
       if (error) throw error;
       if (data?.success) {
