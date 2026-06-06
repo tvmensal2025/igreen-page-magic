@@ -662,7 +662,9 @@ export default function FluxoBuilder() {
 
   async function duplicateStep(id: string) {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para duplicar passos.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para duplicar passos.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return;
     }
     const orig = steps.find((s) => s.id === id);
