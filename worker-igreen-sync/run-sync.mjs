@@ -1,6 +1,6 @@
 // run-sync.mjs — executado pelo GitHub Actions
-// Faz login no portal iGreen via Playwright (IP Microsoft = sem bloqueio CF)
-// e salva os dados direto no Supabase via service role key.
+// Faz login no portal iGreen via Playwright + 2captcha (resolve reCAPTCHA automaticamente).
+// Salva os dados direto no Supabase via service role key.
 
 import { chromium } from 'playwright-chromium';
 
@@ -10,13 +10,67 @@ const CONSULTANT_ID = process.env.CONSULTANT_ID?.trim();
 const MODE = process.env.MODE || 'sync_customers';
 const SUPABASE_URL = process.env.SUPABASE_URL?.trim();
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY?.trim();
+const TWOCAPTCHA_KEY = process.env.TWOCAPTCHA_KEY?.trim() || '63e53153b5b7dfbae1f63ce40c41444e';
 
 const PORTAL_LOGIN_URL = 'https://escritorio.igreenenergy.com.br/login';
 const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
+// sitekey do reCAPTCHA do portal iGreen (v2)
+const RECAPTCHA_SITEKEY = '6LcmxKAUAAAAAHMCMDRNH3NMxIZUSbGqCiGHYeON';
 
 if (!PORTAL_EMAIL || !PORTAL_PASSWORD || !SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('Variáveis de ambiente obrigatórias não definidas.');
   process.exit(1);
+}
+
+// ------------ 2captcha — resolve reCAPTCHA v2 ------------
+async function solve2captcha(sitekey, pageUrl) {
+  console.log('[2captcha] submetendo reCAPTCHA para resolução humana...');
+
+  // Passo 1: submeter o captcha
+  const submitRes = await fetch('https://2captcha.com/in.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      key: TWOCAPTCHA_KEY,
+      method: 'userrecaptcha',
+      googlekey: sitekey,
+      pageurl: pageUrl,
+      json: '1',
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  const submitData = await submitRes.json();
+  if (submitData.status !== 1) {
+    throw new Error(`2captcha submit falhou: ${submitData.request}`);
+  }
+
+  const captchaId = submitData.request;
+  console.log(`[2captcha] captcha enviado, id=${captchaId} — aguardando resolução...`);
+
+  // Passo 2: aguardar a resolução (poll a cada 5s por até 3 min)
+  for (let i = 0; i < 36; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+
+    const pollRes = await fetch(
+      `https://2captcha.com/res.php?key=${TWOCAPTCHA_KEY}&action=get&id=${captchaId}&json=1`,
+      { signal: AbortSignal.timeout(15000) }
+    );
+    const pollData = await pollRes.json();
+
+    if (pollData.status === 1) {
+      console.log(`[2captcha] resolvido em ~${(i + 1) * 5}s`);
+      return pollData.request; // token do reCAPTCHA
+    }
+
+    if (pollData.request !== 'CAPCHA_NOT_READY') {
+      throw new Error(`2captcha erro: ${pollData.request}`);
+    }
+
+    console.log(`[2captcha] aguardando... (${(i + 1) * 5}s)`);
+  }
+
+  throw new Error('2captcha timeout — captcha não resolvido em 3 minutos');
 }
 
 // ------------ Supabase helpers ------------
@@ -261,15 +315,51 @@ async function main() {
     }
 
     console.log('[login] formulário encontrado — preenchendo...');
-    await page.click(emailSel);
-    await page.waitForTimeout(300 + Math.random() * 300);
     await page.fill(emailSel, PORTAL_EMAIL);
     await page.waitForTimeout(400 + Math.random() * 300);
     await page.fill(passSel, PORTAL_PASSWORD);
     await page.waitForTimeout(400 + Math.random() * 300);
 
-    await page.screenshot({ path: '/tmp/login-2-filled.png', fullPage: true }).catch(() => {});
+    // ---- 2captcha: resolve o reCAPTCHA v2 ----
+    const sitekeyFound = await page.evaluate(() => {
+      const el = document.querySelector('[data-sitekey]');
+      return el ? el.getAttribute('data-sitekey') : null;
+    }).catch(() => null);
+    const sitekey = sitekeyFound || RECAPTCHA_SITEKEY;
+    console.log(`[login] reCAPTCHA sitekey: ${sitekey}`);
 
+    const captchaToken = await solve2captcha(sitekey, PORTAL_LOGIN_URL);
+    console.log('[login] token 2captcha obtido — injetando no formulário...');
+
+    // Injeta o token no textarea oculto do reCAPTCHA e dispara callback
+    await page.evaluate((token) => {
+      // Injeta no campo oculto
+      let textarea = document.getElementById('g-recaptcha-response');
+      if (!textarea) textarea = document.querySelector('[name="g-recaptcha-response"]');
+      if (textarea) { textarea.style.display = 'block'; textarea.value = token; }
+
+      // Dispara callback via grecaptcha internal clients
+      try {
+        const cfg = window.___grecaptcha_cfg;
+        if (cfg && cfg.clients) {
+          for (const client of Object.values(cfg.clients)) {
+            for (const val of Object.values(client)) {
+              if (val && typeof val === 'object' && typeof val.callback === 'function') {
+                val.callback(token);
+                return;
+              }
+            }
+          }
+        }
+      } catch(_) {}
+
+      // Fallback: dispara o submit diretamente
+      if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
+    }, captchaToken);
+
+    await page.waitForTimeout(1000);
+
+    // Clica em Entrar
     const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
     await Promise.all([
       page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {}),
@@ -277,14 +367,14 @@ async function main() {
     ]);
 
     await page.waitForTimeout(4000);
-    await page.screenshot({ path: '/tmp/login-3-after-submit.png', fullPage: true }).catch(() => {});
+    await page.screenshot({ path: '/tmp/login-after-submit.png', fullPage: true }).catch(() => {});
 
     const currentUrl = page.url();
     console.log(`[login] URL após submit: ${currentUrl}`);
 
     if (/\/login/i.test(currentUrl)) {
       const bodyText = await page.locator('body').innerText().catch(() => '');
-      console.error(`[login] FALHOU — credenciais inválidas ou bloqueio. Body: ${bodyText.slice(0, 400)}`);
+      console.error(`[login] FALHOU. Body: ${bodyText.slice(0, 400)}`);
       process.exit(1);
     }
 

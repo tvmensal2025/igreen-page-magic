@@ -56,6 +56,7 @@ jobs:
           MODE: ${{ github.event.inputs.mode }}
           SUPABASE_URL: 'https://zlzasfhcxcznaprrragl.supabase.co'
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TWOCAPTCHA_KEY: '63e53153b5b7dfbae1f63ce40c41444e'
         run: node run-sync.mjs
 
       - name: Upload screenshots (debug)
