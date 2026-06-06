@@ -40,6 +40,7 @@ const PanfletoModal = lazy(() => import("@/components/admin/PanfletoModal").then
 const AdsCentralTab = lazy(() => import("@/components/admin/ads/AdsCentralTab").then(m => ({ default: m.AdsCentralTab })));
 const CaptacaoPanel = lazy(() => import("@/components/captacao/CaptacaoPanel").then(m => ({ default: m.CaptacaoPanel })));
 const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTab").then(m => ({ default: m.ParceirosTab })));
+const ConversaoTab = lazy(() => import("@/components/admin/ConversaoTab").then(m => ({ default: m.ConversaoTab })));
 
 
 
@@ -76,7 +77,7 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros") return tab as AdminTabId;
+      if (tab === "crm" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao") return tab as AdminTabId;
     }
     return "dashboard";
   });
@@ -354,6 +355,10 @@ const AdminContent = () => {
 
           {userId && activeTab === "central-anuncios" && (
             <AdsCentralTab consultantId={userId} />
+          )}
+
+          {userId && activeTab === "conversao" && (
+            <ConversaoTab consultantId={userId} />
           )}
 
           {userId && activeTab === "captacao" && (

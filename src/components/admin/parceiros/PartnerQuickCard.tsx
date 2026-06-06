@@ -59,7 +59,7 @@ export function PartnerQuickCard({ partner, analytics, onEdit, onQrCode, onAfter
   const handleView = (e: React.MouseEvent) => {
     e.stopPropagation();
     onAfterAction?.();
-    navigate(`/admin/conversao?partner=${partner.id}`);
+    navigate(`/admin?tab=conversao&partner=${partner.id}`);
   };
 
   return (
