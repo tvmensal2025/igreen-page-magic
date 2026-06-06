@@ -53,6 +53,7 @@ export interface FluxoBState {
   simulacao_apresentada?: boolean;
   interesse_confirmado?: boolean;
   cadastro_finalizado?: boolean;
+  abertura_feita?: boolean;
 }
 
 export interface MemoryBlock {
@@ -85,6 +86,7 @@ export const DEFAULT_STATE: FluxoBState = {
   simulacao_apresentada: false,
   interesse_confirmado: false,
   cadastro_finalizado: false,
+  abertura_feita: false,
 };
 
 export const ETAPAS_ORDER: Etapa[] = [

@@ -24,7 +24,10 @@ const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
 };
 
 // Etapas "ricas" — usam RAG e crítico. Outras são mecânicas (texto curto, sem LLM auxiliar).
-const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "doc", "finalizando"]);
+const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "finalizando"]);
+
+// Etapas onde o template fixo já resolve — pula LLM de escrita e crítico.
+const ETAPAS_DETERMINISTICAS = new Set<Etapa>(["nome", "valor", "foto_conta", "doc", "email"]);
 
 export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraResult> {
   const t0 = Date.now();
@@ -105,7 +108,8 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   if (interesseExt) { state.interesse_confirmado = true; toolsApplied.push("classificar_interesse"); }
 
   // 4) State machine decide etapa SOMENTE com dados confirmados
-  const etapaDecidida = decideEtapa(customer, state);
+  const semHistorico = historyMsgs.length === 0;
+  const etapaDecidida = decideEtapa(customer, state, { semHistorico });
   if (etapaDecidida !== state.etapa) {
     state.etapa = etapaDecidida;
     state.tentativas_etapa = 0;
@@ -130,34 +134,40 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     } catch { /* RAG é opcional */ }
   }
 
-  // 6) Escrita determinística OU micro-writer com TRAVA específica
+  // 6) Escrita: short-circuit determinístico em etapas mecânicas; micro-writer nas demais
   const memoryText = formatMemory(memory);
   let reply = "";
   let modelUsed = "deterministic";
+  let val: ReturnType<typeof validarResposta> = { ok: true };
 
-  const writeResult = await microWrite({
-    etapa: state.etapa,
-    nomeLead: customer.name || null,
-    valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
-    representante: consultant.name || "Rafael",
-    inboundText,
-    history: historyMsgs,
-    perfil,
-    ragText,
-    memoryText,
-    basePersona: consultant.ai_persona_fluxo_b || null,
-  });
-  reply = sanitize(writeResult.text);
-  modelUsed = writeResult.modelUsed;
-
-  // Validação estrutural barata
-  const val = validarResposta(reply, state.etapa, customer.name || null);
-  if (!val.ok) {
+  if (ETAPAS_DETERMINISTICAS.has(state.etapa)) {
     reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
-    modelUsed = `${modelUsed}+fallback:${val.motivo}`;
+    modelUsed = "deterministic_template";
+  } else {
+    const writeResult = await microWrite({
+      etapa: state.etapa,
+      nomeLead: customer.name || null,
+      valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
+      representante: consultant.name || "Rafael",
+      inboundText,
+      history: historyMsgs,
+      perfil,
+      ragText,
+      memoryText,
+      basePersona: consultant.ai_persona_fluxo_b || null,
+    });
+    reply = sanitize(writeResult.text);
+    modelUsed = writeResult.modelUsed;
+
+    // Validação estrutural barata
+    val = validarResposta(reply, state.etapa, customer.name || null);
+    if (!val.ok) {
+      reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+      modelUsed = `${modelUsed}+fallback:${val.motivo}`;
+    }
   }
 
-  // 7) Crítico — só nas etapas ricas
+  // 7) Crítico — só nas etapas ricas (e nunca em determinísticas)
   let criticoAprovado = true;
   const criticoProblemas: string[] = [];
   if (ETAPAS_RICAS.has(state.etapa) && reply) {
@@ -184,10 +194,14 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     }
   }
 
-  // 8) Pós-escrita: se a etapa era simulacao e geramos texto, marca simulacao_apresentada
+  // 8) Pós-escrita: marca flags de progresso
   if (state.etapa === "simulacao" && !state.simulacao_apresentada) {
     state.simulacao_apresentada = true;
   }
+  if (state.etapa === "interesse") {
+    state.abertura_feita = true;
+  }
+
 
   // 9) Step do banco
   let conversationStepUpdate: string | null = STEP_BY_ETAPA[state.etapa] || null;

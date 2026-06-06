@@ -63,6 +63,13 @@ const TOOL_INTERESSE = {
   },
 };
 
+const NAO_E_NOME = new Set([
+  "ok","sim","nao","não","blz","beleza","vlw","valeu","certo","ta","tá","tah",
+  "oi","ola","olá","bom dia","boa tarde","boa noite",
+  "quero","aceito","fechou","fechado","bora","manda","ver","quanto","como",
+  "talvez","depois","pode","vai","top","massa","show","legal","claro",
+]);
+
 export async function extrairNome(inbound: string): Promise<string | null> {
   try {
     const r = await chatForced({
@@ -70,13 +77,20 @@ export async function extrairNome(inbound: string): Promise<string | null> {
       temperature: 0,
       tool: TOOL_NOME,
       messages: [
-        { role: "system", content: "Você extrai o nome do lead se ele se apresentou. Aceita 'sou o X', 'me chamo X', 'X aqui', ou um nome solto. Se não houver nome claro, retorne vazio." },
+        { role: "system", content: "Extraia o NOME PRÓPRIO do lead SOMENTE se ele se apresentou claramente. Aceita: 'sou o X', 'me chamo X', 'meu nome é X', 'pode me chamar de X', 'X aqui', ou um substantivo próprio óbvio (nome humano real). NÃO aceite saudações, confirmações ('ok','sim','blz'), perguntas, números, ou qualquer texto que não seja inequivocamente um nome humano. Sem nome claro → retorne vazio." },
         { role: "user", content: inbound },
       ],
     });
-    const n = String(r.args?.nome || "").trim();
-    if (!n || n.length < 2 || n.length > 80) return null;
-    return n;
+    const raw = String(r.args?.nome || "").trim();
+    if (!raw || raw.length < 2 || raw.length > 80) return null;
+    // Normaliza pra checar stop-list (lower, remove pontuação)
+    const norm = raw.toLowerCase().replace(/[.,!?;:"'()\-]/g, "").trim();
+    if (NAO_E_NOME.has(norm)) return null;
+    // Rejeita se não contém ao menos uma letra alfabética
+    if (!/[a-záàâãéèêíïóôõöúçñ]/i.test(raw)) return null;
+    // Rejeita se for só dígitos/símbolos
+    if (/^[\d\s\W]+$/.test(raw)) return null;
+    return raw;
   } catch { return null; }
 }
 
