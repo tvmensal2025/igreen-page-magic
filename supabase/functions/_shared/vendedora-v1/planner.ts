@@ -86,7 +86,7 @@ Decida a próxima jogada em JSON.`;
   }
 }
 
-const ETAPAS: Etapa[] = ["interesse","nome","valor","simulacao","foto_conta","doc","finalizando","pos_cadastro"];
+const ETAPAS: Etapa[] = ["interesse","nome","valor","simulacao","foto_conta","doc","email","finalizando","pos_cadastro"];
 
 function normalize(p: any, currentEtapa: Etapa): PlannerOutput {
   const etapa: Etapa = ETAPAS.includes(p?.etapa_atual) ? p.etapa_atual : currentEtapa;
