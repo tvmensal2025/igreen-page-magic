@@ -224,36 +224,51 @@ async function main() {
     const emailSel = 'input[type="email"], input[name="email"], input[name="usuario"], input[name="login"]';
     const passSel = 'input[type="password"]';
 
-    // Aguarda mais tempo e tira screenshot para debug
-    console.log('[login] aguardando formulário...');
-    await page.waitForTimeout(3000);
-
-    // Screenshot para debug
-    await page.screenshot({ path: '/tmp/login-before.png', fullPage: true }).catch(() => {});
-    console.log('[login] título da página:', await page.title().catch(() => 'N/A'));
-    console.log('[login] URL atual:', page.url());
-
-    // Verifica se há challenge do Cloudflare
-    const pageText = await page.locator('body').innerText().catch(() => '');
-    if (pageText.includes('Attention Required') || pageText.includes('Checking your browser') || pageText.includes('Just a moment')) {
-      console.log('[login] Cloudflare challenge detectado, aguardando 10s...');
-      await page.waitForTimeout(10000);
-      await page.screenshot({ path: '/tmp/login-challenge.png', fullPage: true }).catch(() => {});
+    // Loop para aguardar resolução do Cloudflare JS challenge (até 60s)
+    console.log('[login] aguardando CF challenge resolver...');
+    let cfResolved = false;
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(3000);
+      const title = await page.title().catch(() => '');
+      const body = await page.locator('body').innerText().catch(() => '');
+      console.log(`[login] [${i+1}/20] título: "${title}" | URL: ${page.url()}`);
+      if (!title.includes('Attention Required') && !title.includes('Just a moment') &&
+          !body.includes('Checking your browser') && !body.includes('Just a moment')) {
+        cfResolved = true;
+        break;
+      }
     }
 
+    await page.screenshot({ path: '/tmp/login-1-after-cf.png', fullPage: true }).catch(() => {});
+
+    if (!cfResolved) {
+      console.error('[login] Cloudflare não resolveu em 60s — IP bloqueado');
+      process.exit(1);
+    }
+
+    // Aguarda formulário de login aparecer
+    let formFound = false;
     try {
-      await page.waitForSelector(emailSel, { timeout: 30000 });
-    } catch (e) {
+      await page.waitForSelector(emailSel, { timeout: 20000 });
+      formFound = true;
+    } catch (_) {}
+
+    if (!formFound) {
       const bodyNow = await page.locator('body').innerText().catch(() => '');
-      console.error(`[login] formulário não apareceu. Body: ${bodyNow.slice(0, 500)}`);
+      console.error(`[login] formulário não encontrado. Body: ${bodyNow.slice(0, 400)}`);
       await page.screenshot({ path: '/tmp/login-error.png', fullPage: true }).catch(() => {});
       process.exit(1);
     }
 
+    console.log('[login] formulário encontrado — preenchendo...');
+    await page.click(emailSel);
+    await page.waitForTimeout(300 + Math.random() * 300);
     await page.fill(emailSel, PORTAL_EMAIL);
-    await page.waitForTimeout(500 + Math.random() * 500);
+    await page.waitForTimeout(400 + Math.random() * 300);
     await page.fill(passSel, PORTAL_PASSWORD);
-    await page.waitForTimeout(500 + Math.random() * 500);
+    await page.waitForTimeout(400 + Math.random() * 300);
+
+    await page.screenshot({ path: '/tmp/login-2-filled.png', fullPage: true }).catch(() => {});
 
     const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
     await Promise.all([
@@ -261,15 +276,15 @@ async function main() {
       page.click(submitSel).catch(() => page.keyboard.press('Enter')),
     ]);
 
-    await page.waitForTimeout(3000);
-    await page.screenshot({ path: '/tmp/login-after.png', fullPage: true }).catch(() => {});
+    await page.waitForTimeout(4000);
+    await page.screenshot({ path: '/tmp/login-3-after-submit.png', fullPage: true }).catch(() => {});
 
     const currentUrl = page.url();
-    console.log(`[login] URL após login: ${currentUrl}`);
+    console.log(`[login] URL após submit: ${currentUrl}`);
 
     if (/\/login/i.test(currentUrl)) {
       const bodyText = await page.locator('body').innerText().catch(() => '');
-      console.error(`[login] FALHOU. Body: ${bodyText.slice(0, 300)}`);
+      console.error(`[login] FALHOU — credenciais inválidas ou bloqueio. Body: ${bodyText.slice(0, 400)}`);
       process.exit(1);
     }
 
