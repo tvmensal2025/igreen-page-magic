@@ -37,6 +37,8 @@ export interface VendedoraResult {
     criticoProblemas: string[];
     stateBefore: any;
     stateAfter: any;
+    checklist?: any;
+    closer?: any;
   };
 }
 
