@@ -47,7 +47,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "dashboard", label: "Dashboard", icon: BarChart3 },
       { id: "crm", label: "CRM", icon: LayoutGrid },
-      { id: "conversao", label: "Conversão", icon: Flame, href: "/admin/conversao" },
+      { id: "conversao", label: "Conversão", icon: Flame },
       { id: "clientes", label: "Clientes", icon: Users },
     ],
   },
