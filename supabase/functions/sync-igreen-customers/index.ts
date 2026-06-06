@@ -740,14 +740,10 @@ Deno.serve(async (req) => {
     // ========================================================
     // MANUAL MODE: single consultant
     // ========================================================
-    if (!portalEmail || !portalPassword) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Credenciais do portal iGreen não configuradas. Preencha na aba Dados." }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
+    // Note: we still allow the request even without portal email/password
+    // if a saved token exists on the consultant record (loaded below).
 
-    // If credentials came from request body, do NOT override with stale DB values.
+
 
 
     let savedToken: string | null = null;
