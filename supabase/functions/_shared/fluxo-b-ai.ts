@@ -96,7 +96,10 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     } catch (_) { /* tolera ausência de colunas em ambientes antigos */ }
   }
 
-  const useV1 = !forceOff && variantId === "b.v1";
+  // Nudge interno (follow-up): força branch legacy que tem suporte explícito
+  // ao bloco "NUDGE INTERNO" no system prompt. A v1 ainda não foi adaptada.
+  const isNudgeRun = !!(input.nudgeHook && String(input.nudgeHook).trim().length > 0);
+  const useV1 = !forceOff && variantId === "b.v1" && !isNudgeRun;
 
   if (useV1) {
     try {
