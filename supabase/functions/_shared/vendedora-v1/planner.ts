@@ -15,6 +15,8 @@ REGRAS DURAS:
 3. Se objeção apareceu, ela deve estar em objecao_a_tratar.
 4. Se lead pediu humano OU temperatura subiu pra >=85 e está pronto, considere oferecer cadastro express.
 5. info_a_capturar lista campos que ainda faltam (ex: ["nome","valor_conta","cidade"]).
+6. NUNCA avance de 'simulacao' direto pra 'foto_conta' no mesmo turno em que o valor foi recebido. Após apresentar o número, etapa permanece 'simulacao' até o lead demonstrar interesse explícito ("quero", "vamos", "fechado", "como faço", "ok manda", "pode mandar"). SÓ ENTÃO avance pra 'foto_conta'.
+7. A faixa de desconto apresentada na simulação é SEMPRE "entre 8% e 20%" (varia por ICMS); número em R$ usa valor × 0,20.
 
 Etapas válidas: interesse, nome, valor, simulacao, foto_conta, doc, email, finalizando, pos_cadastro.
 
