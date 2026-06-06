@@ -1,68 +1,32 @@
-# Plano: Prompt de Vendedora Profissional iGreen — Fluxo B IA Livre
+# Corrigir alucinações do prompt do Fluxo B
 
-## Resumo das respostas
-- **Aplicar em:** todos os consultores (UPDATE sobrescreve `consultants.ai_persona_fluxo_b`)
-- **Variante v1:** NÃO ligar agora — você decide depois em `/admin/fluxos-ab`
-- **Conteúdo:** refinar o prompt atual (manter estrutura, elevar nível)
+## Problema
+A IA disse "Rafael Ferreira" e "80 mil clientes" — nenhum dos dois veio da sua base de conhecimento:
 
----
+- **"Rafael"** é fallback hardcoded em `fluxo-b-prompt.ts:122` quando o nome do consultor não chega. O modelo completou "Ferreira" sozinho.
+- **"80 mil clientes"** está escrito direto no `DEFAULT_PROMPT` (linhas 14, 37, 47, 62, 97) e em `vendedora-v1/writer.ts:81`. Foi colocado por mim no refino anterior como "prova social" — não veio da FAQ.
 
-## 1. Refinar `DEFAULT_PROMPT` em `supabase/functions/_shared/fluxo-b-prompt.ts`
+## O que mudar
 
-Mantenho toda a arquitetura atual (persona, funil, anti-alucinação, FAQ, formatação WhatsApp, tools, placeholders `{{representante}}`, `{{nome_cliente}}`, `{{valor_conta}}`). Refino:
+### 1. `supabase/functions/_shared/fluxo-b-prompt.ts`
+- **Remover toda menção a "80 mil clientes"** das 5 ocorrências no `DEFAULT_PROMPT`. Reescrever as 4 aberturas (A, B, C, D) e o tratamento da objeção "é golpe?" usando só fatos seguros: regulamentação ANEEL, mesma distribuidora, até 20% de desconto, sem obra.
+- **Reforçar a regra anti-alucinação** para incluir explicitamente: "NUNCA cite número de clientes, anos de mercado, faturamento, ranking ou qualquer estatística que não esteja na # FAQ. Se não estiver, omita — não substitua por aproximação."
+- **Trocar o fallback `"Rafael"`** (linha 122) por uma string neutra que não vire nome falso: usar `"da iGreen"` ou simplesmente vazio, e ajustar as aberturas pra funcionarem sem nome do consultor quando ele não existir. Alternativa: lançar erro/log se `ctx.representante` vier vazio, pra não silenciar o problema.
 
-**Persona** — vendedora consultiva sênior da iGreen, não atendente. Postura: escuta, valida, traz número, fecha. Confiança sem arrogância.
+### 2. `supabase/functions/_shared/vendedora-v1/writer.ts:81`
+- Remover "+80 mil clientes" da descrição da persona. Deixar só "energia limpa regulamentada pela ANEEL".
 
-**Aberturas variadas (anti-robô)** — 4 templates de abertura para o 1º turno (sorteia mental), todos com benefício + prova social + micro-pergunta, sem pedir nome.
+### 3. Aplicar o prompt atualizado em todos os consultores
+- Rodar `UPDATE public.consultants SET ai_persona_fluxo_b = <novo DEFAULT_PROMPT>` para sobrescrever as cópias que já foram propagadas no refino anterior (que carregam o "80 mil clientes").
 
-**Descoberta antes do pitch** — antes de jogar o número de economia, valida contexto: tipo de imóvel (casa/apto/comércio), quem paga a conta, há quanto tempo está incomodada com o valor. 1 pergunta de descoberta por turno, no máximo 2 antes de pedir valor.
+## O que NÃO mudar
+- Funil, regras de fechamento, tratamento de objeções restantes, formatação WhatsApp, anti-alucinação existente, fórmula de economia (×0,20), regra de FAQ. Tudo isso fica.
+- A leitura da FAQ via `ai_knowledge_sections` já funciona — o problema é só o prompt inventando fatos que deveriam vir de lá.
 
-**Objeções em camadas** (responde + valida + redireciona):
-- "É golpe" / "ANEEL" / "como funciona" → resposta factual + prova + pergunta de avanço
-- "Preciso pensar" → ancorar perda mensal ("cada mês sem isso = R$X que você deixa na mesa")
-- "Já tenho solar" → comparar modelos, sem desmerecer
-- "Tô ocupado" → oferecer economia por escrito em 2min
-- "Aluguel" → confirma que pode (cliente é quem paga a conta, não o dono)
-- "Conta baixa (<R$200)" → polidamente seguir para qualificação reversa (se viável) ou escalar
-
-**Fechamento por compromisso** — após mostrar economia, NUNCA pedir "topa?". Pedir o próximo passo concreto: "me manda a foto da conta agora pra eu travar sua simulação 📷".
-
-**Regras duras mantidas** — sem vídeo/áudio/link/PDF, sem promessa de retorno, sem inventar fora da FAQ, economia = valor × 0.20, formatação WhatsApp (`*negrito*` simples, 1-2 destaques/msg, max 3 linhas, 1 pergunta).
-
-**Tom** — PT-BR, "você", sem diminutivos, sem "como posso ajudar", sem emojis fofos (😊🤗🙏 proibidos). Emoji funcional só: ⚡ ✅ 📷 📄, max 1/msg.
-
-**Anti-alucinação reforçado** — bloco específico sobre não prometer agendar, não dizer "vou verificar e volto", não citar valores de plano que não estão na FAQ.
-
-**Memória** — instrução explícita de usar `# Memória da conversa` e `# Estado atual` antes de qualquer resposta, e NUNCA tratar como primeiro turno se já houver histórico.
-
-## 2. Aplicar a todos os consultores
-
-```sql
-UPDATE public.consultants
-SET ai_persona_fluxo_b = '<novo prompt>',
-    ai_persona_fluxo_b_temperature = COALESCE(ai_persona_fluxo_b_temperature, 0.7),
-    ai_persona_fluxo_b_cascade_enabled = COALESCE(ai_persona_fluxo_b_cascade_enabled, true);
-```
-
-Sobrescreve qualquer customização anterior (confirmado pela sua resposta).
-
-## 3. NÃO mexer no kill switch
-
-`settings.fluxo_b_variant` permanece como está. A IA Livre continua rodando só nos leads que o sorteio atual mandar pra `b.v1`. Você liga 100% depois no painel.
-
-## 4. Validação pós-deploy
-
-- Conferir que `DEFAULT_PROMPT` compila (sem placeholders quebrados).
-- `SELECT count(*) FROM consultants WHERE ai_persona_fluxo_b IS NOT NULL` = total de consultores.
-- Smoke test mental do prompt: bate com FAQ injetada, com `{{nome_cliente}}=null`, com memória vazia.
+## Resultado esperado
+- A IA nunca mais cita número de clientes a menos que esteja na sua FAQ.
+- Se o `consultant.name` não chegar, ela se apresenta como "da iGreen" sem inventar um nome próprio.
+- Sua base de conhecimento volta a ser a única fonte de prova social e números.
 
 ---
-
-## Arquivos tocados
-- `supabase/functions/_shared/fluxo-b-prompt.ts` (refina `DEFAULT_PROMPT`)
-- Migration de dados (UPDATE em `consultants`)
-
-## O que NÃO muda
-- `fluxo-b-ai.ts`, webhooks, `process-followups`, schema de tools, FAQ, cron, painéis.
-- Sorteio A/B (`b.v1` vs `b.legacy`) permanece 50/50.
-- Fluxos A e D continuam intocados.
+*Obs: `.lovable/` está no seu `.gitignore`, então este plano não persiste após o snapshot. Quer que eu remova essa entrada pra planos ficarem salvos no repo?*
