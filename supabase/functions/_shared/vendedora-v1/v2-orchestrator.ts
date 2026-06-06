@@ -194,7 +194,7 @@ export async function runVendedoraV2(input: VendedoraV2Input): Promise<Vendedora
   let perfil: PerfilOutput | null = null;
   let ragText = "";
   let ragCount = 0;
-  if (RICH_ETAPAS.has(etapa as Etapa)) {
+  if (RICH_ETAPAS.has(etapa)) {
     try {
       const [p, chunks] = await Promise.all([
         perfilar(historyText, inboundText),
@@ -236,7 +236,7 @@ export async function runVendedoraV2(input: VendedoraV2Input): Promise<Vendedora
   let result = await handler(ctx);
 
   // 8. Crítico — apenas em etapas ricas
-  if (RICH_ETAPAS.has(etapa as Etapa) && perfil) {
+  if (RICH_ETAPAS.has(etapa) && perfil) {
     try {
       const critico = await criticar({
         texto: result.reply,
