@@ -40,9 +40,15 @@ Deno.serve(async (req) => {
 
     // Auth: aceita (a) admin via Bearer JWT do usuário OU
     //       (b) chamada interna via header x-internal-secret (trigger pg_net).
+    //       O token interno é lido tanto da env quanto da tabela settings
+    //       (key="embed_internal_token") para casar com o trigger.
     const internalSecret = req.headers.get("x-internal-secret") || "";
-    const expectedInternal = Deno.env.get("EMBED_INTERNAL_SECRET") || "";
-    const isInternal = expectedInternal && internalSecret && internalSecret === expectedInternal;
+    let expectedInternal = Deno.env.get("EMBED_INTERNAL_SECRET") || "";
+    if (!expectedInternal) {
+      const { data: s } = await supabase.from("settings").select("value").eq("key", "embed_internal_token").maybeSingle();
+      expectedInternal = String(s?.value || "");
+    }
+    const isInternal = !!expectedInternal && !!internalSecret && internalSecret === expectedInternal;
 
     if (!isInternal) {
       const authz = req.headers.get("authorization") || "";
