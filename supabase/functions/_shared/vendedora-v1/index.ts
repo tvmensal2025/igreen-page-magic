@@ -418,6 +418,7 @@ function buildFallback(etapa: Etapa, customer: any, updates: Record<string, any>
   }
   if (etapa === "foto_conta") return "Pode me enviar a foto ou PDF da sua última conta de luz? 📷";
   if (etapa === "doc") return "Agora só preciso da foto da frente do seu RG ou CNH pra finalizar 📄";
+  if (etapa === "email") return "Última info: me passa seu melhor e-mail pra eu travar seu cadastro 📧";
   if (etapa === "finalizando") return "Tudo pronto! Estou finalizando seu cadastro agora ✅";
   return "Bora seguir com seu cadastro? Me confirma a próxima informação que pedi.";
 }
