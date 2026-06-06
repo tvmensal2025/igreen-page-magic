@@ -147,11 +147,31 @@ export default function FluxoBEditor({ consultantId }: Props) {
                 <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-card border"}`}>
                   <p className="whitespace-pre-wrap">{m.text}</p>
                   {m.meta && (
-                    <p className="text-[10px] opacity-60 mt-1">
-                      {m.meta.model} · {m.meta.latency}ms
-                      {m.meta.tools?.length ? ` · tools: ${m.meta.tools.join(",")}` : ""}
-                      {m.meta.step ? ` · step→${m.meta.step}` : ""}
-                    </p>
+                    <>
+                      <p className="text-[10px] opacity-60 mt-1">
+                        {m.meta.model} · {m.meta.latency}ms
+                        {m.meta.variantId ? ` · ${m.meta.variantId}` : ""}
+                        {m.meta.tools?.length ? ` · tools: ${m.meta.tools.join(",")}` : ""}
+                        {m.meta.step ? ` · step→${m.meta.step}` : ""}
+                      </p>
+                      {m.meta.debug && (
+                        <details className="mt-2 text-[10px] opacity-80">
+                          <summary className="cursor-pointer underline">Decisão interna (v1)</summary>
+                          <div className="mt-1 space-y-1 font-mono">
+                            <div>perfil: <b>{m.meta.debug.perfil?.perfil}</b> · sent: {m.meta.debug.perfil?.sentimento} · temp: {m.meta.debug.perfil?.temperatura}</div>
+                            <div>etapa: <b>{m.meta.debug.plano?.etapa_atual}</b> · jogada: {m.meta.debug.plano?.proxima_jogada} · tom: {m.meta.debug.plano?.tom}</div>
+                            <div>capturar: {(m.meta.debug.plano?.info_a_capturar || []).join(", ") || "-"}</div>
+                            <div>RAG: {m.meta.debug.ragChunks} chunks · crítico: {m.meta.debug.criticoAprovado ? "✓" : `✗ (${(m.meta.debug.criticoProblemas || []).join(",")})`}</div>
+                            {m.meta.debug.checklist && (
+                              <div>checklist: {m.meta.debug.checklist.pronto ? "✓ pronto" : `falta ${(m.meta.debug.checklist.faltantes || []).map((f: any) => f.campo).join(", ")}`}</div>
+                            )}
+                            {m.meta.debug.closer && (
+                              <div>closer: {m.meta.debug.closer.acionou ? (m.meta.debug.closer.ok ? `✓ ${m.meta.debug.closer.mode}` : `✗ ${m.meta.debug.closer.erro || (m.meta.debug.closer.portalMissing || []).join(", ")}`) : "não acionou"}</div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
