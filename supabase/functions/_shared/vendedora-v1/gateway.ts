@@ -19,16 +19,28 @@ function key(): string {
   return k;
 }
 
-async function rawCall(body: Record<string, any>, model: string): Promise<ChatResult> {
-  const res = await fetch(GATEWAY, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+async function rawCall(body: Record<string, any>, model: string, timeoutMs = 25000): Promise<ChatResult> {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(GATEWAY, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(to);
+    if ((e as any)?.name === "AbortError") throw new Error(`gateway timeout (${model}) after ${timeoutMs}ms`);
+    throw e;
+  }
+  clearTimeout(to);
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`gateway ${res.status} (${model}): ${t.slice(0, 300)}`);
   }
+
   const data = await res.json();
   const choice = data?.choices?.[0]?.message;
   const text = String(choice?.content ?? "");

@@ -9,7 +9,7 @@
 // Quando dryRun=true, NÃO persiste nada no banco — apenas roda a IA e devolve.
 // Útil pro tester do painel.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
+import { createClient } from "npm:@supabase/supabase-js@2.50.0";
 import { runFluxoBAI } from "../_shared/fluxo-b-ai.ts";
 
 const corsHeaders = {
