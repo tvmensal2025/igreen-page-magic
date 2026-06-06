@@ -57,7 +57,8 @@ ${args.texto}`;
       problemas: Array.isArray(parsed.problemas) ? parsed.problemas.slice(0, 5).map(String) : [],
       sugestao: parsed.sugestao ? String(parsed.sugestao).slice(0, 800) : undefined,
     };
-  } catch {
-    return { aprovado: true, problemas: [] };
+  } catch (e) {
+    // V2 hardening: silêncio do crítico NÃO é mais aprovação automática.
+    return { aprovado: false, problemas: [`critico_falhou:${(e as Error).message.slice(0,80)}`] };
   }
 }

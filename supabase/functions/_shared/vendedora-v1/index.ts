@@ -13,6 +13,9 @@ import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
 import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import type { Etapa, SupabaseClient } from "./types.ts";
 
+// V2 export — state machine determinística
+export { runVendedoraV2 } from "./v2-orchestrator.ts";
+
 export interface VendedoraInput {
   supabase: SupabaseClient;
   customerId: string;

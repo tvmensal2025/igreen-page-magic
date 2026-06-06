@@ -49,6 +49,10 @@ export interface FluxoBState {
   ultimo_perfil?: PerfilOutput | null;
   /** Marcador interno — campos que o webhook injetou nesta call (conta, doc) */
   midia_recebida?: { conta?: boolean; doc_frente?: boolean; doc_verso?: boolean };
+  /** V2: flags determinísticas que destravam transições */
+  simulacao_apresentada?: boolean;
+  interesse_confirmado?: boolean;
+  cadastro_finalizado?: boolean;
 }
 
 export interface MemoryBlock {
@@ -78,4 +82,11 @@ export const DEFAULT_STATE: FluxoBState = {
   ultima_jogada: null,
   temperatura_max: 0,
   ultimo_perfil: null,
+  simulacao_apresentada: false,
+  interesse_confirmado: false,
+  cadastro_finalizado: false,
 };
+
+export const ETAPAS_ORDER: Etapa[] = [
+  "interesse","nome","valor","simulacao","foto_conta","doc","email","finalizando","pos_cadastro",
+];
