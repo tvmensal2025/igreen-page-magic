@@ -10,7 +10,6 @@ type Consultant = {
   name: string;
   igreen_portal_email: string | null;
   igreen_connect_code: string | null;
-  igreen_access_token: string | null;
   igreen_token_updated_at: string | null;
   igreen_token_expires_at: string | null;
   igreen_token_expired: boolean;
