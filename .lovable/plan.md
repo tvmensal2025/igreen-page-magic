@@ -1,224 +1,188 @@
-# Análise crítica do plano anterior + versão definitiva
 
-## O que estava bom no plano anterior
+# Plano: Vendedora v1 → venda completa + ferramentas de operação
 
-- Two-pass (Planner → Writer) e state machine persistida são corretos.
-- RAG real com embeddings da Lovable AI é o caminho certo.
-- Tools mais ricas resolvem perda de info entre turnos.
+Objetivo: a v1 vira uma vendedora que **fecha o cadastro sozinha** (foto da conta + RG/CNH + e-mail + telefone confirmado) chamando o mesmo `finalize-capture` que os outros fluxos usam — sem reinventar portal/sync. Em paralelo, entregamos as 7 melhorias da auditoria, com painel A/B desenhado pra **N variantes** (não só duas).
 
-## O que estava fraco / faltando
+## 1. Cadastro completo dentro da v1
 
-1. **Planner + Writer não basta pra "vendedora incrível".** Vendedor bom faz 3 coisas que o desenho anterior não cobria:
-  - **Lê o lead** (perfil, sentimento, urgência) antes de decidir tom.
-  - **Tem playbook por etapa** (não improvisa cada turno).
-  - **Self-critique antes de mandar** (relê a própria resposta e corrige).
-2. **Modelo errado pro Writer.** GPT-5.5 é caro e lento (~3-5s) — pra WhatsApp isso quebra ritmo de venda. `gpt-5.4` ou `gpt-5-mini` rendem 90% da qualidade com 1/3 da latência.
-3. **Faltou "shadow A/B"** — sem comparar a IA nova contra a antiga em conversas reais, não dá pra saber se melhorou.
-4. **Faltou few-shot dinâmico** — vendedor humano aprende com conversas que fecharam. Podemos injetar 2-3 exemplos reais de conversas vencedoras no prompt, recuperados por similaridade.
-5. **Faltou detecção de "momento de fechar"** — vendedor bom sente quando parar de explicar e pedir o cadastro. Hoje a IA fica em loop educativo.
-6. **Faltou guardrail de marca/compliance** — uma camada barata que valida a resposta antes de enviar (não promete o que não pode, não usa palavras proibidas).
+A v1 hoje só pede "foto da conta" e "documento" e para. Vamos estender pra cobrir o checklist completo, na mesma lógica que `finalize-capture` exige.
 
-# Arquitetura definitiva — "Vendedora iGreen v1"
+### Campos obrigatórios que ela precisa capturar/confirmar
+- `name` (já tem)
+- `electricity_bill_value` (já tem)
+- `electricity_bill_photo_url` — foto/PDF da conta (vem do webhook quando lead manda mídia)
+- `document_front_url` + `document_back_url` (RG) **ou** `document_front_url` apenas (CNH) — vem do webhook
+- `document_type` ('rg' | 'cnh')
+- `email` — **novo, hoje a v1 não pede**
+- `phone_whatsapp` — já vem do webhook
+- `address_city` / `address_state` (extraídos do OCR da conta)
 
-5 camadas, todas rodando exclusivamente em **Lovable AI Gateway** (GPT + Gemini).
-
+### Mudanças no playbook
+Nova etapa entre `doc` e `finalizando`: **`email`**. Sequência completa do funil:
 ```text
-inbound do lead
-   │
-   ▼
-┌──────────────────────────────────────────────────────────┐
-│ 1. PERFILADOR  (gemini-3-flash-preview, JSON)            │
-│    perfil + sentimento + urgência + temperatura          │
-└──────────────────────────────────────────────────────────┘
-   │
-   ▼
-┌──────────────────────────────────────────────────────────┐
-│ 2. PLANNER     (gemini-3-flash-preview, JSON)            │
-│    lê state machine + perfil → decide próxima jogada     │
-└──────────────────────────────────────────────────────────┘
-   │
-   ▼
-┌──────────────────────────────────────────────────────────┐
-│ 3. RAG         (gemini-embedding-001 + pgvector)         │
-│    busca: top 3 FAQ + top 2 conversas vencedoras         │
-└──────────────────────────────────────────────────────────┘
-   │
-   ▼
-┌──────────────────────────────────────────────────────────┐
-│ 4. WRITER      (openai/gpt-5.4, tools, temperature 0.8)  │
-│    escreve a mensagem seguindo playbook + chama tools    │
-└──────────────────────────────────────────────────────────┘
-   │
-   ▼
-┌──────────────────────────────────────────────────────────┐
-│ 5. CRÍTICO     (gemini-3-flash-preview, JSON pass/fail)  │
-│    valida tom, compliance, tamanho. Se reprova → reescr. │
-└──────────────────────────────────────────────────────────┘
-   │
-   ▼
-envia ao lead
+interesse → nome → valor → simulacao → foto_conta → doc → email → finalizando → pos_cadastro
 ```
 
-## Por que essa combinação de modelos
+### Novas tools no Writer
+- `registrar_email(email)` — valida regex, grava em `customers.email`.
+- `confirmar_telefone(telefone)` — confirma se o WhatsApp é o melhor pra contato (alguns leads pedem outro).
+- `finalizar_cadastro()` — passa a **realmente chamar** `finalize-capture` (hoje só muda step). Antes de chamar, a v1 valida o checklist; se falta algo, pede o que falta em vez de finalizar.
 
+### Integração com `finalize-capture`
+`runVendedoraV1` ganha um helper `tentarFechar(customerId)`:
+1. Lê o customer atualizado.
+2. Verifica checklist (`name`, `email`, `bill_url`, `doc_urls`, `phone`, `electricity_bill_value`).
+3. Se completo → chama `finalize-capture` via `supabase.functions.invoke` com auth de service role.
+4. Se incompleto → planner força a próxima etapa pelo campo que falta.
 
-| Camada         | Modelo                          | Justificativa                                                                                                                                             |
-| -------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Perfilador     | `google/gemini-3-flash-preview` | Análise estruturada barata, ~300ms. JSON pequeno.                                                                                                         |
-| Planner        | `google/gemini-3-flash-preview` | Decide próxima jogada, não precisa de prosa. Mesmo modelo do perfilador (1 prompt cacheado).                                                              |
-| Embeddings     | `google/gemini-embedding-001`   | Default da Lovable, 3072 dims. RAG-pronto.                                                                                                                |
-| Writer         | `openai/gpt-5.4`                | **Sweet spot**: prosa natural em português, segue tools, ~1.5s. GPT-5.5 dá 5% a mais de qualidade por 3x o custo e 2x a latência — não vale pra WhatsApp. |
-| Crítico        | `google/gemini-3-flash-preview` | Pass/fail rápido, ~200ms.                                                                                                                                 |
-| Resumo memória | `google/gemini-2.5-flash-lite`  | Mais barato pra rodar todo turno.                                                                                                                         |
+Quando o `finalize-capture` responde OK, a v1 marca `conversation_step = "cadastro_finalizando"`, envia a mensagem de confirmação ("seu cadastro foi enviado, em até 5 min você recebe…") e pausa o bot pra acompanhamento humano em caso de erro do portal.
 
+### Tratamento de mídia (foto da conta, doc)
+A v1 não processa mídia hoje. Quando o webhook recebe imagem/PDF, ele:
+- Salva URL em `electricity_bill_photo_url` ou `document_front_url`/`_back_url` (já é feito).
+- Chama a v1 com `inboundText = "[CONTA RECEBIDA]"` ou `"[DOC RECEBIDO]"`.
 
-**Fallbacks via `aiChatCascade**`: Writer cai de `gpt-5.4` → `gpt-5-mini` → `gemini-2.5-pro` em 429/5xx.
+Vamos adicionar **detecção desses marcadores** no início do `runVendedoraV1`: se o inbound começa com `[CONTA RECEBIDA]`, o planner pula direto pra próxima etapa (não tenta "responder" a foto). Análoga pra documento.
 
-## Camada 1 — Perfilador (novo)
+## 2. Sistema genérico de variantes (substitui o A/B binário atual)
 
-Roda 1x por turno, gera JSON:
+Você tem razão: hoje é "v1 vs legacy", mas haverá Fluxo A, B, C, D, e dentro de cada um, várias subvariantes. O sorteio precisa ser genérico.
 
-```json
-{
-  "perfil": "cético|interessado|comprador|indeciso|reclamão",
-  "sentimento": "positivo|neutro|negativo|irritado",
-  "urgencia": "alta|media|baixa",
-  "temperatura": 0-100,
-  "sinais_compra": ["pediu preço","perguntou prazo"],
-  "sinais_perda": ["sumiu 2 turnos","reclamou"]
-}
+### Tabela `flow_variants` (nova)
+| coluna | tipo | função |
+|---|---|---|
+| `id` | text PK | ex: `b.v1`, `b.legacy`, `d.express_v2` |
+| `fluxo` | text | `A` / `B` / `C` / `D` |
+| `nome` | text | rótulo amigável |
+| `descricao` | text | o que essa variante faz de diferente |
+| `weight` | int | peso no sorteio (0 = desligada) |
+| `is_active` | boolean | kill switch global da variante |
+| `consultant_overrides` | jsonb | `{ "<consultant_id>": { weight, is_active } }` pra kill switch por consultor |
+
+### Coluna em `customers`
+- Mantém `flow_variant` (A/B/C/D) — sem mudança.
+- `fluxo_b_variant` (text) vira **`variant_id`** (text, ex: `b.v1`) — generaliza pra qualquer fluxo. Migração: backfill `b.legacy`/`b.v1` baseado no valor atual.
+
+### Roteamento
+Substitui o `Math.random() < 0.5` por:
+```ts
+const variant = await pickVariant({ supabase, fluxo: customer.flow_variant, consultantId });
 ```
+`pickVariant` lê `flow_variants` ativas pro fluxo do lead, aplica overrides do consultor, faz sorteio ponderado e persiste em `customers.variant_id`.
 
-Writer usa isso pra ajustar tom: cético → mais prova social; comprador → menos explicação, mais CTA.
+### Kill switch (resolve item 3 sem código extra)
+- **Por consultor:** edita `consultant_overrides`.
+- **Global:** `weight = 0` ou `is_active = false`.
+- **Emergência total:** env var `VENDEDORA_V1_FORCE_OFF=true` em `runFluxoBAI` força `legacy`.
 
-## Camada 2 — Planner com playbook
+## 3. Painel A/B genérico — `/admin/fluxo-b` ganha aba "Variantes"
 
-Hoje a IA "improvisa". Vendedor bom tem **playbook por etapa**, com fallbacks. Codificamos isso no Planner como JSON output:
+UI mostra uma **tabela por fluxo**, uma linha por variante, comparando KPIs lado a lado (N variantes, não 2):
 
-```json
-{
-  "etapa_atual": "valor",
-  "proxima_jogada": "simular_economia",
-  "tom": "consultivo_seguro",
-  "info_a_capturar": ["valor_conta"],
-  "objecao_a_tratar": null,
-  "deve_pedir_humano": false,
-  "deve_agendar_followup": false,
-  "razao_da_jogada": "lead confirmou interesse, valor é o gatilho natural"
-}
-```
+| Variante | Leads | Turnos médios | % chegou em `simulacao` | % chegou em `foto_conta` | % chegou em `doc` | % `cadastro_finalizando` | % handoff humano | Latência média | Custo médio/lead |
+|---|---|---|---|---|---|---|---|---|---|
 
-Playbook embutido (no prompt do Planner): para cada `etapa × perfil × sentimento`, qual é a próxima jogada recomendada. Tabela ~30 linhas.
+Filtros: período (1d / 7d / 30d), consultor, fluxo (A/B/C/D).
 
-## Camada 3 — RAG dupla
+Cada linha tem botões: **Pausar** (zera weight), **Forçar 100%** (zera weights das outras desse fluxo).
 
-Embeddings em **duas tabelas**:
+Dados vêm de:
+- `ai_decisions` (turnos, latência, custo via tokens, source/variante).
+- `customers` agrupado por `variant_id` (etapa final atingida).
 
-1. `ai_knowledge_sections` — FAQ + institucional (já existe, só adicionar coluna `embedding`).
-2. `**ai_winning_conversations**` (nova) — trechos de conversas reais que fecharam, classificadas por etapa. Atualizada manualmente pelo admin a partir do CRM (conversas com `sales_phase = ativado`).
+## 4. Embeddings automáticos do `/admin/conhecimento?tab=ia`
 
-Por turno: busca top 3 FAQ + top 2 trechos vencedores → injeta no prompt do Writer como "exemplos de como vendedores reais fecharam casos parecidos". Few-shot dinâmico = ganho gigante de qualidade.
+### Trigger no banco
+`AFTER INSERT OR UPDATE OF title, content, is_active ON ai_knowledge_sections` → chama edge `embed-knowledge` via `pg_net` com o `id` da seção. A edge gera embedding daquela seção e grava em `embedding`.
 
-## Camada 4 — Writer com tools expandidas
+### Botão manual no admin
+"Regerar todos os embeddings" — útil quando trocar modelo ou pra primeira carga. Mostra progresso (X/Y seções processadas).
 
-Mantém estilo curto (3 linhas, 1 pergunta) e adiciona tools além das atuais:
+### Indicador visual
+Cada seção mostra um badge: ✅ embeddado / ⏳ pendente / ⚠️ erro. Vem de `embedding IS NOT NULL` + `embedding_updated_at`.
 
-- `registrar_info(campo, valor)` — captura cidade, distribuidora, melhor_horário, profissão, tamanho da casa.
-- `registrar_objecao_tratada(tipo)` — não repete argumento.
-- `agendar_followup(quando_iso, gancho)` — fecha turno com follow-up programado.
-- `marcar_quente(motivo)` — sobe prioridade no CRM, notifica consultor.
-- `pedir_humano_proativo(motivo)` — separado de `escalar_humano` (a pedido do lead).
-- `oferecer_cadastro_express(motivo)` — pula etapas quando lead está pronto.
+## 5. "Marcar conversa vencedora" no chat admin
 
-## Camada 5 — Crítico (novo, barato, decisivo)
+No componente que renderiza a conversa do lead no admin, adiciona um botão **"⭐ Marcar como vencedora"** ao lado de cada mensagem do bot (ou no header da conversa pra marcar o trecho inteiro).
 
-Antes de enviar, Flash valida 5 regras:
+- Abre modal: escolhe `etapa` (interesse/valor/objecao/fechamento), seleciona o trecho de mensagens (slider de N msgs antes/depois), opcional `outcome` ("fechou", "quebrou objeção X").
+- Chama edge `marcar-conversa-vencedora` (já existe) — ela monta o snippet, gera embedding, grava em `ai_winning_conversations`.
+- Lista das vencedoras já marcadas aparece numa aba nova em `/admin/conhecimento?tab=vencedoras`.
 
-1. ≤ 3 linhas, ≤ 600 chars.
-2. Não promete nada fora das regras de negócio.
-3. Não usa frases proibidas ("vou te mandar vídeo", "te ligo amanhã", etc.).
-4. Tem CTA claro (pergunta no final ou pedido de ação).
-5. Tom bate com o `perfil` do Perfilador (não ser efusivo com lead irritado).
+## 6. Worker de `followup_at` (cron 5 min)
 
-Saída: `{aprovado: bool, problemas: [...], sugestao: "..."}`. Se reprova, faz 1 retry no Writer com correções. Se reprova de novo, manda fallback profissional.
+Edge function nova `process-followups`:
+1. Lê `customers WHERE followup_at <= now() AND bot_paused = false AND variant_id LIKE 'b.%'`.
+2. Pra cada lead: roda `runVendedoraV1` com inbound sintético `[FOLLOWUP_AGENDADO: <gancho>]`.
+3. Writer entende o marcador e escreve a mensagem de retomada usando o `followup_hook` como contexto.
+4. Salva resposta via canal certo (whapi/evolution), zera `followup_at`, incrementa `followup_count`.
 
-# State machine persistida
+### Guardrails
+- Máx 2 followups por lead (`followup_count >= 2` → não dispara).
+- Janela 9h–20h horário do consultor.
+- Skip se houve mensagem do lead nas últimas 12h.
+- Skip se `bot_paused = true`.
 
-Nova coluna `customers.fluxo_b_state jsonb`:
+Cron: `*/5 * * * *` via `pg_cron` + `pg_net`.
 
-```json
-{
-  "etapa": "interesse|nome|valor|simulacao|foto_conta|doc|finalizando|pos_cadastro",
-  "perfil": "...",
-  "objecoes_tratadas": [],
-  "info": { "cidade":"...", "distribuidora":"...", "melhor_horario":"..." },
-  "tentativas_etapa": 2,
-  "ultima_jogada": "simular_economia",
-  "temperatura_max": 78,
-  "ultimo_perfil": {...}
-}
-```
+## 7. Debug da v1 no tester `/admin/fluxo-b`
 
-`tentativas_etapa >= 3` → Planner muda gancho ou escala humano automaticamente.
+O `runVendedoraV1` já devolve `debug: { perfil, plano, ragChunks, criticoAprovado, criticoProblemas, stateBefore, stateAfter }`. Mas:
+- A edge `fluxo-b-ai` (HTTP wrapper) **não está propagando o `debug`** no JSON de resposta.
+- A UI do tester não tem painel pra renderizar.
 
-# Memória persistente reformulada
+Mudanças:
+- `supabase/functions/fluxo-b-ai/index.ts`: incluir `debug` no `return json(...)`.
+- `AdminFluxoB.tsx`: novo painel "Decisão interna" mostrando perfil (badges de temperatura/sentimento), plano (etapa, jogada, tom, info_a_capturar), nº chunks do RAG, parecer do crítico (aprovado/problemas), state antes/depois (diff).
 
-`conversation_summary` vira **dois blocos** em JSON:
+## 8. Decisão sobre `oferecer_cadastro_express`
 
-```json
-{
-  "fatos_confirmados": ["mora em SP","conta R$420","tem 2 filhos"],
-  "estado_atual": "respondeu sobre fidelidade, ainda indeciso"
-}
-```
+Hoje é **idêntica** a `pedir_foto_conta`. Como agora a v1 vai fechar o cadastro completo (item 1), a tool fica redundante. **Removo a tool** e ajusto o playbook pra usar `pedir_foto_conta` direto. Se no futuro existir um fluxo express real (form web curto), recriamos.
 
-- `fatos_confirmados` é **append-only** (nunca esquece).
-- `estado_atual` é reescrito todo turno (~200 chars, Flash-lite custa nada).
+---
 
-# Shadow A/B testing (validação obrigatória)
+## Ordem de implementação
 
-Antes de virar default, rodar 2 semanas:
+1. **Item 1 — cadastro completo + integração com `finalize-capture`** (núcleo, sem isso a v1 não vende).
+2. **Item 4 — embeddings automáticos** (sem isso o RAG é decoração).
+3. **Item 7 — debug no tester** (pra você conseguir validar 1 e 4).
+4. **Item 2/3 — `flow_variants` + painel A/B + kill switch** (mede e controla).
+5. **Item 5 — marcar conversa vencedora** (alimenta RAG ao longo do tempo).
+6. **Item 6 — worker de followup** (último, com guardrails).
+7. **Item 8 — remover `oferecer_cadastro_express`** (junto com item 1).
 
-- 50% dos leads B vão pra **vendedora_v1** (nova).
-- 50% continuam no Fluxo B atual (controle).
-- Dashboard novo em `/admin/saude-bot/vendedora-ab`: comparar taxa de captura de nome, valor, foto, doc, finalização, tempo médio até cadastro, taxa de handoff humano.
-- Só promove se v1 ganhar em **finalização** sem perder em "handoff humano".
+## Detalhes técnicos
 
-# Plano de execução
+### Arquivos a criar
+- `supabase/migrations/<ts>_flow_variants_and_followup.sql` — tabela `flow_variants`, renomeia `fluxo_b_variant` → `variant_id`, adiciona `email` (se não existir), `followup_at`, `followup_hook`, `followup_count` em customers; trigger `pg_net` em `ai_knowledge_sections`.
+- `supabase/functions/process-followups/index.ts` — worker.
+- `supabase/functions/_shared/vendedora-v1/closer.ts` — checklist + chamada a `finalize-capture`.
+- `supabase/functions/_shared/vendedora-v1/variant-picker.ts` — sorteio ponderado.
+- `src/pages/AdminVariants.tsx` (ou aba em `AdminFluxoB.tsx`) — painel A/B.
+- `src/components/admin/ChatWinningButton.tsx` — botão "marcar vencedora" + modal.
+- `src/components/admin/fluxo-b/DebugPanel.tsx` — painel de decisão interna.
 
-1. **Migration**
-  - `customers.fluxo_b_state jsonb default '{}'::jsonb`
-  - `customers.fluxo_b_variant text` ('legacy'|'v1') pro A/B
-  - `ai_knowledge_sections.embedding vector(3072)` + índice HNSW
-  - `ai_winning_conversations` (id, consultant_id, etapa, snippet, outcome, embedding, created_at) + RLS + GRANTs
-  - Função `match_knowledge(consultant_id, query_embedding, k)`
-  - Função `match_winning(consultant_id, etapa, query_embedding, k)`
-2. **Backend — novo `_shared/vendedora-v1/**`
-  - `index.ts` → orquestrador (substitui `runFluxoBAI`).
-  - `perfilador.ts`, `planner.ts`, `writer.ts`, `critico.ts`.
-  - `playbook.ts` → tabela etapa × perfil × jogada.
-  - `state.ts` → ler/escrever `fluxo_b_state`.
-  - `rag.ts` → embeddings + busca dupla.
-  - `tools.ts` → schema + handlers das tools.
-  - `memory.ts` → `fatos_confirmados` + `estado_atual`.
-3. **Edge function `embed-knowledge**`
-  - Trigger em insert/update de `ai_knowledge_sections` → gera embedding.
-  - Botão admin "Reindexar tudo" pra backfill.
-4. **Edge function `marcar-conversa-vencedora**`
-  - Admin/CRM: selecionar trecho + etapa + outcome → embedda + grava em `ai_winning_conversations`.
-5. **Roteamento no webhook**
-  - `whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`:
-  - Se `flow_variant === "B"` e `fluxo_b_variant === "v1"` → chama `runVendedoraV1`. Senão → `runFluxoBAI` atual.
-6. **Tester admin (`AdminFluxoB.tsx`)**
-  - 3 abas: **Legacy** (atual), **v1** (nova), **Comparar** (mesmo inbound nos dois lado a lado).
-  - Pra v1, mostrar 5 caixas: Perfil → Plano → RAG → Resposta → Crítico.
-7. **Dashboard A/B em `/admin/saude-bot**`
-  - Funil por variante: nome → valor → foto → doc → finalização.
-  - Custo por lead, latência média, % handoff.
+### Arquivos a editar
+- `supabase/functions/_shared/vendedora-v1/playbook.ts` — adiciona etapa `email`, remove `oferecer_cadastro_express`.
+- `supabase/functions/_shared/vendedora-v1/tools.ts` — adiciona `registrar_email`, `confirmar_telefone`, ajusta `finalizar_cadastro`.
+- `supabase/functions/_shared/vendedora-v1/index.ts` — detecta `[CONTA RECEBIDA]`/`[DOC RECEBIDO]`/`[FOLLOWUP_AGENDADO]`, chama `closer.tentarFechar()`.
+- `supabase/functions/_shared/fluxo-b-ai.ts` — troca `Math.random()` por `pickVariant()`, lê env `VENDEDORA_V1_FORCE_OFF`.
+- `supabase/functions/fluxo-b-ai/index.ts` — propaga `debug`.
+- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` e `whapi-webhook/handlers/bot-flow.ts` — quando recebe mídia (conta/doc), enviar inbound sintético pra v1.
+- `src/pages/AdminKnowledge.tsx` — botão "regerar embeddings" + badges de status.
+- `src/pages/AdminFluxoB.tsx` — abas "Tester" / "Variantes" / "Vencedoras".
 
-# Custo e latência esperados
+### Cuidados
+- Não tocar Fluxo A, C, D em código de IA — só o `flow_variants` é genérico.
+- Edge `finalize-capture` já tem todas as validações; v1 só **chama**, não duplica lógica de portal.
+- Painel A/B é **read-only** dos dados existentes em `ai_decisions` + `customers` — não precisa de tabela nova de métricas.
+- Worker de followup roda com service role; respeita `bot_paused` rigorosamente.
 
+## Vai melhorar mesmo?
 
-| Métrica                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Atual    | v1                                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------- |
-| Latência por turno[boot] igreen-sync-worker ouvindo na porta 3102 (headless=true)[login] [censuralivrealiaad@gmail.com](mailto:censuralivrealiaad@gmail.com) → navegando para login[err] POST /sync-customers → 401: Login rejeitado (URL=[https://escritorio.igreenenergy.com.br/login](https://escritorio.igreenenergy.com.br/login)). Trecho: Bem-vindo ao portal do licenciado 👋E-mailSenhaManter-me conectadoEntrarv1.1.0node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2[login] [censuralivrealiaad@gmail.com](mailto:censuralivrealiaad@gmail.com) → navegando para loginnode:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2[err] POST /sync-customers → 401: Login rejeitado (URL=[https://escritorio.igreenenergy.com.br/login](https://escritorio.igreenenergy.com.br/login)). Trecho: Bem-vindo ao portal do licenciado 👋E-mailSenhaManter-me conectadoEntrarv1.1.0node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/module_job:168:49) { code: 'ERR_MODULE_NOT_FOUND'}Node.js v20.20.2node:internal/modules/esm/resolve:873 throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null); ^Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright-chromium' imported from /app/server.mjs at packageResolve (node:internal/modules/esm/resolve:873:9) at moduleResolve (node:internal/modules/esm/resolve:946:18) at defaultResolve (node:internal/modules/esm/resolve:1188:11) at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:708:12) at #cachedDefaultResolve (node:internal/modules/esm/loader:657:25) at ModuleLoader.resolve (node:internal/modules/esm/loader:640:38) at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:264:38) at ModuleJob._link (node:internal/modules/esm/m
+Sim, e agora com efeito composto:
+- **Item 1** é o que muda o jogo: a v1 deixa de ser um chatbot e vira uma vendedora que **conclui a venda**. Sem isso, todos os outros itens são cosméticos.
+- **Itens 2 + 3 + 7** garantem que você **vê** o resultado e pode pausar com 1 clique se a v1 começar a vender pior que a legacy.
+- **Itens 4 + 5** alimentam o cérebro da v1 com conhecimento real e exemplos vencedores — é onde o ganho de longo prazo mora.
+- **Item 6** é o último porque só faz sentido depois que a v1 já estiver provada.
+
