@@ -15,6 +15,7 @@ export function readState(customer: any): FluxoBState {
 
   // Inferência retroativa pra leads em andamento — evita regressão na cutover.
   const idx = ETAPAS_ORDER.indexOf(base.etapa);
+  const idxNome = ETAPAS_ORDER.indexOf("nome");
   const idxFoto = ETAPAS_ORDER.indexOf("foto_conta");
   if (base.simulacao_apresentada === undefined) {
     base.simulacao_apresentada = idx >= idxFoto;
@@ -24,6 +25,9 @@ export function readState(customer: any): FluxoBState {
   }
   if (base.cadastro_finalizado === undefined) {
     base.cadastro_finalizado = base.etapa === "pos_cadastro";
+  }
+  if (base.abertura_feita === undefined) {
+    base.abertura_feita = idx > idxNome || !!String((customer as any)?.name ?? "").trim();
   }
   return base;
 }
