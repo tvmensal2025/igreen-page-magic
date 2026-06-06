@@ -69,6 +69,7 @@ function fallbackPorEtapa(etapa: Etapa, nome?: string | null): string {
 }
 
 
+/** @deprecated V1 foi aposentada — V2 é a única vendedora em produção. Mantida só pra referência. */
 export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraResult> {
   const t0 = Date.now();
   const { supabase, customerId, inboundText } = input;

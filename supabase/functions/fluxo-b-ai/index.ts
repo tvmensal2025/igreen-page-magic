@@ -9,7 +9,7 @@
 // Quando dryRun=true, NÃO persiste nada no banco — apenas roda a IA e devolve.
 // Útil pro tester do painel.
 
-import { createClient } from "npm:@supabase/supabase-js@2.50.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { runFluxoBAI } from "../_shared/fluxo-b-ai.ts";
 
 const corsHeaders = {
@@ -36,8 +36,6 @@ Deno.serve(async (req) => {
   const consultantId = String(body?.consultantId || "").trim();
   const inboundText = String(body?.inboundText || "").trim();
   const dryRun = Boolean(body?.dryRun);
-  const forceVariantId = dryRun && body?.forceVariantId === "b.v1" ? "b.v1" : null;
-  const forceV2 = dryRun && forceVariantId === "b.v1" && body?.forceV2 === true;
 
   if (!inboundText) return json({ error: "missing_inboundText" }, 400);
   if (!customerId && !consultantId) return json({ error: "missing_customerId_or_consultantId" }, 400);
@@ -111,8 +109,6 @@ Deno.serve(async (req) => {
       flow_variant: "B",
       // overrides vindos do cliente (state acumulado entre turnos no tester)
       ...(body?.customerState && typeof body.customerState === "object" ? body.customerState : {}),
-      ...(forceVariantId ? { variant_id: forceVariantId, fluxo_b_variant: "v1" } : {}),
-      ...(forceV2 ? { __force_vendedora_v2: true } : {}),
     };
   }
 

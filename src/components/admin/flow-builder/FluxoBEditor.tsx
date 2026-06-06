@@ -75,14 +75,13 @@ export default function FluxoBEditor({ consultantId }: Props) {
     setInput("");
     try {
       const history = newChat.slice(0, -1).map(m => ({ role: m.role, content: m.text }));
-      const requestState = { variant_id: "b.v1", fluxo_b_variant: "v1", ...simState };
       const { data, error } = await supabase.functions.invoke("fluxo-b-ai", {
-        body: { consultantId, inboundText: userMsg.text, dryRun: true, customerState: requestState, history, forceVariantId: "b.v1", forceV2: true },
+        body: { consultantId, inboundText: userMsg.text, dryRun: true, customerState: simState, history },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       if (data?.customerUpdates && typeof data.customerUpdates === "object") {
-        setSimState(prev => ({ variant_id: "b.v1", fluxo_b_variant: "v1", ...prev, ...data.customerUpdates }));
+        setSimState(prev => ({ ...prev, ...data.customerUpdates }));
       }
       setChat(prev => [...prev, { role: "assistant", text: data.reply, meta: { model: data.modelUsed, tools: data.toolsApplied, step: data.conversationStepUpdate, latency: data.latencyMs, variantId: data.variantId, debug: data.debug } }]);
     } catch (e) {
@@ -157,7 +156,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
                       </p>
                       {m.meta.debug && (
                         <details className="mt-2 text-[10px] opacity-80">
-                          <summary className="cursor-pointer underline">Decisão interna ({m.meta.debug.phase === "vendedora_v2" ? "v2" : "v1"})</summary>
+                          <summary className="cursor-pointer underline">Decisão interna (v1)</summary>
                           <div className="mt-1 space-y-1 font-mono">
                             <div>perfil: <b>{m.meta.debug.perfil?.perfil}</b> · sent: {m.meta.debug.perfil?.sentimento} · temp: {m.meta.debug.perfil?.temperatura}</div>
                             <div>etapa: <b>{m.meta.debug.plano?.etapa_atual}</b> · jogada: {m.meta.debug.plano?.proxima_jogada} · tom: {m.meta.debug.plano?.tom}</div>
