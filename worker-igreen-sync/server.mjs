@@ -1,14 +1,14 @@
-// server.mjs — igreen-sync-worker v4
+// server.mjs — igreen-sync-worker v5
 //
-// Usa ScraperAPI como proxy para contornar Cloudflare.
-// ScraperAPI rotaciona IPs residenciais automaticamente.
+// Proxy duplo para contornar Cloudflare WAF:
+//   1. CF_PROXY_URL: Cloudflare Worker proxy (gratuito, melhor opção)
+//   2. SCRAPER_API_KEY: ScraperAPI fallback
+//   3. Direto (para testes locais sem CF)
 //
 // Endpoints:
 //   GET  /health
 //   POST /sync-customers   { portal_email, portal_password }
 //   POST /sync-network     { portal_email, portal_password }
-//
-// Auth: header X-Worker-Token (== env WORKER_TOKEN).
 
 import http from 'node:http';
 
@@ -16,39 +16,68 @@ const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '20', 10);
+const CF_PROXY_URL = (process.env.CF_PROXY_URL || '').replace(/\/$/, '');
+const CF_PROXY_SECRET = process.env.CF_PROXY_SECRET || '';
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 
-const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
-const SCRAPER_BASE = 'https://api.scraperapi.com/structured/submit';
+const API_BASE = 'https://api-main.igreenenergy.com.br/v1';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
-if (!SCRAPER_API_KEY) console.warn('[boot] WARN: SCRAPER_API_KEY não definido!');
 
-// ------------ Fetch via ScraperAPI ------------
-// O ScraperAPI rotaciona IPs residenciais, contornando o Cloudflare da iGreen.
-async function scraperFetch(url, options = {}) {
+const proxyMode = CF_PROXY_URL ? 'cloudflare-worker' : SCRAPER_API_KEY ? 'scraperapi' : 'direct';
+console.log(`[boot] proxy mode: ${proxyMode}`);
+
+// ------------ Fetch via proxy (CF Worker ou ScraperAPI) ------------
+async function proxiedFetch(url, options = {}) {
   const { method = 'GET', headers = {}, body = null } = options;
 
-  // ScraperAPI structured endpoint — aceita POST com body
-  const scraperUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=false`;
-
-  const fetchOptions = {
-    method,
-    headers: {
+  if (CF_PROXY_URL && CF_PROXY_SECRET) {
+    // Cloudflare Worker proxy
+    const proxyHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'X-Proxy-Secret': CF_PROXY_SECRET,
+      'X-Target-Path': new URL(url).pathname + new URL(url).search,
       ...headers,
-    },
+    };
+
+    const fetchOpts = {
+      method,
+      headers: proxyHeaders,
+      signal: AbortSignal.timeout(60000),
+    };
+    if (body) fetchOpts.body = body;
+
+    return fetch(CF_PROXY_URL, fetchOpts);
+  }
+
+  if (SCRAPER_API_KEY) {
+    // ScraperAPI proxy
+    const scraperUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=false`;
+    const fetchOpts = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...headers,
+      },
+      signal: AbortSignal.timeout(60000),
+    };
+    if (body) fetchOpts.body = body;
+    return fetch(scraperUrl, fetchOpts);
+  }
+
+  // Direto (local/dev)
+  const fetchOpts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', ...headers },
     signal: AbortSignal.timeout(60000),
   };
-
-  if (body) fetchOptions.body = body;
-
-  const res = await fetch(scraperUrl, fetchOptions);
-  return res;
+  if (body) fetchOpts.body = body;
+  return fetch(url, fetchOpts);
 }
 
-// ------------ Login direto via ScraperAPI ------------
+// ------------ Login ------------
 async function apiLogin(email, password) {
   const payloads = [
     { email, password },
@@ -57,35 +86,20 @@ async function apiLogin(email, password) {
     { usuario: email, senha: password },
   ];
 
-  const loginUrls = [
-    `${API_BASE}/auth/login`,
-    `${API_BASE}/login`,
-    `https://api-voffice.igreenenergy.com.br/auth/login`,
-    `https://api-voffice.igreenenergy.com.br/login`,
+  const loginPaths = [
+    '/v1/auth/login',
+    '/v1/login',
+    '/auth/login',
+    '/login',
   ];
 
-  for (const loginUrl of loginUrls) {
+  for (const path of loginPaths) {
+    const url = `https://api-main.igreenenergy.com.br${path}`;
     for (const payload of payloads) {
       try {
-        // Usa ScraperAPI para fazer o POST passando pelo CF
-        const scraperUrl = new URL('https://api.scraperapi.com/');
-        scraperUrl.searchParams.set('api_key', SCRAPER_API_KEY);
-        scraperUrl.searchParams.set('url', loginUrl);
-        scraperUrl.searchParams.set('render', 'false');
-
-        const res = await fetch(scraperUrl.toString(), {
+        const res = await proxiedFetch(url, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-ScraperAPI-Headers': JSON.stringify({
-              'Origin': 'https://escritorio.igreenenergy.com.br',
-              'Referer': 'https://escritorio.igreenenergy.com.br/',
-              'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 Mobile Safari/537.36',
-            }),
-          },
           body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(30000),
         });
 
         if (res.status === 404 || res.status === 405) continue;
@@ -94,12 +108,11 @@ async function apiLogin(email, password) {
         let data = null;
         try { data = JSON.parse(text); } catch { continue; }
 
-        const token =
-          data?.token || data?.access_token || data?.accessToken ||
+        const token = data?.token || data?.access_token || data?.accessToken ||
           data?.data?.token || data?.data?.access_token || data?.jwt;
 
         if (token && res.ok) {
-          console.log(`[login] OK via ${loginUrl}`);
+          console.log(`[login] ${email} → OK via ${path}`);
           return token;
         }
 
@@ -109,7 +122,7 @@ async function apiLogin(email, password) {
         }
       } catch (e) {
         if (e instanceof HttpError) throw e;
-        console.warn(`[login] tentativa falhou: ${e.message}`);
+        console.warn(`[login] tentativa ${path} falhou: ${e.message}`);
       }
     }
   }
@@ -117,29 +130,12 @@ async function apiLogin(email, password) {
   throw new HttpError(401, 'Não foi possível autenticar. Verifique email e senha.');
 }
 
-// ------------ GET autenticado via ScraperAPI ------------
-async function apiGet(url, token) {
-  const scraperUrl = new URL('https://api.scraperapi.com/');
-  scraperUrl.searchParams.set('api_key', SCRAPER_API_KEY);
-  scraperUrl.searchParams.set('url', url);
-  scraperUrl.searchParams.set('render', 'false');
-
-  const res = await fetch(scraperUrl.toString(), {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    signal: AbortSignal.timeout(60000),
-  });
-
-  return res;
-}
-
 // ------------ Busca consultor_id ------------
 async function fetchConsultorId(token) {
   try {
-    const res = await apiGet(`${API_BASE}/consultant`, token);
+    const res = await proxiedFetch(`${API_BASE}/consultant`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
     if (!res.ok) return null;
     const j = await res.json();
     return String(j?.id || j?.consultor?.id || j?.data?.id || j?.idconsultor || '') || null;
@@ -192,8 +188,13 @@ async function fetchPaginated(token, url, { pageParam = 'page', sizeParam = 'pag
     const full = `${url}${sep}${pageParam}=${p}&${sizeParam}=${size}`;
 
     let res;
-    try { res = await apiGet(full, token); }
-    catch (e) { throw new HttpError(500, `Erro de rede: ${e.message}`); }
+    try {
+      res = await proxiedFetch(full, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+    } catch (e) {
+      throw new HttpError(500, `Erro de rede: ${e.message}`);
+    }
 
     const status = res.status;
     if (status === 429) {
@@ -212,6 +213,7 @@ async function fetchPaginated(token, url, { pageParam = 'page', sizeParam = 'pag
       Array.isArray(j?.customers) ? j.customers :
       Array.isArray(j?.members) ? j.members : [];
     all.push(...arr);
+    console.log(`  page ${p}: ${arr.length} itens`);
     if (arr.length < size) break;
   }
   return all;
@@ -254,8 +256,9 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'scraperapi-proxy',
-        scraper_configured: !!SCRAPER_API_KEY,
+        mode: proxyMode,
+        cf_proxy: !!CF_PROXY_URL,
+        scraper: !!SCRAPER_API_KEY,
       });
     }
 
@@ -293,7 +296,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v4 (scraperapi-proxy) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v5 (${proxyMode}) porta ${PORT}`);
 });
 
 setInterval(() => {
