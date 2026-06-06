@@ -48,13 +48,20 @@ Deno.serve(async (req) => {
 
   // Em dryRun: intercepta updates/inserts pra não persistir
   let supaForRun: any = supabase;
+  // override map: tabela -> função (table) => builder; checada antes do dryRun proxy.
+  const fromOverrides: Record<string, (table: string) => any> = {};
   if (dryRun) {
     const log: any[] = [];
+    const origFrom = supabase.from.bind(supabase);
     supaForRun = new Proxy(supabase, {
       get(target: any, prop: string) {
+        if (prop === "__dryRunLog") return log;
+        if (prop === "__fromOverrides") return fromOverrides;
         if (prop === "from") {
           return (table: string) => {
-            const real = target.from(table);
+            const override = fromOverrides[table];
+            if (override) return override(table);
+            const real = origFrom(table);
             return new Proxy(real, {
               get(t: any, p: string) {
                 if (p === "update" || p === "insert" || p === "delete" || p === "upsert") {
@@ -75,7 +82,6 @@ Deno.serve(async (req) => {
         return target[prop]?.bind ? target[prop].bind(target) : target[prop];
       },
     });
-    (supaForRun as any).__dryRunLog = log;
   }
 
   // Em dryRun sem customerId: monta lead/consultor sintéticos
@@ -109,29 +115,25 @@ Deno.serve(async (req) => {
   // History override (tester mantém o histórico no front, já que dryRun não persiste em conversations)
   const syntheticHistory: Array<{ role: "user" | "assistant"; content: string }> | undefined =
     dryRun && Array.isArray(body?.history) ? body.history.slice(-40) : undefined;
-  if (syntheticHistory && syntheticHistory.length > 0) {
-    // Injeta proxy do select em conversations para devolver o histórico simulado
-    const origFrom = supaForRun.from.bind(supaForRun);
-    supaForRun.from = (table: string) => {
-      if (table !== "conversations") return origFrom(table);
-      return {
-        select: () => ({
-          eq: () => ({
-            order: () => ({
-              limit: async () => ({
-                data: syntheticHistory.map((m) => ({
-                  message_direction: m.role === "assistant" ? "outbound" : "inbound",
-                  message_text: m.content,
-                  message_type: "text",
-                  created_at: new Date().toISOString(),
-                })),
-                error: null,
-              }),
+  if (syntheticHistory && syntheticHistory.length > 0 && dryRun) {
+    // Registra override no map — o proxy intercepta sem reatribuição recursiva.
+    (supaForRun as any).__fromOverrides["conversations"] = (_table: string) => ({
+      select: () => ({
+        eq: () => ({
+          order: () => ({
+            limit: async () => ({
+              data: syntheticHistory.map((m) => ({
+                message_direction: m.role === "assistant" ? "outbound" : "inbound",
+                message_text: m.content,
+                message_type: "text",
+                created_at: new Date().toISOString(),
+              })),
+              error: null,
             }),
           }),
         }),
-      } as any;
-    };
+      }),
+    });
   }
 
   try {
