@@ -182,21 +182,24 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
   });
   let writerText = sanitize(writerResult.text);
 
-  // 6. Crítico
-  const critico = await criticar({
+  // 6. Crítico — bloqueia mensagens reprovadas (até 1 retry forçado, senão fallback determinístico)
+  let critico = await criticar({
     texto: writerText,
     perfil,
     jaTemHistorico: historyMsgs.length > 0,
+    plano,
+    nomeLead: customer.name || null,
   });
-  if (!critico.aprovado && critico.sugestao) {
-    // Tenta 1 retry com correção
+  if (!critico.aprovado) {
+    const problemas = critico.problemas.join("; ") || "não atende às regras";
+    const hint = critico.sugestao ? `Sugestão: "${critico.sugestao}".` : "";
     try {
       const retry = await escrever({
         representante: consultant.name || "Rafael",
         nomeLead: customer.name || null,
         valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
         history: historyMsgs,
-        inboundText: `${inboundText}\n\n[CORREÇÃO INTERNA: sua resposta anterior foi reprovada por: ${critico.problemas.join("; ")}. Sugestão: "${critico.sugestao}". Reescreva seguindo o plano original.]`,
+        inboundText: `${inboundText}\n\n[CORREÇÃO INTERNA OBRIGATÓRIA: sua resposta anterior foi REPROVADA por: ${problemas}. ${hint} Reescreva seguindo a TRAVA DA ETAPA e o plano. NÃO repita o erro.]`,
         perfil,
         plano,
         ragText,
@@ -205,11 +208,26 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
         basePersona: consultant.ai_persona_fluxo_b || null,
       });
       writerResult = retry;
-      writerText = sanitize(retry.text) || critico.sugestao;
-    } catch {
-      writerText = sanitize(critico.sugestao);
+      writerText = sanitize(retry.text);
+    } catch {/* mantém writerText original */}
+
+    // Reavalia. Se reprovou de novo, usa fallback determinístico por etapa.
+    const critico2 = await criticar({
+      texto: writerText,
+      perfil,
+      jaTemHistorico: historyMsgs.length > 0,
+      plano,
+      nomeLead: customer.name || null,
+    });
+    if (!critico2.aprovado) {
+      writerText = sanitize(critico2.sugestao || fallbackPorEtapa(plano.etapa_atual, customer.name));
+      critico = { aprovado: false, problemas: [...critico.problemas, ...critico2.problemas].slice(0, 5) };
+    } else {
+      critico = critico2;
     }
   }
+
+
 
   // 7. Aplica tool calls
   const toolsApplied: string[] = [];
