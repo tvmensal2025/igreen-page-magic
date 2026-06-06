@@ -34,11 +34,11 @@ export const PLAYBOOK: Record<Etapa, Partial<Record<Perfil, PlaybookEntry>>> = {
     reclamao:    T("pedir_valor_resolvendo", "empatico", "'Pra te ajudar a baixar essa conta, qual o valor?'"),
   },
   simulacao: {
-    cetico:      T("apresentar_numero_com_fonte", "consultivo_seguro", "20% da ANEEL. Mostrar economia anual."),
-    interessado: T("apresentar_numero_com_cta", "energetico_direto", "Número + 'manda a foto da conta pra travar'."),
-    comprador:   T("apresentar_numero_e_pedir_foto", "objetivo", ""),
-    indeciso:    T("apresentar_numero_com_prova", "acolhedor_firme", "Número + prova social + CTA suave."),
-    reclamao:    T("apresentar_numero_aliviando", "empatico", "Mostrar quanto economiza vs reclamação."),
+    cetico:      T("apresentar_numero_e_qualificar", "consultivo_seguro", "Faixa 8-20% + número R$. Pergunta consultiva. NUNCA pedir foto neste turno."),
+    interessado: T("apresentar_numero_e_qualificar", "energetico_direto", "Faixa 8-20% + número + 'faz sentido?'. NUNCA pedir foto neste turno."),
+    comprador:   T("apresentar_numero_e_qualificar", "objetivo", "Faixa 8-20% + número. Pergunta curta. NUNCA pedir foto neste turno."),
+    indeciso:    T("apresentar_numero_com_prova", "acolhedor_firme", "Faixa 8-20% + número + ANEEL. Pergunta consultiva. NUNCA pedir foto neste turno."),
+    reclamao:    T("apresentar_numero_aliviando", "empatico", "Faixa 8-20% mostrando alívio vs reclamação. NUNCA pedir foto neste turno."),
   },
   foto_conta: {
     cetico:      T("explicar_uso_da_foto", "transparente", "Pra confirmar distribuidora + valor exato."),
