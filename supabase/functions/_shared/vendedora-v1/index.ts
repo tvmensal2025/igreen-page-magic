@@ -13,10 +13,8 @@ import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
 import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import type { Etapa, SupabaseClient } from "./types.ts";
 
-// Re-export da Vendedora v2 (state machine pura). Coexiste com runVendedoraV1
-// até a estabilização — rollout via env var VENDEDORA_V2_ENABLED em fluxo-b-ai.ts.
+// V2 export — state machine determinística
 export { runVendedoraV2 } from "./v2-orchestrator.ts";
-export type { VendedoraV2Input, VendedoraV2Result } from "./v2-orchestrator.ts";
 
 export interface VendedoraInput {
   supabase: SupabaseClient;

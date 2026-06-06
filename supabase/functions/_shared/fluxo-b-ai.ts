@@ -97,54 +97,32 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   }
 
   // Nudge interno (follow-up): força branch legacy que tem suporte explícito
-  // ao bloco "NUDGE INTERNO" no system prompt. A v1/v2 ainda não foram adaptadas.
+  // ao bloco "NUDGE INTERNO" no system prompt.
   const isNudgeRun = !!(input.nudgeHook && String(input.nudgeHook).trim().length > 0);
+  const v2Enabled = String(Deno.env.get("VENDEDORA_V2_ENABLED") || "").toLowerCase() === "true";
+  const useVendedora = !forceOff && variantId === "b.v1" && !isNudgeRun;
 
-  // Rollout v2 — sobrescreve variantId === "b.v1" quando ligado por env var.
-  // Single-switch: nunca rodam v1 e v2 no mesmo lead no mesmo turno.
-  const v2On = String(Deno.env.get("VENDEDORA_V2_ENABLED") || "").toLowerCase() === "true";
-  const useV2 = v2On && !forceOff && !isNudgeRun && variantId === "b.v1";
-  const useV1 = !v2On && !forceOff && variantId === "b.v1" && !isNudgeRun;
-
-  if (useV2) {
+  if (useVendedora) {
     try {
-      const v2 = await runVendedoraV2({ supabase, customerId, inboundText, customer, consultant: input.consultant });
+      const runner = v2Enabled ? runVendedoraV2 : runVendedoraV1;
+      const v = await runner({ supabase, customerId, inboundText, customer, consultant: input.consultant });
       return {
-        reply: v2.reply,
-        toolsApplied: v2.toolsApplied,
-        conversationStepUpdate: v2.conversationStepUpdate,
-        shouldHandoff: v2.shouldHandoff,
-        modelUsed: v2.modelUsed,
-        latencyMs: v2.latencyMs,
-        customerUpdates: v2.customerUpdates,
-        variantId,
-        debug: v2.debug,
+        reply: v.reply,
+        toolsApplied: v.toolsApplied,
+        conversationStepUpdate: v.conversationStepUpdate,
+        shouldHandoff: v.shouldHandoff,
+        modelUsed: v.modelUsed,
+        latencyMs: v.latencyMs,
+        customerUpdates: v.customerUpdates,
+        variantId: v2Enabled ? `${variantId}+v2` : variantId,
+        debug: v.debug,
       };
     } catch (e) {
-      console.error(`[fluxo-b-ai] vendedora_v2 falhou, caindo pra v1:`, (e as Error).message);
-      // fall-through pra v1
-    }
-  }
-
-  if (useV1 || (useV2 /* v2 falhou e estamos no fallback */)) {
-    try {
-      const v1 = await runVendedoraV1({ supabase, customerId, inboundText, customer, consultant: input.consultant });
-      return {
-        reply: v1.reply,
-        toolsApplied: v1.toolsApplied,
-        conversationStepUpdate: v1.conversationStepUpdate,
-        shouldHandoff: v1.shouldHandoff,
-        modelUsed: v1.modelUsed,
-        latencyMs: v1.latencyMs,
-        customerUpdates: v1.customerUpdates,
-        variantId,
-        debug: v1.debug,
-      };
-    } catch (e) {
-      console.error(`[fluxo-b-ai] vendedora_v1 falhou, caindo pra legacy:`, (e as Error).message);
+      console.error(`[fluxo-b-ai] vendedora ${v2Enabled ? "v2" : "v1"} falhou, caindo pra legacy:`, (e as Error).message);
       // fall-through pro legacy
     }
   }
+
 
   let consultant = input.consultant;
   if (!consultant && customer.consultant_id) {

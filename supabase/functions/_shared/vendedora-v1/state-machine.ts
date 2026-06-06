@@ -1,29 +1,29 @@
-// State machine determinística da Vendedora v2.
-// Decide a próxima etapa apenas com base em dados confirmados no customer +
-// flags do state. Sem LLM, sem heurística sobre o texto do lead.
+// State machine determinística — decide a etapa por código, sem LLM.
+// Lê apenas dados confirmados (customer + state). Nada do inbound entra aqui.
 
 import type { Etapa, FluxoBState } from "./types.ts";
 
-/** Etapa "confirmacao" não existe no schema legacy — é uma sub-etapa só da v2. */
-export type EtapaV2 = Etapa | "confirmacao";
+const MEDIA_PLACEHOLDERS = new Set(["evolution-media:pending", "collected", "nao_aplicavel", ""]);
+const hasMedia = (v: any) => {
+  const s = String(v ?? "").trim();
+  return s.length > 0 && !MEDIA_PLACEHOLDERS.has(s);
+};
 
-export function decideEtapa(customer: any, state: FluxoBState): EtapaV2 {
-  if (!customer?.name && !state.info?.nome) return "nome";
+export function decideEtapa(customer: any, state: FluxoBState): Etapa {
+  if (state.cadastro_finalizado) return "pos_cadastro";
 
-  const valor = customer?.electricity_bill_value;
-  if (!valor || Number(valor) <= 0) return "valor";
+  const temNome = !!String(customer?.name ?? "").trim();
+  const temValor = typeof customer?.electricity_bill_value === "number" && customer.electricity_bill_value > 0;
+  const temConta = hasMedia(customer?.electricity_bill_photo_url) || !!state.midia_recebida?.conta;
+  const temDoc = hasMedia(customer?.document_front_url) || !!state.midia_recebida?.doc_frente;
+  const temEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customer?.email ?? "").trim());
 
+  if (!temNome) return "nome";
+  if (!temValor) return "valor";
   if (!state.simulacao_apresentada) return "simulacao";
-  if (!state.interesse_confirmado) return "confirmacao";
-
-  if (!state.midia_recebida?.conta) return "foto_conta";
-  if (!state.midia_recebida?.doc_frente) return "doc";
-
-  if (!customer?.email) return "email";
-
-  if (!state.cadastro_finalizado) return "finalizando";
-  return "pos_cadastro";
+  if (!state.interesse_confirmado) return "simulacao";
+  if (!temConta) return "foto_conta";
+  if (!temDoc) return "doc";
+  if (!temEmail) return "email";
+  return "finalizando";
 }
-
-/** Etapas onde rodamos perfilador/RAG/crítico — onde há contexto rico. */
-export const RICH_ETAPAS = new Set<EtapaV2>(["simulacao", "confirmacao", "doc"]);

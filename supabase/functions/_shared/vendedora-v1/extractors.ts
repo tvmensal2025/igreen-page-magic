@@ -1,151 +1,140 @@
-// Extractors — microtarefas LLM com tool forçada (chatForced).
-// Cada extractor faz UMA pergunta sobre a última mensagem do lead.
-// Só aceita resultados com confiança ALTA para escrever no banco.
+// Extractors V2 — micro-LLM com tool forçada por etapa.
+// Cada extractor retorna o campo que ele extraiu (ou null se não houver).
 
-import { chatForced, type ChatMsg } from "./gateway.ts";
+import { chatForced } from "./gateway.ts";
 
-const MODEL = "google/gemini-3-flash-preview";
+const MODEL = "google/gemini-2.5-flash-lite";
 
-type Conf = "alta" | "media" | "baixa";
+const TOOL_NOME = {
+  type: "function",
+  function: {
+    name: "extrair_nome",
+    description: "Extrai o nome do lead se ele se apresentou na mensagem.",
+    parameters: {
+      type: "object",
+      properties: { nome: { type: "string", description: "nome do lead ou string vazia se ausente" } },
+      required: ["nome"],
+      additionalProperties: false,
+    },
+  },
+};
 
-function buildMessages(system: string, inbound: string, history?: string): ChatMsg[] {
-  const ctx = history
-    ? `# Histórico recente\n${history.slice(-1200)}\n\n# Última mensagem do lead\n${inbound}`
-    : `# Última mensagem do lead\n${inbound}`;
-  return [
-    { role: "system", content: system },
-    { role: "user", content: ctx },
-  ];
-}
+const TOOL_VALOR = {
+  type: "function",
+  function: {
+    name: "extrair_valor_conta",
+    description: "Extrai o valor médio mensal da conta de luz em reais (número).",
+    parameters: {
+      type: "object",
+      properties: { valor: { type: "number", description: "valor em R$ ou 0 se ausente" } },
+      required: ["valor"],
+      additionalProperties: false,
+    },
+  },
+};
 
-export async function extractName(
-  inbound: string,
-  history?: string,
-): Promise<{ nome: string | null; confianca: Conf }> {
-  try {
-    const { args } = await chatForced({
-      model: MODEL,
-      temperature: 0.1,
-      messages: buildMessages(
-        `Você extrai o NOME do lead da última mensagem dele. Se a mensagem não traz um nome, retorne presente=false. Ignore saudações ("oi", "tudo bem"). Aceite primeiro nome ou nome completo. Não invente.`,
-        inbound,
-        history,
-      ),
-      tool: {
-        type: "function",
-        function: {
-          name: "extrair_nome",
-          description: "Extrai o nome do lead da última mensagem.",
-          parameters: {
-            type: "object",
-            properties: {
-              presente: { type: "boolean" },
-              nome: { type: "string", description: "Nome puro, sem 'meu nome é'. Capitalizado." },
-              confianca: { type: "string", enum: ["alta", "media", "baixa"] },
-            },
-            required: ["presente", "confianca"],
-            additionalProperties: false,
-          },
-        },
+const TOOL_EMAIL = {
+  type: "function",
+  function: {
+    name: "extrair_email",
+    description: "Extrai o e-mail do lead se ele forneceu um na mensagem.",
+    parameters: {
+      type: "object",
+      properties: { email: { type: "string", description: "e-mail ou string vazia" } },
+      required: ["email"],
+      additionalProperties: false,
+    },
+  },
+};
+
+const TOOL_INTERESSE = {
+  type: "function",
+  function: {
+    name: "classificar_interesse",
+    description: "Classifica se o lead demonstrou interesse explícito em prosseguir com o cadastro após a simulação. Palavras-gatilho: quero, vamos, fechado, como faço, ok manda, pode mandar, bora, sim.",
+    parameters: {
+      type: "object",
+      properties: {
+        confirmou: { type: "boolean", description: "true se demonstrou interesse explícito em seguir" },
       },
-    });
-    if (!args || !args.presente) return { nome: null, confianca: "alta" };
-    const nome = String(args.nome || "").trim().slice(0, 80);
-    return { nome: nome || null, confianca: (args.confianca as Conf) || "media" };
-  } catch (e) {
-    console.warn("[extractName] falhou:", (e as Error).message);
-    return { nome: null, confianca: "baixa" };
-  }
-}
+      required: ["confirmou"],
+      additionalProperties: false,
+    },
+  },
+};
 
-export async function extractValor(
-  inbound: string,
-  history?: string,
-): Promise<{ valor: number | null; confianca: Conf }> {
+export async function extrairNome(inbound: string): Promise<string | null> {
   try {
-    const { args } = await chatForced({
+    const r = await chatForced({
       model: MODEL,
-      temperature: 0.1,
-      messages: buildMessages(
-        `Você extrai o VALOR MONETÁRIO da conta de luz da última mensagem do lead. Aceite "250", "R$ 250", "duzentos e cinquenta", "uns 300". Se não há valor explícito (ex: "vou ver amanhã"), retorne presente=false. Não invente.`,
-        inbound,
-        history,
-      ),
-      tool: {
-        type: "function",
-        function: {
-          name: "extrair_valor",
-          description: "Extrai o valor da conta de luz em reais.",
-          parameters: {
-            type: "object",
-            properties: {
-              presente: { type: "boolean" },
-              valor_reais: { type: "number" },
-              confianca: { type: "string", enum: ["alta", "media", "baixa"] },
-            },
-            required: ["presente", "confianca"],
-            additionalProperties: false,
-          },
-        },
-      },
+      temperature: 0,
+      tool: TOOL_NOME,
+      messages: [
+        { role: "system", content: "Você extrai o nome do lead se ele se apresentou. Aceita 'sou o X', 'me chamo X', 'X aqui', ou um nome solto. Se não houver nome claro, retorne vazio." },
+        { role: "user", content: inbound },
+      ],
     });
-    if (!args || !args.presente) return { valor: null, confianca: "alta" };
-    const v = Number(args.valor_reais);
-    if (!Number.isFinite(v) || v <= 0 || v >= 100000) return { valor: null, confianca: "baixa" };
-    return { valor: v, confianca: (args.confianca as Conf) || "media" };
-  } catch (e) {
-    console.warn("[extractValor] falhou:", (e as Error).message);
-    return { valor: null, confianca: "baixa" };
-  }
+    const n = String(r.args?.nome || "").trim();
+    if (!n || n.length < 2 || n.length > 80) return null;
+    return n;
+  } catch { return null; }
 }
 
-export async function extractEmail(
-  inbound: string,
-): Promise<{ email: string | null; confianca: Conf }> {
-  // Fast-path por regex: e-mail é determinístico, não precisa LLM.
-  const m = inbound.match(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/);
+export async function extrairValor(inbound: string): Promise<number | null> {
+  try {
+    const r = await chatForced({
+      model: MODEL,
+      temperature: 0,
+      tool: TOOL_VALOR,
+      messages: [
+        { role: "system", content: "Extraia valor em R$ de uma frase informal. '300 reais' → 300. '1.2k' → 1200. 'paga uns 450 por mes' → 450. Sem valor claro → 0." },
+        { role: "user", content: inbound },
+      ],
+    });
+    const v = Number(r.args?.valor);
+    if (!isFinite(v) || v <= 0 || v >= 100000) return null;
+    return v;
+  } catch { return null; }
+}
+
+export async function extrairEmail(inbound: string): Promise<string | null> {
+  // Atalho determinístico: regex resolve 95% dos casos sem LLM.
+  const m = inbound.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
   if (m) {
-    const email = m[0].toLowerCase();
-    return { email, confianca: "alta" };
+    const e = m[0].toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return e;
   }
-  return { email: null, confianca: "alta" };
+  try {
+    const r = await chatForced({
+      model: MODEL,
+      temperature: 0,
+      tool: TOOL_EMAIL,
+      messages: [
+        { role: "system", content: "Extraia e-mail da mensagem. Sem e-mail → vazio." },
+        { role: "user", content: inbound },
+      ],
+    });
+    const e = String(r.args?.email || "").trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return e;
+    return null;
+  } catch { return null; }
 }
 
-export async function extractInteresse(
-  inbound: string,
-  history?: string,
-): Promise<{ interessado: boolean | null; confianca: Conf }> {
-  try {
-    const { args } = await chatForced({
-      model: MODEL,
-      temperature: 0.1,
-      messages: buildMessages(
-        `Você decide se o lead acabou de CONFIRMAR INTERESSE em seguir com o cadastro da iGreen, depois de ver a simulação. Exemplos de confirmação: "quero", "vamos", "como faço", "bora", "sim", "fechou", "topo". Exemplos de recusa: "não", "depois", "vou pensar", "não tenho interesse". Se a mensagem é ambígua ou off-topic, retorne presente=false.`,
-        inbound,
-        history,
-      ),
-      tool: {
-        type: "function",
-        function: {
-          name: "extrair_interesse",
-          description: "Detecta confirmação ou recusa explícita de interesse.",
-          parameters: {
-            type: "object",
-            properties: {
-              presente: { type: "boolean" },
-              interessado: { type: "boolean" },
-              confianca: { type: "string", enum: ["alta", "media", "baixa"] },
-            },
-            required: ["presente", "confianca"],
-            additionalProperties: false,
-          },
-        },
-      },
-    });
-    if (!args || !args.presente) return { interessado: null, confianca: "alta" };
-    return { interessado: !!args.interessado, confianca: (args.confianca as Conf) || "media" };
-  } catch (e) {
-    console.warn("[extractInteresse] falhou:", (e as Error).message);
-    return { interessado: null, confianca: "baixa" };
+export async function classificarInteresse(inbound: string): Promise<boolean> {
+  // Atalho regex pra palavras-gatilho fortes
+  if (/\b(quero|vamos|fechado|fechou|bora|pode mandar|ok manda|como faço|como fazer|t[óo]\s*dentro|sim,?\s*manda|manda\s*a[ií])\b/i.test(inbound)) {
+    return true;
   }
+  try {
+    const r = await chatForced({
+      model: MODEL,
+      temperature: 0,
+      tool: TOOL_INTERESSE,
+      messages: [
+        { role: "system", content: "Classifique se o lead confirmou interesse explícito em prosseguir com o cadastro após receber a simulação de economia. 'Sim' isolado conta. 'Vou pensar', 'depois', 'talvez' NÃO conta." },
+        { role: "user", content: inbound },
+      ],
+    });
+    return !!r.args?.confirmou;
+  } catch { return false; }
 }

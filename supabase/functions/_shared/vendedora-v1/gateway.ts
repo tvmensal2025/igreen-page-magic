@@ -1,9 +1,14 @@
 // Wrapper enxuto pro Lovable AI Gateway com cascata interna.
-// Mantém isolado do _shared/ai-gateway.ts pra evitar acoplamento.
 
 export interface ChatMsg { role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; name?: string }
 export interface ToolCallParsed { id: string; name: string; arguments: any }
 export interface ChatResult { text: string; toolCalls: ToolCallParsed[]; modelUsed: string }
+
+export type ToolChoice =
+  | "auto"
+  | "none"
+  | "required"
+  | { type: "function"; function: { name: string } };
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const EMBED = "https://ai.gateway.lovable.dev/v1/embeddings";
@@ -14,29 +19,7 @@ function key(): string {
   return k;
 }
 
-export type ToolChoice =
-  | "auto"
-  | "none"
-  | "required"
-  | { type: "function"; function: { name: string } };
-
-export async function chat(opts: {
-  model: string;
-  messages: ChatMsg[];
-  tools?: any[];
-  toolChoice?: ToolChoice;
-  temperature?: number;
-  json?: boolean;
-}): Promise<ChatResult> {
-  const body: Record<string, any> = { model: opts.model, messages: opts.messages };
-  if (opts.tools && opts.tools.length) {
-    body.tools = opts.tools;
-    body.tool_choice = opts.toolChoice ?? "auto";
-  }
-  if (opts.json) body.response_format = { type: "json_object" };
-  if (opts.temperature != null && !/^openai\/(gpt-5|o[134])/i.test(opts.model)) {
-    body.temperature = opts.temperature;
-  }
+async function rawCall(body: Record<string, any>, model: string): Promise<ChatResult> {
   const res = await fetch(GATEWAY, {
     method: "POST",
     headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
@@ -44,29 +27,9 @@ export async function chat(opts: {
   });
   if (!res.ok) {
     const t = await res.text();
-    // Se o proxy Lovable rejeitar tool_choice como objeto, tenta novamente com "required"
-    // (mantém aderência: o modelo é obrigado a chamar uma tool, e validamos qual).
-    if (
-      res.status === 400 &&
-      typeof body.tool_choice === "object" &&
-      /tool_choice/i.test(t)
-    ) {
-      const retryBody = { ...body, tool_choice: "required" };
-      const retry = await fetch(GATEWAY, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-        body: JSON.stringify(retryBody),
-      });
-      if (retry.ok) {
-        return parseChatResponse(await retry.json(), opts.model);
-      }
-    }
-    throw new Error(`gateway ${res.status} (${opts.model}): ${t.slice(0, 300)}`);
+    throw new Error(`gateway ${res.status} (${model}): ${t.slice(0, 300)}`);
   }
-  return parseChatResponse(await res.json(), opts.model);
-}
-
-function parseChatResponse(data: any, model: string): ChatResult {
+  const data = await res.json();
   const choice = data?.choices?.[0]?.message;
   const text = String(choice?.content ?? "");
   const raw = Array.isArray(choice?.tool_calls) ? choice.tool_calls : [];
@@ -78,27 +41,35 @@ function parseChatResponse(data: any, model: string): ChatResult {
   return { text, toolCalls, modelUsed: model };
 }
 
-/**
- * Atalho conveniente para forçar a chamada de UMA tool específica.
- * Retorna `null` se o modelo recusar (raro, com tool_choice forçado).
- */
-export async function chatForced(opts: {
+export async function chat(opts: {
   model: string;
   messages: ChatMsg[];
-  tool: { type: "function"; function: { name: string; description?: string; parameters: any } };
+  tools?: any[];
   temperature?: number;
-}): Promise<{ args: any | null; modelUsed: string }> {
-  const r = await chat({
-    model: opts.model,
-    messages: opts.messages,
-    tools: [opts.tool],
-    toolChoice: { type: "function", function: { name: opts.tool.function.name } },
-    temperature: opts.temperature,
-  });
-  const call = r.toolCalls.find((tc) => tc.name === opts.tool.function.name);
-  return { args: call?.arguments ?? null, modelUsed: r.modelUsed };
+  json?: boolean;
+  toolChoice?: ToolChoice;
+}): Promise<ChatResult> {
+  const body: Record<string, any> = { model: opts.model, messages: opts.messages };
+  if (opts.tools && opts.tools.length) {
+    body.tools = opts.tools;
+    body.tool_choice = opts.toolChoice ?? "auto";
+  }
+  if (opts.json) body.response_format = { type: "json_object" };
+  if (opts.temperature != null && !/^openai\/(gpt-5|o[134])/i.test(opts.model)) {
+    body.temperature = opts.temperature;
+  }
+  try {
+    return await rawCall(body, opts.model);
+  } catch (e) {
+    // Fallback: alguns proxies não aceitam tool_choice como objeto — degrada pra "required"
+    const msg = (e as Error).message || "";
+    if (typeof body.tool_choice === "object" && /400|tool_choice|invalid/i.test(msg)) {
+      body.tool_choice = "required";
+      return await rawCall(body, opts.model);
+    }
+    throw e;
+  }
 }
-
 
 export async function chatCascade(opts: {
   models: string[];
@@ -106,6 +77,7 @@ export async function chatCascade(opts: {
   tools?: any[];
   temperature?: number;
   json?: boolean;
+  toolChoice?: ToolChoice;
 }): Promise<ChatResult> {
   let last: Error | null = null;
   for (const m of opts.models) {
@@ -120,6 +92,27 @@ export async function chatCascade(opts: {
     }
   }
   throw last || new Error("cascade exhausted");
+}
+
+/**
+ * Força o modelo a chamar UMA tool específica. Usado pelos extractors da V2.
+ * Devolve `args` (objeto parseado da tool call) e `modelUsed`.
+ */
+export async function chatForced(opts: {
+  model: string;
+  messages: ChatMsg[];
+  tool: any; // { type:"function", function:{ name, description, parameters } }
+  temperature?: number;
+}): Promise<{ args: any; modelUsed: string; text: string }> {
+  const r = await chat({
+    model: opts.model,
+    messages: opts.messages,
+    tools: [opts.tool],
+    temperature: opts.temperature,
+    toolChoice: { type: "function", function: { name: opts.tool.function.name } },
+  });
+  const args = r.toolCalls[0]?.arguments ?? {};
+  return { args, modelUsed: r.modelUsed, text: r.text };
 }
 
 export async function embed(text: string, dims = 1536): Promise<number[]> {

@@ -1,78 +1,36 @@
-// Vendedora v2 — orquestrador (state machine pura).
-// Coexiste com runVendedoraV1 em index.ts.
-//
-// Pipeline:
-//   1. carregaContexto (customer/consultant/history/state/memory)
-//   2. detectaMidiaNova (mesma lógica da v1)
-//   3. etapa = decideEtapa(customer, state)            // determinística
-//   4. extractors (nome / valor / email / interesse)   // tools forçadas
-//   5. re-decide etapa após extração
-//   6. handler[etapa] roda (template OU writer micro)
-//   7. crítico apenas em RICH_ETAPAS
-//   8. aplica updates + state + ai_decisions
-//   9. se finalizando → tentarFechar (closer.ts)
+// Orchestrator V2 — state machine determinística + extractors + micro-writer.
+// Mesma assinatura de runVendedoraV1.
 
-import type { ChatMsg } from "./gateway.ts";
-import { readState } from "./state.ts";
-import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
-import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
+import { chatCascade, type ChatMsg } from "./gateway.ts";
 import { perfilar } from "./perfilador.ts";
 import { buscarContexto, formatChunks } from "./rag.ts";
 import { criticar } from "./critico.ts";
-import { decideEtapa, RICH_ETAPAS } from "./state-machine.ts";
-import { extractName, extractValor, extractEmail, extractInteresse } from "./extractors.ts";
-import { templatePorEtapa } from "./templates.ts";
-import type { Etapa, FluxoBState, PerfilOutput, SupabaseClient } from "./types.ts";
+import { readState, writeState } from "./state.ts";
+import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
+import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
+import { decideEtapa } from "./state-machine.ts";
+import { extrairNome, extrairValor, extrairEmail, classificarInteresse } from "./extractors.ts";
+import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta } from "./templates.ts";
+import type { Etapa, FluxoBState, SupabaseClient } from "./types.ts";
+import type { VendedoraInput, VendedoraResult } from "./index.ts";
 
-import { interesseHandler } from "./handlers/interesse.ts";
-import { nomeHandler } from "./handlers/nome.ts";
-import { valorHandler } from "./handlers/valor.ts";
-import { simulacaoHandler } from "./handlers/simulacao.ts";
-import { confirmacaoHandler } from "./handlers/confirmacao.ts";
-import { fotoContaHandler } from "./handlers/foto-conta.ts";
-import { docHandler } from "./handlers/doc.ts";
-import { emailHandler } from "./handlers/email.ts";
-import { finalizandoHandler } from "./handlers/finalizando.ts";
-import { posCadastroHandler } from "./handlers/pos-cadastro.ts";
-import type { Handler, HandlerCtx } from "./handlers/_types.ts";
+const MICRO_MODELS = ["google/gemini-3-flash-preview", "openai/gpt-5-mini"];
 
-export interface VendedoraV2Input {
-  supabase: SupabaseClient;
-  customerId: string;
-  inboundText: string;
-  customer?: any;
-  consultant?: any;
-}
-
-export interface VendedoraV2Result {
-  reply: string;
-  toolsApplied: string[];
-  conversationStepUpdate: string | null;
-  shouldHandoff: boolean;
-  modelUsed: string;
-  latencyMs: number;
-  customerUpdates: Record<string, any>;
-  debug?: any;
-}
-
-const HANDLERS: Record<string, Handler> = {
-  interesse: interesseHandler,
-  nome: nomeHandler,
-  valor: valorHandler,
-  simulacao: simulacaoHandler,
-  confirmacao: confirmacaoHandler as unknown as Handler,
-  foto_conta: fotoContaHandler,
-  doc: docHandler,
-  email: emailHandler,
-  finalizando: finalizandoHandler,
-  pos_cadastro: posCadastroHandler,
+const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
+  foto_conta: "aguardando_conta",
+  doc: "aguardando_documento",
+  email: "aguardando_email",
+  finalizando: "cadastro_finalizando",
 };
 
-export async function runVendedoraV2(input: VendedoraV2Input): Promise<VendedoraV2Result> {
+// Etapas "ricas" — usam RAG e crítico. Outras são mecânicas (texto curto, sem LLM auxiliar).
+const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "doc", "finalizando"]);
+
+export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraResult> {
   const t0 = Date.now();
   const { supabase, customerId, inboundText } = input;
 
-  // 1. Contexto
+  // 1) Contexto
   let customer = input.customer;
   if (customerId) {
     const { data } = await supabase.from("customers").select("*").eq("id", customerId).maybeSingle();
@@ -85,12 +43,12 @@ export async function runVendedoraV2(input: VendedoraV2Input): Promise<Vendedora
     const { data } = await supabase
       .from("consultants")
       .select("id, name, ai_persona_fluxo_b")
-      .eq("id", customer.consultant_id)
-      .maybeSingle();
+      .eq("id", customer.consultant_id).maybeSingle();
     consultant = data;
   }
   if (!consultant) throw new Error(`[vendedora-v2] consultant não encontrado`);
 
+  // Histórico
   const { data: histRows } = await supabase
     .from("conversations")
     .select("message_direction, message_text, message_type, created_at")
@@ -98,11 +56,10 @@ export async function runVendedoraV2(input: VendedoraV2Input): Promise<Vendedora
     .order("created_at", { ascending: false })
     .limit(30);
   const historyMsgs: ChatMsg[] = ((histRows || []) as any[])
-    .slice()
-    .reverse()
+    .slice().reverse()
     .map((row): ChatMsg => ({
       role: row.message_direction === "outbound" ? "assistant" : "user",
-      content: row.message_text || (row.message_type === "image" ? "[imagem]" : row.message_type === "audio" ? "[áudio]" : "[mídia]"),
+      content: row.message_text || (row.message_type === "image" ? "[imagem]" : "[mídia]"),
     }))
     .filter((m) => m.content && String(m.content).trim().length > 0);
   const historyText = historyMsgs
@@ -113,247 +70,294 @@ export async function runVendedoraV2(input: VendedoraV2Input): Promise<Vendedora
   const memory = readMemory(customer);
   const stateBefore = { ...state };
 
-  // 2. Mídia nova → avanço determinístico de flags
+  // 2) Mídia recebida → atualiza state.midia_recebida
   const novaMidia = detectarMidiaNova(customer, state);
   if (novaMidia.conta || novaMidia.doc_frente || novaMidia.doc_verso) {
     state.midia_recebida = {
-      ...(state.midia_recebida || {}),
       conta: state.midia_recebida?.conta || novaMidia.conta,
       doc_frente: state.midia_recebida?.doc_frente || novaMidia.doc_frente,
       doc_verso: state.midia_recebida?.doc_verso || novaMidia.doc_verso,
     };
-    // Se entrou a foto da conta, o lead claramente confirmou interesse.
-    if (novaMidia.conta) state.interesse_confirmado = true;
   }
 
-  // 3. Etapa antes da extração
-  const etapaAntes = decideEtapa(customer, state);
+  // 3) Extractors — rodam em paralelo com perfilador, antes de decidir etapa.
+  // Só extrai o que ainda falta — evita LLM call desnecessário.
+  const etapaAntes = state.etapa;
+  const precisaNome = !customer.name;
+  const precisaValor = !(typeof customer.electricity_bill_value === "number" && customer.electricity_bill_value > 0);
+  const precisaEmail = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customer.email || ""));
+  const aguardaInteresse = etapaAntes === "simulacao" && state.simulacao_apresentada && !state.interesse_confirmado;
 
-  // 4. Extractors — tenta capturar dado da mensagem do lead conforme a etapa
   const updates: Record<string, any> = {};
   const toolsApplied: string[] = [];
 
-  if (etapaAntes === "nome") {
-    const r = await extractName(inboundText, historyText);
-    if (r.nome && r.confianca === "alta") {
-      updates.name = r.nome;
-      updates.name_source = "vendedora_v2";
-      customer = { ...customer, name: r.nome };
-      toolsApplied.push("extrair_nome");
-    }
-  } else if (etapaAntes === "valor") {
-    const r = await extractValor(inboundText, historyText);
-    if (r.valor != null && r.confianca === "alta") {
-      updates.electricity_bill_value = r.valor;
-      customer = { ...customer, electricity_bill_value: r.valor };
-      toolsApplied.push("extrair_valor");
-    }
-  } else if (etapaAntes === "email") {
-    const r = await extractEmail(inboundText);
-    if (r.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email)) {
-      updates.email = r.email;
-      customer = { ...customer, email: r.email };
-      toolsApplied.push("extrair_email");
-    }
-  } else if (etapaAntes === "confirmacao") {
-    const r = await extractInteresse(inboundText, historyText);
-    if (r.interessado === true && r.confianca === "alta") {
-      state.interesse_confirmado = true;
-      toolsApplied.push("extrair_interesse");
-    } else if (r.interessado === false && r.confianca === "alta") {
-      // recusa explícita → handoff
-      const updatesAll = {
-        bot_paused: true,
-        bot_paused_reason: "vendedora_v2: lead recusou seguir após simulação",
-        bot_paused_at: new Date().toISOString(),
-      };
-      await supabase.from("customers").update(updatesAll).eq("id", customerId);
-      return {
-        reply: "Sem problema! Se mudar de ideia, é só me chamar 😉",
-        toolsApplied: [...toolsApplied, "escalar_humano"],
-        conversationStepUpdate: null,
-        shouldHandoff: true,
-        modelUsed: "template",
-        latencyMs: Date.now() - t0,
-        customerUpdates: updatesAll,
-      };
-    }
-  }
+  const [perfil, nomeExt, valorExt, emailExt, interesseExt] = await Promise.all([
+    perfilar(historyText, inboundText),
+    precisaNome ? extrairNome(inboundText) : Promise.resolve(null),
+    precisaValor ? extrairValor(inboundText) : Promise.resolve(null),
+    precisaEmail ? extrairEmail(inboundText) : Promise.resolve(null),
+    aguardaInteresse ? classificarInteresse(inboundText) : Promise.resolve(false),
+  ]);
 
-  // 5. Re-decide etapa após extração
-  const etapa = decideEtapa(customer, state);
-  if (etapa !== state.etapa) {
-    // mapeia confirmacao -> etapa schema (mantém compat: usamos foto_conta)
-    state.etapa = (etapa === "confirmacao" ? "simulacao" : etapa) as Etapa;
+  if (nomeExt)  { updates.name = nomeExt; updates.name_source = "vendedora_v2"; customer.name = nomeExt; toolsApplied.push("extrair_nome"); }
+  if (valorExt) { updates.electricity_bill_value = valorExt; customer.electricity_bill_value = valorExt; toolsApplied.push("extrair_valor"); }
+  if (emailExt) { updates.email = emailExt; customer.email = emailExt; toolsApplied.push("extrair_email"); }
+  if (interesseExt) { state.interesse_confirmado = true; toolsApplied.push("classificar_interesse"); }
+
+  // 4) State machine decide etapa SOMENTE com dados confirmados
+  const etapaDecidida = decideEtapa(customer, state);
+  if (etapaDecidida !== state.etapa) {
+    state.etapa = etapaDecidida;
     state.tentativas_etapa = 0;
   } else {
     state.tentativas_etapa = (state.tentativas_etapa || 0) + 1;
   }
+  state.perfil = perfil.perfil;
+  state.ultimo_perfil = perfil;
+  state.temperatura_max = Math.max(state.temperatura_max || 0, perfil.temperatura);
 
-  // 6. Perfilador + RAG paralelos (apenas em etapas ricas)
-  let perfil: PerfilOutput | null = null;
+  // 5) RAG só pra etapas ricas (paralelizado com nada — já fizemos extractors)
   let ragText = "";
-  let ragCount = 0;
-  if (RICH_ETAPAS.has(etapa)) {
+  let ragChunksLen = 0;
+  if (ETAPAS_RICAS.has(state.etapa)) {
     try {
-      const [p, chunks] = await Promise.all([
-        perfilar(historyText, inboundText),
-        buscarContexto({
-          supabase,
-          consultantId: customer.consultant_id,
-          etapa: state.etapa,
-          query: `${inboundText}\n${etapa}`,
-        }),
-      ]);
-      perfil = p;
-      ragText = formatChunks(chunks);
-      ragCount = chunks.length;
-      state.perfil = p.perfil;
-      state.ultimo_perfil = p;
-      state.temperatura_max = Math.max(state.temperatura_max || 0, p.temperatura);
-    } catch (e) {
-      console.warn("[v2] perfil/rag paralelo falhou:", (e as Error).message);
-    }
-  }
-
-  // 7. Handler
-  const ctx: HandlerCtx = {
-    supabase,
-    customerId,
-    customer,
-    consultant,
-    state,
-    perfil,
-    inboundText,
-    historyMsgs,
-    historyText,
-    memoryText: formatMemory(memory),
-    ragText,
-    representante: consultant.name || "Rafael",
-    nomeLead: customer.name || state.info?.nome || null,
-  };
-  const handler = HANDLERS[etapa] || HANDLERS["interesse"];
-  let result = await handler(ctx);
-
-  // 8. Crítico — apenas em etapas ricas
-  if (RICH_ETAPAS.has(etapa) && perfil) {
-    try {
-      const critico = await criticar({
-        texto: result.reply,
-        perfil,
-        jaTemHistorico: historyMsgs.length > 0,
-        nomeLead: ctx.nomeLead,
+      const chunks = await buscarContexto({
+        supabase, consultantId: customer.consultant_id,
+        etapa: state.etapa, query: `${inboundText} ${state.etapa}`,
       });
-      if (!critico.aprovado) {
-        // Substitui pelo template determinístico — não tenta retry no handler
-        // (microWrite já tentou retry internamente).
-        result = {
-          ...result,
-          reply: critico.sugestao || templatePorEtapa(etapa as any, ctx.nomeLead),
-        };
-      }
-    } catch (e) {
-      console.warn("[v2] critico falhou:", (e as Error).message);
+      ragText = formatChunks(chunks);
+      ragChunksLen = chunks.length;
+    } catch { /* RAG é opcional */ }
+  }
+
+  // 6) Escrita determinística OU micro-writer com TRAVA específica
+  const memoryText = formatMemory(memory);
+  let reply = "";
+  let modelUsed = "deterministic";
+
+  const writeResult = await microWrite({
+    etapa: state.etapa,
+    nomeLead: customer.name || null,
+    valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
+    representante: consultant.name || "Rafael",
+    inboundText,
+    history: historyMsgs,
+    perfil,
+    ragText,
+    memoryText,
+    basePersona: consultant.ai_persona_fluxo_b || null,
+  });
+  reply = sanitize(writeResult.text);
+  modelUsed = writeResult.modelUsed;
+
+  // Validação estrutural barata
+  const val = validarResposta(reply, state.etapa, customer.name || null);
+  if (!val.ok) {
+    reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+    modelUsed = `${modelUsed}+fallback:${val.motivo}`;
+  }
+
+  // 7) Crítico — só nas etapas ricas
+  let criticoAprovado = true;
+  const criticoProblemas: string[] = [];
+  if (ETAPAS_RICAS.has(state.etapa) && reply) {
+    const c = await criticar({
+      texto: reply, perfil,
+      jaTemHistorico: historyMsgs.length > 0,
+      plano: {
+        etapa_atual: state.etapa,
+        proxima_jogada: TRAVA_POR_ETAPA[state.etapa],
+        tom: "consultivo_seguro",
+        info_a_capturar: [],
+        objecao_a_tratar: null,
+        deve_pedir_humano: false,
+        deve_agendar_followup: false,
+        razao_da_jogada: "v2 state machine",
+      },
+      nomeLead: customer.name || null,
+    });
+    criticoAprovado = c.aprovado;
+    criticoProblemas.push(...c.problemas);
+    if (!c.aprovado) {
+      reply = sanitize(c.sugestao || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+      modelUsed = `${modelUsed}+critico_reprovou`;
     }
   }
 
-  // 9. Aplica updates
-  Object.assign(updates, result.updates);
-  Object.assign(state, result.stateUpdates);
-  toolsApplied.push(...result.toolsApplied);
-
-  let shouldHandoff = !!result.handoff;
-  if (result.handoff) {
-    updates.bot_paused = true;
-    updates.bot_paused_reason = `vendedora_v2: ${result.handoff.reason}`;
-    updates.bot_paused_at = new Date().toISOString();
+  // 8) Pós-escrita: se a etapa era simulacao e geramos texto, marca simulacao_apresentada
+  if (state.etapa === "simulacao" && !state.simulacao_apresentada) {
+    state.simulacao_apresentada = true;
   }
 
-  // Tentativas demais → handoff
-  if (state.tentativas_etapa >= 4 && !shouldHandoff) {
+  // 9) Step do banco
+  let conversationStepUpdate: string | null = STEP_BY_ETAPA[state.etapa] || null;
+  let shouldHandoff = false;
+
+  if (state.tentativas_etapa >= 4) {
     shouldHandoff = true;
     updates.bot_paused = true;
-    updates.bot_paused_reason = `vendedora_v2: ${state.tentativas_etapa} tentativas na etapa ${etapa}`;
+    updates.bot_paused_reason = `vendedora_v2: ${state.tentativas_etapa} tentativas na etapa ${state.etapa}`;
     updates.bot_paused_at = new Date().toISOString();
   }
 
-  const conversationStepUpdate = updates.conversation_step ?? null;
+  if (conversationStepUpdate) updates.conversation_step = conversationStepUpdate;
   updates.fluxo_b_state = state;
   updates.updated_at = new Date().toISOString();
   await supabase.from("customers").update(updates).eq("id", customerId);
 
-  // 10. Closer
+  // 10) Closer — checklist completo? aciona finalize-capture
   let closerResult: Awaited<ReturnType<typeof tentarFechar>> | null = null;
   const checklist = checklistMinimo({ ...customer, ...updates });
-  const deveTentar = (result.closerHint || etapa === "finalizando" || checklist.pronto) && !shouldHandoff;
-  if (deveTentar) {
+  if ((state.etapa === "finalizando" || checklist.pronto) && !shouldHandoff) {
     closerResult = await tentarFechar(supabase, customerId);
     if (closerResult.ok && closerResult.acionou) {
-      await supabase.from("customers").update({ conversation_step: "portal_submitting" }).eq("id", customerId);
       state.cadastro_finalizado = true;
+      await supabase.from("customers").update({
+        conversation_step: "portal_submitting",
+        fluxo_b_state: state,
+      }).eq("id", customerId);
+      conversationStepUpdate = "portal_submitting";
     } else if (!closerResult.ok && closerResult.portalMissing?.length) {
       shouldHandoff = true;
       await supabase.from("customers").update({
         bot_paused: true,
-        bot_paused_reason: `vendedora_v2: cadastro incompleto pelo portal — ${closerResult.portalMissing.slice(0, 4).join(", ")}`,
+        bot_paused_reason: `vendedora_v2: portal rejeitou — ${closerResult.portalMissing.slice(0,4).join(", ")}`,
         bot_paused_at: new Date().toISOString(),
       }).eq("id", customerId);
     }
   }
 
-  // 11. ai_decisions
+  // 11) Logging
   try {
     await supabase.from("ai_decisions").insert({
       consultant_id: customer.consultant_id,
       customer_id: customerId,
       phase: "vendedora_v2",
       tool_called: toolsApplied.join(",") || null,
-      model: result.modelUsed || "v2",
+      model: modelUsed,
       user_input: inboundText.slice(0, 500),
       ai_output: {
-        text: result.reply.slice(0, 500),
+        text: reply.slice(0, 500),
         tools: toolsApplied,
-        etapa_antes: etapaAntes,
-        etapa_depois: etapa,
         perfil,
-        rag_chunks: ragCount,
+        etapa_antes: etapaAntes,
+        etapa_decidida: state.etapa,
+        rag_chunks: ragChunksLen,
+        critico_aprovado: criticoAprovado,
+        critico_problemas: criticoProblemas,
         state_before: stateBefore,
         state_after: state,
+        validacao: val,
       },
       step_before: customer.conversation_step || null,
       step_after: conversationStepUpdate,
       latency_ms: Date.now() - t0,
       source: "vendedora_v2",
     });
-  } catch (_) { /* best-effort */ }
+  } catch { /* best-effort */ }
 
-  // Memória — fire and forget
+  // 12) Memória (fire and forget)
   void atualizarMemoria({
-    supabase,
-    customerId,
-    memoriaAtual: memory,
-    history: historyText,
-    inbound: inboundText,
-    reply: result.reply,
+    supabase, customerId, memoriaAtual: memory, history: historyText,
+    inbound: inboundText, reply,
   });
 
   return {
-    reply: result.reply,
+    reply: reply || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value),
     toolsApplied,
     conversationStepUpdate,
     shouldHandoff,
-    modelUsed: result.modelUsed || "v2",
+    modelUsed,
     latencyMs: Date.now() - t0,
     customerUpdates: updates,
     debug: {
-      etapa_antes: etapaAntes,
-      etapa_depois: etapa,
       perfil,
-      ragChunks: ragCount,
+      plano: { etapa_atual: state.etapa, trava: TRAVA_POR_ETAPA[state.etapa] },
+      ragChunks: ragChunksLen,
+      criticoAprovado,
+      criticoProblemas,
       stateBefore,
       stateAfter: state,
       checklist,
       closer: closerResult,
     },
   };
+}
+
+// ───── micro-writer ─────────────────────────────────────────────────────
+// Prompt mínimo, focado na TRAVA da etapa. Sem persona inflada, sem plano,
+// sem "regras absolutas" enterradas. O LLM vê 1 trava + 1 contexto + escreve.
+async function microWrite(args: {
+  etapa: Etapa;
+  nomeLead: string | null;
+  valorConta: number | null;
+  representante: string;
+  inboundText: string;
+  history: ChatMsg[];
+  perfil: any;
+  ragText: string;
+  memoryText: string;
+  basePersona: string | null;
+}): Promise<{ text: string; modelUsed: string }> {
+  const trava = TRAVA_POR_ETAPA[args.etapa];
+  const economia = args.valorConta ? `R$ ${(args.valorConta * 0.2).toFixed(0)}/mês` : null;
+
+  const sys = `Você é ${args.representante}, vendedora da iGreen Energy no WhatsApp.
+
+# 🔒 TRAVA DESTA RESPOSTA (etapa: ${args.etapa})
+${trava}
+
+# Dados confirmados
+- nome: ${args.nomeLead || "(ainda não)"}
+- valor da conta: ${args.valorConta ? `R$ ${args.valorConta.toFixed(2)}` : "(ainda não)"}
+${economia ? `- economia estimada (×0,20): ${economia}` : ""}
+
+# Perfil do lead
+${args.perfil.perfil} · sentimento ${args.perfil.sentimento} · temperatura ${args.perfil.temperatura}
+
+# Regras absolutas (curtas)
+- MÁX 3 linhas, ≤600 chars, *negrito assim* (nunca **assim**), sem bullets.
+- 1 pergunta no final (exceto pos_cadastro).
+- Use o nome do lead se já souber.
+- Nunca prometa vídeo/áudio/link/retorno futuro.
+- Nunca "como posso te ajudar", "me conta mais", "estou à disposição".
+${args.ragText ? `\n# Contexto relevante\n${args.ragText.slice(0, 1200)}` : ""}
+${args.memoryText ? `\n${args.memoryText.slice(0, 600)}` : ""}
+
+Responda APENAS a mensagem que vai ao lead, em PT-BR.`;
+
+  const messages: ChatMsg[] = [
+    { role: "system", content: sys },
+    ...args.history.slice(-10),
+    { role: "user", content: args.inboundText },
+  ];
+  try {
+    const r = await chatCascade({ models: MICRO_MODELS, messages, temperature: 0.6 });
+    return { text: r.text, modelUsed: r.modelUsed };
+  } catch (e) {
+    return { text: "", modelUsed: `error:${(e as Error).message.slice(0, 60)}` };
+  }
+}
+
+function sanitize(raw: string): string {
+  let s = String(raw || "").trim();
+  if (!s) return s;
+  s = s.replace(/\*\*(.+?)\*\*/g, "*$1*");
+  s = s.replace(/^[ \t]*[-*][ \t]+/gm, "");
+  s = s.replace(/\n{3,}/g, "\n\n");
+  const lines = s.split("\n");
+  const kept: string[] = [];
+  let n = 0;
+  for (const ln of lines) {
+    const t = ln.trim();
+    if (t) { if (n >= 4) continue; n++; }
+    kept.push(ln);
+  }
+  s = kept.join("\n").trim();
+  if (s.length > 600) {
+    const cut = s.slice(0, 600);
+    const stop = Math.max(cut.lastIndexOf("."), cut.lastIndexOf("?"), cut.lastIndexOf("!"));
+    s = stop > 200 ? cut.slice(0, stop + 1) : cut;
+  }
+  return s.trim();
 }

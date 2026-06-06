@@ -58,9 +58,7 @@ ${args.texto}`;
       sugestao: parsed.sugestao ? String(parsed.sugestao).slice(0, 800) : undefined,
     };
   } catch (e) {
-    // Não silencia mais. Se o crítico cai, devolve aprovado:false para que
-    // o orquestrador entre no fallback determinístico em vez de soltar
-    // mensagem não-validada pro lead.
-    return { aprovado: false, problemas: [`critico indisponivel: ${(e as Error).message.slice(0, 120)}`] };
+    // V2 hardening: silêncio do crítico NÃO é mais aprovação automática.
+    return { aprovado: false, problemas: [`critico_falhou:${(e as Error).message.slice(0,80)}`] };
   }
 }

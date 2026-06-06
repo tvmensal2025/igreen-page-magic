@@ -49,7 +49,7 @@ export interface FluxoBState {
   ultimo_perfil?: PerfilOutput | null;
   /** Marcador interno — campos que o webhook injetou nesta call (conta, doc) */
   midia_recebida?: { conta?: boolean; doc_frente?: boolean; doc_verso?: boolean };
-  /** v2 — flags do state machine determinístico */
+  /** V2: flags determinísticas que destravam transições */
   simulacao_apresentada?: boolean;
   interesse_confirmado?: boolean;
   cadastro_finalizado?: boolean;
@@ -73,19 +73,6 @@ export interface CriticoOutput {
   sugestao?: string;
 }
 
-/** Ordem canônica do funil — usada por state-machine e inferência retroativa. */
-export const ETAPAS_ORDER: Etapa[] = [
-  "interesse",
-  "nome",
-  "valor",
-  "simulacao",
-  "foto_conta",
-  "doc",
-  "email",
-  "finalizando",
-  "pos_cadastro",
-];
-
 export const DEFAULT_STATE: FluxoBState = {
   etapa: "interesse",
   perfil: null,
@@ -100,3 +87,6 @@ export const DEFAULT_STATE: FluxoBState = {
   cadastro_finalizado: false,
 };
 
+export const ETAPAS_ORDER: Etapa[] = [
+  "interesse","nome","valor","simulacao","foto_conta","doc","email","finalizando","pos_cadastro",
+];
