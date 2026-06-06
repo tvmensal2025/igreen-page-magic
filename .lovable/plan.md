@@ -1,97 +1,79 @@
-# Plano — Migrar sync iGreen para Worker Playwright em VPS
 
-## Contexto
-O teste agora mostrou exatamente o problema que tentamos contornar: `POST /v1/login` da API iGreen devolveu **401 "Unauthorized action"** mesmo com email/senha corretos (provavelmente Cloudflare/captcha bloqueando login via fetch). A solução pelo bookmarklet foi um paliativo. A solução robusta é o que você já tem para o cadastro de leads: um **worker Playwright rodando na sua VPS** que loga no portal como um navegador real.
+# Configurar `igreen-sync-worker` no Easypanel
 
-O projeto já tem essa arquitetura para **escrita** no portal (`_shared/portal-worker.ts` → dispatcher HTTP que fala com workers externos em URLs como `http://igreen_portal-worker-2:3101`). Vamos seguir o mesmo padrão para **leitura** (sync de clientes e rede) e remover toda a abordagem do bookmarklet, que ficaria duplicada.
+Como o GitHub App **já tem acesso** ao repo e mesmo assim aparece "Repository not found", o problema está **nos valores do formulário Source → Github**. O Easypanel é muito literal: qualquer barra a mais, owner errado ou ramo inexistente devolve esse erro genérico.
 
-## O que será REMOVIDO (abordagem bookmarklet desta sessão)
+## 1. Valores EXATOS na aba Source → Github
 
-Arquivos:
-- `src/pages/AdminIgreen.tsx`
-- `src/pages/IgreenConnect.tsx`
-- `supabase/functions/igreen-token-receive/index.ts`
-- Rotas `/admin/igreen` e `/igreen-connect` em `src/App.tsx`
-- Bloco `[functions.igreen-token-receive] verify_jwt = false` em `supabase/config.toml`
+Copie/cole exatamente assim (sem aspas, sem barras extras):
 
-Schema (via migration):
-- Colunas em `consultants`: `igreen_access_token`, `igreen_token_updated_at`, `igreen_token_expires_at`, `igreen_token_expired`, `igreen_connect_code`
-- Trigger `trg_ensure_igreen_connect_code` + função `ensure_igreen_connect_code`
-- Mantém: `igreen_consultor_id` (cache útil para o worker), `igreen_portal_email`, `igreen_portal_password` (continuam sendo as credenciais que o worker usa)
-
-## O que será MANTIDO (reutilizável)
-
-`supabase/functions/sync-igreen-customers/index.ts`:
-- Helpers `buildRecord()`, `mapStatus()`, `normalizePhone()`, `safeStr/Num()`, `cleanDevolutiva()`
-- Toda a lógica de upsert em `customers` com proteção de `mid-conversation`
-- Sync de rede com upsert em `network_members` e remoção de obsoletos
-- Modo `cron` que itera sobre todos consultores aprovados
-
-`supabase/functions/_shared/portal-worker.ts` — **não tocar**, é a pipeline de escrita (cadastro de leads) e é totalmente independente.
-
-## O que será CONSTRUÍDO
-
-### 1. Worker Playwright externo (na sua VPS, fora do repo Lovable)
-
-Especificação técnica, que entrego em um documento `docs/igreen-sync-worker.md` no repo (Node + Playwright, você sobe na VPS via Docker no mesmo padrão dos workers já existentes):
-
-```
-POST /sync-customers
-  body: { portal_email, portal_password, since?: ISO_date }
-  resposta: {
-    ok: true,
-    consultor_id: "...",
-    customers: [ { ...campos crus do portal... } ]
-  }
-
-POST /sync-network
-  body: { portal_email, portal_password }
-  resposta: { ok: true, members: [...] }
-
-GET /health → { ok: true, sessions: N }
+```text
+Proprietário (Owner):   tvmensal2025
+Repositório (Repository): portal-oficial-igreen
+Ramo (Branch):           main
+Caminho de Build (Build Path):  /worker-igreen-sync
 ```
 
-Comportamento esperado do worker:
-- Mantém um **pool de sessões Playwright** (1 por email), reaproveita o cookie entre chamadas (TTL 30 min) para não logar a cada request — evita rate-limit e captcha
-- Login real no `https://escritorio.igreenenergy.com.br` com browser headless, salva cookies
-- Depois do login, chama as APIs `/customer-map` e `/network-map` **usando os cookies da sessão** (mesma origem, sem CORS/Cloudflare bloqueando)
-- Retorna JSON cru — todo o parsing/mapeamento continua sendo feito pelo `sync-igreen-customers` no Supabase
+Pontos onde a maioria erra e dá "Repository not found":
 
-### 2. Refator do `sync-igreen-customers`
+- **Owner** é só `tvmensal2025` — NÃO colocar `tvmensal2025/portal-oficial-igreen` ali.
+- **Repository** é só `portal-oficial-igreen` — sem `.git`, sem URL completa, sem owner junto.
+- **Branch** precisa existir no GitHub. Confirme em `https://github.com/tvmensal2025/portal-oficial-igreen/branches` que existe `main` (e não `master`).
+- **Build Path** começa com `/` e é o **diretório**, não um arquivo. Correto: `/worker-igreen-sync`. Errado: `worker-igreen-sync/`, `/worker-igreen-sync/Dockerfile`, `./worker-igreen-sync`.
 
-Remove Strategy 1 (token) e Strategy 2 (login direto). Substitui por uma única chamada:
+Depois de preencher, clicar em **Salvar**. Se aparecer "Repository not found" mesmo assim, ir para o passo 2.
 
+## 2. Reautorizar o GitHub App (mesmo já tendo acesso)
+
+Quando o repo foi **renomeado** ou **transferido** depois da instalação do app, o Easypanel guarda o ID antigo e dá "not found" até reautorizar. Resolve assim:
+
+1. Abrir: `https://github.com/settings/installations`
+2. Clicar em **Configure** no app **Easypanel**
+3. Em **Repository access**, escolher **All repositories** (mais simples) — OU em **Only select repositories** garantir que `portal-oficial-igreen` está marcado, **remover** e **adicionar de novo** (força o refresh).
+4. **Save**.
+5. Voltar no Easypanel, na mesma tela Source → Github, **recarregar a página** (F5) e salvar de novo.
+
+## 3. Restante da configuração do serviço
+
+Depois que o Source aceitar, completar:
+
+**Aba Build**
+- Builder: **Dockerfile** (Easypanel detecta sozinho dentro de `/worker-igreen-sync`)
+
+**Aba Environment**
+```text
+PORT=3102
+NODE_ENV=production
+PLAYWRIGHT_HEADLESS=true
+WORKER_TOKEN=<gerar um segredo longo aleatório e guardar>
 ```
-POST $IGREEN_SYNC_WORKER_URL/sync-customers
-  body: { portal_email, portal_password }
+
+**Aba Network / Domains**
+- Porta exposta: `3102`
+- Domínio: `igreen-sync.d9v83a.easypanel.host`
+
+**Recursos sugeridos:** 1 CPU / 1 GB RAM (Chromium consome memória).
+
+## 4. Conectar no Supabase (depois do deploy verde)
+
+Rodar uma vez no SQL Editor do Supabase, usando o **mesmo** `WORKER_TOKEN` do passo 3:
+
+```sql
+INSERT INTO settings (key, value) VALUES
+  ('igreen_sync_worker_url',    'https://igreen-sync.d9v83a.easypanel.host'),
+  ('igreen_sync_worker_secret', '<mesmo WORKER_TOKEN do Easypanel>')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 ```
 
-Se worker offline ou login falhou, devolve erro claro pro frontend (mesma estrutura que hoje, só muda a fonte).
+## 5. Validação
 
-### 3. Configuração
+```bash
+curl https://igreen-sync.d9v83a.easypanel.host/health
+# esperado: {"ok":true,"sessions":0,"uptime_s":...}
+```
 
-Nova env/secret: `IGREEN_SYNC_WORKER_URL` (apontando para a sua VPS, ex.: `http://igreen-sync-worker:3102` ou URL pública). Lida via `Deno.env.get()` com fallback opcional em `settings.igreen_sync_worker_url` (mesmo padrão do portal-worker).
+Se o health responder, o worker está pronto e a edge function `sync-igreen-customers` já passa a usar ele automaticamente.
 
-### 4. Frontend (já está quase pronto)
+---
 
-Todos os call-sites (`DashboardTab`, `NetworkPanel`, `CustomerManager`) já foram simplificados na sessão passada para **não passar senha** — chamam só com `consultant_id`. Nada mais a mudar lá. Só remover a página `/admin/igreen` do menu admin (se estiver linkada).
-
-## Ordem de execução proposta
-
-1. **Migration** removendo as 5 colunas + trigger + função do bookmarklet. (Reversível via backup do schema atual.)
-2. **Deletar arquivos** das páginas/rotas/edge function do bookmarklet + limpar `App.tsx` e `config.toml`.
-3. **Refatorar** `sync-igreen-customers/index.ts` para chamar o worker (Strategy única).
-4. **Criar `docs/igreen-sync-worker.md`** com a spec completa do worker (endpoints, schemas de request/response, exemplo de Dockerfile, variáveis de ambiente, comportamento de sessão). Você usa esse doc para implementar o worker na VPS.
-5. **Adicionar** `IGREEN_SYNC_WORKER_URL` como secret no Lovable Cloud (após você subir o worker e ter a URL).
-6. **Testar** end-to-end: clicar "Sincronizar" no admin → ver clientes voltando.
-
-## Detalhes técnicos
-- O worker NÃO precisa de acesso ao Supabase — só faz login no portal e devolve JSON. Toda escrita no banco continua sendo do edge function.
-- Credenciais (`igreen_portal_email`/`igreen_portal_password`) continuam armazenadas no `consultants` com o REVOKE de SELECT que aplicamos antes — só o edge function (service_role) lê e passa pro worker via HTTPS.
-- Recomendação: rodar o worker atrás de HTTPS + um header secreto (`X-Worker-Token`) verificado nas duas pontas, mesmo padrão dos workers de cadastro.
-- Sem mexer em nada de Facebook, WhatsApp, ou cadastro de leads — escopo cirúrgico.
-
-## Não está no escopo
-- Implementar o código do worker Playwright em si (você sobe na VPS; eu entrego só a spec).
-- Mexer no `portal-worker.ts` ou em qualquer fluxo de cadastro de leads.
-- Mexer em qualquer integração Facebook.
+**O que eu preciso de você antes de prosseguir:** confirme que vai usar os valores do passo 1 exatamente como acima (em especial o **Build Path = `/worker-igreen-sync`** e o **Owner = `tvmensal2025` sozinho**). Se mesmo assim falhar, me manda o print da tela Source com os campos preenchidos que eu te aponto o campo errado.
