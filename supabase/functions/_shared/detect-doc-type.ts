@@ -255,28 +255,31 @@ async function callGemini(prompt: string, imagePart: any, apiKey: string, model:
 
 /** Versão estruturada que retorna tipo + confiança + origem da decisão. */
 export async function detectDocumentTypeDetailed(input: DetectInput): Promise<DetectResult> {
-  if (!input.geminiApiKey) {
-    // Sem Gemini não dá para classificar — mantém comportamento legado (rg_antigo) para não travar.
-    return { tipo: "rg_antigo", confianca: 0, source: "fallback" };
+  const hasGemini = !!input.geminiApiKey;
+  const hasLovable = !!Deno.env.get("LOVABLE_API_KEY");
+  if (!hasGemini && !hasLovable) {
+    // Sem provedor: assume documento válido (rg_antigo) para o OCR seguir, em vez de rejeitar.
+    return { tipo: "rg_antigo", confianca: 0, source: "fallback", motivo: "classificador indisponível" };
   }
   const imagePart = await fetchImagePart(input);
   if (!imagePart) {
-    return { tipo: "rg_antigo", confianca: 0, source: "fallback" };
+    return { tipo: "rg_antigo", confianca: 0, source: "fallback", motivo: "imagem não disponível" };
   }
+  // callGemini cai automaticamente para Lovable Gateway quando o direto falha.
+  const apiKey = input.geminiApiKey || "__no_gemini__";
 
   // ── Pass 1: gemini-2.5-flash + checklist ──
-  const raw1 = await callGemini(PROMPT_PASS1, imagePart, input.geminiApiKey, "gemini-2.5-flash");
+  const raw1 = await callGemini(PROMPT_PASS1, imagePart, apiKey, "gemini-2.5-flash");
   const parsed1 = parseDetectJson(raw1);
   if (parsed1 && parsed1.confianca >= 0.80) {
     console.log(`🤖 [detectDoc] pass1 confiante: ${parsed1.tipo} (${parsed1.confianca.toFixed(2)}) motivo=${parsed1.motivo || "-"} sinais=${JSON.stringify(parsed1.sinais)}`);
     return { tipo: parsed1.tipo, confianca: parsed1.confianca, source: "gemini_pass1", sinais: parsed1.sinais, motivo: parsed1.motivo };
   }
-
   if (!parsed1) console.warn(`[detectDoc] pass1 raw vazio/inválido: "${raw1.substring(0, 300)}"`);
 
-  // ── Pass 2: gemini-2.5-pro (mais preciso) ──
+  // ── Pass 2: gemini-2.5-pro ──
   console.log(`🤖 [detectDoc] pass1 ambíguo (${parsed1 ? parsed1.confianca.toFixed(2) : "no-parse"}) — pass2 com 2.5-pro`);
-  const raw2 = await callGemini(PROMPT_PASS2, imagePart, input.geminiApiKey, "gemini-2.5-pro");
+  const raw2 = await callGemini(PROMPT_PASS2, imagePart, apiKey, "gemini-2.5-pro");
   const parsed2 = parseDetectJson(raw2);
   if (parsed2 && parsed2.confianca >= 0.60) {
     console.log(`🤖 [detectDoc] pass2 decidiu: ${parsed2.tipo} (${parsed2.confianca.toFixed(2)}) motivo=${parsed2.motivo || "-"} sinais=${JSON.stringify(parsed2.sinais)}`);
@@ -286,7 +289,7 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
 
   // ── Pass 3: desempate ──
   console.log(`🤖 [detectDoc] pass2 ambíguo — pass3 desempate`);
-  const raw3 = await callGemini(PROMPT_PASS3, imagePart, input.geminiApiKey, "gemini-2.5-flash");
+  const raw3 = await callGemini(PROMPT_PASS3, imagePart, apiKey, "gemini-2.5-flash");
   const parsed3 = parseDetectJson(raw3);
   if (parsed3) {
     console.log(`🤖 [detectDoc] pass3 decidiu: ${parsed3.tipo} (${parsed3.confianca.toFixed(2)}) motivo=${parsed3.motivo || "-"} sinais=${JSON.stringify(parsed3.sinais)}`);
@@ -294,14 +297,18 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
   }
   console.warn(`[detectDoc] pass3 raw vazio/inválido: "${raw3.substring(0, 300)}"`);
 
-  // Último recurso: melhor estimativa ou fallback marcado (confianca=0)
+  // Último recurso: melhor estimativa válida.
   const best = parsed2 || parsed1;
   if (best) {
     console.log(`🤖 [detectDoc] usando melhor estimativa: ${best.tipo} (${best.confianca.toFixed(2)})`);
     return { tipo: best.tipo, confianca: best.confianca, source: "gemini_pass2", sinais: best.sinais, motivo: best.motivo };
   }
-  console.warn(`⚠️ [detectDoc] sem parse nas 3 passadas — retornando "outro" para o handler rejeitar e pedir RG/CNH de novo`);
-  return { tipo: "outro", confianca: 0, source: "fallback", motivo: "não identificado" };
+  // 🛡️ FAIL-OPEN: as 3 passadas falharam por motivo TÉCNICO (429, timeout, parse).
+  // NÃO rejeitar como "outro" — isso travava documentos válidos quando a IA
+  // estava em quota. Em vez disso, assume rg_antigo (default histórico) e deixa
+  // o OCR real decidir. Se for um arquivo errado, o OCR falha e o retry pede de novo.
+  console.warn(`⚠️ [detectDoc] sem parse nas 3 passadas — FAIL-OPEN: assumindo rg_antigo para o OCR seguir`);
+  return { tipo: "rg_antigo", confianca: 0, source: "fallback", motivo: "classificador indisponível (fail-open)" };
 }
 
 /** API compatível com o código antigo. Mapeia "outro" para "rg_antigo" (default histórico). */
