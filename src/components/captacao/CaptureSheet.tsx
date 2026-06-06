@@ -415,7 +415,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           </TabsContent>
         </Tabs>
 
-        <footer className="border-t border-border/60 bg-card/80 backdrop-blur sticky bottom-0 z-20 p-2 space-y-1.5">
+        <footer className="border-t border-border/60 bg-gradient-to-t from-card via-card/95 to-card/80 backdrop-blur sticky bottom-0 z-20 p-2.5 space-y-1.5 shadow-[0_-4px_20px_-8px_hsl(var(--primary)/0.15)]">
           <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
           {customer?.conversation_step && ["finalizando", "portal_submitting", "aguardando_otp", "validando_otp"].includes(customer.conversation_step) && (
             <p className="text-[10px] text-center text-primary font-semibold animate-pulse">
@@ -424,23 +424,23 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           )}
           <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
           {canSubmit && hasUnconfirmedOcr && !isRegistered && (
-            <p className="text-[10px] text-amber-300 leading-tight px-1">
+            <p className="text-[10px] text-amber-600 dark:text-amber-300 leading-tight px-1">
               ⚠️ {!billConfirmed && "Conta de luz"}{!billConfirmed && !docConfirmed && " e "}{!docConfirmed && "Documento"} sem confirmação visual — envio liberado mesmo assim.
             </p>
           )}
           {isRegistered ? (
-            <div className="rounded-md border border-emerald-500/50 bg-gradient-to-r from-emerald-500/20 to-lime-500/15 px-3 py-2 text-center shadow-[0_0_28px_hsl(142_70%_45%/0.35)]">
-              <p className="text-xs font-black text-emerald-200 tracking-wide">✅ LEAD CADASTRADO NA iGREEN</p>
+            <div className="rounded-xl border border-primary/40 bg-gradient-to-r from-primary/15 to-primary/8 px-3 py-2.5 text-center shadow-[0_0_28px_hsl(var(--primary)/0.25)]">
+              <p className="text-xs font-black text-primary tracking-wide">✅ LEAD CADASTRADO NA iGREEN</p>
               {(customer as any)?.igreen_code && (
-                <p className="text-[11px] text-emerald-100 mt-0.5">Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
+                <p className="text-[11px] text-primary/80 mt-0.5">Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0 gap-1 font-bold h-9 px-2 text-[10px]"
+                className="shrink-0 gap-1 font-semibold h-9 px-2.5 text-[10px] rounded-full border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
                 onClick={() => setSeqOpen(true)}
                 disabled={pendingSteps.length === 0 || needsName}
                 title={needsName ? "Peça o nome do lead primeiro" : pendingSteps.length === 0 ? "Tudo enviado" : `Disparar ${pendingSteps.length} passos pendentes`}
@@ -449,12 +449,12 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               </Button>
               <Button
                 size="lg"
-                className={`flex-1 font-bold gap-1 h-9 text-xs ${
+                className={`flex-1 font-bold gap-1.5 h-9 text-xs rounded-full transition-all ${
                   canSubmit
                     ? (hasUnconfirmedOcr
-                        ? "bg-gradient-to-r from-amber-500 to-emerald-500 text-white hover:opacity-95 shadow-lg shadow-amber-500/30"
-                        : "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-95 animate-exec-energy shadow-lg shadow-emerald-500/30")
-                    : "bg-muted text-muted-foreground opacity-60 cursor-not-allowed hover:bg-muted"
+                        ? "bg-gradient-to-r from-amber-500 to-primary text-white hover:shadow-lg hover:shadow-amber-500/30 shadow-md shadow-amber-500/20"
+                        : "bg-gradient-to-r from-primary to-primary/85 text-primary-foreground hover:shadow-lg hover:shadow-primary/40 shadow-md shadow-primary/30 animate-exec-energy")
+                    : "bg-muted text-muted-foreground opacity-70 cursor-not-allowed hover:bg-muted"
                 }`}
                 onClick={handleSubmit}
                 disabled={submitting || !canSubmit}
