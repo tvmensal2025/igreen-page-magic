@@ -15,6 +15,7 @@
 import { aiChatCascade, aiChat, type AIChatMessage } from "./ai-gateway.ts";
 import { buildFluxoBSystemPrompt, FLUXO_B_TOOLS, type FluxoBContext } from "./fluxo-b-prompt.ts";
 import { maybeUpdateSummary } from "./ai-summary.ts";
+import { runVendedoraV1 } from "./vendedora-v1/index.ts";
 
 // SupabaseClient genérico para evitar conflitos de tipos entre callers
 // deno-lint-ignore no-explicit-any
