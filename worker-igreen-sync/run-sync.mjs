@@ -223,12 +223,37 @@ async function main() {
 
     const emailSel = 'input[type="email"], input[name="email"], input[name="usuario"], input[name="login"]';
     const passSel = 'input[type="password"]';
-    await page.waitForSelector(emailSel, { timeout: 20000 });
+
+    // Aguarda mais tempo e tira screenshot para debug
+    console.log('[login] aguardando formulário...');
+    await page.waitForTimeout(3000);
+
+    // Screenshot para debug
+    await page.screenshot({ path: '/tmp/login-before.png', fullPage: true }).catch(() => {});
+    console.log('[login] título da página:', await page.title().catch(() => 'N/A'));
+    console.log('[login] URL atual:', page.url());
+
+    // Verifica se há challenge do Cloudflare
+    const pageText = await page.locator('body').innerText().catch(() => '');
+    if (pageText.includes('Attention Required') || pageText.includes('Checking your browser') || pageText.includes('Just a moment')) {
+      console.log('[login] Cloudflare challenge detectado, aguardando 10s...');
+      await page.waitForTimeout(10000);
+      await page.screenshot({ path: '/tmp/login-challenge.png', fullPage: true }).catch(() => {});
+    }
+
+    try {
+      await page.waitForSelector(emailSel, { timeout: 30000 });
+    } catch (e) {
+      const bodyNow = await page.locator('body').innerText().catch(() => '');
+      console.error(`[login] formulário não apareceu. Body: ${bodyNow.slice(0, 500)}`);
+      await page.screenshot({ path: '/tmp/login-error.png', fullPage: true }).catch(() => {});
+      process.exit(1);
+    }
 
     await page.fill(emailSel, PORTAL_EMAIL);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500 + Math.random() * 500);
     await page.fill(passSel, PORTAL_PASSWORD);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500 + Math.random() * 500);
 
     const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
     await Promise.all([
@@ -236,7 +261,8 @@ async function main() {
       page.click(submitSel).catch(() => page.keyboard.press('Enter')),
     ]);
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: '/tmp/login-after.png', fullPage: true }).catch(() => {});
 
     const currentUrl = page.url();
     console.log(`[login] URL após login: ${currentUrl}`);

@@ -57,3 +57,11 @@ jobs:
           SUPABASE_URL: 'https://zlzasfhcxcznaprrragl.supabase.co'
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node run-sync.mjs
+
+      - name: Upload screenshots (debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: login-screenshots
+          path: /tmp/login-*.png
+          if-no-files-found: ignore
