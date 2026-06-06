@@ -2959,6 +2959,7 @@ export type Database = {
           fluxo_b_state: Json
           fluxo_b_variant: string
           followup_count: number
+          followup_hook: string | null
           id: string
           igreen_code: string | null
           igreen_link: string | null
@@ -3063,6 +3064,7 @@ export type Database = {
           summary_updated_at: string | null
           tipo_produto: string
           updated_at: string
+          variant_id: string | null
         }
         Insert: {
           address_city?: string | null
@@ -3144,6 +3146,7 @@ export type Database = {
           fluxo_b_state?: Json
           fluxo_b_variant?: string
           followup_count?: number
+          followup_hook?: string | null
           id?: string
           igreen_code?: string | null
           igreen_link?: string | null
@@ -3248,6 +3251,7 @@ export type Database = {
           summary_updated_at?: string | null
           tipo_produto?: string
           updated_at?: string
+          variant_id?: string | null
         }
         Update: {
           address_city?: string | null
@@ -3329,6 +3333,7 @@ export type Database = {
           fluxo_b_state?: Json
           fluxo_b_variant?: string
           followup_count?: number
+          followup_hook?: string | null
           id?: string
           igreen_code?: string | null
           igreen_link?: string | null
@@ -3433,6 +3438,7 @@ export type Database = {
           summary_updated_at?: string | null
           tipo_produto?: string
           updated_at?: string
+          variant_id?: string | null
         }
         Relationships: [
           {
@@ -4080,6 +4086,42 @@ export type Database = {
             referencedColumns: ["consultant_id"]
           },
         ]
+      }
+      flow_variants: {
+        Row: {
+          consultant_overrides: Json
+          created_at: string
+          descricao: string | null
+          fluxo: string
+          id: string
+          is_active: boolean
+          nome: string
+          updated_at: string
+          weight: number
+        }
+        Insert: {
+          consultant_overrides?: Json
+          created_at?: string
+          descricao?: string | null
+          fluxo: string
+          id: string
+          is_active?: boolean
+          nome: string
+          updated_at?: string
+          weight?: number
+        }
+        Update: {
+          consultant_overrides?: Json
+          created_at?: string
+          descricao?: string | null
+          fluxo?: string
+          id?: string
+          is_active?: boolean
+          nome?: string
+          updated_at?: string
+          weight?: number
+        }
+        Relationships: []
       }
       force_bot_phones: {
         Row: {
