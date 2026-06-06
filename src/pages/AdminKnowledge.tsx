@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Zap, Brain, UserCheck, BookOpen, Loader2 } from "lucide-react";
 import FaqSection from "@/components/admin/fluxo/FaqSection";
 import AdminFaq from "./AdminFaq";
+import EmbeddingsControl from "@/components/admin/knowledge/EmbeddingsControl";
 
 export default function AdminKnowledge() {
   const navigate = useNavigate();
