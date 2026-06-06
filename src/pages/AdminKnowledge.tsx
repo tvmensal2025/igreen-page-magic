@@ -149,7 +149,8 @@ export default function AdminKnowledge() {
             )}
           </TabsContent>
 
-          <TabsContent value="ia" className="mt-4">
+          <TabsContent value="ia" className="mt-4 space-y-4">
+            <EmbeddingsControl />
             <AdminFaq embedded />
           </TabsContent>
         </Tabs>
