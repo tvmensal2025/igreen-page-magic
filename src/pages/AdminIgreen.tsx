@@ -51,7 +51,7 @@ const AdminIgreen = () => {
     const { data, error } = await supabase
       .from("consultants")
       .select(
-        "id, name, igreen_portal_email, igreen_connect_code, igreen_access_token, igreen_token_updated_at, igreen_token_expires_at, igreen_token_expired"
+        "id, name, igreen_portal_email, igreen_connect_code, igreen_token_updated_at, igreen_token_expires_at, igreen_token_expired"
       )
       .order("name");
     if (error) {
