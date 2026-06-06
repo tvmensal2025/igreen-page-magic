@@ -92,12 +92,35 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
   const state = readState(customer);
   const memory = readMemory(customer);
 
+  // 1.1 Detecta mídia recém-recebida (foto da conta / documento) e avança
+  // a etapa automaticamente. Sem isso, a v1 ignorava o avanço quando o webhook
+  // só passava "[imagem]" como inboundText.
+  const novaMidia = detectarMidiaNova(customer, state);
+  if (novaMidia.conta || novaMidia.doc_frente || novaMidia.doc_verso) {
+    state.midia_recebida = {
+      ...(state.midia_recebida || {}),
+      conta: state.midia_recebida?.conta || novaMidia.conta,
+      doc_frente: state.midia_recebida?.doc_frente || novaMidia.doc_frente,
+      doc_verso: state.midia_recebida?.doc_verso || novaMidia.doc_verso,
+    };
+    if (novaMidia.conta && (state.etapa === "interesse" || state.etapa === "nome" || state.etapa === "valor" || state.etapa === "simulacao" || state.etapa === "foto_conta")) {
+      state.etapa = "doc";
+      state.tentativas_etapa = 0;
+    } else if (novaMidia.doc_frente && (state.etapa === "doc" || state.etapa === "foto_conta")) {
+      state.etapa = customer.email ? "finalizando" : "email";
+      state.tentativas_etapa = 0;
+    }
+  }
+
   const knownFacts: string[] = [];
   if (customer.name) knownFacts.push(`Nome: ${customer.name}`);
+  if (customer.email) knownFacts.push(`E-mail: ${customer.email}`);
   if (customer.electricity_bill_value) knownFacts.push(`Valor da conta: R$ ${Number(customer.electricity_bill_value).toFixed(2)}`);
   if (customer.address_city) knownFacts.push(`Cidade: ${customer.address_city}`);
   if (customer.address_state) knownFacts.push(`Estado: ${customer.address_state}`);
   if (customer.distribuidora) knownFacts.push(`Distribuidora: ${customer.distribuidora}`);
+  if (state.midia_recebida?.conta) knownFacts.push(`Foto da conta: já recebida ✅`);
+  if (state.midia_recebida?.doc_frente) knownFacts.push(`Documento (frente): já recebido ✅`);
   for (const [k, v] of Object.entries(state.info || {})) {
     if (v) knownFacts.push(`${k}: ${v}`);
   }
