@@ -20,14 +20,14 @@ const PLAYWRIGHT_HEADLESS = (process.env.PLAYWRIGHT_HEADLESS || 'true') !== 'fal
 
 const PORTAL_LOGIN_URL = 'https://escritorio.igreenenergy.com.br/login';
 const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
-const RECAPTCHA_SITEKEY = '6LcmxKAUAAAAAHMCMDRNH3NMxIZUSbGqCiGHYeON';
+const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_KEY) console.warn('[boot] WARN: TWOCAPTCHA_KEY não definido!');
 
-// ------------ 2captcha ------------
+// ------------ 2captcha (reCAPTCHA Enterprise) ------------
 async function solve2captcha(sitekey, pageUrl) {
-  console.log('[2captcha] submetendo reCAPTCHA...');
+  console.log('[2captcha] submetendo reCAPTCHA Enterprise...');
   const submitRes = await fetch('https://2captcha.com/in.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -36,6 +36,7 @@ async function solve2captcha(sitekey, pageUrl) {
       method: 'userrecaptcha',
       googlekey: sitekey,
       pageurl: pageUrl,
+      enterprise: '1',
       json: '1',
     }),
     signal: AbortSignal.timeout(30000),
@@ -151,38 +152,65 @@ async function loginAndGetToken(email, password) {
     await page.waitForTimeout(400);
 
     // Resolve reCAPTCHA com 2captcha — só se o sitekey estiver na página
+    // reCAPTCHA Enterprise está em iframe — sitekey não fica no DOM principal.
+    // Usa o sitekey fixo descoberto (size=normal visível na página de login).
     const sitekeyEl = await page.evaluate(() => {
       return document.querySelector('[data-sitekey]')?.getAttribute('data-sitekey') || null;
     }).catch(() => null);
 
-    console.log(`[login] sitekey na página: ${sitekeyEl || 'NÃO DETECTADO'}`);
+    const sitekey = sitekeyEl || RECAPTCHA_SITEKEY;
+    console.log(`[login] usando sitekey: ${sitekey} (detectado: ${sitekeyEl || 'não'})`);
     const currentBodyText = await page.locator('body').innerText().catch(() => '');
     console.log(`[login] body snippet: ${currentBodyText.slice(0, 200).replace(/\n/g, ' ')}`);
 
-    if (sitekeyEl) {
-      // reCAPTCHA real detectado — resolve via 2captcha
-      const captchaToken = await solve2captcha(sitekeyEl, PORTAL_LOGIN_URL);
-      console.log('[login] token 2captcha obtido — injetando...');
+    // Resolve via 2captcha (Enterprise)
+    const captchaToken = await solve2captcha(sitekey, PORTAL_LOGIN_URL);
+    console.log('[login] token 2captcha obtido — injetando...');
 
-      await page.evaluate((token) => {
-        let ta = document.getElementById('g-recaptcha-response');
-        if (!ta) ta = document.querySelector('[name="g-recaptcha-response"]');
-        if (ta) { ta.style.display = 'block'; ta.value = token; }
-        try {
-          for (const client of Object.values(window.___grecaptcha_cfg?.clients || {})) {
-            for (const val of Object.values(client)) {
-              if (val && typeof val === 'object' && typeof val.callback === 'function') {
-                val.callback(token); return;
+    await page.evaluate((token) => {
+      // Injeta no textarea oculto (cria se não existir)
+      let ta = document.getElementById('g-recaptcha-response');
+      if (!ta) {
+        ta = document.createElement('textarea');
+        ta.id = 'g-recaptcha-response';
+        ta.name = 'g-recaptcha-response';
+        ta.style.display = 'none';
+        document.body.appendChild(ta);
+      }
+      ta.value = token;
+
+      // reCAPTCHA Enterprise: também injeta no campo enterprise
+      let taEnt = document.getElementById('g-recaptcha-response-100000');
+      if (taEnt) taEnt.value = token;
+
+      // Dispara todos os callbacks registrados (v2 e enterprise)
+      try {
+        const cfg = window.___grecaptcha_cfg;
+        if (cfg && cfg.clients) {
+          for (const client of Object.values(cfg.clients)) {
+            const stack = [client];
+            while (stack.length) {
+              const obj = stack.pop();
+              if (!obj || typeof obj !== 'object') continue;
+              for (const val of Object.values(obj)) {
+                if (val && typeof val === 'object') {
+                  if (typeof val.callback === 'function') {
+                    try { val.callback(token); } catch (_) {}
+                  } else {
+                    stack.push(val);
+                  }
+                }
               }
             }
           }
-        } catch (_) {}
-        if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
-      }, captchaToken);
-      await page.waitForTimeout(800);
-    } else {
-      console.log('[login] sem reCAPTCHA detectado — tentando submit direto');
-    }
+        }
+      } catch (_) {}
+
+      if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
+      if (typeof window.onRecaptchaSuccess === 'function') window.onRecaptchaSuccess(token);
+    }, captchaToken);
+
+    await page.waitForTimeout(1000);
 
     // Submit
     const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
