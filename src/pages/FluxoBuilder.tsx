@@ -581,7 +581,9 @@ export default function FluxoBuilder() {
 
   async function patchStep(id: string, patch: Partial<Step>) {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue o toggle no topo para personalizar.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para personalizar.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return;
     }
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
