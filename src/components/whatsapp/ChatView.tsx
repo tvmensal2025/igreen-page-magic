@@ -427,27 +427,27 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </p>
         </div>
         {isCustomer ? (
-          <div className="flex items-center gap-1 text-primary shrink-0">
-            <UserCheck className="h-3.5 w-3.5" />
-            <span className="text-[10px] font-medium hidden xl:inline">Cliente</span>
-          </div>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+            <UserCheck className="h-3 w-3" />
+            <span className="text-[10px] font-semibold hidden xl:inline">Cliente</span>
+          </span>
         ) : (
           <Button
             size="sm"
             variant="outline"
-            className="h-8 min-w-[32px] text-[10px] gap-1 px-2 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+            className="h-8 min-w-[32px] text-[10px] gap-1 px-2.5 rounded-full border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50 shrink-0 transition-all"
             onClick={() => setShowAddDialog(true)}
             title="Adicionar Cliente"
           >
             <UserPlus className="h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Adicionar</span>
+            <span className="hidden lg:inline font-semibold">Adicionar</span>
           </Button>
         )}
         {kanbanStages.length > 0 && (
           <Select onValueChange={handleSendToCrm} disabled={sendingToCrm}>
-            <SelectTrigger className="h-8 w-auto gap-1 text-[10px] border-accent/30 text-accent-foreground px-2 shrink-0">
+            <SelectTrigger className="h-8 w-auto gap-1 text-[10px] rounded-full border-accent/30 text-accent-foreground px-2.5 shrink-0 hover:bg-accent/10 transition-colors">
               {sendingToCrm ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KanbanSquare className="h-3.5 w-3.5" />}
-              <span className="hidden lg:inline">CRM</span>
+              <span className="hidden lg:inline font-semibold">CRM</span>
             </SelectTrigger>
             <SelectContent>
               {kanbanStages.map((stage) => (
@@ -460,16 +460,16 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           <Button
             size="sm"
             variant={captureActive ? "default" : "outline"}
-            className={`h-8 min-w-[32px] text-[10px] gap-1 px-2 shrink-0 ${
+            className={`h-8 min-w-[32px] text-[10px] gap-1 px-2.5 rounded-full shrink-0 transition-all ${
               captureActive
-                ? "bg-primary text-primary-foreground animate-pulse shadow-md shadow-primary/30"
-                : "border-primary/40 text-primary hover:bg-primary/10"
+                ? "bg-gradient-to-r from-primary to-primary/85 text-primary-foreground shadow-md shadow-primary/30 hover:shadow-lg hover:shadow-primary/40 ring-1 ring-primary/40"
+                : "border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
             }`}
             onClick={toggleCapture}
             title="Abrir painel de captação"
           >
             <ClipboardList className="h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Captação{filledCount > 0 ? ` ${filledCount}/${totalFields}` : ""}</span>
+            <span className="hidden lg:inline font-semibold">Captação{filledCount > 0 ? ` ${filledCount}/${totalFields}` : ""}</span>
           </Button>
         )}
 
@@ -480,10 +480,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             onClick={toggleBot}
             disabled={togglingBot}
             title={botActive ? "Desligar bot só para este lead" : "Ligar bot para este lead"}
-            className={`h-8 min-w-[32px] text-[10px] gap-1 px-2 shrink-0 ${
+            className={`h-8 min-w-[32px] text-[10px] gap-1 px-2.5 rounded-full shrink-0 transition-all ${
               botActive
-                ? "border-primary/40 text-primary hover:bg-primary/10"
-                : "border-muted text-muted-foreground hover:bg-muted/40"
+                ? "border-primary/40 bg-primary/8 text-primary hover:bg-primary/15"
+                : "border-muted-foreground/30 text-muted-foreground hover:bg-muted/40"
             }`}
           >
             {togglingBot ? (
@@ -493,7 +493,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             ) : (
               <BotOff className="h-3.5 w-3.5" />
             )}
-            <span className="hidden lg:inline">IA {botActive ? "ON" : "OFF"}</span>
+            <span className="hidden lg:inline font-semibold">IA {botActive ? "ON" : "OFF"}</span>
+            {botActive && <span className="hidden lg:inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />}
           </Button>
         )}
 
@@ -502,13 +503,13 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           <AlertDialogTrigger asChild>
             <Button
               size="sm"
-              variant="outline"
-              className="h-8 min-w-[32px] text-[10px] gap-1 px-2 border-destructive/40 text-destructive hover:bg-destructive/10 shrink-0"
+              variant="ghost"
+              className="h-8 min-w-[32px] text-[10px] gap-1 px-2.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 transition-colors"
               disabled={resetting}
               title="Apaga histórico do bot e reinicia o fluxo do zero"
             >
               {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-              <span className="hidden lg:inline">Zerar</span>
+              <span className="hidden lg:inline font-medium">Zerar</span>
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
