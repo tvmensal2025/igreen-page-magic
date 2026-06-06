@@ -23,6 +23,7 @@ import { aiInCooldown, setAiCooldown, aiInCooldownPersistent, setAiCooldownPersi
 import { matchTransition as matchTransitionShared, CADASTRO_STEPS } from "../../../_shared/flow-router.ts";
 import { extractStepButtons, matchButtonIntent } from "../../../_shared/ai-button-intent.ts";
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
+import { resolveFlowId } from "../../../_shared/resolve-flow.ts";
 
 export { CONVERSATIONAL_STEPS };
 
@@ -76,24 +77,27 @@ interface LoadedFlow { flowId: string; steps: DbStep[]; strictMode: boolean; }
 
 async function loadFlow(supabase: any, consultantId: string, variant: string = "A"): Promise<LoadedFlow | null> {
   try {
-    const { data: flow } = await supabase
-      .from("bot_flows")
-      .select("id, strict_mode")
-      .eq("consultant_id", consultantId)
-      .eq("is_active", true)
-      .eq("variant", variant)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (!flow?.id) {
+    // Resolve via resolveFlowId para respeitar sync_mode:
+    // - sync_mode='public' → fluxo PÚBLICO do superadmin (mesma fonte que bot-flow)
+    // - sync_mode='custom' → fluxo próprio do consultor
+    // Evita mismatch entre handlers que gravariam UUID de um fluxo e leriam de outro.
+    const resolved = await resolveFlowId(supabase, consultantId, variant);
+    if (!resolved?.id) {
       console.log(`[conversational] loadFlow: no active flow for consultant=${consultantId} variant=${variant}`);
       return null;
     }
+    const flowId = resolved.id;
+
+    const { data: flowMeta } = await supabase
+      .from("bot_flows")
+      .select("strict_mode")
+      .eq("id", flowId)
+      .maybeSingle();
 
     const { data: steps, error: stepsErr } = await supabase
       .from("bot_flow_steps")
       .select("id, step_key, step_type, message_text, wait_for, text_delay_ms, slot_key, is_active, position, transitions, captures, fallback, auto_detect_doc_type, media_order")
-      .eq("flow_id", flow.id)
+      .eq("flow_id", flowId)
       .order("position", { ascending: true });
     if (stepsErr) {
       console.error("[conversational] loadFlow: steps query failed", stepsErr);
@@ -105,8 +109,9 @@ async function loadFlow(supabase: any, consultantId: string, variant: string = "
       // para o motor dinâmico não cair no fluxo legado.
       step_key: step.step_key || step.id,
     }));
-    console.log(`[conversational] loadFlow: flow=${flow.id} steps=${normalized.length} strict=${!!(flow as any).strict_mode}`);
-    return { flowId: flow.id as string, steps: normalized, strictMode: !!(flow as any).strict_mode };
+    const strictMode = !!(flowMeta as any)?.strict_mode;
+    console.log(`[conversational] loadFlow: flow=${flowId} steps=${normalized.length} strict=${strictMode}`);
+    return { flowId, steps: normalized, strictMode };
   } catch (e) {
     console.error("[conversational] loadFlow failed", e);
     return null;
@@ -865,9 +870,33 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const firstActiveRaw = dbSteps.find((s) => s.is_active) || dbSteps[0];
   // Lookup robusto: tenta por id (preferido — estável) e por step_key (compat reversa).
   // O orchestrator passa stepKey já com prefixo strippado; pode ser UUID, "passo_xxx" ou nome canônico.
-  const currentStepRaw =
+  let currentStepRaw =
     dbSteps.find((s) => s.id === stepKey) ||
     dbSteps.find((s) => s.step_key === stepKey);
+
+  // Rede de segurança: stepKey é UUID que não existe no fluxo carregado
+  // (ex.: lead vinha de outro fluxo após republicação / mudança de sync_mode).
+  // Tenta recuperar pelo step_key equivalente antes de cair em restart.
+  if (!currentStepRaw && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(stepKey))) {
+    try {
+      const { data: orphan } = await ctx.supabase
+        .from("bot_flow_steps")
+        .select("step_key")
+        .eq("id", stepKey)
+        .maybeSingle();
+      const orphanKey = (orphan as any)?.step_key;
+      if (orphanKey) {
+        const recovered = dbSteps.find((s) => s.step_key === orphanKey && s.is_active);
+        if (recovered) {
+          console.log(`[conversational] 🛟 step_key recovery: UUID órfão "${stepKey}" → step_key="${orphanKey}" → id=${recovered.id}`);
+          currentStepRaw = recovered;
+          stepKey = recovered.id;
+        }
+      }
+    } catch (e) {
+      console.warn(`[conversational] step_key recovery failed: ${(e as Error)?.message}`);
+    }
+  }
 
   // ─── resolveLandingStep ────────────────────────────────────────────────
   // Se o passo atual existe SÓ pra capturar um dado que já temos (ex: Passo 1
