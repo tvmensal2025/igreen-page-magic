@@ -750,16 +750,24 @@ Deno.serve(async (req) => {
     // If credentials came from request body, do NOT override with stale DB values.
 
 
+    let savedToken: string | null = null;
+    let savedConsultorId: string | null = null;
+
     if (consultantId && !credsFromBody) {
       const { data: cred } = await supabase
         .from("consultants")
-        .select("igreen_portal_email, igreen_portal_password")
+        .select("igreen_portal_email, igreen_portal_password, igreen_access_token, igreen_consultor_id, igreen_token_expired")
         .eq("id", consultantId)
         .maybeSingle();
       if (cred?.igreen_portal_email && cred?.igreen_portal_password) {
         portalEmail = cred.igreen_portal_email;
         portalPassword = cred.igreen_portal_password;
         console.log(`[creds] Loaded from DB for consultant: ${consultantId}`);
+      }
+      if (cred?.igreen_access_token && cred?.igreen_token_expired !== true) {
+        savedToken = cred.igreen_access_token;
+        savedConsultorId = cred.igreen_consultor_id || null;
+        console.log(`[token] Loaded saved token for consultant: ${consultantId}`);
       }
     } else if (credsFromBody) {
       console.log(`[creds] Using credentials from request body (not DB)`);
@@ -768,16 +776,37 @@ Deno.serve(async (req) => {
     if (!consultantId && portalEmail) {
       const { data: consultant } = await supabase
         .from("consultants")
-        .select("id")
+        .select("id, igreen_access_token, igreen_consultor_id, igreen_token_expired")
         .eq("igreen_portal_email", portalEmail)
         .maybeSingle();
       if (consultant?.id) {
         consultantId = consultant.id;
         console.log(`Resolved consultant_id from portal email: ${consultantId}`);
+        if (consultant.igreen_access_token && consultant.igreen_token_expired !== true) {
+          savedToken = consultant.igreen_access_token;
+          savedConsultorId = consultant.igreen_consultor_id || null;
+        }
       }
     }
 
-    const result = await syncOneConsultant(supabase, portalEmail!, portalPassword!, consultantId, mode);
+    // Without portal creds AND without saved token, we cannot proceed.
+    if ((!portalEmail || !portalPassword) && !savedToken) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Credenciais ou token do portal iGreen não configurados. Use 'Conectar iGreen' ou preencha email/senha na aba Dados." }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const result = await syncOneConsultant(
+      supabase,
+      portalEmail || "",
+      portalPassword || "",
+      consultantId,
+      mode,
+      savedToken,
+      savedConsultorId,
+    );
+
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
