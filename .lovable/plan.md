@@ -1,67 +1,75 @@
-# Plano: Correções V2 (pós-auditoria)
+# Plano: fazer o teste de lead validar a Vendedora V2 de verdade
 
-Aplicar as 3 ressalvas identificadas, em ordem de impacto. Tudo isolado em arquivos V2 — sem tocar V1.
+## Diagnóstico
 
-## 1. Restaurar etapa `interesse` na 1ª mensagem (bloqueante)
+O último teste não provou a V2 porque a execução caiu em V1/legacy:
 
-**Problema**: `decideEtapa()` pula direto pra `nome` quando lead chega sem cadastro, eliminando a apresentação da iGreen.
+- Primeiro turno `oi`: resposta veio com `variantId: "b.legacy"` e `phase: "fluxo_b_chat"`.
+- Segundo/terceiro turnos: veio `variantId: "b.v1"`, mas `phase: "vendedora_v1"`, não `vendedora_v2`.
+- Turno `900`: voltou para `variantId: "b.legacy"`, porque o tester `dryRun` não persistia `variant_id`; cada mensagem sorteava variante de novo.
+- O runtime da Edge Function também não estava com `VENDEDORA_V2_ENABLED=true`, então mesmo quando sorteou `b.v1`, rodou V1.
+- Existem logs repetidos de módulo (`node:zlib`, `bufferutil`, `utf-8-validate`) na Edge Function; eles não derrubaram a resposta 200, mas indicam ruído/dependência incompatível que precisa ser removido se estiver vindo do import atual.
 
-**Arquivos**: `supabase/functions/_shared/vendedora-v1/state-machine.ts`, `v2-orchestrator.ts`
+## Mudanças propostas
 
-**Mudanças**:
-- `decideEtapa(customer, state, opts?: { semHistorico?: boolean })`: se `semHistorico && !temNome` → retorna `"interesse"`.
-- `v2-orchestrator.ts` passa `{ semHistorico: historyMsgs.length === 0 }` na chamada (linha 108).
-- Em `microWrite`, etapa `interesse` já tem trava correta no `TRAVA_POR_ETAPA`.
-- Pós-escrita: se `state.etapa === "interesse"`, marca uma flag interna leve (`state.abertura_feita = true`) para próxima decisão avançar pra `nome` mesmo com histórico curto.
-- Adicionar `abertura_feita?: boolean` em `types.ts` (`FluxoBState` + `DEFAULT_STATE`) e em `state.ts` (inferência retroativa: `true` se `idx >= idxNome`).
-- `decideEtapa`: se `!temNome && state.abertura_feita` → `"nome"`.
+### 1. Forçar V2 no modo de teste
 
-## 2. Short-circuit determinístico para etapas mecânicas (impacto custo/latência)
+Editar `supabase/functions/fluxo-b-ai/index.ts` para aceitar um campo explícito no body, por exemplo:
 
-**Problema**: `nome`, `valor`, `email`, `foto_conta`, `doc` chamam LLM toda vez quando o template fixo já resolve.
+```json
+{ "forceVariantId": "b.v1", "forceV2": true }
+```
 
-**Arquivos**: `v2-orchestrator.ts`
+No `dryRun`, o `syntheticCustomer` será criado com:
 
-**Mudanças**:
-- Adicionar `const ETAPAS_DETERMINISTICAS = new Set<Etapa>(["nome","valor","foto_conta","doc","email"])`.
-- Antes de `microWrite`, se `ETAPAS_DETERMINISTICAS.has(state.etapa)` → usar `fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value)` direto, `modelUsed = "deterministic_template"`, pular crítico.
-- Continua passando por `sanitize` e `validarResposta` (validação deve passar trivialmente).
-- LLM só roda nas etapas ricas: `interesse`, `simulacao`, `finalizando`, `pos_cadastro`.
-- Economia esperada: ~60% das mensagens deixam de chamar LLM de escrita.
+- `variant_id: "b.v1"`
+- `fluxo_b_variant: "v1"`
+- `fluxo_b_state` preservado entre turnos pelo `customerState`
 
-## 3. Stop-list para `extrairNome` (qualidade)
+Assim o teste deixa de sortear variante a cada mensagem.
 
-**Problema**: prompt aceita "nome solto" — risco de capturar "ok", "sim", "blz" como nome do lead.
+### 2. Remover dependência de env para o teste V2
 
-**Arquivos**: `extractors.ts`
+Editar `supabase/functions/_shared/fluxo-b-ai.ts` para permitir override seguro somente em `dryRun/tester`, sem afetar produção WhatsApp:
 
-**Mudanças**:
-- Constante `NAO_E_NOME = new Set(["ok","sim","nao","não","blz","beleza","vlw","valeu","certo","ta","tá","oi","ola","olá","bom dia","boa tarde","boa noite","quero","aceito","fechou","bora","manda","ver","quanto","como"])`.
-- Após extração, normalizar lower + trim + remover pontuação; se `NAO_E_NOME` contém → retorna `null`.
-- Guard adicional: rejeita se string contém apenas dígitos ou caracteres não-alfa.
-- Endurecer system prompt: "Se a mensagem NÃO contém uma apresentação clara (ex: 'sou X', 'me chamo X', 'meu nome é X', 'pode me chamar de X', ou ao menos um substantivo próprio óbvio), retorne vazio."
+- Se `customer.__force_vendedora_v2 === true`, usar `runVendedoraV2`.
+- Caso contrário, manter regra atual: `VENDEDORA_V2_ENABLED=true`.
 
-## 4. Limpeza pós-validação (não-bloqueante — deixar pra depois)
+Isso permite testar a V2 agora, mesmo antes do rollout global.
 
-Após 48h em produção com V2 estável, remover dead code:
-- `planner.ts`, `writer.ts`, `variant-picker.ts`
-- Avaliar `tools.ts` (V1-only)
+### 3. Ajustar o painel “Testar lead simulado”
 
-Não fazer agora — manter rollback fácil.
+Editar `src/components/admin/flow-builder/FluxoBEditor.tsx` para mandar sempre no teste:
 
-## Validação
+- `forceVariantId: "b.v1"`
+- `forceV2: true`
 
-Após edits:
-1. `code--exec` para verificar nenhum import quebrou (grep de símbolos renomeados).
-2. Deploy de `fluxo-b-ai` + função consumidora (provavelmente `process-customer-message` ou similar — confirmar pelo wiring).
-3. Curl em 3 cenários: lead novo (espera abertura), lead pós-simulação dizendo "quero" (espera foto_conta), lead enviando "ok" como suposto nome (espera não capturar).
+Também ajustar o merge do estado simulado para preservar `variant_id`, `fluxo_b_variant`, `name`, `electricity_bill_value`, `email` e `fluxo_b_state` entre turnos.
 
-## Resumo dos arquivos editados
+### 4. Mostrar claramente que é V2
 
-- `state-machine.ts` — assinatura `decideEtapa(customer, state, opts?)` + lógica de abertura
-- `v2-orchestrator.ts` — passa `semHistorico`, marca `abertura_feita`, short-circuit determinístico
-- `types.ts` — campo `abertura_feita` em `FluxoBState` + `DEFAULT_STATE`
-- `state.ts` — inferência retroativa de `abertura_feita`
-- `extractors.ts` — stop-list + prompt mais restritivo em `extrairNome`
+No tester, atualizar o texto/metadata para mostrar:
 
-Nenhuma migração SQL. Toggle continua `VENDEDORA_V2_ENABLED=true`.
+- `variantId` retornado como `b.v1+v2`
+- modelo `deterministic_template` nas etapas mecânicas
+- debug “Decisão interna (v2)” quando `debug.phase` ou equivalente indicar V2
+
+### 5. Auditar o erro de módulo da Edge Function
+
+Rastrear qual import está puxando dependências incompatíveis (`node:zlib`, `bufferutil`, `utf-8-validate`) e corrigir com import Deno/esm compatível, provavelmente fixando o `@supabase/supabase-js` ou removendo path que puxa realtime/ws.
+
+### 6. Validar com teste real do fluxo
+
+Após implementar, testar via Edge Function com a sequência:
+
+1. `oi` → deve retornar `variantId: b.v1+v2`, fase/debug V2 e abertura.
+2. `sim` → deve pedir nome via template/determinístico ou etapa correta.
+3. `Sirlene` → deve extrair nome e pedir valor.
+4. `900` → deve extrair valor e apresentar simulação, não cair em legacy.
+5. `quero` → deve confirmar interesse e pedir foto da conta.
+
+Critério de aceite: nenhuma resposta do tester pode voltar com `b.legacy`, `vendedora_v1` ou `fluxo_b_chat` quando o modo V2 estiver ativo.
+
+## Observação importante
+
+A pasta `.lovable/` está no `.gitignore`; planos salvos em `.lovable/plan.md` podem não persistir no snapshot. Se quiser manter planos versionados, o próximo passo seria remover essa entrada do `.gitignore`, mas não vou mexer nisso sem pedido explícito.
