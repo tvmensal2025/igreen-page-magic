@@ -132,7 +132,7 @@ export const WRITER_TOOLS = [
     type: "function",
     function: {
       name: "finalizar_cadastro",
-      description: "Encerra a conversa e aciona pipeline de cadastro final.",
+      description: "Chame quando você já tem nome completo, valor da conta, e-mail, foto da conta e foto do documento confirmados. O servidor valida e envia ao portal automaticamente. Se faltar algo, o sistema vai te avisar e você pede o que falta.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
