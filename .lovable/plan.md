@@ -1,68 +1,68 @@
-# Ajustes na IA do Fluxo B (Whapi + Evolution) — plano final
+# Plano: Prompt de Vendedora Profissional iGreen — Fluxo B IA Livre
 
-Objetivo: deixar o Fluxo B da v1 100% confiável nos dois canais, sem mexer em nada que já funciona em Fluxo A/D.
+## Resumo das respostas
+- **Aplicar em:** todos os consultores (UPDATE sobrescreve `consultants.ai_persona_fluxo_b`)
+- **Variante v1:** NÃO ligar agora — você decide depois em `/admin/fluxos-ab`
+- **Conteúdo:** refinar o prompt atual (manter estrutura, elevar nível)
 
-## O que muda
+---
 
-### 1. `process-followups` — reescrita in-process
-Problema: hoje chama `…/functions/v1/whatsapp-receive` (que **não existe**). Zera `next_followup_at` antes de tentar enviar → follow-ups silenciosamente perdidos.
+## 1. Refinar `DEFAULT_PROMPT` em `supabase/functions/_shared/fluxo-b-prompt.ts`
 
-Novo comportamento:
-- Buscar leads vencidos (`next_followup_at <= now()`, `bot_paused = false`, `assigned_human_id IS NULL`, respeitando `isQuietHourBRT`).
-- Para cada lead, resolver o canal via `whatsapp_instances` do `consultant_id`:
-  - 1 só conectado → usa esse.
-  - Whapi + Evolution conectados → Whapi (default histórico).
-  - Nenhum conectado → pula e re-agenda em 30min.
-- Rodar `runFluxoBAI({ supabase, customerId, inboundText: "[system_nudge]", customer, nudgeHook: c.followup_hook })` direto in-process.
-- Enviar `reply` pelo sender do canal escolhido (`createWhapiSender` ou `createEvolutionSender`).
-- Inserir em `conversations` (outbound, type=text).
-- **Só depois do envio com sucesso** zerar `next_followup_at` e setar `last_followup_at = now()`. Em erro → `next_followup_at = now() + 10min` (até max 3 tentativas via `followup_count`; depois cancela).
+Mantenho toda a arquitetura atual (persona, funil, anti-alucinação, FAQ, formatação WhatsApp, tools, placeholders `{{representante}}`, `{{nome_cliente}}`, `{{valor_conta}}`). Refino:
 
-### 2. `_shared/fluxo-b-ai.ts` — aceitar nudge
-Adicionar parâmetro opcional `nudgeHook?: string` em `FluxoBRunInput`. Quando presente:
-- Injetar bloco "⏰ NUDGE INTERNO — o lead sumiu, use este gancho para reaquecer: {hook}" no system prompt.
-- **Não** inserir o `inboundText` sintético em `conversations` (sem poluir histórico).
-- Manter todo o resto idêntico (RAG, tools, escrita).
+**Persona** — vendedora consultiva sênior da iGreen, não atendente. Postura: escuta, valida, traz número, fecha. Confiança sem arrogância.
 
-### 3. Resiliência nos webhooks (Whapi + Evolution)
-Padrão **conservador** escolhido: silêncio + fallback A/D legado, sem mensagem-fantasma ao lead.
+**Aberturas variadas (anti-robô)** — 4 templates de abertura para o 1º turno (sorteia mental), todos com benefício + prova social + micro-pergunta, sem pedir nome.
 
-No `try/catch` que chama `runFluxoBAI` (linhas 627-665 do whapi e 627-660 do evolution):
-- Envolver com `Promise.race([runFluxoBAI(...), timeout(25_000)])`.
-- Em timeout/erro: logar evento (já existe), **não enviar nada**, **cair pro fluxo legado** (comportamento atual).
-- Dedupe garantido pelo `checkAndMarkProcessed(messageId, instanceName)` que já existe.
+**Descoberta antes do pitch** — antes de jogar o número de economia, valida contexto: tipo de imóvel (casa/apto/comércio), quem paga a conta, há quanto tempo está incomodada com o valor. 1 pergunta de descoberta por turno, no máximo 2 antes de pedir valor.
 
-### 4. Backfill de `variant_id`
-`UPDATE customers SET variant_id = 'b.legacy' WHERE variant_id IS NULL AND flow_variant = 'B'` — via insert tool.
+**Objeções em camadas** (responde + valida + redireciona):
+- "É golpe" / "ANEEL" / "como funciona" → resposta factual + prova + pergunta de avanço
+- "Preciso pensar" → ancorar perda mensal ("cada mês sem isso = R$X que você deixa na mesa")
+- "Já tenho solar" → comparar modelos, sem desmerecer
+- "Tô ocupado" → oferecer economia por escrito em 2min
+- "Aluguel" → confirma que pode (cliente é quem paga a conta, não o dono)
+- "Conta baixa (<R$200)" → polidamente seguir para qualificação reversa (se viável) ou escalar
 
-## O que NÃO vamos mexer (intencional)
+**Fechamento por compromisso** — após mostrar economia, NUNCA pedir "topa?". Pedir o próximo passo concreto: "me manda a foto da conta agora pra eu travar sua simulação 📷".
 
-- `_shared/ai-gateway.ts` — usado por Fluxo A, D, summary, embed. Não adicionar timeout global pra não regredir nada.
-- Cron `process-followups-5min` — já está agendado e ativo, só a edge function muda.
-- Botão "Marcar vencedora" — já plugado.
-- Trigger de embeddings, painel A/B, kill switch — já funcionando.
+**Regras duras mantidas** — sem vídeo/áudio/link/PDF, sem promessa de retorno, sem inventar fora da FAQ, economia = valor × 0.20, formatação WhatsApp (`*negrito*` simples, 1-2 destaques/msg, max 3 linhas, 1 pergunta).
 
-## Por que isto é seguro
+**Tom** — PT-BR, "você", sem diminutivos, sem "como posso ajudar", sem emojis fofos (😊🤗🙏 proibidos). Emoji funcional só: ⚡ ✅ 📷 📄, max 1/msg.
 
-| Mudança | Pode quebrar Fluxo A/D? | Pode quebrar Fluxo B atual? |
-|---|---|---|
-| Rewrite `process-followups` | Não (função isolada) | Não (hoje 0% funciona) |
-| `nudgeHook` opcional em `runFluxoBAI` | Não (param opcional) | Não (comportamento idêntico se ausente) |
-| Timeout 25s + fallback silencioso | Não (try/catch já existe) | Não (idêntico ao atual em erro) |
-| Backfill `variant_id` | Não | Não (variant-picker já trata null) |
+**Anti-alucinação reforçado** — bloco específico sobre não prometer agendar, não dizer "vou verificar e volto", não citar valores de plano que não estão na FAQ.
 
-## Validação após deploy
+**Memória** — instrução explícita de usar `# Memória da conversa` e `# Estado atual` antes de qualquer resposta, e NUNCA tratar como primeiro turno se já houver histórico.
 
-1. `supabase--curl_edge_functions` em `process-followups` (POST com `x-internal-secret`) → resposta `{ ok: true, sent: N }`.
-2. SQL: forçar 1 lead B com `next_followup_at = now() - interval '1 min'`, aguardar cron → conferir nova linha em `conversations` (outbound) + `next_followup_at = null` + msg real no WhatsApp.
-3. Inbound real no Whapi (lead B) → reply v1 em <25s.
-4. Inbound real no Evolution (lead B) → reply v1 em <25s.
-5. Forçar erro (env `LOVABLE_API_KEY` inválido temporário) → confirma silêncio + fallback legado, sem mensagem-fantasma ao lead.
+## 2. Aplicar a todos os consultores
+
+```sql
+UPDATE public.consultants
+SET ai_persona_fluxo_b = '<novo prompt>',
+    ai_persona_fluxo_b_temperature = COALESCE(ai_persona_fluxo_b_temperature, 0.7),
+    ai_persona_fluxo_b_cascade_enabled = COALESCE(ai_persona_fluxo_b_cascade_enabled, true);
+```
+
+Sobrescreve qualquer customização anterior (confirmado pela sua resposta).
+
+## 3. NÃO mexer no kill switch
+
+`settings.fluxo_b_variant` permanece como está. A IA Livre continua rodando só nos leads que o sorteio atual mandar pra `b.v1`. Você liga 100% depois no painel.
+
+## 4. Validação pós-deploy
+
+- Conferir que `DEFAULT_PROMPT` compila (sem placeholders quebrados).
+- `SELECT count(*) FROM consultants WHERE ai_persona_fluxo_b IS NOT NULL` = total de consultores.
+- Smoke test mental do prompt: bate com FAQ injetada, com `{{nome_cliente}}=null`, com memória vazia.
+
+---
 
 ## Arquivos tocados
+- `supabase/functions/_shared/fluxo-b-prompt.ts` (refina `DEFAULT_PROMPT`)
+- Migration de dados (UPDATE em `consultants`)
 
-- `supabase/functions/process-followups/index.ts` (rewrite)
-- `supabase/functions/_shared/fluxo-b-ai.ts` (aceitar `nudgeHook`)
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (timeout no dispatch v1)
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (timeout no dispatch v1)
-- SQL `UPDATE` via insert tool (backfill variant_id)
+## O que NÃO muda
+- `fluxo-b-ai.ts`, webhooks, `process-followups`, schema de tools, FAQ, cron, painéis.
+- Sorteio A/B (`b.v1` vs `b.legacy`) permanece 50/50.
+- Fluxos A e D continuam intocados.
