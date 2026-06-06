@@ -60,18 +60,41 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   }
   if (!customer) throw new Error(`[fluxo-b-ai] customer ${customerId} not found`);
 
-  // ── A/B routing: vendedora_v1 vs legacy ───────────────────────────────
-  // Se variante ainda não foi atribuída, sorteia 50/50 e persiste.
-  let variant: string = String(customer.fluxo_b_variant || "").toLowerCase();
-  if (variant !== "v1" && variant !== "legacy") {
-    variant = Math.random() < 0.5 ? "v1" : "legacy";
+  // ── Roteamento por variante (genérico, suporta N variantes) ───────────
+  // Lê customers.variant_id; se ainda não foi atribuído, sorteia via flow_variants.
+  // Kill switch global: env VENDEDORA_V1_FORCE_OFF=true cai pro legacy.
+  const forceOff = String(Deno.env.get("VENDEDORA_V1_FORCE_OFF") || "").toLowerCase() === "true";
+  let variantId: string | null = customer.variant_id || null;
+  if (!variantId) {
+    // tenta sortear via flow_variants
     try {
-      await supabase.from("customers").update({ fluxo_b_variant: variant }).eq("id", customerId);
-      customer.fluxo_b_variant = variant;
-    } catch (_) { /* tolera ausência da coluna em ambientes antigos */ }
+      variantId = await pickVariant({
+        supabase,
+        fluxo: customer.flow_variant || "B",
+        consultantId: customer.consultant_id,
+      });
+    } catch (_) { variantId = null; }
+    // fallback: mantém A/B legado se a tabela estiver vazia
+    if (!variantId) {
+      const legacyVar = String(customer.fluxo_b_variant || "").toLowerCase();
+      if (legacyVar === "v1" || legacyVar === "legacy") {
+        variantId = legacyVar === "v1" ? "b.v1" : "b.legacy";
+      } else {
+        variantId = Math.random() < 0.5 ? "b.v1" : "b.legacy";
+      }
+    }
+    try {
+      await supabase.from("customers").update({
+        variant_id: variantId,
+        fluxo_b_variant: variantId === "b.v1" ? "v1" : "legacy",
+      }).eq("id", customerId);
+      customer.variant_id = variantId;
+    } catch (_) { /* tolera ausência de colunas em ambientes antigos */ }
   }
 
-  if (variant === "v1") {
+  const useV1 = !forceOff && variantId === "b.v1";
+
+  if (useV1) {
     try {
       const v1 = await runVendedoraV1({ supabase, customerId, inboundText, customer, consultant: input.consultant });
       return {
@@ -82,6 +105,8 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
         modelUsed: v1.modelUsed,
         latencyMs: v1.latencyMs,
         customerUpdates: v1.customerUpdates,
+        variantId,
+        debug: v1.debug,
       };
     } catch (e) {
       console.error(`[fluxo-b-ai] vendedora_v1 falhou, caindo pra legacy:`, (e as Error).message);
