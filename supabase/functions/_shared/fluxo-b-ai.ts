@@ -99,7 +99,8 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   // Nudge interno (follow-up): força branch legacy que tem suporte explícito
   // ao bloco "NUDGE INTERNO" no system prompt.
   const isNudgeRun = !!(input.nudgeHook && String(input.nudgeHook).trim().length > 0);
-  const v2Enabled = String(Deno.env.get("VENDEDORA_V2_ENABLED") || "").toLowerCase() === "true";
+  const forcedV2ForDryRun = customer?.__force_vendedora_v2 === true;
+  const v2Enabled = forcedV2ForDryRun || String(Deno.env.get("VENDEDORA_V2_ENABLED") || "").toLowerCase() === "true";
   const useVendedora = !forceOff && variantId === "b.v1" && !isNudgeRun;
 
   if (useVendedora) {
@@ -115,7 +116,7 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
         latencyMs: v.latencyMs,
         customerUpdates: v.customerUpdates,
         variantId: v2Enabled ? `${variantId}+v2` : variantId,
-        debug: v.debug,
+        debug: v.debug ? { ...v.debug, phase: v2Enabled ? "vendedora_v2" : "vendedora_v1" } : undefined,
       };
     } catch (e) {
       console.error(`[fluxo-b-ai] vendedora ${v2Enabled ? "v2" : "v1"} falhou, caindo pra legacy:`, (e as Error).message);
