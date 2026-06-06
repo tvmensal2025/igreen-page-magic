@@ -238,22 +238,12 @@ async function callGeminiViaLovable(prompt: string, imagePart: any, model: strin
   }
 }
 
-async function callGemini(prompt: string, imagePart: any, apiKey: string, model: string): Promise<string> {
-  // Se não temos chave Gemini, vai direto para o Lovable Gateway.
-  if (!apiKey || apiKey === "__no_gemini__") {
-    const gw = await callGeminiViaLovable(prompt, imagePart, model);
-    if (gw) console.log(`[detectDocumentType] ✅ Lovable Gateway (sem chave Gemini)`);
-    return gw;
-  }
-  const direct = await callGeminiDirect(prompt, imagePart, apiKey, model);
-  if (direct.text) return direct.text;
-  // Fallback p/ Lovable Gateway em qualquer falha (429, 5xx, timeout, resposta vazia).
-  const gw = await callGeminiViaLovable(prompt, imagePart, model);
-  if (gw) {
-    console.log(`[detectDocumentType] ✅ fallback Lovable Gateway respondeu (direct status=${direct.status})`);
-    return gw;
-  }
-  return "";
+async function callGemini(_prompt: string, imagePart: any, _apiKey: string, model: string): Promise<string> {
+  // Política do projeto: SEMPRE usar Lovable AI Gateway. Nunca chamar Gemini direto.
+  const gw = await callGeminiViaLovable(_prompt, imagePart, model);
+  if (gw) console.log(`[detectDocumentType] ✅ Lovable Gateway (${model})`);
+  else console.warn(`[detectDocumentType] ⚠️ Lovable Gateway vazio (${model})`);
+  return gw;
 }
 
 /** Versão estruturada que retorna tipo + confiança + origem da decisão. */
