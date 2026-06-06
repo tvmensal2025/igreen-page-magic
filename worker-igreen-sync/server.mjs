@@ -334,13 +334,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not_found' });
     if (!authOk(req)) return send(res, 401, { ok: false, error: 'unauthorized' });
 
-    const body = await readJsonBody(req);
-    const email = String(body.portal_email || '').trim().toLowerCase();
-    const password = String(body.portal_password || '');
-    if (!email || !password) return send(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
-
+    // /debug-page não precisa de credenciais — só inspeciona a página
     if (req.url === '/debug-page') {
-      // Endpoint temporário para ver o HTML da página de login via Tor
       const browser = await getBrowser();
       const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -349,20 +344,26 @@ const server = http.createServer(async (req, res) => {
       await context.addInitScript(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
       const p = await context.newPage();
       try {
-        await p.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await p.waitForTimeout(3000);
+        await p.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 40000 });
+        await p.waitForTimeout(5000);
         const title = await p.title().catch(() => '');
         const url = p.url();
         const html = await p.content().catch(() => '');
         const sitekeys = html.match(/data-sitekey="([^"]+)"/g) || [];
+        const iframeSrcs = (html.match(/recaptcha[^"']*\/anchor[^"']*/g) || []).slice(0, 2);
         const bodyText = await p.locator('body').innerText().catch(() => '');
         await context.close();
-        return send(res, 200, { title, url, sitekeys, bodySnippet: bodyText.slice(0, 500) });
+        return send(res, 200, { title, url, sitekeys, iframeSrcs, bodySnippet: bodyText.slice(0, 400) });
       } catch (e) {
         await context.close().catch(() => {});
         return send(res, 500, { error: e.message });
       }
     }
+
+    const body = await readJsonBody(req);
+    const email = String(body.portal_email || '').trim().toLowerCase();
+    const password = String(body.portal_password || '');
+    if (!email || !password) return send(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
 
     if (req.url === '/sync-customers') {
       const result = await withSession(email, password, async s => {
