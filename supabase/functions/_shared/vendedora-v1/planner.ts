@@ -16,7 +16,7 @@ REGRAS DURAS:
 4. Se lead pediu humano OU temperatura subiu pra >=85 e está pronto, considere oferecer cadastro express.
 5. info_a_capturar lista campos que ainda faltam (ex: ["nome","valor_conta","cidade"]).
 
-Etapas válidas: interesse, nome, valor, simulacao, foto_conta, doc, finalizando, pos_cadastro.
+Etapas válidas: interesse, nome, valor, simulacao, foto_conta, doc, email, finalizando, pos_cadastro.
 
 Devolva APENAS este JSON:
 {
