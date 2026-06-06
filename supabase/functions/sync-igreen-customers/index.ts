@@ -675,13 +675,17 @@ Deno.serve(async (req) => {
       console.log("=== CRON MODE: Syncing ALL consultants ===");
       const { data: consultants, error: cErr } = await supabase
         .from("consultants")
-        .select("id, name, igreen_portal_email, igreen_portal_password")
-        .eq("approved", true)
-        .not("igreen_portal_email", "is", null)
-        .not("igreen_portal_password", "is", null);
+        .select("id, name, igreen_portal_email, igreen_portal_password, igreen_access_token, igreen_consultor_id, igreen_token_expired")
+        .eq("approved", true);
 
-      if (cErr || !consultants || consultants.length === 0) {
-        console.log("No consultants with credentials found, falling back to env vars.");
+      const usable = (consultants || []).filter((c: Record<string, unknown>) => {
+        const hasCreds = !!c.igreen_portal_email && !!c.igreen_portal_password;
+        const hasToken = !!c.igreen_access_token && c.igreen_token_expired !== true;
+        return hasCreds || hasToken;
+      });
+
+      if (cErr || usable.length === 0) {
+        console.log("No consultants with credentials or saved tokens found, falling back to env vars.");
         if (portalEmail && portalPassword) {
           const result = await syncOneConsultant(supabase, portalEmail, portalPassword, null, mode);
           return new Response(JSON.stringify(result), {
@@ -689,23 +693,25 @@ Deno.serve(async (req) => {
           });
         }
         return new Response(
-          JSON.stringify({ success: false, error: "Nenhum consultor com credenciais configuradas." }),
+          JSON.stringify({ success: false, error: "Nenhum consultor com credenciais ou token configurado." }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      console.log(`Found ${consultants.length} consultants with credentials.`);
+      console.log(`Found ${usable.length} consultants with usable auth.`);
       const results: Record<string, unknown>[] = [];
 
-      for (const c of consultants) {
-        console.log(`--- Syncing: ${c.name} (${c.igreen_portal_email}) ---`);
+      for (const c of usable) {
+        console.log(`--- Syncing: ${c.name} (${c.igreen_portal_email || "[token only]"}) ---`);
         try {
           const r = await syncOneConsultant(
             supabase,
-            c.igreen_portal_email!,
-            c.igreen_portal_password!,
+            c.igreen_portal_email || "",
+            c.igreen_portal_password || "",
             c.id,
             mode,
+            c.igreen_token_expired === true ? null : c.igreen_access_token,
+            c.igreen_consultor_id,
           );
           results.push({ consultant: c.name, ...r });
         } catch (err) {
@@ -717,18 +723,19 @@ Deno.serve(async (req) => {
       }
 
       const totalSynced = results.filter((r) => r.success).length;
-      console.log(`CRON completed: ${totalSynced}/${consultants.length} consultants synced.`);
+      console.log(`CRON completed: ${totalSynced}/${usable.length} consultants synced.`);
 
       return new Response(JSON.stringify({
         success: true,
         mode: "cron_all",
-        total_consultants: consultants.length,
+        total_consultants: usable.length,
         synced: totalSynced,
         results,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
 
     // ========================================================
     // MANUAL MODE: single consultant
