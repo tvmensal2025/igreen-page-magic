@@ -3,6 +3,10 @@
 Worker Playwright dedicado à **leitura** do portal iGreen (`escritorio.igreenenergy.com.br`).
 Consumido apenas pela edge function `sync-igreen-customers`.
 
+> **Propósito:** este worker baixa **dados de clientes e rede do portal iGreen**
+> (via `api-voffice.igreenenergy.com.br`). Nada de Facebook, Ads ou marketing —
+> é só sincronização de clientes iGreen.
+
 Não confundir com `worker-portal/` (escrita/cadastro de leads no portal `digital.igreenenergy`)
 nem com `worker-portal-2/` (cadastro via API direta em `green.igreenenergy/autoconexao`).
 
@@ -39,8 +43,8 @@ Resposta:
 ## Deploy no Easypanel
 
 1. **Source → Github**
-   - Proprietário: `tvmensal25`
-   - Repositório: `portal-oficial-igreen`
+   - Proprietário: `tvmensal2025`
+   - Repositório: `igreen-official-portal`
    - Ramo: `main`
    - Caminho de Build: `worker-igreen-sync`
 2. **Porta**: `3102`
@@ -54,33 +58,46 @@ Resposta:
 4. **Domain**: `igreen-sync.d9v83a.easypanel.host`
 5. **Recursos sugeridos**: 1 CPU / 1 GB RAM
 
-### Erro no Easypanel: `curl: (23) Failure writing output to destination`
+### Erro no Easypanel: `curl: (23) Failure writing output to destination, passed 1370 returned 0`
 
-Esse erro acontece antes do Dockerfile rodar: o Easypanel conseguiu acessar o GitHub, mas falhou ao gravar ou extrair o archive baixado.
+Esse erro acontece **antes do Dockerfile rodar**. O Easypanel baixou apenas
+~1.3 KB do GitHub e tentou descompactar como `.tar.gz` — 1.3 KB nunca é um
+repositório real, normalmente é uma resposta de erro do GitHub (404, página
+de login HTML, permissão negada, rate limit) sendo interpretada como tar.
 
-Verifique a VPS via SSH:
+**Não é problema de disco nem de Dockerfile.** Causas comuns:
 
-```bash
-df -h
-df -i
-docker system df
-```
+- Owner/Repositório errados no app do Easypanel
+- App do GitHub do Easypanel sem acesso ao repositório (precisa reautorizar)
+- Branch inexistente
+- Repositório privado sem a integração GitHub instalada
 
-Se o disco estiver cheio, limpe caches/builds antigos com segurança:
-
-```bash
-docker builder prune -af
-docker image prune -af
-docker container prune -f
-```
-
-Se houver espaço livre e o erro continuar, remova somente o cache de código desse app para o Easypanel baixar novamente:
+**Diagnóstico na VPS:**
 
 ```bash
-rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
+curl -L -o /tmp/igreen.tar.gz \
+  https://github.com/tvmensal2025/igreen-official-portal/archive/refs/heads/main.tar.gz
+ls -lh /tmp/igreen.tar.gz          # deve ter centenas de KB, não 1.3 KB
+file /tmp/igreen.tar.gz            # deve ser: gzip compressed data
+tar -tzf /tmp/igreen.tar.gz | grep worker-igreen-sync/Dockerfile
 ```
 
-Depois clique em deploy novamente no Easypanel.
+Se vier ~1.3 KB, abra para ver a resposta real do GitHub:
+
+```bash
+cat /tmp/igreen.tar.gz
+```
+
+**Correção:**
+
+1. No app `worker-igreen` → **Source**, confirme owner `tvmensal2025`,
+   repo `igreen-official-portal`, branch `main`, build path `worker-igreen-sync`.
+2. **Settings → Integrations → GitHub** → **Reautorize** dando acesso a este repo.
+3. Limpe o cache de código quebrado:
+   ```bash
+   rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
+   ```
+4. Clique em **Deploy** no Easypanel.
 
 ### Erro no Easypanel: `No such image: easypanel/igreen/worker-igreen:latest`
 
@@ -90,25 +107,22 @@ Verifique no app `worker-igreen`:
 
 ```text
 Source: Github
-Proprietário: tvmensal25
-Repositório: portal-oficial-igreen
+Proprietário: tvmensal2025
+Repositório: igreen-official-portal
 Ramo: main
 Caminho de Build: worker-igreen-sync
 Porta: 3102
 ```
 
-Depois clique em **Deploy** e acompanhe os logs até o fim. A imagem só existirá quando o build concluir e taggear algo como `easypanel/igreen/worker-igreen:latest`.
+Depois clique em **Deploy** e acompanhe os logs até taggear `easypanel/igreen/worker-igreen:latest`.
 
-Se o app estiver preso nesse estado, recrie apenas o app `worker-igreen` no Easypanel com Source = **Github**. Não use Source = **Docker Image**, porque nesse modo o Easypanel tentará puxar uma imagem pronta que não existe.
+Se o app estiver preso, recrie apenas o app `worker-igreen` no Easypanel com Source = **Github** (não Docker Image).
 
-Na VPS, você pode confirmar com:
+Na VPS:
 
 ```bash
 docker images | grep worker-igreen
-docker images | grep easypanel/igreen
 ```
-
-Se não aparecer imagem, o build ainda não gerou nada; é preciso fazer um deploy/rebuild pelo Easypanel.
 
 ## Configurar no Supabase (lado da edge function)
 
@@ -117,19 +131,4 @@ INSERT INTO settings (key, value) VALUES
   ('igreen_sync_worker_url',    'https://igreen-sync.d9v83a.easypanel.host'),
   ('igreen_sync_worker_secret', '<mesmo WORKER_TOKEN>')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-```
-
-Ou via secrets do edge function: `IGREEN_SYNC_WORKER_URL` e `IGREEN_SYNC_WORKER_SECRET`.
-
-## Teste rápido
-
-```bash
-# health
-curl https://igreen-sync.d9v83a.easypanel.host/health
-
-# customers
-curl -X POST https://igreen-sync.d9v83a.easypanel.host/sync-customers \
-  -H "X-Worker-Token: $WORKER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"portal_email":"...","portal_password":"..."}'
 ```
