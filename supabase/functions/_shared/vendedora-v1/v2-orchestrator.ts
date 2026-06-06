@@ -285,6 +285,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     latencyMs: Date.now() - t0,
     customerUpdates: updates,
     debug: {
+      phase: "vendedora_v2",
       perfil,
       plano: { etapa_atual: state.etapa, trava: TRAVA_POR_ETAPA[state.etapa] },
       ragChunks: ragChunksLen,
