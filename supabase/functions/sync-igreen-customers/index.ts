@@ -1,12 +1,16 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 
+// =====================================================
+// sync-igreen-customers
+// Estratégia única: delega o login/scraping para o Playwright Worker na VPS
+// (IGREEN_SYNC_WORKER_URL). Toda a normalização e upsert continua aqui.
+// =====================================================
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-const API_BASE = "https://api-voffice.igreenenergy.com.br/v1";
 
 function normalizePhone(raw: string): string {
   const digits = String(raw || "").replace(/\D/g, "");
@@ -76,17 +80,13 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
   }
 
   const record: Record<string, unknown> = { phone_whatsapp: phone };
-  // Marca explicitamente que veio do sync iGreen — não é lead do WhatsApp
   record.customer_origin = "igreen_sync";
-  // ⚠️ Telefone NÃO foi confirmado pelo cliente — bot precisa pedir confirmação antes do portal
   record.phone_contact_confirmed = false;
 
   const name = safeStr(get(c, "nomeCliente", "nome", "Nome", "name", "Nome do Cliente"));
   if (name) record.name = name;
 
   const statusRaw = safeStr(get(c, "andamento", "Andamento", "status"));
-  // Se o telefone é placeholder (sem celular real), marca como contato_incompleto
-  // — bot bloqueia portal até cliente confirmar telefone real
   record.status = isPlaceholderPhone ? "contato_incompleto" : mapStatus(statusRaw || undefined);
 
   const cpf = safeStr(get(c, "cpf", "CPF", "documento", "Documento"));
@@ -171,368 +171,184 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
 }
 
 // =====================================================
-// syncOneConsultant — syncs a single consultant
+// Resolve worker URL + secret (mesmo padrão do portal-worker)
+// =====================================================
+async function resolveSyncWorker(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+): Promise<{ url: string; secret: string } | null> {
+  const { data: settingsRows } = await supabase.from("settings").select("key, value");
+  const settings: Record<string, string> = {};
+  settingsRows?.forEach((s: { key: string; value: string }) => { settings[s.key] = s.value; });
+
+  const url = (
+    settings.igreen_sync_worker_url ||
+    Deno.env.get("IGREEN_SYNC_WORKER_URL") ||
+    ""
+  ).replace(/\/$/, "");
+  const secret =
+    settings.igreen_sync_worker_secret ||
+    Deno.env.get("IGREEN_SYNC_WORKER_SECRET") ||
+    settings.worker_secret ||
+    Deno.env.get("WORKER_SECRET") ||
+    "";
+
+  if (!url) return null;
+  return { url, secret };
+}
+
+async function callWorker(
+  worker: { url: string; secret: string },
+  path: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: boolean; status: number; data?: any; error?: string }> {
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 180_000); // 3 min
+  try {
+    const res = await fetch(`${worker.url}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Worker-Token": worker.secret,
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    let data: any = null;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (!res.ok) return { ok: false, status: res.status, error: data?.error || text.slice(0, 300), data };
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// =====================================================
+// syncOneConsultant — chama o worker e processa os dados
 // =====================================================
 async function syncOneConsultant(
   // deno-lint-ignore no-explicit-any
   supabase: any,
+  worker: { url: string; secret: string },
   portalEmail: string,
   portalPassword: string,
   consultantId: string | null,
   mode: string,
-  savedToken?: string | null,
-  savedConsultorId?: string | null,
 ): Promise<Record<string, unknown>> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
-  const browserHeaders = {
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-    "Origin": "https://escritorio.igreenenergy.com.br",
-    "Referer": "https://escritorio.igreenenergy.com.br/",
-  };
 
-  let token: string | null = null;
-  let consultorIdFromToken: string | null = null;
-  let usedSavedToken = false;
-
-  // ===== Strategy 1: try the token captured by the consultant's browser =====
-  if (savedToken && typeof savedToken === "string" && savedToken.length > 20) {
-    console.log(`Trying saved iGreen token for consultant ${consultantId || emailNorm}...`);
-    const testHeaders = {
-      "Authorization": `Bearer ${savedToken}`,
-      "Content-Type": "application/json",
-      "User-Agent": browserHeaders["User-Agent"],
-      "Accept": "application/json, text/plain, */*",
-      "Origin": "https://escritorio.igreenenergy.com.br",
-      "Referer": "https://escritorio.igreenenergy.com.br/",
-    };
-    try {
-      // Validate token by calling /consultant (cheap) unless we already cached consultorId
-      if (savedConsultorId) {
-        // quick probe to confirm token still valid: HEAD-like GET against a small endpoint
-        const probe = await fetch(`${API_BASE}/customer-map/${savedConsultorId}?page=1&pageSize=1`, { headers: testHeaders });
-        if (probe.ok) {
-          token = savedToken;
-          consultorIdFromToken = savedConsultorId;
-          usedSavedToken = true;
-          console.log("Saved token is valid (cached consultorId).");
-        } else if (probe.status === 401 || probe.status === 403) {
-          console.log("Saved token rejected (401/403). Marking expired and falling back to login.");
-          if (consultantId) {
-            await supabase.from("consultants").update({ igreen_token_expired: true }).eq("id", consultantId);
-          }
-        } else {
-          console.log(`Saved token probe returned ${probe.status}. Falling back to login.`);
-        }
-        await probe.text().catch(() => {});
-      } else {
-        const cRes = await fetch(`${API_BASE}/consultant`, { headers: testHeaders });
-        if (cRes.ok) {
-          const cData = await cRes.json();
-          const cid = cData.idconsultor || cData.id || cData.data?.id || cData.consultant?.id
-            || cData.user?.id || cData.consultor?.id || cData._id || cData.data?._id
-            || cData.uid || cData.userId || cData.user_id;
-          if (cid) {
-            token = savedToken;
-            consultorIdFromToken = String(cid);
-            usedSavedToken = true;
-            if (consultantId) {
-              await supabase.from("consultants").update({ igreen_consultor_id: String(cid) }).eq("id", consultantId);
-            }
-            console.log(`Saved token valid. Cached consultorId=${cid}.`);
-          }
-        } else if (cRes.status === 401 || cRes.status === 403) {
-          console.log("Saved token rejected by /consultant. Marking expired.");
-          if (consultantId) {
-            await supabase.from("consultants").update({ igreen_token_expired: true }).eq("id", consultantId);
-          }
-          await cRes.text().catch(() => {});
-        } else {
-          await cRes.text().catch(() => {});
-        }
-      }
-    } catch (err) {
-      console.error("Saved token probe error:", err);
-    }
+  if (!emailNorm || !passwordNorm) {
+    return { success: false, email: emailNorm, error: "Credenciais do portal iGreen não preenchidas." };
   }
-
-  // ===== Strategy 2: fallback to email/password login (legacy path) =====
-  async function attemptLogin(): Promise<Response> {
-    return await fetch(`${API_BASE}/login`, {
-      method: "POST",
-      headers: browserHeaders,
-      body: JSON.stringify({ email: emailNorm, password: passwordNorm }),
-    });
-  }
-
-  if (!token) {
-    console.log(`Logging in to iGreen API for ${emailNorm} (pwd_len=${passwordNorm.length})...`);
-
-    let loginRes = await attemptLogin();
-    if (loginRes.status === 429 || (await loginRes.clone().text()).toLowerCase().includes("muitas tentativas")) {
-      console.log("Rate limited (429). Waiting 30s before retry...");
-      await new Promise((r) => setTimeout(r, 30000));
-      loginRes = await attemptLogin();
-    }
-
-    if (!loginRes.ok) {
-      const errText = await loginRes.text();
-      console.error(`Login failed for ${emailNorm}: ${loginRes.status} - ${errText}`);
-      let friendly: string;
-      if (loginRes.status === 401 || loginRes.status === 403) {
-        friendly = usedSavedToken === false && savedToken
-          ? "Token iGreen expirou e o login direto também falhou (Cloudflare/captcha). Reconecte o iGreen na aba de conexões."
-          : "O portal iGreen recusou o login. Os dados estão salvos, mas o portal não aceitou essa combinação. Confira se a senha foi alterada no portal e atualize na aba Dados.";
-      } else if (loginRes.status === 429 || errText.toLowerCase().includes("muitas tentativas")) {
-        friendly = "Portal iGreen bloqueou temporariamente por excesso de tentativas. Aguarde 1 minuto e tente de novo.";
-      } else if (loginRes.status === 403 || errText.toLowerCase().includes("cloudflare") || errText.toLowerCase().includes("blocked")) {
-        friendly = "Cloudflare bloqueou o login direto. Use a opção 'Conectar iGreen' para enviar seu token pelo navegador.";
-      } else {
-        friendly = `Login no portal falhou (HTTP ${loginRes.status}). Resposta: ${errText.slice(0, 200)}`;
-      }
-      return {
-        success: false,
-        email: emailNorm,
-        error: friendly,
-        login_status: loginRes.status,
-        login_body: errText.slice(0, 200),
-      };
-    }
-
-    const loginData = await loginRes.json();
-    token = loginData.accessToken || loginData.token || loginData.access_token;
-    if (!token) {
-      return {
-        success: false,
-        email: portalEmail,
-        error: "Portal respondeu sem token de acesso. Avise o suporte.",
-      };
-    }
-    console.log(`Login OK for ${portalEmail}`);
-  }
-
-  const authHeaders = {
-    "Authorization": `Bearer ${token}`,
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Origin": "https://escritorio.igreenenergy.com.br",
-    "Referer": "https://escritorio.igreenenergy.com.br/",
-  };
-
-  let consultorId: string | null = consultorIdFromToken;
-  if (!consultorId) {
-    const consultantRes = await fetch(`${API_BASE}/consultant`, { headers: authHeaders });
-    if (!consultantRes.ok) {
-      if ((consultantRes.status === 401 || consultantRes.status === 403) && usedSavedToken && consultantId) {
-        await supabase.from("consultants").update({ igreen_token_expired: true }).eq("id", consultantId);
-      }
-      await consultantRes.text().catch(() => {});
-      return { success: false, email: portalEmail, error: "Não foi possível obter dados do consultor." };
-    }
-
-    const consultantData = await consultantRes.json();
-    console.log("Consultant API response keys:", JSON.stringify(Object.keys(consultantData)));
-
-    const cid = consultantData.idconsultor
-      || consultantData.id
-      || consultantData.data?.id
-      || consultantData.consultant?.id
-      || consultantData.user?.id
-      || consultantData.consultor?.id
-      || consultantData._id
-      || consultantData.data?._id
-      || consultantData.uid
-      || consultantData.userId
-      || consultantData.user_id;
-
-    if (!cid) {
-      return { success: false, email: portalEmail, error: "ID do consultor não encontrado" };
-    }
-    consultorId = String(cid);
-    if (consultantId) {
-      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
-    }
-  }
-  console.log(`Consultant ID: ${consultorId} (saved_token=${usedSavedToken})`);
-
 
   // === SYNC NETWORK MODE ===
   if (mode === "explore_network" || mode === "sync_network") {
-    console.log("=== SYNC NETWORK MODE ===");
-    try {
-      // Fetch all pages of network map
-      let allNetData: Record<string, unknown>[] = [];
-      let page = 1;
-      const perPage = 100;
-      while (true) {
-        const url = `${API_BASE}/network-map?page=${page}&per_page=${perPage}&limit=${perPage}`;
-        console.log(`Fetching network page ${page}: ${url}`);
-        const netRes = await fetch(url, { headers: authHeaders });
-        if (!netRes.ok) {
-          console.error(`Network fetch failed page ${page}: ${netRes.status}`);
-          if (page === 1) return { success: false, email: portalEmail, error: "Não foi possível buscar o mapa de rede." };
-          break;
-        }
+    console.log(`[worker] sync-network for ${emailNorm}`);
+    const r = await callWorker(worker, "/sync-network", {
+      portal_email: emailNorm,
+      portal_password: passwordNorm,
+    });
+    if (!r.ok) {
+      return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    }
 
-        const rawNet = await netRes.json();
-        console.log(`Page ${page} raw keys:`, Object.keys(rawNet));
-        
-        let pageData: Record<string, unknown>[];
-        if (Array.isArray(rawNet)) {
-          pageData = rawNet;
-        } else if (rawNet.data && Array.isArray(rawNet.data)) {
-          pageData = rawNet.data;
-        } else if (rawNet.results && Array.isArray(rawNet.results)) {
-          pageData = rawNet.results;
-        } else if (rawNet.items && Array.isArray(rawNet.items)) {
-          pageData = rawNet.items;
-        } else {
-          // Log full structure to understand API response
-          console.log(`Page ${page} full response (truncated):`, JSON.stringify(rawNet).slice(0, 2000));
-          pageData = [];
-        }
-        
-        console.log(`Page ${page}: ${pageData.length} members`);
-        if (pageData.length === 0) break;
-        
-        allNetData = allNetData.concat(pageData);
-        
-        // Check pagination metadata
-        const totalPages = rawNet.last_page || rawNet.totalPages || rawNet.total_pages;
-        if (totalPages && page >= totalPages) break;
-        if (pageData.length < perPage && !totalPages) break;
-        
-        page++;
-        // Safety: max 20 pages
-        if (page > 20) break;
-        await new Promise(r => setTimeout(r, 500));
-      }
-      
-      // Deduplicate by igreen_id (API may return same member across pages)
-      const deduped = new Map<number, Record<string, unknown>>();
-      for (const m of allNetData) {
-        const id = Number(m.idconsultor || m.id);
-        if (id) deduped.set(id, m);
-      }
-      const netData = Array.from(deduped.values());
-      console.log(`Network map total: ${netData.length} unique members (${allNetData.length} raw)`);
+    const members: Record<string, unknown>[] = r.data?.members || r.data?.data || [];
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
 
-      // API returns exactly 16 fields — map them correctly
-      const netRecords = netData.map((m: Record<string, unknown>) => ({
-        consultant_id: consultantId,
-        igreen_id: Number(m.idconsultor || m.id),
-        name: String(m.nome || "Sem nome"),
-        phone: normalizePhone(String(m.celular || "")),
-        sponsor_id: m.idpatrocinador ? Number(m.idpatrocinador) : null,
-        nivel: Number(m.nivel ?? 0),
-        data_ativo: safeStr(m.data_ativo) || null,
-        cidade: safeStr(m.cidade) || null,
-        uf: safeStr(m.uf) || null,
-        clientes_ativos: Number(m.cliativo ?? 0),
-        gp: safeNum(m.gp) ?? 0,
-        gi: safeNum(m.gi) ?? 0,
-        qtde_diretos: Number(m.qtde_diretos ?? 0),
-        inicio_rapido: safeStr(m.inicio_rapido) || null,
-        diretos_inicio_rapido: Number(m.diretos_inicio_rapido ?? 0),
-        diretos_mes: Number(m.diretos_mes ?? 0),
-        total_pontos: safeNum(m.total_pontos) ?? 0,
-        // These fields map to accumulated totals from API
-        gp_total: safeNum(m.gp) ?? 0,
-        gi_total: safeNum(m.gi) ?? 0,
-        updated_at: new Date().toISOString(),
-      }));
+    // Dedup
+    const deduped = new Map<number, Record<string, unknown>>();
+    for (const m of members) {
+      const id = Number(m.idconsultor || m.id);
+      if (id) deduped.set(id, m);
+    }
+    const netData = Array.from(deduped.values());
 
-      // Final dedup on mapped records by igreen_id
-      const uniqueRecords = new Map<number, typeof netRecords[0]>();
-      for (const r of netRecords) {
-        uniqueRecords.set(Number(r.igreen_id), r);
-      }
-      const finalRecords = Array.from(uniqueRecords.values());
-      console.log(`After final dedup: ${finalRecords.length} records`);
+    const netRecords = netData.map((m) => ({
+      consultant_id: consultantId,
+      igreen_id: Number(m.idconsultor || m.id),
+      name: String(m.nome || "Sem nome"),
+      phone: normalizePhone(String(m.celular || "")),
+      sponsor_id: m.idpatrocinador ? Number(m.idpatrocinador) : null,
+      nivel: Number(m.nivel ?? 0),
+      data_ativo: safeStr(m.data_ativo) || null,
+      cidade: safeStr(m.cidade) || null,
+      uf: safeStr(m.uf) || null,
+      clientes_ativos: Number(m.cliativo ?? 0),
+      gp: safeNum(m.gp) ?? 0,
+      gi: safeNum(m.gi) ?? 0,
+      qtde_diretos: Number(m.qtde_diretos ?? 0),
+      inicio_rapido: safeStr(m.inicio_rapido) || null,
+      diretos_inicio_rapido: Number(m.diretos_inicio_rapido ?? 0),
+      diretos_mes: Number(m.diretos_mes ?? 0),
+      total_pontos: safeNum(m.total_pontos) ?? 0,
+      gp_total: safeNum(m.gp) ?? 0,
+      gi_total: safeNum(m.gi) ?? 0,
+      updated_at: new Date().toISOString(),
+    }));
 
-      let netUpdated = 0;
-      for (let i = 0; i < finalRecords.length; i += 25) {
-        const batch = finalRecords.slice(i, i + 25);
-        const { data, error } = await supabase
-          .from("network_members")
-          .upsert(batch, { onConflict: "consultant_id,igreen_id", ignoreDuplicates: false })
-          .select("id");
-        if (error) console.error(`Network upsert error at ${i}:`, error);
-        else netUpdated += (data?.length || 0);
-      }
+    let netUpdated = 0;
+    for (let i = 0; i < netRecords.length; i += 25) {
+      const batch = netRecords.slice(i, i + 25);
+      const { data, error } = await supabase
+        .from("network_members")
+        .upsert(batch, { onConflict: "consultant_id,igreen_id", ignoreDuplicates: false })
+        .select("id");
+      if (error) console.error(`Network upsert error at ${i}:`, error);
+      else netUpdated += (data?.length || 0);
+    }
 
-      // Remove stale members that no longer exist in the API
-      const apiIds = finalRecords.map(r => Number(r.igreen_id));
+    // Remove stale members
+    if (consultantId) {
+      const apiIds = netRecords.map((r) => Number(r.igreen_id));
       const { data: existingMembers } = await supabase
         .from("network_members")
         .select("igreen_id")
         .eq("consultant_id", consultantId);
-
       if (existingMembers) {
         const staleIds = (existingMembers as Array<{ igreen_id: number }>)
           .map((m) => m.igreen_id)
           .filter((id) => !apiIds.includes(id));
         if (staleIds.length > 0) {
-          console.log(`Removing ${staleIds.length} stale members:`, staleIds);
-          const { error: delErr } = await supabase
+          await supabase
             .from("network_members")
             .delete()
             .eq("consultant_id", consultantId)
             .in("igreen_id", staleIds);
-          if (delErr) console.error("Delete stale error:", delErr);
         }
       }
-
-      return { success: true, mode: "sync_network", total_members: netData.length, updated: netUpdated, cleaned: 0 };
-    } catch (err) {
-      return { success: false, email: portalEmail, error: err instanceof Error ? err.message : "Erro rede" };
     }
+
+    return { success: true, mode: "sync_network", total_members: netData.length, updated: netUpdated };
   }
 
   // === SYNC CUSTOMERS ===
-  console.log("Fetching customer data...");
-  let allCustomers: Record<string, unknown>[] = [];
-  let page = 1;
-  const pageSize = 500;
-  let hasMore = true;
+  console.log(`[worker] sync-customers for ${emailNorm}`);
+  const r = await callWorker(worker, "/sync-customers", {
+    portal_email: emailNorm,
+    portal_password: passwordNorm,
+  });
+  if (!r.ok) {
+    return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+  }
 
-  while (hasMore) {
-    const url = `${API_BASE}/customer-map/${consultorId}?page=${page}&pageSize=${pageSize}`;
-    console.log(`Fetching page ${page}...`);
-    const dataRes = await fetch(url, { headers: authHeaders });
-
-    if (!dataRes.ok) {
-      const errText = await dataRes.text();
-      console.error(`Data fetch failed on page ${page}: ${dataRes.status} - ${errText}`);
-      break;
-    }
-
-    const responseData = await dataRes.json();
-    const customers = Array.isArray(responseData) ? responseData : (responseData.data || []);
-    const total = responseData.total || customers.length;
-
-    console.log(`Page ${page}: got ${customers.length} customers (total: ${total})`);
-    allCustomers = allCustomers.concat(customers);
-
-    if (customers.length < pageSize || allCustomers.length >= total) {
-      hasMore = false;
-    } else {
-      page++;
-    }
+  const allCustomers: Record<string, unknown>[] = r.data?.customers || r.data?.data || [];
+  const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+  if (consultantId && consultorId) {
+    await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
   }
 
   if (allCustomers.length === 0) {
-    return { success: false, email: portalEmail, error: "Nenhum cliente encontrado no portal." };
+    return { success: false, email: emailNorm, error: "Nenhum cliente retornado pelo worker." };
   }
 
-  console.log(`Total customers fetched: ${allCustomers.length}`);
-  if (allCustomers.length > 0) {
-    console.log(`Sample fields: ${Object.keys(allCustomers[0]).join(", ")}`);
-  }
+  console.log(`Worker returned ${allCustomers.length} customers`);
 
   const seenPhones = new Map<string, string>();
   const records: Record<string, unknown>[] = [];
@@ -540,11 +356,7 @@ async function syncOneConsultant(
 
   for (const c of allCustomers) {
     const record = buildRecord(c);
-    if (!record || !record.phone_whatsapp) {
-      skippedNoPhone++;
-      continue;
-    }
-
+    if (!record || !record.phone_whatsapp) { skippedNoPhone++; continue; }
     const phone = String(record.phone_whatsapp);
 
     if (seenPhones.has(phone)) {
@@ -552,11 +364,8 @@ async function syncOneConsultant(
       if (icode) {
         const uniquePhone = `${phone}_${icode}`;
         record.phone_whatsapp = uniquePhone;
-        console.log(`Duplicate phone ${phone} for "${record.name}" — using unique key: ${uniquePhone}`);
         seenPhones.set(uniquePhone, String(record.name || "unknown"));
-      } else {
-        continue;
-      }
+      } else continue;
     } else {
       seenPhones.set(phone, String(record.name || "unknown"));
     }
@@ -565,18 +374,9 @@ async function syncOneConsultant(
     records.push(record);
   }
 
-  console.log(`Processing ${records.length} records (${skippedNoPhone} skipped no phone)`);
-
-  let updatedCount = 0;
-  let errorCount = 0;
-  const BATCH_SIZE = 100;
-
-  // First, fetch existing customers that are mid-conversation (have a conversation_step set)
-  // to avoid overwriting their status/step during sync
-  const allPhones = records.map(r => String(r.phone_whatsapp));
+  // Proteção mid-conversation
+  const allPhones = records.map((r) => String(r.phone_whatsapp));
   const midConvoPhones = new Set<string>();
-  
-  // Batch fetch in chunks of 200
   for (let i = 0; i < allPhones.length; i += 200) {
     const chunk = allPhones.slice(i, i + 200);
     const { data: existing } = await supabase
@@ -586,32 +386,28 @@ async function syncOneConsultant(
       .not("conversation_step", "is", null);
     if (existing) {
       for (const e of existing as Array<{ phone_whatsapp: string; conversation_step: string | null }>) {
-        // If a customer has an active conversation_step (not 'complete'), protect them
         if (e.conversation_step && e.conversation_step !== "complete") {
           midConvoPhones.add(e.phone_whatsapp);
         }
       }
     }
   }
-  
   if (midConvoPhones.size > 0) {
-    console.log(`⚠️ Protecting ${midConvoPhones.size} leads mid-conversation from status overwrite`);
+    console.log(`⚠️ Protecting ${midConvoPhones.size} mid-conversation leads`);
   }
-
-  // For mid-conversation leads, remove status from the upsert record so it won't overwrite
   for (const rec of records) {
-    if (midConvoPhones.has(String(rec.phone_whatsapp))) {
-      delete rec.status;
-    }
+    if (midConvoPhones.has(String(rec.phone_whatsapp))) delete rec.status;
   }
 
+  let updatedCount = 0;
+  let errorCount = 0;
+  const BATCH_SIZE = 100;
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE);
     const { data, error } = await supabase
       .from("customers")
       .upsert(batch, { onConflict: "phone_whatsapp,consultant_id", ignoreDuplicates: false })
       .select("id");
-
     if (error) {
       console.error(`Batch upsert error at ${i}:`, error);
       errorCount += batch.length;
@@ -625,18 +421,16 @@ async function syncOneConsultant(
     .from("settings")
     .upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
 
-  const result = {
+  return {
     success: true,
-    email: portalEmail,
+    email: emailNorm,
     total_from_portal: allCustomers.length,
     processed: records.length,
+    skipped_no_phone: skippedNoPhone,
     updated: updatedCount,
     errors: errorCount,
     synced_at: syncTimestamp,
   };
-
-  console.log("Sync completed:", result);
-  return result;
 }
 
 // =====================================================
@@ -666,65 +460,69 @@ Deno.serve(async (req) => {
       if (body.consultant_id) consultantId = body.consultant_id;
       if (body.mode) mode = body.mode;
       if (body.source) source = body.source;
-    } catch (_) { /* no body or invalid json */ }
+    } catch (_) { /* sem body */ }
+
+    const worker = await resolveSyncWorker(supabase);
+    if (!worker) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Worker de sync iGreen não configurado. Defina IGREEN_SYNC_WORKER_URL (secret) ou settings.igreen_sync_worker_url.",
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     // ========================================================
-    // CRON MODE: iterate over ALL consultants with credentials
+    // CRON MODE: itera sobre todos os consultores aprovados
     // ========================================================
     if (source === "cron") {
       console.log("=== CRON MODE: Syncing ALL consultants ===");
       const { data: consultants, error: cErr } = await supabase
         .from("consultants")
-        .select("id, name, igreen_portal_email, igreen_portal_password, igreen_access_token, igreen_consultor_id, igreen_token_expired")
+        .select("id, name, igreen_portal_email, igreen_portal_password")
         .eq("approved", true);
 
-      const usable = (consultants || []).filter((c: Record<string, unknown>) => {
-        const hasCreds = !!c.igreen_portal_email && !!c.igreen_portal_password;
-        const hasToken = !!c.igreen_access_token && c.igreen_token_expired !== true;
-        return hasCreds || hasToken;
-      });
+      const usable = (consultants || []).filter((c: Record<string, unknown>) =>
+        !!c.igreen_portal_email && !!c.igreen_portal_password
+      );
 
       if (cErr || usable.length === 0) {
-        console.log("No consultants with credentials or saved tokens found, falling back to env vars.");
         if (portalEmail && portalPassword) {
-          const result = await syncOneConsultant(supabase, portalEmail, portalPassword, null, mode);
+          const result = await syncOneConsultant(supabase, worker, portalEmail, portalPassword, null, mode);
           return new Response(JSON.stringify(result), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         return new Response(
-          JSON.stringify({ success: false, error: "Nenhum consultor com credenciais ou token configurado." }),
+          JSON.stringify({ success: false, error: "Nenhum consultor com credenciais iGreen configuradas." }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      console.log(`Found ${usable.length} consultants with usable auth.`);
+      console.log(`Found ${usable.length} consultants with credentials.`);
       const results: Record<string, unknown>[] = [];
 
       for (const c of usable) {
-        console.log(`--- Syncing: ${c.name} (${c.igreen_portal_email || "[token only]"}) ---`);
+        console.log(`--- Syncing: ${c.name} (${c.igreen_portal_email}) ---`);
         try {
           const r = await syncOneConsultant(
             supabase,
-            c.igreen_portal_email || "",
-            c.igreen_portal_password || "",
+            worker,
+            c.igreen_portal_email,
+            c.igreen_portal_password,
             c.id,
             mode,
-            c.igreen_token_expired === true ? null : c.igreen_access_token,
-            c.igreen_consultor_id,
           );
           results.push({ consultant: c.name, ...r });
         } catch (err) {
           console.error(`Error syncing ${c.name}:`, err);
           results.push({ consultant: c.name, success: false, error: err instanceof Error ? err.message : "Erro" });
         }
-        // 5s delay between consultants to avoid iGreen rate limits
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise((r) => setTimeout(r, 3000));
       }
 
       const totalSynced = results.filter((r) => r.success).length;
-      console.log(`CRON completed: ${totalSynced}/${usable.length} consultants synced.`);
-
       return new Response(JSON.stringify({
         success: true,
         mode: "cron_all",
@@ -736,71 +534,44 @@ Deno.serve(async (req) => {
       });
     }
 
-
     // ========================================================
     // MANUAL MODE: single consultant
     // ========================================================
-    // Note: we still allow the request even without portal email/password
-    // if a saved token exists on the consultant record (loaded below).
-
-
-
-
-    let savedToken: string | null = null;
-    let savedConsultorId: string | null = null;
-
     if (consultantId && !credsFromBody) {
       const { data: cred } = await supabase
         .from("consultants")
-        .select("igreen_portal_email, igreen_portal_password, igreen_access_token, igreen_consultor_id, igreen_token_expired")
+        .select("igreen_portal_email, igreen_portal_password")
         .eq("id", consultantId)
         .maybeSingle();
       if (cred?.igreen_portal_email && cred?.igreen_portal_password) {
         portalEmail = cred.igreen_portal_email;
         portalPassword = cred.igreen_portal_password;
-        console.log(`[creds] Loaded from DB for consultant: ${consultantId}`);
       }
-      if (cred?.igreen_access_token && cred?.igreen_token_expired !== true) {
-        savedToken = cred.igreen_access_token;
-        savedConsultorId = cred.igreen_consultor_id || null;
-        console.log(`[token] Loaded saved token for consultant: ${consultantId}`);
-      }
-    } else if (credsFromBody) {
-      console.log(`[creds] Using credentials from request body (not DB)`);
     }
 
     if (!consultantId && portalEmail) {
       const { data: consultant } = await supabase
         .from("consultants")
-        .select("id, igreen_access_token, igreen_consultor_id, igreen_token_expired")
+        .select("id")
         .eq("igreen_portal_email", portalEmail)
         .maybeSingle();
-      if (consultant?.id) {
-        consultantId = consultant.id;
-        console.log(`Resolved consultant_id from portal email: ${consultantId}`);
-        if (consultant.igreen_access_token && consultant.igreen_token_expired !== true) {
-          savedToken = consultant.igreen_access_token;
-          savedConsultorId = consultant.igreen_consultor_id || null;
-        }
-      }
+      if (consultant?.id) consultantId = consultant.id;
     }
 
-    // Without portal creds AND without saved token, we cannot proceed.
-    if ((!portalEmail || !portalPassword) && !savedToken) {
+    if (!portalEmail || !portalPassword) {
       return new Response(
-        JSON.stringify({ success: false, error: "Credenciais ou token do portal iGreen não configurados. Use 'Conectar iGreen' ou preencha email/senha na aba Dados." }),
+        JSON.stringify({ success: false, error: "Credenciais do portal iGreen não configuradas. Preencha email/senha na aba Dados." }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     const result = await syncOneConsultant(
       supabase,
-      portalEmail || "",
-      portalPassword || "",
+      worker,
+      portalEmail,
+      portalPassword,
       consultantId,
       mode,
-      savedToken,
-      savedConsultorId,
     );
 
     return new Response(JSON.stringify(result), {
