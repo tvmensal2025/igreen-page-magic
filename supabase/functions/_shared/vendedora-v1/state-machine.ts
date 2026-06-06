@@ -9,7 +9,11 @@ const hasMedia = (v: any) => {
   return s.length > 0 && !MEDIA_PLACEHOLDERS.has(s);
 };
 
-export function decideEtapa(customer: any, state: FluxoBState): Etapa {
+export function decideEtapa(
+  customer: any,
+  state: FluxoBState,
+  opts?: { semHistorico?: boolean },
+): Etapa {
   if (state.cadastro_finalizado) return "pos_cadastro";
 
   const temNome = !!String(customer?.name ?? "").trim();
@@ -17,6 +21,9 @@ export function decideEtapa(customer: any, state: FluxoBState): Etapa {
   const temConta = hasMedia(customer?.electricity_bill_photo_url) || !!state.midia_recebida?.conta;
   const temDoc = hasMedia(customer?.document_front_url) || !!state.midia_recebida?.doc_frente;
   const temEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customer?.email ?? "").trim());
+
+  // 1ª mensagem com lead sem nome → abertura (apresenta iGreen antes de pedir nome).
+  if (!temNome && opts?.semHistorico && !state.abertura_feita) return "interesse";
 
   if (!temNome) return "nome";
   if (!temValor) return "valor";
