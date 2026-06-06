@@ -327,23 +327,23 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   if (inline) {
     if (!open) return null;
     return (
-      <aside className="w-full h-full flex flex-col bg-background border-l border-border/60 overflow-hidden">
-        <header className="px-2 py-1.5 border-b border-border/60 bg-gradient-to-br from-primary/10 via-card to-card sticky top-0 z-20">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-              <ClipboardList className="w-3.5 h-3.5 text-primary" />
+      <aside className="w-full h-full flex flex-col bg-gradient-to-b from-background via-background to-primary/[0.02] border-l border-border/60 overflow-hidden">
+        <header className="px-3 py-2.5 border-b border-border/60 bg-gradient-to-br from-primary/10 via-primary/[0.04] to-card sticky top-0 z-20 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/25 to-primary/10 flex items-center justify-center shrink-0 ring-1 ring-primary/20 shadow-sm shadow-primary/10">
+              <ClipboardList className="w-4 h-4 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold leading-tight break-words">
+              <p className="text-sm font-bold leading-tight break-words text-foreground">
                 {customerName || phoneNumber || "Lead"}
               </p>
-              {phoneNumber && <p className="text-[10px] text-muted-foreground truncate">{phoneNumber}</p>}
+              {phoneNumber && <p className="text-[10px] text-muted-foreground truncate font-mono">{phoneNumber}</p>}
             </div>
             {needsName && (
               <Button
                 size="sm"
                 variant="default"
-                className="gap-1 font-bold animate-pulse shrink-0 h-7 px-2 text-[10px]"
+                className="gap-1 font-semibold animate-pulse shrink-0 h-7 px-2.5 text-[10px] rounded-full shadow-sm shadow-primary/30"
                 onClick={handleAskName}
                 disabled={askingName}
                 title="Lead sem nome — peça agora"
@@ -352,17 +352,26 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
                 Nome
               </Button>
             )}
-            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)} title="Fechar painel">
+            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => onOpenChange(false)} title="Fechar painel">
               <X className="w-4 h-4" />
             </Button>
           </div>
-          <CaptureProgressBar progress={progress} filled={filledCount} total={totalFields} />
-          <p className="text-[10px] text-center font-semibold text-primary/90 mt-1">{phrase}</p>
-          {nextMissing && !canSubmit && (
-            <p className="text-[10px] text-center mt-0.5 text-muted-foreground">
-              🎯 Próximo: <span className="font-bold text-foreground">{nextMissing.label}</span>
-            </p>
-          )}
+
+          {/* Card de progresso destacado */}
+          <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-card via-card to-primary/[0.06] p-2.5 shadow-sm">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Progresso do Cadastro</span>
+              <span className="text-sm font-black tabular-nums text-primary">{filledCount}<span className="text-muted-foreground/70 font-bold">/{totalFields}</span></span>
+            </div>
+            <CaptureProgressBar progress={progress} filled={filledCount} total={totalFields} />
+            <p className="text-[10px] text-center font-semibold text-primary mt-1.5">{phrase}</p>
+            {nextMissing && !canSubmit && (
+              <p className="text-[10px] text-center mt-0.5 text-muted-foreground flex items-center justify-center gap-1">
+                <span>🎯 Próximo:</span> <span className="font-bold text-foreground">{nextMissing.label}</span>
+              </p>
+            )}
+          </div>
+
           {combo.isActive && (
             <div className="mt-1.5">
               <ComboTimer
@@ -376,14 +385,14 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         </header>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="mx-2 mt-1.5 grid grid-cols-2 h-8">
-            <TabsTrigger value="passos" className="gap-0.5 text-[11px]">
-              <ListChecks className="w-3 h-3" /> Passos
-              <span className="ml-0.5 bg-primary/15 px-1 py-px rounded-full font-bold text-[9px]">{sentSteps.size}</span>
+          <TabsList className="mx-2 mt-2 grid grid-cols-2 h-9 rounded-full bg-muted/50 p-0.5">
+            <TabsTrigger value="passos" className="gap-1 text-[11px] rounded-full data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm font-semibold transition-all">
+              <ListChecks className="w-3.5 h-3.5" /> Passos
+              <span className="ml-0.5 bg-primary/15 text-primary px-1.5 py-px rounded-full font-bold text-[9px] tabular-nums">{sentSteps.size}</span>
             </TabsTrigger>
-            <TabsTrigger value="ficha" className="gap-0.5 text-[11px]">
-              <IdCard className="w-3 h-3" /> Ficha
-              <span className="ml-0.5 bg-primary/15 px-1 py-px rounded-full font-bold text-[9px]">{filledCount}/{totalFields}</span>
+            <TabsTrigger value="ficha" className="gap-1 text-[11px] rounded-full data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm font-semibold transition-all">
+              <IdCard className="w-3.5 h-3.5" /> Ficha
+              <span className="ml-0.5 bg-primary/15 text-primary px-1.5 py-px rounded-full font-bold text-[9px] tabular-nums">{filledCount}/{totalFields}</span>
             </TabsTrigger>
           </TabsList>
 
