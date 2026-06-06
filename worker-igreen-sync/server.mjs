@@ -393,9 +393,23 @@ const server = http.createServer(async (req, res) => {
         const html = await p.content().catch(() => '');
         const sitekeys = html.match(/data-sitekey="([^"]+)"/g) || [];
         const iframeSrcs = (html.match(/recaptcha[^"']*\/anchor[^"']*/g) || []).slice(0, 2);
+        // Inspeciona estrutura do reCAPTCHA e do form
+        const recaptchaInfo = await p.evaluate(() => {
+          const info = {};
+          info.hasGrecaptcha = typeof window.grecaptcha !== 'undefined';
+          info.hasEnterprise = typeof window.grecaptcha?.enterprise !== 'undefined';
+          info.gResponseFields = [...document.querySelectorAll('[name="g-recaptcha-response"], textarea[id^="g-recaptcha"]')].map(e => e.id || e.name);
+          info.recaptchaDivs = [...document.querySelectorAll('.g-recaptcha, [class*="recaptcha"]')].map(e => ({ cls: e.className, sitekey: e.getAttribute('data-sitekey'), size: e.getAttribute('data-size') }));
+          info.buttons = [...document.querySelectorAll('button')].map(b => ({ text: b.innerText.trim(), type: b.type, disabled: b.disabled }));
+          info.forms = [...document.querySelectorAll('form')].map(f => f.action || 'no-action');
+          // procura sitekey em scripts
+          const scripts = [...document.querySelectorAll('script')].map(s => s.src).filter(s => s.includes('recaptcha'));
+          info.recaptchaScripts = scripts;
+          return info;
+        }).catch(e => ({ error: e.message }));
         const bodyText = await p.locator('body').innerText().catch(() => '');
         await context.close();
-        return send(res, 200, { title, url, sitekeys, iframeSrcs, bodySnippet: bodyText.slice(0, 400) });
+        return send(res, 200, { title, url, sitekeys, iframeSrcs, recaptchaInfo, bodySnippet: bodyText.slice(0, 400) });
       } catch (e) {
         await context.close().catch(() => {});
         return send(res, 500, { error: e.message });
