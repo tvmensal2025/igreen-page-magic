@@ -181,13 +181,13 @@ ANALISE ESTA IMAGEM DE CONTA DE ENERGIA e extraia os dados do CLIENTE (não da d
 IMPORTANTE: NÃO extraia CPF - o CPF será obtido do documento de identidade separadamente.
 
 Extraia:
-1. NOME do TITULAR da conta
-2. ENDEREÇO DE INSTALAÇÃO (rua/avenida, sem número)
-3. NÚMERO do endereço
-4. BAIRRO
-5. CEP (8 dígitos)
-6. CIDADE
-7. ESTADO (sigla UF, ex: SP, MG, RJ)
+1. NOME do TITULAR CONTRATANTE (geralmente no topo da fatura, perto de "Cliente"/"Titular"/"Razão Social"). NÃO confunda com nomes em histórico, segunda via, ou anúncios. Se houver mais de um nome impresso, use o que estiver no bloco principal de identificação do cliente.
+2. ENDEREÇO DE INSTALAÇÃO — procure o bloco **"ENDEREÇO DE INSTALAÇÃO" / "UNIDADE CONSUMIDORA" / "LOCAL DE FORNECIMENTO" / "ENDEREÇO DO IMÓVEL"**. NÃO use o endereço de correspondência, da agência, do PAGADOR, da loja ou da própria distribuidora. O endereço de instalação fica próximo do "Nº da Instalação" / "Seu Código" / "Código do Cliente". Devolva apenas a rua/avenida (com prefixo R., RUA, AV., AVENIDA, AL., ALAMEDA, TV., TRAVESSA, ROD., ESTRADA, PRAÇA), SEM número.
+3. NÚMERO do endereço de instalação
+4. BAIRRO do endereço de instalação
+5. CEP do endereço de instalação — 8 dígitos no formato XXXXX-XXX. Fica junto/abaixo do endereço de instalação ou da cidade/UF da instalação. NÃO use CEP da agência/distribuidora/correspondência. Devolva sempre os 8 dígitos quando visível na fatura.
+6. CIDADE do endereço de instalação
+7. ESTADO (sigla UF, ex: SP, MG, RJ) do endereço de instalação
 8. DISTRIBUIDORA (nome REGIONAL da concessionária — NUNCA o grupo holding. Use: CPFL PIRATININGA, CPFL PAULISTA, CPFL SANTA CRUZ, RGE, ENEL SP, ENEL RJ, EDP SP, EDP ES, LIGHT, CEMIG, COPEL, CELESC, COELBA, CELPE, COSERN, COELCE, EQUATORIAL GO/PA/MA/PI/AL, CEB, ENERGISA <UF>, AMAZONAS ENERGIA, RORAIMA ENERGIA, ELEKTRO etc. NÃO escreva apenas "CPFL ENERGIA", "ENEL", "EDP", "ENERGISA" ou "EQUATORIAL" sozinhos)
 9. NÚMERO DA INSTALAÇÃO (campo "Seu Código" na CPFL, "Nº do Cliente" na Enel, geralmente 7-12 dígitos)
 10. VALOR TOTAL A PAGAR (em reais)
