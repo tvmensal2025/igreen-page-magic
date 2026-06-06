@@ -27,6 +27,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { ManualStepDialog } from "./ManualStepDialog";
+import WinningConversationButton from "@/components/admin/WinningConversationButton";
 
 type Variant = "A" | "B" | "C" | "D" | "E";
 
@@ -463,6 +464,7 @@ function Section({ title, rows, action }: { title: string; rows: Row[]; action: 
             <span className="text-xs text-muted-foreground">
               {r.last_bot_reply_at ? formatDistanceToNow(new Date(r.last_bot_reply_at), { addSuffix: true, locale: ptBR }) : "—"}
             </span>
+            <WinningConversationButton customerId={r.id} compact />
             {action(r)}
           </Card>
         ))}
