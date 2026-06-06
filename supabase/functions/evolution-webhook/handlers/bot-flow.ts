@@ -637,12 +637,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       messageText && messageText.trim().length > 0
     ) {
       console.log(`[fluxo-b] dispatching customer=${customer.id} step=${_fbStep}`);
-      const r = await runFluxoBAI({
-        supabase,
-        customerId: customer.id,
-        inboundText: messageText,
-        customer,
-      });
+      // Timeout duro de 25s: se a IA travar, cai pro fluxo legado (silêncio).
+      const r = await Promise.race([
+        runFluxoBAI({ supabase, customerId: customer.id, inboundText: messageText, customer }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("fluxo_b_timeout_25s")), 25_000),
+        ),
+      ]);
       try { await ctx.sender.sendText(remoteJid, r.reply); } catch (e) {
         console.warn(`[fluxo-b] sendText falhou:`, (e as any)?.message);
       }

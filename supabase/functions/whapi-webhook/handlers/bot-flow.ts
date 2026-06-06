@@ -639,13 +639,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       messageText && messageText.trim().length > 0
     ) {
       console.log(`[fluxo-b] dispatching customer=${customer.id} step=${_fbStep} text="${messageText.slice(0, 60)}"`);
-      const r = await runFluxoBAI({
-        supabase,
-        customerId: customer.id,
-        inboundText: messageText,
-        customer,
-      });
-      // Envia a resposta direto pelo sender
+      // Timeout duro de 25s: se a IA travar, cai pro fluxo legado (silêncio
+      // p/ o lead, sem mensagem-fantasma). Dedupe garante 0 duplicidade.
+      const r = await Promise.race([
+        runFluxoBAI({ supabase, customerId: customer.id, inboundText: messageText, customer }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("fluxo_b_timeout_25s")), 25_000),
+        ),
+      ]);
       try { await sendText(remoteJid, r.reply); } catch (e) {
         console.warn(`[fluxo-b] sendText falhou:`, (e as any)?.message);
       }
