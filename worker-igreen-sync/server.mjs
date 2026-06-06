@@ -72,6 +72,34 @@ async function solve2captcha(sitekey, pageUrl) {
   throw new HttpError(500, '2captcha timeout');
 }
 
+// ------------ IA de visão (assistida) — GPT-4o-mini analisa screenshot ------------
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+async function aiVision(screenshotBase64, question) {
+  if (!OPENAI_API_KEY) return 'IA indisponível (sem OPENAI_API_KEY)';
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 400,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: question },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } },
+          ],
+        }],
+      }),
+      signal: AbortSignal.timeout(40000),
+    });
+    const j = await res.json();
+    return j?.choices?.[0]?.message?.content || JSON.stringify(j).slice(0, 300);
+  } catch (e) {
+    return `IA erro: ${e.message}`;
+  }
+}
+
 // ------------ Browser com Tor ------------
 let sharedBrowser = null;
 
@@ -113,6 +141,39 @@ async function loginAndGetToken(email, password) {
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     window.chrome = { runtime: {} };
+
+    // Override grecaptcha.getResponse para devolver o token resolvido pelo 2captcha.
+    // SPAs leem o token via grecaptcha.getResponse()/enterprise.getResponse(),
+    // NÃO da textarea — por isso injetar na textarea não bastava.
+    window.__igreenCaptchaToken = '';
+    function patchGrecaptcha() {
+      try {
+        if (window.grecaptcha) {
+          const orig = window.grecaptcha.getResponse;
+          window.grecaptcha.getResponse = function (...a) {
+            if (window.__igreenCaptchaToken) return window.__igreenCaptchaToken;
+            try { return orig ? orig.apply(this, a) : ''; } catch { return ''; }
+          };
+          if (window.grecaptcha.enterprise) {
+            const origE = window.grecaptcha.enterprise.getResponse;
+            window.grecaptcha.enterprise.getResponse = function (...a) {
+              if (window.__igreenCaptchaToken) return window.__igreenCaptchaToken;
+              try { return origE ? origE.apply(this, a) : ''; } catch { return ''; }
+            };
+            // execute() retorna Promise com o token (fluxo invisível/score)
+            const origExec = window.grecaptcha.enterprise.execute;
+            window.grecaptcha.enterprise.execute = function (...a) {
+              if (window.__igreenCaptchaToken) return Promise.resolve(window.__igreenCaptchaToken);
+              try { return origExec ? origExec.apply(this, a) : Promise.resolve(''); } catch { return Promise.resolve(''); }
+            };
+          }
+        }
+      } catch (_) {}
+    }
+    // grecaptcha carrega async — re-patcha periodicamente
+    patchGrecaptcha();
+    const iv = setInterval(patchGrecaptcha, 300);
+    setTimeout(() => clearInterval(iv), 30000);
   });
 
   // Captura token JWT das responses de rede
@@ -128,6 +189,17 @@ async function loginAndGetToken(email, password) {
       const t = j?.token || j?.access_token || j?.accessToken || j?.data?.token || j?.jwt;
       if (t && !capturedToken) { capturedToken = t; dbg(`[token] capturado de ${url}`); }
     } catch { /* ignora */ }
+  });
+
+  // DIAGNÓSTICO: loga toda requisição POST ao domínio iGreen (revela endpoint + payload do login)
+  context.on('request', (request) => {
+    try {
+      const url = request.url();
+      if (request.method() !== 'POST') return;
+      if (!/igreenenergy/.test(url)) return;
+      const pd = (request.postData() || '').slice(0, 500);
+      dbg(`[req] POST ${url} body=${pd.replace(/\n/g, ' ')}`);
+    } catch (_) {}
   });
 
   const page = await context.newPage();
@@ -177,6 +249,9 @@ async function loginAndGetToken(email, password) {
     dbg('[login] token 2captcha obtido — injetando...');
 
     await page.evaluate((token) => {
+      // Define o token global que o getResponse() sobrescrito devolve (caminho principal SPA)
+      window.__igreenCaptchaToken = token;
+
       // Injeta o token em TODOS os campos g-recaptcha-response (widget 0 e 1)
       const fields = document.querySelectorAll('textarea[id^="g-recaptcha-response"], textarea[name="g-recaptcha-response"], #g-recaptcha-response, #g-recaptcha-response-1');
       fields.forEach(ta => { ta.value = token; ta.innerHTML = token; });
@@ -238,6 +313,16 @@ async function loginAndGetToken(email, password) {
 
     const currentUrl = page.url();
     if (/\/login/i.test(currentUrl)) {
+      // Diagnóstico: captura mensagem de erro visível + análise de IA
+      const errText = await page.locator('body').innerText().catch(() => '');
+      dbg(`[login] FALHOU — body: ${errText.slice(0, 250).replace(/\n/g, ' ')}`);
+      if (OPENAI_API_KEY) {
+        const shot = await page.screenshot({ encoding: 'base64' }).catch(() => null);
+        if (shot) {
+          const v = await aiVision(shot, 'Esta é uma tela de login que falhou. Descreva exatamente qual mensagem de erro aparece, se há um captcha (caixa "não sou robô" ou desafio de imagens) ainda visível, e se o botão Entrar está habilitado. Responda em português, curto.');
+          dbg(`[IA] ${v.slice(0, 300)}`);
+        }
+      }
       throw new HttpError(401, 'Login rejeitado — credenciais inválidas ou captcha não aceito');
     }
 
