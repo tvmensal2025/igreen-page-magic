@@ -1,0 +1,121 @@
+// Tools que o Writer pode chamar.
+
+export const WRITER_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "registrar_nome",
+      description: "Salva o nome do lead.",
+      parameters: { type: "object", properties: { nome: { type: "string" } }, required: ["nome"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "registrar_valor_conta",
+      description: "Salva o valor médio mensal da conta de luz em reais.",
+      parameters: { type: "object", properties: { valor: { type: "number" } }, required: ["valor"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "registrar_info",
+      description: "Salva uma informação genérica do lead (cidade, distribuidora, melhor_horario, profissao, tamanho_casa, etc).",
+      parameters: {
+        type: "object",
+        properties: {
+          campo: { type: "string", description: "ex: cidade, distribuidora, melhor_horario" },
+          valor: { type: "string" },
+        },
+        required: ["campo", "valor"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "registrar_objecao_tratada",
+      description: "Marca que uma objeção já foi tratada pra não repetir o mesmo argumento.",
+      parameters: {
+        type: "object",
+        properties: { tipo: { type: "string", description: "ex: golpe, obra, fidelidade, solar, tempo" } },
+        required: ["tipo"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pedir_foto_conta",
+      description: "Próximo passo: receber foto/PDF da conta. Combine com mensagem curta.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pedir_documento",
+      description: "Próximo passo: receber foto do RG/CNH. Combine com mensagem curta.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "agendar_followup",
+      description: "Agenda um follow-up quando o lead pediu pra falar depois.",
+      parameters: {
+        type: "object",
+        properties: {
+          quando_iso: { type: "string", description: "ISO datetime do retorno" },
+          gancho: { type: "string", description: "gancho curto pra reabrir conversa" },
+        },
+        required: ["quando_iso", "gancho"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "marcar_quente",
+      description: "Sobe prioridade do lead no CRM quando temperatura alta.",
+      parameters: { type: "object", properties: { motivo: { type: "string" } }, required: ["motivo"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "oferecer_cadastro_express",
+      description: "Quando lead está pronto, pula etapas e pede foto da conta + documento juntos.",
+      parameters: { type: "object", properties: { motivo: { type: "string" } }, required: ["motivo"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pedir_humano_proativo",
+      description: "IA decide proativamente que precisa humano (caso complexo, frustração séria).",
+      parameters: { type: "object", properties: { motivo: { type: "string" } }, required: ["motivo"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "escalar_humano",
+      description: "Lead pediu humano explicitamente. Pausa o bot.",
+      parameters: { type: "object", properties: { motivo: { type: "string" } }, required: ["motivo"], additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "finalizar_cadastro",
+      description: "Encerra a conversa e aciona pipeline de cadastro final.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+] as const;

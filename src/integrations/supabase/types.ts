@@ -1084,6 +1084,8 @@ export type Database = {
           consultant_id: string | null
           content: string
           created_at: string
+          embedding: string | null
+          embedding_updated_at: string | null
           id: string
           is_active: boolean
           is_critical: boolean
@@ -1097,6 +1099,8 @@ export type Database = {
           consultant_id?: string | null
           content: string
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           id?: string
           is_active?: boolean
           is_critical?: boolean
@@ -1110,6 +1114,8 @@ export type Database = {
           consultant_id?: string | null
           content?: string
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           id?: string
           is_active?: boolean
           is_critical?: boolean
@@ -1366,6 +1372,64 @@ export type Database = {
           tokens_out?: number | null
         }
         Relationships: []
+      }
+      ai_winning_conversations: {
+        Row: {
+          consultant_id: string | null
+          created_at: string
+          created_by: string | null
+          embedding: string | null
+          etapa: string
+          id: string
+          outcome: string | null
+          snippet: string
+          updated_at: string
+        }
+        Insert: {
+          consultant_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          embedding?: string | null
+          etapa: string
+          id?: string
+          outcome?: string | null
+          snippet: string
+          updated_at?: string
+        }
+        Update: {
+          consultant_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          embedding?: string | null
+          etapa?: string
+          id?: string
+          outcome?: string | null
+          snippet?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_winning_conversations_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_winning_conversations_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_winning_conversations_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
       }
       app_settings: {
         Row: {
@@ -2892,6 +2956,8 @@ export type Database = {
           finalized_at: string | null
           finalized_by: string | null
           flow_variant: string | null
+          fluxo_b_state: Json
+          fluxo_b_variant: string
           followup_count: number
           id: string
           igreen_code: string | null
@@ -3075,6 +3141,8 @@ export type Database = {
           finalized_at?: string | null
           finalized_by?: string | null
           flow_variant?: string | null
+          fluxo_b_state?: Json
+          fluxo_b_variant?: string
           followup_count?: number
           id?: string
           igreen_code?: string | null
@@ -3258,6 +3326,8 @@ export type Database = {
           finalized_at?: string | null
           finalized_by?: string | null
           flow_variant?: string | null
+          fluxo_b_state?: Json
+          fluxo_b_variant?: string
           followup_count?: number
           id?: string
           igreen_code?: string | null
@@ -6186,6 +6256,34 @@ export type Database = {
           _source: string
         }
         Returns: undefined
+      }
+      match_knowledge: {
+        Args: {
+          p_consultant_id: string
+          p_match_count?: number
+          p_query_embedding: string
+        }
+        Returns: {
+          content: string
+          id: string
+          similarity: number
+          title: string
+        }[]
+      }
+      match_winning: {
+        Args: {
+          p_consultant_id: string
+          p_etapa: string
+          p_match_count?: number
+          p_query_embedding: string
+        }
+        Returns: {
+          etapa: string
+          id: string
+          outcome: string
+          similarity: number
+          snippet: string
+        }[]
       }
       pause_sending_now: {
         Args: { p_hours?: number; p_instance: string }
