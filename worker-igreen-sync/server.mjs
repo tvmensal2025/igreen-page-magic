@@ -339,6 +339,31 @@ const server = http.createServer(async (req, res) => {
     const password = String(body.portal_password || '');
     if (!email || !password) return send(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
 
+    if (req.url === '/debug-page') {
+      // Endpoint temporário para ver o HTML da página de login via Tor
+      const browser = await getBrowser();
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1280, height: 800 },
+      });
+      await context.addInitScript(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
+      const p = await context.newPage();
+      try {
+        await p.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await p.waitForTimeout(3000);
+        const title = await p.title().catch(() => '');
+        const url = p.url();
+        const html = await p.content().catch(() => '');
+        const sitekeys = html.match(/data-sitekey="([^"]+)"/g) || [];
+        const bodyText = await p.locator('body').innerText().catch(() => '');
+        await context.close();
+        return send(res, 200, { title, url, sitekeys, bodySnippet: bodyText.slice(0, 500) });
+      } catch (e) {
+        await context.close().catch(() => {});
+        return send(res, 500, { error: e.message });
+      }
+    }
+
     if (req.url === '/sync-customers') {
       const result = await withSession(email, password, async s => {
         if (!s.consultorId) throw new HttpError(500, 'consultor_id indisponível');
