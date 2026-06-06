@@ -4202,7 +4202,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     case "confirmar_titularidade": {
       // resp pode ser string vazia (não null) — coerção defensiva via String()
       // satisfaz o typecheck do regex.test() que exige string.
-      const resp: string = isButton ? String(buttonId ?? "") : messageText.toLowerCase().trim();
+      const rawResp: string = isButton ? String(buttonId ?? "") : messageText.toLowerCase().trim();
+      // Canais sem botões nativos (Evolution/Baileys) renderizam as opções
+      // como lista numerada. Mapeia 1/2/3 para os ids dos botões.
+      const numMap: Record<string, string> = { "1": "titular_mesmo", "2": "titular_outro", "3": "titular_corrigir" };
+      const resp = numMap[rawResp] ?? rawResp;
       if (resp === "titular_mesmo" || /mesma|sou eu|é eu|eh eu|igual/i.test(resp)) {
         updates.name_mismatch_acknowledged_at = new Date().toISOString();
         const merged = { ...customer, ...updates };
@@ -4225,7 +4229,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           { id: "titular_outro", title: "Outro titular" },
           { id: "titular_corrigir", title: "Corrigir" },
         ]);
-        if (!sent) reply = "Responda: *mesma pessoa*, *outro titular* ou *corrigir*.";
+        if (!sent) reply = "Responda com o número:\n\n*1* Mesma pessoa\n*2* Outro titular\n*3* Corrigir dados";
       }
       break;
     }
