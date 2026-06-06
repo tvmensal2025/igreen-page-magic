@@ -39,10 +39,10 @@ Resposta:
 ## Deploy no Easypanel
 
 1. **Source → Github**
-   - Proprietário: `tvmensal2025`
+   - Proprietário: `tvmensal25`
    - Repositório: `portal-oficial-igreen`
    - Ramo: `main`
-   - Caminho de Build: `/worker-igreen-sync`
+   - Caminho de Build: `worker-igreen-sync`
 2. **Porta**: `3102`
 3. **Environment**:
    ```
@@ -53,6 +53,34 @@ Resposta:
    ```
 4. **Domain**: `igreen-sync.d9v83a.easypanel.host`
 5. **Recursos sugeridos**: 1 CPU / 1 GB RAM
+
+### Erro no Easypanel: `curl: (23) Failure writing output to destination`
+
+Esse erro acontece antes do Dockerfile rodar: o Easypanel conseguiu acessar o GitHub, mas falhou ao gravar ou extrair o archive baixado.
+
+Verifique a VPS via SSH:
+
+```bash
+df -h
+df -i
+docker system df
+```
+
+Se o disco estiver cheio, limpe caches/builds antigos com segurança:
+
+```bash
+docker builder prune -af
+docker image prune -af
+docker container prune -f
+```
+
+Se houver espaço livre e o erro continuar, remova somente o cache de código desse app para o Easypanel baixar novamente:
+
+```bash
+rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
+```
+
+Depois clique em deploy novamente no Easypanel.
 
 ## Configurar no Supabase (lado da edge function)
 

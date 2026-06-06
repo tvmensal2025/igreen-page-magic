@@ -1,79 +1,128 @@
+# Plano de correção — Easypanel falha ao baixar o GitHub Archive
 
-# Configurar `igreen-sync-worker` no Easypanel
+## Diagnóstico principal
 
-Como o GitHub App **já tem acesso** ao repo e mesmo assim aparece "Repository not found", o problema está **nos valores do formulário Source → Github**. O Easypanel é muito literal: qualquer barra a mais, owner errado ou ramo inexistente devolve esse erro genérico.
-
-## 1. Valores EXATOS na aba Source → Github
-
-Copie/cole exatamente assim (sem aspas, sem barras extras):
+O erro atual não é mais “Repository not found”. Agora o Easypanel conseguiu iniciar o download do repositório, mas falhou ao escrever/extrair o arquivo baixado:
 
 ```text
-Proprietário (Owner):   tvmensal2025
-Repositório (Repository): portal-oficial-igreen
-Ramo (Branch):           main
-Caminho de Build (Build Path):  /worker-igreen-sync
+curl: (23) Failure writing output to destination
+passed 1370 returned 0
+
+gzip: stdin: unexpected end of file
+tar: Unexpected EOF in archive
 ```
 
-Pontos onde a maioria erra e dá "Repository not found":
+Isso acontece antes do Dockerfile rodar. Portanto, o problema está no host/Easypanel durante o download ou gravação do archive do GitHub.
 
-- **Owner** é só `tvmensal2025` — NÃO colocar `tvmensal2025/portal-oficial-igreen` ali.
-- **Repository** é só `portal-oficial-igreen` — sem `.git`, sem URL completa, sem owner junto.
-- **Branch** precisa existir no GitHub. Confirme em `https://github.com/tvmensal2025/portal-oficial-igreen/branches` que existe `main` (e não `master`).
-- **Build Path** começa com `/` e é o **diretório**, não um arquivo. Correto: `/worker-igreen-sync`. Errado: `worker-igreen-sync/`, `/worker-igreen-sync/Dockerfile`, `./worker-igreen-sync`.
+## Causa mais provável
 
-Depois de preencher, clicar em **Salvar**. Se aparecer "Repository not found" mesmo assim, ir para o passo 2.
+A causa mais forte é falta de espaço, permissão ou diretório quebrado em:
 
-## 2. Reautorizar o GitHub App (mesmo já tendo acesso)
-
-Quando o repo foi **renomeado** ou **transferido** depois da instalação do app, o Easypanel guarda o ID antigo e dá "not found" até reautorizar. Resolve assim:
-
-1. Abrir: `https://github.com/settings/installations`
-2. Clicar em **Configure** no app **Easypanel**
-3. Em **Repository access**, escolher **All repositories** (mais simples) — OU em **Only select repositories** garantir que `portal-oficial-igreen` está marcado, **remover** e **adicionar de novo** (força o refresh).
-4. **Save**.
-5. Voltar no Easypanel, na mesma tela Source → Github, **recarregar a página** (F5) e salvar de novo.
-
-## 3. Restante da configuração do serviço
-
-Depois que o Source aceitar, completar:
-
-**Aba Build**
-- Builder: **Dockerfile** (Easypanel detecta sozinho dentro de `/worker-igreen-sync`)
-
-**Aba Environment**
 ```text
-PORT=3102
-NODE_ENV=production
-PLAYWRIGHT_HEADLESS=true
-WORKER_TOKEN=<gerar um segredo longo aleatório e guardar>
+/etc/easypanel/projects/igreen/worker-igreen/code
 ```
 
-**Aba Network / Domains**
-- Porta exposta: `3102`
-- Domínio: `igreen-sync.d9v83a.easypanel.host`
+O `curl` recebeu dados do GitHub, tentou escrever no destino, mas o sistema retornou `0` bytes escritos. Em seguida o `tar` tentou abrir um arquivo incompleto, por isso apareceu `Unexpected EOF in archive`.
 
-**Recursos sugeridos:** 1 CPU / 1 GB RAM (Chromium consome memória).
+## Verificações na VPS
 
-## 4. Conectar no Supabase (depois do deploy verde)
-
-Rodar uma vez no SQL Editor do Supabase, usando o **mesmo** `WORKER_TOKEN` do passo 3:
-
-```sql
-INSERT INTO settings (key, value) VALUES
-  ('igreen_sync_worker_url',    'https://igreen-sync.d9v83a.easypanel.host'),
-  ('igreen_sync_worker_secret', '<mesmo WORKER_TOKEN do Easypanel>')
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-```
-
-## 5. Validação
+Rodar estes comandos via SSH na VPS:
 
 ```bash
-curl https://igreen-sync.d9v83a.easypanel.host/health
-# esperado: {"ok":true,"sessions":0,"uptime_s":...}
+df -h
 ```
 
-Se o health responder, o worker está pronto e a edge function `sync-igreen-customers` já passa a usar ele automaticamente.
+Confirmar se `/`, `/etc` ou o disco principal está 100% cheio.
 
----
+```bash
+df -i
+```
 
-**O que eu preciso de você antes de prosseguir:** confirme que vai usar os valores do passo 1 exatamente como acima (em especial o **Build Path = `/worker-igreen-sync`** e o **Owner = `tvmensal2025` sozinho**). Se mesmo assim falhar, me manda o print da tela Source com os campos preenchidos que eu te aponto o campo errado.
+Confirmar se os inodes acabaram.
+
+```bash
+ls -ld /etc/easypanel/projects/igreen/worker-igreen/code
+```
+
+Confirmar se o diretório existe e se o Easypanel consegue escrever nele.
+
+## Limpeza segura recomendada
+
+Se o disco estiver cheio ou quase cheio, limpar caches e builds antigos:
+
+```bash
+docker system df
+```
+
+Depois:
+
+```bash
+docker builder prune -af
+```
+
+Se ainda precisar liberar mais espaço:
+
+```bash
+docker image prune -af
+```
+
+E, com cuidado:
+
+```bash
+docker container prune -f
+```
+
+Evitar apagar volumes com `docker volume prune` sem verificar, porque pode remover dados persistentes.
+
+## Reset do diretório de código do app
+
+Se houver espaço livre e o erro continuar, remover somente o cache/código baixado desse app para o Easypanel baixar novamente:
+
+```bash
+rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
+```
+
+Depois voltar no Easypanel e clicar novamente em deploy.
+
+## Conferir configuração correta no Easypanel
+
+Manter estes valores:
+
+```text
+App: worker-igreen
+Source: GitHub
+Repository: tvmensal25/portal-oficial-igreen
+Branch: main
+Build Path: worker-igreen-sync
+Port: 3102
+```
+
+Importante: o Build Path deve ser apenas a pasta, sem barra inicial e sem Dockerfile:
+
+```text
+worker-igreen-sync
+```
+
+Não usar:
+
+```text
+/worker-igreen-sync
+/worker-igreen-sync/Dockerfile
+worker-igreen-sync/Dockerfile
+```
+
+## Se ainda falhar depois disso
+
+1. Reautorizar o GitHub App do Easypanel para `tvmensal25/portal-oficial-igreen`.
+2. Tentar deploy novamente.
+3. Se o erro continuar exatamente igual, atualizar/reiniciar o Easypanel, porque a falha está no mecanismo de download/extract do próprio Easypanel.
+
+## Resultado esperado
+
+Depois de liberar espaço ou resetar o diretório `code`, o log deve passar da etapa:
+
+```text
+Download Github Archive Started
+```
+
+E só então entrar no build Docker do `worker-igreen-sync`.
