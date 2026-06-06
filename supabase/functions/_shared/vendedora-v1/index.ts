@@ -299,6 +299,30 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
     await writeState(supabase, customerId, state);
   }
 
+  // 8. Fecha cadastro de verdade
+  // Dispara `finalize-capture` quando:
+  //  - o Writer pediu via tool `finalizar_cadastro`; OU
+  //  - a etapa virou `finalizando` (via mídia ou e-mail); OU
+  //  - o checklist mínimo da IA já está completo (atalho oportunista).
+  let closerResult: Awaited<ReturnType<typeof tentarFechar>> | null = null;
+  const checklist = checklistMinimo({ ...customer, ...updates });
+  const deveTentar = pediuFinalizar || state.etapa === "finalizando" || checklist.pronto;
+  if (deveTentar && !shouldHandoff) {
+    closerResult = await tentarFechar(supabase, customerId);
+    if (closerResult.ok && closerResult.acionou) {
+      // Sucesso real — atualiza step (finalize-capture já marcou portal_submitting)
+      updates.conversation_step = "portal_submitting";
+    } else if (!closerResult.ok && closerResult.portalMissing?.length) {
+      // Portal rejeitou — pausa bot pra humano corrigir
+      shouldHandoff = true;
+      await supabase.from("customers").update({
+        bot_paused: true,
+        bot_paused_reason: `vendedora_v1: cadastro incompleto pelo portal — ${closerResult.portalMissing.slice(0, 4).join(", ")}`,
+        bot_paused_at: new Date().toISOString(),
+      }).eq("id", customerId);
+    }
+  }
+
   // Logging
   try {
     await supabase.from("ai_decisions").insert({
