@@ -1,128 +1,121 @@
-# Plano de correção — Easypanel falha ao baixar o GitHub Archive
+## Novo erro: `No such image: easypanel/igreen/worker-igreen:latest`
 
-## Diagnóstico principal
+Esse erro é **diferente** do anterior (`curl: (23)` / `Unexpected EOF`).
 
-O erro atual não é mais “Repository not found”. Agora o Easypanel conseguiu iniciar o download do repositório, mas falhou ao escrever/extrair o arquivo baixado:
+Agora o GitHub Archive foi baixado e extraído. O problema é que o Easypanel está tentando **rodar** o container, mas a **imagem Docker não existe** localmente.
 
 ```text
-curl: (23) Failure writing output to destination
-passed 1370 returned 0
-
-gzip: stdin: unexpected end of file
-tar: Unexpected EOF in archive
+No such image: easypanel/igreen/worker-igreen:latest
 ```
 
-Isso acontece antes do Dockerfile rodar. Portanto, o problema está no host/Easypanel durante o download ou gravação do archive do GitHub.
+Isso significa: o **build não terminou com sucesso**, ou nunca rodou, ou rodou mas não taggeou a imagem com esse nome. O Easypanel pulou direto para a etapa de "start" usando uma imagem que ainda não foi construída.
 
 ## Causa mais provável
 
-A causa mais forte é falta de espaço, permissão ou diretório quebrado em:
+1. O build do Dockerfile falhou silenciosamente e o Easypanel mesmo assim tentou subir.
+2. O `Build Path` está apontando para uma pasta sem `Dockerfile` válido — então não há nada para construir, mas o Easypanel tenta iniciar a imagem mesmo assim.
+3. O usuário clicou em **Deploy/Start** antes de **Build**, ou o build foi cancelado.
+4. Existe um app antigo `worker-igreen` em estado inconsistente apontando para uma imagem que nunca foi criada.
+
+## O que precisa ser verificado no Easypanel
+
+No app `worker-igreen`, conferir:
+
+### 1. Source
 
 ```text
-/etc/easypanel/projects/igreen/worker-igreen/code
+Type: Github (NÃO "Docker Image")
+Owner: tvmensal25
+Repository: portal-oficial-igreen
+Branch: main
+Build Path: worker-igreen-sync
 ```
 
-O `curl` recebeu dados do GitHub, tentou escrever no destino, mas o sistema retornou `0` bytes escritos. Em seguida o `tar` tentou abrir um arquivo incompleto, por isso apareceu `Unexpected EOF in archive`.
+Confirmar que `Build Path` é exatamente `worker-igreen-sync` (sem `/`, sem `/Dockerfile`).
 
-## Verificações na VPS
+Se o Source estiver como **Docker Image** em vez de **Github**, o Easypanel não vai buildar — ele vai só tentar `docker pull` numa imagem que não existe. Esse é provavelmente o problema.
 
-Rodar estes comandos via SSH na VPS:
+### 2. Build
+
+Ir na aba **Deployments** / **Build Logs** do app e verificar:
+
+- Houve build recente?
+- O build terminou com `Successfully tagged ...` ou com erro?
+- Se nunca rodou um build com sucesso, a imagem `easypanel/igreen/worker-igreen:latest` simplesmente não existe no Docker da VPS.
+
+### 3. Verificar imagens existentes na VPS
+
+Via SSH:
 
 ```bash
-df -h
+docker images | grep worker-igreen
+docker images | grep easypanel/igreen
 ```
 
-Confirmar se `/`, `/etc` ou o disco principal está 100% cheio.
+Se não aparecer nada, confirma que o build nunca produziu a imagem.
 
-```bash
-df -i
-```
+## Ações recomendadas
 
-Confirmar se os inodes acabaram.
+### Ação 1 — Forçar rebuild
 
-```bash
-ls -ld /etc/easypanel/projects/igreen/worker-igreen/code
-```
+No Easypanel, no app `worker-igreen`:
 
-Confirmar se o diretório existe e se o Easypanel consegue escrever nele.
+1. Garantir que Source = **Github** com os campos acima.
+2. Clicar em **Deploy** (não em **Start**).
+3. Acompanhar **Build Logs** até o final.
+4. Só vai funcionar quando aparecer algo como `Successfully tagged easypanel/igreen/worker-igreen:latest`.
 
-## Limpeza segura recomendada
+### Ação 2 — Recriar o app
 
-Se o disco estiver cheio ou quase cheio, limpar caches e builds antigos:
+Se o app está em estado quebrado, o caminho mais limpo é:
 
-```bash
-docker system df
-```
-
-Depois:
-
-```bash
-docker builder prune -af
-```
-
-Se ainda precisar liberar mais espaço:
-
-```bash
-docker image prune -af
-```
-
-E, com cuidado:
-
-```bash
-docker container prune -f
-```
-
-Evitar apagar volumes com `docker volume prune` sem verificar, porque pode remover dados persistentes.
-
-## Reset do diretório de código do app
-
-Se houver espaço livre e o erro continuar, remover somente o cache/código baixado desse app para o Easypanel baixar novamente:
-
-```bash
-rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
-```
-
-Depois voltar no Easypanel e clicar novamente em deploy.
-
-## Conferir configuração correta no Easypanel
-
-Manter estes valores:
+1. Deletar o app `worker-igreen` no Easypanel.
+2. Criar de novo:
 
 ```text
-App: worker-igreen
-Source: GitHub
-Repository: tvmensal25/portal-oficial-igreen
+Projeto: igreen
+Nome: worker-igreen
+Source: Github
+Owner: tvmensal25
+Repository: portal-oficial-igreen
 Branch: main
 Build Path: worker-igreen-sync
 Port: 3102
 ```
 
-Importante: o Build Path deve ser apenas a pasta, sem barra inicial e sem Dockerfile:
+3. Adicionar env vars:
 
 ```text
-worker-igreen-sync
+PORT=3102
+NODE_ENV=production
+PLAYWRIGHT_HEADLESS=true
+WORKER_TOKEN=<segredo>
 ```
 
-Não usar:
+4. Clicar em **Deploy** e aguardar o build completo.
 
-```text
-/worker-igreen-sync
-/worker-igreen-sync/Dockerfile
-worker-igreen-sync/Dockerfile
+### Ação 3 — Limpar resíduos na VPS
+
+Via SSH, se necessário:
+
+```bash
+docker ps -a | grep worker-igreen
+docker rm -f $(docker ps -aq --filter "name=worker-igreen") 2>/dev/null
+docker images | grep worker-igreen
+docker rmi -f $(docker images -q --filter "reference=easypanel/igreen/worker-igreen") 2>/dev/null
+rm -rf /etc/easypanel/projects/igreen/worker-igreen/code
 ```
 
-## Se ainda falhar depois disso
+Depois redeploy no Easypanel.
 
-1. Reautorizar o GitHub App do Easypanel para `tvmensal25/portal-oficial-igreen`.
-2. Tentar deploy novamente.
-3. Se o erro continuar exatamente igual, atualizar/reiniciar o Easypanel, porque a falha está no mecanismo de download/extract do próprio Easypanel.
+## Resumo
 
-## Resultado esperado
+- O erro mudou. Agora não é mais download do GitHub — é **imagem Docker inexistente**.
+- Causa principal: build nunca rodou com sucesso, ou o app está configurado como Docker Image em vez de Github.
+- Verificar Source, rodar Deploy, ler os Build Logs até o final.
+- Se continuar quebrado, deletar e recriar o app no Easypanel.
+- Nada precisa mudar no código do `worker-igreen-sync/` nesta etapa.
 
-Depois de liberar espaço ou resetar o diretório `code`, o log deve passar da etapa:
-
-```text
-Download Github Archive Started
-```
-
-E só então entrar no build Docker do `worker-igreen-sync`.
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>
