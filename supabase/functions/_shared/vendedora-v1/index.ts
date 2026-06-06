@@ -376,6 +376,8 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
       criticoProblemas: critico.problemas,
       stateBefore,
       stateAfter: state,
+      checklist,
+      closer: closerResult,
     },
   };
 }
