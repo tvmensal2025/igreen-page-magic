@@ -21,6 +21,6 @@
 -- =====================================================
 
 INSERT INTO public.settings (key, value) VALUES
-  ('igreen_sync_worker_url',    'https://igreen-sync.d9v83a.easypanel.host'),
-  ('igreen_sync_worker_secret', 'CONFIGURE_NO_EASYPANEL')
+  ('igreen_sync_worker_url',    'https://igreen-worker-igreen.d9v63q.easypanel.host'),
+  ('igreen_sync_worker_secret', 'igreen_sync_w0rk3r_s3cr3t_2026_x9k2p')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
