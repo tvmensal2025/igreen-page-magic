@@ -1,14 +1,16 @@
 {
   "name": "igreen-sync-worker",
-  "version": "4.0.0",
-  "description": "Worker de sincronização iGreen via ScraperAPI proxy — sem Playwright, sem Cloudflare block.",
+  "version": "5.0.0",
+  "description": "Worker de sincronização iGreen — servidor Node.js (v5 proxy) + script GitHub Actions (run-sync.mjs).",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs"
   },
-  "dependencies": {},
+  "dependencies": {
+    "playwright-chromium": "^1.49.0"
+  },
   "engines": {
     "node": ">=20.0.0"
   }
