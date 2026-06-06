@@ -127,12 +127,16 @@ async function loginAndGetToken(email, password) {
     await page.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     // Aguarda CF challenge resolver (Tor usa IPs residenciais — deve passar)
+    let pageTitle = '';
     for (let i = 0; i < 15; i++) {
       await page.waitForTimeout(2000);
-      const title = await page.title().catch(() => '');
-      if (!title.includes('Attention Required') && !title.includes('Just a moment')) break;
-      if (i === 14) throw new HttpError(503, 'Cloudflare não resolveu via Tor');
-      console.log(`[login] CF challenge (${(i+1)*2}s)...`);
+      pageTitle = await page.title().catch(() => '');
+      const bodySnippet = await page.locator('body').innerText().catch(() => '');
+      console.log(`[login] CF check [${i+1}/15] title="${pageTitle}" url=${page.url()}`);
+      console.log(`[login] body snippet: ${bodySnippet.slice(0, 150).replace(/\n/g, ' ')}`);
+      if (!pageTitle.includes('Attention Required') && !pageTitle.includes('Just a moment') &&
+          !bodySnippet.includes('Checking your browser')) break;
+      if (i === 14) throw new HttpError(503, 'Cloudflare bloqueou via Tor');
     }
 
     // Aguarda formulário
@@ -146,32 +150,39 @@ async function loginAndGetToken(email, password) {
     await page.fill(passSel, password);
     await page.waitForTimeout(400);
 
-    // Resolve reCAPTCHA com 2captcha
+    // Resolve reCAPTCHA com 2captcha — só se o sitekey estiver na página
     const sitekeyEl = await page.evaluate(() => {
       return document.querySelector('[data-sitekey]')?.getAttribute('data-sitekey') || null;
     }).catch(() => null);
-    const sitekey = sitekeyEl || RECAPTCHA_SITEKEY;
 
-    const captchaToken = await solve2captcha(sitekey, PORTAL_LOGIN_URL);
+    console.log(`[login] sitekey na página: ${sitekeyEl || 'NÃO DETECTADO'}`);
+    const currentBodyText = await page.locator('body').innerText().catch(() => '');
+    console.log(`[login] body snippet: ${currentBodyText.slice(0, 200).replace(/\n/g, ' ')}`);
 
-    // Injeta token no formulário
-    await page.evaluate((token) => {
-      let ta = document.getElementById('g-recaptcha-response');
-      if (!ta) ta = document.querySelector('[name="g-recaptcha-response"]');
-      if (ta) { ta.style.display = 'block'; ta.value = token; }
-      try {
-        for (const client of Object.values(window.___grecaptcha_cfg?.clients || {})) {
-          for (const val of Object.values(client)) {
-            if (val && typeof val === 'object' && typeof val.callback === 'function') {
-              val.callback(token); return;
+    if (sitekeyEl) {
+      // reCAPTCHA real detectado — resolve via 2captcha
+      const captchaToken = await solve2captcha(sitekeyEl, PORTAL_LOGIN_URL);
+      console.log('[login] token 2captcha obtido — injetando...');
+
+      await page.evaluate((token) => {
+        let ta = document.getElementById('g-recaptcha-response');
+        if (!ta) ta = document.querySelector('[name="g-recaptcha-response"]');
+        if (ta) { ta.style.display = 'block'; ta.value = token; }
+        try {
+          for (const client of Object.values(window.___grecaptcha_cfg?.clients || {})) {
+            for (const val of Object.values(client)) {
+              if (val && typeof val === 'object' && typeof val.callback === 'function') {
+                val.callback(token); return;
+              }
             }
           }
-        }
-      } catch (_) {}
-      if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
-    }, captchaToken);
-
-    await page.waitForTimeout(800);
+        } catch (_) {}
+        if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
+      }, captchaToken);
+      await page.waitForTimeout(800);
+    } else {
+      console.log('[login] sem reCAPTCHA detectado — tentando submit direto');
+    }
 
     // Submit
     const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
