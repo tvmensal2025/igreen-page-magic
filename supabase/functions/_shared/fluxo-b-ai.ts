@@ -15,6 +15,7 @@
 import { aiChatCascade, aiChat, type AIChatMessage } from "./ai-gateway.ts";
 import { buildFluxoBSystemPrompt, FLUXO_B_TOOLS, type FluxoBContext } from "./fluxo-b-prompt.ts";
 import { maybeUpdateSummary } from "./ai-summary.ts";
+import { runVendedoraV1 } from "./vendedora-v1/index.ts";
 
 // SupabaseClient genérico para evitar conflitos de tipos entre callers
 // deno-lint-ignore no-explicit-any
@@ -55,6 +56,35 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     if (data) customer = data;
   }
   if (!customer) throw new Error(`[fluxo-b-ai] customer ${customerId} not found`);
+
+  // ── A/B routing: vendedora_v1 vs legacy ───────────────────────────────
+  // Se variante ainda não foi atribuída, sorteia 50/50 e persiste.
+  let variant: string = String(customer.fluxo_b_variant || "").toLowerCase();
+  if (variant !== "v1" && variant !== "legacy") {
+    variant = Math.random() < 0.5 ? "v1" : "legacy";
+    try {
+      await supabase.from("customers").update({ fluxo_b_variant: variant }).eq("id", customerId);
+      customer.fluxo_b_variant = variant;
+    } catch (_) { /* tolera ausência da coluna em ambientes antigos */ }
+  }
+
+  if (variant === "v1") {
+    try {
+      const v1 = await runVendedoraV1({ supabase, customerId, inboundText, customer, consultant: input.consultant });
+      return {
+        reply: v1.reply,
+        toolsApplied: v1.toolsApplied,
+        conversationStepUpdate: v1.conversationStepUpdate,
+        shouldHandoff: v1.shouldHandoff,
+        modelUsed: v1.modelUsed,
+        latencyMs: v1.latencyMs,
+        customerUpdates: v1.customerUpdates,
+      };
+    } catch (e) {
+      console.error(`[fluxo-b-ai] vendedora_v1 falhou, caindo pra legacy:`, (e as Error).message);
+      // fall-through pro legacy
+    }
+  }
 
   let consultant = input.consultant;
   if (!consultant && customer.consultant_id) {
