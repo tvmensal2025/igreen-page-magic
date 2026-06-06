@@ -4,7 +4,10 @@
 
 import type { Etapa, FluxoBState } from "./types.ts";
 
-export function decideEtapa(customer: any, state: FluxoBState): Etapa {
+/** Etapa "confirmacao" não existe no schema legacy — é uma sub-etapa só da v2. */
+export type EtapaV2 = Etapa | "confirmacao";
+
+export function decideEtapa(customer: any, state: FluxoBState): EtapaV2 {
   if (!customer?.name && !state.info?.nome) return "nome";
 
   const valor = customer?.electricity_bill_value;
@@ -23,7 +26,4 @@ export function decideEtapa(customer: any, state: FluxoBState): Etapa {
 }
 
 /** Etapas onde rodamos perfilador/RAG/crítico — onde há contexto rico. */
-export const RICH_ETAPAS = new Set<Etapa>(["simulacao", "confirmacao", "doc"]);
-
-/** Etapa "confirmacao" não é parte do schema antigo, é uma sub-etapa v2. */
-export type EtapaV2 = Etapa | "confirmacao";
+export const RICH_ETAPAS = new Set<EtapaV2>(["simulacao", "confirmacao", "doc"]);
