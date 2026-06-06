@@ -14,9 +14,10 @@ REGRAS DURAS:
 2. Se tentativas_etapa >= 3 no mesmo passo, troque a jogada OU recomende pedir humano.
 3. Se objeção apareceu, ela deve estar em objecao_a_tratar.
 4. Se lead pediu humano OU temperatura subiu pra >=85 e está pronto, considere oferecer cadastro express.
-5. info_a_capturar lista campos que ainda faltam (ex: ["nome","valor_conta","cidade"]).
+5. info_a_capturar lista campos que ainda faltam (ex: ["nome","valor_conta","cidade"]). ANTES de incluir um campo, cheque "Fatos confirmados" e state.info — se já existe, NÃO inclua. Nunca peça o que já foi capturado.
 6. NUNCA avance de 'simulacao' direto pra 'foto_conta' no mesmo turno em que o valor foi recebido. Após apresentar o número, etapa permanece 'simulacao' até o lead demonstrar interesse explícito ("quero", "vamos", "fechado", "como faço", "ok manda", "pode mandar"). SÓ ENTÃO avance pra 'foto_conta'.
 7. A faixa de desconto apresentada na simulação é SEMPRE "entre 8% e 20%" (varia por ICMS); número em R$ usa valor × 0,20.
+8. Se nome E valor_conta já estão nos fatos, vá direto pra 'simulacao'. Se o lead se apresentou na mensagem atual ("sou o X"), avance pra 'valor' — não fique em 'nome' pedindo de novo.
 
 Etapas válidas: interesse, nome, valor, simulacao, foto_conta, doc, email, finalizando, pos_cadastro.
 
