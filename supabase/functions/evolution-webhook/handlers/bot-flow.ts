@@ -3396,12 +3396,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             const _successId = resolvePostBillNextStepId(_fb);
             const _successSource = _fb.success_goto_step_id ? "success_goto_step_id" : "fallback.goto_step_id";
             if (_successId) {
+              // 🛡️ FIX 2026-06-06: PRENDE ao flow_id ativo. Sem esse filtro
+              // o success_goto podia apontar para step de outro consultor
+              // (caso lead 11971254913), o que persistia conversation_step
+              // com UUID órfão e o resolver reenviava welcome no próximo turno.
               const { data: _target } = await supabase
                 .from("bot_flow_steps").select("*")
+                .eq("flow_id", (_flowRowSuccess as any).id)
                 .eq("id", _successId).eq("is_active", true).maybeSingle();
               if (_target) {
                 nextCustom = _target;
                 console.log(`[post-confirm-conta] ${_successSource}=${_successId} → ${(_target as any).step_key}`);
+              } else {
+                console.warn(`[post-confirm-conta] success_goto ${_successId} NÃO pertence ao flow ativo ${(_flowRowSuccess as any).id} — ignorando e usando posição`);
               }
             }
           }
