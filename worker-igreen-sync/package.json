@@ -1,16 +1,14 @@
 {
   "name": "igreen-sync-worker",
-  "version": "1.0.0",
-  "description": "Playwright worker for reading iGreen portal (escritorio.igreenenergy.com.br). Consumed by edge function sync-igreen-customers.",
+  "version": "2.0.0",
+  "description": "Worker de leitura do portal iGreen via API REST direta. Sem Playwright/CAPTCHA. Consumido pela edge function sync-igreen-customers.",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs"
   },
-  "dependencies": {
-    "playwright-chromium": "^1.49.0"
-  },
+  "dependencies": {},
   "engines": {
     "node": ">=20.0.0"
   }
