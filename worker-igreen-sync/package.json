@@ -1,7 +1,7 @@
 {
   "name": "igreen-sync-worker",
-  "version": "5.0.0",
-  "description": "Worker de sincronização iGreen — servidor Node.js (v5 proxy) + script GitHub Actions (run-sync.mjs).",
+  "version": "6.0.0",
+  "description": "Playwright + Tor (IP residencial) + 2captcha — bypass Cloudflare e reCAPTCHA",
   "type": "module",
   "main": "server.mjs",
   "scripts": {

@@ -1,9 +1,7 @@
-// server.mjs — igreen-sync-worker v5
+// server.mjs — igreen-sync-worker v6
 //
-// Proxy duplo para contornar Cloudflare WAF:
-//   1. CF_PROXY_URL: Cloudflare Worker proxy (gratuito, melhor opção)
-//   2. SCRAPER_API_KEY: ScraperAPI fallback
-//   3. Direto (para testes locais sem CF)
+// Login: Playwright via Tor SOCKS5 (IP residencial) + 2captcha (reCAPTCHA v2)
+// Dados: fetch direto com token JWT (sem proxy)
 //
 // Endpoints:
 //   GET  /health
@@ -11,138 +9,79 @@
 //   POST /sync-network     { portal_email, portal_password }
 
 import http from 'node:http';
+import { chromium } from 'playwright-chromium';
 
 const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '20', 10);
-const CF_PROXY_URL = (process.env.CF_PROXY_URL || '').replace(/\/$/, '');
-const CF_PROXY_SECRET = process.env.CF_PROXY_SECRET || '';
-const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
+const TWOCAPTCHA_KEY = process.env.TWOCAPTCHA_KEY || '';
+const PLAYWRIGHT_HEADLESS = (process.env.PLAYWRIGHT_HEADLESS || 'true') !== 'false';
 
-const API_BASE = 'https://api-main.igreenenergy.com.br/v1';
+const PORTAL_LOGIN_URL = 'https://escritorio.igreenenergy.com.br/login';
+const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
+const RECAPTCHA_SITEKEY = '6LcmxKAUAAAAAHMCMDRNH3NMxIZUSbGqCiGHYeON';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
+if (!TWOCAPTCHA_KEY) console.warn('[boot] WARN: TWOCAPTCHA_KEY não definido!');
 
-const proxyMode = CF_PROXY_URL ? 'cloudflare-worker' : SCRAPER_API_KEY ? 'scraperapi' : 'direct';
-console.log(`[boot] proxy mode: ${proxyMode}`);
+// ------------ 2captcha ------------
+async function solve2captcha(sitekey, pageUrl) {
+  console.log('[2captcha] submetendo reCAPTCHA...');
+  const submitRes = await fetch('https://2captcha.com/in.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      key: TWOCAPTCHA_KEY,
+      method: 'userrecaptcha',
+      googlekey: sitekey,
+      pageurl: pageUrl,
+      json: '1',
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const submitData = await submitRes.json();
+  if (submitData.status !== 1) throw new HttpError(500, `2captcha submit: ${submitData.request}`);
 
-// ------------ Fetch via proxy (CF Worker ou ScraperAPI) ------------
-async function proxiedFetch(url, options = {}) {
-  const { method = 'GET', headers = {}, body = null } = options;
+  const captchaId = submitData.request;
+  console.log(`[2captcha] id=${captchaId}, aguardando resolução...`);
 
-  if (CF_PROXY_URL && CF_PROXY_SECRET) {
-    // Cloudflare Worker proxy
-    const proxyHeaders = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'X-Proxy-Secret': CF_PROXY_SECRET,
-      'X-Target-Path': new URL(url).pathname + new URL(url).search,
-      ...headers,
-    };
-
-    const fetchOpts = {
-      method,
-      headers: proxyHeaders,
-      signal: AbortSignal.timeout(60000),
-    };
-    if (body) fetchOpts.body = body;
-
-    return fetch(CF_PROXY_URL, fetchOpts);
-  }
-
-  if (SCRAPER_API_KEY) {
-    // ScraperAPI proxy
-    const scraperUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=false`;
-    const fetchOpts = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...headers,
-      },
-      signal: AbortSignal.timeout(60000),
-    };
-    if (body) fetchOpts.body = body;
-    return fetch(scraperUrl, fetchOpts);
-  }
-
-  // Direto (local/dev)
-  const fetchOpts = {
-    method,
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', ...headers },
-    signal: AbortSignal.timeout(60000),
-  };
-  if (body) fetchOpts.body = body;
-  return fetch(url, fetchOpts);
-}
-
-// ------------ Login ------------
-async function apiLogin(email, password) {
-  const payloads = [
-    { email, password },
-    { login: email, senha: password },
-    { email, senha: password },
-    { usuario: email, senha: password },
-  ];
-
-  const loginPaths = [
-    '/v1/auth/login',
-    '/v1/login',
-    '/auth/login',
-    '/login',
-  ];
-
-  for (const path of loginPaths) {
-    const url = `https://api-main.igreenenergy.com.br${path}`;
-    for (const payload of payloads) {
-      try {
-        const res = await proxiedFetch(url, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-
-        if (res.status === 404 || res.status === 405) continue;
-
-        const text = await res.text();
-        let data = null;
-        try { data = JSON.parse(text); } catch { continue; }
-
-        const token = data?.token || data?.access_token || data?.accessToken ||
-          data?.data?.token || data?.data?.access_token || data?.jwt;
-
-        if (token && res.ok) {
-          console.log(`[login] ${email} → OK via ${path}`);
-          return token;
-        }
-
-        if (res.status === 401 || res.status === 403) {
-          const msg = data?.message || data?.error || data?.msg || 'Credenciais inválidas';
-          throw new HttpError(401, `Login rejeitado: ${msg}`);
-        }
-      } catch (e) {
-        if (e instanceof HttpError) throw e;
-        console.warn(`[login] tentativa ${path} falhou: ${e.message}`);
-      }
+  for (let i = 0; i < 36; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const pollRes = await fetch(
+      `https://2captcha.com/res.php?key=${TWOCAPTCHA_KEY}&action=get&id=${captchaId}&json=1`,
+      { signal: AbortSignal.timeout(15000) }
+    );
+    const pollData = await pollRes.json();
+    if (pollData.status === 1) {
+      console.log(`[2captcha] resolvido em ~${(i + 1) * 5}s`);
+      return pollData.request;
     }
+    if (pollData.request !== 'CAPCHA_NOT_READY') throw new HttpError(500, `2captcha: ${pollData.request}`);
+    if (i % 4 === 0) console.log(`[2captcha] aguardando... ${(i + 1) * 5}s`);
   }
-
-  throw new HttpError(401, 'Não foi possível autenticar. Verifique email e senha.');
+  throw new HttpError(500, '2captcha timeout');
 }
 
-// ------------ Busca consultor_id ------------
-async function fetchConsultorId(token) {
-  try {
-    const res = await proxiedFetch(`${API_BASE}/consultant`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const j = await res.json();
-    return String(j?.id || j?.consultor?.id || j?.data?.id || j?.idconsultor || '') || null;
-  } catch { return null; }
+// ------------ Browser com Tor ------------
+let sharedBrowser = null;
+
+async function getBrowser() {
+  if (sharedBrowser && sharedBrowser.isConnected()) return sharedBrowser;
+  sharedBrowser = await chromium.launch({
+    headless: PLAYWRIGHT_HEADLESS,
+    proxy: { server: 'socks5://127.0.0.1:9050' }, // Tor SOCKS5
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+    ],
+  });
+  return sharedBrowser;
 }
 
-// ------------ Pool de sessões ------------
+// ------------ Pool de sessões (token JWT) ------------
 const sessions = new Map();
 
 async function evictOldest() {
@@ -153,6 +92,136 @@ async function evictOldest() {
   if (oldestKey) sessions.delete(oldestKey);
 }
 
+async function loginAndGetToken(email, password) {
+  const browser = await getBrowser();
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    viewport: { width: 1280, height: 800 },
+    locale: 'pt-BR',
+  });
+
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
+  });
+
+  // Captura token JWT das responses de rede
+  let capturedToken = null;
+  context.on('response', async (response) => {
+    const url = response.url();
+    if (!url.includes('igreenenergy')) return;
+    try {
+      const ct = response.headers()['content-type'] || '';
+      if (!ct.includes('json')) return;
+      const j = await response.json().catch(() => null);
+      if (!j) return;
+      const t = j?.token || j?.access_token || j?.accessToken || j?.data?.token || j?.jwt;
+      if (t && !capturedToken) { capturedToken = t; console.log(`[token] capturado de ${url}`); }
+    } catch { /* ignora */ }
+  });
+
+  const page = await context.newPage();
+
+  try {
+    console.log(`[login] ${email} → navegando via Tor`);
+    await page.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    // Aguarda CF challenge resolver (Tor usa IPs residenciais — deve passar)
+    for (let i = 0; i < 15; i++) {
+      await page.waitForTimeout(2000);
+      const title = await page.title().catch(() => '');
+      if (!title.includes('Attention Required') && !title.includes('Just a moment')) break;
+      if (i === 14) throw new HttpError(503, 'Cloudflare não resolveu via Tor');
+      console.log(`[login] CF challenge (${(i+1)*2}s)...`);
+    }
+
+    // Aguarda formulário
+    const emailSel = 'input[type="email"], input[name="email"], input[name="usuario"], input[name="login"]';
+    const passSel = 'input[type="password"]';
+    await page.waitForSelector(emailSel, { timeout: 20000 });
+
+    // Preenche
+    await page.fill(emailSel, email);
+    await page.waitForTimeout(400);
+    await page.fill(passSel, password);
+    await page.waitForTimeout(400);
+
+    // Resolve reCAPTCHA com 2captcha
+    const sitekeyEl = await page.evaluate(() => {
+      return document.querySelector('[data-sitekey]')?.getAttribute('data-sitekey') || null;
+    }).catch(() => null);
+    const sitekey = sitekeyEl || RECAPTCHA_SITEKEY;
+
+    const captchaToken = await solve2captcha(sitekey, PORTAL_LOGIN_URL);
+
+    // Injeta token no formulário
+    await page.evaluate((token) => {
+      let ta = document.getElementById('g-recaptcha-response');
+      if (!ta) ta = document.querySelector('[name="g-recaptcha-response"]');
+      if (ta) { ta.style.display = 'block'; ta.value = token; }
+      try {
+        for (const client of Object.values(window.___grecaptcha_cfg?.clients || {})) {
+          for (const val of Object.values(client)) {
+            if (val && typeof val === 'object' && typeof val.callback === 'function') {
+              val.callback(token); return;
+            }
+          }
+        }
+      } catch (_) {}
+      if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
+    }, captchaToken);
+
+    await page.waitForTimeout(800);
+
+    // Submit
+    const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
+    await Promise.all([
+      page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {}),
+      page.click(submitSel).catch(() => page.keyboard.press('Enter')),
+    ]);
+
+    await page.waitForTimeout(3000);
+
+    const currentUrl = page.url();
+    if (/\/login/i.test(currentUrl)) {
+      throw new HttpError(401, 'Login rejeitado — credenciais inválidas ou captcha não aceito');
+    }
+
+    console.log(`[login] ${email} → OK! URL=${currentUrl}`);
+
+    // Tenta capturar token JWT se não foi capturado via network
+    if (!capturedToken) {
+      capturedToken = await page.evaluate(() => {
+        return localStorage.getItem('token') ||
+          localStorage.getItem('access_token') ||
+          sessionStorage.getItem('token') ||
+          null;
+      }).catch(() => null);
+    }
+
+    // Busca consultor_id
+    let consultorId = null;
+    try {
+      const consultantRes = await page.request.get(`${API_BASE}/consultant`, { timeout: 20000 });
+      if (consultantRes.ok()) {
+        const j = await consultantRes.json();
+        consultorId = String(j?.id || j?.consultor?.id || j?.data?.id || j?.idconsultor || '') || null;
+      }
+    } catch (e) {
+      console.warn(`[login] ${email} → não consegui consultor_id: ${e.message}`);
+    }
+
+    await context.close();
+
+    console.log(`[login] ${email} → token=${capturedToken ? 'sim' : 'via-cookies'}, consultor=${consultorId}`);
+    return { token: capturedToken, consultorId };
+
+  } catch (e) {
+    await context.close().catch(() => {});
+    throw e;
+  }
+}
+
 async function getOrCreateSession(email, password) {
   const now = Date.now();
   let s = sessions.get(email);
@@ -160,12 +229,9 @@ async function getOrCreateSession(email, password) {
   if (s) { s.lastUsed = now; return s; }
   if (sessions.size >= MAX_SESSIONS) await evictOldest();
 
-  const token = await apiLogin(email, password);
-  const consultorId = await fetchConsultorId(token);
-
+  const { token, consultorId } = await loginAndGetToken(email, password);
   s = { token, consultorId, createdAt: now, lastUsed: now, lock: Promise.resolve() };
   sessions.set(email, s);
-  console.log(`[session] ${email} → criada (consultor=${consultorId})`);
   return s;
 }
 
@@ -180,30 +246,24 @@ async function withSession(email, password, fn) {
   } finally { release(); }
 }
 
-// ------------ Coleta paginada ------------
+// ------------ API direta com token JWT (sem proxy) ------------
 async function fetchPaginated(token, url, { pageParam = 'page', sizeParam = 'pageSize', size = 500 } = {}) {
   const all = [];
   for (let p = 1; p <= 200; p++) {
     const sep = url.includes('?') ? '&' : '?';
     const full = `${url}${sep}${pageParam}=${p}&${sizeParam}=${size}`;
-
     let res;
     try {
-      res = await proxiedFetch(full, {
-        headers: { 'Authorization': `Bearer ${token}` },
+      res = await fetch(full, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(60000),
       });
-    } catch (e) {
-      throw new HttpError(500, `Erro de rede: ${e.message}`);
-    }
+    } catch (e) { throw new HttpError(500, `Rede: ${e.message}`); }
 
     const status = res.status;
-    if (status === 429) {
-      console.warn(`[fetch] 429 — aguardando 30s`);
-      await new Promise(r => setTimeout(r, 30000));
-      continue;
-    }
+    if (status === 429) { console.warn('[fetch] 429 — aguardando 30s'); await new Promise(r => setTimeout(r, 30000)); continue; }
     if (status === 401 || status === 403) throw new HttpError(status, `Token expirado (${status})`);
-    if (!res.ok) throw new HttpError(status, `HTTP ${status} em ${full}`);
+    if (!res.ok) throw new HttpError(status, `HTTP ${status}`);
 
     const j = await res.json();
     const arr = Array.isArray(j) ? j :
@@ -213,13 +273,13 @@ async function fetchPaginated(token, url, { pageParam = 'page', sizeParam = 'pag
       Array.isArray(j?.customers) ? j.customers :
       Array.isArray(j?.members) ? j.members : [];
     all.push(...arr);
-    console.log(`  page ${p}: ${arr.length} itens`);
+    console.log(`  page ${p}: ${arr.length} (total: ${all.length})`);
     if (arr.length < size) break;
   }
   return all;
 }
 
-// ------------ HTTP server ------------
+// ------------ HTTP ------------
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -229,8 +289,8 @@ function readJsonBody(req) {
     const chunks = [];
     req.on('data', c => chunks.push(c));
     req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8') || '{}';
-      try { resolve(JSON.parse(raw)); } catch { reject(new HttpError(400, 'JSON inválido')); }
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
+      catch { reject(new HttpError(400, 'JSON inválido')); }
     });
     req.on('error', reject);
   });
@@ -244,8 +304,7 @@ function send(res, status, obj) {
 
 function authOk(req) {
   if (!WORKER_TOKEN) return true;
-  const t = req.headers['x-worker-token'];
-  return typeof t === 'string' && t === WORKER_TOKEN;
+  return req.headers['x-worker-token'] === WORKER_TOKEN;
 }
 
 const bootAt = Date.now();
@@ -256,9 +315,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: proxyMode,
-        cf_proxy: !!CF_PROXY_URL,
-        scraper: !!SCRAPER_API_KEY,
+        mode: 'tor-playwright-2captcha',
+        tor: true, twocaptcha: !!TWOCAPTCHA_KEY,
       });
     }
 
@@ -296,7 +354,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v5 (${proxyMode}) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v6 (tor+playwright+2captcha) porta ${PORT}`);
 });
 
 setInterval(() => {
@@ -309,7 +367,8 @@ setInterval(() => {
   }
 }, 60000);
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   sessions.clear();
+  if (sharedBrowser) await sharedBrowser.close().catch(() => {});
   process.exit(0);
 });
