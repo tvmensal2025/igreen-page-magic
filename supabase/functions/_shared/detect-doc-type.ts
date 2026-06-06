@@ -156,7 +156,7 @@ function parseDetectJson(raw: string): { tipo: DetectedDocType; confianca: numbe
   }
 }
 
-async function callGemini(prompt: string, imagePart: any, apiKey: string, model: string): Promise<string> {
+async function callGeminiDirect(prompt: string, imagePart: any, apiKey: string, model: string): Promise<{ text: string; status: number }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15_000);
   try {
@@ -171,8 +171,6 @@ async function callGemini(prompt: string, imagePart: any, apiKey: string, model:
             temperature: 0,
             maxOutputTokens: 2048,
             responseMimeType: "application/json",
-            // Crítico: desliga o "thinking" do gemini-2.5. Sem isto o thinking
-            // consome todo o orçamento de tokens e a resposta visível volta vazia.
             thinkingConfig: { thinkingBudget: 0 },
           },
         }),
@@ -181,42 +179,110 @@ async function callGemini(prompt: string, imagePart: any, apiKey: string, model:
     );
     if (!resp.ok) {
       console.warn(`[detectDocumentType] gemini ${model} status`, resp.status);
+      return { text: "", status: resp.status };
+    }
+    const json: any = await resp.json();
+    return { text: (json?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim(), status: 200 };
+  } catch (e) {
+    console.warn(`[detectDocumentType] erro chamando gemini ${model}:`, (e as Error).message);
+    return { text: "", status: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Fallback via Lovable AI Gateway quando o Gemini direto retorna 429/5xx/timeout.
+// O OCR principal (ocr.ts) já usa esse gateway com sucesso — o classificador
+// estava sem essa rota e por isso travava todo o passo de documento quando a
+// chave Gemini direta entrava em quota.
+async function callGeminiViaLovable(prompt: string, imagePart: any, model: string): Promise<string> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY") || "";
+  if (!apiKey) return "";
+  const mime = imagePart?.inline_data?.mime_type || "image/jpeg";
+  const b64 = imagePart?.inline_data?.data || "";
+  if (!b64) return "";
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15_000);
+  // Lovable Gateway aceita modelos no formato "google/<id>"
+  const gwModel = model.startsWith("google/") ? model : `google/${model}`;
+  try {
+    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: gwModel,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } },
+          ],
+        }],
+        temperature: 0,
+        max_tokens: 2048,
+        response_format: { type: "json_object" },
+      }),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) {
+      console.warn(`[detectDocumentType] lovable-gateway ${gwModel} status`, resp.status);
       return "";
     }
     const json: any = await resp.json();
-    return (json?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+    return String(json?.choices?.[0]?.message?.content || "").trim();
   } catch (e) {
-    console.warn(`[detectDocumentType] erro chamando gemini ${model}:`, (e as Error).message);
+    console.warn(`[detectDocumentType] erro lovable-gateway ${gwModel}:`, (e as Error).message);
     return "";
   } finally {
     clearTimeout(timer);
   }
 }
 
+async function callGemini(prompt: string, imagePart: any, apiKey: string, model: string): Promise<string> {
+  // Se não temos chave Gemini, vai direto para o Lovable Gateway.
+  if (!apiKey || apiKey === "__no_gemini__") {
+    const gw = await callGeminiViaLovable(prompt, imagePart, model);
+    if (gw) console.log(`[detectDocumentType] ✅ Lovable Gateway (sem chave Gemini)`);
+    return gw;
+  }
+  const direct = await callGeminiDirect(prompt, imagePart, apiKey, model);
+  if (direct.text) return direct.text;
+  // Fallback p/ Lovable Gateway em qualquer falha (429, 5xx, timeout, resposta vazia).
+  const gw = await callGeminiViaLovable(prompt, imagePart, model);
+  if (gw) {
+    console.log(`[detectDocumentType] ✅ fallback Lovable Gateway respondeu (direct status=${direct.status})`);
+    return gw;
+  }
+  return "";
+}
+
 /** Versão estruturada que retorna tipo + confiança + origem da decisão. */
 export async function detectDocumentTypeDetailed(input: DetectInput): Promise<DetectResult> {
-  if (!input.geminiApiKey) {
-    // Sem Gemini não dá para classificar — mantém comportamento legado (rg_antigo) para não travar.
-    return { tipo: "rg_antigo", confianca: 0, source: "fallback" };
+  const hasGemini = !!input.geminiApiKey;
+  const hasLovable = !!Deno.env.get("LOVABLE_API_KEY");
+  if (!hasGemini && !hasLovable) {
+    // Sem provedor: assume documento válido (rg_antigo) para o OCR seguir, em vez de rejeitar.
+    return { tipo: "rg_antigo", confianca: 0, source: "fallback", motivo: "classificador indisponível" };
   }
   const imagePart = await fetchImagePart(input);
   if (!imagePart) {
-    return { tipo: "rg_antigo", confianca: 0, source: "fallback" };
+    return { tipo: "rg_antigo", confianca: 0, source: "fallback", motivo: "imagem não disponível" };
   }
+  // callGemini cai automaticamente para Lovable Gateway quando o direto falha.
+  const apiKey = input.geminiApiKey || "__no_gemini__";
 
   // ── Pass 1: gemini-2.5-flash + checklist ──
-  const raw1 = await callGemini(PROMPT_PASS1, imagePart, input.geminiApiKey, "gemini-2.5-flash");
+  const raw1 = await callGemini(PROMPT_PASS1, imagePart, apiKey, "gemini-2.5-flash");
   const parsed1 = parseDetectJson(raw1);
   if (parsed1 && parsed1.confianca >= 0.80) {
     console.log(`🤖 [detectDoc] pass1 confiante: ${parsed1.tipo} (${parsed1.confianca.toFixed(2)}) motivo=${parsed1.motivo || "-"} sinais=${JSON.stringify(parsed1.sinais)}`);
     return { tipo: parsed1.tipo, confianca: parsed1.confianca, source: "gemini_pass1", sinais: parsed1.sinais, motivo: parsed1.motivo };
   }
-
   if (!parsed1) console.warn(`[detectDoc] pass1 raw vazio/inválido: "${raw1.substring(0, 300)}"`);
 
-  // ── Pass 2: gemini-2.5-pro (mais preciso) ──
+  // ── Pass 2: gemini-2.5-pro ──
   console.log(`🤖 [detectDoc] pass1 ambíguo (${parsed1 ? parsed1.confianca.toFixed(2) : "no-parse"}) — pass2 com 2.5-pro`);
-  const raw2 = await callGemini(PROMPT_PASS2, imagePart, input.geminiApiKey, "gemini-2.5-pro");
+  const raw2 = await callGemini(PROMPT_PASS2, imagePart, apiKey, "gemini-2.5-pro");
   const parsed2 = parseDetectJson(raw2);
   if (parsed2 && parsed2.confianca >= 0.60) {
     console.log(`🤖 [detectDoc] pass2 decidiu: ${parsed2.tipo} (${parsed2.confianca.toFixed(2)}) motivo=${parsed2.motivo || "-"} sinais=${JSON.stringify(parsed2.sinais)}`);
@@ -226,7 +292,7 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
 
   // ── Pass 3: desempate ──
   console.log(`🤖 [detectDoc] pass2 ambíguo — pass3 desempate`);
-  const raw3 = await callGemini(PROMPT_PASS3, imagePart, input.geminiApiKey, "gemini-2.5-flash");
+  const raw3 = await callGemini(PROMPT_PASS3, imagePart, apiKey, "gemini-2.5-flash");
   const parsed3 = parseDetectJson(raw3);
   if (parsed3) {
     console.log(`🤖 [detectDoc] pass3 decidiu: ${parsed3.tipo} (${parsed3.confianca.toFixed(2)}) motivo=${parsed3.motivo || "-"} sinais=${JSON.stringify(parsed3.sinais)}`);
@@ -234,14 +300,18 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
   }
   console.warn(`[detectDoc] pass3 raw vazio/inválido: "${raw3.substring(0, 300)}"`);
 
-  // Último recurso: melhor estimativa ou fallback marcado (confianca=0)
+  // Último recurso: melhor estimativa válida.
   const best = parsed2 || parsed1;
   if (best) {
     console.log(`🤖 [detectDoc] usando melhor estimativa: ${best.tipo} (${best.confianca.toFixed(2)})`);
     return { tipo: best.tipo, confianca: best.confianca, source: "gemini_pass2", sinais: best.sinais, motivo: best.motivo };
   }
-  console.warn(`⚠️ [detectDoc] sem parse nas 3 passadas — retornando "outro" para o handler rejeitar e pedir RG/CNH de novo`);
-  return { tipo: "outro", confianca: 0, source: "fallback", motivo: "não identificado" };
+  // 🛡️ FAIL-OPEN: as 3 passadas falharam por motivo TÉCNICO (429, timeout, parse).
+  // NÃO rejeitar como "outro" — isso travava documentos válidos quando a IA
+  // estava em quota. Em vez disso, assume rg_antigo (default histórico) e deixa
+  // o OCR real decidir. Se for um arquivo errado, o OCR falha e o retry pede de novo.
+  console.warn(`⚠️ [detectDoc] sem parse nas 3 passadas — FAIL-OPEN: assumindo rg_antigo para o OCR seguir`);
+  return { tipo: "rg_antigo", confianca: 0, source: "fallback", motivo: "classificador indisponível (fail-open)" };
 }
 
 /** API compatível com o código antigo. Mapeia "outro" para "rg_antigo" (default histórico). */

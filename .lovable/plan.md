@@ -1,43 +1,31 @@
-## Diagnóstico (confirmado nos dados)
+Diagnóstico confirmado:
 
-O bot reenvia o início depois da simulação porque dois handlers carregam fluxos diferentes:
+- Na última conversa do telefone `5511971254913`, o lead estava corretamente em `aguardando_doc_auto`.
+- O PDF do documento foi baixado com sucesso pela Evolution e salvo no MinIO.
+- A falha aconteceu antes do OCR do documento: o classificador `detectDocumentTypeDetailed` chamou Gemini direto e recebeu `429` em todas as tentativas.
+- Por causa disso, ele retornou `tipo=outro, source=fallback, motivo=não identificado`, e o bot rejeitou o arquivo como se não fosse RG/CNH.
+- O OCR real do documento nem chegou a rodar. O OCR principal já usa Lovable AI Gateway; quem quebrou foi só a etapa anterior de classificação RG/CNH.
 
-- `handlers/bot-flow.ts` (post-confirm-conta) usa `resolveFlowId`, que respeita `sync_mode`. Para um consultor em `sync_mode='public'`, lê o fluxo PÚBLICO do superadmin e grava o UUID do passo público (`d_resultado` = `4df1f90a...`) em `conversation_step`.
-- `handlers/conversational/index.ts` (`loadFlow`) carrega só o fluxo PRÓPRIO do consultor (`b539a8a2...`). O UUID público não existe ali. Cai em `unknown step → restart at firstActive` e dispara o welcome de novo.
+Plano de correção:
 
-Validação no banco:
-- Passo `4df1f90a` → `is_public=true`, consultor `0c2711ad` (superadmin).
-- Lead afetado: `sync_mode='public'` apontando para o próprio fluxo `b539a8a2`.
-- 4 consultores ativos hoje em `sync_mode='public'` (1 A, 1 B, 2 D) — todos reproduzem o bug.
-- Em `sync_mode='custom'` ambos os handlers já leem o mesmo fluxo; a correção não muda o comportamento deles.
+1. Corrigir o classificador de documento compartilhado
+   - Alterar `supabase/functions/_shared/detect-doc-type.ts`.
+   - Quando a chamada direta ao Gemini falhar por `429`, timeout, resposta vazia ou sem JSON, tentar classificar via Lovable AI Gateway usando `LOVABLE_API_KEY`.
+   - Manter a rejeição `tipo=outro` apenas quando a IA realmente responder que o arquivo é conta, selfie, boleto, print etc.
 
-## Plano
+2. Fail-open seguro quando a classificação estiver indisponível
+   - Se todas as tentativas de classificação falharem por quota/erro técnico, não rejeitar o arquivo como `outro`.
+   - Retornar `rg_antigo` com baixa confiança e motivo técnico, deixando o fluxo seguir para o OCR real.
+   - Assim, documento válido não fica bloqueado por falha do classificador. Se for arquivo errado, o OCR/retry do próprio passo trata depois.
 
-1. Unificar carregamento no `conversational`
-   - Em `supabase/functions/evolution-webhook/handlers/conversational/index.ts` e no espelho `supabase/functions/whapi-webhook/handlers/conversational/index.ts`, substituir o `loadFlow` por `resolveFlowId` + leitura dos steps pelo `flow_id` retornado.
-   - Resultado: em `sync_mode='public'` carrega o fluxo do superadmin; em `sync_mode='custom'` segue carregando o próprio. Mesma fonte de verdade do `bot-flow`.
+3. Preservar comportamento dos próximos passos
+   - Não mudar a sequência conta → simulação → documento.
+   - Não mexer no banco nem criar migration.
+   - A correção vale para `evolution-webhook` e `whapi-webhook`, porque ambos usam o mesmo `_shared/detect-doc-type.ts`.
 
-2. Rede de segurança contra UUID órfão (por `step_key`)
-   - No bloco `unknown step` do `conversational`, antes do restart, tentar localizar um step ativo com o mesmo `step_key` no fluxo carregado.
-   - Cobre os 11 leads em `sync_mode='custom'` com UUID antigo (republicações) sem perder o lugar deles.
-
-3. Manter `bot-flow` como está
-   - O lookup de `success_goto`/`fallback.goto_step_id` já filtra por `flow_id`. Sem mudança de schema.
-
-4. Validação
-   - Rodar `bot-flow_test.ts` e `step-namespace_test.ts`.
-   - Conferir nos logs do `evolution-webhook` que após `[post-confirm-conta] next=d_resultado` o próximo turno NÃO emite `[conversational] unknown step`.
-
-## Impacto em consultores novos
-
-- Consultor cria do zero (default `sync_mode='public'`): passa a funcionar igual ao superadmin, sem reenviar welcome após a simulação.
-- Consultor personaliza (`sync_mode='custom'`): nenhuma mudança visível — `resolveFlowId` devolve o próprio fluxo.
-- Leads antigos com UUID inválido: a rede por `step_key` evita restart cego.
-
-## Arquivos
-
-- `supabase/functions/evolution-webhook/handlers/conversational/index.ts` — `loadFlow` passa a usar `resolveFlowId(supabase, consultantId, variant)` e carregar `bot_flow_steps` pelo id retornado; `strict_mode` continua sendo lido do fluxo resolvido.
-- `supabase/functions/whapi-webhook/handlers/conversational/index.ts` — mesma mudança.
-- No bloco `if (!currentStep)`: fallback `dbSteps.find(s => s.step_key === stepKey && s.is_active)` antes do restart.
-
-Sem migração de banco.
+4. Validar o fluxo crítico
+   - Conferir testes/rotas existentes de OCR e fallback.
+   - Validar pelos logs esperados:
+     - não aparecer mais rejeição `tipo=outro source=fallback motivo=não identificado` quando o erro real for `429`;
+     - após receber documento, o bot deve avançar para `aguardando_doc_verso`, `ask_cpf` ou `confirmando_dados_doc`, conforme o tipo/dados lidos;
+     - o lead não deve ficar preso pedindo o mesmo documento por erro de quota do classificador.
