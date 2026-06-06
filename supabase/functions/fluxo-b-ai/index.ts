@@ -115,29 +115,25 @@ Deno.serve(async (req) => {
   // History override (tester mantém o histórico no front, já que dryRun não persiste em conversations)
   const syntheticHistory: Array<{ role: "user" | "assistant"; content: string }> | undefined =
     dryRun && Array.isArray(body?.history) ? body.history.slice(-40) : undefined;
-  if (syntheticHistory && syntheticHistory.length > 0) {
-    // Injeta proxy do select em conversations para devolver o histórico simulado
-    const origFrom = supaForRun.from.bind(supaForRun);
-    supaForRun.from = (table: string) => {
-      if (table !== "conversations") return origFrom(table);
-      return {
-        select: () => ({
-          eq: () => ({
-            order: () => ({
-              limit: async () => ({
-                data: syntheticHistory.map((m) => ({
-                  message_direction: m.role === "assistant" ? "outbound" : "inbound",
-                  message_text: m.content,
-                  message_type: "text",
-                  created_at: new Date().toISOString(),
-                })),
-                error: null,
-              }),
+  if (syntheticHistory && syntheticHistory.length > 0 && dryRun) {
+    // Registra override no map — o proxy intercepta sem reatribuição recursiva.
+    (supaForRun as any).__fromOverrides["conversations"] = (_table: string) => ({
+      select: () => ({
+        eq: () => ({
+          order: () => ({
+            limit: async () => ({
+              data: syntheticHistory.map((m) => ({
+                message_direction: m.role === "assistant" ? "outbound" : "inbound",
+                message_text: m.content,
+                message_type: "text",
+                created_at: new Date().toISOString(),
+              })),
+              error: null,
             }),
           }),
         }),
-      } as any;
-    };
+      }),
+    });
   }
 
   try {
