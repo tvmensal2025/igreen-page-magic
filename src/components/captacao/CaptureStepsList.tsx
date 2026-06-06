@@ -253,42 +253,42 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
           return (
             <li key={g.step_key}>
               <div
-                className={`rounded-md border flex items-center gap-1 pl-1 pr-1 py-0.5 transition-all ${
+                className={`group rounded-xl border flex items-center gap-2 pl-1.5 pr-1.5 py-1.5 transition-all duration-200 ${
                   isError
                     ? "border-destructive/60 bg-destructive/10"
                     : isCurrent
-                    ? "border-amber-400/60 bg-amber-400/10 ring-1 ring-amber-400/40"
+                    ? "border-amber-400/60 bg-amber-400/10 ring-1 ring-amber-400/40 shadow-sm"
                     : anySent
-                    ? "border-primary/30 bg-primary/5"
-                    : "border-border bg-card hover:border-primary/50"
+                    ? "border-primary/25 bg-primary/[0.04]"
+                    : "border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] hover:shadow-sm"
                 }`}
               >
                 <div className="relative shrink-0">
                   <span
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold tabular-nums ${
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums transition-all ${
                       anySent
-                        ? "bg-primary text-primary-foreground"
+                        ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-sm shadow-primary/30"
                         : isCurrent
-                        ? "bg-amber-400 text-black"
-                        : "bg-muted text-muted-foreground"
+                        ? "bg-amber-400 text-black shadow-sm shadow-amber-400/40"
+                        : "bg-muted text-muted-foreground group-hover:bg-primary/15 group-hover:text-primary"
                     }`}
                   >
-                    {anySent ? <Check className="w-2.5 h-2.5" /> : num}
+                    {anySent ? <Check className="w-3 h-3" /> : num}
                   </span>
-                  <span className="absolute -bottom-0.5 -right-1 text-[7px] font-bold bg-background border border-border rounded-sm px-0.5 leading-none py-px text-foreground/80">
+                  <span className="absolute -bottom-0.5 -right-1 text-[7px] font-bold bg-background border border-border/60 rounded-sm px-0.5 leading-none py-px text-foreground/80 shadow-sm">
                     {defaultRow?.variant || defaultV}
                   </span>
                 </div>
-                <div className="flex-1 min-w-0 flex items-center gap-1">
-                  <p className="text-[11px] font-semibold truncate leading-tight">
+                <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                  <p className={`text-[11px] truncate leading-tight ${anySent ? "font-medium text-foreground/85" : "font-semibold text-foreground"}`}>
                     {g.title || g.step_key || `Passo ${num}`}
                   </p>
                   {isCurrent && (
-                    <span className="text-[8px] font-bold uppercase tracking-wide px-1 py-px rounded bg-amber-400 text-black shrink-0">
+                    <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded-full bg-amber-400 text-black shrink-0">
                       atual
                     </span>
                   )}
-                  <div className="flex items-center gap-0.5 shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0 opacity-70">
                     {media.includes("audio") && <Mic className="w-2.5 h-2.5 text-emerald-500" />}
                     {media.includes("image") && <ImageIcon className="w-2.5 h-2.5 text-amber-500" />}
                     {media.includes("video") && <Video className="w-2.5 h-2.5 text-cyan-500" />}
@@ -299,22 +299,22 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
                   disabled={isSending || !defaultRow}
                   onClick={() => defaultRow && setConfirmStep({ group: g, row: defaultRow })}
                   title={isError ? "Falhou — clique pra tentar de novo" : "Ver prévia e enviar"}
-                  className={`relative shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 ${
+                  className={`relative shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${
                     isError
-                      ? "bg-destructive text-destructive-foreground"
+                      ? "bg-destructive text-destructive-foreground shadow-sm shadow-destructive/30"
                       : anySent
-                      ? "border border-primary/40 text-primary hover:bg-primary/10"
-                      : "bg-primary text-primary-foreground hover:bg-primary/90"
+                      ? "border border-primary/40 text-primary hover:bg-primary/10 hover:scale-105"
+                      : "bg-gradient-to-br from-primary to-primary/85 text-primary-foreground shadow-sm shadow-primary/30 hover:shadow-md hover:shadow-primary/40 hover:scale-105"
                   }`}
                 >
                   {isSending ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : isError ? (
                     <span className="text-[10px] font-bold">!</span>
                   ) : anySent ? (
-                    <Check className="w-3 h-3" />
+                    <Check className="w-3.5 h-3.5" />
                   ) : (
-                    <Send className="w-3 h-3" />
+                    <Send className="w-3.5 h-3.5" />
                   )}
                 </button>
               </div>

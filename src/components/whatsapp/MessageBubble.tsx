@@ -348,12 +348,12 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
   }, [loadedUrl, onLoadMedia, message, onAttachToCapture]);
 
   return (
-    <div className={`group flex ${fromMe ? "justify-end" : "justify-start"} mb-1`}>
+    <div className={`group flex ${fromMe ? "justify-end" : "justify-start"} mb-1.5`}>
       <div
-        className={`relative max-w-[75%] rounded-lg px-3 py-1.5 ${
+        className={`relative max-w-[75%] rounded-2xl px-3 py-2 shadow-sm transition-shadow hover:shadow-md ${
           fromMe
-            ? "bg-primary/20 text-foreground rounded-br-none"
-            : "bg-secondary text-foreground rounded-bl-none"
+            ? "bg-gradient-to-br from-primary/15 to-primary/10 text-foreground rounded-br-md border border-primary/15"
+            : "bg-card text-foreground rounded-bl-md border border-border/60"
         }`}
       >
         {(canSaveAsTemplate || canCopy || canAttachToCapture) && (
