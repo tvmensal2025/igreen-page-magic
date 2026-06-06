@@ -4982,12 +4982,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
 
-      const resp: string = isButton ? String(buttonId ?? "") : messageText.toLowerCase().trim();
-      // Sprint D-B11: "1"/"2" só valem se vieram do botão. Texto livre exige palavra explícita.
-      const sim = (isButton && (resp === "sim_phone" || resp === "1"))
-        || (!isButton && /^(sim|s|isso|isso\s+mesmo|é\s+meu|eh\s+meu|confirmo|pode|certo|correto|positivo)\b/.test(resp));
-      const editar = (isButton && (resp === "editar_phone" || resp === "2"))
-        || (!isButton && /^(n[aã]o|n|editar|outro|outro\s+n[uú]mero|trocar|mudar|errado)\b/.test(resp));
+      const rawResp: string = isButton ? String(buttonId ?? "") : messageText.toLowerCase().trim();
+      // Whapi/Evolution renderizam sendOptions como texto numerado, então "1"/"2"
+      // sempre chegam como texto. Aceitamos numérico independente de isButton.
+      const numKey = ({ "1": "sim_phone", "2": "editar_phone" } as Record<string,string>)[rawResp] ?? rawResp;
+      const sim = numKey === "sim_phone"
+        || /^(sim|s|isso|isso\s+mesmo|é\s+meu|eh\s+meu|confirmo|pode|certo|correto|positivo)\b/.test(rawResp);
+      const editar = numKey === "editar_phone"
+        || /^(n[aã]o|n|editar|outro|outro\s+n[uú]mero|trocar|mudar|errado)\b/.test(rawResp);
 
       // ── PROTEÇÃO: Se o phone_whatsapp é o número do consultor/instância,
       // NÃO permitir confirmar — forçar digitar outro número ──

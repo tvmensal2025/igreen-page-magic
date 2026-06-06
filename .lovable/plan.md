@@ -1,94 +1,82 @@
-## Análise do fluxo — telefone 5511971254913 (lead JOSE FELICIO BATISTA / `e7faa174-7904-44ae-b923-66d676fd30be`)
 
-Reconstruí toda a jornada a partir da tabela `conversations`. O fluxo correu bem até o final do cadastro e travou no penúltimo passo.
+## Auditoria de loops em todos os steps do bot
 
-### Linha do tempo real
+Varri todos os `case` dos handlers `bot-flow.ts` (evolution + whapi) e cruzei com cada chamada de `sendOptions(...)`. O risco de loop só existe quando o handler envia botões e exige o `id` do botão (ou regex de texto livre) sem aceitar `1`/`2`/`3` — porque o canal Evolution (e o fallback do Whapi) renderiza `sendOptions` como texto numerado (`*1.* Mesma pessoa` + "_Digite o número da opção desejada._").
 
-```text
-04:33:06  IN   "Oi"                                 → welcome
-04:33:11  OUT  d_welcome (menu numérico)
-04:33:20  IN   "3"
-04:33:32  OUT  "Me envia a foto da conta de luz"    → aguardando_conta
-04:33:50  IN   [imagem] conta de luz                ✅ OCR ok
-04:34:01  IN   "1"                                  confirmando_dados_conta
-04:34:05  OUT  d_resultado (simulação R$ 255,35 → economia R$20–52)
-04:34:12  IN   "1"
-04:34:20  OUT  "Agora preciso do RG/CNH"            → aguardando_doc_auto
-04:34:29  IN   [PDF] documento                      ✅ OCR doc ok
-04:34:45  IN   "1"                                  confirmando_dados_doc
-            (bot detectou mismatch nome conta × doc)
-04:34:55  IN   "1"   ┐
-04:35:06  IN   "1"   │
-04:35:14  IN   "1"   │ ← LOOP: bot fica em confirmar_titularidade
-04:35:22  IN   "2"   │   e reenvia sempre a mesma pergunta
-04:35:30  IN   "3"   ┘
+### Resultado da varredura
+
+| Step | Aceita 1/2/3? | Status |
+|---|---|---|
+| `confirmando_dados_conta` | ✅ 1=sim · 2=não · 3=editar | OK |
+| `confirmando_dados_doc` | ✅ 1=sim · 2=não · 3=editar | OK |
+| `confirmar_titularidade` | ✅ (corrigido na rodada anterior) | OK |
+| `editing_conta_menu` | ✅ 1–6 + 0 | OK |
+| `editing_doc_menu` | ✅ 1–4 + 0 | OK |
+| `menu_inicial` / `pos_video` | ✅ por regex `cadastr/humano` + fallback IA livre | OK (não trava) |
+| `ask_quero_cadastrar` | ✅ "1" listado em triggers | OK |
+| `ask_finalizar` | ✅ "1" listado em triggers | OK |
+| `aguardando_humano` | ✅ "2" + regex `cadastr` | OK |
+| **`ask_phone_confirm`** | ❌ **`1`/`2` só são aceitos se `isButton===true`** | **LOOP** |
+| `validando_otp` / `otp_falhou` / `aguardando_facial` / `cadastro_em_analise` | aceitam só texto livre/código | OK (não usam botões) |
+
+### Bug confirmado — `ask_phone_confirm`
+
+Em `supabase/functions/evolution-webhook/handlers/bot-flow.ts:4488-4493` e no espelho em `whapi-webhook/handlers/bot-flow.ts:4985-4990`:
+
+```ts
+const sim    = (isButton && (resp === "sim_phone" || resp === "1")) || (!isButton && /^(sim|s|isso…)\b/.test(resp));
+const editar = (isButton && (resp === "editar_phone" || resp === "2")) || (!isButton && /^(n[aã]o|n|editar…)\b/.test(resp));
 ```
 
-### Causa raiz
+Como `sendOptions` no Evolution sempre cai no caminho de texto numerado (não há suporte nativo a botões), o usuário recebe a pergunta listada como `*1.* Sim · *2.* Outro número` e o sistema injeta "_Digite o número da opção desejada._". Quando ele responde `1` ou `2`, `isButton=false`, e nenhum dos regex casa com dígito → cai no `else` (linhas 4533-4540) e reenvia a mesma pergunta. Mesmo padrão do `confirmar_titularidade` que já corrigimos.
 
-O step `**confirmar_titularidade**` (handler em `supabase/functions/evolution-webhook/handlers/bot-flow.ts:4202-4231`) só aceita três entradas:
+Adicionalmente o fallback de texto (`if (!sent) reply = "Digite *1* …"`) só roda quando `sendOptions` falha — então o lead nunca vê uma instrução clara, só a lista numerada que não funciona.
 
-- button id `titular_mesmo` / texto casando `/mesma|sou eu|igual/`
-- button id `titular_outro` / `/outro|cônjuge|esposa|pai|mãe/`
-- button id `titular_corrigir` / `/corrigir|errado|edit/`
+### Outros pontos analisados e descartados
 
-Quando nenhuma casa, chama `sendOptions(...)` com três botões. **Mas o adapter Evolution loga `supports_buttons:false**` — então `sendOptions` cai no fallback de texto, que numera as opções como 1/2/3. O usuário responde "1", "2", "3" — e o handler **não tem mapeamento numérico**, então cai no `else` e repete a mesma pergunta infinitamente.
-
-Mesmo bug existe no whapi-webhook (canal Whapi também não suporta botões nativos da mesma forma neste step).
-
-### Impacto para os consultores
-
-Qualquer lead em que o nome do RG/CNH não bate exatamente com o nome da conta de luz (caso muito comum: conta no nome do pai/cônjuge) **trava aqui e não finaliza cadastro**. O bot fica em loop até o lead desistir.
+- `pitch_conexao_club`, `aguardando_conta`, `aguardando_doc_*`, `ask_cpf`, `ask_name`, `ask_cep`, `ask_email`, `ask_distribuidora`, `ask_installation_number`, `ask_bill_value` — todos pedem dado livre (foto/número/texto), sem botões → sem loop.
+- O bloco de reset (`RE_INTENT_RESET`, linha 1922) chama `sendOptions` com 3 ids (`entender_desconto`, `cadastrar_agora`, `falar_humano`) e cai em `menu_inicial`. O handler de `menu_inicial` (linha 2942) não trata `entender_desconto`, mas o `else` migra o lead para `qualificacao` com texto livre — degrada para conversa, não trava. Mantenho como está.
+- `pitch_conexao_club` (linha 3623) só envia texto, sem botões → OK.
 
 ---
 
 ## Plano de correção
 
-### 1. Aceitar respostas numéricas em `confirmar_titularidade`
+### 1. Tornar `ask_phone_confirm` numeric-friendly nos dois webhooks
 
-Em `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (case `confirmar_titularidade`, linhas 4202-4231), adicionar mapeamento:
-
-- `"1"` → `titular_mesmo`
-- `"2"` → `titular_outro`
-- `"3"` → `titular_corrigir`
-
-Antes da cadeia de regex existente, normalizar:
+Substituir as duas linhas das flags `sim`/`editar` para aceitar `1`/`2` **independentemente** de ter vindo como botão ou texto:
 
 ```ts
-const numMap: Record<string,string> = { "1":"titular_mesmo","2":"titular_outro","3":"titular_corrigir" };
-const normalized = numMap[resp] ?? resp;
+const numKey = ({ "1": "sim_phone", "2": "editar_phone" } as const)[resp] ?? resp;
+const sim    = numKey === "sim_phone"    || /^(sim|s|isso|isso\s+mesmo|é\s+meu|eh\s+meu|confirmo|pode|certo|correto|positivo)\b/.test(resp);
+const editar = numKey === "editar_phone" || /^(n[aã]o|n|editar|outro|outro\s+n[uú]mero|trocar|mudar|errado)\b/.test(resp);
 ```
 
-E usar `normalized` nas comparações de id. Os regex de texto livre continuam funcionando.
+Aplicar em `supabase/functions/evolution-webhook/handlers/bot-flow.ts:4487-4493` e `supabase/functions/whapi-webhook/handlers/bot-flow.ts:4985-4990`.
 
-### 2. Reescrever o fallback de texto para deixar a opção numérica explícita
+### 2. Garantir prompt numérico explícito no envio
 
-Quando `sendOptions` cai em texto, o prompt já vira algo como "1) Mesma pessoa / 2) Outro titular / 3) Corrigir", mas o `reply` de fallback `"Responda: *mesma pessoa*, *outro titular* ou *corrigir*."` não ensina o atalho. Trocar por:
+No `else` dos dois handlers (`linhas 4533-4540` evo / `5030-…` whapi), trocar `reply = ""` para sempre incluir o atalho — assim o lead vê "Responda *1* para confirmar, *2* para informar outro número" abaixo da lista, mesmo quando `sendOptions` foi enviado com sucesso:
 
-```
-Responda com o número:
-*1* Mesma pessoa
-*2* Outro titular
-*3* Corrigir dados
+```ts
+reply = "";
+// (sem mudança aqui — sendOptions já injeta "Digite o número")
 ```
 
-### 3. Aplicar a mesma correção no whapi-webhook
+A função `sendOptions` (linha 1037) já anexa `_Digite o número da opção desejada._`, então não precisamos duplicar. Só ajustar o fallback de erro (`if (!sent)`) que já está claro.
 
-`supabase/functions/whapi-webhook/handlers/bot-flow.ts` tem o handler espelhado (o repo mantém os dois webhooks em paralelo). Aplicar a mesma mudança lá.
+Conclusão: o item 2 é só conferência — a mudança real é a do item 1.
 
-### 4. Validação (sem nova migração, sem mudar schema)
+### 3. Validação
 
-- Editar manualmente o lead `e7faa174-...` voltando para `confirmar_titularidade` (SQL UPDATE) e responder "1" → deve avançar para o próximo step (validação facial / endereço, via `autoResolveCepIfNeeded`).
-- Conferir logs `evolution-webhook`: `handler_done step_before=confirmar_titularidade step_after=<próximo>` (hoje fica `step_after=confirmar_titularidade`).
-- Confirmar que nenhum outro step do funil tem o mesmo padrão (botões + numeração não-mapeada). Vou varrer rapidamente `confirmando_dados_doc`, `confirmando_dados_conta`, `editing_doc_menu` durante a implementação — todos já aceitam números, só `confirmar_titularidade` ficou de fora.
+- Buscar leads recentes presos em `ask_phone_confirm` no banco (`SELECT id, phone_whatsapp, updated_at FROM customers WHERE conversation_step = 'ask_phone_confirm' AND updated_at > now() - interval '7 days'`). Se houver, eles vão destravar no próximo `1`/`2` após o deploy.
+- Verificar nos logs do `evolution-webhook` após uma interação real: `handler_done step_before=ask_phone_confirm step_after=<próximo>` (hoje fica preso).
+- Re-rodar a auditoria: nenhum outro step compartilha o padrão `isButton && resp === "N"`.
 
 ### Fora de escopo
 
-- Não mexer no OCR (rodou ok nesta conversa).
-- Não mexer no detect-doc-type (correções da rodada anterior continuam válidas).
-- Não criar migration nem alterar schema.
-- Não tocar em `portal-worker2`.
+- Não tocar em OCR / detect-doc-type / portal-worker.
+- Não criar migration nem mudar schema.
+- Não mexer no flow custom (Flow Builder) — esse usa `dispatchStepFromFlow` e segue outra lógica.
 
-Aprova que eu implemente? Sim
-
-&nbsp;
+Aprova?
