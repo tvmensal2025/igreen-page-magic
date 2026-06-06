@@ -411,17 +411,20 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
       <div className={`flex flex-col min-h-0 min-w-0 ${showInlineCapture ? "flex-1" : "flex-1"}`}>
-      {/* Chat header — h-12, compacto */}
-      <div className="flex items-center gap-2 px-3 h-12 border-b border-border bg-card shrink-0">
-        <Avatar className="h-8 w-8 shrink-0">
+      {/* Chat header — h-14, mais ar */}
+      <div className="flex items-center gap-2.5 px-3.5 h-14 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
+        <Avatar className="h-9 w-9 shrink-0 ring-1 ring-primary/20">
           <AvatarImage src={chat.profilePicUrl} />
-          <AvatarFallback className="bg-primary/20 text-primary text-[10px]">
+          <AvatarFallback className="bg-gradient-to-br from-primary/25 to-primary/5 text-primary text-[11px] font-bold">
             {chat.name.slice(0, 2).toUpperCase()}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate sensitive-name leading-tight">{chat.name}</p>
-          <p className="text-[10px] text-muted-foreground sensitive-phone leading-tight">{phoneNumber}</p>
+          <p className="text-[10px] text-muted-foreground sensitive-phone leading-tight flex items-center gap-1">
+            <span className="inline-block h-1 w-1 rounded-full bg-primary/60" />
+            {phoneNumber}
+          </p>
         </div>
         {isCustomer ? (
           <div className="flex items-center gap-1 text-primary shrink-0">
@@ -530,8 +533,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       {/* Messages area — flex-1 min-h-0 garante composer sempre visível */}
       <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto px-3 py-2"
-        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}
+        className="flex-1 min-h-0 overflow-y-auto px-3 py-3 bg-gradient-to-b from-muted/20 via-background to-muted/10"
+        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%2300a032' fill-opacity='0.025'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}
       >
         {isLoading && messages.length === 0 && (
           <div className="flex justify-center py-8">
