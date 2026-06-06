@@ -610,7 +610,9 @@ export default function FluxoBuilder() {
     initialPosition?: { x: number; y: number },
   ): Promise<Step | null> {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para adicionar passos.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para adicionar passos.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return null;
     }
     if (!flowId) return null;
