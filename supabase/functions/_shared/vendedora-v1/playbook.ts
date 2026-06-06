@@ -13,11 +13,11 @@ const T = (jogada: string, tom: string, detalhe: string): PlaybookEntry => ({ jo
 
 export const PLAYBOOK: Record<Etapa, Partial<Record<Perfil, PlaybookEntry>>> = {
   interesse: {
-    cetico:      T("provar_credibilidade", "consultivo_seguro", "ANEEL, mesma distribuidora, sem obra. Pergunta de interesse no fim."),
-    interessado: T("abrir_funil_simulacao", "energetico_direto", "Oferecer simulação imediata."),
-    comprador:   T("ir_direto_ao_nome", "objetivo", "Pular conversa fiada, pedir nome."),
-    indeciso:    T("provar_e_perguntar_interesse", "acolhedor_firme", "Tirar dúvida em 1 linha + CTA."),
-    reclamao:    T("validar_e_redirecionar", "empatico", "Reconhecer reclamação, mostrar valor."),
+    cetico:      T("abertura_padrao", "consultivo_seguro", "Olá + apresentação no nome do consultor + benefício curto + 'posso te chamar como?'. Sem pedir nome formal nem fazer pitch longo."),
+    interessado: T("abertura_padrao", "energetico_direto", "Olá + apresentação + benefício + 'posso te chamar como?'. Tom leve e direto."),
+    comprador:   T("abertura_padrao", "objetivo", "Olá curto + nome do consultor + benefício + 'posso te chamar como?'."),
+    indeciso:    T("abertura_padrao", "acolhedor_firme", "Olá + apresentação + benefício + 'posso te chamar como?'. Acolhedor."),
+    reclamao:    T("abertura_padrao", "empatico", "Olá + apresentação + benefício (foco em aliviar conta) + 'posso te chamar como?'."),
   },
   nome: {
     cetico:      T("explicar_porque_nome", "transparente", "Por que precisa do nome (simulação personalizada)."),
