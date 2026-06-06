@@ -169,22 +169,29 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
 
   return (
     <div className="flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
-      {/* Compact connection status — h-7 */}
-      <div className="flex items-center justify-between px-3 py-1 bg-card border border-border rounded-t-lg shrink-0 h-7">
+      {/* Compact connection status — pill on the left, soft border */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-primary/5 via-card to-card border border-border/60 rounded-t-xl shrink-0 h-8">
         {isConnected ? (
           <div className="flex items-center gap-2 min-w-0">
-            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shrink-0" />
-            <span className="text-[11px] text-foreground font-medium">WhatsApp Conectado</span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inset-0 rounded-full bg-primary animate-ping opacity-60" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+              </span>
+              <span className="text-[10px] font-semibold text-primary tracking-wide uppercase">Conectado</span>
+            </span>
             {instanceName && (
-              <span className="text-[10px] text-muted-foreground truncate">({instanceName})</span>
+              <span className="text-[10px] text-muted-foreground truncate font-mono">{instanceName}</span>
             )}
           </div>
         ) : (
           <>
             <div className="flex items-center gap-2 min-w-0">
-              <div className="h-1.5 w-1.5 rounded-full bg-destructive shrink-0" />
-              <span className="text-[11px] text-foreground font-medium truncate">
-                {connectionStatus === "connecting" ? "WhatsApp Conectando..." : "WhatsApp Desconectado"}
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive/10 border border-destructive/25">
+                <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
+                <span className="text-[10px] font-semibold text-destructive tracking-wide uppercase truncate">
+                  {connectionStatus === "connecting" ? "Conectando" : "Desconectado"}
+                </span>
               </span>
             </div>
             <button
@@ -194,37 +201,41 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
               }}
               disabled={isLoading || fatalLocked}
               title={fatalLocked ? "Número em revisão manual — não reconecte aqui" : undefined}
-              className="text-[10px] text-primary hover:underline font-medium shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {fatalLocked
                 ? "Em revisão"
-                : isLoading || connectionStatus === "connecting" ? "Conectando..." : "Conectar"}
+                : isLoading || connectionStatus === "connecting" ? "Conectando…" : "Conectar →"}
             </button>
           </>
         )}
       </div>
 
-      {/* Sub-tab navigation — compacta, h-9 */}
-      <div className="flex border-x border-border bg-card overflow-x-auto shrink-0 h-9">
+      {/* Sub-tab navigation — underline animado, hover suave, pill de badge */}
+      <div className="flex border-x border-border/60 bg-card/80 backdrop-blur-sm overflow-x-auto shrink-0 h-10 px-1 gap-0.5">
         {SUB_TABS.map((tab) => {
           const Icon = tab.icon;
           const showBadge = tab.key === "conversas" && totalUnread > 0;
+          const isActive = activeSubTab === tab.key;
           return (
             <button
               key={tab.key}
               onClick={() => setActiveSubTab(tab.key)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2 min-h-[32px] ${
-                activeSubTab === tab.key
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 ${
+                isActive
+                  ? "text-primary bg-primary/8"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
               }`}
             >
-              <Icon className="h-3 w-3" />
+              <Icon className={`h-3.5 w-3.5 transition-transform ${isActive ? "scale-110" : ""}`} />
               <span className="hidden sm:inline">{tab.label}</span>
               {showBadge && (
-                <span className="bg-primary text-primary-foreground text-[9px] rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 font-bold">
+                <span className="bg-primary text-primary-foreground text-[9px] rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 font-bold shadow-sm shadow-primary/30">
                   {totalUnread > 99 ? "99+" : totalUnread}
                 </span>
+              )}
+              {isActive && (
+                <span className="absolute -bottom-1 left-2 right-2 h-0.5 bg-primary rounded-full" />
               )}
             </button>
           );

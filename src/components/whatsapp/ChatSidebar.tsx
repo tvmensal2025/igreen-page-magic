@@ -93,13 +93,16 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 border-r border-border bg-card">
+    <div className="flex flex-col h-full min-h-0 border-r border-border/60 bg-card">
       {/* Header */}
-      <div className="px-3 h-9 border-b border-border flex items-center justify-between shrink-0">
-        <h3 className="font-semibold text-foreground text-xs">Conversas</h3>
+      <div className="px-3 h-10 border-b border-border/60 flex items-center justify-between shrink-0 bg-gradient-to-b from-card to-card/50">
+        <h3 className="font-semibold text-foreground text-xs tracking-wide flex items-center gap-1.5">
+          <span className="h-1 w-1 rounded-full bg-primary" />
+          Conversas
+        </h3>
         <button
           onClick={() => setShowNewChat((v) => !v)}
-          className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
+          className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all hover:scale-105"
           title="Nova conversa"
         >
           <MessageCirclePlus className="h-4 w-4" />
@@ -108,26 +111,26 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
 
       {/* New chat input */}
       {showNewChat && (
-        <div className="p-2 border-b border-border bg-secondary/30">
-          <p className="text-[10px] text-muted-foreground mb-1.5">Nova conversa — digite o número:</p>
+        <div className="p-2 border-b border-border/60 bg-primary/5">
+          <p className="text-[10px] text-muted-foreground mb-1.5 font-medium">Nova conversa — digite o número:</p>
           <div className="flex gap-1.5">
             <Input
               ref={newPhoneRef}
               value={newPhone}
               onChange={(e) => setNewPhone(e.target.value)}
               placeholder="(11) 99999-9999"
-              className="h-8 text-xs flex-1 bg-background border-border/50"
+              className="h-8 text-xs flex-1 bg-background border-border/60 rounded-lg focus-visible:ring-primary/40"
               onKeyDown={(e) => e.key === "Enter" && handleStartNewChat()}
             />
             <button
               onClick={handleStartNewChat}
-              className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+              className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all shadow-sm shadow-primary/20 hover:shadow-md hover:shadow-primary/30"
             >
               Iniciar
             </button>
             <button
               onClick={() => { setShowNewChat(false); setNewPhone(""); }}
-              className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-secondary transition-colors"
+              className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-secondary transition-colors"
             >
               <X className="h-3.5 w-3.5 text-muted-foreground" />
             </button>
@@ -136,32 +139,32 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
       )}
 
       {/* Search */}
-      <div className="px-2 py-1.5 shrink-0">
+      <div className="px-2 py-2 shrink-0">
         <div className="relative">
-          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Buscar conversa ou cliente..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-xs bg-secondary border-none"
+            className="pl-8 h-9 text-xs bg-muted/40 border border-border/40 rounded-full focus-visible:ring-primary/40 focus-visible:ring-2 focus-visible:bg-background transition-all"
           />
         </div>
       </div>
 
       {/* Customer search results from DB */}
       {customerResults.length > 0 && (
-        <div className="border-b border-border shrink-0">
-          <p className="text-[10px] text-muted-foreground px-3 pt-1 pb-0.5 flex items-center gap-1">
+        <div className="border-b border-border/60 shrink-0 bg-primary/[0.03]">
+          <p className="text-[10px] text-muted-foreground px-3 pt-1.5 pb-1 flex items-center gap-1 font-semibold uppercase tracking-wider">
             <Users className="h-3 w-3" /> Clientes encontrados
           </p>
           {customerResults.map((cr) => (
             <button
               key={cr.phone_whatsapp}
               onClick={() => handleStartChatFromCustomer(cr.phone_whatsapp)}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-secondary/80"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-primary/10"
             >
-              <Avatar className="h-7 w-7 shrink-0">
-                <AvatarFallback className="bg-accent/20 text-accent text-[10px]">
+              <Avatar className="h-7 w-7 shrink-0 ring-1 ring-primary/20">
+                <AvatarFallback className="bg-primary/15 text-primary text-[10px] font-semibold">
                   {(cr.name || "?").slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
@@ -186,42 +189,51 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
             Nenhuma conversa encontrada
           </div>
         )}
-        {filtered.map((chat) => (
-          <button
-            key={chat.remoteJid}
-            onClick={() => onSelectChat(chat.remoteJid)}
-            className={`w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-secondary/80 ${
-              selectedJid === chat.remoteJid ? "bg-secondary" : ""
-            }`}
-          >
-            <Avatar className="h-9 w-9 shrink-0">
-              <AvatarImage src={chat.profilePicUrl} />
-              <AvatarFallback className="bg-primary/20 text-primary text-[10px]">
-                {chat.name.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-medium text-foreground truncate sensitive-name">
-                  {chat.name}
-                </span>
-                <span className="text-[10px] text-muted-foreground shrink-0 ml-1">
-                  {formatTime(chat.lastMessageTimestamp)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-muted-foreground truncate">
-                  {chat.lastMessage || "..."}
-                </span>
-                {chat.unreadCount > 0 && (
-                  <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 shrink-0 ml-1">
-                    {chat.unreadCount}
+        {filtered.map((chat) => {
+          const isSelected = selectedJid === chat.remoteJid;
+          const hasUnread = chat.unreadCount > 0;
+          return (
+            <button
+              key={chat.remoteJid}
+              onClick={() => onSelectChat(chat.remoteJid)}
+              className={`relative w-full flex items-center gap-2.5 px-2.5 py-2.5 text-left transition-all ${
+                isSelected
+                  ? "bg-primary/8 hover:bg-primary/10"
+                  : "hover:bg-muted/50"
+              }`}
+            >
+              {isSelected && (
+                <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary" />
+              )}
+              <Avatar className={`h-10 w-10 shrink-0 transition-all ${hasUnread ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card" : "ring-1 ring-border/40"}`}>
+                <AvatarImage src={chat.profilePicUrl} />
+                <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/5 text-primary text-[10px] font-bold">
+                  {chat.name.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[13px] truncate sensitive-name ${hasUnread ? "font-bold text-foreground" : "font-medium text-foreground/90"}`}>
+                    {chat.name}
                   </span>
-                )}
+                  <span className={`text-[10px] shrink-0 ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                    {formatTime(chat.lastMessageTimestamp)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <span className={`text-[11px] truncate ${hasUnread ? "text-foreground/80" : "text-muted-foreground"}`}>
+                    {chat.lastMessage || "..."}
+                  </span>
+                  {hasUnread && (
+                    <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-[18px] min-w-[18px] flex items-center justify-center px-1.5 shrink-0 font-bold shadow-sm shadow-primary/30">
+                      {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </ScrollArea>
     </div>
   );
