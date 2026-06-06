@@ -581,7 +581,9 @@ export default function FluxoBuilder() {
 
   async function patchStep(id: string, patch: Partial<Step>) {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue o toggle no topo para personalizar.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para personalizar.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return;
     }
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -608,7 +610,9 @@ export default function FluxoBuilder() {
     initialPosition?: { x: number; y: number },
   ): Promise<Step | null> {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para adicionar passos.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para adicionar passos.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return null;
     }
     if (!flowId) return null;
@@ -658,7 +662,9 @@ export default function FluxoBuilder() {
 
   async function duplicateStep(id: string) {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para duplicar passos.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para duplicar passos.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return;
     }
     const orig = steps.find((s) => s.id === id);
@@ -685,7 +691,9 @@ export default function FluxoBuilder() {
 
   async function deleteStep(id: string) {
     if (isReadOnly) {
-      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para remover passos.");
+      toast.error("Modo \"Seguir modelo público\" ativo. Desligue para remover passos.", {
+        action: { label: "Personalizar agora", onClick: () => void handleToggleSync(false) },
+      });
       return;
     }
     const ok = await confirm({
