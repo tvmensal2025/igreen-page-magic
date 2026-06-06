@@ -1,0 +1,62 @@
+name: Sync iGreen Portal
+
+# Disparado pela edge function sync-igreen-customers via repository_dispatch.
+# Roda em IPs da Microsoft Azure — não bloqueados pelo Cloudflare do portal iGreen.
+
+on:
+  workflow_dispatch:
+    inputs:
+      consultant_id:
+        description: 'ID do consultor no Supabase'
+        required: true
+      portal_email:
+        description: 'Email do portal iGreen'
+        required: true
+      portal_password:
+        description: 'Senha do portal iGreen'
+        required: true
+      mode:
+        description: 'sync_customers ou sync_network'
+        required: false
+        default: 'sync_customers'
+      supabase_url:
+        description: 'URL do Supabase'
+        required: true
+      supabase_service_key:
+        description: 'Service role key do Supabase'
+        required: true
+
+concurrency:
+  group: sync-igreen-${{ github.event.inputs.consultant_id }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync iGreen (${{ github.event.inputs.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        working-directory: worker-igreen-sync
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium
+          npx playwright install-deps chromium
+
+      - name: Run sync
+        working-directory: worker-igreen-sync
+        env:
+          PORTAL_EMAIL: ${{ github.event.inputs.portal_email }}
+          PORTAL_PASSWORD: ${{ github.event.inputs.portal_password }}
+          CONSULTANT_ID: ${{ github.event.inputs.consultant_id }}
+          MODE: ${{ github.event.inputs.mode }}
+          SUPABASE_URL: ${{ github.event.inputs.supabase_url }}
+          SUPABASE_SERVICE_KEY: ${{ github.event.inputs.supabase_service_key }}
+        run: node run-sync.mjs
