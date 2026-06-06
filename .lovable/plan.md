@@ -1,82 +1,64 @@
+# Por que o bot pediu o CEP do 11971254913
 
-## Auditoria de loops em todos os steps do bot
+## Diagnóstico (logs reais 06/06 09:30–09:34)
 
-Varri todos os `case` dos handlers `bot-flow.ts` (evolution + whapi) e cruzei com cada chamada de `sendOptions(...)`. O risco de loop só existe quando o handler envia botões e exige o `id` do botão (ou regex de texto livre) sem aceitar `1`/`2`/`3` — porque o canal Evolution (e o fallback do Whapi) renderiza `sendOptions` como texto numerado (`*1.* Mesma pessoa` + "_Digite o número da opção desejada._").
-
-### Resultado da varredura
-
-| Step | Aceita 1/2/3? | Status |
-|---|---|---|
-| `confirmando_dados_conta` | ✅ 1=sim · 2=não · 3=editar | OK |
-| `confirmando_dados_doc` | ✅ 1=sim · 2=não · 3=editar | OK |
-| `confirmar_titularidade` | ✅ (corrigido na rodada anterior) | OK |
-| `editing_conta_menu` | ✅ 1–6 + 0 | OK |
-| `editing_doc_menu` | ✅ 1–4 + 0 | OK |
-| `menu_inicial` / `pos_video` | ✅ por regex `cadastr/humano` + fallback IA livre | OK (não trava) |
-| `ask_quero_cadastrar` | ✅ "1" listado em triggers | OK |
-| `ask_finalizar` | ✅ "1" listado em triggers | OK |
-| `aguardando_humano` | ✅ "2" + regex `cadastr` | OK |
-| **`ask_phone_confirm`** | ❌ **`1`/`2` só são aceitos se `isButton===true`** | **LOOP** |
-| `validando_otp` / `otp_falhou` / `aguardando_facial` / `cadastro_em_analise` | aceitam só texto livre/código | OK (não usam botões) |
-
-### Bug confirmado — `ask_phone_confirm`
-
-Em `supabase/functions/evolution-webhook/handlers/bot-flow.ts:4488-4493` e no espelho em `whapi-webhook/handlers/bot-flow.ts:4985-4990`:
-
-```ts
-const sim    = (isButton && (resp === "sim_phone" || resp === "1")) || (!isButton && /^(sim|s|isso…)\b/.test(resp));
-const editar = (isButton && (resp === "editar_phone" || resp === "2")) || (!isButton && /^(n[aã]o|n|editar…)\b/.test(resp));
+Linha do tempo da conversa:
+```text
+09:32:01  lead envia foto da conta
+09:32:08  OCR Gemini grava: name + electricity_bill_value (só esses 2 capture_field_events)
+09:32:17  confirmando_dados_conta "1"
+...
+09:34:00  autoResolveCepIfNeeded() roda:
+          🔍 ViaCEP https://viacep.com.br/ws/SP/CAPIVARI/ELIZA%20FAVOTTO%20ANGELIN/json/
+          ⚠️ ViaCEP não retornou CEP específico → pergunta ao usuário
+09:34:04  📤 "Qual o seu *CEP*? (8 dígitos)"
+09:34:19  lead digita "13323-472"
+09:34:26  cep=13323472, street="Rua João Leme do Prado", city="Salto", state="SP" ← endereço real
 ```
 
-Como `sendOptions` no Evolution sempre cai no caminho de texto numerado (não há suporte nativo a botões), o usuário recebe a pergunta listada como `*1.* Sim · *2.* Outro número` e o sistema injeta "_Digite o número da opção desejada._". Quando ele responde `1` ou `2`, `isButton=false`, e nenhum dos regex casa com dígito → cai no `else` (linhas 4533-4540) e reenvia a mesma pergunta. Mesmo padrão do `confirmar_titularidade` que já corrigimos.
+## Causa raiz
 
-Adicionalmente o fallback de texto (`if (!sent) reply = "Digite *1* …"`) só roda quando `sendOptions` falha — então o lead nunca vê uma instrução clara, só a lista numerada que não funciona.
+O OCR (Gemini 2.5 Flash, `supabase/functions/_shared/ocr.ts`) leu campos errados desta fatura:
 
-### Outros pontos analisados e descartados
+- `cep = ""` (não extraiu)
+- `cidade = "CAPIVARI"` (é o endereço da agência da CPFL, não do imóvel)
+- `endereco = "ELIZA FAVOTTO ANGELIN"` (é nome de pessoa, não logradouro)
 
-- `pitch_conexao_club`, `aguardando_conta`, `aguardando_doc_*`, `ask_cpf`, `ask_name`, `ask_cep`, `ask_email`, `ask_distribuidora`, `ask_installation_number`, `ask_bill_value` — todos pedem dado livre (foto/número/texto), sem botões → sem loop.
-- O bloco de reset (`RE_INTENT_RESET`, linha 1922) chama `sendOptions` com 3 ids (`entender_desconto`, `cadastrar_agora`, `falar_humano`) e cai em `menu_inicial`. O handler de `menu_inicial` (linha 2942) não trata `entender_desconto`, mas o `else` migra o lead para `qualificacao` com texto livre — degrada para conversa, não trava. Mantenho como está.
-- `pitch_conexao_club` (linha 3623) só envia texto, sem botões → OK.
+Com `cep` vazio e endereço plausível, o fallback `buscarCepPorEndereco` rodou contra ViaCEP, que devolveu só CEPs genéricos de setor (final `000`) e o `autoResolveCepIfNeeded` corretamente desistiu — só que o endereço de referência era ruim de origem. Não é loop nem bug de fluxo: é OCR pegando o bloco errado da fatura (CPFL imprime o endereço da concessionária e o nome do titular anterior em destaque, e o Gemini confundiu com endereço de instalação).
 
----
+O CEP **está** na fatura — o lead conferiu e digitou `13323-472` — mas o prompt atual não força o modelo a olhar o bloco "ENDEREÇO DE INSTALAÇÃO / UNIDADE CONSUMIDORA".
 
-## Plano de correção
+## O que mudar
 
-### 1. Tornar `ask_phone_confirm` numeric-friendly nos dois webhooks
+Arquivo: `supabase/functions/_shared/ocr.ts` (função `processarOcrConta`, prompt nas linhas 179-202).
 
-Substituir as duas linhas das flags `sim`/`editar` para aceitar `1`/`2` **independentemente** de ter vindo como botão ou texto:
+1. **Prompt mais cirúrgico para endereço/CEP**
+   - Trocar item 2 ("ENDEREÇO DE INSTALAÇÃO (rua/avenida, sem número)") por instrução explícita:
+     > "Procure o bloco **ENDEREÇO DE INSTALAÇÃO / UNIDADE CONSUMIDORA / LOCAL DE FORNECIMENTO**. NÃO use o endereço de correspondência, da agência, do PAGADOR ou da distribuidora. O endereço de instalação fica perto do número da instalação / código do cliente."
+   - Item 5 (CEP): adicionar "O CEP de instalação tem 8 dígitos no formato XXXXX-XXX e fica junto do endereço de instalação. Devolva sempre os 8 dígitos quando visível na fatura."
+   - Item 1 (NOME): reforçar "nome do titular contratante; NÃO confundir com nome impresso no histórico/segunda via".
 
-```ts
-const numKey = ({ "1": "sim_phone", "2": "editar_phone" } as const)[resp] ?? resp;
-const sim    = numKey === "sim_phone"    || /^(sim|s|isso|isso\s+mesmo|é\s+meu|eh\s+meu|confirmo|pode|certo|correto|positivo)\b/.test(resp);
-const editar = numKey === "editar_phone" || /^(n[aã]o|n|editar|outro|outro\s+n[uú]mero|trocar|mudar|errado)\b/.test(resp);
-```
+2. **Validação anti-confusão street↔nome**
+   - Após `JSON.parse`, se `dados.endereco` tiver ≤ 2 palavras **e** nenhum prefixo de logradouro (`R\b|RUA|AV|AVENIDA|AL|ALAMEDA|TRAV|ROD|PRAÇA|PR\b|EST\b|ESTRADA`), descartar (`dados.endereco = ""`) — evita que "ELIZA FAVOTTO ANGELIN" caia em `address_street` e contamine o ViaCEP reverso.
+   - Se `dados.cep` ficou vazio e `dados.endereco` foi descartado, deixar tudo vazio em vez de mandar lixo pro fallback.
 
-Aplicar em `supabase/functions/evolution-webhook/handlers/bot-flow.ts:4487-4493` e `supabase/functions/whapi-webhook/handlers/bot-flow.ts:4985-4990`.
+3. **Segunda passada só pra CEP quando falta**
+   - Em `processarOcrConta`, se depois do parse `dados.cep === ""` e `gemData.candidates[0].content.parts[0].text` for grande o bastante, rodar uma chamada Gemini extra curta (`gemini-2.5-flash-lite`, max 256 tok) com prompt focado:
+     > "Encontre apenas o CEP (8 dígitos) do endereço de instalação nesta fatura. Responda JSON {\"cep\":\"XXXXXXXX\"} ou {\"cep\":\"\"}."
+   - Custo marginal (~$0.00005). Só roda quando o primeiro pass falhou no CEP — não impacta a maioria dos cadastros que já vêm completos.
 
-### 2. Garantir prompt numérico explícito no envio
+4. **Telemetria pra acompanhar**
+   - Log estruturado em `bot-flow.ts` (linha ~3198, quando cai no `buscarCepPorEndereco`):
+     `logStructured("warn","ocr_cep_missing",{ customer_id, has_street:!!updates.address_street, has_city:!!updates.address_city })`
+   - Permite dashboard rápido de "quantos % das contas saem do OCR sem CEP" pra medir o ganho.
 
-No `else` dos dois handlers (`linhas 4533-4540` evo / `5030-…` whapi), trocar `reply = ""` para sempre incluir o atalho — assim o lead vê "Responda *1* para confirmar, *2* para informar outro número" abaixo da lista, mesmo quando `sendOptions` foi enviado com sucesso:
+## Fora do escopo
 
-```ts
-reply = "";
-// (sem mudança aqui — sendOptions já injeta "Digite o número")
-```
+- Não mexer no fluxo do `ask_cep` (já funciona certo — só foi acionado porque o OCR falhou).
+- Não mexer no `worker-portal-2` nem no `detect-doc-type`.
+- Não tocar nas correções recentes de `ask_phone_confirm`/`confirmar_titularidade`.
 
-A função `sendOptions` (linha 1037) já anexa `_Digite o número da opção desejada._`, então não precisamos duplicar. Só ajustar o fallback de erro (`if (!sent)`) que já está claro.
+## Validação após implementar
 
-Conclusão: o item 2 é só conferência — a mudança real é a do item 1.
-
-### 3. Validação
-
-- Buscar leads recentes presos em `ask_phone_confirm` no banco (`SELECT id, phone_whatsapp, updated_at FROM customers WHERE conversation_step = 'ask_phone_confirm' AND updated_at > now() - interval '7 days'`). Se houver, eles vão destravar no próximo `1`/`2` após o deploy.
-- Verificar nos logs do `evolution-webhook` após uma interação real: `handler_done step_before=ask_phone_confirm step_after=<próximo>` (hoje fica preso).
-- Re-rodar a auditoria: nenhum outro step compartilha o padrão `isButton && resp === "N"`.
-
-### Fora de escopo
-
-- Não tocar em OCR / detect-doc-type / portal-worker.
-- Não criar migration nem mudar schema.
-- Não mexer no flow custom (Flow Builder) — esse usa `dispatchStepFromFlow` e segue outra lógica.
-
-Aprova?
+1. Re-rodar a foto da conta do lead `b189ceb6-6880-405e-a211-08c0ab0117cd` via `reprocess-capture` e confirmar que `dados.cep === "13323472"` e `dados.endereco` começa com "RUA" / "R " etc.
+2. Esperar próximo cadastro real e checar nos logs: `ocr_cep_missing` não deve aparecer pra contas CPFL/Enel padrão.

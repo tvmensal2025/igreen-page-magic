@@ -3195,6 +3195,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             const cepClean = String(updates.cep).replace(/\D/g, "");
             updates.cep = cepClean.length === 8 ? cepClean : "";
           }
+          if (!updates.cep) {
+            console.warn(`[telemetry] ocr_cep_missing customer=${customer.id} has_street=${!!updates.address_street} has_city=${!!updates.address_city} has_state=${!!updates.address_state}`);
+          }
           if (!updates.cep && updates.address_city && updates.address_state && updates.address_street) {
             console.log("🔍 CEP não encontrado. Buscando via ViaCEP...");
             const cepBuscado = await buscarCepPorEndereco(updates.address_state, updates.address_city, updates.address_street);

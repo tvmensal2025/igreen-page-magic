@@ -181,13 +181,13 @@ ANALISE ESTA IMAGEM DE CONTA DE ENERGIA e extraia os dados do CLIENTE (não da d
 IMPORTANTE: NÃO extraia CPF - o CPF será obtido do documento de identidade separadamente.
 
 Extraia:
-1. NOME do TITULAR da conta
-2. ENDEREÇO DE INSTALAÇÃO (rua/avenida, sem número)
-3. NÚMERO do endereço
-4. BAIRRO
-5. CEP (8 dígitos)
-6. CIDADE
-7. ESTADO (sigla UF, ex: SP, MG, RJ)
+1. NOME do TITULAR CONTRATANTE (geralmente no topo da fatura, perto de "Cliente"/"Titular"/"Razão Social"). NÃO confunda com nomes em histórico, segunda via, ou anúncios. Se houver mais de um nome impresso, use o que estiver no bloco principal de identificação do cliente.
+2. ENDEREÇO DE INSTALAÇÃO — procure o bloco **"ENDEREÇO DE INSTALAÇÃO" / "UNIDADE CONSUMIDORA" / "LOCAL DE FORNECIMENTO" / "ENDEREÇO DO IMÓVEL"**. NÃO use o endereço de correspondência, da agência, do PAGADOR, da loja ou da própria distribuidora. O endereço de instalação fica próximo do "Nº da Instalação" / "Seu Código" / "Código do Cliente". Devolva apenas a rua/avenida (com prefixo R., RUA, AV., AVENIDA, AL., ALAMEDA, TV., TRAVESSA, ROD., ESTRADA, PRAÇA), SEM número.
+3. NÚMERO do endereço de instalação
+4. BAIRRO do endereço de instalação
+5. CEP do endereço de instalação — 8 dígitos no formato XXXXX-XXX. Fica junto/abaixo do endereço de instalação ou da cidade/UF da instalação. NÃO use CEP da agência/distribuidora/correspondência. Devolva sempre os 8 dígitos quando visível na fatura.
+6. CIDADE do endereço de instalação
+7. ESTADO (sigla UF, ex: SP, MG, RJ) do endereço de instalação
 8. DISTRIBUIDORA (nome REGIONAL da concessionária — NUNCA o grupo holding. Use: CPFL PIRATININGA, CPFL PAULISTA, CPFL SANTA CRUZ, RGE, ENEL SP, ENEL RJ, EDP SP, EDP ES, LIGHT, CEMIG, COPEL, CELESC, COELBA, CELPE, COSERN, COELCE, EQUATORIAL GO/PA/MA/PI/AL, CEB, ENERGISA <UF>, AMAZONAS ENERGIA, RORAIMA ENERGIA, ELEKTRO etc. NÃO escreva apenas "CPFL ENERGIA", "ENEL", "EDP", "ENERGISA" ou "EQUATORIAL" sozinhos)
 9. NÚMERO DA INSTALAÇÃO (campo "Seu Código" na CPFL, "Nº do Cliente" na Enel, geralmente 7-12 dígitos)
 10. VALOR TOTAL A PAGAR (em reais)
@@ -236,7 +236,49 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
     }
 
     const dados = JSON.parse(match[0]);
+
+    // Anti-confusão street↔nome: se "endereco" não tem prefixo de logradouro e parece nome
+    // de pessoa (≤3 tokens, só letras), descarta — evita poluir ViaCEP reverso.
+    if (dados.endereco) {
+      const end = String(dados.endereco).trim();
+      const hasLogPrefix = /^(R\.?|RUA|AV\.?|AVENIDA|AL\.?|ALAMEDA|TV\.?|TRAVESSA|ROD\.?|RODOVIA|EST\.?|ESTRADA|PRA[CÇ]A|PR\.?|LARGO|VIA|VL\.?|VIELA|PASSAGEM|PSG\.?)\b/i.test(end);
+      const tokens = end.split(/\s+/).filter(Boolean);
+      const onlyLettersTokens = tokens.every((t: string) => /^[A-Za-zÀ-ÖØ-öø-ÿ.'-]+$/.test(t));
+      if (!hasLogPrefix && tokens.length <= 3 && onlyLettersTokens) {
+        console.warn(`⚠️ [ocr] endereco "${end}" parece NOME, não logradouro — descartando`);
+        dados.endereco = "";
+        // Sem logradouro confiável, cidade/bairro também ficam suspeitos pro lookup
+        // mas mantemos pra exibição ao usuário; só limpamos pra não tentar ViaCEP reverso.
+        dados._endereco_descartado = true;
+      }
+    }
+
     if (dados.cep) { const c = dados.cep.replace(/\D/g, ""); dados.cep = c.length === 8 ? c : ""; }
+
+    // Segunda passada focada em CEP quando a primeira falhou
+    if (!dados.cep) {
+      try {
+        console.log("🔍 [ocr] CEP não veio no 1º pass — tentando 2ª passada focada");
+        const cepPrompt = `Encontre apenas o CEP do ENDEREÇO DE INSTALAÇÃO (UNIDADE CONSUMIDORA / LOCAL DE FORNECIMENTO) desta conta de luz brasileira. Ignore CEP de agência, distribuidora ou correspondência. Responda APENAS JSON: {"cep":"XXXXXXXX"} (8 dígitos, sem hífen) ou {"cep":""} se não encontrar.`;
+        const cepRes = await callGeminiViaLovable(cepPrompt, img, { maxTokens: 128, responseJson: true });
+        if (cepRes.ok) {
+          const cepData = await cepRes.json();
+          const cepText = cepData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          const cepMatch = cepText.match(/\{[\s\S]*\}/);
+          if (cepMatch) {
+            const parsed = JSON.parse(cepMatch[0]);
+            const c = String(parsed?.cep || "").replace(/\D/g, "");
+            if (c.length === 8) {
+              dados.cep = c;
+              console.log(`✅ [ocr] CEP recuperado no 2º pass: ${c}`);
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn(`⚠️ [ocr] 2ª passada CEP falhou: ${e?.message}`);
+      }
+    }
+
     if (dados.numeroInstalacao) { const n = dados.numeroInstalacao.replace(/\D/g, ""); dados.numeroInstalacao = (n.length >= 7 && n.length <= 12) ? n : ""; }
     if (dados.valorConta) {
       // Parse robusto BR/US: "1.688,15" → 1688.15 ; "1688.15" → 1688.15 ; "1688" → 1688
