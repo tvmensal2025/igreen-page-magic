@@ -10,6 +10,24 @@ Consumido apenas pela edge function `sync-igreen-customers`.
 Não confundir com `worker-portal/` (escrita/cadastro de leads no portal `digital.igreenenergy`)
 nem com `worker-portal-2/` (cadastro via API direta em `green.igreenenergy/autoconexao`).
 
+## Validação de repositório (2026-06-06)
+
+Repo `tvmensal2025/igreen-official-portal@main` confirmado íntegro via VPS:
+
+```bash
+curl -L -o /tmp/igreen.tar.gz \
+  https://github.com/tvmensal2025/igreen-official-portal/archive/refs/heads/main.tar.gz
+# → 160 MB, gzip válido
+```
+
+Se o Easypanel ainda mostrar `curl: (23) ... passed 1370` / `tar: Unexpected EOF`,
+o problema é **exclusivamente** configuração do app `worker-igreen` no painel
+(owner/repo/branch errados, GitHub App sem acesso ao repo, ou Source = Docker Image
+em vez de Github). Não é rede, disco, Dockerfile nem repositório.
+
+Correção: ver seção "Erro no Easypanel" abaixo.
+
+
 ## Endpoints
 
 Auth: header `X-Worker-Token: <WORKER_TOKEN>`.
