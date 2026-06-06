@@ -1,67 +1,51 @@
-# Plano: Correções V2 (pós-auditoria)
+# Objetivo
 
-Aplicar as 3 ressalvas identificadas, em ordem de impacto. Tudo isolado em arquivos V2 — sem tocar V1.
+A partir de agora **toda conversa do Fluxo B roda exclusivamente a Vendedora V2** (a versão à prova de erro que acabamos de criar). V1 e legacy ficam desligados de vez — sem env var, sem sorteio, sem fallback silencioso.
 
-## 1. Restaurar etapa `interesse` na 1ª mensagem (bloqueante)
+# O que muda
 
-**Problema**: `decideEtapa()` pula direto pra `nome` quando lead chega sem cadastro, eliminando a apresentação da iGreen.
+## 1. `supabase/functions/_shared/fluxo-b-ai.ts` — entrar sempre em V2
 
-**Arquivos**: `supabase/functions/_shared/vendedora-v1/state-machine.ts`, `v2-orchestrator.ts`
+- Remover o sorteio de variante (`pickVariant`, `fluxo_b_variant`, `variant_id`, `b.v1` vs `b.legacy`).
+- Remover os flags `VENDEDORA_V1_FORCE_OFF` e `VENDEDORA_V2_ENABLED` e o flag `__force_vendedora_v2` que usávamos só no tester.
+- Remover o import de `runVendedoraV1` (manter só `runVendedoraV2`).
+- O caminho único passa a ser:
+  - Carrega `customer`.
+  - Se for nudge interno (`input.nudgeHook`), ainda usa o pipeline antigo de prompt+tool-calling (V2 não foi desenhada pra nudge — manter esse branch só pra reaquecer lead sumido).
+  - Caso contrário, chama `runVendedoraV2(...)` direto e retorna o resultado com `variantId: "b.v2"`.
+- Apagar todo o bloco "legacy fall-through" (linhas ~127–356) **exceto** a parte usada pelo nudge — extrair essa parte para uma função interna `runNudgeLegacy(...)` chamada só quando `isNudgeRun === true`.
 
-**Mudanças**:
-- `decideEtapa(customer, state, opts?: { semHistorico?: boolean })`: se `semHistorico && !temNome` → retorna `"interesse"`.
-- `v2-orchestrator.ts` passa `{ semHistorico: historyMsgs.length === 0 }` na chamada (linha 108).
-- Em `microWrite`, etapa `interesse` já tem trava correta no `TRAVA_POR_ETAPA`.
-- Pós-escrita: se `state.etapa === "interesse"`, marca uma flag interna leve (`state.abertura_feita = true`) para próxima decisão avançar pra `nome` mesmo com histórico curto.
-- Adicionar `abertura_feita?: boolean` em `types.ts` (`FluxoBState` + `DEFAULT_STATE`) e em `state.ts` (inferência retroativa: `true` se `idx >= idxNome`).
-- `decideEtapa`: se `!temNome && state.abertura_feita` → `"nome"`.
+## 2. `supabase/functions/_shared/vendedora-v1/index.ts` — limpar exports
 
-## 2. Short-circuit determinístico para etapas mecânicas (impacto custo/latência)
+- Manter `runVendedoraV2` como export principal.
+- Marcar `runVendedoraV1` como deprecated (remover do export público) — não é mais chamada em runtime.
 
-**Problema**: `nome`, `valor`, `email`, `foto_conta`, `doc` chamam LLM toda vez quando o template fixo já resolve.
+## 3. Tester (`src/components/admin/flow-builder/FluxoBEditor.tsx`)
 
-**Arquivos**: `v2-orchestrator.ts`
+- Remover os parâmetros `forceVariantId` e `forceV2` (não precisam mais existir; V2 é o único caminho).
+- O metadado mostrado passa a ser sempre `vendedora_v2`.
 
-**Mudanças**:
-- Adicionar `const ETAPAS_DETERMINISTICAS = new Set<Etapa>(["nome","valor","foto_conta","doc","email"])`.
-- Antes de `microWrite`, se `ETAPAS_DETERMINISTICAS.has(state.etapa)` → usar `fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value)` direto, `modelUsed = "deterministic_template"`, pular crítico.
-- Continua passando por `sanitize` e `validarResposta` (validação deve passar trivialmente).
-- LLM só roda nas etapas ricas: `interesse`, `simulacao`, `finalizando`, `pos_cadastro`.
-- Economia esperada: ~60% das mensagens deixam de chamar LLM de escrita.
+## 4. Edge `supabase/functions/fluxo-b-ai/index.ts`
 
-## 3. Stop-list para `extrairNome` (qualidade)
+- Remover a leitura/forward de `forceVariantId` e `forceV2` do body.
+- Remover a manipulação de `syntheticCustomer.variant_id` / `fluxo_b_variant`.
 
-**Problema**: prompt aceita "nome solto" — risco de capturar "ok", "sim", "blz" como nome do lead.
+## 5. Banco — sem migração necessária
 
-**Arquivos**: `extractors.ts`
+- As colunas `customers.variant_id` e `customers.fluxo_b_variant` continuam existindo (legado), mas deixam de ser lidas/gravadas. Nada quebra.
+- `flow_variants` continua intacto — pode ser reaproveitado depois se quisermos voltar a A/B testar.
 
-**Mudanças**:
-- Constante `NAO_E_NOME = new Set(["ok","sim","nao","não","blz","beleza","vlw","valeu","certo","ta","tá","oi","ola","olá","bom dia","boa tarde","boa noite","quero","aceito","fechou","bora","manda","ver","quanto","como"])`.
-- Após extração, normalizar lower + trim + remover pontuação; se `NAO_E_NOME` contém → retorna `null`.
-- Guard adicional: rejeita se string contém apenas dígitos ou caracteres não-alfa.
-- Endurecer system prompt: "Se a mensagem NÃO contém uma apresentação clara (ex: 'sou X', 'me chamo X', 'meu nome é X', 'pode me chamar de X', ou ao menos um substantivo próprio óbvio), retorne vazio."
+# Validação
 
-## 4. Limpeza pós-validação (não-bloqueante — deixar pra depois)
+1. Deploy `fluxo-b-ai`.
+2. Rodar a sequência de teste no tester (`oi` → `sim` → `Sirlene` → `900` → `quero`), como funciona, golpe, quantos boleto vemm? demora?.
+3. Confirmar em **todas** as respostas: `variantId === "b.v2"` e `debug.phase === "vendedora_v2"`.
+4. Confirmar nos logs de edge: nenhuma chamada caiu no legacy (`phase: "fluxo_b_chat"`).
+5. Confirmar nudge interno (follow-up) ainda funciona — disparar um nudge sintético e ver `runNudgeLegacy` rodando.
 
-Após 48h em produção com V2 estável, remover dead code:
-- `planner.ts`, `writer.ts`, `variant-picker.ts`
-- Avaliar `tools.ts` (V1-only)
+# Riscos
 
-Não fazer agora — manter rollback fácil.
+- **Nudge interno**: V2 hoje não trata reaquecimento de lead sumido. Manter o branch legacy só pra esse caso é a escolha mais segura. Se quiser que nudge também rode V2, vira tarefa separada.
+- **Conversas antigas em V1**: leads que estavam no meio de um fluxo V1 vão receber respostas V2 no próximo turno. V2 lê o histórico e o estado, então transição é suave, mas pode haver leve duplicação de pergunta no primeiro turno pós-corte.
 
-## Validação
-
-Após edits:
-1. `code--exec` para verificar nenhum import quebrou (grep de símbolos renomeados).
-2. Deploy de `fluxo-b-ai` + função consumidora (provavelmente `process-customer-message` ou similar — confirmar pelo wiring).
-3. Curl em 3 cenários: lead novo (espera abertura), lead pós-simulação dizendo "quero" (espera foto_conta), lead enviando "ok" como suposto nome (espera não capturar).
-
-## Resumo dos arquivos editados
-
-- `state-machine.ts` — assinatura `decideEtapa(customer, state, opts?)` + lógica de abertura
-- `v2-orchestrator.ts` — passa `semHistorico`, marca `abertura_feita`, short-circuit determinístico
-- `types.ts` — campo `abertura_feita` em `FluxoBState` + `DEFAULT_STATE`
-- `state.ts` — inferência retroativa de `abertura_feita`
-- `extractors.ts` — stop-list + prompt mais restritivo em `extrairNome`
-
-Nenhuma migração SQL. Toggle continua `VENDEDORA_V2_ENABLED=true`.
+Posso executar?
