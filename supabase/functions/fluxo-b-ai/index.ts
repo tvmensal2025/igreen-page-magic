@@ -48,13 +48,20 @@ Deno.serve(async (req) => {
 
   // Em dryRun: intercepta updates/inserts pra não persistir
   let supaForRun: any = supabase;
+  // override map: tabela -> função (table) => builder; checada antes do dryRun proxy.
+  const fromOverrides: Record<string, (table: string) => any> = {};
   if (dryRun) {
     const log: any[] = [];
+    const origFrom = supabase.from.bind(supabase);
     supaForRun = new Proxy(supabase, {
       get(target: any, prop: string) {
+        if (prop === "__dryRunLog") return log;
+        if (prop === "__fromOverrides") return fromOverrides;
         if (prop === "from") {
           return (table: string) => {
-            const real = target.from(table);
+            const override = fromOverrides[table];
+            if (override) return override(table);
+            const real = origFrom(table);
             return new Proxy(real, {
               get(t: any, p: string) {
                 if (p === "update" || p === "insert" || p === "delete" || p === "upsert") {
@@ -75,7 +82,6 @@ Deno.serve(async (req) => {
         return target[prop]?.bind ? target[prop].bind(target) : target[prop];
       },
     });
-    (supaForRun as any).__dryRunLog = log;
   }
 
   // Em dryRun sem customerId: monta lead/consultor sintéticos
