@@ -1,16 +1,14 @@
 {
   "name": "igreen-sync-worker",
-  "version": "3.0.0",
-  "description": "Playwright stealth worker — captura token JWT via intercepção de network. Sem CAPTCHA.",
+  "version": "4.0.0",
+  "description": "Worker de sincronização iGreen via ScraperAPI proxy — sem Playwright, sem Cloudflare block.",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs"
   },
-  "dependencies": {
-    "playwright-chromium": "^1.49.0"
-  },
+  "dependencies": {},
   "engines": {
     "node": ">=20.0.0"
   }
