@@ -29,6 +29,10 @@ export interface FluxoBRunInput {
   // se já temos os objetos carregados, pular re-fetch
   customer?: any;
   consultant?: any;
+  // Quando presente, indica que essa execução é um NUDGE interno (follow-up
+  // disparado pelo worker process-followups). Injeta gancho no system prompt
+  // para a IA decidir como reaquecer o lead.
+  nudgeHook?: string | null;
 }
 
 export interface FluxoBRunResult {
