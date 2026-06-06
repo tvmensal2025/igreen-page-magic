@@ -34,6 +34,18 @@ export async function escrever(input: WriterInput): Promise<ChatResult> {
   });
 }
 
+const TRAVA_POR_ETAPA: Record<string, string> = {
+  interesse: "Você DEVE fazer a abertura (apresentação + benefício) e perguntar 'posso te chamar como?'. PROIBIDO pedir valor, foto, doc, e-mail.",
+  nome: "Você DEVE perguntar o nome do lead. PROIBIDO pedir valor, foto, doc, e-mail ou apresentar simulação.",
+  valor: "Você DEVE perguntar o VALOR MÉDIO DA CONTA EM R$ (ex: 'Qual o valor médio da sua conta de luz?'). PROIBIDO pedir foto, doc, e-mail ou apresentar simulação neste turno.",
+  simulacao: "Você DEVE apresentar a faixa de desconto (entre *8% e 20%*) e o número em R$ (valor × 0,20) e fazer UMA pergunta consultiva tipo 'faz sentido?'. PROIBIDO pedir foto, doc ou e-mail neste turno.",
+  foto_conta: "Você DEVE pedir a foto da conta de luz 📷. PROIBIDO pedir doc ou e-mail neste turno.",
+  doc: "Você DEVE pedir a foto da frente do RG ou CNH 📄. PROIBIDO pedir e-mail neste turno.",
+  email: "Você DEVE pedir o e-mail do lead 📧. PROIBIDO pedir outras coisas.",
+  finalizando: "Você DEVE confirmar os dados e CHAMAR finalizar_cadastro.",
+  pos_cadastro: "Você DEVE agradecer e explicar próximos passos. PROIBIDO pedir mais dados.",
+};
+
 function buildSystem(i: WriterInput): string {
   const persona = (i.basePersona && i.basePersona.trim()) || DEFAULT_PERSONA;
   const filled = persona
@@ -41,7 +53,13 @@ function buildSystem(i: WriterInput): string {
     .replace(/\{\{\s*nome_cliente\s*\}\}/gi, i.nomeLead || "(ainda não sei o nome)")
     .replace(/\{\{\s*valor_conta\s*\}\}/gi, i.valorConta ? `R$ ${i.valorConta.toFixed(2)}` : "(ainda não sei)");
 
+  const trava = TRAVA_POR_ETAPA[i.plano.etapa_atual] || "Siga a próxima jogada do plano.";
+
   return `${filled}
+
+# 🔒 REGRA TRAVADA DA ETAPA ATUAL (${i.plano.etapa_atual}) — VIOLAR REPROVA A MENSAGEM
+${trava}
+${i.nomeLead ? `O nome do lead é *${i.nomeLead}* — USE ele na resposta (pelo menos 1 vez).` : ""}
 
 # Plano desta resposta (DECIDIDO POR OUTRO MODELO, SIGA À RISCA)
 - Etapa atual: ${i.plano.etapa_atual}
