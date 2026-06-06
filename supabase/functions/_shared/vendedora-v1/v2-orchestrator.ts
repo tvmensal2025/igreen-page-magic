@@ -24,7 +24,7 @@ const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
 };
 
 // Etapas "ricas" — usam RAG e crítico. Outras são mecânicas (texto curto, sem LLM auxiliar).
-const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "doc", "finalizando"]);
+const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "finalizando"]);
 
 // Etapas onde o template fixo já resolve — pula LLM de escrita e crítico.
 const ETAPAS_DETERMINISTICAS = new Set<Etapa>(["nome", "valor", "foto_conta", "doc", "email"]);
