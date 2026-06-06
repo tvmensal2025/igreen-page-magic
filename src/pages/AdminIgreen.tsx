@@ -10,7 +10,6 @@ type Consultant = {
   name: string;
   igreen_portal_email: string | null;
   igreen_connect_code: string | null;
-  igreen_access_token: string | null;
   igreen_token_updated_at: string | null;
   igreen_token_expires_at: string | null;
   igreen_token_expired: boolean;
@@ -28,7 +27,7 @@ function buildBookmarklet(code: string): string {
 }
 
 function statusOf(c: Consultant): { label: string; color: string; icon: JSX.Element } {
-  if (!c.igreen_access_token) {
+  if (!c.igreen_token_updated_at) {
     return { label: "Nunca conectou", color: "text-muted-foreground", icon: <WifiOff className="w-4 h-4" /> };
   }
   if (c.igreen_token_expired) {
@@ -52,7 +51,7 @@ const AdminIgreen = () => {
     const { data, error } = await supabase
       .from("consultants")
       .select(
-        "id, name, igreen_portal_email, igreen_connect_code, igreen_access_token, igreen_token_updated_at, igreen_token_expires_at, igreen_token_expired"
+        "id, name, igreen_portal_email, igreen_connect_code, igreen_token_updated_at, igreen_token_expires_at, igreen_token_expired"
       )
       .order("name");
     if (error) {

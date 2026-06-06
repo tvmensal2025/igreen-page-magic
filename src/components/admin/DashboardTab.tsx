@@ -155,12 +155,12 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
     return { totalCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
   }, [analytics, selectedLicenciado, periodDays]);
 
-  const runSync = async (email: string, password: string) => {
+  const runSync = async () => {
     setSyncingDashboard(true); startCooldown();
     try {
-      // 1) Clientes
+      // 1) Clientes — edge function carrega credenciais salvas via service_role.
       const { data: cData, error: cErr } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { portal_email: email, portal_password: password, consultant_id: userId },
+        body: { consultant_id: userId },
       });
       if (cErr) throw cErr;
       if (!cData?.success) {
@@ -170,7 +170,7 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
       // 2) Rede (delay 3s p/ evitar rate-limit do portal)
       await new Promise((r) => setTimeout(r, 3000));
       const { data: nData, error: nErr } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { portal_email: email, portal_password: password, consultant_id: userId, mode: "sync_network" },
+        body: { consultant_id: userId, mode: "sync_network" },
       });
       if (nErr) throw nErr;
       if (!nData?.success) {
@@ -192,7 +192,8 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   };
 
   const handleDashboardSync = () => {
-    if (form.igreen_portal_email && form.igreen_portal_password) runSync(form.igreen_portal_email, form.igreen_portal_password);
+    // Senha não é mais lida do banco; basta ter email configurado para acionar.
+    if (form.igreen_portal_email) runSync();
     else { setCredForm({ email: "", password: "" }); setShowCredentialsDialog(true); }
   };
 
@@ -204,7 +205,7 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
       onFormUpdate({ igreen_portal_email: credForm.email, igreen_portal_password: credForm.password });
       setShowCredentialsDialog(false);
       toast({ title: "✅ Credenciais salvas!", description: "Baixando clientes e rede do portal iGreen…" });
-      runSync(credForm.email, credForm.password);
+      runSync();
     } catch (err: unknown) { toast({ title: "Erro ao salvar credenciais", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
   };
 
