@@ -63,64 +63,28 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
   }
   if (!customer) throw new Error(`[fluxo-b-ai] customer ${customerId} not found`);
 
-  // ── Roteamento por variante (genérico, suporta N variantes) ───────────
-  // Lê customers.variant_id; se ainda não foi atribuído, sorteia via flow_variants.
-  // Kill switch global: env VENDEDORA_V1_FORCE_OFF=true cai pro legacy.
-  const forceOff = String(Deno.env.get("VENDEDORA_V1_FORCE_OFF") || "").toLowerCase() === "true";
-  let variantId: string | null = customer.variant_id || null;
-  if (!variantId) {
-    // tenta sortear via flow_variants
-    try {
-      variantId = await pickVariant({
-        supabase,
-        fluxo: customer.flow_variant || "B",
-        consultantId: customer.consultant_id,
-      });
-    } catch (_) { variantId = null; }
-    // fallback: mantém A/B legado se a tabela estiver vazia
-    if (!variantId) {
-      const legacyVar = String(customer.fluxo_b_variant || "").toLowerCase();
-      if (legacyVar === "v1" || legacyVar === "legacy") {
-        variantId = legacyVar === "v1" ? "b.v1" : "b.legacy";
-      } else {
-        variantId = Math.random() < 0.5 ? "b.v1" : "b.legacy";
-      }
-    }
-    try {
-      await supabase.from("customers").update({
-        variant_id: variantId,
-        fluxo_b_variant: variantId === "b.v1" ? "v1" : "legacy",
-      }).eq("id", customerId);
-      customer.variant_id = variantId;
-    } catch (_) { /* tolera ausência de colunas em ambientes antigos */ }
-  }
-
-  // Nudge interno (follow-up): força branch legacy que tem suporte explícito
-  // ao bloco "NUDGE INTERNO" no system prompt.
+  // ── Roteamento único: Vendedora V2 é a ÚNICA versão em produção ──────
+  // V1 e legacy foram aposentados. O único caminho que ainda passa pelo
+  // pipeline legado é o NUDGE INTERNO (follow-up reaquecendo lead sumido),
+  // porque V2 não foi desenhada para esse caso.
   const isNudgeRun = !!(input.nudgeHook && String(input.nudgeHook).trim().length > 0);
-  const v2Enabled = String(Deno.env.get("VENDEDORA_V2_ENABLED") || "").toLowerCase() === "true";
-  const useVendedora = !forceOff && variantId === "b.v1" && !isNudgeRun;
 
-  if (useVendedora) {
-    try {
-      const runner = v2Enabled ? runVendedoraV2 : runVendedoraV1;
-      const v = await runner({ supabase, customerId, inboundText, customer, consultant: input.consultant });
-      return {
-        reply: v.reply,
-        toolsApplied: v.toolsApplied,
-        conversationStepUpdate: v.conversationStepUpdate,
-        shouldHandoff: v.shouldHandoff,
-        modelUsed: v.modelUsed,
-        latencyMs: v.latencyMs,
-        customerUpdates: v.customerUpdates,
-        variantId: v2Enabled ? `${variantId}+v2` : variantId,
-        debug: v.debug,
-      };
-    } catch (e) {
-      console.error(`[fluxo-b-ai] vendedora ${v2Enabled ? "v2" : "v1"} falhou, caindo pra legacy:`, (e as Error).message);
-      // fall-through pro legacy
-    }
+  if (!isNudgeRun) {
+    const v = await runVendedoraV2({ supabase, customerId, inboundText, customer, consultant: input.consultant });
+    return {
+      reply: v.reply,
+      toolsApplied: v.toolsApplied,
+      conversationStepUpdate: v.conversationStepUpdate,
+      shouldHandoff: v.shouldHandoff,
+      modelUsed: v.modelUsed,
+      latencyMs: v.latencyMs,
+      customerUpdates: v.customerUpdates,
+      variantId: "b.v2",
+      debug: v.debug,
+    };
   }
+
+
 
 
   let consultant = input.consultant;
