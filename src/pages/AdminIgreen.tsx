@@ -27,7 +27,7 @@ function buildBookmarklet(code: string): string {
 }
 
 function statusOf(c: Consultant): { label: string; color: string; icon: JSX.Element } {
-  if (!c.igreen_access_token) {
+  if (!c.igreen_token_updated_at) {
     return { label: "Nunca conectou", color: "text-muted-foreground", icon: <WifiOff className="w-4 h-4" /> };
   }
   if (c.igreen_token_expired) {
