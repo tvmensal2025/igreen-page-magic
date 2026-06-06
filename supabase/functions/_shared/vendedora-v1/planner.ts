@@ -20,7 +20,7 @@ Etapas válidas: interesse, nome, valor, simulacao, foto_conta, doc, email, fina
 
 Devolva APENAS este JSON:
 {
-  "etapa_atual": "interesse|nome|valor|simulacao|foto_conta|doc|finalizando|pos_cadastro",
+  "etapa_atual": "interesse|nome|valor|simulacao|foto_conta|doc|email|finalizando|pos_cadastro",
   "proxima_jogada": "string curta",
   "tom": "consultivo_seguro|energetico_direto|objetivo|acolhedor_firme|empatico|leve_direto|transparente",
   "info_a_capturar": ["..."],
