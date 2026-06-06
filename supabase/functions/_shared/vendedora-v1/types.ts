@@ -86,6 +86,7 @@ export const DEFAULT_STATE: FluxoBState = {
   simulacao_apresentada: false,
   interesse_confirmado: false,
   cadastro_finalizado: false,
+  abertura_feita: false,
 };
 
 export const ETAPAS_ORDER: Etapa[] = [
