@@ -194,13 +194,25 @@ export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResul
     ? `\n\n# Dados já confirmados deste lead (NÃO pergunte de novo)\n- ${knownFacts.join("\n- ")}`
     : "";
 
-  const systemPrompt = baseSystemPrompt + factsBlock;
+  // Quando este turno é um nudge interno do worker de follow-up, injeta um
+  // bloco no system prompt para a IA decidir como reaquecer o lead. O
+  // `inboundText` sintético ("[system_nudge]") NÃO entra como mensagem do user.
+  const isNudge = !!(input.nudgeHook && String(input.nudgeHook).trim().length > 0) ||
+    String(inboundText || "").trim() === "[system_nudge]";
+  const nudgeBlock = isNudge
+    ? `\n\n# ⏰ NUDGE INTERNO — o lead sumiu, reaqueça com naturalidade.\n` +
+      `- Esta NÃO é uma mensagem do lead. Você está iniciando o contato de volta.\n` +
+      `- Gancho sugerido: ${String(input.nudgeHook || "lead sumiu no meio do funil — retome de onde parou").slice(0, 300)}\n` +
+      `- Sem "desculpa a demora", "tudo bem?", "só passando aqui". Vá direto: 1 frase curta + 1 pergunta que destrava o próximo passo.`
+    : "";
 
-  const messages: AIChatMessage[] = [
-    { role: "system", content: systemPrompt },
-    ...history,
-    { role: "user", content: inboundText },
-  ];
+  const systemPrompt = baseSystemPrompt + factsBlock + nudgeBlock;
+
+  const messages: AIChatMessage[] = isNudge
+    ? [{ role: "system", content: systemPrompt }, ...history,
+       { role: "user", content: "(system) hora de reaquecer este lead — escreva a próxima mensagem agora." }]
+    : [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: inboundText }];
+
 
   // 4) Chama IA — Flash primeiro, escala pra Pro se cascade habilitado e Flash recusar/falhar
   const temperature = typeof consultant.ai_persona_fluxo_b_temperature === "number"
