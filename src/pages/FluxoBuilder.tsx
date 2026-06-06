@@ -869,6 +869,16 @@ export default function FluxoBuilder() {
                 onCheckedChange={(v) => { void handleToggleSync(v); }}
                 aria-label="Seguir modelo público"
               />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={togglingSync || !flowId}
+                onClick={() => void handleSyncNow()}
+              >
+                {togglingSync ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                Sincronizar agora com o super admin
+              </Button>
               <p className="flex-1 text-xs text-muted-foreground min-w-[240px]">
                 {isReadOnly
                   ? "Estrutura travada ao modelo público. Você só pode trocar as mídias dos passos — mudanças do super-admin aparecem aqui automaticamente. No Evolution, os botões viram lista numerada (1️⃣ 2️⃣ 3️⃣) automaticamente."
