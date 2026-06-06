@@ -14,17 +14,24 @@ function key(): string {
   return k;
 }
 
+export type ToolChoice =
+  | "auto"
+  | "none"
+  | "required"
+  | { type: "function"; function: { name: string } };
+
 export async function chat(opts: {
   model: string;
   messages: ChatMsg[];
   tools?: any[];
+  toolChoice?: ToolChoice;
   temperature?: number;
   json?: boolean;
 }): Promise<ChatResult> {
   const body: Record<string, any> = { model: opts.model, messages: opts.messages };
   if (opts.tools && opts.tools.length) {
     body.tools = opts.tools;
-    body.tool_choice = "auto";
+    body.tool_choice = opts.toolChoice ?? "auto";
   }
   if (opts.json) body.response_format = { type: "json_object" };
   if (opts.temperature != null && !/^openai\/(gpt-5|o[134])/i.test(opts.model)) {
@@ -37,9 +44,29 @@ export async function chat(opts: {
   });
   if (!res.ok) {
     const t = await res.text();
+    // Se o proxy Lovable rejeitar tool_choice como objeto, tenta novamente com "required"
+    // (mantém aderência: o modelo é obrigado a chamar uma tool, e validamos qual).
+    if (
+      res.status === 400 &&
+      typeof body.tool_choice === "object" &&
+      /tool_choice/i.test(t)
+    ) {
+      const retryBody = { ...body, tool_choice: "required" };
+      const retry = await fetch(GATEWAY, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+        body: JSON.stringify(retryBody),
+      });
+      if (retry.ok) {
+        return parseChatResponse(await retry.json(), opts.model);
+      }
+    }
     throw new Error(`gateway ${res.status} (${opts.model}): ${t.slice(0, 300)}`);
   }
-  const data = await res.json();
+  return parseChatResponse(await res.json(), opts.model);
+}
+
+function parseChatResponse(data: any, model: string): ChatResult {
   const choice = data?.choices?.[0]?.message;
   const text = String(choice?.content ?? "");
   const raw = Array.isArray(choice?.tool_calls) ? choice.tool_calls : [];
@@ -48,8 +75,30 @@ export async function chat(opts: {
     try { parsed = JSON.parse(tc?.function?.arguments || "{}"); } catch { /* ignore */ }
     return { id: tc?.id || "", name: tc?.function?.name || "", arguments: parsed };
   }).filter((t: ToolCallParsed) => t.name);
-  return { text, toolCalls, modelUsed: opts.model };
+  return { text, toolCalls, modelUsed: model };
 }
+
+/**
+ * Atalho conveniente para forçar a chamada de UMA tool específica.
+ * Retorna `null` se o modelo recusar (raro, com tool_choice forçado).
+ */
+export async function chatForced(opts: {
+  model: string;
+  messages: ChatMsg[];
+  tool: { type: "function"; function: { name: string; description?: string; parameters: any } };
+  temperature?: number;
+}): Promise<{ args: any | null; modelUsed: string }> {
+  const r = await chat({
+    model: opts.model,
+    messages: opts.messages,
+    tools: [opts.tool],
+    toolChoice: { type: "function", function: { name: opts.tool.function.name } },
+    temperature: opts.temperature,
+  });
+  const call = r.toolCalls.find((tc) => tc.name === opts.tool.function.name);
+  return { args: call?.arguments ?? null, modelUsed: r.modelUsed };
+}
+
 
 export async function chatCascade(opts: {
   models: string[];

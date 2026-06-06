@@ -57,7 +57,10 @@ ${args.texto}`;
       problemas: Array.isArray(parsed.problemas) ? parsed.problemas.slice(0, 5).map(String) : [],
       sugestao: parsed.sugestao ? String(parsed.sugestao).slice(0, 800) : undefined,
     };
-  } catch {
-    return { aprovado: true, problemas: [] };
+  } catch (e) {
+    // Não silencia mais. Se o crítico cai, devolve aprovado:false para que
+    // o orquestrador entre no fallback determinístico em vez de soltar
+    // mensagem não-validada pro lead.
+    return { aprovado: false, problemas: [`critico indisponivel: ${(e as Error).message.slice(0, 120)}`] };
   }
 }
