@@ -88,7 +88,7 @@ export function useAdminAuth() {
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (isStale()) return; if (userError) throw userError;
       const pendingConsultant = buildPendingConsultantDefaults(uid, userData.user?.email);
-      const { data: createdData, error: createError } = await supabase.from("consultants").upsert(pendingConsultant, { onConflict: "id" }).select("*").single();
+      const { data: createdData, error: createError } = await supabase.from("consultants").upsert(pendingConsultant, { onConflict: "id" }).select("id, igreen_id, approved, name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, portal_kind, photo_url").single();
       if (isStale()) return; if (createError) throw createError;
       applyConsultantData(createdData);
     } catch (e) {
