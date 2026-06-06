@@ -1,77 +1,52 @@
-## Diagnóstico do lead 11971254913
+## Problema
 
-O lead `5511971254913` está no consultor correto `953f7e48-509b-4069-9822-bdad9902be09`, variante `D`.
+1. Ao tentar sair do "Modo público" (ou clicar em "Personalizar agora"), o RPC `fork_flow_from_public` quebra com `column reference "t" is ambiguous`.
+2. Mesmo com o toggle **Sincronizado** ligado, o consultor enxerga um fluxo que parece desalinhado do super admin — não há uma ação explícita de "puxar o que o super admin tem agora" para o flow do consultor.
 
-A sequência real no banco mostra:
+## Causa raiz
 
-```text
-03:09:50 bot pediu conta de luz
-03:10:35 cliente enviou imagem da conta
-03:10:51 cliente confirmou dados da conta com "1"
-03:10:55 bot enviou simulação d_resultado
-03:11:02 cliente respondeu "1" para continuar cadastro
-03:11:06 bot enviou d_welcome de novo, em vez de pedir documento
+### Erro SQL
+O `fork_flow_from_public` (migration `20260605141030_*`) declara uma variável `t jsonb;` no `DECLARE` e depois usa `FROM jsonb_array_elements(...) t` dentro de um subselect. O Postgres confunde a variável PL/pgSQL `t` com o alias da tabela `t`, gerando `column reference "t" is ambiguous`. Resultado: o RPC falha sempre que o consultor tenta personalizar ou re-sincronizar.
+
+### Sensação de "diferente do super admin"
+Hoje:
+- Quando `sync_mode='public'`, a UI lê os steps direto do `bot_flow` público (correto).
+- Mas o flow do próprio consultor (`bot_flow_steps` ligado ao `bot_flow` dele) fica com a versão antiga "congelada". Se o usuário olhar pelo diagrama, pelo runtime de algum cron antigo, ou se alternar modos, vê drift.
+- Não existe um botão "puxar agora a versão do super admin para dentro do meu fluxo".
+
+## Solução
+
+### 1. Corrigir o RPC `fork_flow_from_public`
+Migration que recria a função:
+- Remove o `DECLARE t jsonb;`.
+- No subselect que remapeia transitions, usa um alias diferente do alias externo (ex.: `FROM jsonb_array_elements(...) AS _tr`).
+- Mantém o resto da lógica idêntica (remap de `goto_step_id`, `success_goto_step_id`, fallback, posições, `sync_mode='custom'` ao final na variante de "fork").
+
+### 2. Novo RPC `sync_flow_from_public`
+Idêntico ao `fork_flow_from_public`, mas no final faz:
+```sql
+UPDATE bot_flows SET sync_mode='public' WHERE id = v_target_flow;
 ```
+Ou seja: copia toda a estrutura do super admin para dentro do flow do consultor **e mantém o modo público ligado**. Garante que UI, diagrama e qualquer leitura por `consultant_id` mostrem exatamente os mesmos passos do super admin, sem perder a sincronização automática futura.
 
-A conta foi recebida e processada. O problema não é OCR nem envio da conta de energia.
+### 3. UI no `FluxoBuilder.tsx`
+No bloco do toggle "Seguir modelo público" (linhas ~806-844), adicionar um botão secundário **"Sincronizar agora com o super admin"** (visível apenas quando `!isSuperAdmin && flowId`). Ao clicar:
+- `confirm()` com aviso: "Vamos copiar a versão atual do super admin para o seu fluxo. Suas edições locais nos passos serão substituídas. As mídias que você subiu continuam funcionando."
+- Chama `supabase.rpc("sync_flow_from_public", { _consultant_id: userId, _variant: editingVariant })`.
+- Em sucesso: `toast.success("Fluxo sincronizado com o super admin")` e `reload()`.
 
-## Causa encontrada
+### 4. Validação
+Após aplicar a migration:
+- Conferir no SQL Editor que `SELECT proname FROM pg_proc WHERE proname IN ('fork_flow_from_public','sync_flow_from_public')` retorna as duas.
+- Clicar em "Personalizar agora" no toast — não deve mais dar erro.
+- Clicar em "Sincronizar agora com o super admin" — os 16 passos do consultor devem ficar idênticos (mesmo `step_key`, `position`, `title`, `message_text`) aos do flow público `320bf22c-…`.
 
-Existe uma contaminação de step entre consultores/fluxos:
+## Arquivos tocados
 
-- A mensagem inbound `03:11:02` ficou marcada com `conversation_step = 4df1f90a-0248-4df0-9473-4c910f1b22bd`.
-- Esse step `4df1...` pertence a outro consultor (`0c2711ad-4836-41e6-afba-edd94f698ae3`) no fluxo `Fluxo Whapi (botões)`.
-- O fluxo ativo correto do lead é outro: `b539a8a2-3ba2-4d36-9d7b-0f3d3df129b3`.
-- O `d_resultado` correto desse lead é `fa170374-fc84-45de-815a-b1535ab24958`, que aponta corretamente para `d_pedir_documento` (`6dc972a2-b2b2-4669-96fc-5937d08af0dc`).
+- `supabase/migrations/<novo>.sql` — recria `fork_flow_from_public` (sem ambiguidade do `t`) e cria `sync_flow_from_public`.
+- `src/pages/FluxoBuilder.tsx` — botão "Sincronizar agora com o super admin" e handler que chama o novo RPC.
 
-Também há um ponto perigoso no código Evolution pós-confirmação da conta:
+## Fora do escopo
 
-```ts
-.from("bot_flow_steps").select("*")
-.eq("id", _successId)
-.eq("is_active", true)
-.maybeSingle()
-```
-
-Esse lookup busca por ID sem prender no `flow_id` ativo. Se o fallback/success_goto contém ID antigo ou de outro fluxo, o sistema pode salvar o step errado no customer. Depois, quando o cliente responde `1`, o resolver não encontra esse step no fluxo correto e o bot cai em reentrada/boas-vindas.
-
-## Correção planejada
-
-1. Corrigir `evolution-webhook/handlers/bot-flow.ts`
-   - No bloco `post-confirm-conta`, carregar `_successId` sempre com:
-     - `.eq("flow_id", _flowRowSuccess.id)`
-     - `.eq("id", _successId)`
-   - Se o ID não pertencer ao fluxo ativo, ignorar esse ID e buscar o `d_resultado` do fluxo correto por `step_key`/posição.
-   - Nunca persistir `conversation_step` com ID de step de outro fluxo.
-
-2. Aplicar a mesma proteção no `whapi-webhook/handlers/bot-flow.ts`
-   - Ele já está mais próximo do correto em alguns trechos, mas também há lookup pós-conta por ID sem `flow_id`.
-   - Padronizar os dois canais para impedir contaminação cruzada.
-
-3. Fortalecer o resolver de step customizado
-   - Quando `customer.conversation_step` for UUID e não existir no fluxo ativo do consultor:
-     - não reenviar welcome;
-     - tentar recuperar pelo último outbound do próprio cliente com `conversation_step` textual (`d_resultado`, `ask_quero_cadastrar`) ou pelo `step_key` equivalente no fluxo ativo;
-     - se a resposta for `1`/`quero cadastrar` após uma simulação, avançar para `ask_quero_cadastrar` ou `aguardando_doc_auto`, conforme regra atual de separação conta/documento.
-
-4. Corrigir o lead específico no banco após o patch
-   - Ajustar `customers.conversation_step` de `flow:dfa0e6d9...` para o estado correto pós-simulação.
-   - Como o cliente já clicou `1` para continuar, o estado ideal é pedir documento (`aguardando_doc_auto`) ou reemitir o CTA `ask_quero_cadastrar`, dependendo da regra que você preferir manter.
-   - Minha recomendação: reemitir o CTA `ask_quero_cadastrar` se quiser preservar a regra “documento só dispara após clique”; ou enviar direto o pedido de documento porque ele já clicou `1`.
-
-5. Validar
-   - Consultar o lead novamente.
-   - Conferir que nenhum step de `consultant_id = 0c2711...` aparece em conversas/customers desse lead.
-   - Testar mentalmente o fluxo:
-
-```text
-confirmando_dados_conta + 1
-→ envia d_resultado do fluxo b539...
-→ customer fica em fa170... ou ask_quero_cadastrar
-→ cliente responde 1
-→ vai para d_pedir_documento / aguardando_doc_auto
-```
-
-## Resultado esperado
-
-Após a correção, o lead `11971254913` não deve mais voltar para o início após a simulação. Ao responder `1`/`quero me cadastrar`, ele deve receber o pedido de documento e seguir o cadastro normalmente.
+- Não mexer no runtime do webhook (resolver já está correto, lendo do flow público).
+- Não mexer em mídias (continuam por `consultant_id`).
