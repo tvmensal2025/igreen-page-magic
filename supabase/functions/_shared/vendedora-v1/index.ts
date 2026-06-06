@@ -49,6 +49,23 @@ const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
   finalizando: "cadastro_finalizando",
 };
 
+function fallbackPorEtapa(etapa: Etapa, nome?: string | null): string {
+  const n = nome ? `, *${nome}*` : "";
+  switch (etapa) {
+    case "interesse": return `Olá! 😊 Aqui é da *iGreen Energy*. Você passa a pagar *menos* todo mês na conta de luz, sem obra e sem trocar de distribuidora ⚡\nPosso te chamar como?`;
+    case "nome": return `Pra eu te atender direitinho, qual o seu nome?`;
+    case "valor": return `Show${n}! Qual o *valor médio* da sua conta de luz?`;
+    case "simulacao": return `${nome ? `${nome}, com base no seu valor, ` : "Com base no seu valor, "}o desconto fica entre *8% e 20%* ao mês ⚡\nFaz sentido pra você?`;
+    case "foto_conta": return `${nome ? `Perfeito${n}! ` : ""}Me manda a *foto da sua conta de luz* 📷`;
+    case "doc": return `Agora preciso da foto da *frente do seu RG ou CNH* 📄`;
+    case "email": return `Pra finalizar, qual o seu melhor *e-mail* 📧?`;
+    case "finalizando": return `${nome ? `${nome}, ` : ""}tá tudo certo pra finalizar seu cadastro. Posso seguir?`;
+    case "pos_cadastro": return `Cadastro feito${n}! Em breve te mando os próximos passos ✅`;
+    default: return `Pode me contar um pouco mais pra eu te ajudar melhor?`;
+  }
+}
+
+
 export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraResult> {
   const t0 = Date.now();
   const { supabase, customerId, inboundText } = input;
@@ -182,21 +199,24 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
   });
   let writerText = sanitize(writerResult.text);
 
-  // 6. Crítico
-  const critico = await criticar({
+  // 6. Crítico — bloqueia mensagens reprovadas (até 1 retry forçado, senão fallback determinístico)
+  let critico = await criticar({
     texto: writerText,
     perfil,
     jaTemHistorico: historyMsgs.length > 0,
+    plano,
+    nomeLead: customer.name || null,
   });
-  if (!critico.aprovado && critico.sugestao) {
-    // Tenta 1 retry com correção
+  if (!critico.aprovado) {
+    const problemas = critico.problemas.join("; ") || "não atende às regras";
+    const hint = critico.sugestao ? `Sugestão: "${critico.sugestao}".` : "";
     try {
       const retry = await escrever({
         representante: consultant.name || "Rafael",
         nomeLead: customer.name || null,
         valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
         history: historyMsgs,
-        inboundText: `${inboundText}\n\n[CORREÇÃO INTERNA: sua resposta anterior foi reprovada por: ${critico.problemas.join("; ")}. Sugestão: "${critico.sugestao}". Reescreva seguindo o plano original.]`,
+        inboundText: `${inboundText}\n\n[CORREÇÃO INTERNA OBRIGATÓRIA: sua resposta anterior foi REPROVADA por: ${problemas}. ${hint} Reescreva seguindo a TRAVA DA ETAPA e o plano. NÃO repita o erro.]`,
         perfil,
         plano,
         ragText,
@@ -205,11 +225,26 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
         basePersona: consultant.ai_persona_fluxo_b || null,
       });
       writerResult = retry;
-      writerText = sanitize(retry.text) || critico.sugestao;
-    } catch {
-      writerText = sanitize(critico.sugestao);
+      writerText = sanitize(retry.text);
+    } catch {/* mantém writerText original */}
+
+    // Reavalia. Se reprovou de novo, usa fallback determinístico por etapa.
+    const critico2 = await criticar({
+      texto: writerText,
+      perfil,
+      jaTemHistorico: historyMsgs.length > 0,
+      plano,
+      nomeLead: customer.name || null,
+    });
+    if (!critico2.aprovado) {
+      writerText = sanitize(critico2.sugestao || fallbackPorEtapa(plano.etapa_atual, customer.name));
+      critico = { aprovado: false, problemas: [...critico.problemas, ...critico2.problemas].slice(0, 5) };
+    } else {
+      critico = critico2;
     }
   }
+
+
 
   // 7. Aplica tool calls
   const toolsApplied: string[] = [];
