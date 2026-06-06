@@ -214,6 +214,7 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
   const updates: Record<string, any> = {};
   let conversationStepUpdate: string | null = STEP_BY_ETAPA[plano.etapa_atual] || null;
   let shouldHandoff = false;
+  let pediuFinalizar = false;
 
   for (const tc of writerResult.toolCalls) {
     toolsApplied.push(tc.name);
@@ -224,6 +225,20 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
       } else if (tc.name === "registrar_valor_conta" && typeof tc.arguments?.valor === "number") {
         const v = Number(tc.arguments.valor);
         if (v > 0 && v < 100000) updates.electricity_bill_value = v;
+      } else if (tc.name === "registrar_email" && tc.arguments?.email) {
+        const email = String(tc.arguments.email).trim().toLowerCase().slice(0, 120);
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          updates.email = email;
+          // após capturar o e-mail, etapa avança pra finalizando
+          if (state.etapa === "email" || state.etapa === "doc") {
+            state.etapa = "finalizando";
+            state.tentativas_etapa = 0;
+            conversationStepUpdate = "cadastro_finalizando";
+          }
+        }
+      } else if (tc.name === "confirmar_telefone" && tc.arguments?.telefone) {
+        const tel = String(tc.arguments.telefone).replace(/\D/g, "").slice(0, 14);
+        if (tel.length >= 10) updates.phone_whatsapp = tel;
       } else if (tc.name === "registrar_info" && tc.arguments?.campo && tc.arguments?.valor) {
         const campo = String(tc.arguments.campo).trim().toLowerCase().slice(0, 40);
         const valor = String(tc.arguments.valor).trim().slice(0, 200);
@@ -241,16 +256,16 @@ export async function runVendedoraV1(input: VendedoraInput): Promise<VendedoraRe
         conversationStepUpdate = "aguardando_documento";
         state.etapa = "doc";
       } else if (tc.name === "finalizar_cadastro") {
+        pediuFinalizar = true;
         conversationStepUpdate = "cadastro_finalizando";
         state.etapa = "finalizando";
       } else if (tc.name === "agendar_followup" && tc.arguments?.quando_iso) {
-        updates.followup_at = String(tc.arguments.quando_iso);
+        const iso = String(tc.arguments.quando_iso);
+        // Coluna do banco é next_followup_at; mantém compat com followup_at se existir
+        updates.next_followup_at = iso;
         updates.followup_hook = String(tc.arguments?.gancho || "").slice(0, 240);
       } else if (tc.name === "marcar_quente") {
         updates.lead_priority = "hot";
-      } else if (tc.name === "oferecer_cadastro_express") {
-        conversationStepUpdate = "aguardando_conta";
-        state.etapa = "foto_conta";
       } else if (tc.name === "pedir_humano_proativo" || tc.name === "escalar_humano") {
         shouldHandoff = true;
         updates.bot_paused = true;
