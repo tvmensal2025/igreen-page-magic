@@ -10,6 +10,7 @@ import { escrever } from "./writer.ts";
 import { criticar } from "./critico.ts";
 import { readState, writeState } from "./state.ts";
 import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
+import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import type { Etapa, SupabaseClient } from "./types.ts";
 
 export interface VendedoraInput {
