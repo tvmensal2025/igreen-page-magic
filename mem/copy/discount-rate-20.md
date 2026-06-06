@@ -4,7 +4,8 @@ description: Texto oficial em todas as comunicações usa "até 20%" de desconto
 type: feature
 ---
 Padrão para todas as superfícies cliente-final (LP, WhatsApp bot, FAQ, IA):
-- **Desconto = até 20%** (NUNCA 12%, 15% ou faixa 10-20%).
+- **Desconto = até 20%** em LP/FAQ/bot. NUNCA 12%, 15% ou faixa 10-20%.
+- **Exceção — IA Fluxo B (Vendedora v1)**: na frase de SIMULAÇÃO verbal usa SEMPRE faixa "*entre 8% e 20%*" (varia por ICMS/consumo). O número em R$ exibido continua `valor × 0,20` fixo. Definido em `_shared/fluxo-b-prompt.ts` (seção "Simulação após receber o valor da conta") e reforçado em `vendedora-v1/planner.ts` e `playbook.ts`.
 - `supabase/functions/ai-sales-agent/index.ts`: prompt diz "≈20% sobre o valor"; cálculo `billNum * 0.20`.
 - `supabase/functions/{whapi,evolution}-webhook/handlers/bot-flow.ts`: `{economia_mensal/anual}` = `valor * 0.20`.
 - `ai_knowledge_sections` "FAQ 2 — DESCONTO E COBRANÇA": "O desconto é de até 20%…".
