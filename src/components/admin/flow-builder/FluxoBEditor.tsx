@@ -83,7 +83,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
       if (data?.customerUpdates && typeof data.customerUpdates === "object") {
         setSimState(prev => ({ ...prev, ...data.customerUpdates }));
       }
-      setChat(prev => [...prev, { role: "assistant", text: data.reply, meta: { model: data.modelUsed, tools: data.toolsApplied, step: data.conversationStepUpdate, latency: data.latencyMs } }]);
+      setChat(prev => [...prev, { role: "assistant", text: data.reply, meta: { model: data.modelUsed, tools: data.toolsApplied, step: data.conversationStepUpdate, latency: data.latencyMs, variantId: data.variantId, debug: data.debug } }]);
     } catch (e) {
       setChat(prev => [...prev, { role: "assistant", text: `❌ erro: ${(e as Error).message}` }]);
     } finally {
