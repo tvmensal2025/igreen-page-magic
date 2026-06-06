@@ -25,9 +25,17 @@ const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_KEY) console.warn('[boot] WARN: TWOCAPTCHA_KEY não definido!');
 
+// Debug em memória (acessível via GET /last-debug)
+let lastDebug = { ts: null, steps: [] };
+function dbg(msg) {
+  console.log(msg);
+  lastDebug.steps.push(`${new Date().toISOString().slice(11,19)} ${msg}`);
+  if (lastDebug.steps.length > 50) lastDebug.steps.shift();
+}
+
 // ------------ 2captcha (reCAPTCHA Enterprise) ------------
 async function solve2captcha(sitekey, pageUrl) {
-  console.log('[2captcha] submetendo reCAPTCHA Enterprise...');
+  dbg('[2captcha] submetendo reCAPTCHA Enterprise...');
   const submitRes = await fetch('https://2captcha.com/in.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -45,7 +53,7 @@ async function solve2captcha(sitekey, pageUrl) {
   if (submitData.status !== 1) throw new HttpError(500, `2captcha submit: ${submitData.request}`);
 
   const captchaId = submitData.request;
-  console.log(`[2captcha] id=${captchaId}, aguardando resolução...`);
+  dbg(`[2captcha] id=${captchaId}, aguardando resolução...`);
 
   for (let i = 0; i < 36; i++) {
     await new Promise(r => setTimeout(r, 5000));
@@ -55,11 +63,11 @@ async function solve2captcha(sitekey, pageUrl) {
     );
     const pollData = await pollRes.json();
     if (pollData.status === 1) {
-      console.log(`[2captcha] resolvido em ~${(i + 1) * 5}s`);
+      dbg(`[2captcha] resolvido em ~${(i + 1) * 5}s`);
       return pollData.request;
     }
     if (pollData.request !== 'CAPCHA_NOT_READY') throw new HttpError(500, `2captcha: ${pollData.request}`);
-    if (i % 4 === 0) console.log(`[2captcha] aguardando... ${(i + 1) * 5}s`);
+    if (i % 4 === 0) dbg(`[2captcha] aguardando... ${(i + 1) * 5}s`);
   }
   throw new HttpError(500, '2captcha timeout');
 }
@@ -94,6 +102,7 @@ async function evictOldest() {
 }
 
 async function loginAndGetToken(email, password) {
+  lastDebug = { ts: new Date().toISOString(), steps: [] };
   const browser = await getBrowser();
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -117,14 +126,14 @@ async function loginAndGetToken(email, password) {
       const j = await response.json().catch(() => null);
       if (!j) return;
       const t = j?.token || j?.access_token || j?.accessToken || j?.data?.token || j?.jwt;
-      if (t && !capturedToken) { capturedToken = t; console.log(`[token] capturado de ${url}`); }
+      if (t && !capturedToken) { capturedToken = t; dbg(`[token] capturado de ${url}`); }
     } catch { /* ignora */ }
   });
 
   const page = await context.newPage();
 
   try {
-    console.log(`[login] ${email} → navegando via Tor`);
+    dbg(`[login] ${email} → navegando via Tor`);
     await page.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     // Aguarda CF challenge resolver (Tor usa IPs residenciais — deve passar)
@@ -133,8 +142,8 @@ async function loginAndGetToken(email, password) {
       await page.waitForTimeout(2000);
       pageTitle = await page.title().catch(() => '');
       const bodySnippet = await page.locator('body').innerText().catch(() => '');
-      console.log(`[login] CF check [${i+1}/15] title="${pageTitle}" url=${page.url()}`);
-      console.log(`[login] body snippet: ${bodySnippet.slice(0, 150).replace(/\n/g, ' ')}`);
+      dbg(`[login] CF check [${i+1}/15] title="${pageTitle}" url=${page.url()}`);
+      dbg(`[login] body snippet: ${bodySnippet.slice(0, 150).replace(/\n/g, ' ')}`);
       if (!pageTitle.includes('Attention Required') && !pageTitle.includes('Just a moment') &&
           !bodySnippet.includes('Checking your browser')) break;
       if (i === 14) throw new HttpError(503, 'Cloudflare bloqueou via Tor');
@@ -159,13 +168,13 @@ async function loginAndGetToken(email, password) {
     }).catch(() => null);
 
     const sitekey = sitekeyEl || RECAPTCHA_SITEKEY;
-    console.log(`[login] usando sitekey: ${sitekey} (detectado: ${sitekeyEl || 'não'})`);
+    dbg(`[login] usando sitekey: ${sitekey} (detectado: ${sitekeyEl || 'não'})`);
     const currentBodyText = await page.locator('body').innerText().catch(() => '');
-    console.log(`[login] body snippet: ${currentBodyText.slice(0, 200).replace(/\n/g, ' ')}`);
+    dbg(`[login] body snippet: ${currentBodyText.slice(0, 200).replace(/\n/g, ' ')}`);
 
     // Resolve via 2captcha (Enterprise)
     const captchaToken = await solve2captcha(sitekey, PORTAL_LOGIN_URL);
-    console.log('[login] token 2captcha obtido — injetando...');
+    dbg('[login] token 2captcha obtido — injetando...');
 
     await page.evaluate((token) => {
       // Injeta no textarea oculto (cria se não existir)
@@ -226,7 +235,7 @@ async function loginAndGetToken(email, password) {
       throw new HttpError(401, 'Login rejeitado — credenciais inválidas ou captcha não aceito');
     }
 
-    console.log(`[login] ${email} → OK! URL=${currentUrl}`);
+    dbg(`[login] ${email} → OK! URL=${currentUrl}`);
 
     // Tenta capturar token JWT se não foi capturado via network
     if (!capturedToken) {
@@ -252,10 +261,11 @@ async function loginAndGetToken(email, password) {
 
     await context.close();
 
-    console.log(`[login] ${email} → token=${capturedToken ? 'sim' : 'via-cookies'}, consultor=${consultorId}`);
+    dbg(`[login] ${email} → token=${capturedToken ? 'sim' : 'via-cookies'}, consultor=${consultorId}`);
     return { token: capturedToken, consultorId };
 
   } catch (e) {
+    dbg(`[login] ERRO: ${e.message}`);
     await context.close().catch(() => {});
     throw e;
   }
@@ -357,6 +367,10 @@ const server = http.createServer(async (req, res) => {
         mode: 'tor-playwright-2captcha',
         tor: true, twocaptcha: !!TWOCAPTCHA_KEY,
       });
+    }
+
+    if (req.method === 'GET' && req.url === '/last-debug') {
+      return send(res, 200, lastDebug);
     }
 
     if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not_found' });
