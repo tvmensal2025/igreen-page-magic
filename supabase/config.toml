@@ -118,3 +118,6 @@ verify_jwt = false
 
 [functions.flow-spreadsheet-review]
 verify_jwt = true
+
+[functions.igreen-token-receive]
+verify_jwt = false
