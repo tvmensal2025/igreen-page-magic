@@ -1,16 +1,14 @@
 {
   "name": "igreen-sync-worker",
-  "version": "7.0.0",
-  "description": "Playwright + Tor (IP residencial) — login via API REST do portal iGreen (sem captcha)",
+  "version": "8.0.0",
+  "description": "HTTP direto contra api-voffice.igreenenergy.com.br (sem Playwright, sem Tor)",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs"
   },
-  "dependencies": {
-    "playwright-chromium": "^1.49.0"
-  },
+  "dependencies": {},
   "engines": {
     "node": ">=20.0.0"
   }
