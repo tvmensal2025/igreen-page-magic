@@ -1,107 +1,99 @@
-# Plano — Fluxo B = APENAS a Vendedora V2 (deletar todo o resto)
+## Diagnóstico — lead 5511971254913
 
-## Decisão
+Estado atual no banco:
+- `flow_variant = B`
+- `conversation_step = "flow:e0f1de51-36c5-4669-9ffd-95c1423e5008"`
+- `consultant_id = 0c2711ad-4836-41e6-afba-edd94f698ae3` (Rafael)
 
-Variant B passa a ter **um único caminho de código**: a Vendedora V2 (`_shared/vendedora/orchestrator.ts`, chamada via `runFluxoBAI`). Tudo que existe hoje para B em outros lugares (V3 step engine, nudge legacy, fallback de bot-flow, etc.) é deletado para não voltar a misturar.
+Nos logs do whapi-webhook este lead está sendo processado pelo **engine "conversational" (flow legado da Camila)**, não pela Vendedora V2:
 
-## Diagnóstico atual
-
-Hoje convivem 3 caminhos paralelos para variant B, e o que está rodando é o errado:
-
-
-| Caminho                                | Arquivo                                                          | Status hoje                                                  |
-| -------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------ |
-| **Vendedora V2** (queremos manter)     | `_shared/vendedora/*` via `_shared/fluxo-b-ai.ts`                | Nunca executa — gate só roda quando V3 está desligado        |
-| **V3 step engine variant B** (deletar) | `_shared/engine/variants/b.ts` + `runner.ts`                     | É o que está rodando hoje — manda `passo_*` + `boas_vindas`  |
-| **Nudge legacy fluxo-b-ai** (deletar)  | linhas 87‑320 de `_shared/fluxo-b-ai.ts` (após o `return` da V2) | Código morto exceto pelo nudge — duplica lógica da Vendedora |
-
-
-`ai_decisions` últimas 24 h: 0 entradas `vendedora_v2`. Confirmado: V3 estava sequestrando todos os turnos B.
-
-## Mudanças
-
-### 1. Variant B nunca entra no V3
-
-- `_shared/engine/loader.ts` (~linha 80): se `customer.flow_variant === "B"`, **lançar erro** `variant_b_should_not_reach_v3` para garantir que nenhum caller esquecido caia no V3 silenciosamente.
-- `_shared/engine/variants/b.ts`: **deletar arquivo**.
-- `_shared/engine/runner.ts` (~linha 455): remover branch `if (input.flow.variant === "B")` e remover import do `variantB`.
-- `_shared/engine/helpers.ts` `pickVariant`: tirar case `"B"` (ou apontar para um throw).
-- Atualizar testes em `_shared/engine/__tests__/v3-runner_test.ts` (remover/ajustar arbitrários que geram `variant: "B"`).
-
-### 2. Bypass V3 nos dois webhooks (defesa em profundidade)
-
-`whapi-webhook/index.ts` (1311) e `evolution-webhook/index.ts` (1626), antes do gate `isEngineV3Enabled`:
-
-```ts
-const fbVariant = String((customer as any)?.flow_variant || "").toUpperCase();
-if (fbVariant === "B") {
-  // Variant B = Vendedora V2 pura. Cai direto no bot-flow legado,
-  // que dispatcha runFluxoBAI. Captura de mídia continua determinística.
-} else if (await isEngineV3Enabled(...)) { /* V3 normal pra A/C/D */ }
+```
+[conversational] loadFlow: flow=477f8968-1344-4252-b822-8912fdbdb538 steps=10
+[conversational] entry stepKey="e0f1de51-..."
+[conversational-orch] hit step="e0f1de51-..." route=clarify
+[skip-step] mantendo passo_mp8yc0bp (tem slot_key/texto)
+[emit-before-goto] emitindo "3e7fb4cd-..." antes de avançar para "passo_mpagqq3g"
+✅ [whapi:sendButtons] botões entregues
 ```
 
-### 3. Limpar `fluxo-b-ai.ts` — só a Vendedora V2 sobra
+Ou seja: Fluxo B está recebendo botões, "passo_*", "auto-advance por captura", "ButtonsV3" — tudo do motor scripted, exatamente o que deveria estar desligado.
 
-Reescrever `_shared/fluxo-b-ai.ts` para conter **apenas**:
+### Por que o bypass anterior falhou
 
-- Carregar customer + consultant.
-- Chamar `runVendedoraV2(...)` e retornar.
+O bypass que adicionei em `whapi-webhook/index.ts:1316` só pula o **engine V3**. Já o bypass dentro de `handlers/bot-flow.ts:632` (que chama `runFluxoBAI`) só é alcançado quando `engine === "sys"`.
 
-Apagar:
+Mas para este lead, `conversation_step` começa com `"flow:"`, então `routeEngineV2` devolve `engine = "flow"` e o webhook chama `runConversationalFlow(...)` (linha 1530). A Vendedora nunca é invocada.
 
-- Todo o bloco "nudge legacy" (linhas 87 em diante: histórico, knowledge base manual, `buildFluxoBSystemPrompt`, `callWithTools`, `sanitizeReply`, fallback profissional). A Vendedora já tem RAG, memória, fallback determinístico, sanitizer próprio.
-- Constantes `FLASH_MODEL`/`PRO_MODEL` locais.
-- Parâmetro `nudgeHook` e flag `isNudgeRun`.
+O bloco "FONTE ÚNICA DE VERDADE" (1440-1482) ainda piora: mesmo se o step fosse `sys`, ele faz `engine = "flow"` quando o consultor tem `conversational_flow_enabled=true` e existe um `bot_flows` ativo para a variant — e o Rafael tem fluxo ativo para variant B (`477f8968...`), então força tudo pro motor scripted.
 
-`_shared/fluxo-b-prompt.ts`: **deletar** (era só do legacy).
+Resultado: zero leads B caem na Vendedora V2 hoje, mesmo após a limpeza anterior. O `conversation_step` `"flow:..."` é re-gravado a cada mensagem pelo conversational engine.
 
-### 4. Worker de follow-up sem caminho legacy
+Mesmo problema existe em `evolution-webhook/index.ts` (mesma estrutura, linhas 1481 e 1675).
 
-`process-followups/index.ts` chama `runFluxoBAI(..., nudgeHook)`. Como o nudge legacy some, o worker passa a chamar a Vendedora normalmente — adapta `inboundText` para um marcador interno `"[nudge]"` e a Vendedora trata como turno novo do bot (sem mensagem do lead). Remove `nudgeHook` da assinatura.
+## Correção proposta
 
-### 5. Limpar fallback B em `whapi-webhook/handlers/bot-flow.ts`
+### 1. Bypass duro de B antes do dispatcher dos engines legados
 
-- Manter o gate B → `runFluxoBAI` (linhas 631‑666), mas tirar o `try/catch` que faz "fall-through pro fluxo padrão A/D" em erro. Em erro: envia mensagem padrão de retentativa + log; NUNCA cai no fluxo determinístico A/D pra um lead B (era exatamente o que misturava).
-- Mesma coisa em `evolution-webhook/handlers/bot-flow.ts`.
+Em `supabase/functions/whapi-webhook/index.ts` e `supabase/functions/evolution-webhook/index.ts`, logo após o gate V3 e ANTES do `routeEngineV2` / bloco "FONTE ÚNICA DE VERDADE":
 
-### 6. Reset de leads B presos
+```ts
+const _fbVariantLegacy = String((customer as any)?.flow_variant || "").toUpperCase();
+const _fbStepLegacy = String((customer as any)?.conversation_step || "");
+const _fbStepRaw = stripPrefix(_fbStepLegacy);
+const _fbMediaSteps = new Set([
+  "aguardando_conta","aguardando_documento","aguardando_humano",
+  "aguardando_doc_auto","aguardando_doc_frente","aguardando_doc_verso",
+  "aguardando_otp","validando_otp","portal_submitting",
+  "cadastro_finalizando","finalizando","complete","cadastro_em_analise",
+]);
+if (_fbVariantLegacy === "B" && !_fbMediaSteps.has(_fbStepRaw)) {
+  // Vendedora V2 só roda no caminho sys (bot-flow.ts → runFluxoBAI).
+  // Zera qualquer "flow:<uuid>" / "passo_*" / UUID que o conversational
+  // tenha gravado, força engine=sys, e segue para runBotFlow.
+  if (_fbStepLegacy.startsWith("flow:") || /^[0-9a-f-]{36}$/i.test(_fbStepRaw) || _fbStepRaw.startsWith("passo_")) {
+    (customer as any).conversation_step = null;
+    try {
+      await supabase.from("customers")
+        .update({ conversation_step: null, updated_at: new Date().toISOString() })
+        .eq("id", customer.id);
+    } catch (_) { /* não bloqueia */ }
+  }
+  engine = "sys"; // força bot-flow legacy → dispara runFluxoBAI no topo
+  console.log(`[fluxo-b-bypass] customer=${customer.id} step_in="${_fbStepLegacy}" → engine=sys (Vendedora V2)`);
+}
+```
 
-Migration de dados (UPDATE):
+Esse trecho entra antes da declaração `engineUsed = engine` para que o dispatcher já receba `sys`. Onde `engine` é `let` (já é), basta atribuir.
+
+### 2. Pular o bloco "FONTE ÚNICA DE VERDADE" para B
+
+Mesmo arquivo, no `if (engine === "sys" && !isCadastroStep && consultantFlag && customerOverride !== false)` (whapi 1440, evolution equivalente): adicionar `&& _fbVariantLegacy !== "B"` para garantir que B nunca é re-empurrado para `flow`.
+
+### 3. Limpar o lead atual
+
+Migration de reparo (rodar via `supabase--migration`):
 
 ```sql
 UPDATE public.customers
 SET conversation_step = NULL,
-    fluxo_b_state = NULL,
     updated_at = now()
-WHERE flow_variant = 'B'
-  AND conversation_step IS NOT NULL
-  AND conversation_step NOT IN (
-    'aguardando_conta','aguardando_documento','aguardando_humano',
-    'aguardando_doc_auto','aguardando_doc_frente','aguardando_doc_verso',
-    'aguardando_otp','validando_otp','portal_submitting',
-    'cadastro_finalizando','finalizando','complete'
-  );
+WHERE id = 'd5f8f0d7-cf2b-41b3-900c-96a40ac6744f';
 ```
 
-Steps de captura de mídia/handoff/OTP permanecem (cadastro determinístico segue intocado). Só zera os steps scriptados de flow (`flow:*`, `welcome`, `passo_*`, UUIDs de step).
+(Reset cirúrgico só desse lead; a limpeza ampla já rodou na rodada anterior — a recontaminação foi causada pelo bug acima.)
 
-## Deploy
+### 4. Deploy
 
-- Edge functions: `whapi-webhook`, `evolution-webhook`, `process-followups`.
-- Migration via tool de insert (UPDATE em customers).
-- Não toca em `ai_persona_fluxo_b`, `ai_knowledge_sections`, nem na biblioteca de mídia.
+Redeploy de `whapi-webhook` e `evolution-webhook`.
 
-## Validação
+### 5. Validação
 
-1. `psql` confirma 0 customers B com `conversation_step` scriptado.
-2. Lead de teste B manda "Oi" → logs mostram `[vendedora-v2]`, **não** `engine_v3_handled` nem `passo_*`/`boas_vindas`.
-3. `SELECT source, count(*) FROM ai_decisions WHERE created_at > now()-interval '10 min' GROUP BY source` lista `vendedora_v2`.
-4. Lead B manda foto da conta → continua caindo no handler determinístico de OCR (mídia não foi afetada).
+- Testar "oi" no 11971254913 pelo Whapi → logs devem mostrar `[fluxo-b-bypass]` + `[fluxo-b] dispatching` + `[fluxo-b] done model=...`, sem `[conversational]`, `passo_*`, `ButtonsV3` ou `auto-advance`.
+- Conferir `customers.conversation_step` após algumas mensagens — deve ficar em `null` ou em algum dos `_fbMediaSteps` (nunca `flow:*`).
 
-## Fora do escopo
+## Detalhes técnicos
 
-- Variant A/C/D continuam exatamente como estão (V3 ligado).
-- Mídia/OCR/portal não muda.
-- Não mexo na persona do consultor nem em `ai_knowledge_sections`.
-
-Posso implementar? SIM, DEXAIDNO O FLUXO B APENAS COM A VENDEDROA
+- `routeEngineV2` permanece igual; o bypass acontece antes da decisão por engine.
+- Mídia (foto da conta, documento, OTP) e handoff continuam intactos porque `_fbMediaSteps` cobre todos os passos determinísticos que ainda fazem sentido para o Fluxo B.
+- Mudança é puramente em código de roteamento dos dois webhooks + um UPDATE pontual. Não toca em `_shared/fluxo-b-ai.ts`, `vendedora/*` nem nas templates.
+- Sem mudança de tipos do Supabase, sem nova tabela.
