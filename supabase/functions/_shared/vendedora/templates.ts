@@ -191,10 +191,16 @@ export function respostaPerguntaCurta(
   etapa: Etapa,
   valor: number | null,
   tentativa: number,
+  objecoesTratadas: string[] = [],
 ): string {
-  // Pega a 1ª variante (curta) da resposta da objeção
   const variantes = RESP_OBJECAO_VARIANTES[tipo] || RESP_OBJECAO_VARIANTES.generica;
-  const resp = variantes[Math.max(0, tentativa) % variantes.length];
+  // Quantas vezes essa MESMA dúvida já apareceu → escolhe variante diferente
+  const jaVista = objecoesTratadas.filter((o) => o === tipo).length;
+  let resp = variantes[jaVista % variantes.length];
+  if (jaVista >= 1) {
+    const prefixos = ["como te falei, ", "reforçando: ", "só pra deixar claro de novo: "];
+    resp = prefixos[(jaVista - 1) % prefixos.length] + resp;
+  }
 
   // Reancora com a pergunta da etapa — limpando saudação ("Show, X!") pra não
   // ficar "X, sem fidelidade. Show, X! Qual o valor..."
