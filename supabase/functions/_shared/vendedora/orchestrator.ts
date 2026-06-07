@@ -161,7 +161,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   };
 
   if (ETAPAS_DETERMINISTICAS.has(state.etapa)) {
-    reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+    reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
     modelUsed = "deterministic_template";
   } else {
     const writeResult = await microWrite({
@@ -185,7 +185,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
       // Fallback ESPECÍFICO da consideração: responde a dúvida do lead, não frase genérica.
       reply = state.etapa === "consideracao"
         ? respConsider()
-        : sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+        : sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
       modelUsed = `${modelUsed}+fallback:${val.motivo}`;
     } else if (state.etapa === "consideracao") {
       // Em consideração, mesmo com resposta "válida" do LLM, garantimos
@@ -230,7 +230,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     if (!c.aprovado) {
       reply = state.etapa === "consideracao"
         ? respConsider()
-        : sanitize(c.sugestao || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+        : sanitize(c.sugestao || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
       modelUsed = `${modelUsed}+critico_reprovou`;
     }
   }
@@ -249,7 +249,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     if (pedeMidia) {
       const corrigido = state.etapa === "consideracao"
         ? respConsider()
-        : sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+        : sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
       console.warn(`[vendedora-v2] trava anti-foto: etapa=${state.etapa} pediu mídia/email cedo — reescrito p/ fallback`);
       reply = corrigido;
       modelUsed = `${modelUsed}+trava_antifoto`;
@@ -344,7 +344,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   });
 
   return {
-    reply: reply || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value),
+    reply: reply || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa),
     toolsApplied,
     conversationStepUpdate,
     shouldHandoff,
