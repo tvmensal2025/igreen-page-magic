@@ -674,6 +674,11 @@ Deno.serve(async (req) => {
 
     if (!customer) {
       console.log(`📱 Telefone ${phone}: criando novo registro.`);
+      // Variante respeita `consultants.active_variants` (round-robin via RPC).
+      const { data: assignedVariant } = await supabase.rpc("assign_flow_variant", {
+        _consultant_id: instanceData.consultant_id,
+      });
+      const newFlowVariant = (typeof assignedVariant === "string" && assignedVariant) || "A";
       const { data: newCustomer, error } = await supabase
         .from("customers")
         .insert({
@@ -681,6 +686,7 @@ Deno.serve(async (req) => {
           consultant_id: instanceData.consultant_id,
           status: "pending",
           conversation_step: "welcome",
+          flow_variant: newFlowVariant,
         })
         .select().single();
       if (error) {
