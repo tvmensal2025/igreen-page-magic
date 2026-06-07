@@ -107,7 +107,14 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     aguardaInteresse ? classificarInteresse(inboundText) : Promise.resolve(false),
   ]);
 
-  if (nomeExt)  { updates.name = nomeExt; updates.name_source = "vendedora_v2"; customer.name = nomeExt; toolsApplied.push("extrair_nome"); }
+  if (nomeExt)  {
+    const pretty = prettyName(nomeExt) || nomeExt;
+    updates.name = pretty; updates.name_source = "vendedora_v2"; customer.name = pretty;
+    toolsApplied.push("extrair_nome");
+  } else if (customer.name) {
+    const pretty = prettyName(customer.name);
+    if (pretty && pretty !== customer.name) { customer.name = pretty; }
+  }
   if (valorExt) { updates.electricity_bill_value = valorExt; customer.electricity_bill_value = valorExt; toolsApplied.push("extrair_valor"); }
   if (emailExt) { updates.email = emailExt; customer.email = emailExt; toolsApplied.push("extrair_email"); }
   if (interesseExt) { state.interesse_confirmado = true; toolsApplied.push("classificar_interesse"); }
