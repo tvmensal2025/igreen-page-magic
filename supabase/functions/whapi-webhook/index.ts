@@ -1467,7 +1467,8 @@ Deno.serve(async (req) => {
         engine === "sys" &&
         !isCadastroStep &&
         consultantFlag &&
-        customerOverride !== false
+        customerOverride !== false &&
+        _fbVariantLegacy !== "B"
       ) {
         try {
           // 🔑 FIX: Rafael tem fluxos A/B/C ativos simultâneos. Filtrar pela
