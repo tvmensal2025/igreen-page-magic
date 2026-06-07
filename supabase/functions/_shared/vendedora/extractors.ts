@@ -76,15 +76,26 @@ const NAO_E_NOME = new Set([
 export async function extrairNome(inbound: string): Promise<string | null> {
   // 0) Fast-path determinístico — resolve a maioria sem LLM (e sem rate-limit).
   //    Aceita variações comuns: "Carlos Antunes", "ok Carlos", "tá, Roberto Dias",
-  //    "sou João", "me chamo Maria", "meu nome é Pedro".
+  //    "sou João", "me chamo Maria", "meu nome é Pedro", "ok confio, Cláudia Reis",
+  //    "pode anotar, João", "tô dentro, Maria", "fechado então, Pedro Silva".
   try {
     const txt = String(inbound || "").trim();
-    // Remove prefixos curtos de confirmação (ok, tá, blz, sim, então, etc.) + pontuação
-    const semPrefixo = txt.replace(
-      /^(ok|t[áa]h?|blz|beleza|sim|certo|claro|ent[ãa]o|aham|aqui|opa|oi)[\s,.;:\-]+/i,
+    // (a) Remove prefixos curtos de confirmação simples (1 palavra) + pontuação.
+    const semPrefixoSimples = txt.replace(
+      /^(ok|t[áa]h?|blz|beleza|sim|certo|claro|ent[ãa]o|aham|aqui|opa|oi|bora|fechado|t[óo]|show|massa)[\s,.;:\-]+/i,
       "",
     );
-    const regexHit = extractNomeRegex(semPrefixo) || extractNomeRegex(txt);
+    // (b) Se a mensagem tem padrão "<prefixo curto em minúsculas>, <Nome Próprio...>",
+    //     descarta tudo antes da vírgula e tenta o nome no que sobra.
+    //     Ex.: "ok confio, Cláudia Reis" / "pode anotar, João" / "tô dentro então, Maria"
+    let semPrefixoComposto = semPrefixoSimples;
+    const m = semPrefixoSimples.match(/^([a-zà-ÿ\s'çãõáéíóúâêôà]{1,40}),\s*([A-ZÀ-Ý][\wÀ-ÿ'\-]+(?:\s+[A-ZÀ-Ý][\wÀ-ÿ'\-]+)*)\s*$/);
+    if (m && m[1].split(/\s+/).filter(Boolean).length <= 4) {
+      semPrefixoComposto = m[2];
+    }
+    const regexHit = extractNomeRegex(semPrefixoComposto)
+      || extractNomeRegex(semPrefixoSimples)
+      || extractNomeRegex(txt);
     if (regexHit) {
       const norm = regexHit.toLowerCase().replace(/[.,!?;:"'()\-]/g, "").trim();
       if (!NAO_E_NOME.has(norm) && regexHit.length >= 2 && regexHit.length <= 80) {
