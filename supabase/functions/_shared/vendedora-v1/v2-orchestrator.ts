@@ -10,7 +10,7 @@ import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
 import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import { decideEtapa } from "./state-machine.ts";
 import { extrairNome, extrairValor, extrairEmail, classificarInteresse } from "./extractors.ts";
-import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta } from "./templates.ts";
+import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao } from "./templates.ts";
 import type { Etapa, FluxoBState, SupabaseClient } from "./types.ts";
 import type { VendedoraInput, VendedoraResult } from "./index.ts";
 
@@ -24,7 +24,7 @@ const STEP_BY_ETAPA: Partial<Record<Etapa, string>> = {
 };
 
 // Etapas "ricas" — usam RAG e crítico. Outras são mecânicas (texto curto, sem LLM auxiliar).
-const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "finalizando"]);
+const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "consideracao", "finalizando"]);
 
 // Etapas onde o template fixo já resolve — pula LLM de escrita e crítico.
 const ETAPAS_DETERMINISTICAS = new Set<Etapa>(["nome", "valor", "foto_conta", "doc", "email"]);
@@ -89,7 +89,10 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   const precisaNome = !customer.name;
   const precisaValor = !(typeof customer.electricity_bill_value === "number" && customer.electricity_bill_value > 0);
   const precisaEmail = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customer.email || ""));
-  const aguardaInteresse = etapaAntes === "simulacao" && state.simulacao_apresentada && !state.interesse_confirmado;
+  // Detecta interesse quando o lead já viu a simulação e está na fase de
+  // consideração (ou ainda no turno em que a simulação foi apresentada).
+  const aguardaInteresse = (etapaAntes === "simulacao" || etapaAntes === "consideracao")
+    && state.simulacao_apresentada && !state.interesse_confirmado;
 
   const updates: Record<string, any> = {};
   const toolsApplied: string[] = [];
@@ -140,6 +143,22 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   let modelUsed = "deterministic";
   let val: ReturnType<typeof validarResposta> = { ok: true };
 
+  // Última resposta do bot (pra evitar repetir a mesma frase na consideração)
+  const ultimaRespBot = [...historyMsgs].reverse().find((m) => m.role === "assistant")?.content || "";
+  const norm = (s: string) => String(s).toLowerCase().replace(/[^a-záàâãéêíóôõúç0-9]/gi, "").slice(0, 120);
+
+  // Helper: resposta determinística da consideração que JÁ registra a objeção
+  // tratada no state (pra próxima repetição escolher variante diferente).
+  const respConsider = (tentativaOffset = 0): string => {
+    const r = respostaConsideracao(
+      inboundText, customer.name || null,
+      state.tentativas_etapa + tentativaOffset,
+      state.objecoes_tratadas,
+    );
+    state.objecoes_tratadas = [...(state.objecoes_tratadas || []), r.tipo].slice(-12);
+    return sanitize(r.texto);
+  };
+
   if (ETAPAS_DETERMINISTICAS.has(state.etapa)) {
     reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
     modelUsed = "deterministic_template";
@@ -162,8 +181,27 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     // Validação estrutural barata
     val = validarResposta(reply, state.etapa, customer.name || null);
     if (!val.ok) {
-      reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+      // Fallback ESPECÍFICO da consideração: responde a dúvida do lead, não frase genérica.
+      reply = state.etapa === "consideracao"
+        ? respConsider()
+        : sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
       modelUsed = `${modelUsed}+fallback:${val.motivo}`;
+    } else if (state.etapa === "consideracao") {
+      // Em consideração, mesmo com resposta "válida" do LLM, garantimos
+      // coerência e anti-repetição com a rede determinística:
+      const tocaTema = respostaTocaTema(inboundText, reply);
+      const repetiuAnterior = ultimaRespBot && norm(reply) === norm(ultimaRespBot);
+      if (!tocaTema) {
+        reply = respConsider();
+        modelUsed = `${modelUsed}+tema_corrigido`;
+      } else if (repetiuAnterior) {
+        reply = respConsider(1);
+        modelUsed = `${modelUsed}+antirepeticao`;
+      } else {
+        // LLM respondeu bem e no tema: registra a objeção mesmo assim, pra
+        // controle de repetição futura.
+        state.objecoes_tratadas = [...(state.objecoes_tratadas || []), classificarObjecao(inboundText)].slice(-12);
+      }
     }
   }
 
@@ -189,8 +227,31 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     criticoAprovado = c.aprovado;
     criticoProblemas.push(...c.problemas);
     if (!c.aprovado) {
-      reply = sanitize(c.sugestao || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+      reply = state.etapa === "consideracao"
+        ? respConsider()
+        : sanitize(c.sugestao || fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
       modelUsed = `${modelUsed}+critico_reprovou`;
+    }
+  }
+
+  // 7b) TRAVA DURA anti-pedido-precoce — rede determinística independente do LLM.
+  // Se a etapa atual NÃO é de coleta de mídia/e-mail mas o texto pede
+  // foto/conta/documento/RG/CNH/e-mail, o modelo (ou o crítico) furou a trava.
+  // Reescreve com o fallback determinístico da etapa. Garante que a foto só
+  // é pedida quando a state machine realmente chegou em `foto_conta`.
+  if (!["foto_conta", "doc", "email"].includes(state.etapa)) {
+    const pedeMidia = /\b(foto|fotografia|print|imagem)\b/i.test(reply) ||
+      /\b(conta de luz|fatura).*(envi|mand|manda|me\s+pass)/i.test(reply) ||
+      /\b(rg|cnh|documento|identidade)\b/i.test(reply) ||
+      /\b(e-?mail)\b/i.test(reply) ||
+      /📷|📄|📧/.test(reply);
+    if (pedeMidia) {
+      const corrigido = state.etapa === "consideracao"
+        ? respConsider()
+        : sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value));
+      console.warn(`[vendedora-v2] trava anti-foto: etapa=${state.etapa} pediu mídia/email cedo — reescrito p/ fallback`);
+      reply = corrigido;
+      modelUsed = `${modelUsed}+trava_antifoto`;
     }
   }
 
@@ -207,7 +268,12 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   let conversationStepUpdate: string | null = STEP_BY_ETAPA[state.etapa] || null;
   let shouldHandoff = false;
 
-  if (state.tentativas_etapa >= 4) {
+  // Handoff por excesso de tentativas. A etapa `consideracao` é EXCEÇÃO:
+  // o lead pode legitimamente fazer várias perguntas/objeções antes de
+  // decidir cadastrar — não é "travamento", é negociação. Damos um teto
+  // bem mais alto e só então escalamos.
+  const tetoTentativas = state.etapa === "consideracao" ? 8 : 4;
+  if (state.tentativas_etapa >= tetoTentativas) {
     shouldHandoff = true;
     updates.bot_paused = true;
     updates.bot_paused_reason = `vendedora_v2: ${state.tentativas_etapa} tentativas na etapa ${state.etapa}`;

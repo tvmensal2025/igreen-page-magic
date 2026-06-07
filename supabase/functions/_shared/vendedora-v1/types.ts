@@ -8,6 +8,7 @@ export type Etapa =
   | "nome"
   | "valor"
   | "simulacao"
+  | "consideracao"
   | "foto_conta"
   | "doc"
   | "email"
@@ -90,5 +91,5 @@ export const DEFAULT_STATE: FluxoBState = {
 };
 
 export const ETAPAS_ORDER: Etapa[] = [
-  "interesse","nome","valor","simulacao","foto_conta","doc","email","finalizando","pos_cadastro",
+  "interesse","nome","valor","simulacao","consideracao","foto_conta","doc","email","finalizando","pos_cadastro",
 ];

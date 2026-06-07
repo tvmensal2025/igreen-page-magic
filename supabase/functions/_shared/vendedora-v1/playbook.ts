@@ -40,6 +40,13 @@ export const PLAYBOOK: Record<Etapa, Partial<Record<Perfil, PlaybookEntry>>> = {
     indeciso:    T("apresentar_numero_com_prova", "acolhedor_firme", "Faixa 8-20% + número + ANEEL. Pergunta consultiva. NUNCA pedir foto neste turno."),
     reclamao:    T("apresentar_numero_aliviando", "empatico", "Faixa 8-20% mostrando alívio vs reclamação. NUNCA pedir foto neste turno."),
   },
+  consideracao: {
+    cetico:      T("tratar_objecao_e_provar", "consultivo_seguro", "Responde a dúvida com FAQ + ANEEL/sem obra. Fecha com pergunta que aproxima do cadastro. NUNCA pedir foto antes do 'quero'."),
+    interessado: T("reforcar_valor_e_convidar", "energetico_direto", "Reforça economia/facilidade + convite suave pra cadastrar. NUNCA pedir foto antes do 'quero'."),
+    comprador:   T("convidar_a_fechar", "objetivo", "Lead quente: pergunta direta de fechamento ('quer que eu já deixe pronto?'). Só pede foto se ele confirmar."),
+    indeciso:    T("quebrar_hesitacao", "acolhedor_firme", "Acolhe a dúvida, reduz risco (sem fidelidade/sem obra) + 1 micro-passo. NUNCA pedir foto antes do 'quero'."),
+    reclamao:    T("aliviar_e_redirecionar", "empatico", "Valida a queixa da conta, mostra alívio concreto + convite. NUNCA pedir foto antes do 'quero'."),
+  },
   foto_conta: {
     cetico:      T("explicar_uso_da_foto", "transparente", "Pra confirmar distribuidora + valor exato."),
     interessado: T("pedir_foto_direta", "leve_direto", "'Manda a foto da conta 📷'"),

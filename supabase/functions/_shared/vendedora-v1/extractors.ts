@@ -135,8 +135,32 @@ export async function extrairEmail(inbound: string): Promise<string | null> {
 }
 
 export async function classificarInteresse(inbound: string): Promise<boolean> {
-  // Atalho regex pra palavras-gatilho fortes
-  if (/\b(quero|vamos|fechado|fechou|bora|pode mandar|ok manda|como faço|como fazer|t[óo]\s*dentro|sim,?\s*manda|manda\s*a[ií])\b/i.test(inbound)) {
+  const txt = String(inbound || "").trim();
+
+  // 1) Negação explícita NUNCA é interesse ("não quero", "ainda não", "agora não").
+  if (/\b(n[ãa]o|nunca|jamais|ainda n[ãa]o|agora n[ãa]o)\b/i.test(txt)) {
+    // Só deixa passar se houver confirmação forte DEPOIS da negação
+    // (ex.: "não tenho dúvida, quero sim"). Caso contrário, trata como não-interesse.
+    if (!/\b(quero sim|sim,?\s*quero|pode sim|claro que quero)\b/i.test(txt)) {
+      return false;
+    }
+  }
+
+  // 2) "quero/queria + verbo de dúvida" é PERGUNTA, não interesse de fechar
+  // ("quero saber", "queria entender", "quero ver como funciona", "quero pensar").
+  if (/\b(quero|queria|gostaria de)\s+(saber|entender|ver|conhecer|pensar|perguntar|tirar|confirmar|comparar)\b/i.test(txt)) {
+    return false;
+  }
+
+  // 3) Atalho regex pra palavras-gatilho fortes (interesse real de prosseguir).
+  //    Sem \b no final: palavras acentuadas ("aí", "faço") quebram a fronteira
+  //    de palavra em regex ASCII e fariam o padrão falhar.
+  if (/(^|\s)(vamos|fechado|fechou|bora|t[óo]\s*dentro|manda\s*ver)(\s|$|[.!])/i.test(txt)) return true;
+  if (/\b(pode\s*mandar|ok\s*manda|sim,?\s*manda|manda\s*a[ií]|quero\s*sim|sim,?\s*quero|claro\s*que\s*quero|quero\s*(fechar|contratar|cadastrar|come|seguir|aderir|agora|esse|isso)|pode\s*(seguir|mandar|prosseguir)|como\s*fa(z|ç|c))/i.test(txt)) {
+    return true;
+  }
+  // "sim" / "quero" / afirmações isoladas (mensagem curta de confirmação)
+  if (/^(sim|quero|isso|claro|com certeza|perfeito|ok|fechado|bora|manda|👍|✅)[\s.!]*$/i.test(txt)) {
     return true;
   }
   try {
@@ -145,7 +169,7 @@ export async function classificarInteresse(inbound: string): Promise<boolean> {
       temperature: 0,
       tool: TOOL_INTERESSE,
       messages: [
-        { role: "system", content: "Classifique se o lead confirmou interesse explícito em prosseguir com o cadastro após receber a simulação de economia. 'Sim' isolado conta. 'Vou pensar', 'depois', 'talvez' NÃO conta." },
+        { role: "system", content: "Classifique se o lead confirmou interesse EXPLÍCITO em prosseguir com o CADASTRO após receber a simulação. true APENAS para concordância clara de avançar ('sim', 'quero fechar', 'vamos', 'como faço pra contratar', 'pode seguir'). false para: dúvidas ('quero saber mais', 'como funciona?'), negações ('não quero', 'agora não'), hesitação ('vou pensar', 'depois', 'talvez'), ou qualquer pergunta. Na dúvida, retorne false." },
         { role: "user", content: inbound },
       ],
     });

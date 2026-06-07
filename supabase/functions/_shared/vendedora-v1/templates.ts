@@ -6,6 +6,7 @@ export const TRAVA_POR_ETAPA: Record<Etapa, string> = {
   nome: "Pergunte o NOME do lead. 1 pergunta. PROIBIDO pedir outra coisa.",
   valor: "Pergunte o VALOR MÉDIO DA CONTA EM R$. PROIBIDO pedir foto/doc/e-mail nem dar simulação ainda.",
   simulacao: "Apresente faixa *8% a 20%* + número (valor × 0,20) + pergunta consultiva tipo 'faz sentido?'. PROIBIDO pedir foto/doc/e-mail.",
+  consideracao: "O lead JÁ viu a simulação. RESPONDA DIRETAMENTE a dúvida/objeção específica que ele acabou de fazer (use a FAQ/contexto), em 1-2 linhas, com informação concreta — NÃO responda de forma genérica nem repita a mesma frase do turno anterior. Depois faça UMA pergunta que aproxime do cadastro, VARIANDO a forma. PROIBIDO pedir foto/conta/doc/e-mail — só peça quando o lead disser claramente que quer cadastrar/fechar.",
   foto_conta: "Peça a foto da conta de luz 📷. PROIBIDO pedir doc/e-mail.",
   doc: "Peça a foto da frente do RG ou CNH 📄. PROIBIDO pedir e-mail.",
   email: "Peça o e-mail do lead 📧. PROIBIDO pedir outras coisas.",
@@ -22,6 +23,10 @@ export function fallbackPorEtapa(etapa: Etapa, nome?: string | null, valor?: num
     case "simulacao": {
       const eco = valor ? ` Daria cerca de *R$ ${(valor * 0.2).toFixed(0)}/mês* de economia.` : "";
       return `${nome ? `${nome}, com base no seu valor, ` : "Com base no seu valor, "}o desconto fica *entre 8% e 20%* ao mês ⚡${eco}\nFaz sentido pra você?`;
+    }
+    case "consideracao": {
+      const eco = valor ? `*R$ ${(valor * 0.2).toFixed(0)}/mês*` : "uma boa economia";
+      return `${nome ? `${nome}, ` : ""}é tudo *sem obra* e regulamentado pela *ANEEL* — a mesma conta, só com ${eco} a menos ⚡\nQuer que eu já deixe tudo pronto pra você começar a economizar?`;
     }
     case "foto_conta":  return `${nome ? `Perfeito${n}! ` : ""}Me manda a *foto da sua conta de luz* 📷`;
     case "doc":         return `Agora preciso da foto da *frente do seu RG ou CNH* 📄`;
@@ -49,6 +54,9 @@ export function validarResposta(texto: string, etapa: Etapa, nomeLead: string | 
   if (etapa === "nome" && !/\?$|\?\s/m.test(t)) return { ok: false, motivo: "nome_sem_pergunta" };
   if (etapa === "valor" && !/valor|conta|r\$|quanto|paga/i.test(t)) return { ok: false, motivo: "valor_fora_de_tema" };
   if (etapa === "simulacao" && !/8\s*%|20\s*%|desconto|economia|r\$/i.test(t)) return { ok: false, motivo: "simulacao_sem_numero" };
+  if (etapa === "consideracao" && /\b(foto|conta de luz|fatura|rg|cnh|documento)\b/i.test(t) && /(envi|mand|manda|me\s+pass)/i.test(t)) {
+    return { ok: false, motivo: "consideracao_pediu_midia_cedo" };
+  }
   if (etapa === "foto_conta" && !/foto|conta|📷|imagem/i.test(t)) return { ok: false, motivo: "foto_fora_de_tema" };
   if (etapa === "doc" && !/rg|cnh|documento|📄/i.test(t)) return { ok: false, motivo: "doc_fora_de_tema" };
   if (etapa === "email" && !/e-?mail|📧|@/i.test(t)) return { ok: false, motivo: "email_fora_de_tema" };
@@ -58,4 +66,185 @@ export function validarResposta(texto: string, etapa: Etapa, nomeLead: string | 
     // Não bloqueia — só penaliza, mas mantém ok=true (handler pode reescrever)
   }
   return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Matcher de objeções/dúvidas para a etapa CONSIDERAÇÃO.
+// Rede determinística: reconhece a pergunta específica do lead e devolve uma
+// resposta CORRETA e ESPECÍFICA + convite ao cadastro. Usado como fallback
+// robusto quando o LLM/RAG falha ou repete. Garante que cada dúvida tenha
+// resposta de tema correto, sem repetir a frase anterior.
+
+export type ObjecaoTipo =
+  | "golpe" | "obra" | "fidelidade" | "solar" | "distribuidora" | "aluguel"
+  | "outra_empresa" | "boleto" | "prazo" | "cobertura" | "cancelar"
+  | "taxa_adesao" | "conta_baixa" | "como_ganham" | "pensar" | "generica";
+
+export function classificarObjecao(texto: string): ObjecaoTipo {
+  const t = String(texto || "").toLowerCase();
+  // Ordem importa: padrões mais específicos primeiro.
+  if (/aluguel|alugad|inquilin|mudar de casa|mudar de im[óo]vel|se eu mudar|quando eu mudar|quando mudar|se mudar|trocar de casa|n[ãa]o (?:é|eh) min(?:ha|h)a casa/.test(t)) return "aluguel";
+  if (/conta (?:for |fica |é |eh )?baixa|conta baixa|m[êe]s mais baixo|gasto pouco|consumo baixo|n[ãa]o vale a pena|compensa/.test(t)) return "conta_baixa";
+  if (/taxa|ades[ãa]o|cobra(?:m|r)? (?:algo|alguma|taxa|pra)|pagar (?:pra|para) entrar|investiment|mensalidade|custo (?:pra|para|de) entrar|tem custo/.test(t)) return "taxa_adesao";
+  if (/boleto|fatura|mesmo? (?:boleto|conta)|onde pago|como pago|dois boleto|atras(?:ar|o) o pagamento|pagar (?:a conta|onde)/.test(t)) return "boleto";
+  if (/fidelidade|multa|car[êe]ncia|preso|amarrad|tempo de contrato|fica preso/.test(t)) return "fidelidade";
+  if (/cancelar|sair (?:quando|a qualquer)|desistir|parar quando/.test(t)) return "cancelar";
+  if (/golpe|pir[âa]mide|enganad|furad|confi[áa]vel|seguro|é verdade|pegadinha|bom demais|nunca ouvi|medo|receio|cilada|quebrar|falir|sair do mercado|fechar as portas/.test(t)) return "golpe";
+  if (/\bobra\b|reforma|instala|placa|painel|t[ée]cnico|equipamento|mexer (?:na|em) (?:casa|telhado)/.test(t)) return "obra";
+  if (/solar|painel solar|energia do sol/.test(t)) return "solar";
+  if (/distribuidora|trocar de (?:empresa|distribuidora)|mudar de (?:empresa|distribuidora|companhia)|enel|cemig|cpfl|light|equatorial|neoenergia/.test(t)) return "distribuidora";
+  if (/outra empresa|[óo]rigo|sun mobi|energisol|j[áa] tenho desconto|concorr|diferen[çc]a de voc[êe]s|diferen[çc]a de vcs|qual a diferen/.test(t)) return "outra_empresa";
+  if (/quanto tempo|prazo|demora|quando come[çc]|ativa[çr]|leva quanto/.test(t)) return "prazo";
+  if (/atende (?:em|na|aqui|minha|meu)|cobertura|minha cidade|meu estado|funciona (?:em|na|aqui|na minha)|cobre (?:minha|aqui)/.test(t)) return "cobertura";
+  if (/como (?:voc[êe]s|vcs) ganha|de onde vem|qual o lucro|o que (?:voc[êe]s|vcs) ganha|onde t[áa] o ganho/.test(t)) return "como_ganham";
+  if (/pensar|depois|mais tarde|vou ver|talvez|n[ãa]o sei|deixa eu ver/.test(t)) return "pensar";
+  return "generica";
+}
+
+// Cada objeção tem 2-3 variantes. Quando o lead repete a mesma dúvida, o
+// sistema escolhe uma variante DIFERENTE (em vez de repetir o mesmo texto).
+const RESP_OBJECAO_VARIANTES: Record<ObjecaoTipo, string[]> = {
+  golpe: [
+    "super justo perguntar! A *iGreen* é homologada pela *ANEEL* (Lei 14.300) — você continua com a mesma distribuidora, só com o desconto na fatura.",
+    "pode ficar tranquilo: a iGreen tem *CNPJ ativo* e é fiscalizada pela *ANEEL*. Já são centenas de milhares de clientes economizando.",
+    "nada de golpe — você *não paga nada a mais* e continua recebendo a conta da sua distribuidora normalmente, só com o abatimento.",
+  ],
+  obra: [
+    "nada de obra! *Sem placa, sem técnico, sem mexer na sua casa*. O desconto entra direto na fatura ⚡",
+    "não precisa instalar nada — *zero obra, zero equipamento*. É só um cadastro e o desconto passa a aparecer na conta.",
+  ],
+  fidelidade: [
+    "fica tranquilo: *sem fidelidade e sem multa* — você pode sair quando quiser, sem pegadinha.",
+    "não tem amarração: *sem contrato de permanência e sem multa*. Se quiser sair, é só avisar.",
+  ],
+  solar: [
+    "é energia limpa de fazendas solares da iGreen, mas *sem instalar nada na sua casa*. O crédito vem direto pra sua conta.",
+    "a energia vem das *usinas solares da iGreen* — você usa o crédito sem placa nenhuma no seu telhado.",
+  ],
+  distribuidora: [
+    "você *não troca de distribuidora* nem de fiação. Tudo continua igual, só entra o desconto na fatura.",
+    "sua distribuidora continua *exatamente a mesma* — a iGreen só aplica o desconto por cima da sua conta.",
+  ],
+  aluguel: [
+    "funciona normal em imóvel alugado — *quem paga a conta é quem recebe o desconto*. Se mudar, a gente transfere.",
+    "mesmo de aluguel dá certo: o desconto fica *no seu nome*, e se você mudar é só transferir o cadastro.",
+  ],
+  outra_empresa: [
+    "o nosso é regulamentado pela *ANEEL*, sem obra e sem fidelidade. Dá pra comparar e ver se sobra mais economia pra você.",
+    "vale comparar: muita gente troca pra iGreen por ser *sem fidelidade* e ter desconto direto na fatura.",
+  ],
+  boleto: [
+    "continua *a mesma conta da sua distribuidora*, com o desconto já aplicado — sem boleto novo, sem confusão.",
+    "você não recebe boleto extra: o desconto vem *na própria fatura* que você já paga hoje.",
+  ],
+  prazo: [
+    "depois do cadastro aprovado, a economia começa a aparecer na fatura em torno de *30 a 60 dias*.",
+    "em geral *1 a 2 ciclos de fatura* após a aprovação você já vê o desconto na conta.",
+  ],
+  cobertura: [
+    "a iGreen atende em *21 estados*. Pelo seu cadastro eu já confirmo se cobre sua região, sem compromisso.",
+    "a cobertura já passa de *21 estados* — fazendo o cadastro eu confirmo na hora se atende aí.",
+  ],
+  cancelar: [
+    "pode cancelar *quando quiser, sem multa*. Você não fica preso a nada.",
+    "o cancelamento é *livre e sem custo* — você decide a hora de sair, sem burocracia.",
+  ],
+  taxa_adesao: [
+    "*não tem taxa de adesão nem mensalidade* — o cadastro é gratuito. Você só passa a pagar menos.",
+    "é *100% gratuito* pra entrar — nenhuma taxa, nenhuma mensalidade. Você só economiza.",
+  ],
+  conta_baixa: [
+    "pra contas a partir de *R$ 200* já compensa. Quanto maior a conta, maior a economia no fim do mês.",
+    "mesmo em meses mais baixos vale: o desconto é *proporcional ao consumo*, então sempre sobra economia.",
+  ],
+  como_ganham: [
+    "a iGreen ganha uma parte do que a fazenda solar gera — por isso consegue te dar desconto *sem te cobrar nada a mais*.",
+    "o modelo é simples: a usina gera energia, você usa o crédito com desconto, e a iGreen ganha pela geração — *sem custo pra você*.",
+  ],
+  pensar: [
+    "tranquilo pensar! Mas o cadastro é *gratuito e sem compromisso* — você só começa a economizar, sem risco.",
+    "sem pressa! Como não tem custo nem fidelidade, dá pra começar *sem risco nenhum* e ver na prática.",
+  ],
+  generica: [
+    "boa pergunta! É tudo *sem obra, sem fidelidade e regulamentado pela ANEEL* ⚡",
+    "ótima dúvida — o resumo é: *economia na fatura, sem obra e sem amarração*. Posso te explicar qualquer ponto.",
+  ],
+};
+
+// Convites ao cadastro, variados por índice de tentativa (anti-repetição).
+const CONVITES = [
+  "Quer que eu já comece seu cadastro pra garantir essa economia?",
+  "Posso seguir com seu cadastro agora? Leva 2 minutos.",
+  "Bora deixar tudo pronto pra você começar a economizar?",
+  "Faz sentido pra você seguir com o cadastro?",
+  "Quer que eu adiante seu cadastro pra travar o desconto?",
+];
+
+/**
+ * Resposta determinística para a etapa CONSIDERAÇÃO. Responde a dúvida
+ * específica + convida ao cadastro. Anti-repetição em 2 níveis:
+ *  - escolhe a VARIANTE da resposta conforme quantas vezes essa objeção já foi
+ *    tratada (vira → 2ª/3ª forma de dizer)
+ *  - varia o convite final por `tentativa`
+ * Quando a objeção JÁ foi tratada antes, adiciona um reconhecimento curto
+ * ("como te falei") pra soar humano e não robótico.
+ *
+ * Retorna { texto, tipo } pra o orquestrador registrar a objeção tratada.
+ */
+export function respostaConsideracao(
+  inbound: string,
+  nome: string | null,
+  tentativa: number,
+  objecoesTratadas: string[] = [],
+): { texto: string; tipo: ObjecaoTipo } {
+  const tipo = classificarObjecao(inbound);
+  const variantes = RESP_OBJECAO_VARIANTES[tipo];
+  // quantas vezes essa objeção já apareceu → escolhe variante diferente
+  const jaVista = objecoesTratadas.filter((o) => o === tipo).length;
+  let resp = variantes[jaVista % variantes.length];
+
+  // Se já tratamos essa MESMA objeção antes, reconhece pra não soar repetido.
+  if (jaVista >= 1) {
+    const prefixos = ["como te falei, ", "reforçando: ", "de novo só pra deixar claro: "];
+    resp = prefixos[(jaVista - 1) % prefixos.length] + resp;
+  }
+
+  const convite = CONVITES[Math.max(0, tentativa) % CONVITES.length];
+  let corpo: string;
+  if (nome) {
+    corpo = `${nome}, ${resp}`;
+  } else {
+    corpo = resp.charAt(0).toUpperCase() + resp.slice(1);
+  }
+  return { texto: `${corpo}\n${convite}`, tipo };
+}
+
+// Palavras-chave que comprovam que a resposta tocou no tema da dúvida.
+const TEMA_KEYWORDS: Record<ObjecaoTipo, RegExp> = {
+  golpe: /aneel|homologad|regulament|mesma distribuidora|lei|seguro|confi[áa]/i,
+  obra: /sem (?:obra|placa|t[ée]cnico|instala)|nada (?:de obra|na sua casa)|direto na fatura/i,
+  fidelidade: /sem fidelidade|sem multa|sair quando|sem pegadinha|sem car[êe]ncia/i,
+  solar: /fazenda|solar|cr[ée]dito|sem instalar/i,
+  distribuidora: /n[ãa]o troca|mesma (?:distribuidora|conta|fia[çc])|continua igual/i,
+  aluguel: /alug|quem paga|transfer|mud(?:ar|ou)/i,
+  outra_empresa: /aneel|comparar|sem obra|sem fidelidade|regulament/i,
+  boleto: /mesma conta|desconto j[áa] aplicado|sem boleto|mesma fatura/i,
+  prazo: /\b30\b|\b60\b|dias|fatura|aprovaç/i,
+  cobertura: /21 estados|atende|regi[ãa]o|cobre/i,
+  cancelar: /cancelar|quando quiser|sem multa|sem (?:ficar )?preso/i,
+  taxa_adesao: /sem taxa|gratuit|sem mensalidade|n[ãa]o tem (?:taxa|custo|mensalidade)/i,
+  conta_baixa: /\b200\b|compensa|maior a conta|quanto maior/i,
+  como_ganham: /fazenda|gera|parte do que|comercializ/i,
+  pensar: /sem compromisso|gratuit|sem risco|no seu tempo/i,
+  generica: /aneel|sem obra|sem fidelidade|desconto/i,
+};
+
+/**
+ * Verifica se a resposta proposta realmente aborda o tema da dúvida do lead.
+ * Usado na consideração: se o LLM fugiu do assunto, trocamos pela resposta
+ * determinística correta. Garante coerência pergunta→resposta.
+ */
+export function respostaTocaTema(inbound: string, resposta: string): boolean {
+  const tipo = classificarObjecao(inbound);
+  return TEMA_KEYWORDS[tipo].test(String(resposta || "").toLowerCase());
 }

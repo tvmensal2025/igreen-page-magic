@@ -27,8 +27,11 @@ export function decideEtapa(
 
   if (!temNome) return "nome";
   if (!temValor) return "valor";
+  // Apresenta a simulação uma vez.
   if (!state.simulacao_apresentada) return "simulacao";
-  if (!state.interesse_confirmado) return "simulacao";
+  // Depois da simulação, fica em CONSIDERAÇÃO: trata dúvidas/objeções e
+  // aquece o lead. Só avança pra foto quando ele confirmar que quer cadastrar.
+  if (!state.interesse_confirmado) return "consideracao";
   if (!temConta) return "foto_conta";
   if (!temDoc) return "doc";
   if (!temEmail) return "email";
