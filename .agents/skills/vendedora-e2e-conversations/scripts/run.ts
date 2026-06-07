@@ -287,10 +287,20 @@ async function runConversation(opts: {
   if (opts.kind === "scripted") scriptedIdx = 1;
 
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
-    // injeta media flag se houver
-    const stateForTurn = mediaTag
-      ? { ...customerState, midia_recebida: { ...(customerState.midia_recebida || {}), [mediaTag]: true } }
-      : customerState;
+    // injeta mídia: a vendedora detecta via campos *_url no customer
+    // (não via midia_recebida — esse é só snapshot interno).
+    let stateForTurn = customerState;
+    if (mediaTag === "conta") {
+      stateForTurn = { ...customerState, electricity_bill_photo_url: "https://placeholder/conta.jpg" };
+      customerState = stateForTurn; // persiste pro próximo turno
+    } else if (mediaTag === "doc_frente") {
+      stateForTurn = {
+        ...customerState,
+        document_front_url: "https://placeholder/doc-frente.jpg",
+        document_back_url: "https://placeholder/doc-verso.jpg",
+      };
+      customerState = stateForTurn;
+    }
 
     const { status, json, ms } = await callFluxoB({
       consultantId: CONSULTANT_ID,
@@ -338,7 +348,8 @@ async function runConversation(opts: {
     // foto-cedo: bot menciona foto/conta antes de interesse_confirmado
     const interesseOk = json?.debug?.stateAfter?.interesse_confirmado === true
       || json?.debug?.stateBefore?.interesse_confirmado === true;
-    if (!interesseOk && /\b(foto|conta de luz|me manda a foto|fatura)\b/i.test(reply)) {
+    // só conta como "pediu mídia": frases imperativas pedindo a foto
+    if (!interesseOk && /(manda?\s+(a\s+)?foto|me\s+envia\s+a\s+foto|foto\s+da\s+(sua\s+)?conta|envia\s+(uma\s+)?foto|📷)/i.test(reply)) {
       result.problems.push(`turn ${turn}: FOTO_CEDO (bot pediu mídia antes de interesse confirmado)`);
     }
 
