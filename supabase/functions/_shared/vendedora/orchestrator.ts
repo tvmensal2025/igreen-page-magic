@@ -11,7 +11,7 @@ import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
 import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import { decideEtapa } from "./state-machine.ts";
 import { extrairNome, extrairValor, extrairEmail, classificarInteresse } from "./extractors.ts";
-import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao, leadFezPergunta, respostaPerguntaCurta, respostaDespedida, respostaPedidoHumano, sanitizeConsultantName } from "./templates.ts";
+import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao, leadFezPergunta, respostaPerguntaCurta, respostaDespedida, respostaPedidoHumano, sanitizeConsultantName, leadAfirmaEnvio, prettyName } from "./templates.ts";
 import type { Etapa, FluxoBState, SupabaseClient } from "./types.ts";
 import type { VendedoraInput, VendedoraResult } from "./index.ts";
 
@@ -82,6 +82,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
       doc_frente: state.midia_recebida?.doc_frente || novaMidia.doc_frente,
       doc_verso: state.midia_recebida?.doc_verso || novaMidia.doc_verso,
     };
+    if (novaMidia.conta) state.claims_sent_count = 0;
   }
 
   // 3) Extractors — rodam em paralelo com perfilador, antes de decidir etapa.
@@ -107,7 +108,14 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
     aguardaInteresse ? classificarInteresse(inboundText) : Promise.resolve(false),
   ]);
 
-  if (nomeExt)  { updates.name = nomeExt; updates.name_source = "vendedora_v2"; customer.name = nomeExt; toolsApplied.push("extrair_nome"); }
+  if (nomeExt)  {
+    const pretty = prettyName(nomeExt) || nomeExt;
+    updates.name = pretty; updates.name_source = "vendedora_v2"; customer.name = pretty;
+    toolsApplied.push("extrair_nome");
+  } else if (customer.name) {
+    const pretty = prettyName(customer.name);
+    if (pretty && pretty !== customer.name) { customer.name = pretty; }
+  }
   if (valorExt) { updates.electricity_bill_value = valorExt; customer.electricity_bill_value = valorExt; toolsApplied.push("extrair_valor"); }
   if (emailExt) { updates.email = emailExt; customer.email = emailExt; toolsApplied.push("extrair_email"); }
   if (interesseExt) { state.interesse_confirmado = true; toolsApplied.push("classificar_interesse"); }
@@ -162,60 +170,95 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   };
 
   if (ETAPAS_DETERMINISTICAS.has(state.etapa)) {
-    // ⚡ Antes do template fixo: o lead fez uma PERGUNTA/objeção em vez de
-    // responder o que a etapa pediu? Se sim, responde a dúvida e reancora.
-    const q = leadFezPergunta(inboundText, state.etapa);
-    if (q.pergunta) {
-      // Esta interação respondeu a uma dúvida — não conta como "tentativa
-      // falha" da etapa (a etapa simplesmente não avançou porque o lead
-      // perguntou outra coisa).
-      state.tentativas_etapa = Math.max(0, (state.tentativas_etapa || 1) - 1);
-
-      if (q.tipo === "desistencia") {
-        reply = sanitize(respostaDespedida(customer.name));
-        modelUsed = "deterministic_despedida";
+    // 🆕 Lead diz "mandei", "segue a foto" mas nada chegou — escalonar.
+    if (
+      state.etapa === "foto_conta"
+      && !state.midia_recebida?.conta
+      && leadAfirmaEnvio(inboundText)
+    ) {
+      const count = (state.claims_sent_count || 0) + 1;
+      state.claims_sent_count = count;
+      const nome = customer.name || null;
+      if (count >= 3) {
+        reply = sanitize(`${nome ? `*${nome}*, ` : ""}não tô conseguindo ver a foto aqui 😕 vou chamar um(a) atendente humano(a) pra te ajudar a enviar. Um instante!`);
+        modelUsed = "deterministic_foto_handoff";
         shouldHandoff = true;
         updates.bot_paused = true;
-        updates.bot_paused_reason = `vendedora_v2: lead desistiu na etapa ${state.etapa}`;
+        updates.bot_paused_reason = "vendedora_v2: lead alegou enviar foto 3x sem mídia chegar";
         updates.bot_paused_at = new Date().toISOString();
-      } else if (q.tipo === "pedido_humano") {
-        reply = sanitize(respostaPedidoHumano(customer.name));
-        modelUsed = "deterministic_handoff_humano";
-        shouldHandoff = true;
-        updates.bot_paused = true;
-        updates.bot_paused_reason = `vendedora_v2: lead pediu atendente humano na etapa ${state.etapa}`;
-        updates.bot_paused_at = new Date().toISOString();
+      } else if (count === 2) {
+        reply = sanitize(`${nome ? `${nome}, ` : ""}ainda não chegou a foto aqui 🙁 tenta de novo: aperta o *clipe 📎 > Câmera/Galeria* e manda a foto da conta de luz.`);
+        modelUsed = "deterministic_foto_reenvio";
       } else {
-        // Quando a dúvida é "generica" (sem match específico), enriquece com
-        // a FAQ via RAG — regra: a IA TEM que usar a base de conhecimento.
-        let faqExtra = "";
-        if (q.tipo === "generica") {
-          try {
-            const chunks = await buscarContexto({
-              supabase, consultantId: customer.consultant_id,
-              etapa: state.etapa, query: inboundText,
-            });
-            const top = chunks.filter((c) => c.source === "faq" && c.similarity >= 0.72)[0];
-            if (top && top.content) {
-              faqExtra = String(top.content).split("\n")[0].slice(0, 220).trim();
-            }
-          } catch { /* RAG é best-effort */ }
-        }
-        const base = respostaPerguntaCurta(
-          q.tipo,
-          customer.name || null,
-          state.etapa,
-          typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
-          state.tentativas_etapa,
-          state.objecoes_tratadas || [],
-        );
-        reply = sanitize(faqExtra ? base.replace(/\n/, ` ${faqExtra}\n`) : base);
-        modelUsed = `deterministic_duvida:${q.tipo}${faqExtra ? "+faq" : ""}`;
-        state.objecoes_tratadas = [...(state.objecoes_tratadas || []), q.tipo].slice(-12);
+        reply = sanitize(`${nome ? `${nome}, ` : ""}aqui ainda não apareceu a foto 🤔 me manda mais uma vez? *foto da conta de luz* 📷`);
+        modelUsed = "deterministic_foto_aguardando";
       }
     } else {
-      reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
-      modelUsed = "deterministic_template";
+      // ⚡ Antes do template fixo: o lead fez uma PERGUNTA/objeção em vez de
+      // responder o que a etapa pediu? Se sim, responde a dúvida e reancora.
+      const q = leadFezPergunta(inboundText, state.etapa);
+      if (q.pergunta) {
+        state.tentativas_etapa = Math.max(0, (state.tentativas_etapa || 1) - 1);
+
+        if (q.tipo === "desistencia") {
+          reply = sanitize(respostaDespedida(customer.name));
+          modelUsed = "deterministic_despedida";
+          shouldHandoff = true;
+          updates.bot_paused = true;
+          updates.bot_paused_reason = `vendedora_v2: lead desistiu na etapa ${state.etapa}`;
+          updates.bot_paused_at = new Date().toISOString();
+        } else if (q.tipo === "pedido_humano") {
+          reply = sanitize(respostaPedidoHumano(customer.name));
+          modelUsed = "deterministic_handoff_humano";
+          shouldHandoff = true;
+          updates.bot_paused = true;
+          updates.bot_paused_reason = `vendedora_v2: lead pediu atendente humano na etapa ${state.etapa}`;
+          updates.bot_paused_at = new Date().toISOString();
+        } else {
+          // foto_antes só faz sentido ANTES da etapa foto_conta.
+          // Se já estamos em foto_conta, lead querer mandar foto = bom, não dúvida.
+          if (q.tipo === "foto_antes" && state.etapa === "foto_conta") {
+            reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
+            modelUsed = "deterministic_template";
+          } else {
+            // Quando a dúvida é "generica" (sem match específico), enriquece com FAQ via RAG.
+            let faqExtra = "";
+            if (q.tipo === "generica") {
+              try {
+                const chunks = await buscarContexto({
+                  supabase, consultantId: customer.consultant_id,
+                  etapa: state.etapa, query: inboundText,
+                });
+                const top = chunks.filter((c) => c.source === "faq" && c.similarity >= 0.72)[0];
+                if (top && top.content) {
+                  faqExtra = String(top.content).split("\n")[0].slice(0, 220).trim();
+                }
+              } catch { /* RAG é best-effort */ }
+            }
+
+            // 🆕 Anti-repetição: se a última resposta foi do MESMO template-key,
+            // pula 1 variante adiante pra não soar robótico.
+            const sameAsLast = state.ultimo_template_key === `duvida:${q.tipo}`;
+            const offset = sameAsLast ? 1 : 0;
+            const base = respostaPerguntaCurta(
+              q.tipo,
+              customer.name || null,
+              state.etapa,
+              typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
+              state.tentativas_etapa + offset,
+              [...(state.objecoes_tratadas || []), ...(sameAsLast ? [q.tipo] : [])],
+            );
+            reply = sanitize(faqExtra ? base.replace(/\n/, ` ${faqExtra}\n`) : base);
+            modelUsed = `deterministic_duvida:${q.tipo}${faqExtra ? "+faq" : ""}${sameAsLast ? "+variant" : ""}`;
+            state.objecoes_tratadas = [...(state.objecoes_tratadas || []), q.tipo].slice(-12);
+            state.ultimo_template_key = `duvida:${q.tipo}`;
+          }
+        }
+      } else {
+        reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
+        modelUsed = "deterministic_template";
+        state.ultimo_template_key = `template:${state.etapa}`;
+      }
     }
   } else {
     const writeResult = await microWrite({

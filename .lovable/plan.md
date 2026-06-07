@@ -97,3 +97,13 @@ Após aplicar 1-3 + 5-6 (bloco crítico), rodar novamente as 10 personas (`--onl
 - `supabase/functions/_shared/vendedora/extractors.ts` (bug 4 — capturar email em qualquer etapa)
 - `supabase/functions/_shared/vendedora/gateway.ts` (bug 8 — retry)
 - `.lovable/plan.md` — registrar este plano
+
+## Status (Parte 2 — entregue)
+
+- ✅ Bug 1 (desistência false-positive): regex restringida em `templates.ts`.
+- ✅ Bug 2 (loop `foto_conta` quando lead afirma envio): handler `leadAfirmaEnvio` integrado em `orchestrator.ts` com escalonamento de 3 níveis (aguardando → reenvio com instrução clipe → handoff). `claims_sent_count` adicionado em `types.ts` e resetado quando a mídia chega.
+- ✅ Bug 3 (anti-repetição de dúvida genérica): `ultimo_template_key` registrado a cada turno; quando se repete o mesmo `duvida:tipo`, avança 1 variante.
+- ✅ Bug 4 (`foto_antes` mal escrito): mensagem simplificada para "pode mandar a foto sim! 📷"; só ativa fora de `etapa === foto_conta`.
+- ✅ Bug 5 (capitalização de nome): `prettyName` aplicado tanto ao extrair quanto ao reler nome existente.
+- ✅ Bug 8 (retry no gateway): 1 retry com backoff em 5xx/timeout dentro de `rawCall`.
+- ✅ Bugs 6/7/9 (novos detectores titularidade/cnpj/homologação/recap + tema correto): cobertos pelo conjunto de variantes adicionado em `templates.ts`.
