@@ -467,6 +467,7 @@ export async function geminiEmbed(text: string, taskType:
   "RETRIEVAL_QUERY" | "RETRIEVAL_DOCUMENT" | "SEMANTIC_SIMILARITY" = "SEMANTIC_SIMILARITY",
 ): Promise<number[]> {
   const apiKey = getApiKey();
+  if (!apiKey) throw new Error("geminiEmbed: GEMINI_API_KEY not configured (embeddings still require direct API)");
   const url = `${API_BASE}/models/text-embedding-004:embedContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
