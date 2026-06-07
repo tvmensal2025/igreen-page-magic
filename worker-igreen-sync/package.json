@@ -1,14 +1,16 @@
 {
   "name": "igreen-sync-worker",
-  "version": "8.0.0",
-  "description": "HTTP direto contra api-voffice.igreenenergy.com.br (sem Playwright, sem Tor)",
+  "version": "10.0.0",
+  "description": "Tor + Playwright + 2captcha + visão IA contra api-voffice.igreenenergy.com.br",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs"
   },
-  "dependencies": {},
+  "dependencies": {
+    "playwright-chromium": "^1.49.1"
+  },
   "engines": {
     "node": ">=20.0.0"
   }
