@@ -359,7 +359,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v12',
+        mode: 'tor+playwright+2captcha-v13',
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
       });
@@ -399,7 +399,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v12 (tor+playwright+2captcha+fallback) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v13 (tor+playwright+2captcha+context-fallback) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
