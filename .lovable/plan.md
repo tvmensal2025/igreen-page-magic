@@ -1,47 +1,65 @@
-# Trocar visão IA do worker para OpenAI direto
+# Corrigir login do worker iGreen quando o botão não dispara `/v1/login`
 
-## Objetivo
-Substituir a chamada via Lovable AI Gateway (`LOVABLE_API_KEY` + Gemini) por chamada direta à **OpenAI Vision** usando sua própria `OPENAI_API_KEY`. Assim o worker no Easypanel não depende mais do segredo opaco do Lovable.
+## Diagnóstico
+Pelos logs, o fluxo v10 abriu o login, preencheu e resolveu o captcha, mas depois de clicar **Entrar** ficou 60s esperando e terminou com:
 
-## O que muda
+```text
+Nenhuma response /v1/login capturada
+```
 
-### 1. `worker-igreen-sync/server.mjs`
-- Remover bloco que monta request para `https://ai.gateway.lovable.dev/...` com `LOVABLE_API_KEY`.
-- Substituir por chamada à OpenAI:
-  - Endpoint: `https://api.openai.com/v1/chat/completions`
-  - Header: `Authorization: Bearer ${OPENAI_API_KEY}`
-  - Modelo: `gpt-4o-mini` (visão, barato, ~US$0,0002 por screenshot)
-  - Payload: mensagem `user` multimodal com `image_url` data-URL base64 + prompt curto em PT-BR descrevendo o que está na tela.
-- Flag `ai_debug` em `/health` passa a refletir `!!process.env.OPENAI_API_KEY`.
-- Manter o resto do pipeline (Tor + Playwright + 2captcha + `/last-debug` + `/last-screenshot`) intacto.
+Isso significa que o botão/formulário da página não disparou a chamada de login. A IA dizer “captcha não marcado” não é necessariamente erro visual; o backend valida o token `g-recaptcha-response`/`recaptchaToken`, não o checkbox marcado.
 
-### 2. `worker-igreen-sync/README.md`
-- Trocar tabela de envs: remover `LOVABLE_API_KEY`, adicionar `OPENAI_API_KEY` (obrigatória p/ debug visual; opcional se você não quiser visão).
-- Atualizar nota de custos: ~US$0,0002/screenshot via gpt-4o-mini.
+## Plano
 
-### 3. `worker-igreen-sync/Dockerfile`
-- Nenhuma mudança (não tem env hardcoded lá).
+### 1. Adicionar fallback no `worker-igreen-sync/server.mjs`
+Depois do clique em **Entrar**:
+- manter a tentativa atual de capturar `/v1/login`;
+- se não capturar nada em até ~10–15s, fazer um `fetch` dentro do próprio navegador para:
 
-### 4. Bump versão `mode`
-- `/health` retorna `mode: "tor+playwright+2captcha-v11"` para confirmar deploy novo.
+```text
+POST https://api-voffice.igreenenergy.com.br/v1/login
+```
 
-## O que você faz no Easypanel
-1. Em `worker-igreen-sync` → Environment:
-   - **Remover** `LOVABLE_API_KEY` (não usado mais).
-   - **Adicionar** `OPENAI_API_KEY=sk-...` (sua chave).
-2. Rebuild do serviço.
-3. Validar:
-   - `GET /health` → `mode: "tor+playwright+2captcha-v11"`, `ai_debug: true`.
-   - Clicar "Sincronizar" no admin.
-   - `GET /last-debug` → deve mostrar descrições da OpenAI tipo `"Formulário de login do iGreen visível, captcha ainda não resolvido"`.
-   - `GET /last-screenshot` → PNG do último passo (mesma coisa de antes).
+com body:
 
-## O que NÃO muda
-- Edge functions do Lovable continuam usando `LOVABLE_API_KEY` normalmente (nada quebra dentro do projeto).
-- Pipeline de login (Tor/2captcha) intocado.
-- Cache de 30min por consultor intocado.
+```json
+{
+  "email": "...",
+  "password": "...",
+  "recaptchaToken": "TOKEN_2CAPTCHA",
+  "keepConnected": true
+}
+```
 
-## Observação
-A chave OpenAI fica **só no Easypanel**, nunca no código nem no Lovable. Se vazar, você rotaciona no painel da OpenAI sem mexer no Lovable.
+Isso replica o padrão já existente em `worker-portal/playwright-automation.mjs`, onde há comentário indicando que a API exige `recaptchaToken` desde 2026-06.
 
-Confirma que posso prosseguir?
+### 2. Melhorar logs de diagnóstico
+Adicionar linhas como:
+
+```text
+[login] clique não gerou /v1/login; tentando fallback POST /login com recaptchaToken
+[login] fallback status=...
+```
+
+Assim fica claro se o problema é:
+- botão não submetendo;
+- captcha rejeitado;
+- Cloudflare bloqueando;
+- credencial inválida.
+
+### 3. Manter OpenAI Vision/v11
+Preservar a mudança anterior:
+- `OPENAI_API_KEY` para visão;
+- `mode: tor+playwright+2captcha-v11` ou subir para `v12` para confirmar novo deploy.
+
+### 4. Atualizar README
+Documentar que o worker agora tem fallback API direto quando o form visual não dispara.
+
+## Validação esperada
+Depois do rebuild no Easypanel:
+
+- `/health` deve mostrar `mode: "tor+playwright+2captcha-v12"`;
+- novo `/last-debug` deve mostrar uma destas saídas:
+  - sucesso: `[login] fallback status=200` e depois `[login] OK consultor=...`;
+  - bloqueio real: status `403` com HTML Cloudflare;
+  - captcha/credencial: status `401` com body da API.

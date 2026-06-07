@@ -173,11 +173,9 @@ async function loginWithPlaywright(email, password) {
     const captchaToken = await solveRecaptcha();
     dbg('[login] injetando token no widget');
     await page.evaluate((token) => {
-      // injeta no textarea padrão do reCAPTCHA v2
       const ta = document.querySelector('textarea#g-recaptcha-response') ||
                  document.querySelector('textarea[name="g-recaptcha-response"]');
       if (ta) { ta.value = token; ta.innerHTML = token; }
-      // dispara callback do widget se existir
       if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
         const clients = window.___grecaptcha_cfg.clients;
         for (const cid of Object.keys(clients)) {
@@ -199,19 +197,44 @@ async function loginWithPlaywright(email, password) {
 
     dbg('[login] clicando "Entrar"');
     await Promise.all([
-      page.waitForResponse(r => r.url().includes('/v1/login'), { timeout: 60000 }).catch(() => null),
-      page.click('button[type="submit"], button:has-text("Entrar")'),
+      page.waitForResponse(r => r.url().includes('/v1/login'), { timeout: 15000 }).catch(() => null),
+      page.click('button[type="submit"], button:has-text("Entrar")').catch(() => {}),
     ]);
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1500);
+
+    // Fallback: se o clique não disparou /v1/login, fazer POST direto dentro do browser
+    if (!loginResponseData) {
+      dbg('[login] clique não gerou /v1/login; tentando fallback POST direto com recaptchaToken');
+      try {
+        const fb = await page.evaluate(async ({ email, password, token, apiBase }) => {
+          const r = await fetch(`${apiBase}/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json, text/plain, */*',
+            },
+            credentials: 'include',
+            body: JSON.stringify({ email, password, recaptchaToken: token, keepConnected: true }),
+          });
+          const text = await r.text();
+          let body; try { body = JSON.parse(text); } catch { body = { raw: text.slice(0, 400) }; }
+          return { status: r.status, body };
+        }, { email, password, token: captchaToken, apiBase: API_BASE });
+        dbg(`[login] fallback status=${fb.status}`);
+        loginResponseData = fb;
+      } catch (e) {
+        dbg(`[login] fallback erro: ${e.message}`);
+      }
+    }
     await snapStep(page, 'pos_submit');
 
-    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada');
+    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada (clique + fallback falharam)');
     dbg(`[login] response /login status=${loginResponseData.status}`);
     if (loginResponseData.status === 401 || loginResponseData.status === 403) {
-      throw new HttpError(401, `Login rejeitado: ${JSON.stringify(loginResponseData.body).slice(0, 200)}`);
+      throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${JSON.stringify(loginResponseData.body).slice(0, 200)}`);
     }
     if (loginResponseData.status >= 400) {
-      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}`);
+      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${JSON.stringify(loginResponseData.body).slice(0, 200)}`);
     }
 
     const data = loginResponseData.body;
@@ -309,7 +332,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v11',
+        mode: 'tor+playwright+2captcha-v12',
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
       });
@@ -349,7 +372,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v10 (tor+playwright+2captcha) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v12 (tor+playwright+2captcha+fallback) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
