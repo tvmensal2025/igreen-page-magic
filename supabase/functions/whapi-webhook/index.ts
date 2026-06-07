@@ -184,6 +184,24 @@ Deno.serve(async (req) => {
     }
 
     const phone = normalizePhone(remoteJid.replace("@s.whatsapp.net", ""));
+    const phoneLocal = phone.startsWith("55") ? phone.slice(2) : phone;
+    let resetMarker: any = null;
+    try {
+      const { data: resetRow, error: resetErr } = await supabase
+        .from("phone_reset_quarantine")
+        .select("reset_at, quarantine_until")
+        .in("phone_digits", Array.from(new Set([phone, phoneLocal])))
+        .order("reset_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (resetErr) console.warn("[reset-marker] lookup falhou:", resetErr.message);
+      resetMarker = resetRow || null;
+      if (resetMarker) {
+        console.log(`[reset-marker] phone=${phone} reset_at=${resetMarker.reset_at} quarantine_until=${resetMarker.quarantine_until}`);
+      }
+    } catch (e) {
+      console.warn("[reset-marker] lookup exception:", (e as Error).message);
+    }
 
     // ─── Validar token Whapi (settings já carregadas acima) ────────────
     const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
@@ -464,7 +482,7 @@ Deno.serve(async (req) => {
     }
 
     if (!customer) {
-      const pushedName = cleanPushName(fromName);
+      const pushedName = resetMarker ? null : cleanPushName(fromName);
       // Variante respeita `consultants.active_variants` (round-robin
       // determinístico via RPC `assign_flow_variant`). Só sorteia para
       // lead NOVO — lead existente mantém sua variante.
@@ -482,6 +500,7 @@ Deno.serve(async (req) => {
           flow_variant: abVariant,
           ...(realMode ? { is_test_lead: true, is_sandbox: false, capture_mode: "auto" } : {}),
           ...(pushedName ? { name: pushedName, name_source: "whatsapp_profile" } : {}),
+          ...(resetMarker ? { chat_cleared_at: resetMarker.reset_at } : {}),
         })
         .select().single();
       if (error) {
@@ -539,7 +558,7 @@ Deno.serve(async (req) => {
     // ─── Backfill: se o customer existe mas ainda não tem nome, usa o pushName do WhatsApp ─
     // Depois de clicar em "Zerar", não reaproveitamos from_name/pushName do WhatsApp.
     // Isso evita parecer que o bot "lembrou" do número durante testes do fluxo.
-    const wasManuallyReset = !!(customer as any)?.chat_cleared_at;
+    const wasManuallyReset = !!(customer as any)?.chat_cleared_at || !!resetMarker;
     if (customer && !customer.name && !wasManuallyReset) {
       const pushedName = cleanPushName(fromName);
       if (pushedName) {
