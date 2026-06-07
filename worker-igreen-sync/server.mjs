@@ -54,23 +54,23 @@ class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-// ---------- IA Vision (Lovable AI Gateway → Gemini) ----------
+// ---------- IA Vision (OpenAI Vision direto) ----------
 async function describeScreenshot(pngBuffer, stepName) {
-  if (!LOVABLE_API_KEY) return null;
+  if (!OPENAI_API_KEY) return null;
   try {
     const b64 = pngBuffer.toString('base64');
-    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: OPENAI_VISION_MODEL,
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: `Step "${stepName}" do worker iGreen. Descreva em 1 frase curta o que está visível: formulário de login, mensagem de erro, página de bloqueio Cloudflare ("Sorry, you have been blocked"), dashboard pós-login, captcha não marcado, etc.` },
+            { type: 'text', text: `Step "${stepName}" do worker iGreen. Descreva em 1 frase curta em PT-BR o que está visível: formulário de login, mensagem de erro, página de bloqueio Cloudflare ("Sorry, you have been blocked"), dashboard pós-login, captcha não marcado, etc.` },
             { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
           ],
         }],
@@ -79,6 +79,7 @@ async function describeScreenshot(pngBuffer, stepName) {
       signal: AbortSignal.timeout(20000),
     });
     const j = await res.json();
+    if (!res.ok) return `(IA vision ${res.status}: ${j?.error?.message || 'erro'})`;
     return j?.choices?.[0]?.message?.content?.trim() || null;
   } catch (e) {
     return `(IA vision falhou: ${e.message})`;
