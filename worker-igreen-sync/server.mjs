@@ -27,7 +27,8 @@ const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
 const TWOCAPTCHA_API_KEY = process.env.TWOCAPTCHA_API_KEY || '';
-const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY || '';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
 const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050';
 
 const PORTAL_URL = 'https://escritorio.igreenenergy.com.br/login';
@@ -36,7 +37,7 @@ const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
-if (!LOVABLE_API_KEY) console.warn('[boot] WARN: LOVABLE_API_KEY não definido (debug IA desativado)');
+if (!OPENAI_API_KEY) console.warn('[boot] WARN: OPENAI_API_KEY não definido (debug IA desativado)');
 
 // ---------- Debug ----------
 let lastDebug = { ts: null, steps: [] };
@@ -53,23 +54,23 @@ class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-// ---------- IA Vision (Lovable AI Gateway → Gemini) ----------
+// ---------- IA Vision (OpenAI Vision direto) ----------
 async function describeScreenshot(pngBuffer, stepName) {
-  if (!LOVABLE_API_KEY) return null;
+  if (!OPENAI_API_KEY) return null;
   try {
     const b64 = pngBuffer.toString('base64');
-    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: OPENAI_VISION_MODEL,
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: `Step "${stepName}" do worker iGreen. Descreva em 1 frase curta o que está visível: formulário de login, mensagem de erro, página de bloqueio Cloudflare ("Sorry, you have been blocked"), dashboard pós-login, captcha não marcado, etc.` },
+            { type: 'text', text: `Step "${stepName}" do worker iGreen. Descreva em 1 frase curta em PT-BR o que está visível: formulário de login, mensagem de erro, página de bloqueio Cloudflare ("Sorry, you have been blocked"), dashboard pós-login, captcha não marcado, etc.` },
             { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
           ],
         }],
@@ -78,6 +79,7 @@ async function describeScreenshot(pngBuffer, stepName) {
       signal: AbortSignal.timeout(20000),
     });
     const j = await res.json();
+    if (!res.ok) return `(IA vision ${res.status}: ${j?.error?.message || 'erro'})`;
     return j?.choices?.[0]?.message?.content?.trim() || null;
   } catch (e) {
     return `(IA vision falhou: ${e.message})`;
@@ -307,8 +309,9 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v10',
-        ia_vision: Boolean(LOVABLE_API_KEY),
+        mode: 'tor+playwright+2captcha-v11',
+        ia_vision: Boolean(OPENAI_API_KEY),
+        ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
       });
     }
     if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
