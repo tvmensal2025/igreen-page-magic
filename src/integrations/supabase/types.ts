@@ -4828,6 +4828,30 @@ export type Database = {
         }
         Relationships: []
       }
+      phone_reset_quarantine: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          phone_digits: string
+          quarantine_until: string
+          reset_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          phone_digits: string
+          quarantine_until: string
+          reset_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          phone_digits?: string
+          quarantine_until?: string
+          reset_at?: string
+        }
+        Relationships: []
+      }
       platform_facebook_account: {
         Row: {
           access_token_encrypted: string
