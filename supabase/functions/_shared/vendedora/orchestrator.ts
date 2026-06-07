@@ -11,7 +11,7 @@ import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
 import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import { decideEtapa } from "./state-machine.ts";
 import { extrairNome, extrairValor, extrairEmail, classificarInteresse } from "./extractors.ts";
-import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao, leadFezPergunta, respostaPerguntaCurta, respostaDespedida } from "./templates.ts";
+import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao, leadFezPergunta, respostaPerguntaCurta, respostaDespedida, respostaPedidoHumano, sanitizeConsultantName } from "./templates.ts";
 import type { Etapa, FluxoBState, SupabaseClient } from "./types.ts";
 import type { VendedoraInput, VendedoraResult } from "./index.ts";
 
@@ -178,16 +178,39 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
         updates.bot_paused = true;
         updates.bot_paused_reason = `vendedora_v2: lead desistiu na etapa ${state.etapa}`;
         updates.bot_paused_at = new Date().toISOString();
+      } else if (q.tipo === "pedido_humano") {
+        reply = sanitize(respostaPedidoHumano(customer.name));
+        modelUsed = "deterministic_handoff_humano";
+        shouldHandoff = true;
+        updates.bot_paused = true;
+        updates.bot_paused_reason = `vendedora_v2: lead pediu atendente humano na etapa ${state.etapa}`;
+        updates.bot_paused_at = new Date().toISOString();
       } else {
-        reply = sanitize(respostaPerguntaCurta(
+        // Quando a dúvida é "generica" (sem match específico), enriquece com
+        // a FAQ via RAG — regra: a IA TEM que usar a base de conhecimento.
+        let faqExtra = "";
+        if (q.tipo === "generica") {
+          try {
+            const chunks = await buscarContexto({
+              supabase, consultantId: customer.consultant_id,
+              etapa: state.etapa, query: inboundText,
+            });
+            const top = chunks.filter((c) => c.source === "faq" && c.similarity >= 0.72)[0];
+            if (top && top.content) {
+              faqExtra = String(top.content).split("\n")[0].slice(0, 220).trim();
+            }
+          } catch { /* RAG é best-effort */ }
+        }
+        const base = respostaPerguntaCurta(
           q.tipo,
           customer.name || null,
           state.etapa,
           typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
           state.tentativas_etapa,
           state.objecoes_tratadas || [],
-        ));
-        modelUsed = `deterministic_duvida:${q.tipo}`;
+        );
+        reply = sanitize(faqExtra ? base.replace(/\n/, ` ${faqExtra}\n`) : base);
+        modelUsed = `deterministic_duvida:${q.tipo}${faqExtra ? "+faq" : ""}`;
         state.objecoes_tratadas = [...(state.objecoes_tratadas || []), q.tipo].slice(-12);
       }
     } else {
@@ -199,7 +222,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
       etapa: state.etapa,
       nomeLead: customer.name || null,
       valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
-      representante: consultant.name || "Rafael",
+      representante: sanitizeConsultantName(consultant.name) || "Rafael",
       inboundText,
       history: historyMsgs,
       perfil,

@@ -113,26 +113,38 @@ export type ObjecaoTipo =
   | "golpe" | "obra" | "fidelidade" | "solar" | "distribuidora" | "aluguel"
   | "outra_empresa" | "boleto" | "prazo" | "cobertura" | "cancelar"
   | "taxa_adesao" | "conta_baixa" | "como_ganham" | "pensar"
-  | "como_funciona" | "foto_antes" | "desistencia" | "generica";
+  | "como_funciona" | "foto_antes" | "desistencia"
+  | "pedido_humano" | "titularidade" | "cnpj" | "homologacao_aneel" | "pedido_recap"
+  | "generica";
 
 export function classificarObjecao(texto: string): ObjecaoTipo {
   const t = String(texto || "").toLowerCase();
   // Ordem importa: padrões mais específicos primeiro.
-  // Desistência: SEMPRE primeiro — lead querendo sair tem prioridade.
+  // Pedido de humano — top prioridade, sempre escala.
+  if (/\b(humano|pessoa de verdade|gente de verdade|algu[ée]m de verdade|atendente|consultor(?:a)? humano|n[ãa]o (?:é )?bot|nao bot|n[ãa]o quero bot|falar com (?:algu[ée]m|gente|pessoa|humano|atendente)|quero (?:um|uma)?\s*humano|quero falar com algu[ée]m)\b/.test(t)) return "pedido_humano";
+  // Desistência: lead querendo sair tem prioridade alta.
   if (/^(tchau|xau|chau|flw|falou|valeu por nada)\b/.test(t)
-    || /\b(n[ãa]o quero|n[ãa]o vou querer|n[ãa]o tenho interesse|desisti|desisto|mudei de id[eé]ia|deixa pra l[áa]|deixa quieto|pode parar|chega|sai fora|esquece)\b/.test(t)) return "desistencia";
+    || /\b(n[ãa]o quero|n[ãa]o vou querer|n[ãa]o tenho interesse|desisti|desisto|mudei de id[eé]ia|deixa pra l[áa]|deixa quieto|pode parar|chega|sai fora|esquece|melhor n[ãa]o|fica pra (?:outra|depois)|outra hora|n[ãa]o vai dar|valeu(?:,?\s*mas)?(?:\s+(?:n[ãa]o|melhor))?)\b/.test(t)) return "desistencia";
   if (/(posso|d[áa] (?:pra|para))\s+(j[áa]\s+)?(mandar|enviar|passar|tirar)\s+(a\s+|uma\s+)?(foto|conta|fatura|imagem|print)/.test(t)
     || /(j[áa]\s+)?(te\s+)?mando\s+(j[áa]\s+)?(a\s+)?(foto|conta|fatura)/.test(t)
     || /(manda|envia)\s+(l[áa]\s+|j[áa]\s+|a[ií]\s+)?(a\s+|uma\s+)?(foto|conta|fatura)/.test(t)
     || /vou\s+(te\s+)?(mandar|enviar)\s+(a\s+|uma\s+)?(foto|conta|fatura)/.test(t)
     || /(posso|d[áa] (?:pra|para))\s+(j[áa]\s+)?mandar\s+a?gora/.test(t)) return "foto_antes";
-  if (/^e?\s*como funciona\??$|^como (?:que )?funciona\b|me explica (?:como|isso|melhor)|explica (?:melhor|isso|como)|do que se trata|do que (?:que )?se trata|n[ãa]o entendi/.test(t)) return "como_funciona";
+  // Recap / pedido de re-explicação curto
+  if (/\b(me explica (?:de novo|denovo|outra vez|melhor)|explica (?:de novo|denovo|outra vez|melhor|rapid)|de novo rapid|repete|repetir|recapitula|resume (?:pra mim|isso|de novo)|me lembra (?:como|de novo)|como funciona mesmo)\b/.test(t)) return "pedido_recap";
+  if (/^e?\s*como funciona\??$|^como (?:que )?funciona\b|me explica (?:como|isso)|do que se trata|do que (?:que )?se trata|n[ãa]o entendi/.test(t)) return "como_funciona";
+  // Titularidade do contrato (no nome de quem fica, dono x inquilino)
+  if (/\b(nome de quem|no meu nome|no nome do (?:dono|propriet|titular)|titularidade|titular(?:idade)? (?:da )?conta|contrato (?:em|no) nome|do propriet[áa]rio|do dono|do inquilin|do locador|do locat)\b/.test(t)) return "titularidade";
   if (/aluguel|alugad|inquilin|mudar de casa|mudar de im[óo]vel|se eu mudar|quando eu mudar|quando mudar|se mudar|trocar de casa|n[ãa]o (?:é|eh) min(?:ha|h)a casa/.test(t)) return "aluguel";
-  if (/conta (?:for |fica |é |eh )?baixa|conta baixa|m[êe]s mais baixo|gasto pouco|consumo baixo|n[ãa]o vale a pena|compensa/.test(t)) return "conta_baixa";
+  if (/conta (?:for |fica |é |eh )?baixa|conta baixa|conta pequena|conta de \w+ reais|conta (?:é |eh )?s[óo] (?:de )?\d|s[óo] (?:r\$\s*)?\d{2,3}(?!\d)|m[êe]s mais baixo|gasto pouco|consumo baixo|n[ãa]o vale a pena|vale a pena|d[áa] quase nada|pouca coisa|compensa(?:r)?(?:\s|$|\?)/.test(t)) return "conta_baixa";
   if (/taxa|ades[ãa]o|cobra(?:m|r)? (?:algo|alguma|taxa|pra)|pagar (?:pra|para) entrar|investiment|mensalidade|custo (?:pra|para|de) entrar|tem custo/.test(t)) return "taxa_adesao";
   if (/boleto|fatura|mesmo? (?:boleto|conta)|onde pago|como pago|dois boleto|vem.*\bboleto|vai vir.*\bboleto|chega(?:m|r).*\bboleto|atras(?:ar|o) o pagamento|pagar (?:a conta|onde)/.test(t)) return "boleto";
   if (/fidelidade|multa|car[êe]ncia|preso|amarrad|tempo de contrato|fica preso/.test(t)) return "fidelidade";
   if (/cancelar|sair (?:quando|a qualquer)|desistir|parar quando/.test(t)) return "cancelar";
+  // CNPJ específico
+  if (/\bcnpj\b|raz[ãa]o social|tem (?:um )?cadastro|registro (?:da )?empresa/.test(t)) return "cnpj";
+  // Homologação ANEEL específica
+  if (/homologa(?:[çc][ãa]o|d[oa]|r)\s*(?:n[oa])?\s*aneel|aneel.*homolog|registro (?:na )?aneel|lei 14\.?300|garantia escrit/.test(t)) return "homologacao_aneel";
   if (/golpe|pir[âa]mide|enganad|furad|confi[áa]vel|seguro|é verdade|pegadinha|bom demais|nunca ouvi|medo|receio|cilada|quebrar|falir|sair do mercado|fechar as portas/.test(t)) return "golpe";
   if (/\bobra\b|reforma|instala|placa|painel|t[ée]cnico|equipamento|mexer (?:na|em) (?:casa|telhado)/.test(t)) return "obra";
   if (/solar|painel solar|energia do sol/.test(t)) return "solar";
@@ -143,6 +155,26 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   if (/como (?:voc[êe]s|vcs) ganha|de onde vem|qual o lucro|o que (?:voc[êe]s|vcs) ganha|onde t[áa] o ganho/.test(t)) return "como_ganham";
   if (/pensar|depois|mais tarde|vou ver|talvez|n[ãa]o sei|deixa eu ver/.test(t)) return "pensar";
   return "generica";
+}
+
+/** Resposta determinística pra quando o lead pede falar com humano. */
+export function respostaPedidoHumano(nome: string | null): string {
+  return `Claro${nome ? `, *${nome}*` : ""}! Vou chamar um(a) atendente humano(a) aqui pra continuar com você. Aguarda um instante 🙌`;
+}
+
+/**
+ * Normaliza o nome do consultor pra abertura. Se vier um handle (username
+ * com dígito ou sem espaço como "tvmensal22"), devolve null pra omitir a
+ * apresentação "Sou a X" — fica só "Aqui é da iGreen Energy".
+ */
+export function sanitizeConsultantName(raw: string | null | undefined): string | null {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  // sem espaço E (com dígito ou tudo minúsculo) → parece handle
+  if (!/\s/.test(s) && (/\d/.test(s) || /^[a-z_]+$/.test(s))) return null;
+  // Caracteres não-humanos
+  if (/[@._\-]/.test(s) && !/\s/.test(s)) return null;
+  return s;
 }
 
 /**
@@ -295,6 +327,24 @@ const RESP_OBJECAO_VARIANTES: Record<ObjecaoTipo, string[]> = {
   desistencia: [
     "tudo bem! Sem pressão.",
   ],
+  pedido_humano: [
+    "vou te transferir pra um atendente humano agora mesmo.",
+  ],
+  titularidade: [
+    "o contrato fica *no nome de quem paga a conta de luz hoje* — independente de ser dono ou inquilino. É o titular da fatura.",
+    "vai no seu nome se for você quem paga a conta. Não precisa autorização do dono do imóvel.",
+  ],
+  cnpj: [
+    "a iGreen Energy tem *CNPJ 35.704.770/0001-30*, empresa ativa e regularizada na Receita Federal.",
+  ],
+  homologacao_aneel: [
+    "sim — a iGreen é *homologada pela ANEEL* dentro da Lei 14.300/2022, que regulamenta a geração distribuída no Brasil.",
+    "tudo certinho com a ANEEL: operamos sob a *Lei 14.300/2022*, com registro ativo de geração compartilhada.",
+  ],
+  pedido_recap: [
+    "rapidinho: você continua com a *mesma distribuidora* (Enel, Cemig, etc.), e a gente aplica um *desconto de 8% a 20%* direto na sua fatura. Sem obra, sem fidelidade.",
+    "resumindo: *zero obra, zero mensalidade* — só um cadastro e o desconto passa a vir na própria conta que você já paga.",
+  ],
 };
 
 // Convites ao cadastro, variados por índice de tentativa (anti-repetição).
@@ -366,6 +416,11 @@ const TEMA_KEYWORDS: Record<ObjecaoTipo, RegExp> = {
   como_funciona: /mesma distribuidora|desconto.*fatura|usina|sem obra/i,
   foto_antes: /pode (?:mandar|enviar)|antes|claro/i,
   desistencia: /tudo bem|sem press[ãa]o|qualquer hora/i,
+  pedido_humano: /atendente|humano|transferir|aguarda/i,
+  titularidade: /no nome|titular|paga a conta|inquilino|dono/i,
+  cnpj: /cnpj|35\.704|receita federal/i,
+  homologacao_aneel: /aneel|14\.300|homolog|lei/i,
+  pedido_recap: /distribuidora|8.*20|desconto|sem obra|cadastro/i,
 };
 
 /**
