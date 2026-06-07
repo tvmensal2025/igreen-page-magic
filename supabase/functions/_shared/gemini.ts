@@ -204,6 +204,71 @@ export async function geminiGenerate(opts: GeminiGenerateOpts): Promise<GeminiRe
     }
   }
 
+  // ── Lovable AI Gateway (primary path) ──
+  // Try the gateway first when LOVABLE_API_KEY is available. The gateway
+  // bridges to Gemini and OpenAI models with shared workspace credits and
+  // automatic failover, so calls keep working when the direct
+  // GEMINI_API_KEY hits 402/429. On any gateway error or unsupported
+  // request (tool calls, exotic mime) we fall back to the direct Gemini
+  // API loop below.
+  try {
+    const gw = await tryLovableGateway({
+      model: modelToUse,
+      system: opts.system,
+      contents: opts.contents,
+      temperature: opts.temperature,
+      maxOutputTokens: opts.maxOutputTokens,
+      responseMimeType: opts.responseMimeType,
+      responseSchema: opts.responseSchema,
+      signal: opts.signal,
+      tools: opts.tools,
+    });
+    if (gw) {
+      const costCents = estimateCostCents(
+        modelToUse,
+        gw.usage.promptTokens,
+        gw.usage.outputTokens + gw.usage.thinkingTokens,
+      );
+      const latency = Date.now() - start;
+      if (opts.functionName) {
+        logUsage({
+          function_name: opts.functionName,
+          model: gw.modelUsed,
+          tokens_in: gw.usage.promptTokens,
+          tokens_out: gw.usage.outputTokens,
+          thinking_tokens: gw.usage.thinkingTokens,
+          latency_ms: latency,
+          cost_estimate_cents: costCents,
+          outcome: "ok",
+          degraded: false,
+          consultant_id: opts.consultantId || null,
+          customer_id: opts.customerId || null,
+          metadata: { route: "lovable_gateway", finish: gw.finishReason },
+        });
+      }
+      return {
+        text: gw.text,
+        toolCall: undefined,
+        toolCalls: [],
+        finishReason: gw.finishReason,
+        usage: gw.usage,
+        costCents,
+        modelUsed: gw.modelUsed,
+        degraded: false,
+        raw: gw.raw,
+      };
+    }
+  } catch (e) {
+    console.warn("[gemini] gateway attempt failed, falling back:", (e as Error)?.message);
+  }
+
+  if (!apiKey) {
+    // No direct Gemini key either — surface a single clear error.
+    throw new Error(
+      "Neither LOVABLE_API_KEY (gateway) nor GEMINI_API_KEY (direct) is configured",
+    );
+  }
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const body: Record<string, any> = {
