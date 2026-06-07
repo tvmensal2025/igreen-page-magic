@@ -1,9 +1,9 @@
-# igreen-sync-worker (v12 — Tor + Playwright + 2captcha + OpenAI Vision + fallback POST)
+# igreen-sync-worker (v13 — Tor + Playwright + 2captcha + OpenAI Vision + context fallback)
 
-> **v12**: se o clique visual em **Entrar** não disparar `/v1/login` em ~15s, o worker faz
-> um `fetch` direto dentro do próprio browser para `POST /v1/login` com
-> `{ email, password, recaptchaToken, keepConnected: true }`. Isso cobre o caso em que
-> o formulário React não submete por causa de algum listener bloqueado.
+> **v13**: se o clique visual em **Entrar** não disparar `/v1/login` em ~15s, o worker faz
+> um `context.request.post` do Playwright para `POST /v1/login` com
+> `{ email, password, recaptchaToken, keepConnected: true }`. Isso evita o CORS do
+> `page.evaluate(fetch)`, que em produção estava falhando com `TypeError: Failed to fetch`.
 
 Worker dedicado à **leitura** dos dados do portal iGreen (clientes e rede).
 Consumido pela edge function `sync-igreen-customers`.
