@@ -55,6 +55,10 @@ export interface FluxoBState {
   interesse_confirmado?: boolean;
   cadastro_finalizado?: boolean;
   abertura_feita?: boolean;
+  /** Lead alegou enviar foto/mídia mas nada chegou — contador de tentativas. */
+  claims_sent_count?: number;
+  /** Última chave de template determinístico usada (anti-repetição genérica). */
+  ultimo_template_key?: string | null;
 }
 
 export interface MemoryBlock {
