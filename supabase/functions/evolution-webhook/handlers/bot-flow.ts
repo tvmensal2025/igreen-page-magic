@@ -657,7 +657,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       return { reply: "", updates: {} };
     }
   } catch (e) {
-    console.error(`[fluxo-b] erro:`, (e as Error).message);
+    // NUNCA fall-through pro fluxo A/D — leads B ficam com a Vendedora.
+    console.error(`[fluxo-b] erro — NÃO faz fallback p/ A/D:`, (e as Error).message);
+    try {
+      await ctx.sender.sendText(remoteJid, "Tive uma instabilidade aqui agora. Pode repetir, por favor?");
+    } catch (_) { /* segue */ }
+    return { reply: "", updates: {} };
   }
 
   // ═══════════════════════════════════════════════════════════════════

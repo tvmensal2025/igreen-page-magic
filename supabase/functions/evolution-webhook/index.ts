@@ -1623,7 +1623,10 @@ Deno.serve(async (req) => {
       // errors, the helper pauses the customer + inserts a handoff
       // alert (NEVER falls through to legacy) per the safety contract.
       const { isEngineV3Enabled } = await import("../_shared/engine/router.ts");
-      if (await isEngineV3Enabled(supabase as any, instanceData.consultant_id)) {
+      // ─── Fluxo B bypass ──────────────────────────────────────────────
+      // Variant B = Vendedora V2 (IA livre). NUNCA entra no V3.
+      const _fbVariantTop = String((customer as any)?.flow_variant || "").toUpperCase();
+      if (_fbVariantTop !== "B" && await isEngineV3Enabled(supabase as any, instanceData.consultant_id)) {
         const { runUnifiedEngineWebhookEntry } = await import("../_shared/engine/webhook-entry.ts");
         const { getAdapter } = await import("../_shared/channels/index.ts");
         const v3Adapter = getAdapter({

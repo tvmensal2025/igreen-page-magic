@@ -288,7 +288,8 @@ const arbInbound: fc.Arbitrary<InboundEvent> = fc.oneof(
   fc.record({ kind: fc.constant("no_input" as const) }),
 );
 
-const arbVariant = fc.constantFrom<"A" | "B" | "D">("A", "B", "D");
+// Variant B foi removida do step engine — Fluxo B agora roda na Vendedora V2.
+const arbVariant = fc.constantFrom<"A" | "D">("A", "D");
 
 function buildInputArb(): fc.Arbitrary<EngineInput> {
   return fc.record({
@@ -351,20 +352,7 @@ Deno.test("PBT G3: at most one primary decision log per turn (no_match+safe_text
 });
 
 // ─── PBT G4: variant fidelity (Task 21) ────────────────────────────────
-
-Deno.test("PBT G4b: variant B never emits audio outbound", () => {
-  fc.assert(fc.property(
-    buildInputArb().map((i) => ({ ...i, flow: { ...i.flow, variant: "B" as const } })),
-    (input) => {
-      const out = runEngine(input);
-      return out.outbound.every((m) => {
-        if (m.kind === "audio_slot") return false;
-        if (m.kind === "media" && m.media.kind === "audio") return false;
-        return true;
-      });
-    },
-  ), { numRuns: 100 });
-});
+// PBT G4b removido: variant B não passa mais pelo runner V3.
 
 Deno.test("PBT G4d: variant C → handoff + variant_unsupported log", () => {
   fc.assert(fc.property(

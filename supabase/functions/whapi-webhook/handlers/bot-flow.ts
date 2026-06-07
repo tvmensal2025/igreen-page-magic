@@ -661,8 +661,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       return { reply: "", updates: {} }; // reply já enviado inline
     }
   } catch (e) {
-    console.error(`[fluxo-b] erro, caindo para fluxo padrão:`, (e as Error).message);
-    // fall-through: deixa o fluxo A/D normal seguir
+    // NUNCA cair no fluxo determinístico A/D para um lead B — isso
+    // misturava scripts com a IA livre. Mandamos retentativa cordial e
+    // logamos para inspeção.
+    console.error(`[fluxo-b] erro — NÃO faz fallback p/ A/D:`, (e as Error).message);
+    try {
+      await sendText(remoteJid, "Tive uma instabilidade aqui agora. Pode repetir, por favor?");
+    } catch (_) { /* segue */ }
+    return { reply: "", updates: {} };
   }
 
   // ═══════════════════════════════════════════════════════════════════

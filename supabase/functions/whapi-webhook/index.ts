@@ -1308,7 +1308,13 @@ Deno.serve(async (req) => {
       // VERDADE" block. The v3 entry helper handles everything: load
       // context, run engine, dispatch outbounds, persist state.
       const { isEngineV3Enabled } = await import("../_shared/engine/router.ts");
-      if (await isEngineV3Enabled(supabase as any, superAdminConsultantId)) {
+      // ─── Fluxo B bypass ──────────────────────────────────────────────
+      // Variant B = Vendedora V2 (IA livre). NUNCA entra no V3 — cai
+      // direto no bot-flow legado, que dispatcha runFluxoBAI. Captura de
+      // mídia (aguardando_conta/documento) continua determinística no
+      // legado também.
+      const _fbVariantTop = String((customer as any)?.flow_variant || "").toUpperCase();
+      if (_fbVariantTop !== "B" && await isEngineV3Enabled(supabase as any, superAdminConsultantId)) {
         const { runUnifiedEngineWebhookEntry } = await import("../_shared/engine/webhook-entry.ts");
         const { getAdapter } = await import("../_shared/channels/index.ts");
         const v3Adapter = getAdapter({

@@ -79,6 +79,13 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
   const consultantId = customer.consultant_id as string;
   const variant = ((customer.flow_variant as string) || "A").toUpperCase() as "A" | "B" | "C" | "D";
 
+  // Variant B = Vendedora V2 (IA livre). NUNCA carregar flow V3 para B —
+  // o webhook deve bypassar o V3 antes de chamar o loader. Se chegou aqui,
+  // é bug de roteamento e queremos falhar ruidosamente.
+  if (variant === "B") {
+    throw new Error("v3-loader: variant_b_should_not_reach_v3 — Fluxo B roda na Vendedora V2");
+  }
+
   // ─── 2. Read active flow for variant ──────────────────────────────────
   const { data: flowRow } = await supabase
     .from("bot_flows")

@@ -84,16 +84,8 @@ function makeLog(
   };
 }
 
-/** Variant-B static guarantee: no audio outbound. Filters defensively. */
-function stripAudioForVariantB(
-  outbound: OutboundMessage[],
-): OutboundMessage[] {
-  return outbound.filter((m) => {
-    if (m.kind === "audio_slot") return false;
-    if (m.kind === "media" && m.media.kind === "audio") return false;
-    return true;
-  });
-}
+// stripAudioForVariantB removido — Fluxo B agora é Vendedora V2 e nunca
+// emite outbounds pelo runner V3.
 
 /** Clamp retries to [0, prev + 1] per Requirement 15.4. */
 function clampRetries(prev: number, candidate: number | undefined): number | undefined {
@@ -451,10 +443,8 @@ function finalize(
   outbound = cap.outbound;
   if (cap.log) logs.push(cap.log);
 
-  // Step 8: variant B static guarantee
-  if (input.flow.variant === "B") {
-    outbound = stripAudioForVariantB(outbound);
-  }
+  // Step 8: variant B removido — Fluxo B agora é Vendedora V2 e nunca
+  // chega no runner V3. Se chegar, deixamos quebrar mais cedo no loader.
 
   // Step 9: lastOutboundContentHash for next turn
   let stateUpdate: Partial<CustomerSnapshot> = { ...partial.stateUpdate };
