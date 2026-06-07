@@ -1,4 +1,0 @@
-SocksPort 9050
-SocksPolicy accept 127.0.0.1
-Log notice stderr
-DataDirectory /tmp/tor-data
