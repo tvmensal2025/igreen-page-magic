@@ -18,8 +18,11 @@ import http from 'node:http';
 const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
+const TWOCAPTCHA_API_KEY = process.env.TWOCAPTCHA_API_KEY || '';
 
 const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
+const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
+const RECAPTCHA_PAGEURL = 'https://escritorio.igreenenergy.com.br/login';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const BASE_HEADERS = {
@@ -32,6 +35,8 @@ const BASE_HEADERS = {
 };
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
+if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
+
 
 // Debug em memória
 let lastDebug = { ts: null, steps: [] };
