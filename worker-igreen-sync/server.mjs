@@ -1,12 +1,13 @@
-// server.mjs — igreen-sync-worker v10
+// server.mjs — igreen-sync-worker v13
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
 //   2. Abre https://escritorio.igreenenergy.com.br/login           (recebe cf_clearance)
 //   3. 2captcha resolve o reCAPTCHA v2 do widget                   (~15-60s)
 //   4. Injeta o token + preenche email/senha + clica "Entrar"
-//   5. Intercepta a response do POST /v1/login e extrai accessToken
-//   6. Reusa o page.context() para chamar /customer-map paginado
+//   5. Intercepta a response do POST /v1/login; se o clique não chamar a API,
+//      faz fallback com context.request.post (fora do CORS do navegador)
+//   6. Extrai accessToken e reusa o page.context() para chamar /customer-map paginado
 //
 // Debug visual (NOVO):
 //   - cada step crítico tira screenshot → envia para Lovable AI Gateway (Gemini)
@@ -52,6 +53,26 @@ function dbg(msg) {
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
+}
+
+async function readResponseLike(resp) {
+  const headers = typeof resp.headers === 'function' ? resp.headers() : {};
+  const contentType = headers['content-type'] || headers['Content-Type'] || '';
+  const text = await resp.text();
+  let body;
+  try { body = JSON.parse(text); }
+  catch { body = { raw: String(text || '').slice(0, 1200) }; }
+  return { status: resp.status(), body, contentType };
+}
+
+function isHtmlResponse(data) {
+  const contentType = String(data?.contentType || '').toLowerCase();
+  const raw = String(data?.body?.raw || '');
+  return contentType.includes('text/html') || /<!doctype html|<html[\s>]/i.test(raw);
+}
+
+function bodyPreview(body) {
+  return JSON.stringify(body || {}).slice(0, 300);
 }
 
 // ---------- IA Vision (OpenAI Vision direto) ----------
