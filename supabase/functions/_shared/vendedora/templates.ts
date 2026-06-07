@@ -122,9 +122,16 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   // Ordem importa: padrões mais específicos primeiro.
   // Pedido de humano — top prioridade, sempre escala.
   if (/\b(humano|pessoa de verdade|gente de verdade|algu[ée]m de verdade|atendente|consultor(?:a)? humano|n[ãa]o (?:é )?bot|nao bot|n[ãa]o quero bot|falar com (?:algu[ée]m|gente|pessoa|humano|atendente)|quero (?:um|uma)?\s*humano|quero falar com algu[ée]m)\b/.test(t)) return "pedido_humano";
-  // Desistência: lead querendo sair tem prioridade alta.
-  if (/^(tchau|xau|chau|flw|falou|valeu por nada)\b/.test(t)
-    || /\b(n[ãa]o quero|n[ãa]o vou querer|n[ãa]o tenho interesse|desisti|desisto|mudei de id[eé]ia|deixa pra l[áa]|deixa quieto|pode parar|chega|sai fora|esquece|melhor n[ãa]o|fica pra (?:outra|depois)|outra hora|n[ãa]o vai dar|valeu(?:,?\s*mas)?(?:\s+(?:n[ãa]o|melhor))?)\b/.test(t)) return "desistencia";
+  // Desistência: SÓ intenções explícitas de sair. Frases interrogativas
+  // (terminam com "?" ou começam com palavra-pergunta) NUNCA são desistência.
+  // "não quero/precisa/tem X" onde X é palavra positiva (obra, multa,
+  // fidelidade…) é OBJEÇÃO, não saída — não dispara desistência.
+  const ehPergunta = t.includes("?") || /^(como|qual|quais|quando|quanto|onde|quem|por\s*qu[êe]|porque|tem|t[êe]m|vai|v[ãa]o|posso|preciso|precisa|d[áa]\s*pra|d[áa]\s*para|e\s+se|vem)\b/.test(t);
+  const negacaoSeguidaDeBeneficio = /\bn[ãa]o (?:quero|tenho|preciso|vou|vai|tem|gosto)\b[^.?!\n]{0,40}\b(obra|placa|painel|instala|t[ée]cnico|equipamento|multa|fidelidade|car[êe]ncia|taxa|mensalidade|boleto|complica[çc]|enrolar?|risco|surpresa|pegadinha|nada disso|amarra)/.test(t);
+  if (!ehPergunta && !negacaoSeguidaDeBeneficio) {
+    if (/^(tchau|xau|chau|flw|falou|valeu por nada)\b/.test(t)
+      || /\b(n[ãa]o tenho interesse|desisti|desisto|mudei de id[eé]ia|deixa pra l[áa]|deixa quieto|pode parar|chega disso|sai fora|esquece(?:r)?|melhor n[ãa]o|fica pra (?:outra|depois)|outra hora|n[ãa]o vai dar|n[ãa]o vou querer|n[ãa]o me interessa|valeu(?:,?\s*mas)?\s+(?:n[ãa]o|melhor)|n[ãa]o quero (?:n[ãa]o|mais|isso|saber)|n[ãa]o quero\s*$)\b/.test(t)) return "desistencia";
+  }
   if (/(posso|d[áa] (?:pra|para))\s+(j[áa]\s+)?(mandar|enviar|passar|tirar)\s+(a\s+|uma\s+)?(foto|conta|fatura|imagem|print)/.test(t)
     || /(j[áa]\s+)?(te\s+)?mando\s+(j[áa]\s+)?(a\s+)?(foto|conta|fatura)/.test(t)
     || /(manda|envia)\s+(l[áa]\s+|j[áa]\s+|a[ií]\s+)?(a\s+|uma\s+)?(foto|conta|fatura)/.test(t)
@@ -146,7 +153,7 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   // Homologação ANEEL específica
   if (/homologa(?:[çc][ãa]o|d[oa]|r)\s*(?:n[oa])?\s*aneel|aneel.*homolog|registro (?:na )?aneel|lei 14\.?300|garantia escrit/.test(t)) return "homologacao_aneel";
   if (/golpe|pir[âa]mide|enganad|furad|confi[áa]vel|seguro|é verdade|pegadinha|bom demais|nunca ouvi|medo|receio|cilada|quebrar|falir|sair do mercado|fechar as portas/.test(t)) return "golpe";
-  if (/\bobra\b|reforma|instala|placa|painel|t[ée]cnico|equipamento|mexer (?:na|em) (?:casa|telhado)/.test(t)) return "obra";
+  if (/\bobra\b|reforma|instala|placa|painel|t[ée]cnico|equipamento|mexer (?:na|em) (?:casa|telhado)|mexer.{0,20}(?:fia[çc]|fio)|fia[çc][ãa]o/.test(t)) return "obra";
   if (/solar|painel solar|energia do sol/.test(t)) return "solar";
   if (/distribuidora|trocar de (?:empresa|distribuidora)|mudar de (?:empresa|distribuidora|companhia)|enel|cemig|cpfl|light|equatorial|neoenergia/.test(t)) return "distribuidora";
   if (/outra empresa|[óo]rigo|sun mobi|energisol|j[áa] tenho desconto|concorr|diferen[çc]a de voc[êe]s|diferen[çc]a de vcs|qual a diferen/.test(t)) return "outra_empresa";
@@ -155,6 +162,31 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   if (/como (?:voc[êe]s|vcs) ganha|de onde vem|qual o lucro|o que (?:voc[êe]s|vcs) ganha|onde t[áa] o ganho/.test(t)) return "como_ganham";
   if (/pensar|depois|mais tarde|vou ver|talvez|n[ãa]o sei|deixa eu ver/.test(t)) return "pensar";
   return "generica";
+}
+
+/**
+ * Detector: lead AFIRMA ter enviado mídia (foto/conta) — usado em foto_conta
+ * quando `midia_recebida.conta` é false. Frases típicas: "mandei aí", "ja
+ * mandei", "segue a foto", "vê se chegou", "tá na mão, mando agora".
+ */
+export function leadAfirmaEnvio(texto: string): boolean {
+  const t = String(texto || "").toLowerCase().trim();
+  if (!t) return false;
+  if (/\b(mandei|enviei|j[áa] (?:te )?(?:mandei|enviei)|t[oô] mandando|estou mandando|segue (?:a |aí )?(?:foto|conta|fatura|imagem)|t[áa] (?:a[ií]|na m[ãa]o)|chegou (?:a[ií]|pra )?(?:foto|conta|voc[êe])?|olha (?:a[ií]|nas mensagens)|ve(?:r|ja)? se chegou|ve(?:r|ja)? se ficou|n[ãa]o (?:apareceu|chegou) (?:a[ií]|pra)|bugou|mandando (?:de novo|outra vez)|envio agora|tirei (?:a |uma )?foto)\b/.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/** Capitaliza primeiro nome (e sobrenome curto se houver). "bruno" → "Bruno". */
+export function prettyName(s: string | null | undefined): string | null {
+  const raw = String(s || "").trim();
+  if (!raw) return null;
+  return raw
+    .split(/\s+/)
+    .slice(0, 3)
+    .map((w) => (w.length <= 2 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+    .join(" ");
 }
 
 /** Resposta determinística pra quando o lead pede falar com humano. */
