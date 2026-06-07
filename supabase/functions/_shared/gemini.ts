@@ -3,6 +3,7 @@
 // No dependency on Lovable AI Gateway.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { tryLovableGateway } from "./lovable-gateway.ts";
 
 /**
  * GeminiQuotaExhausted — sentinel error type. Thrown by `geminiGenerate`
