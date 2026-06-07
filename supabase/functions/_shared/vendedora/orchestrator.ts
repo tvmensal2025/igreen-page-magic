@@ -11,7 +11,7 @@ import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
 import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import { decideEtapa } from "./state-machine.ts";
 import { extrairNome, extrairValor, extrairEmail, classificarInteresse } from "./extractors.ts";
-import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao, leadFezPergunta, respostaPerguntaCurta, respostaDespedida, respostaPedidoHumano, sanitizeConsultantName } from "./templates.ts";
+import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao, leadFezPergunta, respostaPerguntaCurta, respostaDespedida, respostaPedidoHumano, sanitizeConsultantName, leadAfirmaEnvio, prettyName } from "./templates.ts";
 import type { Etapa, FluxoBState, SupabaseClient } from "./types.ts";
 import type { VendedoraInput, VendedoraResult } from "./index.ts";
 
