@@ -112,15 +112,23 @@ export function validarResposta(texto: string, etapa: Etapa, nomeLead: string | 
 export type ObjecaoTipo =
   | "golpe" | "obra" | "fidelidade" | "solar" | "distribuidora" | "aluguel"
   | "outra_empresa" | "boleto" | "prazo" | "cobertura" | "cancelar"
-  | "taxa_adesao" | "conta_baixa" | "como_ganham" | "pensar" | "generica";
+  | "taxa_adesao" | "conta_baixa" | "como_ganham" | "pensar"
+  | "como_funciona" | "foto_antes" | "desistencia" | "generica";
 
 export function classificarObjecao(texto: string): ObjecaoTipo {
   const t = String(texto || "").toLowerCase();
   // Ordem importa: padrões mais específicos primeiro.
+  // Desistência: SEMPRE primeiro — lead querendo sair tem prioridade.
+  if (/^(tchau|xau|chau|flw|falou|valeu por nada)\b/.test(t)
+    || /\b(n[ãa]o quero|n[ãa]o vou querer|n[ãa]o tenho interesse|desisti|desisto|mudei de id[eé]ia|deixa pra l[áa]|deixa quieto|pode parar|chega|sai fora|esquece)\b/.test(t)) return "desistencia";
+  if (/(posso|d[áa] (?:pra|para))\s+(j[áa]\s+)?(mandar|enviar|passar|tirar)\s+(a\s+|uma\s+)?(foto|conta|fatura|imagem|print)/.test(t)
+    || /(j[áa]\s+)?mando\s+(a\s+)?(foto|conta|fatura)/.test(t)
+    || /(posso|d[áa] (?:pra|para))\s+(j[áa]\s+)?mandar\s+a?gora/.test(t)) return "foto_antes";
+  if (/^e?\s*como funciona\??$|^como (?:que )?funciona\b|me explica (?:como|isso|melhor)|explica (?:melhor|isso|como)|do que se trata|do que (?:que )?se trata|n[ãa]o entendi/.test(t)) return "como_funciona";
   if (/aluguel|alugad|inquilin|mudar de casa|mudar de im[óo]vel|se eu mudar|quando eu mudar|quando mudar|se mudar|trocar de casa|n[ãa]o (?:é|eh) min(?:ha|h)a casa/.test(t)) return "aluguel";
   if (/conta (?:for |fica |é |eh )?baixa|conta baixa|m[êe]s mais baixo|gasto pouco|consumo baixo|n[ãa]o vale a pena|compensa/.test(t)) return "conta_baixa";
   if (/taxa|ades[ãa]o|cobra(?:m|r)? (?:algo|alguma|taxa|pra)|pagar (?:pra|para) entrar|investiment|mensalidade|custo (?:pra|para|de) entrar|tem custo/.test(t)) return "taxa_adesao";
-  if (/boleto|fatura|mesmo? (?:boleto|conta)|onde pago|como pago|dois boleto|atras(?:ar|o) o pagamento|pagar (?:a conta|onde)/.test(t)) return "boleto";
+  if (/boleto|fatura|mesmo? (?:boleto|conta)|onde pago|como pago|dois boleto|vem.*\bboleto|vai vir.*\bboleto|chega(?:m|r).*\bboleto|atras(?:ar|o) o pagamento|pagar (?:a conta|onde)/.test(t)) return "boleto";
   if (/fidelidade|multa|car[êe]ncia|preso|amarrad|tempo de contrato|fica preso/.test(t)) return "fidelidade";
   if (/cancelar|sair (?:quando|a qualquer)|desistir|parar quando/.test(t)) return "cancelar";
   if (/golpe|pir[âa]mide|enganad|furad|confi[áa]vel|seguro|é verdade|pegadinha|bom demais|nunca ouvi|medo|receio|cilada|quebrar|falir|sair do mercado|fechar as portas/.test(t)) return "golpe";
@@ -133,6 +141,71 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   if (/como (?:voc[êe]s|vcs) ganha|de onde vem|qual o lucro|o que (?:voc[êe]s|vcs) ganha|onde t[áa] o ganho/.test(t)) return "como_ganham";
   if (/pensar|depois|mais tarde|vou ver|talvez|n[ãa]o sei|deixa eu ver/.test(t)) return "pensar";
   return "generica";
+}
+
+/**
+ * Detector determinístico: o lead está fazendo uma PERGUNTA/objeção em vez
+ * de responder o que a etapa pediu? Roda nas etapas mecânicas (nome, valor,
+ * foto_conta, doc, email) — se for true, respondemos a dúvida antes de
+ * reancorar a pergunta da etapa.
+ */
+export function leadFezPergunta(inbound: string, etapa: Etapa): { pergunta: boolean; tipo: ObjecaoTipo } {
+  const t = String(inbound || "").trim();
+  if (!t || t.length < 2) return { pergunta: false, tipo: "generica" };
+  const low = t.toLowerCase();
+
+  // Mídia recebida não conta como pergunta
+  if (/^\[(envia|imagem|foto|m[íi]dia)/i.test(t)) return { pergunta: false, tipo: "generica" };
+
+  // 1) Classificador já cobre desistência/foto_antes/como_funciona e objeções nominais
+  const tipo = classificarObjecao(low);
+  if (tipo !== "generica") return { pergunta: true, tipo };
+
+  // 2) Heurística genérica: tem '?' ou começa com interrogativo
+  const hasQM = t.includes("?");
+  const interro = /^(como|quanto|quando|qual|quais|onde|quem|por\s*qu[êe]|porque|tem|t[êe]m|vai|v[ãa]o|posso|preciso|precisa|d[áa]\s*pra|d[áa]\s*para|e\s+se|vem|cobra|paga|funciona|serve)\b/i;
+  if (hasQM || interro.test(low)) {
+    return { pergunta: true, tipo: "generica" };
+  }
+
+  // 3) Em etapas onde a resposta esperada é estruturada (nome/valor/email),
+  //    se a mensagem é frase longa fora-de-forma, tratamos como dúvida genérica
+  //    em vez de só repetir o template. (mais conservador: só se >= 3 palavras)
+  const palavras = low.split(/\s+/).filter(Boolean).length;
+  if ((etapa === "valor" || etapa === "email") && palavras >= 4 && !/\d/.test(low) && !/@/.test(low)) {
+    return { pergunta: true, tipo: "generica" };
+  }
+
+  return { pergunta: false, tipo: "generica" };
+}
+
+/**
+ * Responde a dúvida do lead em 1 frase + reancora a pergunta da etapa.
+ * Usado em etapas mecânicas quando o lead pergunta em vez de responder.
+ */
+export function respostaPerguntaCurta(
+  tipo: ObjecaoTipo,
+  nome: string | null,
+  etapa: Etapa,
+  valor: number | null,
+  tentativa: number,
+): string {
+  // Pega a 1ª variante (curta) da resposta da objeção
+  const variantes = RESP_OBJECAO_VARIANTES[tipo] || RESP_OBJECAO_VARIANTES.generica;
+  const resp = variantes[Math.max(0, tentativa) % variantes.length];
+
+  // Reancora com a pergunta da etapa — limpando saudação ("Show, X!") pra não
+  // ficar "X, sem fidelidade. Show, X! Qual o valor..."
+  const ask = fallbackPorEtapa(etapa, nome, valor, tentativa)
+    .replace(/^(Show|Perfeito|Ótimo|Oi)[^!?\n]*[!]\s*/i, "");
+
+  const corpo = nome ? `${nome}, ${resp}` : resp.charAt(0).toUpperCase() + resp.slice(1);
+  return `${corpo}\n${ask}`;
+}
+
+/** Despedida educada quando o lead desiste em qualquer etapa. */
+export function respostaDespedida(nome: string | null): string {
+  return `Tudo bem${nome ? `, *${nome}*` : ""}! Qualquer hora que quiser economizar é só me chamar por aqui 😊⚡`;
 }
 
 // Cada objeção tem 2-3 variantes. Quando o lead repete a mesma dúvida, o
