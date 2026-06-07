@@ -74,28 +74,45 @@ const NAO_E_NOME = new Set([
 ]);
 
 export async function extrairNome(inbound: string): Promise<string | null> {
+  // 0) Fast-path determinístico — resolve a maioria sem LLM (e sem rate-limit).
+  //    Aceita variações comuns: "Carlos Antunes", "ok Carlos", "tá, Roberto Dias",
+  //    "sou João", "me chamo Maria", "meu nome é Pedro".
+  try {
+    const txt = String(inbound || "").trim();
+    // Remove prefixos curtos de confirmação (ok, tá, blz, sim, então, etc.) + pontuação
+    const semPrefixo = txt.replace(
+      /^(ok|t[áa]h?|blz|beleza|sim|certo|claro|ent[ãa]o|aham|aqui|opa|oi)[\s,.;:\-]+/i,
+      "",
+    );
+    const regexHit = extractNomeRegex(semPrefixo) || extractNomeRegex(txt);
+    if (regexHit) {
+      const norm = regexHit.toLowerCase().replace(/[.,!?;:"'()\-]/g, "").trim();
+      if (!NAO_E_NOME.has(norm) && regexHit.length >= 2 && regexHit.length <= 80) {
+        return regexHit;
+      }
+    }
+  } catch { /* segue pra LLM */ }
+
   try {
     const r = await chatForced({
       model: MODEL,
       temperature: 0,
       tool: TOOL_NOME,
       messages: [
-        { role: "system", content: "Extraia o NOME PRÓPRIO do lead SOMENTE se ele se apresentou claramente. Aceita: 'sou o X', 'me chamo X', 'meu nome é X', 'pode me chamar de X', 'X aqui', ou um substantivo próprio óbvio (nome humano real). NÃO aceite saudações, confirmações ('ok','sim','blz'), perguntas, números, ou qualquer texto que não seja inequivocamente um nome humano. Sem nome claro → retorne vazio." },
+        { role: "system", content: "Extraia o NOME PRÓPRIO do lead SOMENTE se ele se apresentou claramente. Aceita: 'sou o X', 'me chamo X', 'meu nome é X', 'pode me chamar de X', 'X aqui', ou um substantivo próprio óbvio (nome humano real, ex: 'Carlos Antunes', 'ok Carlos', 'tá, Roberto Dias'). NÃO aceite saudações, confirmações sozinhas ('ok','sim','blz'), perguntas, números, ou texto que não seja nome humano. Sem nome claro → retorne vazio." },
         { role: "user", content: inbound },
       ],
     });
     const raw = String(r.args?.nome || "").trim();
     if (!raw || raw.length < 2 || raw.length > 80) return null;
-    // Normaliza pra checar stop-list (lower, remove pontuação)
     const norm = raw.toLowerCase().replace(/[.,!?;:"'()\-]/g, "").trim();
     if (NAO_E_NOME.has(norm)) return null;
-    // Rejeita se não contém ao menos uma letra alfabética
     if (!/[a-záàâãéèêíïóôõöúçñ]/i.test(raw)) return null;
-    // Rejeita se for só dígitos/símbolos
     if (/^[\d\s\W]+$/.test(raw)) return null;
     return raw;
   } catch { return null; }
 }
+
 
 export async function extrairValor(inbound: string): Promise<number | null> {
   try {
