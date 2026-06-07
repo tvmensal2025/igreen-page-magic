@@ -1,12 +1,13 @@
-// server.mjs — igreen-sync-worker v10
+// server.mjs — igreen-sync-worker v13
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
 //   2. Abre https://escritorio.igreenenergy.com.br/login           (recebe cf_clearance)
 //   3. 2captcha resolve o reCAPTCHA v2 do widget                   (~15-60s)
 //   4. Injeta o token + preenche email/senha + clica "Entrar"
-//   5. Intercepta a response do POST /v1/login e extrai accessToken
-//   6. Reusa o page.context() para chamar /customer-map paginado
+//   5. Intercepta a response do POST /v1/login; se o clique não chamar a API,
+//      faz fallback com context.request.post (fora do CORS do navegador)
+//   6. Extrai accessToken e reusa o page.context() para chamar /customer-map paginado
 //
 // Debug visual (NOVO):
 //   - cada step crítico tira screenshot → envia para Lovable AI Gateway (Gemini)
@@ -52,6 +53,26 @@ function dbg(msg) {
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
+}
+
+async function readResponseLike(resp) {
+  const headers = typeof resp.headers === 'function' ? resp.headers() : {};
+  const contentType = headers['content-type'] || headers['Content-Type'] || '';
+  const text = await resp.text();
+  let body;
+  try { body = JSON.parse(text); }
+  catch { body = { raw: String(text || '').slice(0, 1200) }; }
+  return { status: resp.status(), body, contentType };
+}
+
+function isHtmlResponse(data) {
+  const contentType = String(data?.contentType || '').toLowerCase();
+  const raw = String(data?.body?.raw || '');
+  return contentType.includes('text/html') || /<!doctype html|<html[\s>]/i.test(raw);
+}
+
+function bodyPreview(body) {
+  return JSON.stringify(body || {}).slice(0, 300);
 }
 
 // ---------- IA Vision (OpenAI Vision direto) ----------
@@ -148,15 +169,16 @@ async function loginWithPlaywright(email, password) {
     });
     page = await context.newPage();
 
-    // Intercepta a response do /login para capturar o accessToken
+    // Intercepta a response do /login para capturar o accessToken ou bloqueio HTML/CF
     let loginResponseData = null;
     page.on('response', async (resp) => {
       const url = resp.url();
       if (url.includes('/v1/login') && resp.request().method() === 'POST') {
         try {
-          const json = await resp.json();
-          loginResponseData = { status: resp.status(), body: json };
-        } catch { /* não-json */ }
+          loginResponseData = await readResponseLike(resp);
+        } catch (e) {
+          dbg(`[login] não consegui ler response /v1/login: ${e.message}`);
+        }
       }
     });
 
@@ -196,31 +218,33 @@ async function loginWithPlaywright(email, password) {
     await snapStep(page, 'injetou_captcha');
 
     dbg('[login] clicando "Entrar"');
-    await Promise.all([
+    const [clickedLoginResp] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/v1/login'), { timeout: 15000 }).catch(() => null),
       page.click('button[type="submit"], button:has-text("Entrar")').catch(() => {}),
     ]);
+    if (clickedLoginResp && !loginResponseData) {
+      try { loginResponseData = await readResponseLike(clickedLoginResp); }
+      catch (e) { dbg(`[login] response /v1/login capturada mas ilegível: ${e.message}`); }
+    }
     await page.waitForTimeout(1500);
 
-    // Fallback: se o clique não disparou /v1/login, fazer POST direto dentro do browser
+    // Fallback: se o clique não disparou /v1/login, fazer POST direto pelo contexto
+    // Playwright. Isso evita o CORS que causa "TypeError: Failed to fetch" no page.evaluate.
     if (!loginResponseData) {
-      dbg('[login] clique não gerou /v1/login; tentando fallback POST direto com recaptchaToken');
+      dbg('[login] clique não gerou /v1/login; tentando fallback context.request.post com recaptchaToken');
       try {
-        const fb = await page.evaluate(async ({ email, password, token, apiBase }) => {
-          const r = await fetch(`${apiBase}/login`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json, text/plain, */*',
-            },
-            credentials: 'include',
-            body: JSON.stringify({ email, password, recaptchaToken: token, keepConnected: true }),
-          });
-          const text = await r.text();
-          let body; try { body = JSON.parse(text); } catch { body = { raw: text.slice(0, 400) }; }
-          return { status: r.status, body };
-        }, { email, password, token: captchaToken, apiBase: API_BASE });
-        dbg(`[login] fallback status=${fb.status}`);
+        const fbResp = await context.request.post(`${API_BASE}/login`, {
+          headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
+            'Origin': 'https://escritorio.igreenenergy.com.br',
+            'Referer': PORTAL_URL,
+          },
+          data: { email, password, recaptchaToken: captchaToken, keepConnected: true },
+          timeout: 30000,
+        });
+        const fb = await readResponseLike(fbResp);
+        dbg(`[login] fallback status=${fb.status}${isHtmlResponse(fb) ? ' html' : ''}`);
         loginResponseData = fb;
       } catch (e) {
         dbg(`[login] fallback erro: ${e.message}`);
@@ -229,12 +253,15 @@ async function loginWithPlaywright(email, password) {
     await snapStep(page, 'pos_submit');
 
     if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada (clique + fallback falharam)');
-    dbg(`[login] response /login status=${loginResponseData.status}`);
+    dbg(`[login] response /login status=${loginResponseData.status}${isHtmlResponse(loginResponseData) ? ' html' : ''}`);
+    if (isHtmlResponse(loginResponseData)) {
+      throw new HttpError(502, `Cloudflare/WAF retornou HTML no /login (${loginResponseData.status}): ${String(loginResponseData.body?.raw || '').slice(0, 180)}`);
+    }
     if (loginResponseData.status === 401 || loginResponseData.status === 403) {
-      throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${JSON.stringify(loginResponseData.body).slice(0, 200)}`);
+      throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${bodyPreview(loginResponseData.body)}`);
     }
     if (loginResponseData.status >= 400) {
-      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${JSON.stringify(loginResponseData.body).slice(0, 200)}`);
+      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${bodyPreview(loginResponseData.body)}`);
     }
 
     const data = loginResponseData.body;
@@ -332,7 +359,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v12',
+        mode: 'tor+playwright+2captcha-v13',
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
       });
@@ -372,7 +399,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v12 (tor+playwright+2captcha+fallback) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v13 (tor+playwright+2captcha+context-fallback) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
