@@ -185,6 +185,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
           state.etapa,
           typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
           state.tentativas_etapa,
+          state.objecoes_tratadas || [],
         ));
         modelUsed = `deterministic_duvida:${q.tipo}`;
         state.objecoes_tratadas = [...(state.objecoes_tratadas || []), q.tipo].slice(-12);
