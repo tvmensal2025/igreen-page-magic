@@ -26,7 +26,8 @@ import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
-import { pickFlowVariant } from "../_shared/pick-flow-variant.ts";
+// `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
+// `assign_flow_variant` que respeita `consultants.active_variants`.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
