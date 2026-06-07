@@ -451,10 +451,8 @@ function finalize(
   outbound = cap.outbound;
   if (cap.log) logs.push(cap.log);
 
-  // Step 8: variant B static guarantee
-  if (input.flow.variant === "B") {
-    outbound = stripAudioForVariantB(outbound);
-  }
+  // Step 8: variant B removido — Fluxo B agora é Vendedora V2 e nunca
+  // chega no runner V3. Se chegar, deixamos quebrar mais cedo no loader.
 
   // Step 9: lastOutboundContentHash for next turn
   let stateUpdate: Partial<CustomerSnapshot> = { ...partial.stateUpdate };

@@ -34,7 +34,8 @@ import type {
 // the bot-engine-channel-unification rename (Task 3), the canonical path
 // is `_shared/engine/variants/*` (was `_shared/flow-engine/variants/*`).
 import { variantA } from "./variants/a.ts";
-import { variantB } from "./variants/b.ts";
+// variantB removido: Fluxo B é exclusivamente IA livre (Vendedora V2) e
+// nunca deve cair no step engine V3.
 import { variantC } from "./variants/c.ts";
 import { variantD } from "./variants/d.ts";
 
@@ -319,7 +320,10 @@ export function pickVariant(variant: "A" | "B" | "C" | "D"): VariantStrategy {
     case "A":
       return variantA;
     case "B":
-      return variantB;
+      // Variant B é Vendedora V2 (IA livre). NUNCA deve chegar aqui — o
+      // gate em webhook + loader bloqueia antes. Lançamos para falhar
+      // ruidosamente caso algum caller esquecido tente rodar B no V3.
+      throw new Error("pickVariant: variant B is handled by Vendedora V2, not V3 step engine");
     case "C":
       return variantC;
     case "D":
