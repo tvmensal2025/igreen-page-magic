@@ -14,12 +14,45 @@ export const TRAVA_POR_ETAPA: Record<Etapa, string> = {
   pos_cadastro: "Agradeça e diga que vai mandar os próximos passos. PROIBIDO pedir mais dados.",
 };
 
-export function fallbackPorEtapa(etapa: Etapa, nome?: string | null, valor?: number | null): string {
+// Variantes por etapa — usadas quando a vendedora reperguntar a mesma coisa,
+// pra não soar robótica repetindo a frase exata. `tentativa` é state.tentativas_etapa.
+const VARIANTES_NOME = [
+  "Pra eu te atender direitinho, qual o seu nome?",
+  "Antes da gente seguir, *como posso te chamar*?",
+  "Me diz só o seu *nome completo* que eu já adianto aqui 😊",
+  "Pra personalizar o atendimento: qual seu nome?",
+];
+const VARIANTES_VALOR = [
+  "Qual o *valor médio* da sua conta de luz?",
+  "Mais ou menos quanto vem a sua conta de luz por mês? (em R$)",
+  "Quanto você costuma pagar de energia mensalmente?",
+];
+const VARIANTES_FOTO_CONTA = [
+  "Me manda a *foto da sua conta de luz* 📷",
+  "Pra eu avançar, *envia uma foto da sua conta de luz* (qualquer página serve) 📷",
+  "Só preciso da *foto da sua conta de luz* pra confirmar os dados 📷",
+];
+const VARIANTES_DOC = [
+  "Agora preciso da foto da *frente do seu RG ou CNH* 📄",
+  "Pra continuar: *foto da frente do seu documento* (RG ou CNH) 📄",
+  "Me envia a *frente do RG ou CNH* pra eu validar 📄",
+];
+const VARIANTES_EMAIL = [
+  "Pra finalizar, qual o seu melhor *e-mail* 📧?",
+  "Só falta o *e-mail* pra fechar — qual você usa? 📧",
+  "Me passa o seu *e-mail* que eu já termino aqui 📧",
+];
+
+function pick<T>(arr: T[], i: number): T {
+  return arr[Math.max(0, i | 0) % arr.length];
+}
+
+export function fallbackPorEtapa(etapa: Etapa, nome?: string | null, valor?: number | null, tentativa = 0): string {
   const n = nome ? `, *${nome}*` : "";
   switch (etapa) {
     case "interesse": return `Olá! 😊 Aqui é da *iGreen Energy*. Você passa a pagar *menos* todo mês na conta de luz, sem obra e sem trocar de distribuidora ⚡\nPosso te chamar como?`;
-    case "nome":      return `Pra eu te atender direitinho, qual o seu nome?`;
-    case "valor":     return `Show${n}! Qual o *valor médio* da sua conta de luz?`;
+    case "nome":      return pick(VARIANTES_NOME, tentativa);
+    case "valor":     return `${nome ? `Show${n}! ` : ""}${pick(VARIANTES_VALOR, tentativa)}`;
     case "simulacao": {
       const eco = valor ? ` Daria cerca de *R$ ${(valor * 0.2).toFixed(0)}/mês* de economia.` : "";
       return `${nome ? `${nome}, com base no seu valor, ` : "Com base no seu valor, "}o desconto fica *entre 8% e 20%* ao mês ⚡${eco}\nFaz sentido pra você?`;
@@ -28,13 +61,14 @@ export function fallbackPorEtapa(etapa: Etapa, nome?: string | null, valor?: num
       const eco = valor ? `*R$ ${(valor * 0.2).toFixed(0)}/mês*` : "uma boa economia";
       return `${nome ? `${nome}, ` : ""}é tudo *sem obra* e regulamentado pela *ANEEL* — a mesma conta, só com ${eco} a menos ⚡\nQuer que eu já deixe tudo pronto pra você começar a economizar?`;
     }
-    case "foto_conta":  return `${nome ? `Perfeito${n}! ` : ""}Me manda a *foto da sua conta de luz* 📷`;
-    case "doc":         return `Agora preciso da foto da *frente do seu RG ou CNH* 📄`;
-    case "email":       return `Pra finalizar, qual o seu melhor *e-mail* 📧?`;
+    case "foto_conta":  return `${nome && tentativa === 0 ? `Perfeito${n}! ` : ""}${pick(VARIANTES_FOTO_CONTA, tentativa)}`;
+    case "doc":         return pick(VARIANTES_DOC, tentativa);
+    case "email":       return pick(VARIANTES_EMAIL, tentativa);
     case "finalizando": return `${nome ? `${nome}, ` : ""}tá tudo certo pra finalizar seu cadastro. Posso seguir?`;
     case "pos_cadastro":return `Cadastro feito${n}! Em breve te mando os próximos passos ✅`;
   }
 }
+
 
 /** Validador estrutural barato — pega problemas óbvios sem chamar LLM. */
 export function validarResposta(texto: string, etapa: Etapa, nomeLead: string | null): { ok: boolean; motivo?: string } {
