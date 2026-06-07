@@ -1,51 +1,79 @@
-# Objetivo
+## Skill: `vendedora-e2e-conversations`
 
-A partir de agora **toda conversa do Fluxo B roda exclusivamente a Vendedora V2** (a versão à prova de erro que acabamos de criar). V1 e legacy ficam desligados de vez — sem env var, sem sorteio, sem fallback silencioso.
+Roda 20 conversas simuladas end-to-end (do "oi" até `portal_submitting` ou handoff) contra a edge function `fluxo-b-ai` em modo `dryRun`, e devolve transcrições + relatório de diagnóstico. Reusável sempre que mexer na vendedora V2.
 
-# O que muda
+### O que a skill faz, em ordem
 
-## 1. `supabase/functions/_shared/fluxo-b-ai.ts` — entrar sempre em V2
+1. Recebe args: `--consultant-id <uuid>` (default `81fe673d-253e-46bc-993a-85c286ae54b5`), `--out <dir>` (default `/mnt/documents/vendedora-runs/<timestamp>/`), `--only scripted|persona|all` (default `all`), `--max-turns 25`.
+2. Carrega 10 **scripts determinísticos** (lead "fala" turnos pré-definidos) cobrindo:
+  - happy path curto / happy path longo
+  - objeção "golpe", "boleto", "fidelidade", "obra/aluguel", "prazo"
+  - lead pede foto antes da hora (testa trava anti-foto-cedo)
+  - lead repete a mesma dúvida 3× (testa anti-loop / variantes)
+  - lead muda de ideia ("não quero mais")
+  - lead manda nome/valor juntos no primeiro turno
+  - lead manda mídia direto (conta) sem confirmar interesse
+3. Carrega 10 **personas LLM** — cada um é um system prompt curto ("você é um cliente cético", "aposentado desconfiado", "jovem apressado", "reclamão que já foi enganado", etc.) chamado via Lovable AI Gateway (`google/gemini-3-flash-preview`) com histórico da conversa, devolvendo a próxima fala como cliente.
+4. Loop por conversa: até `max-turns` ou até a vendedora retornar `shouldHandoff` ou `conversationStepUpdate === "portal_submitting"`:
+  - chama `POST {SUPABASE_URL}/functions/v1/fluxo-b-ai` com `{ consultantId, inboundText, dryRun: true, history, customerState }`
+  - acumula `history` (front-end faz isso porque dryRun não persiste)
+  - propaga `customerState` (name, electricity_bill_value, conversation_step, fluxo_b_state, conversation_summary) entre turnos lendo do `dryRunLog`
+  - registra: turno, lead msg, bot reply, etapa antes/depois, modelo usado, latência
+5. Escreve por conversa: `<out>/conv-NN-<slug>.md` com a transcrição em markdown + bloco JSON de debug ao final.
+6. Escreve `<out>/REPORT.md` com:
+  - tabela: conversa | perfil | turnos | etapa final | handoff? | latência total | modelos usados
+  - contagem de problemas detectados (loops, repetições, foto pedida antes da consideração, crash)
+  - top 5 turnos com maior latência
+  - lista de conversas que não chegaram a `portal_submitting`
+7. Stdout enxuto: barra de progresso (`[3/20] persona-cetico ... ✓ 14 turnos, 38s`) + path final do REPORT.
 
-- Remover o sorteio de variante (`pickVariant`, `fluxo_b_variant`, `variant_id`, `b.v1` vs `b.legacy`).
-- Remover os flags `VENDEDORA_V1_FORCE_OFF` e `VENDEDORA_V2_ENABLED` e o flag `__force_vendedora_v2` que usávamos só no tester.
-- Remover o import de `runVendedoraV1` (manter só `runVendedoraV2`).
-- O caminho único passa a ser:
-  - Carrega `customer`.
-  - Se for nudge interno (`input.nudgeHook`), ainda usa o pipeline antigo de prompt+tool-calling (V2 não foi desenhada pra nudge — manter esse branch só pra reaquecer lead sumido).
-  - Caso contrário, chama `runVendedoraV2(...)` direto e retorna o resultado com `variantId: "b.v2"`.
-- Apagar todo o bloco "legacy fall-through" (linhas ~127–356) **exceto** a parte usada pelo nudge — extrair essa parte para uma função interna `runNudgeLegacy(...)` chamada só quando `isNudgeRun === true`.
+### Estrutura de arquivos
 
-## 2. `supabase/functions/_shared/vendedora-v1/index.ts` — limpar exports
+```
+.agents/skills/vendedora-e2e-conversations/
+├── SKILL.md
+├── references/
+│   ├── scripted-scenarios.md   # os 10 roteiros + critério de sucesso de cada
+│   └── personas.md             # os 10 system prompts dos personas LLM
+└── scripts/
+    └── run.ts                  # CLI (bun/deno-compatível, usa fetch + LOVABLE_API_KEY)
+```
 
-- Manter `runVendedoraV2` como export principal.
-- Marcar `runVendedoraV1` como deprecated (remover do export público) — não é mais chamada em runtime.
+### SKILL.md (esqueleto)
 
-## 3. Tester (`src/components/admin/flow-builder/FluxoBEditor.tsx`)
+- `name: vendedora-e2e-conversations`
+- `description: Roda 20 conversas simuladas (10 scripts + 10 personas LLM) contra a vendedora Fluxo B V2 via edge function dryRun e gera relatório de transcrições + diagnóstico. Usar antes/depois de mexer em vendedora/, fluxo-b-ai, templates, state-machine ou extractors.`
+- Corpo: como invocar (`bun /tmp/run.ts --consultant-id ... --out ...`), pré-requisitos (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `LOVABLE_API_KEY` no env), o que o relatório indica, ponteiros para as references.
 
-- Remover os parâmetros `forceVariantId` e `forceV2` (não precisam mais existir; V2 é o único caminho).
-- O metadado mostrado passa a ser sempre `vendedora_v2`.
+### Detalhes técnicos
 
-## 4. Edge `supabase/functions/fluxo-b-ai/index.ts`
+- HTTP: `fetch(SUPABASE_URL + "/functions/v1/fluxo-b-ai", { headers: { apikey, Authorization: Bearer anon } })`.
+- `customerState` é o jeito do tester manter estado entre turnos (já suportado pelo `index.ts` do edge — linha 111). A skill faz mesma coisa: a cada turno lê o último update do `dryRunLog` e mescla no próximo `customerState`.
+- Persona LLM chama `https://ai.gateway.lovable.dev/v1/chat/completions` com `model: google/gemini-3-flash-preview`, `temperature: 0.9`. Falha de persona vira "ok, entendi" pra não travar o loop.
+- Detecção de problemas no REPORT (heurísticas):
+  - **loop**: mesma resposta do bot 2× seguidas (hash exato).
+  - **repetição**: mesma resposta do bot em 3 turnos da janela de 5.
+  - **foto cedo**: bot pede foto/conta antes de `interesse_confirmado` virar true.
+  - **crash**: status HTTP != 200 ou `error` no body.
 
-- Remover a leitura/forward de `forceVariantId` e `forceV2` do body.
-- Remover a manipulação de `syntheticCustomer.variant_id` / `fluxo_b_variant`.
+### Custos / latência esperada
 
-## 5. Banco — sem migração necessária
+- 10 scripts × ~12 turnos × ~6s/turno via cascade = ~12 min.
+- 10 personas × 12 turnos × (6s vendedora + ~1.5s persona LLM) = ~15 min.
+- Total ~25-30 min sequencial. Skill roda 3 conversas em paralelo (`Promise.all` em chunks) → ~10 min.
+- Custo LLM persona: ~200 chamadas Gemini Flash, dezenas de centavos.
 
-- As colunas `customers.variant_id` e `customers.fluxo_b_variant` continuam existindo (legado), mas deixam de ser lidas/gravadas. Nada quebra.
-- `flow_variants` continua intacto — pode ser reaproveitado depois se quisermos voltar a A/B testar.
+### Validação após apply
 
-# Validação
+1. `skills--apply_draft .agents/skills/vendedora-e2e-conversations`
+2. Rodar uma vez: `bun /tmp/run.ts --only scripted --max-turns 6` (smoke test rápido, ~2 min).
+3. Conferir que `/mnt/documents/vendedora-runs/<ts>/REPORT.md` foi gerado e que pelo menos 1 conversa chegou a `portal_submitting`.
 
-1. Deploy `fluxo-b-ai`.
-2. Rodar a sequência de teste no tester (`oi` → `sim` → `Sirlene` → `900` → `quero`), como funciona, golpe, quantos boleto vemm? demora?.
-3. Confirmar em **todas** as respostas: `variantId === "b.v2"` e `debug.phase === "vendedora_v2"`.
-4. Confirmar nos logs de edge: nenhuma chamada caiu no legacy (`phase: "fluxo_b_chat"`).
-5. Confirmar nudge interno (follow-up) ainda funciona — disparar um nudge sintético e ver `runNudgeLegacy` rodando.
+### Fora de escopo
 
-# Riscos
+- Não persiste no banco (dryRun).
+- Não testa nudge (continua no caminho legacy).
+- Não mede custo USD via `ai_costs` (só latência local).
+- Não substitui testes unitários — é teste de comportamento end-to-end.
 
-- **Nudge interno**: V2 hoje não trata reaquecimento de lead sumido. Manter o branch legacy só pra esse caso é a escolha mais segura. Se quiser que nudge também rode V2, vira tarefa separada.
-- **Conversas antigas em V1**: leads que estavam no meio de um fluxo V1 vão receber respostas V2 no próximo turno. V2 lê o histórico e o estado, então transição é suave, mas pode haver leve duplicação de pergunta no primeiro turno pós-corte.
-
-Posso executar?
+Posso aplicar? sim serao simulados reais para testar e entender o fluxo
