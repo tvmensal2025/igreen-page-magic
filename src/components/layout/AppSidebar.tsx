@@ -130,17 +130,17 @@ export function AppSidebar({
         {/* Brand — foto do consultor */}
         <div className={`${collapsed ? "px-2 justify-center" : "px-5"} pt-6 pb-5 flex items-center gap-3 shrink-0`}>
           <div
-            className="w-10 h-10 rounded-xl p-[2px] shrink-0"
+            className="w-14 h-14 rounded-full p-[2px] shrink-0"
             style={{ background: "linear-gradient(135deg, var(--pe-accent-soft), var(--pe-accent), var(--pe-accent-deep))" }}
           >
             <div
-              className="w-full h-full rounded-[10px] overflow-hidden flex items-center justify-center"
+              className="w-full h-full rounded-full overflow-hidden flex items-center justify-center"
               style={{ background: "var(--pe-emerald-strong)" }}
             >
               {consultantPhoto ? (
                 <img src={consultantPhoto} alt={consultantName} className="w-full h-full object-cover" />
               ) : (
-                <span className="pe-heading text-sm font-bold" style={{ color: "var(--pe-accent)" }}>
+                <span className="pe-heading text-base font-bold" style={{ color: "var(--pe-accent)" }}>
                   {consultantName.slice(0, 1).toUpperCase()}
                 </span>
               )}
@@ -148,14 +148,25 @@ export function AppSidebar({
           </div>
           {!collapsed && (
             <>
-              <div className="min-w-0">
-                <p className="pe-heading text-lg font-bold tracking-tight leading-none text-sky-50 truncate">{consultantName}</p>
-                <p className="text-[9px] mt-1 uppercase tracking-[0.22em]" style={{ color: "rgba(16,185,129,0.7)" }}>Painel Elite</p>
+              <div className="min-w-0 flex-1">
+                <p className="pe-heading text-base font-bold tracking-tight leading-tight text-sky-50 truncate">{consultantName}</p>
+                <p className="text-[9px] mt-1 uppercase tracking-[0.22em] truncate" style={{ color: "rgba(16,185,129,0.7)" }}>{consultantLevel}</p>
               </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  aria-label="Sair"
+                  title="Sair"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onOpenChange?.(false)}
-                className="lg:hidden ml-auto p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10"
+                className="lg:hidden p-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10"
                 aria-label="Recolher"
               >
                 <ChevronLeft className="w-5 h-5" />
