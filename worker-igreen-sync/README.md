@@ -1,4 +1,9 @@
-# igreen-sync-worker (v11 — Tor + Playwright + 2captcha + OpenAI Vision)
+# igreen-sync-worker (v12 — Tor + Playwright + 2captcha + OpenAI Vision + fallback POST)
+
+> **v12**: se o clique visual em **Entrar** não disparar `/v1/login` em ~15s, o worker faz
+> um `fetch` direto dentro do próprio browser para `POST /v1/login` com
+> `{ email, password, recaptchaToken, keepConnected: true }`. Isso cobre o caso em que
+> o formulário React não submete por causa de algum listener bloqueado.
 
 Worker dedicado à **leitura** dos dados do portal iGreen (clientes e rede).
 Consumido pela edge function `sync-igreen-customers`.
