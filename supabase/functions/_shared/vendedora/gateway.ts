@@ -20,37 +20,55 @@ function key(): string {
 }
 
 async function rawCall(body: Record<string, any>, model: string, timeoutMs = 25000): Promise<ChatResult> {
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), timeoutMs);
-  let res: Response;
-  try {
-    res = await fetch(GATEWAY, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    });
-  } catch (e) {
+  // Retry leve em 5xx/timeout: 1 retry com backoff curto.
+  const maxAttempts = 2;
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(GATEWAY, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      clearTimeout(to);
+      const isTimeout = (e as any)?.name === "AbortError";
+      lastErr = isTimeout
+        ? new Error(`gateway timeout (${model}) after ${timeoutMs}ms`)
+        : (e as Error);
+      if (attempt < maxAttempts && isTimeout) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      throw lastErr;
+    }
     clearTimeout(to);
-    if ((e as any)?.name === "AbortError") throw new Error(`gateway timeout (${model}) after ${timeoutMs}ms`);
-    throw e;
-  }
-  clearTimeout(to);
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`gateway ${res.status} (${model}): ${t.slice(0, 300)}`);
-  }
+    if (!res.ok) {
+      const t = await res.text();
+      lastErr = new Error(`gateway ${res.status} (${model}): ${t.slice(0, 300)}`);
+      if (attempt < maxAttempts && res.status >= 500) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      throw lastErr;
+    }
 
-  const data = await res.json();
-  const choice = data?.choices?.[0]?.message;
-  const text = String(choice?.content ?? "");
-  const raw = Array.isArray(choice?.tool_calls) ? choice.tool_calls : [];
-  const toolCalls: ToolCallParsed[] = raw.map((tc: any) => {
-    let parsed: any = {};
-    try { parsed = JSON.parse(tc?.function?.arguments || "{}"); } catch { /* ignore */ }
-    return { id: tc?.id || "", name: tc?.function?.name || "", arguments: parsed };
-  }).filter((t: ToolCallParsed) => t.name);
-  return { text, toolCalls, modelUsed: model };
+    const data = await res.json();
+    const choice = data?.choices?.[0]?.message;
+    const text = String(choice?.content ?? "");
+    const raw = Array.isArray(choice?.tool_calls) ? choice.tool_calls : [];
+    const toolCalls: ToolCallParsed[] = raw.map((tc: any) => {
+      let parsed: any = {};
+      try { parsed = JSON.parse(tc?.function?.arguments || "{}"); } catch { /* ignore */ }
+      return { id: tc?.id || "", name: tc?.function?.name || "", arguments: parsed };
+    }).filter((t: ToolCallParsed) => t.name);
+    return { text, toolCalls, modelUsed: model };
+  }
+  throw lastErr || new Error(`gateway exhausted (${model})`);
 }
 
 export async function chat(opts: {
