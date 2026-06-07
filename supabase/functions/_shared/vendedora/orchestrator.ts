@@ -82,6 +82,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
       doc_frente: state.midia_recebida?.doc_frente || novaMidia.doc_frente,
       doc_verso: state.midia_recebida?.doc_verso || novaMidia.doc_verso,
     };
+    if (novaMidia.conta) state.claims_sent_count = 0;
   }
 
   // 3) Extractors — rodam em paralelo com perfilador, antes de decidir etapa.
