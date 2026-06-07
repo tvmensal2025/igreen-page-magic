@@ -1,4 +1,4 @@
-// server.mjs — igreen-sync-worker v8 (HTTP direto, sem Tor/Playwright)
+// server.mjs — igreen-sync-worker v9 (HTTP direto + 2captcha)
 //
 // Estratégia (alinhada com worker-portal/playwright-automation.mjs:826):
 //   - fetch nativo do Node direto contra api-voffice.igreenenergy.com.br/v1/login
@@ -18,8 +18,11 @@ import http from 'node:http';
 const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
+const TWOCAPTCHA_API_KEY = process.env.TWOCAPTCHA_API_KEY || '';
 
 const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
+const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
+const RECAPTCHA_PAGEURL = 'https://escritorio.igreenenergy.com.br/login';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const BASE_HEADERS = {
@@ -32,6 +35,8 @@ const BASE_HEADERS = {
 };
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
+if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
+
 
 // Debug em memória
 let lastDebug = { ts: null, steps: [] };
@@ -59,21 +64,74 @@ async function apiFetch(method, path, { body, token, timeoutMs = 45000 } = {}) {
   return { status: res.status, body: text };
 }
 
+// ------------ 2captcha ------------
+// Resolve reCAPTCHA v2 do portal iGreen via serviço 2captcha.
+// Docs: https://2captcha.com/2captcha-api#solving_recaptchav2_new
+async function solveRecaptcha() {
+  if (!TWOCAPTCHA_API_KEY) {
+    throw new HttpError(500, 'TWOCAPTCHA_API_KEY não configurada no worker');
+  }
+  dbg('[captcha] solicitando 2captcha…');
+  const inUrl = `https://2captcha.com/in.php?key=${TWOCAPTCHA_API_KEY}` +
+    `&method=userrecaptcha&googlekey=${RECAPTCHA_SITEKEY}` +
+    `&pageurl=${encodeURIComponent(RECAPTCHA_PAGEURL)}&json=1`;
+  const inRes = await fetch(inUrl, { signal: AbortSignal.timeout(20000) });
+  const inJson = await inRes.json().catch(() => ({}));
+  if (inJson.status !== 1) {
+    throw new HttpError(502, `2captcha in.php falhou: ${inJson.request || inRes.status}`);
+  }
+  const requestId = inJson.request;
+  dbg(`[captcha] id=${requestId}, aguardando solução…`);
+
+  // Poll até 150s (geralmente resolve em 15-30s)
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const resUrl = `https://2captcha.com/res.php?key=${TWOCAPTCHA_API_KEY}` +
+      `&action=get&id=${requestId}&json=1`;
+    const r = await fetch(resUrl, { signal: AbortSignal.timeout(15000) });
+    const j = await r.json().catch(() => ({}));
+    if (j.status === 1) {
+      dbg(`[captcha] resolvido em ${(i + 1) * 5}s`);
+      return j.request;
+    }
+    if (j.request && j.request !== 'CAPCHA_NOT_READY') {
+      throw new HttpError(502, `2captcha res.php erro: ${j.request}`);
+    }
+  }
+  throw new HttpError(504, '2captcha timeout (>150s)');
+}
+
 // ------------ Login + pool ------------
 const sessions = new Map(); // email -> { token, consultorId, createdAt, lastUsed }
 
+async function postLogin(email, password, recaptchaToken) {
+  return apiFetch('POST', '/login', {
+    body: { email, password, recaptchaToken, keepConnected: true },
+    timeoutMs: 30000,
+  });
+}
+
 async function loginAndGetToken(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
-  dbg(`[login] ${email} → POST /login`);
+  dbg(`[login] ${email} → resolvendo captcha + POST /login`);
 
+  let recaptchaToken = await solveRecaptcha();
   let res;
   try {
-    res = await apiFetch('POST', '/login', { body: { email, password }, timeoutMs: 30000 });
+    res = await postLogin(email, password, recaptchaToken);
   } catch (e) {
     dbg(`[login] network error: ${e.message}`);
     throw new HttpError(502, `Falha de rede no login: ${e.message}`);
   }
   dbg(`[login] status=${res.status} body=${String(res.body).slice(0, 200)}`);
+
+  // Se 401/403 com mensagem de captcha, retry 1x com novo token
+  if ((res.status === 401 || res.status === 403) && /captcha|recaptcha/i.test(res.body)) {
+    dbg('[login] captcha rejeitado — resolvendo de novo');
+    recaptchaToken = await solveRecaptcha();
+    res = await postLogin(email, password, recaptchaToken);
+    dbg(`[login] retry status=${res.status} body=${String(res.body).slice(0, 200)}`);
+  }
 
   if (res.status === 401 || res.status === 403) {
     throw new HttpError(401, 'Login rejeitado — email ou senha incorretos');
@@ -81,7 +139,8 @@ async function loginAndGetToken(email, password) {
   if (res.status === 429) {
     dbg('[login] 429 — aguardando 30s e tentando 1x');
     await new Promise(r => setTimeout(r, 30000));
-    res = await apiFetch('POST', '/login', { body: { email, password }, timeoutMs: 30000 });
+    recaptchaToken = await solveRecaptcha();
+    res = await postLogin(email, password, recaptchaToken);
     if (res.status !== 200 && res.status !== 201) {
       throw new HttpError(502, `Rate-limit persistente HTTP ${res.status}`);
     }
@@ -89,6 +148,7 @@ async function loginAndGetToken(email, password) {
   if (res.status !== 200 && res.status !== 201) {
     throw new HttpError(502, `API login HTTP ${res.status}`);
   }
+
 
   let data;
   try { data = JSON.parse(res.body); }
@@ -201,7 +261,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'http-direct-v8',
+        mode: 'http-direct-2captcha-v9',
       });
     }
 
@@ -239,7 +299,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v8 (http-direct) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v9 (http-direct + 2captcha) porta ${PORT}`);
 });
 
 setInterval(() => {
