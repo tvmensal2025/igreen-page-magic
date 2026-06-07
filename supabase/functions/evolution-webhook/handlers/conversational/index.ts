@@ -430,15 +430,22 @@ async function sendStepMedia(
   let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
   if (variant === "B") {
     const transformed: any[] = [];
+    const seenTranscripts = new Set<string>();
     for (const m of medias) {
       if (String(m.kind).toLowerCase() !== "audio") { transformed.push(m); continue; }
       const transcript = await ensureAudioTranscript(ctx.supabase, m);
-      if (transcript && transcript.trim()) {
-        transformed.push({ ...m, _asText: true, _transcript: transcript.trim() });
-        console.log(`[sendStepMedia] variant=B: audio "${m.label || m.id}" → text (${transcript.length} chars)`);
-      } else {
+      const norm = (transcript || "").trim().toLowerCase().replace(/\s+/g, " ");
+      if (!norm) {
         console.warn(`[sendStepMedia] variant=B: audio "${m.label || m.id}" sem transcript → pulado`);
+        continue;
       }
+      if (seenTranscripts.has(norm)) {
+        console.log(`[sendStepMedia] variant=B: audio "${m.label || m.id}" transcript duplicado → pulado`);
+        continue;
+      }
+      seenTranscripts.add(norm);
+      transformed.push({ ...m, _asText: true, _transcript: transcript!.trim() });
+      console.log(`[sendStepMedia] variant=B: audio "${m.label || m.id}" → text (${transcript!.length} chars)`);
     }
     medias = transformed;
   }
