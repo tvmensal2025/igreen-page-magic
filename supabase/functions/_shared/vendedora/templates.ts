@@ -355,6 +355,9 @@ const TEMA_KEYWORDS: Record<ObjecaoTipo, RegExp> = {
   como_ganham: /fazenda|gera|parte do que|comercializ/i,
   pensar: /sem compromisso|gratuit|sem risco|no seu tempo/i,
   generica: /aneel|sem obra|sem fidelidade|desconto/i,
+  como_funciona: /mesma distribuidora|desconto.*fatura|usina|sem obra/i,
+  foto_antes: /pode (?:mandar|enviar)|antes|claro/i,
+  desistencia: /tudo bem|sem press[ãa]o|qualquer hora/i,
 };
 
 /**
