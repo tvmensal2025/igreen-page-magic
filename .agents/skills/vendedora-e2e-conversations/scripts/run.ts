@@ -535,6 +535,35 @@ async function runConversation(opts: {
       result.problems.push(`turn ${turn}: FOTO_CEDO (bot pediu mídia antes de interesse confirmado)`);
     }
 
+    // DUVIDA_IGNORADA: lead fez pergunta e bot devolveu resposta idêntica à anterior
+    const leadAskedQ = /\?/.test(leadMsg) || /^(como|quanto|quando|qual|tem|vai|vão|posso|e se|dá pra|precisa|isso é)\b/i.test(leadMsg.trim());
+    if (leadAskedQ && lastReply && sha1(lastReply) === h) {
+      result.problems.push(`turn ${turn}: DUVIDA_IGNORADA (lead perguntou e bot repetiu reply anterior)`);
+    }
+
+    // REPETIU_TEMA: 2 respostas seguidas com mesmo deterministic_duvida:<tipo>
+    const modelTag = t.modelUsed || "";
+    const prevTurn = result.turns[result.turns.length - 2];
+    if (modelTag.startsWith("deterministic_duvida:") && prevTurn?.modelUsed === modelTag) {
+      const prevReply = prevTurn.reply || "";
+      // similaridade simples: 70%+ tokens em comum
+      const toks = (s: string) => new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 3));
+      const a = toks(reply), b = toks(prevReply);
+      const inter = [...a].filter((w) => b.has(w)).length;
+      const sim = inter / Math.max(1, Math.min(a.size, b.size));
+      if (sim > 0.7) result.problems.push(`turn ${turn}: REPETIU_TEMA (${modelTag}, sim=${(sim * 100).toFixed(0)}%)`);
+    }
+
+    // HANDOFF_INCOERENTE: handoff sem o lead ter pedido humano nem desistido
+    if (t.shouldHandoff) {
+      const lastLeadMsgs = (result.turns.slice(-3).map((x) => x.leadMsg).join(" ") + " " + leadMsg).toLowerCase();
+      const pediuHumano = /(humano|atendente|pessoa|consultor|alguém de verdade|falar com)/i.test(lastLeadMsgs);
+      const desistiu = /(não quero|nao quero|desisti|melhor não|melhor nao|tchau|deixa pra lá|deixa pra la|valeu|outra hora)/i.test(lastLeadMsgs);
+      if (!pediuHumano && !desistiu) {
+        result.problems.push(`turn ${turn}: HANDOFF_INCOERENTE (handoff sem pedido humano nem desistência)`);
+      }
+    }
+
     // aplica updates ao state local
     customerState = applyDryRunLog(customerState, json?.dryRunLog || []);
 
