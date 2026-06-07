@@ -1,25 +1,40 @@
-# Dockerfile — igreen-sync-worker v8
-# HTTP direto contra api-voffice.igreenenergy.com.br (same method as worker-portal).
-# Sem Playwright, sem Tor, sem captcha.
+# Dockerfile — igreen-sync-worker v10
+# Tor (IP residencial) + Playwright Chromium (passa CF) + 2captcha (resolve reCAPTCHA)
+# + Visão IA (Gemini via Lovable AI Gateway) para debug visual.
 
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 LABEL service="igreen-sync-worker"
-LABEL version="v8.0-2026.06.07"
+LABEL version="v10.0-2026.06.07"
+
+# Deps de sistema: Tor + libs do Chromium headless
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tor \
+    ca-certificates \
+    wget \
+    fonts-liberation \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+    libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 libx11-6 \
+    libxcb1 libxext6 libxi6 libxtst6 libgtk-3-0 \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev --no-audit --no-fund \
+ && npx playwright install chromium
 
-COPY *.mjs ./
+COPY *.mjs torrc ./
 
 ENV NODE_ENV=production
 ENV PORT=3102
+ENV TOR_SOCKS_PROXY=socks5://127.0.0.1:9050
 
 EXPOSE 3102
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD wget -qO- http://localhost:3102/health || exit 1
 
-CMD ["node", "server.mjs"]
+# Sobe Tor em background e depois o worker
+CMD ["sh", "-c", "tor -f /app/torrc & sleep 5 && node server.mjs"]

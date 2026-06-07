@@ -1,92 +1,71 @@
-# igreen-sync-worker (v9 — http-direct + 2captcha)
+# igreen-sync-worker (v10 — Tor + Playwright + 2captcha + visão IA)
 
-Worker dedicado à **leitura** dos dados do portal iGreen
-(clientes e rede). Consumido apenas pela edge function `sync-igreen-customers`.
+Worker dedicado à **leitura** dos dados do portal iGreen (clientes e rede).
+Consumido pela edge function `sync-igreen-customers`.
 
-## Como funciona
+## Por que tudo isso?
 
-O endpoint `POST https://api-voffice.igreenenergy.com.br/v1/login` **exige
-reCAPTCHA v2** (sitekey `6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6`, página
-`https://escritorio.igreenenergy.com.br/login`). Sem o token, devolve 401
-"Unauthorized action" mesmo com email/senha corretos.
+O endpoint `POST https://api-voffice.igreenenergy.com.br/v1/login` é defendido por:
 
-Fluxo a cada sync (token de login dura ~30 min, então só roda 1x por meia hora
-por consultor):
+1. **Cloudflare WAF** — bloqueia IPs de datacenter (easypanel, AWS, etc.) com 403 HTML.
+2. **reCAPTCHA v2** — sitekey `6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6` (página `/login`).
+   Sem o `recaptchaToken` no body, devolve 401 "Unauthorized action".
 
-1. `solveRecaptcha()` chama **2captcha** (`method=userrecaptcha`) → recebe `gToken` em ~20s.
-2. `POST /v1/login` com `{ email, password, recaptchaToken: gToken, keepConnected: true }` → `accessToken`.
-3. `GET /v1/customer-map/{consultorId}?page=N&pageSize=500` paginado com `Bearer accessToken`.
+Para passar nos dois, o worker combina:
 
 ```
-Painel → edge sync-igreen-customers → worker-igreen-sync
-                                          │
-                                          ├─► 2captcha.com (resolve reCAPTCHA)
-                                          └─► api-voffice.igreenenergy.com.br
+Playwright Chromium ──(via Tor SOCKS5)──► iGreen Cloudflare ✅
+       │
+       ├─ injeta token do 2captcha no widget reCAPTCHA
+       ├─ clica "Entrar"
+       └─ intercepta /v1/login → captura accessToken
+                    │
+                    ▼
+           /v1/customer-map (Bearer)
 ```
 
-Sem Tor, sem Playwright, sem Chromium. Imagem Docker ~150MB.
+A sessão fica cacheada 30min, então o pipeline pesado só roda uma vez por
+consultor a cada meia hora.
 
-## Variáveis de ambiente
+## Debug visual com IA
 
-| Nome                  | Obrigatória | Descrição                                      |
-|-----------------------|-------------|------------------------------------------------|
-| `WORKER_TOKEN`        | sim         | header `X-Worker-Token` esperado das chamadas  |
-| `TWOCAPTCHA_API_KEY`  | sim         | chave do serviço 2captcha (resolve reCAPTCHA)  |
-| `PORT`                | não         | default `3102`                                 |
-| `SESSION_TTL_MS`      | não         | default `1800000` (30 min)                     |
+A cada passo crítico (`abriu_login`, `preencheu_form`, `injetou_captcha`,
+`pos_submit`) o worker tira screenshot e envia para o **Lovable AI Gateway
+(Gemini 2.5 Flash visão)**. A resposta vira uma linha no `/last-debug`:
 
+```
+21:42:11 [step] abriu_login → "Formulário de login do portal iGreen visível, com campo de email preenchido"
+21:42:34 [step] pos_submit  → "Página de bloqueio Cloudflare 'Sorry, you have been blocked'"
+```
 
+E `GET /last-screenshot` devolve o PNG bruto do último passo para você abrir
+no navegador.
 
 ## Endpoints
 
 Auth: header `X-Worker-Token: <WORKER_TOKEN>`.
 
-| Método | Path              | Função                                       |
-|--------|-------------------|----------------------------------------------|
-| GET    | `/health`         | healthcheck (`{ ok, sessions, uptime_s }`)   |
-| GET    | `/last-debug`     | passos do último login (debug)               |
-| POST   | `/sync-customers` | JSON cru de `/customer-map/{consultorId}`    |
-| POST   | `/sync-network`   | JSON cru de `/network-map`                   |
-
-Body dos POST:
-```json
-{ "portal_email": "x@y.com", "portal_password": "..." }
-```
-
-Resposta:
-```json
-{ "ok": true, "consultor_id": "12345", "customers": [ /* JSON cru */ ] }
-```
+| Método | Path                | Função                                          |
+|--------|---------------------|-------------------------------------------------|
+| GET    | `/health`           | `{ ok, sessions, uptime_s, mode, ia_vision }`   |
+| GET    | `/last-debug`       | passos + análise IA do último login             |
+| GET    | `/last-screenshot`  | PNG do último step                              |
+| POST   | `/sync-customers`   | `{ portal_email, portal_password }` → clientes  |
+| POST   | `/sync-network`     | `{ portal_email, portal_password }` → rede      |
 
 ## Variáveis de ambiente
 
-| Var                    | Default     | Descrição                                |
-|------------------------|-------------|------------------------------------------|
-| `PORT`                 | `3102`      | Porta HTTP                               |
-| `WORKER_TOKEN`         | —           | == `settings.igreen_sync_worker_secret`  |
-| `SESSION_TTL_MS`       | `1800000`   | TTL da sessão Playwright (30 min)        |
-| `MAX_SESSIONS`         | `20`        | Limite do pool (LRU)                     |
-| `PLAYWRIGHT_HEADLESS`  | `true`      | Headless on/off                          |
+| Nome                  | Obrigatória | Descrição                                          |
+|-----------------------|-------------|----------------------------------------------------|
+| `WORKER_TOKEN`        | sim         | header `X-Worker-Token` esperado                   |
+| `TWOCAPTCHA_API_KEY`  | sim         | chave 2captcha (resolve reCAPTCHA v2)              |
+| `LOVABLE_API_KEY`     | recomendada | habilita debug visual com Gemini                   |
+| `TOR_SOCKS_PROXY`     | não         | default `socks5://127.0.0.1:9050` (Tor local)      |
+| `PORT`                | não         | default `3102`                                     |
+| `SESSION_TTL_MS`      | não         | default `1800000` (30 min)                         |
 
-## Deploy no Easypanel
+## Custos por sync (com cache de 30min ativo)
 
-1. **Source → Github**: `tvmensal2025/igreen-official-portal`, branch `main`,
-   Caminho de Build `worker-igreen-sync`.
-2. **Porta**: `3102`
-3. **Environment**:
-   ```
-   PORT=3102
-   NODE_ENV=production
-   PLAYWRIGHT_HEADLESS=true
-   WORKER_TOKEN=<segredo longo>
-   ```
-4. Clique em **Deploy**.
-
-## Configurar no Supabase (edge function)
-
-```sql
-INSERT INTO settings (key, value) VALUES
-  ('igreen_sync_worker_url',    'https://<dominio-do-worker>'),
-  ('igreen_sync_worker_secret', '<mesmo WORKER_TOKEN>')
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-```
+- 2captcha: ~US$0,003
+- Lovable AI vision: gratuito no Gemini 2.5 Flash até 13/10/2026
+- Total: ~R$0,015/sync

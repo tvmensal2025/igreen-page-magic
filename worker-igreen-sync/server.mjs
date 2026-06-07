@@ -1,94 +1,117 @@
-// server.mjs — igreen-sync-worker v9 (HTTP direto + 2captcha)
+// server.mjs — igreen-sync-worker v10
 //
-// Estratégia (alinhada com worker-portal/playwright-automation.mjs:826):
-//   - fetch nativo do Node direto contra api-voffice.igreenenergy.com.br/v1/login
-//   - Headers Origin/Referer de escritorio.igreenenergy.com.br (passa o CORS/CF)
-//   - Body { email, password } → accessToken
-//   - customer-map / network-map paginados com Bearer
-//   - Pool de tokens em memória por email (TTL 30 min)
+// Pipeline:
+//   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
+//   2. Abre https://escritorio.igreenenergy.com.br/login           (recebe cf_clearance)
+//   3. 2captcha resolve o reCAPTCHA v2 do widget                   (~15-60s)
+//   4. Injeta o token + preenche email/senha + clica "Entrar"
+//   5. Intercepta a response do POST /v1/login e extrai accessToken
+//   6. Reusa o page.context() para chamar /customer-map paginado
+//
+// Debug visual (NOVO):
+//   - cada step crítico tira screenshot → envia para Lovable AI Gateway (Gemini)
+//   - resposta IA fica no /last-debug junto do passo
+//   - GET /last-screenshot devolve o PNG do último step
 //
 // Endpoints:
 //   GET  /health
-//   GET  /last-debug
-//   POST /sync-customers   { portal_email, portal_password }
-//   POST /sync-network     { portal_email, portal_password }
+//   GET  /last-debug         JSON com steps + análise IA
+//   GET  /last-screenshot    PNG bruto do último step
+//   POST /sync-customers     { portal_email, portal_password }
+//   POST /sync-network       { portal_email, portal_password }
 
 import http from 'node:http';
+import { chromium } from 'playwright-chromium';
 
 const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
 const TWOCAPTCHA_API_KEY = process.env.TWOCAPTCHA_API_KEY || '';
+const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY || '';
+const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050';
 
+const PORTAL_URL = 'https://escritorio.igreenenergy.com.br/login';
 const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
 const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
-const RECAPTCHA_PAGEURL = 'https://escritorio.igreenenergy.com.br/login';
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-const BASE_HEADERS = {
-  'Content-Type': 'application/json',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-  'Origin': 'https://escritorio.igreenenergy.com.br',
-  'Referer': 'https://escritorio.igreenenergy.com.br/',
-  'User-Agent': UA,
-};
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
+if (!LOVABLE_API_KEY) console.warn('[boot] WARN: LOVABLE_API_KEY não definido (debug IA desativado)');
 
-
-// Debug em memória
+// ---------- Debug ----------
 let lastDebug = { ts: null, steps: [] };
+let lastScreenshot = null; // Buffer PNG
+
 function dbg(msg) {
-  console.log(msg);
-  lastDebug.steps.push(`${new Date().toISOString().slice(11, 19)} ${msg}`);
-  if (lastDebug.steps.length > 80) lastDebug.steps.shift();
+  const line = `${new Date().toISOString().slice(11, 19)} ${msg}`;
+  console.log(line);
+  lastDebug.steps.push(line);
+  if (lastDebug.steps.length > 200) lastDebug.steps.shift();
 }
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-async function apiFetch(method, path, { body, token, timeoutMs = 45000 } = {}) {
-  const url = `${API_BASE}${path}`;
-  const headers = { ...BASE_HEADERS };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const text = await res.text();
-  return { status: res.status, body: text };
+// ---------- IA Vision (Lovable AI Gateway → Gemini) ----------
+async function describeScreenshot(pngBuffer, stepName) {
+  if (!LOVABLE_API_KEY) return null;
+  try {
+    const b64 = pngBuffer.toString('base64');
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: `Step "${stepName}" do worker iGreen. Descreva em 1 frase curta o que está visível: formulário de login, mensagem de erro, página de bloqueio Cloudflare ("Sorry, you have been blocked"), dashboard pós-login, captcha não marcado, etc.` },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } },
+          ],
+        }],
+        max_tokens: 200,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await res.json();
+    return j?.choices?.[0]?.message?.content?.trim() || null;
+  } catch (e) {
+    return `(IA vision falhou: ${e.message})`;
+  }
 }
 
-// ------------ 2captcha ------------
-// Resolve reCAPTCHA v2 do portal iGreen via serviço 2captcha.
-// Docs: https://2captcha.com/2captcha-api#solving_recaptchav2_new
-async function solveRecaptcha() {
-  if (!TWOCAPTCHA_API_KEY) {
-    throw new HttpError(500, 'TWOCAPTCHA_API_KEY não configurada no worker');
+async function snapStep(page, stepName) {
+  try {
+    const png = await page.screenshot({ type: 'png', fullPage: false });
+    lastScreenshot = png;
+    const desc = await describeScreenshot(png, stepName);
+    dbg(`[step] ${stepName} → ${desc || '(sem IA)'}`);
+  } catch (e) {
+    dbg(`[step] ${stepName} → snapshot falhou: ${e.message}`);
   }
+}
+
+// ---------- 2captcha ----------
+async function solveRecaptcha() {
+  if (!TWOCAPTCHA_API_KEY) throw new HttpError(500, 'TWOCAPTCHA_API_KEY não configurada');
   dbg('[captcha] solicitando 2captcha…');
   const inUrl = `https://2captcha.com/in.php?key=${TWOCAPTCHA_API_KEY}` +
     `&method=userrecaptcha&googlekey=${RECAPTCHA_SITEKEY}` +
-    `&pageurl=${encodeURIComponent(RECAPTCHA_PAGEURL)}&json=1`;
+    `&pageurl=${encodeURIComponent(PORTAL_URL)}&json=1`;
   const inRes = await fetch(inUrl, { signal: AbortSignal.timeout(20000) });
   const inJson = await inRes.json().catch(() => ({}));
   if (inJson.status !== 1) {
     throw new HttpError(502, `2captcha in.php falhou: ${inJson.request || inRes.status}`);
   }
-  const requestId = inJson.request;
-  dbg(`[captcha] id=${requestId}, aguardando solução…`);
-
-  // Poll até 150s (geralmente resolve em 15-30s)
+  const id = inJson.request;
+  dbg(`[captcha] id=${id}, aguardando solução…`);
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 5000));
-    const resUrl = `https://2captcha.com/res.php?key=${TWOCAPTCHA_API_KEY}` +
-      `&action=get&id=${requestId}&json=1`;
-    const r = await fetch(resUrl, { signal: AbortSignal.timeout(15000) });
+    const r = await fetch(`https://2captcha.com/res.php?key=${TWOCAPTCHA_API_KEY}&action=get&id=${id}&json=1`, { signal: AbortSignal.timeout(15000) });
     const j = await r.json().catch(() => ({}));
     if (j.status === 1) {
       dbg(`[captcha] resolvido em ${(i + 1) * 5}s`);
@@ -101,124 +124,147 @@ async function solveRecaptcha() {
   throw new HttpError(504, '2captcha timeout (>150s)');
 }
 
-// ------------ Login + pool ------------
-const sessions = new Map(); // email -> { token, consultorId, createdAt, lastUsed }
+// ---------- Login Playwright ----------
+const sessions = new Map(); // email → { token, consultorId, browser, context, createdAt }
 
-async function postLogin(email, password, recaptchaToken) {
-  return apiFetch('POST', '/login', {
-    body: { email, password, recaptchaToken, keepConnected: true },
-    timeoutMs: 30000,
-  });
-}
-
-async function loginAndGetToken(email, password) {
+async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
-  dbg(`[login] ${email} → resolvendo captcha + POST /login`);
+  dbg(`[login] ${email} → iniciando browser via Tor (${TOR_PROXY})`);
 
-  let recaptchaToken = await solveRecaptcha();
-  let res;
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+    proxy: { server: TOR_PROXY },
+  });
+
+  let context, page;
   try {
-    res = await postLogin(email, password, recaptchaToken);
-  } catch (e) {
-    dbg(`[login] network error: ${e.message}`);
-    throw new HttpError(502, `Falha de rede no login: ${e.message}`);
-  }
-  dbg(`[login] status=${res.status} body=${String(res.body).slice(0, 200)}`);
+    context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 800 },
+      locale: 'pt-BR',
+    });
+    page = await context.newPage();
 
-  // Se 401/403 com mensagem de captcha, retry 1x com novo token
-  if ((res.status === 401 || res.status === 403) && /captcha|recaptcha/i.test(res.body)) {
-    dbg('[login] captcha rejeitado — resolvendo de novo');
-    recaptchaToken = await solveRecaptcha();
-    res = await postLogin(email, password, recaptchaToken);
-    dbg(`[login] retry status=${res.status} body=${String(res.body).slice(0, 200)}`);
-  }
+    // Intercepta a response do /login para capturar o accessToken
+    let loginResponseData = null;
+    page.on('response', async (resp) => {
+      const url = resp.url();
+      if (url.includes('/v1/login') && resp.request().method() === 'POST') {
+        try {
+          const json = await resp.json();
+          loginResponseData = { status: resp.status(), body: json };
+        } catch { /* não-json */ }
+      }
+    });
 
-  if (res.status === 401 || res.status === 403) {
-    throw new HttpError(401, 'Login rejeitado — email ou senha incorretos');
-  }
-  if (res.status === 429) {
-    dbg('[login] 429 — aguardando 30s e tentando 1x');
-    await new Promise(r => setTimeout(r, 30000));
-    recaptchaToken = await solveRecaptcha();
-    res = await postLogin(email, password, recaptchaToken);
-    if (res.status !== 200 && res.status !== 201) {
-      throw new HttpError(502, `Rate-limit persistente HTTP ${res.status}`);
+    dbg('[login] abrindo página de login…');
+    await page.goto(PORTAL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 30000 });
+    await snapStep(page, 'abriu_login');
+
+    dbg('[login] preenchendo credenciais');
+    await page.fill('input[type="email"], input[name="email"]', email);
+    await page.fill('input[type="password"], input[name="password"]', password);
+    await snapStep(page, 'preencheu_form');
+
+    const captchaToken = await solveRecaptcha();
+    dbg('[login] injetando token no widget');
+    await page.evaluate((token) => {
+      // injeta no textarea padrão do reCAPTCHA v2
+      const ta = document.querySelector('textarea#g-recaptcha-response') ||
+                 document.querySelector('textarea[name="g-recaptcha-response"]');
+      if (ta) { ta.value = token; ta.innerHTML = token; }
+      // dispara callback do widget se existir
+      if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
+        const clients = window.___grecaptcha_cfg.clients;
+        for (const cid of Object.keys(clients)) {
+          const client = clients[cid];
+          for (const k of Object.keys(client)) {
+            const obj = client[k];
+            if (obj && typeof obj === 'object') {
+              for (const kk of Object.keys(obj)) {
+                if (obj[kk] && typeof obj[kk].callback === 'function') {
+                  try { obj[kk].callback(token); } catch {}
+                }
+              }
+            }
+          }
+        }
+      }
+    }, captchaToken);
+    await snapStep(page, 'injetou_captcha');
+
+    dbg('[login] clicando "Entrar"');
+    await Promise.all([
+      page.waitForResponse(r => r.url().includes('/v1/login'), { timeout: 60000 }).catch(() => null),
+      page.click('button[type="submit"], button:has-text("Entrar")'),
+    ]);
+    await page.waitForTimeout(2000);
+    await snapStep(page, 'pos_submit');
+
+    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada');
+    dbg(`[login] response /login status=${loginResponseData.status}`);
+    if (loginResponseData.status === 401 || loginResponseData.status === 403) {
+      throw new HttpError(401, `Login rejeitado: ${JSON.stringify(loginResponseData.body).slice(0, 200)}`);
     }
-  }
-  if (res.status !== 200 && res.status !== 201) {
-    throw new HttpError(502, `API login HTTP ${res.status}`);
-  }
+    if (loginResponseData.status >= 400) {
+      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}`);
+    }
 
+    const data = loginResponseData.body;
+    const token = data.accessToken || data.token || data.access_token ||
+      data?.data?.token || data?.data?.accessToken || null;
+    if (!token) throw new HttpError(502, 'Login OK mas sem accessToken');
 
-  let data;
-  try { data = JSON.parse(res.body); }
-  catch { throw new HttpError(502, 'Resposta de login não-JSON'); }
+    let consultorId = String(
+      data?.idconsultor || data?.consultorId || data?.consultor?.id ||
+      data?.user?.idconsultor || data?.data?.idconsultor || ''
+    ) || null;
 
-  const token = data.accessToken || data.token || data.access_token ||
-    data?.data?.token || data?.data?.accessToken || null;
-  if (!token) throw new HttpError(502, 'Login OK mas sem accessToken');
-
-  let consultorId = String(
-    data?.idconsultor || data?.consultorId || data?.consultor?.id ||
-    data?.user?.idconsultor || data?.data?.idconsultor || ''
-  ) || null;
-
-  if (!consultorId) {
-    try {
-      const c = await apiFetch('GET', '/consultant', { token });
-      dbg(`[login] /consultant status=${c.status}`);
-      if (c.status === 200) {
-        const cj = JSON.parse(c.body);
+    if (!consultorId) {
+      const c = await context.request.get(`${API_BASE}/consultant`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (c.ok()) {
+        const cj = await c.json();
         consultorId = String(cj?.id || cj?.idconsultor || cj?.consultor?.id || cj?.data?.id || '') || null;
       }
-    } catch (e) { dbg(`[login] /consultant erro: ${e.message}`); }
-  }
+    }
 
-  dbg(`[login] OK token=sim consultor=${consultorId}`);
-  return { token, consultorId };
+    dbg(`[login] OK consultor=${consultorId}`);
+    return { token, consultorId, browser, context, createdAt: Date.now() };
+  } catch (e) {
+    try { await browser.close(); } catch {}
+    throw e;
+  }
 }
 
 async function getOrCreateSession(email, password) {
   const now = Date.now();
   const s = sessions.get(email);
-  if (s && (now - s.createdAt) < SESSION_TTL_MS) {
-    s.lastUsed = now;
-    return s;
-  }
-  const fresh = await loginAndGetToken(email, password);
-  const entry = { ...fresh, createdAt: now, lastUsed: now };
-  sessions.set(email, entry);
-  return entry;
+  if (s && (now - s.createdAt) < SESSION_TTL_MS) return s;
+  if (s) { try { await s.browser.close(); } catch {} sessions.delete(email); }
+  const fresh = await loginWithPlaywright(email, password);
+  sessions.set(email, fresh);
+  return fresh;
 }
 
-async function fetchPaginated(token, path, { pageParam = 'page', sizeParam = 'pageSize', size = 500 } = {}) {
+async function fetchPaginated(session, path, { pageParam = 'page', sizeParam = 'pageSize', size = 500 } = {}) {
   const all = [];
   for (let p = 1; p <= 200; p++) {
     const sep = path.includes('?') ? '&' : '?';
-    const full = `${path}${sep}${pageParam}=${p}&${sizeParam}=${size}`;
-    let res;
-    try {
-      res = await apiFetch('GET', full, { token });
-    } catch (e) {
-      throw new HttpError(502, `Falha de rede em ${full}: ${e.message}`);
-    }
-
-    if (res.status === 429) {
-      dbg(`[fetch] 429 page ${p} — aguardando 30s`);
-      await new Promise(r => setTimeout(r, 30000));
-      p--; continue;
-    }
-    if (res.status === 401 || res.status === 403) {
-      throw new HttpError(res.status, `Token expirado (${res.status})`);
-    }
-    if (res.status !== 200) throw new HttpError(res.status || 502, `HTTP ${res.status}`);
-
-    let j;
-    try { j = JSON.parse(res.body); } catch { throw new HttpError(502, 'Resposta não-JSON'); }
+    const full = `${API_BASE}${path}${sep}${pageParam}=${p}&${sizeParam}=${size}`;
+    const r = await session.context.request.get(full, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      timeout: 60000,
+    });
+    if (r.status() === 429) { await new Promise(s => setTimeout(s, 30000)); p--; continue; }
+    if (!r.ok()) throw new HttpError(r.status(), `HTTP ${r.status()} em ${full}`);
+    const j = await r.json();
     const arr = Array.isArray(j) ? j :
       Array.isArray(j?.data) ? j.data :
       Array.isArray(j?.items) ? j.items :
-      Array.isArray(j?.results) ? j.results :
       Array.isArray(j?.customers) ? j.customers :
       Array.isArray(j?.members) ? j.members : [];
     all.push(...arr);
@@ -229,7 +275,7 @@ async function fetchPaginated(token, path, { pageParam = 'page', sizeParam = 'pa
   return all;
 }
 
-// ------------ HTTP ------------
+// ---------- HTTP ----------
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -242,7 +288,7 @@ function readJsonBody(req) {
   });
 }
 
-function send(res, status, obj) {
+function sendJson(res, status, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body) });
   res.end(body);
@@ -258,58 +304,64 @@ const bootAt = Date.now();
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/health') {
-      return send(res, 200, {
+      return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'http-direct-2captcha-v9',
+        mode: 'tor+playwright+2captcha-v10',
+        ia_vision: Boolean(LOVABLE_API_KEY),
       });
     }
-
-    if (req.method === 'GET' && req.url === '/last-debug') {
-      return send(res, 200, lastDebug);
+    if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
+    if (req.method === 'GET' && req.url === '/last-screenshot') {
+      if (!lastScreenshot) return sendJson(res, 404, { ok: false, error: 'sem screenshot' });
+      res.writeHead(200, { 'content-type': 'image/png', 'content-length': lastScreenshot.length });
+      return res.end(lastScreenshot);
     }
 
-    if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not_found' });
-    if (!authOk(req)) return send(res, 401, { ok: false, error: 'unauthorized' });
+    if (req.method !== 'POST') return sendJson(res, 404, { ok: false, error: 'not_found' });
+    if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'unauthorized' });
 
     const body = await readJsonBody(req);
     const email = String(body.portal_email || '').trim().toLowerCase();
     const password = String(body.portal_password || '');
-    if (!email || !password) return send(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
+    if (!email || !password) return sendJson(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
 
     if (req.url === '/sync-customers') {
       const s = await getOrCreateSession(email, password);
       if (!s.consultorId) throw new HttpError(500, 'consultor_id indisponível');
-      const customers = await fetchPaginated(s.token, `/customer-map/${s.consultorId}`, { pageParam: 'page', sizeParam: 'pageSize', size: 500 });
-      return send(res, 200, { ok: true, consultor_id: s.consultorId, customers });
+      const customers = await fetchPaginated(s, `/customer-map/${s.consultorId}`, { pageParam: 'page', sizeParam: 'pageSize', size: 500 });
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers });
     }
-
     if (req.url === '/sync-network') {
       const s = await getOrCreateSession(email, password);
-      const members = await fetchPaginated(s.token, `/network-map`, { pageParam: 'page', sizeParam: 'per_page', size: 100 });
-      return send(res, 200, { ok: true, consultor_id: s.consultorId, members });
+      const members = await fetchPaginated(s, `/network-map`, { pageParam: 'page', sizeParam: 'per_page', size: 100 });
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, members });
     }
-
-    return send(res, 404, { ok: false, error: 'not_found' });
+    return sendJson(res, 404, { ok: false, error: 'not_found' });
   } catch (e) {
     const status = e?.status || 500;
     console.error(`[err] ${req.method} ${req.url} → ${status}: ${e?.message}`);
-    return send(res, status, { ok: false, error: e?.message || 'erro interno' });
+    return sendJson(res, status, { ok: false, error: e?.message || 'erro interno' });
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v9 (http-direct + 2captcha) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v10 (tor+playwright+2captcha) porta ${PORT}`);
 });
 
-setInterval(() => {
+// Garbage collect de sessões expiradas
+setInterval(async () => {
   const now = Date.now();
   for (const [email, s] of sessions) {
     if ((now - s.createdAt) > SESSION_TTL_MS) {
-      console.log(`[gc] expirando sessão ${email}`);
+      dbg(`[gc] expirando sessão ${email}`);
+      try { await s.browser.close(); } catch {}
       sessions.delete(email);
     }
   }
 }, 60000);
 
-process.on('SIGTERM', () => { sessions.clear(); process.exit(0); });
+process.on('SIGTERM', async () => {
+  for (const [, s] of sessions) { try { await s.browser.close(); } catch {} }
+  process.exit(0);
+});

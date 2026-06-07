@@ -1,0 +1,6 @@
+SocksPort 9050
+DataDirectory /tmp/tor-data
+RunAsDaemon 0
+Log notice stdout
+ExitRelay 0
+ClientUseIPv6 1

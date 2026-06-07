@@ -1,72 +1,67 @@
-## Objetivo
-Destravar a sincronização de clientes iGreen integrando o serviço 2captcha ao `worker-igreen-sync`, resolvendo o reCAPTCHA que o endpoint `POST /v1/login` passou a exigir.
+## Diagnóstico (lendo os logs)
 
-## Como vai funcionar
+| Versão | Passou Cloudflare? | Passou reCAPTCHA da API? | Resultado |
+|---|---|---|---|
+| v7 (Tor + Playwright) | Sim (IP Tor) | Não (não enviava token) | 401 "Unauthorized action" |
+| v9 (HTTP direto + 2captcha) | Não (IP easypanel) | Sim (resolveu em 60s) | 403 Cloudflare HTML |
 
-```text
-sync-igreen-customers (edge)
-        │  POST + x-worker-token
-        ▼
-worker-igreen-sync  ──①──►  2captcha.com  (resolve reCAPTCHA, ~20s)
-        │                       │
-        │◄────── gToken ────────┘
-        │
-        ②  POST /v1/login  { email, password, recaptchaToken }
-        ▼
-   api-voffice.igreenenergy.com.br  → accessToken
-        │
-        ③ /customer-map paginado (token Bearer, sem captcha)
-```
+O `<!DOCTYPE html>... Sorry, you have been blocked` é a **página de bloqueio do Cloudflare**, não erro da iGreen. No seu navegador o reCAPTCHA passou sozinho porque seu IP residencial tem score alto; o IP do easypanel é datacenter e o WAF derruba direto.
 
-- Token de login dura ~30min → resolvemos captcha **só 1x a cada 30min por consultor** (pool em memória já existe).
-- Custo estimado: ~US$0,003 por sync (1 captcha ≈ R$0,015).
+## Solução: v10 — Tor + Playwright + 2captcha + visão IA
 
-## Passos
+Combinar o melhor dos dois mundos:
 
-1. **Salvar o secret** `TWOCAPTCHA_API_KEY` no Lovable Cloud (vou pedir via `add_secret`; já tenho a chave que você passou).
+1. **Tor SOCKS5** para sair com IP residencial (passa o Cloudflare).
+2. **Playwright** abre a página real `/login` → carrega o widget reCAPTCHA → recebe `cf_clearance` cookie.
+3. **2captcha** resolve o reCAPTCHA → injetamos o token no `textarea#g-recaptcha-response` da página.
+4. **Submit pela própria página** (clique no botão "Entrar") → request sai do contexto do browser (mesmo fingerprint + cookie CF + token captcha) → Cloudflare libera + iGreen aceita.
+5. Captura `accessToken` interceptando a response do `/v1/login` via `page.on('response')`.
+6. Daí em diante: chamadas `/customer-map` via `page.evaluate(fetch)` para reaproveitar fingerprint+cookies.
 
-2. **Descobrir o sitekey do reCAPTCHA** do portal iGreen
-   - Faço um `curl` em `https://escritorio.igreenenergy.com.br/login` e extraio o `data-sitekey` do HTML.
-   - Verifico o nome do campo que a API espera (`recaptcha`, `recaptchaToken`, `g-recaptcha-response`, etc.) — inspeciono o bundle JS do portal para confirmar.
+### Camada de debug visual com IA (Gemini)
 
-3. **Implementar `solveRecaptcha()` em `worker-igreen-sync/server.mjs`**
-   - `POST https://2captcha.com/in.php` com `key`, `method=userrecaptcha`, `googlekey`, `pageurl`, `json=1` → retorna `request_id`.
-   - Poll `GET https://2captcha.com/res.php?key=...&action=get&id=...&json=1` a cada 5s, timeout 120s.
-   - Retorna o `gRecaptchaResponse`.
-   - Trata erros (`ERROR_ZERO_BALANCE`, `ERROR_CAPTCHA_UNSOLVABLE` etc.) com mensagens claras.
+Para nunca mais ficarmos cegos sobre "o que aconteceu":
 
-4. **Ajustar `loginAndGetToken()`**
-   - Antes do POST `/login`, chama `solveRecaptcha()`.
-   - Envia o token no body do login (campo a confirmar no passo 2).
-   - Se a API ainda retornar 401, retry 1x com novo captcha (token pode ter "queimado").
+- A cada passo crítico (`abriu login`, `preencheu senha`, `injetou captcha`, `clicou entrar`, `pós-submit`) o worker tira **screenshot PNG** em memória.
+- Envia para **Lovable AI Gateway (Gemini 2.5 Flash vision)** com prompt:
+  > "Analise este screenshot de uma página de login. Descreva em 1 frase o que está visível: formulário, mensagem de erro, página de bloqueio Cloudflare, dashboard pós-login, etc."
+- Resposta é gravada no `/last-debug` junto com o passo. Exemplo:
+  ```
+  21:42:11 [step] abriu_login → "Formulário de login iGreen visível, reCAPTCHA v2 não marcado"
+  21:42:34 [step] pos_submit  → "Página de bloqueio Cloudflare 'Sorry, you have been blocked'"
+  ```
+- Adiciona endpoint `GET /last-screenshot` que devolve o PNG do último passo, para você abrir no navegador se precisar.
 
-5. **Atualizar variáveis de ambiente do worker**
-   - Adicionar `TWOCAPTCHA_API_KEY` no `easypanel` (worker-igreen). Te passo o valor para colar.
-
-6. **Atualizar `worker-portal/playwright-automation.mjs`**
-   - Aplicar o mesmo `solveRecaptcha` na função `buscarCadastroExistenteIgreen` (mesmo problema).
-
-7. **Validar end-to-end**
-   - Redeploy do worker → `/health` ok.
-   - Chamo `sync-igreen-customers` via curl → conferir `success: true` com lista de clientes.
-   - Se falhar, leio `/last-debug` e os logs da edge.
-
-## Detalhes técnicos
-
-- **Sem mudanças no schema do banco** — só código de worker e secret.
-- **Sem mudanças na edge function** `sync-igreen-customers` — ela só repassa `portal_email`/`portal_password`.
-- **Sem mudança na UI do admin** — a senha continua sendo salva e usada normalmente.
-- **Cache de token 30min** já existe (`SESSION_TTL_MS`), então o gasto com 2captcha é mínimo mesmo com muitos consultores.
-- **Fallback**: se 2captcha estiver fora do ar, retorna 502 claro ("captcha service unavailable") em vez de 401 confuso.
+Usa o `LOVABLE_API_KEY` que já existe — zero config nova.
 
 ## Arquivos que vou tocar
 
-- `worker-igreen-sync/server.mjs` — adiciona `solveRecaptcha()` + chama em `loginAndGetToken()`.
-- `worker-igreen-sync/README.md` — atualiza explicação (hoje afirma incorretamente que "não precisa captcha").
-- `worker-portal/playwright-automation.mjs` — aplica mesmo fluxo em `buscarCadastroExistenteIgreen`.
+- `worker-igreen-sync/Dockerfile` — volta `node:20-bookworm-slim` + Tor + Playwright Chromium.
+- `worker-igreen-sync/package.json` — adiciona `playwright-chromium`.
+- `worker-igreen-sync/torrc` — recria config Tor.
+- `worker-igreen-sync/server.mjs` — reescreve para v10 (mantém endpoints `/health`, `/last-debug`, `/sync-customers`, `/sync-network`; adiciona `/last-screenshot`).
+- `worker-igreen-sync/README.md` — atualiza para refletir v10.
 
-## O que você precisa fazer depois que eu implementar
+## Variáveis de ambiente (no easypanel)
 
-1. Colar `TWOCAPTCHA_API_KEY=63e53153b5b7dfbae1f63ce40c41444e` no easypanel do `worker-igreen`.
-2. Redeploy do container.
-3. Clicar em "Sincronizar" no painel → eu valido junto.
+| Nome | Onde estava | Ação |
+|---|---|---|
+| `WORKER_TOKEN` | já existe | manter |
+| `TWOCAPTCHA_API_KEY` | já adicionado | manter |
+| `LOVABLE_API_KEY` | **novo** | colar do painel Lovable → debug visual com IA |
+
+## Validação
+
+1. Redeploy do worker → `/health` deve responder `mode: "tor+playwright+2captcha-v10"`.
+2. Clique em "Sincronizar" no painel → eu acompanho via `/last-debug` (que agora terá as legendas geradas por IA) e, se travar, via `/last-screenshot` consigo ver exatamente onde parou.
+3. Sucesso esperado: lista de clientes vindo da `/customer-map`.
+
+## Custos por sync (após cache de 30min)
+
+- 2captcha: ~US$0,003
+- Lovable AI (5 screenshots × ~700 tokens visão): grátis no Gemini 2.5 Flash até 2026-10-13
+- Total: ~R$0,015 por sincronização
+
+## Risco
+
+Cloudflare pode endurecer ainda mais (ex: exigir `cf-turnstile` em vez de reCAPTCHA). Se isso acontecer, plano B é proxy residencial pago (BrightData ~US$15/GB).
