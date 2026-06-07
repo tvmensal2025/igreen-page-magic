@@ -220,26 +220,6 @@ export function AppSidebar({
             </button>
           </div>
         )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{consultantName}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--pe-accent-soft)" }}>
-                  {consultantLevel}
-                </p>
-              </div>
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-                  aria-label="Sair"
-                  title="Sair"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
       </aside>
     </>
   );
