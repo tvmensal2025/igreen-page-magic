@@ -86,7 +86,6 @@ async function apiFetch(page, method, path, { body, token } = {}) {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        credentials: 'include',
       });
       const text = await res.text();
       return { status: res.status, body: text };
