@@ -11,7 +11,7 @@ import { atualizarMemoria, formatMemory, readMemory } from "./memory.ts";
 import { tentarFechar, detectarMidiaNova, checklistMinimo } from "./closer.ts";
 import { decideEtapa } from "./state-machine.ts";
 import { extrairNome, extrairValor, extrairEmail, classificarInteresse } from "./extractors.ts";
-import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao } from "./templates.ts";
+import { TRAVA_POR_ETAPA, fallbackPorEtapa, validarResposta, respostaConsideracao, respostaTocaTema, classificarObjecao, leadFezPergunta, respostaPerguntaCurta, respostaDespedida } from "./templates.ts";
 import type { Etapa, FluxoBState, SupabaseClient } from "./types.ts";
 import type { VendedoraInput, VendedoraResult } from "./index.ts";
 
@@ -97,6 +97,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
 
   const updates: Record<string, any> = {};
   const toolsApplied: string[] = [];
+  let shouldHandoff = false;
 
   const [perfil, nomeExt, valorExt, emailExt, interesseExt] = await Promise.all([
     perfilar(historyText, inboundText),
@@ -161,8 +162,38 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
   };
 
   if (ETAPAS_DETERMINISTICAS.has(state.etapa)) {
-    reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
-    modelUsed = "deterministic_template";
+    // ⚡ Antes do template fixo: o lead fez uma PERGUNTA/objeção em vez de
+    // responder o que a etapa pediu? Se sim, responde a dúvida e reancora.
+    const q = leadFezPergunta(inboundText, state.etapa);
+    if (q.pergunta) {
+      // Esta interação respondeu a uma dúvida — não conta como "tentativa
+      // falha" da etapa (a etapa simplesmente não avançou porque o lead
+      // perguntou outra coisa).
+      state.tentativas_etapa = Math.max(0, (state.tentativas_etapa || 1) - 1);
+
+      if (q.tipo === "desistencia") {
+        reply = sanitize(respostaDespedida(customer.name));
+        modelUsed = "deterministic_despedida";
+        shouldHandoff = true;
+        updates.bot_paused = true;
+        updates.bot_paused_reason = `vendedora_v2: lead desistiu na etapa ${state.etapa}`;
+        updates.bot_paused_at = new Date().toISOString();
+      } else {
+        reply = sanitize(respostaPerguntaCurta(
+          q.tipo,
+          customer.name || null,
+          state.etapa,
+          typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
+          state.tentativas_etapa,
+          state.objecoes_tratadas || [],
+        ));
+        modelUsed = `deterministic_duvida:${q.tipo}`;
+        state.objecoes_tratadas = [...(state.objecoes_tratadas || []), q.tipo].slice(-12);
+      }
+    } else {
+      reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
+      modelUsed = "deterministic_template";
+    }
   } else {
     const writeResult = await microWrite({
       etapa: state.etapa,
@@ -267,7 +298,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
 
   // 9) Step do banco
   let conversationStepUpdate: string | null = STEP_BY_ETAPA[state.etapa] || null;
-  let shouldHandoff = false;
+  // shouldHandoff já foi declarado lá em cima (pode ser setado pelo bloco de desistência)
 
   // Handoff por excesso de tentativas. A etapa `consideracao` é EXCEÇÃO:
   // o lead pode legitimamente fazer várias perguntas/objeções antes de
