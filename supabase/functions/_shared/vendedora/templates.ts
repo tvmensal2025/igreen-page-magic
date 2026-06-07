@@ -122,7 +122,9 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   if (/^(tchau|xau|chau|flw|falou|valeu por nada)\b/.test(t)
     || /\b(n[ãa]o quero|n[ãa]o vou querer|n[ãa]o tenho interesse|desisti|desisto|mudei de id[eé]ia|deixa pra l[áa]|deixa quieto|pode parar|chega|sai fora|esquece)\b/.test(t)) return "desistencia";
   if (/(posso|d[áa] (?:pra|para))\s+(j[áa]\s+)?(mandar|enviar|passar|tirar)\s+(a\s+|uma\s+)?(foto|conta|fatura|imagem|print)/.test(t)
-    || /(j[áa]\s+)?mando\s+(a\s+)?(foto|conta|fatura)/.test(t)
+    || /(j[áa]\s+)?(te\s+)?mando\s+(j[áa]\s+)?(a\s+)?(foto|conta|fatura)/.test(t)
+    || /(manda|envia)\s+(l[áa]\s+|j[áa]\s+|a[ií]\s+)?(a\s+|uma\s+)?(foto|conta|fatura)/.test(t)
+    || /vou\s+(te\s+)?(mandar|enviar)\s+(a\s+|uma\s+)?(foto|conta|fatura)/.test(t)
     || /(posso|d[áa] (?:pra|para))\s+(j[áa]\s+)?mandar\s+a?gora/.test(t)) return "foto_antes";
   if (/^e?\s*como funciona\??$|^como (?:que )?funciona\b|me explica (?:como|isso|melhor)|explica (?:melhor|isso|como)|do que se trata|do que (?:que )?se trata|n[ãa]o entendi/.test(t)) return "como_funciona";
   if (/aluguel|alugad|inquilin|mudar de casa|mudar de im[óo]vel|se eu mudar|quando eu mudar|quando mudar|se mudar|trocar de casa|n[ãa]o (?:é|eh) min(?:ha|h)a casa/.test(t)) return "aluguel";
