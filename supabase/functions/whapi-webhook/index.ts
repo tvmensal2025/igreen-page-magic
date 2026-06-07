@@ -1370,6 +1370,32 @@ Deno.serve(async (req) => {
         (customer as any).conversation_step = routed.step;
       }
 
+      // ─── Fluxo B bypass (engine legado) ──────────────────────────────
+      // Variant B = Vendedora V2 (IA livre). NUNCA pode cair no engine
+      // "conversational" scripted, mesmo com conversation_step=`flow:*`.
+      // Força engine=sys → bot-flow.ts dispatcha runFluxoBAI no topo.
+      const _fbVariantLegacy = String((customer as any)?.flow_variant || "").toUpperCase();
+      const _fbStepLegacy = String((customer as any)?.conversation_step || "");
+      const _fbStepRaw = stripPrefix(_fbStepLegacy);
+      const _fbMediaSteps = new Set([
+        "aguardando_conta","aguardando_documento","aguardando_humano",
+        "aguardando_doc_auto","aguardando_doc_frente","aguardando_doc_verso",
+        "aguardando_otp","validando_otp","portal_submitting",
+        "cadastro_finalizando","finalizando","complete","cadastro_em_analise",
+      ]);
+      if (_fbVariantLegacy === "B" && !_fbMediaSteps.has(_fbStepRaw)) {
+        if (_fbStepLegacy.startsWith("flow:") || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_fbStepRaw) || _fbStepRaw.startsWith("passo_")) {
+          (customer as any).conversation_step = null;
+          try {
+            await supabase.from("customers")
+              .update({ conversation_step: null, updated_at: new Date().toISOString() })
+              .eq("id", customer.id);
+          } catch (_) { /* não bloqueia */ }
+        }
+        engine = "sys";
+        console.log(`[fluxo-b-bypass] customer=${customer.id} step_in="${_fbStepLegacy}" → engine=sys (Vendedora V2)`);
+      }
+
       // 🩹 AUTO-CURA DE STEP ÓRFÃO ENTRE VARIANTES (2026-05-25)
       // Bug recorrente: consultor publica um Fluxo D depois que leads já estavam
       // no meio do Fluxo A. Os leads ficam com `flow_variant='D'` mas
