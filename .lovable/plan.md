@@ -1,64 +1,72 @@
-## Diagnóstico
+## Objetivo
+Destravar a sincronização de clientes iGreen integrando o serviço 2captcha ao `worker-igreen-sync`, resolvendo o reCAPTCHA que o endpoint `POST /v1/login` passou a exigir.
 
-Os logs do `worker-igreen-sync` no easypanel mostram:
+## Como vai funcionar
 
+```text
+sync-igreen-customers (edge)
+        │  POST + x-worker-token
+        ▼
+worker-igreen-sync  ──①──►  2captcha.com  (resolve reCAPTCHA, ~20s)
+        │                       │
+        │◄────── gToken ────────┘
+        │
+        ②  POST /v1/login  { email, password, recaptchaToken }
+        ▼
+   api-voffice.igreenenergy.com.br  → accessToken
+        │
+        ③ /customer-map paginado (token Bearer, sem captcha)
 ```
-[login] status=401 body=Unauthorized
-[login] ERRO: Login rejeitado — email ou senha incorretos
-```
 
-**Importante:** o worker ESTÁ conseguindo passar pelo Cloudflare (via Tor) e ESTÁ chegando até a API `api-voffice.igreenenergy.com.br/v1/login`. O 401 é a resposta REAL da API iGreen rejeitando o login.
+- Token de login dura ~30min → resolvemos captcha **só 1x a cada 30min por consultor** (pool em memória já existe).
+- Custo estimado: ~US$0,003 por sync (1 captcha ≈ R$0,015).
 
-Comparando com o `worker-portal` (que funciona em produção e usa as MESMAS credenciais da tabela `consultants.igreen_portal_password`):
+## Passos
 
-- `worker-portal/playwright-automation.mjs:826` faz `fetch` **direto via Node** (sem Tor, sem browser, sem Playwright) para `/v1/login`, passando apenas `Origin` e `Referer` de `escritorio.igreenenergy.com.br`. **Funciona perfeitamente.**
-- `worker-igreen-sync/server.mjs` faz o mesmo login via **Tor + Playwright + page.evaluate** — recebe 401 com as mesmas credenciais.
+1. **Salvar o secret** `TWOCAPTCHA_API_KEY` no Lovable Cloud (vou pedir via `add_secret`; já tenho a chave que você passou).
 
-Ou seja: a complexidade adicionada (Tor + browser real) está sendo rejeitada pela API. Provavelmente o IP residencial do Tor tem reputação ruim para essa rota específica, OU algum header automático do `fetch` do browser (cookie/CSRF/cf_clearance) está fazendo a API rejeitar.
+2. **Descobrir o sitekey do reCAPTCHA** do portal iGreen
+   - Faço um `curl` em `https://escritorio.igreenenergy.com.br/login` e extraio o `data-sitekey` do HTML.
+   - Verifico o nome do campo que a API espera (`recaptcha`, `recaptchaToken`, `g-recaptcha-response`, etc.) — inspeciono o bundle JS do portal para confirmar.
 
-A solução é alinhar o `worker-igreen-sync` com o método que JÁ FUNCIONA no `worker-portal`.
+3. **Implementar `solveRecaptcha()` em `worker-igreen-sync/server.mjs`**
+   - `POST https://2captcha.com/in.php` com `key`, `method=userrecaptcha`, `googlekey`, `pageurl`, `json=1` → retorna `request_id`.
+   - Poll `GET https://2captcha.com/res.php?key=...&action=get&id=...&json=1` a cada 5s, timeout 120s.
+   - Retorna o `gRecaptchaResponse`.
+   - Trata erros (`ERROR_ZERO_BALANCE`, `ERROR_CAPTCHA_UNSOLVABLE` etc.) com mensagens claras.
 
-## Plano
+4. **Ajustar `loginAndGetToken()`**
+   - Antes do POST `/login`, chama `solveRecaptcha()`.
+   - Envia o token no body do login (campo a confirmar no passo 2).
+   - Se a API ainda retornar 401, retry 1x com novo captcha (token pode ter "queimado").
 
-### 1. Refatorar `worker-igreen-sync/server.mjs`
+5. **Atualizar variáveis de ambiente do worker**
+   - Adicionar `TWOCAPTCHA_API_KEY` no `easypanel` (worker-igreen). Te passo o valor para colar.
 
-Trocar a estratégia de login e leitura de dados:
+6. **Atualizar `worker-portal/playwright-automation.mjs`**
+   - Aplicar o mesmo `solveRecaptcha` na função `buscarCadastroExistenteIgreen` (mesmo problema).
 
-- **Remover** uso de Playwright/Chromium e Tor para o fluxo `/sync-customers` e `/sync-network`.
-- **Usar `fetch` nativo do Node** direto contra `https://api-voffice.igreenenergy.com.br/v1/login`, exatamente como `worker-portal/playwright-automation.mjs:819-834`:
-  - Headers: `Content-Type: application/json`, `Accept: application/json, text/plain, */*`, `Origin: https://escritorio.igreenenergy.com.br`, `Referer: https://escritorio.igreenenergy.com.br/`, `User-Agent` de Chrome desktop.
-  - Body: `{ email, password }`.
-- Após obter `accessToken`, fazer as chamadas a `/v1/consultant`, `/v1/customer-map/<id>?page=N&pageSize=500` e `/v1/network-map?page=N&per_page=100` também via `fetch` nativo com `Authorization: Bearer <token>`.
-- Manter paginação até esgotar resultados, manter pool de tokens em memória (TTL 30 min) por email para evitar relogar a cada request.
-- Manter endpoints `/health`, `/last-debug`, `/sync-customers`, `/sync-network` com o mesmo contrato (a edge function não muda).
-- Tratamento de erros: 401/403 → "Credenciais inválidas"; 429 → aguardar 30s e tentar 1x; 5xx/timeout → erro 502.
-
-### 2. Plano B (fallback se a API começar a bloquear IP de datacenter)
-
-Se algum dia a API começar a 403/Cloudflare-block o IP do easypanel (não está acontecendo hoje — worker-portal prova isso), reativamos a rota Tor+Playwright como fallback automático. Por enquanto deixar só o caminho simples.
-
-### 3. Limpar dependências
-
-- Remover `playwright-chromium`, instalação do Chromium e Tor do `Dockerfile`.
-- Remover `torrc` do build.
-- Imagem fica MUITO menor (~150MB em vez de ~1.5GB) e sobe em segundos.
-
-### 4. Edge function `sync-igreen-customers`
-
-**Nenhuma mudança** — o contrato HTTP do worker é idêntico. A edge já está apontando para o `IGREEN_SYNC_WORKER_URL=https://igreen-worker-igreen.d9v63q.easypanel.host` e usando o secret correto (validado em `settings`).
-
-### 5. Validação após deploy
-
-1. Redeploy do container `worker-igreen` no easypanel (você faz no painel).
-2. Eu chamo a edge `sync-igreen-customers` via curl para o seu consultor (Rafael Ferreira) e confirmo que retorna `success: true` com lista de customers.
-3. Se vier erro, leio `GET /last-debug` no worker para entender em qual passo travou.
+7. **Validar end-to-end**
+   - Redeploy do worker → `/health` ok.
+   - Chamo `sync-igreen-customers` via curl → conferir `success: true` com lista de clientes.
+   - Se falhar, leio `/last-debug` e os logs da edge.
 
 ## Detalhes técnicos
 
-Arquivos que mudam:
-- `worker-igreen-sync/server.mjs` — reescrita do core, mesmo contrato HTTP.
-- `worker-igreen-sync/Dockerfile` — remover Playwright e Tor, virar `FROM node:20-alpine` simples.
-- `worker-igreen-sync/package.json` — remover `playwright-chromium`.
-- `worker-igreen-sync/torrc` — apagar.
+- **Sem mudanças no schema do banco** — só código de worker e secret.
+- **Sem mudanças na edge function** `sync-igreen-customers` — ela só repassa `portal_email`/`portal_password`.
+- **Sem mudança na UI do admin** — a senha continua sendo salva e usada normalmente.
+- **Cache de token 30min** já existe (`SESSION_TTL_MS`), então o gasto com 2captcha é mínimo mesmo com muitos consultores.
+- **Fallback**: se 2captcha estiver fora do ar, retorna 502 claro ("captcha service unavailable") em vez de 401 confuso.
 
-Risco: baixo. O método é o MESMO que já funciona em produção há meses no `worker-portal` com as mesmas credenciais da mesma tabela.
+## Arquivos que vou tocar
+
+- `worker-igreen-sync/server.mjs` — adiciona `solveRecaptcha()` + chama em `loginAndGetToken()`.
+- `worker-igreen-sync/README.md` — atualiza explicação (hoje afirma incorretamente que "não precisa captcha").
+- `worker-portal/playwright-automation.mjs` — aplica mesmo fluxo em `buscarCadastroExistenteIgreen`.
+
+## O que você precisa fazer depois que eu implementar
+
+1. Colar `TWOCAPTCHA_API_KEY=63e53153b5b7dfbae1f63ce40c41444e` no easypanel do `worker-igreen`.
+2. Redeploy do container.
+3. Clicar em "Sincronizar" no painel → eu valido junto.
