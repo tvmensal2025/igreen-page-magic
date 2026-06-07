@@ -348,7 +348,8 @@ async function runConversation(opts: {
     // foto-cedo: bot menciona foto/conta antes de interesse_confirmado
     const interesseOk = json?.debug?.stateAfter?.interesse_confirmado === true
       || json?.debug?.stateBefore?.interesse_confirmado === true;
-    if (!interesseOk && /\b(foto|conta de luz|me manda a foto|fatura)\b/i.test(reply)) {
+    // só conta como "pediu mídia": frases imperativas pedindo a foto
+    if (!interesseOk && /(manda?\s+(a\s+)?foto|me\s+envia\s+a\s+foto|foto\s+da\s+(sua\s+)?conta|envia\s+(uma\s+)?foto|📷)/i.test(reply)) {
       result.problems.push(`turn ${turn}: FOTO_CEDO (bot pediu mídia antes de interesse confirmado)`);
     }
 
