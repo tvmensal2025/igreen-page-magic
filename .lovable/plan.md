@@ -1,109 +1,64 @@
-# Auditoria profunda — `duvidas-dificeis-v3` (20 conversas)
+# Por que o lead nasce em D quando só B está ativo
 
-Resultado geral: **5/20 (25%)** chegaram em `cadastro_finalizando`. Os 10 scripted foram bem (10/10 ok), mas os **10 personas LLM colapsaram** todos no mesmo ponto: a etapa `foto_conta`. O fix anterior (`pedido_humano`/`desistencia` expandidos) introduziu regressão grave e os templates determinísticos viraram um loop.
+## Causa raiz
 
-## Bugs encontrados (por categoria)
+No `supabase/functions/whapi-webhook/index.ts:469`, quando o lead é criado, o código chama:
 
-### 🔴 BUG 1 — `deterministic_despedida` falso-positivo (CRÍTICO)
-**Onde:** `templates.ts` — detector `desistencia`.
-**Conv-12 turn 3:** lead diz `"me chamo sebastião. mas não precisa instalar nada aqui em casa mesmo? não quero obra não."` → bot responde **"Qualquer hora que quiser economizar é só me chamar 😊"** + `handoff`.
-**Causa:** regex de desistência casa `"não quero"` mesmo quando o objeto é "obra" (= reforço positivo, não desistência). A frase é uma **pergunta de objeção**, não uma despedida.
-**Impacto:** mata conversas no turno 3. Provavelmente responsável por boa parte dos handoffs prematuros nas personas mais avessas a risco (`aposentado`).
+```ts
+const abVariant = await pickFlowVariant(supabase);
+```
 
-### 🔴 BUG 2 — Loop infinito em `foto_conta` quando lead afirma envio (CRÍTICO)
-**Onde:** `orchestrator.ts` / `templates.ts` — sem handler para "afirmação de envio sem mídia".
-**Manifesta em:** conv-11, 13, 14, 15, 16, 17, 19, 20 (8 das 10 personas).
-**Padrão:** lead diz `"mandei aí"`, `"já mandei, viu?"`, `"vê se chegou"`, `"acho que bugou, mandei de novo"`. Bot sempre responde com `"Me manda a foto da sua conta de luz 📷"` — 4 a 7 vezes seguidas, com variações triviais. Nenhum reconhecimento de que o lead **afirma ter enviado** e não chegou nada.
-**Esperado:** detectar `afirma_envio_sem_midia` → responder algo como **"Aqui ainda não chegou a foto, Bruno 🙈 pode tentar reenviar? Às vezes o zap engasga."** + após 2 tentativas, escalar.
+Esse helper (`supabase/functions/_shared/pick-flow-variant.ts`) **sempre sorteia entre `"A"` e `"D"`** (50/50), lendo só `settings.flow_ab_mode`. Ele **ignora completamente** o `consultants.active_variants` que o painel `/admin/fluxos` controla via `VariantDistributionBar`.
 
-### 🟠 BUG 3 — `deterministic_duvida:generica` em loop
-**Onde:** `templates.ts` — fallback genérico.
-**Manifesta em:** todas as personas. O bot dispara `"boa pergunta! É tudo sem obra, sem fidelidade e regulamentado pela ANEEL ⚡"` **3-5 vezes na mesma conversa**, ignorando o conteúdo real da mensagem.
-**Exemplos:**
-- conv-11 turn 6: lead pergunta `"precisa de email tbm? bruno.silva88@gmail.com"` → bot responde ANEEL genérico, **ignora o email** entregue.
-- conv-13 turn 9: lead pede `"manda seu email também por garantia?"` → bot responde ANEEL.
-- conv-19 turn 2: lead `"como funciona isso?"` → bot responde ANEEL e pula direto pro valor da conta, **sem explicar**.
-**Causa:** o gate "se etapa determinística e mensagem é dúvida → usa template fixo" não tem anti-repetição nem prioridade pra RAG quando a dúvida é específica (email, como funciona, técnica).
+Resultado: mesmo com só o Fluxo **B** ativo no consultor, todo lead novo nasce com `flow_variant='A'` ou `'D'` — e como nenhum fluxo A/D está publicado, a engine cai no fallback de D / mostra comportamento errado.
 
-### 🟠 BUG 4 — `deterministic_duvida:foto_antes` mal redigido
-**Onde:** `templates.ts` → resposta `foto_antes`.
-**Conv-11 turn 5 / conv-20 turn 6:** lead diz `"pode sim, mando a foto?"` → bot responde **"pode mandar sim! Mas antes preciso de um detalhinho rápido: Me manda a foto da sua conta de luz 📷"** — diz "antes preciso de um detalhinho" mas **só pede a própria foto** (frase quebrada, sem sentido).
+Já existe no banco a função correta — `public.assign_flow_variant(_consultant_id uuid)` — que:
+1. Lê `consultants.active_variants`
+2. Filtra só as variantes que têm `bot_flows.is_active = true`
+3. Faz round-robin determinístico por `count(customers) % len(disponíveis)`
+4. Default seguro = `'A'` se nada disponível
 
-### 🟠 BUG 5 — Capitalização de nomes inconsistente
-**Onde:** `microWrite` / `templates.ts`.
-**Sintoma:** bot intercala `"Bruno"` (correto) com `"bruno"` (minúsculo) na mesma conversa. Conv-13/14/19/20 todos têm isso. Quebra a percepção de naturalidade.
+O webhook simplesmente não está usando ela.
 
-### 🟠 BUG 6 — Não responde à pergunta, só pula etapa
-**Conv-19 turn 2:** `"como funciona isso?"` → bot dá resposta genérica de 1 linha + força `"Qual o valor médio da sua conta?"`. Lead que pediu explicação técnica recebe slogan.
-**Conv-15 (engenheiro):** lead pergunta detalhes técnicos de compensação ANEEL várias vezes; bot só repete `"continua a mesma distribuidora, sem boleto novo"` sem responder o "como" técnico. RAG deveria entrar aqui.
+## Plano de correção
 
-### 🟠 BUG 7 — `deterministic_duvida:foto_antes` triggando fora de hora
-**Conv-20 turn 6:** etapa já é `foto_conta` (lead vai mandar a foto) → bot reativa o handler `foto_antes` como se fosse pré-foto. Estado vs. tema bate errado.
+### 1. `supabase/functions/whapi-webhook/index.ts` (linha ~469)
 
-### 🟡 BUG 8 — Handoff sem motivo no turno 11+
-A maioria das personas termina em `handoff` no turno 11-19 **sem trigger explícito** — provavelmente um contador de "rounds em foto_conta sem mídia". OK como salvaguarda, mas o lead nunca soube por que foi escalado: a última resposta do bot ainda é "envia a foto" e o handoff é silencioso.
+Substituir:
+```ts
+const abVariant = await pickFlowVariant(supabase);
+```
+por chamada RPC à função existente:
+```ts
+const { data: assigned } = await supabase.rpc("assign_flow_variant", {
+  _consultant_id: superAdminConsultantId,
+});
+const abVariant = (assigned as string) || "A";
+```
+Remover o import de `pickFlowVariant` no topo do arquivo.
 
-### 🟡 BUG 9 — Crash não tratado (conv-18 turn 4)
-HTTP 500 do `google/gemini-3-flash-preview` após 25s → conversa morre. Falta retry/fallback no caminho do micro-writer.
+### 2. `supabase/functions/evolution-webhook/index.ts` (linha ~679, insert do novo customer)
 
-## Plano de correção (ordem de impacto)
+Hoje o insert não seta `flow_variant` — o campo fica `NULL` e depois é lido como `"A"`. Para respeitar `active_variants` (consultor pode ter só B/C/etc.), adicionar antes do insert:
 
-1. **Adicionar handler `afirma_envio_sem_midia`** em `templates.ts`
-   - Regex: `/\b(mandei|enviei|t[oô] mandando|t[áa] a[ií]|segue (a )?foto|chegou)\b/i` quando `etapa === "foto_conta"` e `hasMedia === false`.
-   - Contador `attemptsSinceLastReal` no state. Resposta varia por tentativa:
-     - 1ª: "Bruno, aqui ainda não chegou nada 🙈 pode reenviar? às vezes o zap engasga."
-     - 2ª: "Ainda não recebi, viu. Tenta tirar uma nova foto ou enviar como documento PDF."
-     - 3ª: handoff explícito **com motivo dito ao lead** ("Vou chamar um consultor pra te ajudar a enviar a foto").
+```ts
+const { data: assigned } = await supabase.rpc("assign_flow_variant", {
+  _consultant_id: instanceData.consultant_id,
+});
+```
+e incluir `flow_variant: (assigned as string) || "A"` no objeto do `.insert(...)`.
 
-2. **Restringir detector `desistencia`** em `templates.ts`
-   - NÃO disparar quando `não quero/precisa/tem` é seguido de substantivo que aparece como benefício (`obra`, `instalação`, `placa`, `multa`, `fidelidade`, `taxa`, `boleto novo`).
-   - Exigir intenção de saída explícita: `"não tenho interesse"`, `"deixa pra lá"`, `"depois eu vejo"`, `"vou pensar e te aviso"`, `"melhor não"`, `"fica pra outra hora"`.
-   - Frases interrogativas (`?` no fim ou começa com palavra-pergunta) NUNCA são desistência.
+### 3. Deixar `pick-flow-variant.ts` como legado
 
-3. **Anti-repetição global do template genérico**
-   - State guarda último `templateKey` usado. Se o mesmo `deterministic_duvida:generica` for solicitado 2× seguidas, força fallback pra: (a) RAG real via `buscarContexto`, (b) micro-writer com instrução "responda diretamente a essa mensagem".
+Não deletar agora (pode estar referenciado em testes/diagnose). Apenas garantir que os dois webhooks de produção não chamem mais.
 
-4. **Detectar email no inbound durante `foto_conta`**
-   - Já existe `extrairEmail`. Quando lead manda email não solicitado, salvar em `customer.email` e responder breve confirmação ("Anotei seu e-mail, valeu! Agora só falta a foto da conta 📷"), em vez de responder com ANEEL genérico.
+## Verificação pós-deploy
 
-5. **Capitalização determinística de nomes**
-   - Helper `prettyName(s)` aplicado em **todo** ponto que injeta nome em template (não só na saudação). Primeira letra de cada palavra do primeiro nome.
+- Criar lead de teste no Whapi → confere `customers.flow_variant = 'B'` (ou outra variante ativa).
+- Repetir no Evolution → mesma checagem.
+- Conferir nos logs do webhook que o primeiro outbound usa o fluxo B (não o D).
 
-6. **Corrigir frase do `foto_antes`**
-   - Trocar `"pode mandar sim! Mas antes preciso de um detalhinho rápido:"` por `"Pode mandar a foto sim! 📷"` (sem o "detalhinho" fantasma).
-   - Só ativar `foto_antes` quando `etapa !== "foto_conta"`.
+## Notas
 
-7. **Forçar RAG quando dúvida é técnica/específica**
-   - Lista de gatilhos que **sempre** chamam `buscarContexto` mesmo em etapa determinística: `como funciona`, `compensação`, `kw/h`, `injeção`, `crédito`, `usina`, `pagamento`, `taxa`, `cobrança`.
-
-8. **Retry no micro-writer**
-   - Em `gateway.ts`/`micro-writer`: se HTTP 5xx ou timeout, 1 retry com `gemini-2.5-flash` (fallback) antes de propagar erro.
-
-9. **Handoff comunicado ao lead**
-   - Quando `shouldHandoff = true` por contador de loop, última resposta do bot deve incluir frase tipo "Vou chamar um consultor pra te ajudar agora 👤" — não pode ser silencioso.
-
-## Validação
-
-Após aplicar 1-3 + 5-6 (bloco crítico), rodar novamente as 10 personas (`--only persona`) e medir:
-- ≥6/10 chegam em `cadastro_finalizando` (vs. 0/10 hoje)
-- 0 ocorrências de `deterministic_duvida:generica` repetido 3× na mesma conversa
-- 0 handoffs no turno ≤4 sem trigger explícito do lead
-- email entregue pelo lead é capturado em ≥80% dos casos
-
-## Arquivos a tocar
-
-- `supabase/functions/_shared/vendedora/templates.ts` (bugs 1, 2, 3, 4, 6, 7, 9)
-- `supabase/functions/_shared/vendedora/orchestrator.ts` (bugs 2, 3, 4, 7, 9)
-- `supabase/functions/_shared/vendedora/extractors.ts` (bug 4 — capturar email em qualquer etapa)
-- `supabase/functions/_shared/vendedora/gateway.ts` (bug 8 — retry)
-- `.lovable/plan.md` — registrar este plano
-
-## Status (Parte 2 — entregue)
-
-- ✅ Bug 1 (desistência false-positive): regex restringida em `templates.ts`.
-- ✅ Bug 2 (loop `foto_conta` quando lead afirma envio): handler `leadAfirmaEnvio` integrado em `orchestrator.ts` com escalonamento de 3 níveis (aguardando → reenvio com instrução clipe → handoff). `claims_sent_count` adicionado em `types.ts` e resetado quando a mídia chega.
-- ✅ Bug 3 (anti-repetição de dúvida genérica): `ultimo_template_key` registrado a cada turno; quando se repete o mesmo `duvida:tipo`, avança 1 variante.
-- ✅ Bug 4 (`foto_antes` mal escrito): mensagem simplificada para "pode mandar a foto sim! 📷"; só ativa fora de `etapa === foto_conta`.
-- ✅ Bug 5 (capitalização de nome): `prettyName` aplicado tanto ao extrair quanto ao reler nome existente.
-- ✅ Bug 8 (retry no gateway): 1 retry com backoff em 5xx/timeout dentro de `rawCall`.
-- ✅ Bugs 6/7/9 (novos detectores titularidade/cnpj/homologação/recap + tema correto): cobertos pelo conjunto de variantes adicionado em `templates.ts`.
+- Nada de UI muda — a correção é toda em edge functions.
+- Round-robin é determinístico (count % len), então 2 leads na mesma variante única continuarão indo todos para ela — comportamento desejado quando só B está ativo.
