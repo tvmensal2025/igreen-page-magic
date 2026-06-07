@@ -1,7 +1,7 @@
 {
   "name": "igreen-sync-worker",
-  "version": "6.0.0",
-  "description": "Playwright + Tor (IP residencial) + 2captcha — bypass Cloudflare e reCAPTCHA",
+  "version": "7.0.0",
+  "description": "Playwright + Tor (IP residencial) — login via API REST do portal iGreen (sem captcha)",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
