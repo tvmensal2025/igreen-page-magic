@@ -1,26 +1,31 @@
-# Corrigir login do worker iGreen quando o botão não dispara `/v1/login`
-
-## Diagnóstico
-Pelos logs, o fluxo v10 abriu o login, preencheu e resolveu o captcha, mas depois de clicar **Entrar** ficou 60s esperando e terminou com:
-
-```text
-Nenhuma response /v1/login capturada
-```
-
-Isso significa que o botão/formulário da página não disparou a chamada de login. A IA dizer “captcha não marcado” não é necessariamente erro visual; o backend valida o token `g-recaptcha-response`/`recaptchaToken`, não o checkbox marcado.
-
 ## Plano
 
-### 1. Adicionar fallback no `worker-igreen-sync/server.mjs`
-Depois do clique em **Entrar**:
-- manter a tentativa atual de capturar `/v1/login`;
-- se não capturar nada em até ~10–15s, fazer um `fetch` dentro do próprio navegador para:
+Os logs mostram que o container em produção ainda está rodando `igreen-sync-worker v10 (tor+playwright+2captcha)`. Esse build antigo para em `Nenhuma response /v1/login capturada` logo após clicar em **Entrar**.
+
+No código atual do projeto, o worker já está em `v12` e já tem o fallback esperado:
 
 ```text
-POST https://api-voffice.igreenenergy.com.br/v1/login
+[login] clique não gerou /v1/login; tentando fallback POST direto com recaptchaToken
+[login] fallback status=...
 ```
 
-com body:
+### 1. Alinhar versão nos arquivos de deploy
+Atualizar os metadados ainda antigos para evitar confusão e forçar um novo build claro no Easypanel:
+
+- `worker-igreen-sync/Dockerfile`
+  - trocar comentários/label de `v10` para `v12`
+- `worker-igreen-sync/README.md`
+  - trocar título de `v11` para `v12`
+  - documentar o fallback POST quando o clique não dispara `/v1/login`
+
+### 2. Manter o código de login v12
+Não reverter o fluxo atual. Ele deve continuar assim:
+
+1. abre a página real de login via Playwright + Tor;
+2. preenche email/senha;
+3. resolve reCAPTCHA com 2captcha;
+4. injeta token e tenta clicar em **Entrar**;
+5. se nenhuma resposta `/v1/login` aparecer, faz `fetch` direto no browser com:
 
 ```json
 {
@@ -31,35 +36,42 @@ com body:
 }
 ```
 
-Isso replica o padrão já existente em `worker-portal/playwright-automation.mjs`, onde há comentário indicando que a API exige `recaptchaToken` desde 2026-06.
-
-### 2. Melhorar logs de diagnóstico
-Adicionar linhas como:
+### 3. Validar sintaxe localmente
+Rodar apenas validação estática do worker:
 
 ```text
-[login] clique não gerou /v1/login; tentando fallback POST /login com recaptchaToken
-[login] fallback status=...
+node --check worker-igreen-sync/server.mjs
 ```
 
-Assim fica claro se o problema é:
-- botão não submetendo;
-- captcha rejeitado;
-- Cloudflare bloqueando;
-- credencial inválida.
+### 4. Rebuild/redeploy no Easypanel
+Depois de aplicado, fazer rebuild do serviço `igreen-sync-worker` no Easypanel.
 
-### 3. Manter OpenAI Vision/v11
-Preservar a mudança anterior:
-- `OPENAI_API_KEY` para visão;
-- `mode: tor+playwright+2captcha-v11` ou subir para `v12` para confirmar novo deploy.
+Validação esperada em `/health`:
 
-### 4. Atualizar README
-Documentar que o worker agora tem fallback API direto quando o form visual não dispara.
+```json
+{
+  "mode": "tor+playwright+2captcha-v12"
+}
+```
 
-## Validação esperada
-Depois do rebuild no Easypanel:
+### 5. Interpretar o próximo `/last-debug`
+Após o rebuild, o log correto precisa conter uma destas linhas:
 
-- `/health` deve mostrar `mode: "tor+playwright+2captcha-v12"`;
-- novo `/last-debug` deve mostrar uma destas saídas:
-  - sucesso: `[login] fallback status=200` e depois `[login] OK consultor=...`;
-  - bloqueio real: status `403` com HTML Cloudflare;
-  - captcha/credencial: status `401` com body da API.
+```text
+[login] fallback status=200
+```
+
+ou, se houver bloqueio real:
+
+```text
+[login] fallback status=401
+[login] fallback status=403
+```
+
+Se ainda aparecer só:
+
+```text
+Nenhuma response /v1/login capturada
+```
+
+sem a linha de fallback, então o Easypanel ainda não está rodando o build v12.
