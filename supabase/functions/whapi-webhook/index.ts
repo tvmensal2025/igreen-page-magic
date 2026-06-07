@@ -465,9 +465,13 @@ Deno.serve(async (req) => {
 
     if (!customer) {
       const pushedName = cleanPushName(fromName);
-      // A/B test 50/50 por lead (com kill-switch em settings.flow_ab_mode).
-      // Só sorteia para lead NOVO — lead existente mantém sua variante.
-      const abVariant = await pickFlowVariant(supabase);
+      // Variante respeita `consultants.active_variants` (round-robin
+      // determinístico via RPC `assign_flow_variant`). Só sorteia para
+      // lead NOVO — lead existente mantém sua variante.
+      const { data: assignedVariant } = await supabase.rpc("assign_flow_variant", {
+        _consultant_id: superAdminConsultantId,
+      });
+      const abVariant = (typeof assignedVariant === "string" && assignedVariant) || "A";
       const { data: newCustomer, error } = await supabase
         .from("customers")
         .insert({
