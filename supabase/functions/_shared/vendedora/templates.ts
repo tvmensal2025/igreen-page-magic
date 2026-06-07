@@ -353,8 +353,8 @@ const RESP_OBJECAO_VARIANTES: Record<ObjecaoTipo, string[]> = {
     "é simples: a gente conecta sua conta a uma *usina solar parceira*, e o desconto cai todo mês na sua própria fatura.",
   ],
   foto_antes: [
-    "pode mandar sim! Mas antes preciso de um detalhinho rápido:",
-    "claro, pode enviar! Antes só me ajuda com isto:",
+    "pode mandar a foto sim! 📷",
+    "claro, manda a foto que eu já confiro aqui 📷",
   ],
   desistencia: [
     "tudo bem! Sem pressão.",
