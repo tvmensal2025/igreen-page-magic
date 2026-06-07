@@ -287,17 +287,36 @@ async function runConversation(opts: {
   if (opts.kind === "scripted") scriptedIdx = 1;
 
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
-    // injeta mídia: a vendedora detecta via campos *_url no customer
-    // (não via midia_recebida — esse é só snapshot interno).
+    // injeta mídia + OCR mock: a vendedora detecta via campos *_url no customer;
+    // o closer.checklistMinimo exige name/email/phone_whatsapp/electricity_bill_value/photo/doc.
+    // Em produção o worker-portal-2 extrai cpf/cep/endereço/distribuidora do OCR — aqui mockamos.
     let stateForTurn = customerState;
     if (mediaTag === "conta") {
-      stateForTurn = { ...customerState, electricity_bill_photo_url: "https://placeholder/conta.jpg" };
-      customerState = stateForTurn; // persiste pro próximo turno
+      stateForTurn = {
+        ...customerState,
+        electricity_bill_photo_url: "https://placeholder/conta.jpg",
+        // OCR mock da conta de luz
+        cep: customerState.cep || "01310-100",
+        endereco: customerState.endereco || "Av. Paulista, 1000",
+        endereco_numero: customerState.endereco_numero || "1000",
+        cidade: customerState.cidade || "São Paulo",
+        uf: customerState.uf || "SP",
+        distribuidora: customerState.distribuidora || "ENEL SP",
+        numero_instalacao: customerState.numero_instalacao || "1234567890",
+      };
+      customerState = stateForTurn;
     } else if (mediaTag === "doc_frente") {
       stateForTurn = {
         ...customerState,
         document_front_url: "https://placeholder/doc-frente.jpg",
         document_back_url: "https://placeholder/doc-verso.jpg",
+        document_type: customerState.document_type || "cnh",
+        // OCR mock do documento
+        cpf: customerState.cpf || "39053344705",
+        rg: customerState.rg || "123456789",
+        data_nascimento: customerState.data_nascimento || "15/03/1985",
+        // telefone fixo para o portal (whatsapp já vem do lead)
+        phone_whatsapp: customerState.phone_whatsapp || "11987654321",
       };
       customerState = stateForTurn;
     }
@@ -312,6 +331,7 @@ async function runConversation(opts: {
 
     const reply = String(json?.reply || "").trim();
     const stepUpdate = json?.conversationStepUpdate ?? null;
+    const checklistPronto = json?.debug?.checklist?.pronto === true;
     const t: Turn = {
       turn,
       leadMsg,
@@ -348,7 +368,6 @@ async function runConversation(opts: {
     // foto-cedo: bot menciona foto/conta antes de interesse_confirmado
     const interesseOk = json?.debug?.stateAfter?.interesse_confirmado === true
       || json?.debug?.stateBefore?.interesse_confirmado === true;
-    // só conta como "pediu mídia": frases imperativas pedindo a foto
     if (!interesseOk && /(manda?\s+(a\s+)?foto|me\s+envia\s+a\s+foto|foto\s+da\s+(sua\s+)?conta|envia\s+(uma\s+)?foto|📷)/i.test(reply)) {
       result.problems.push(`turn ${turn}: FOTO_CEDO (bot pediu mídia antes de interesse confirmado)`);
     }
@@ -362,12 +381,16 @@ async function runConversation(opts: {
     lastReply = reply;
 
     // critério de fim
+    // - portal_submitting → produção (não acontece em dryRun pq customer não existe no DB)
+    // - cadastro_finalizando + checklist completo → equivalente em dryRun (vendedora pronta pra fechar)
     if (stepUpdate === "portal_submitting") { result.endedBy = "portal"; break; }
+    if (stepUpdate === "cadastro_finalizando" && checklistPronto) { result.endedBy = "portal"; break; }
     if (t.shouldHandoff) { result.endedBy = "handoff"; break; }
-    if (/^(tchau|valeu|obrigad[oa]|até)\b/i.test(leadMsg) && turn > 3) { result.endedBy = "lead_done"; break; }
+    if (/^(tchau|valeu|obrigad[oa]|at[eé])\b/i.test(leadMsg) && turn > 3) { result.endedBy = "lead_done"; break; }
 
     // próxima fala do lead
     mediaTag = undefined;
+
     if (opts.kind === "scripted") {
       if (scriptedIdx >= opts.scripted!.length) {
         result.endedBy = "script_exhausted";
