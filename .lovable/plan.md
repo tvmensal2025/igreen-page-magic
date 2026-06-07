@@ -1,99 +1,87 @@
-## Diagnóstico — lead 5511971254913
+## Diagnóstico
 
-Estado atual no banco:
-- `flow_variant = B`
-- `conversation_step = "flow:e0f1de51-36c5-4669-9ffd-95c1423e5008"`
-- `consultant_id = 0c2711ad-4836-41e6-afba-edd94f698ae3` (Rafael)
+O botão "Resetar telefone" do `HardResetPhoneCard` funcionou — o `admin_audit_log` confirma três execuções (16:35, 16:36, 17:04), cada uma apagando `customers/conversations/crm_deals/customer_flow_state/capture_field_events`. O problema é que quando você mandou "Oi" de novo logo após o reset, o webhook **recriou o lead, mas não 100% "do zero"**:
 
-Nos logs do whapi-webhook este lead está sendo processado pelo **engine "conversational" (flow legado da Camila)**, não pela Vendedora V2:
+- ✅ `customers.id` é novo (`5652b581…`), `conversation_step=null`, `flow_variant=B` reatribuído via distribuição
+- ❌ O `consultant_id` é decidido pelo mesmo roteamento de antes (Rafael, porque o número segue na carteira/última fonte)
+- ❌ O webhook não revalida `lead_source`, `customer_origin`, `is_test_lead`, etc. — herda o que vier do contexto
+- ❌ Possivelmente herda metadados via tabelas que o reset não cobre (ver auditoria abaixo)
 
-```
-[conversational] loadFlow: flow=477f8968-1344-4252-b822-8912fdbdb538 steps=10
-[conversational] entry stepKey="e0f1de51-..."
-[conversational-orch] hit step="e0f1de51-..." route=clarify
-[skip-step] mantendo passo_mp8yc0bp (tem slot_key/texto)
-[emit-before-goto] emitindo "3e7fb4cd-..." antes de avançar para "passo_mpagqq3g"
-✅ [whapi:sendButtons] botões entregues
-```
+Você quer: **após reset, o telefone deve se comportar igual a um número que nunca falou com o sistema** — primeira mensagem cai no fluxo de boas-vindas do consultor que receber pela distribuição padrão, sem nenhum "fantasma" do lead anterior.
 
-Ou seja: Fluxo B está recebendo botões, "passo_*", "auto-advance por captura", "ButtonsV3" — tudo do motor scripted, exatamente o que deveria estar desligado.
+## Plano
 
-### Por que o bypass anterior falhou
+### 1. Auditar o que sobra fora das tabelas que o `admin_hard_reset_phone` apaga
 
-O bypass que adicionei em `whapi-webhook/index.ts:1316` só pula o **engine V3**. Já o bypass dentro de `handlers/bot-flow.ts:632` (que chama `runFluxoBAI`) só é alcançado quando `engine === "sys"`.
+Rodar (read-only) procura por `5511971254913` em todas as tabelas `public.*` com colunas `phone%`, `remote_jid`, `customer_jid`, `to`, `recipient`, `metadata->>phone`, etc., para listar resíduos. Candidatos prováveis que hoje a função NÃO cobre:
 
-Mas para este lead, `conversation_step` começa com `"flow:"`, então `routeEngineV2` devolve `engine = "flow"` e o webhook chama `runConversationalFlow(...)` (linha 1530). A Vendedora nunca é invocada.
+- `bot_messages` / `bot_message_ab_results` (histórico de A/B)
+- `outbound_message_log` (cobre por customer_id, mas a entrega `delivered` chega depois do reset com customer já apagado → órfão)
+- `webhook_message_dedup` (dedupe por message_id — pode bloquear primeira msg)
+- `whatsapp_message_buffer` resíduos por `chat_id`
+- `lead_insights`, `ai_winning_conversations`, `ai_cooldown_state` (cobertura parcial via ILIKE — ver se pega o JID `@s.whatsapp.net`)
+- `crm_auto_message_log`, `customer_tags`, `scheduled_messages` (cobertos por remote_jid; conferir variantes `@lid`)
+- Qualquer tabela com `consultant_id` + `phone` que cacheia distribuição (ex.: `consultant_lead_history`, se existir)
 
-O bloco "FONTE ÚNICA DE VERDADE" (1440-1482) ainda piora: mesmo se o step fosse `sys`, ele faz `engine = "flow"` quando o consultor tem `conversational_flow_enabled=true` e existe um `bot_flows` ativo para a variant — e o Rafael tem fluxo ativo para variant B (`477f8968...`), então força tudo pro motor scripted.
+Esse diagnóstico vira a base do passo 2.
 
-Resultado: zero leads B caem na Vendedora V2 hoje, mesmo após a limpeza anterior. O `conversation_step` `"flow:..."` é re-gravado a cada mensagem pelo conversational engine.
+### 2. Estender `admin_hard_reset_phone` para "wipe total + cooldown curto"
 
-Mesmo problema existe em `evolution-webhook/index.ts` (mesma estrutura, linhas 1481 e 1675).
+Migration nova que substitui (CREATE OR REPLACE) a função para:
 
-## Correção proposta
+a) **Apagar resíduos** identificados no passo 1 (acrescentar `DELETE` ao bloco existente, na mesma transação SECURITY DEFINER).
+b) **Limpar `webhook_message_dedup`** para os `message_id`s relacionados ao chat_id desse telefone (ou todos os entries cujo `chat_id` bate as variantes).
+c) **Inserir uma trava curta em `webhook_rate_limit`** (ou nova tabela `phone_reset_quarantine`) marcando o telefone como "resetado em X" por 30 s. Webhook ignora qualquer status callback (`from_me=true`, type=`statuses`) ou mensagem cujo timestamp ≤ ao instante do reset.
+d) Retornar no JSON o `quarantine_until` para o front exibir feedback.
 
-### 1. Bypass duro de B antes do dispatcher dos engines legados
+### 3. Honrar a quarentena nos dois webhooks
 
-Em `supabase/functions/whapi-webhook/index.ts` e `supabase/functions/evolution-webhook/index.ts`, logo após o gate V3 e ANTES do `routeEngineV2` / bloco "FONTE ÚNICA DE VERDADE":
+Em `supabase/functions/whapi-webhook/index.ts` e `supabase/functions/evolution-webhook/index.ts`, bem no topo do handler (antes de qualquer lookup de customer):
 
 ```ts
-const _fbVariantLegacy = String((customer as any)?.flow_variant || "").toUpperCase();
-const _fbStepLegacy = String((customer as any)?.conversation_step || "");
-const _fbStepRaw = stripPrefix(_fbStepLegacy);
-const _fbMediaSteps = new Set([
-  "aguardando_conta","aguardando_documento","aguardando_humano",
-  "aguardando_doc_auto","aguardando_doc_frente","aguardando_doc_verso",
-  "aguardando_otp","validando_otp","portal_submitting",
-  "cadastro_finalizando","finalizando","complete","cadastro_em_analise",
-]);
-if (_fbVariantLegacy === "B" && !_fbMediaSteps.has(_fbStepRaw)) {
-  // Vendedora V2 só roda no caminho sys (bot-flow.ts → runFluxoBAI).
-  // Zera qualquer "flow:<uuid>" / "passo_*" / UUID que o conversational
-  // tenha gravado, força engine=sys, e segue para runBotFlow.
-  if (_fbStepLegacy.startsWith("flow:") || /^[0-9a-f-]{36}$/i.test(_fbStepRaw) || _fbStepRaw.startsWith("passo_")) {
-    (customer as any).conversation_step = null;
-    try {
-      await supabase.from("customers")
-        .update({ conversation_step: null, updated_at: new Date().toISOString() })
-        .eq("id", customer.id);
-    } catch (_) { /* não bloqueia */ }
-  }
-  engine = "sys"; // força bot-flow legacy → dispara runFluxoBAI no topo
-  console.log(`[fluxo-b-bypass] customer=${customer.id} step_in="${_fbStepLegacy}" → engine=sys (Vendedora V2)`);
+const phoneDigits = onlyDigits(chatIdOrFrom);
+const { data: q } = await supabase
+  .from("phone_reset_quarantine")
+  .select("quarantine_until, reset_at")
+  .eq("phone_digits", phoneDigits)
+  .gte("quarantine_until", new Date().toISOString())
+  .maybeSingle();
+
+if (q) {
+  // 1) status callbacks de mensagens antigas → descarta
+  if (eventType === "statuses") return ok();
+  // 2) mensagens cujo timestamp <= reset_at → descarta (entrega atrasada)
+  if (messageTsMs <= new Date(q.reset_at).getTime()) return ok();
+  // 3) qualquer customer pré-existente com esse phone é deletado de novo (defesa em profundidade)
 }
 ```
 
-Esse trecho entra antes da declaração `engineUsed = engine` para que o dispatcher já receba `sys`. Onde `engine` é `let` (já é), basta atribuir.
+Isso garante: status `delivered` da última mensagem do bot que ainda está em trânsito não recria o customer; só **uma mensagem nova de verdade** (timestamp > reset_at) entra, e aí já entra no caminho de lead novo.
 
-### 2. Pular o bloco "FONTE ÚNICA DE VERDADE" para B
+### 4. Garantir reentrada como "lead novo" mesmo dentro da carteira do consultor
 
-Mesmo arquivo, no `if (engine === "sys" && !isCadastroStep && consultantFlag && customerOverride !== false)` (whapi 1440, evolution equivalente): adicionar `&& _fbVariantLegacy !== "B"` para garantir que B nunca é re-empurrado para `flow`.
+Mesmo após wipe, a distribuição vai escolher um consultor (provavelmente Rafael de novo porque é quem recebe esse DDD/instance). Para a UX que você quer (= "um número novo qualquer"), basta:
 
-### 3. Limpar o lead atual
+- Customer recriado já entra com `conversation_step=null`, `flow_variant=B` (sorteado), `lead_source=null`, `customer_origin=null`, `last_bot_reply_at=null` — o que o bypass V2 + Vendedora V2 já trata como welcome.
+- Adicionar `previous_conversation_step=null`, `name=null`, `name_source=null` para não herdar nome captado por outros canais (caso a tabela `customer_memory` ressuscite algo via webhook). Já está coberto porque o reset apaga `customer_memory`; só preciso confirmar que NENHUM outro código popula `customers.name` antes do welcome.
 
-Migration de reparo (rodar via `supabase--migration`):
+Se o passo 1 achar tabela de memória residual, ela entra no `DELETE` do passo 2.
 
-```sql
-UPDATE public.customers
-SET conversation_step = NULL,
-    updated_at = now()
-WHERE id = 'd5f8f0d7-cf2b-41b3-900c-96a40ac6744f';
-```
+### 5. Feedback no card de UI
 
-(Reset cirúrgico só desse lead; a limpeza ampla já rodou na rodada anterior — a recontaminação foi causada pelo bug acima.)
+`HardResetPhoneCard.tsx`: após sucesso mostrar também `"Quarentena ativa até <hh:mm:ss> — próximos delivered/status são ignorados"`. Sem mexer no botão em si.
 
-### 4. Deploy
+### 6. Validação
 
-Redeploy de `whapi-webhook` e `evolution-webhook`.
-
-### 5. Validação
-
-- Testar "oi" no 11971254913 pelo Whapi → logs devem mostrar `[fluxo-b-bypass]` + `[fluxo-b] dispatching` + `[fluxo-b] done model=...`, sem `[conversational]`, `passo_*`, `ButtonsV3` ou `auto-advance`.
-- Conferir `customers.conversation_step` após algumas mensagens — deve ficar em `null` ou em algum dos `_fbMediaSteps` (nunca `flow:*`).
+1. Apertar "Resetar telefone" em `11971254913`.
+2. Conferir `admin_audit_log` mais recente: novo campo `quarantine_until` presente.
+3. Olhar logs do `whapi-webhook` por 30 s — qualquer `statuses` para esse chat_id deve sair como `⏭️ Mensagem ignorada (quarentena pós-reset)`.
+4. Mandar "Oi" do celular depois da quarentena → deve aparecer `[fluxo-b-bypass]` + `[fluxo-b] dispatching customer=<novo-id> step=welcome` SEM `previous_conversation_step`, sem nome herdado, sem `lead_source`.
+5. Checar `customers` para `11971254913`: deve existir um único `id` novo, `created_at > reset_at`, e todos os campos de captura/memória zerados.
 
 ## Detalhes técnicos
 
-- `routeEngineV2` permanece igual; o bypass acontece antes da decisão por engine.
-- Mídia (foto da conta, documento, OTP) e handoff continuam intactos porque `_fbMediaSteps` cobre todos os passos determinísticos que ainda fazem sentido para o Fluxo B.
-- Mudança é puramente em código de roteamento dos dois webhooks + um UPDATE pontual. Não toca em `_shared/fluxo-b-ai.ts`, `vendedora/*` nem nas templates.
-- Sem mudança de tipos do Supabase, sem nova tabela.
+- Mudanças concentradas em: 1 migration (`admin_hard_reset_phone` + nova tabela `phone_reset_quarantine` + GRANTs + RLS service_role-only), 2 edge functions (`whapi-webhook`, `evolution-webhook` — bloco de quarentena no topo), 1 componente (`HardResetPhoneCard` — string de feedback).
+- Sem alteração no fluxo da Vendedora V2 nem no Fluxo B.
+- A quarentena é por **telefone normalizado** (55 + DDD + número), aplicada antes de qualquer lookup, portanto cobre tanto `whapi` quanto `evolution` e não depende de `customer_id`.
+- TTL curto (30 s, configurável) — não impacta uso real porque um humano novo demora > 30 s para iniciar conversa após você apertar reset.
