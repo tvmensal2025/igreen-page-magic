@@ -372,7 +372,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v10 (tor+playwright+2captcha) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v12 (tor+playwright+2captcha+fallback) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
