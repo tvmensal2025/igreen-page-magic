@@ -222,7 +222,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
       etapa: state.etapa,
       nomeLead: customer.name || null,
       valorConta: typeof customer.electricity_bill_value === "number" ? customer.electricity_bill_value : null,
-      representante: consultant.name || "Rafael",
+      representante: sanitizeConsultantName(consultant.name) || "Rafael",
       inboundText,
       history: historyMsgs,
       perfil,
