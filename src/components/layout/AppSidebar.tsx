@@ -149,8 +149,8 @@ export function AppSidebar({
           {!collapsed && (
             <>
               <div className="min-w-0 flex-1">
-                <p className="pe-heading text-base font-bold tracking-tight leading-tight text-sky-50 truncate">{consultantName}</p>
-                <p className="text-[9px] mt-1 uppercase tracking-[0.22em] truncate" style={{ color: "rgba(16,185,129,0.7)" }}>{consultantLevel}</p>
+                <p className="pe-heading text-base font-bold tracking-tight leading-tight truncate text-slate-50">{consultantName}</p>
+                <p className="text-[9px] mt-1 uppercase tracking-[0.22em] truncate text-lime-200">{consultantLevel}</p>
               </div>
               {onLogout && (
                 <button
