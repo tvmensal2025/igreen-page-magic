@@ -276,6 +276,17 @@ const RESP_OBJECAO_VARIANTES: Record<ObjecaoTipo, string[]> = {
     "boa pergunta! É tudo *sem obra, sem fidelidade e regulamentado pela ANEEL* ⚡",
     "ótima dúvida — o resumo é: *economia na fatura, sem obra e sem amarração*. Posso te explicar qualquer ponto.",
   ],
+  como_funciona: [
+    "funciona assim: você continua com a mesma distribuidora, e a iGreen aplica um *desconto direto na sua fatura* — sem obra, sem instalar nada.",
+    "é simples: a gente conecta sua conta a uma *usina solar parceira*, e o desconto cai todo mês na sua própria fatura.",
+  ],
+  foto_antes: [
+    "pode mandar sim! Mas antes preciso de um detalhinho rápido:",
+    "claro, pode enviar! Antes só me ajuda com isto:",
+  ],
+  desistencia: [
+    "tudo bem! Sem pressão.",
+  ],
 };
 
 // Convites ao cadastro, variados por índice de tentativa (anti-repetição).
