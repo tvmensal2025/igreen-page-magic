@@ -127,17 +127,29 @@ export function AppSidebar({
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         } ${collapsed ? "w-[72px]" : "w-72"}`}
       >
-        {/* Brand */}
+        {/* Brand — foto do consultor */}
         <div className={`${collapsed ? "px-2 justify-center" : "px-5"} pt-6 pb-5 flex items-center gap-3 shrink-0`}>
-          <div className="w-10 h-10 rounded-xl p-[2px] shrink-0" style={{ background: "linear-gradient(135deg, var(--pe-accent-soft), var(--pe-accent), var(--pe-accent-deep))" }}>
-            <div className="w-full h-full rounded-[10px] flex items-center justify-center" style={{ background: "var(--pe-emerald-strong)" }}>
-              <span className="pe-heading text-sm font-bold" style={{ color: "var(--pe-accent)" }}>iG</span>
+          <div
+            className="w-10 h-10 rounded-xl p-[2px] shrink-0"
+            style={{ background: "linear-gradient(135deg, var(--pe-accent-soft), var(--pe-accent), var(--pe-accent-deep))" }}
+          >
+            <div
+              className="w-full h-full rounded-[10px] overflow-hidden flex items-center justify-center"
+              style={{ background: "var(--pe-emerald-strong)" }}
+            >
+              {consultantPhoto ? (
+                <img src={consultantPhoto} alt={consultantName} className="w-full h-full object-cover" />
+              ) : (
+                <span className="pe-heading text-sm font-bold" style={{ color: "var(--pe-accent)" }}>
+                  {consultantName.slice(0, 1).toUpperCase()}
+                </span>
+              )}
             </div>
           </div>
           {!collapsed && (
             <>
               <div className="min-w-0">
-                <p className="pe-heading text-lg font-bold tracking-tight leading-none text-sky-50">iGreen</p>
+                <p className="pe-heading text-lg font-bold tracking-tight leading-none text-sky-50 truncate">{consultantName}</p>
                 <p className="text-[9px] mt-1 uppercase tracking-[0.22em]" style={{ color: "rgba(16,185,129,0.7)" }}>Painel Elite</p>
               </div>
               <button
