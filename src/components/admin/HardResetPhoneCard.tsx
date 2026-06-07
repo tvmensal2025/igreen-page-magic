@@ -78,9 +78,12 @@ export function HardResetPhoneCard({ userId, className }: HardResetPhoneCardProp
         queryClient.invalidateQueries();
         return;
       }
+      const qUntil = (res as { quarantine_until?: string }).quarantine_until;
+      const qSecs = (res as { quarantine_seconds?: number }).quarantine_seconds ?? 60;
+      const qSuffix = qUntil ? ` · quarentena ${qSecs}s (eventos antigos ignorados)` : "";
       toast({
         title: "✅ Telefone zerado confirmado",
-        description: `${trace.ok ? trace.phoneNormalized : res.phoneNormalized} — ${totals || "nada a apagar"}`,
+        description: `${trace.ok ? trace.phoneNormalized : res.phoneNormalized} — ${totals || "nada a apagar"}${qSuffix}`,
       });
       queryClient.invalidateQueries();
     } catch (err: unknown) {
