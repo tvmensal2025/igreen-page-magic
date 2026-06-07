@@ -1,87 +1,64 @@
 ## Diagnóstico
 
-O botão "Resetar telefone" do `HardResetPhoneCard` funcionou — o `admin_audit_log` confirma três execuções (16:35, 16:36, 17:04), cada uma apagando `customers/conversations/crm_deals/customer_flow_state/capture_field_events`. O problema é que quando você mandou "Oi" de novo logo após o reset, o webhook **recriou o lead, mas não 100% "do zero"**:
+Os logs do `worker-igreen-sync` no easypanel mostram:
 
-- ✅ `customers.id` é novo (`5652b581…`), `conversation_step=null`, `flow_variant=B` reatribuído via distribuição
-- ❌ O `consultant_id` é decidido pelo mesmo roteamento de antes (Rafael, porque o número segue na carteira/última fonte)
-- ❌ O webhook não revalida `lead_source`, `customer_origin`, `is_test_lead`, etc. — herda o que vier do contexto
-- ❌ Possivelmente herda metadados via tabelas que o reset não cobre (ver auditoria abaixo)
+```
+[login] status=401 body=Unauthorized
+[login] ERRO: Login rejeitado — email ou senha incorretos
+```
 
-Você quer: **após reset, o telefone deve se comportar igual a um número que nunca falou com o sistema** — primeira mensagem cai no fluxo de boas-vindas do consultor que receber pela distribuição padrão, sem nenhum "fantasma" do lead anterior.
+**Importante:** o worker ESTÁ conseguindo passar pelo Cloudflare (via Tor) e ESTÁ chegando até a API `api-voffice.igreenenergy.com.br/v1/login`. O 401 é a resposta REAL da API iGreen rejeitando o login.
+
+Comparando com o `worker-portal` (que funciona em produção e usa as MESMAS credenciais da tabela `consultants.igreen_portal_password`):
+
+- `worker-portal/playwright-automation.mjs:826` faz `fetch` **direto via Node** (sem Tor, sem browser, sem Playwright) para `/v1/login`, passando apenas `Origin` e `Referer` de `escritorio.igreenenergy.com.br`. **Funciona perfeitamente.**
+- `worker-igreen-sync/server.mjs` faz o mesmo login via **Tor + Playwright + page.evaluate** — recebe 401 com as mesmas credenciais.
+
+Ou seja: a complexidade adicionada (Tor + browser real) está sendo rejeitada pela API. Provavelmente o IP residencial do Tor tem reputação ruim para essa rota específica, OU algum header automático do `fetch` do browser (cookie/CSRF/cf_clearance) está fazendo a API rejeitar.
+
+A solução é alinhar o `worker-igreen-sync` com o método que JÁ FUNCIONA no `worker-portal`.
 
 ## Plano
 
-### 1. Auditar o que sobra fora das tabelas que o `admin_hard_reset_phone` apaga
+### 1. Refatorar `worker-igreen-sync/server.mjs`
 
-Rodar (read-only) procura por `5511971254913` em todas as tabelas `public.*` com colunas `phone%`, `remote_jid`, `customer_jid`, `to`, `recipient`, `metadata->>phone`, etc., para listar resíduos. Candidatos prováveis que hoje a função NÃO cobre:
+Trocar a estratégia de login e leitura de dados:
 
-- `bot_messages` / `bot_message_ab_results` (histórico de A/B)
-- `outbound_message_log` (cobre por customer_id, mas a entrega `delivered` chega depois do reset com customer já apagado → órfão)
-- `webhook_message_dedup` (dedupe por message_id — pode bloquear primeira msg)
-- `whatsapp_message_buffer` resíduos por `chat_id`
-- `lead_insights`, `ai_winning_conversations`, `ai_cooldown_state` (cobertura parcial via ILIKE — ver se pega o JID `@s.whatsapp.net`)
-- `crm_auto_message_log`, `customer_tags`, `scheduled_messages` (cobertos por remote_jid; conferir variantes `@lid`)
-- Qualquer tabela com `consultant_id` + `phone` que cacheia distribuição (ex.: `consultant_lead_history`, se existir)
+- **Remover** uso de Playwright/Chromium e Tor para o fluxo `/sync-customers` e `/sync-network`.
+- **Usar `fetch` nativo do Node** direto contra `https://api-voffice.igreenenergy.com.br/v1/login`, exatamente como `worker-portal/playwright-automation.mjs:819-834`:
+  - Headers: `Content-Type: application/json`, `Accept: application/json, text/plain, */*`, `Origin: https://escritorio.igreenenergy.com.br`, `Referer: https://escritorio.igreenenergy.com.br/`, `User-Agent` de Chrome desktop.
+  - Body: `{ email, password }`.
+- Após obter `accessToken`, fazer as chamadas a `/v1/consultant`, `/v1/customer-map/<id>?page=N&pageSize=500` e `/v1/network-map?page=N&per_page=100` também via `fetch` nativo com `Authorization: Bearer <token>`.
+- Manter paginação até esgotar resultados, manter pool de tokens em memória (TTL 30 min) por email para evitar relogar a cada request.
+- Manter endpoints `/health`, `/last-debug`, `/sync-customers`, `/sync-network` com o mesmo contrato (a edge function não muda).
+- Tratamento de erros: 401/403 → "Credenciais inválidas"; 429 → aguardar 30s e tentar 1x; 5xx/timeout → erro 502.
 
-Esse diagnóstico vira a base do passo 2.
+### 2. Plano B (fallback se a API começar a bloquear IP de datacenter)
 
-### 2. Estender `admin_hard_reset_phone` para "wipe total + cooldown curto"
+Se algum dia a API começar a 403/Cloudflare-block o IP do easypanel (não está acontecendo hoje — worker-portal prova isso), reativamos a rota Tor+Playwright como fallback automático. Por enquanto deixar só o caminho simples.
 
-Migration nova que substitui (CREATE OR REPLACE) a função para:
+### 3. Limpar dependências
 
-a) **Apagar resíduos** identificados no passo 1 (acrescentar `DELETE` ao bloco existente, na mesma transação SECURITY DEFINER).
-b) **Limpar `webhook_message_dedup`** para os `message_id`s relacionados ao chat_id desse telefone (ou todos os entries cujo `chat_id` bate as variantes).
-c) **Inserir uma trava curta em `webhook_rate_limit`** (ou nova tabela `phone_reset_quarantine`) marcando o telefone como "resetado em X" por 30 s. Webhook ignora qualquer status callback (`from_me=true`, type=`statuses`) ou mensagem cujo timestamp ≤ ao instante do reset.
-d) Retornar no JSON o `quarantine_until` para o front exibir feedback.
+- Remover `playwright-chromium`, instalação do Chromium e Tor do `Dockerfile`.
+- Remover `torrc` do build.
+- Imagem fica MUITO menor (~150MB em vez de ~1.5GB) e sobe em segundos.
 
-### 3. Honrar a quarentena nos dois webhooks
+### 4. Edge function `sync-igreen-customers`
 
-Em `supabase/functions/whapi-webhook/index.ts` e `supabase/functions/evolution-webhook/index.ts`, bem no topo do handler (antes de qualquer lookup de customer):
+**Nenhuma mudança** — o contrato HTTP do worker é idêntico. A edge já está apontando para o `IGREEN_SYNC_WORKER_URL=https://igreen-worker-igreen.d9v63q.easypanel.host` e usando o secret correto (validado em `settings`).
 
-```ts
-const phoneDigits = onlyDigits(chatIdOrFrom);
-const { data: q } = await supabase
-  .from("phone_reset_quarantine")
-  .select("quarantine_until, reset_at")
-  .eq("phone_digits", phoneDigits)
-  .gte("quarantine_until", new Date().toISOString())
-  .maybeSingle();
+### 5. Validação após deploy
 
-if (q) {
-  // 1) status callbacks de mensagens antigas → descarta
-  if (eventType === "statuses") return ok();
-  // 2) mensagens cujo timestamp <= reset_at → descarta (entrega atrasada)
-  if (messageTsMs <= new Date(q.reset_at).getTime()) return ok();
-  // 3) qualquer customer pré-existente com esse phone é deletado de novo (defesa em profundidade)
-}
-```
-
-Isso garante: status `delivered` da última mensagem do bot que ainda está em trânsito não recria o customer; só **uma mensagem nova de verdade** (timestamp > reset_at) entra, e aí já entra no caminho de lead novo.
-
-### 4. Garantir reentrada como "lead novo" mesmo dentro da carteira do consultor
-
-Mesmo após wipe, a distribuição vai escolher um consultor (provavelmente Rafael de novo porque é quem recebe esse DDD/instance). Para a UX que você quer (= "um número novo qualquer"), basta:
-
-- Customer recriado já entra com `conversation_step=null`, `flow_variant=B` (sorteado), `lead_source=null`, `customer_origin=null`, `last_bot_reply_at=null` — o que o bypass V2 + Vendedora V2 já trata como welcome.
-- Adicionar `previous_conversation_step=null`, `name=null`, `name_source=null` para não herdar nome captado por outros canais (caso a tabela `customer_memory` ressuscite algo via webhook). Já está coberto porque o reset apaga `customer_memory`; só preciso confirmar que NENHUM outro código popula `customers.name` antes do welcome.
-
-Se o passo 1 achar tabela de memória residual, ela entra no `DELETE` do passo 2.
-
-### 5. Feedback no card de UI
-
-`HardResetPhoneCard.tsx`: após sucesso mostrar também `"Quarentena ativa até <hh:mm:ss> — próximos delivered/status são ignorados"`. Sem mexer no botão em si.
-
-### 6. Validação
-
-1. Apertar "Resetar telefone" em `11971254913`.
-2. Conferir `admin_audit_log` mais recente: novo campo `quarantine_until` presente.
-3. Olhar logs do `whapi-webhook` por 30 s — qualquer `statuses` para esse chat_id deve sair como `⏭️ Mensagem ignorada (quarentena pós-reset)`.
-4. Mandar "Oi" do celular depois da quarentena → deve aparecer `[fluxo-b-bypass]` + `[fluxo-b] dispatching customer=<novo-id> step=welcome` SEM `previous_conversation_step`, sem nome herdado, sem `lead_source`.
-5. Checar `customers` para `11971254913`: deve existir um único `id` novo, `created_at > reset_at`, e todos os campos de captura/memória zerados.
+1. Redeploy do container `worker-igreen` no easypanel (você faz no painel).
+2. Eu chamo a edge `sync-igreen-customers` via curl para o seu consultor (Rafael Ferreira) e confirmo que retorna `success: true` com lista de customers.
+3. Se vier erro, leio `GET /last-debug` no worker para entender em qual passo travou.
 
 ## Detalhes técnicos
 
-- Mudanças concentradas em: 1 migration (`admin_hard_reset_phone` + nova tabela `phone_reset_quarantine` + GRANTs + RLS service_role-only), 2 edge functions (`whapi-webhook`, `evolution-webhook` — bloco de quarentena no topo), 1 componente (`HardResetPhoneCard` — string de feedback).
-- Sem alteração no fluxo da Vendedora V2 nem no Fluxo B.
-- A quarentena é por **telefone normalizado** (55 + DDD + número), aplicada antes de qualquer lookup, portanto cobre tanto `whapi` quanto `evolution` e não depende de `customer_id`.
-- TTL curto (30 s, configurável) — não impacta uso real porque um humano novo demora > 30 s para iniciar conversa após você apertar reset.
+Arquivos que mudam:
+- `worker-igreen-sync/server.mjs` — reescrita do core, mesmo contrato HTTP.
+- `worker-igreen-sync/Dockerfile` — remover Playwright e Tor, virar `FROM node:20-alpine` simples.
+- `worker-igreen-sync/package.json` — remover `playwright-chromium`.
+- `worker-igreen-sync/torrc` — apagar.
+
+Risco: baixo. O método é o MESMO que já funciona em produção há meses no `worker-portal` com as mesmas credenciais da mesma tabela.
