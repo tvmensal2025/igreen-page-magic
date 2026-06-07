@@ -1,11 +1,12 @@
-# Dockerfile — igreen-sync-worker v6
-# Playwright + Tor (proxy residencial para login) + 2captcha (resolve reCAPTCHA)
-# Fluxo: login via Tor → reCAPTCHA via 2captcha → token JWT → API direta
+# Dockerfile — igreen-sync-worker v7
+# Playwright + Tor (IP residencial p/ passar Cloudflare). SEM 2captcha.
+# Fluxo: Tor → página igreen (cf_clearance) → API /login via page.evaluate → token JWT
+#        → customer-map / network-map (tudo de dentro da página, passa Cloudflare)
 
 FROM node:20-bookworm-slim
 
 LABEL service="igreen-sync-worker"
-LABEL version="v6.0-2026.06.06"
+LABEL version="v7.0-2026.06.07"
 
 # Instala Tor + deps do Chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -1,10 +1,20 @@
-// server.mjs — igreen-sync-worker v6
+// server.mjs — igreen-sync-worker v7
 //
-// Login: Playwright via Tor SOCKS5 (IP residencial) + 2captcha (reCAPTCHA v2)
-// Dados: fetch direto com token JWT (sem proxy)
+// AUDITORIA (2026-06-07): o portal NÃO precisa de captcha para login.
+// O reCAPTCHA só existe na PÁGINA da SPA (escritorio.../login). A API REST por
+// trás (api-voffice.igreenenergy.com.br/v1/login) aceita {email,password} e
+// devolve accessToken — sem captcha. Padrão comprovado em worker-portal/.
+//
+// Estratégia:
+//   - Chromium via Tor SOCKS5 (IP residencial → passa reputação do Cloudflare)
+//   - Navega numa página igreenenergy (seta cookie cf_clearance)
+//   - Chama a API via page.evaluate(fetch) → usa TLS fingerprint do browser real
+//     + cf_clearance → Cloudflare devolve 200 (fetch cru do Node leva 403)
+//   - login → accessToken → customer-map / network-map (tudo via page.evaluate)
 //
 // Endpoints:
 //   GET  /health
+//   GET  /last-debug
 //   POST /sync-customers   { portal_email, portal_password }
 //   POST /sync-network     { portal_email, portal_password }
 
@@ -15,89 +25,20 @@ const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
 const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '20', 10);
-const TWOCAPTCHA_KEY = process.env.TWOCAPTCHA_KEY || '';
 const PLAYWRIGHT_HEADLESS = (process.env.PLAYWRIGHT_HEADLESS || 'true') !== 'false';
 
 const PORTAL_LOGIN_URL = 'https://escritorio.igreenenergy.com.br/login';
 const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
-const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
+const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
-if (!TWOCAPTCHA_KEY) console.warn('[boot] WARN: TWOCAPTCHA_KEY não definido!');
 
 // Debug em memória (acessível via GET /last-debug)
 let lastDebug = { ts: null, steps: [] };
 function dbg(msg) {
   console.log(msg);
-  lastDebug.steps.push(`${new Date().toISOString().slice(11,19)} ${msg}`);
-  if (lastDebug.steps.length > 50) lastDebug.steps.shift();
-}
-
-// ------------ 2captcha (reCAPTCHA Enterprise) ------------
-async function solve2captcha(sitekey, pageUrl) {
-  dbg('[2captcha] submetendo reCAPTCHA Enterprise...');
-  const submitRes = await fetch('https://2captcha.com/in.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      key: TWOCAPTCHA_KEY,
-      method: 'userrecaptcha',
-      googlekey: sitekey,
-      pageurl: pageUrl,
-      enterprise: '1',
-      json: '1',
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-  const submitData = await submitRes.json();
-  if (submitData.status !== 1) throw new HttpError(500, `2captcha submit: ${submitData.request}`);
-
-  const captchaId = submitData.request;
-  dbg(`[2captcha] id=${captchaId}, aguardando resolução...`);
-
-  for (let i = 0; i < 36; i++) {
-    await new Promise(r => setTimeout(r, 5000));
-    const pollRes = await fetch(
-      `https://2captcha.com/res.php?key=${TWOCAPTCHA_KEY}&action=get&id=${captchaId}&json=1`,
-      { signal: AbortSignal.timeout(15000) }
-    );
-    const pollData = await pollRes.json();
-    if (pollData.status === 1) {
-      dbg(`[2captcha] resolvido em ~${(i + 1) * 5}s`);
-      return pollData.request;
-    }
-    if (pollData.request !== 'CAPCHA_NOT_READY') throw new HttpError(500, `2captcha: ${pollData.request}`);
-    if (i % 4 === 0) dbg(`[2captcha] aguardando... ${(i + 1) * 5}s`);
-  }
-  throw new HttpError(500, '2captcha timeout');
-}
-
-// ------------ IA de visão (assistida) — GPT-4o-mini analisa screenshot ------------
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-async function aiVision(screenshotBase64, question) {
-  if (!OPENAI_API_KEY) return 'IA indisponível (sem OPENAI_API_KEY)';
-  try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        max_tokens: 400,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: question },
-            { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } },
-          ],
-        }],
-      }),
-      signal: AbortSignal.timeout(40000),
-    });
-    const j = await res.json();
-    return j?.choices?.[0]?.message?.content || JSON.stringify(j).slice(0, 300);
-  } catch (e) {
-    return `IA erro: ${e.message}`;
-  }
+  lastDebug.steps.push(`${new Date().toISOString().slice(11, 19)} ${msg}`);
+  if (lastDebug.steps.length > 60) lastDebug.steps.shift();
 }
 
 // ------------ Browser com Tor ------------
@@ -118,7 +59,45 @@ async function getBrowser() {
   return sharedBrowser;
 }
 
-// ------------ Pool de sessões (token JWT) ------------
+// Espera o Cloudflare liberar (Tor usa IPs residenciais — deve passar).
+async function waitCloudflare(page) {
+  for (let i = 0; i < 15; i++) {
+    await page.waitForTimeout(2000);
+    const title = await page.title().catch(() => '');
+    const body = await page.locator('body').innerText().catch(() => '');
+    dbg(`[cf] [${i + 1}/15] title="${title}" url=${page.url()}`);
+    const blocked = title.includes('Attention Required') || title.includes('Just a moment') ||
+      body.includes('Checking your browser') || body.includes('Verifying you are human');
+    if (!blocked && title) return true;
+    if (i === 14) throw new HttpError(503, 'Cloudflare bloqueou via Tor');
+  }
+  return false;
+}
+
+// Faz uma chamada à API de DENTRO da página (passa pelo Cloudflare).
+async function apiFetch(page, method, path, { body, token } = {}) {
+  const url = `${API_BASE}${path}`;
+  const result = await page.evaluate(async ({ url, method, body, token }) => {
+    try {
+      const headers = { 'Accept': 'application/json, text/plain, */*' };
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        credentials: 'include',
+      });
+      const text = await res.text();
+      return { status: res.status, body: text };
+    } catch (e) {
+      return { status: 0, body: String(e) };
+    }
+  }, { url, method, body, token });
+  return result;
+}
+
+// ------------ Pool de sessões (browser context vivo + token JWT) ------------
 const sessions = new Map();
 
 async function evictOldest() {
@@ -126,80 +105,24 @@ async function evictOldest() {
   for (const [k, s] of sessions) {
     if (s.lastUsed < oldestUsed) { oldestUsed = s.lastUsed; oldestKey = k; }
   }
-  if (oldestKey) sessions.delete(oldestKey);
+  if (oldestKey) {
+    const s = sessions.get(oldestKey);
+    await s?.context?.close().catch(() => {});
+    sessions.delete(oldestKey);
+  }
 }
 
 async function loginAndGetToken(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
   const browser = await getBrowser();
   const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    userAgent: UA,
     viewport: { width: 1280, height: 800 },
     locale: 'pt-BR',
   });
-
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     window.chrome = { runtime: {} };
-
-    // Override grecaptcha.getResponse para devolver o token resolvido pelo 2captcha.
-    // SPAs leem o token via grecaptcha.getResponse()/enterprise.getResponse(),
-    // NÃO da textarea — por isso injetar na textarea não bastava.
-    window.__igreenCaptchaToken = '';
-    function patchGrecaptcha() {
-      try {
-        if (window.grecaptcha) {
-          const orig = window.grecaptcha.getResponse;
-          window.grecaptcha.getResponse = function (...a) {
-            if (window.__igreenCaptchaToken) return window.__igreenCaptchaToken;
-            try { return orig ? orig.apply(this, a) : ''; } catch { return ''; }
-          };
-          if (window.grecaptcha.enterprise) {
-            const origE = window.grecaptcha.enterprise.getResponse;
-            window.grecaptcha.enterprise.getResponse = function (...a) {
-              if (window.__igreenCaptchaToken) return window.__igreenCaptchaToken;
-              try { return origE ? origE.apply(this, a) : ''; } catch { return ''; }
-            };
-            // execute() retorna Promise com o token (fluxo invisível/score)
-            const origExec = window.grecaptcha.enterprise.execute;
-            window.grecaptcha.enterprise.execute = function (...a) {
-              if (window.__igreenCaptchaToken) return Promise.resolve(window.__igreenCaptchaToken);
-              try { return origExec ? origExec.apply(this, a) : Promise.resolve(''); } catch { return Promise.resolve(''); }
-            };
-          }
-        }
-      } catch (_) {}
-    }
-    // grecaptcha carrega async — re-patcha periodicamente
-    patchGrecaptcha();
-    const iv = setInterval(patchGrecaptcha, 300);
-    setTimeout(() => clearInterval(iv), 30000);
-  });
-
-  // Captura token JWT das responses de rede
-  let capturedToken = null;
-  context.on('response', async (response) => {
-    const url = response.url();
-    if (!url.includes('igreenenergy')) return;
-    try {
-      const ct = response.headers()['content-type'] || '';
-      if (!ct.includes('json')) return;
-      const j = await response.json().catch(() => null);
-      if (!j) return;
-      const t = j?.token || j?.access_token || j?.accessToken || j?.data?.token || j?.jwt;
-      if (t && !capturedToken) { capturedToken = t; dbg(`[token] capturado de ${url}`); }
-    } catch { /* ignora */ }
-  });
-
-  // DIAGNÓSTICO: loga toda requisição POST ao domínio iGreen (revela endpoint + payload do login)
-  context.on('request', (request) => {
-    try {
-      const url = request.url();
-      if (request.method() !== 'POST') return;
-      if (!/igreenenergy/.test(url)) return;
-      const pd = (request.postData() || '').slice(0, 500);
-      dbg(`[req] POST ${url} body=${pd.replace(/\n/g, ' ')}`);
-    } catch (_) {}
   });
 
   const page = await context.newPage();
@@ -207,154 +130,47 @@ async function loginAndGetToken(email, password) {
   try {
     dbg(`[login] ${email} → navegando via Tor`);
     await page.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await waitCloudflare(page);
 
-    // Aguarda CF challenge resolver (Tor usa IPs residenciais — deve passar)
-    let pageTitle = '';
-    for (let i = 0; i < 15; i++) {
-      await page.waitForTimeout(2000);
-      pageTitle = await page.title().catch(() => '');
-      const bodySnippet = await page.locator('body').innerText().catch(() => '');
-      dbg(`[login] CF check [${i+1}/15] title="${pageTitle}" url=${page.url()}`);
-      dbg(`[login] body snippet: ${bodySnippet.slice(0, 150).replace(/\n/g, ' ')}`);
-      if (!pageTitle.includes('Attention Required') && !pageTitle.includes('Just a moment') &&
-          !bodySnippet.includes('Checking your browser')) break;
-      if (i === 14) throw new HttpError(503, 'Cloudflare bloqueou via Tor');
+    // Login via API REST (sem captcha) — de dentro da página
+    dbg('[login] POST /login via página...');
+    const loginRes = await apiFetch(page, 'POST', '/login', { body: { email, password } });
+    dbg(`[login] status=${loginRes.status} body=${String(loginRes.body).slice(0, 200)}`);
+
+    if (loginRes.status === 401 || loginRes.status === 403) {
+      throw new HttpError(401, 'Login rejeitado — email ou senha incorretos');
+    }
+    if (loginRes.status !== 200 && loginRes.status !== 201) {
+      throw new HttpError(502, `API login HTTP ${loginRes.status}`);
     }
 
-    // Aguarda formulário
-    const emailSel = 'input[type="email"], input[name="email"], input[name="usuario"], input[name="login"]';
-    const passSel = 'input[type="password"]';
-    await page.waitForSelector(emailSel, { timeout: 20000 });
+    let loginData;
+    try { loginData = JSON.parse(loginRes.body); }
+    catch { throw new HttpError(502, 'Resposta de login não-JSON (Cloudflare?)'); }
 
-    // Preenche
-    await page.fill(emailSel, email);
-    await page.waitForTimeout(400);
-    await page.fill(passSel, password);
-    await page.waitForTimeout(400);
+    const token = loginData.accessToken || loginData.token || loginData.access_token ||
+      loginData?.data?.token || loginData?.data?.accessToken || null;
+    if (!token) throw new HttpError(502, 'Login OK mas sem accessToken na resposta');
 
-    // Resolve reCAPTCHA com 2captcha — só se o sitekey estiver na página
-    // reCAPTCHA Enterprise está em iframe — sitekey não fica no DOM principal.
-    // Usa o sitekey fixo descoberto (size=normal visível na página de login).
-    const sitekeyEl = await page.evaluate(() => {
-      return document.querySelector('[data-sitekey]')?.getAttribute('data-sitekey') || null;
-    }).catch(() => null);
+    // consultor_id pode vir no login ou via /consultant
+    let consultorId = String(
+      loginData?.idconsultor || loginData?.consultorId || loginData?.consultor?.id ||
+      loginData?.user?.idconsultor || loginData?.data?.idconsultor || ''
+    ) || null;
 
-    const sitekey = sitekeyEl || RECAPTCHA_SITEKEY;
-    dbg(`[login] usando sitekey: ${sitekey} (detectado: ${sitekeyEl || 'não'})`);
-    const currentBodyText = await page.locator('body').innerText().catch(() => '');
-    dbg(`[login] body snippet: ${currentBodyText.slice(0, 200).replace(/\n/g, ' ')}`);
-
-    // Resolve via 2captcha (Enterprise)
-    const captchaToken = await solve2captcha(sitekey, PORTAL_LOGIN_URL);
-    dbg('[login] token 2captcha obtido — injetando...');
-
-    await page.evaluate((token) => {
-      // Define o token global que o getResponse() sobrescrito devolve (caminho principal SPA)
-      window.__igreenCaptchaToken = token;
-
-      // Injeta o token em TODOS os campos g-recaptcha-response (widget 0 e 1)
-      const fields = document.querySelectorAll('textarea[id^="g-recaptcha-response"], textarea[name="g-recaptcha-response"], #g-recaptcha-response, #g-recaptcha-response-1');
-      fields.forEach(ta => { ta.value = token; ta.innerHTML = token; });
-
-      // Cria os campos se não existirem
-      ['g-recaptcha-response', 'g-recaptcha-response-1'].forEach(id => {
-        if (!document.getElementById(id)) {
-          const ta = document.createElement('textarea');
-          ta.id = id; ta.name = 'g-recaptcha-response';
-          ta.style.display = 'none'; ta.value = token;
-          document.body.appendChild(ta);
-        }
-      });
-
-      // Dispara TODOS os callbacks registrados (grecaptcha.enterprise)
-      try {
-        const cfg = window.___grecaptcha_cfg;
-        if (cfg && cfg.clients) {
-          for (const client of Object.values(cfg.clients)) {
-            const stack = [client];
-            const seen = new Set();
-            while (stack.length) {
-              const obj = stack.pop();
-              if (!obj || typeof obj !== 'object' || seen.has(obj)) continue;
-              seen.add(obj);
-              for (const val of Object.values(obj)) {
-                if (val && typeof val === 'object') {
-                  if (typeof val.callback === 'function') {
-                    try { val.callback(token); } catch (_) {}
-                  }
-                  stack.push(val);
-                }
-              }
-            }
-          }
-        }
-      } catch (_) {}
-
-      // Habilita o botão Entrar (estava disabled aguardando o captcha)
-      document.querySelectorAll('button[type="submit"], button:disabled').forEach(b => {
-        b.disabled = false;
-        b.removeAttribute('disabled');
-      });
-
-      if (typeof window.verifyCallback === 'function') window.verifyCallback(token);
-      if (typeof window.onRecaptchaSuccess === 'function') window.onRecaptchaSuccess(token);
-    }, captchaToken);
-
-    await page.waitForTimeout(1500);
-
-    // Submit
-    const submitSel = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Acessar")';
-    await Promise.all([
-      page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {}),
-      page.click(submitSel).catch(() => page.keyboard.press('Enter')),
-    ]);
-
-    await page.waitForTimeout(3000);
-
-    const currentUrl = page.url();
-    if (/\/login/i.test(currentUrl)) {
-      // Diagnóstico: captura mensagem de erro visível + análise de IA
-      const errText = await page.locator('body').innerText().catch(() => '');
-      dbg(`[login] FALHOU — body: ${errText.slice(0, 250).replace(/\n/g, ' ')}`);
-      if (OPENAI_API_KEY) {
-        const shot = await page.screenshot({ encoding: 'base64' }).catch(() => null);
-        if (shot) {
-          const v = await aiVision(shot, 'Esta é uma tela de login que falhou. Descreva exatamente qual mensagem de erro aparece, se há um captcha (caixa "não sou robô" ou desafio de imagens) ainda visível, e se o botão Entrar está habilitado. Responda em português, curto.');
-          dbg(`[IA] ${v.slice(0, 300)}`);
-        }
+    if (!consultorId) {
+      const cRes = await apiFetch(page, 'GET', '/consultant', { token });
+      if (cRes.status === 200) {
+        try {
+          const cj = JSON.parse(cRes.body);
+          consultorId = String(cj?.id || cj?.idconsultor || cj?.consultor?.id || cj?.data?.id || '') || null;
+        } catch { /* ignora */ }
       }
-      throw new HttpError(401, 'Login rejeitado — credenciais inválidas ou captcha não aceito');
+      dbg(`[login] /consultant status=${cRes.status} consultorId=${consultorId}`);
     }
 
-    dbg(`[login] ${email} → OK! URL=${currentUrl}`);
-
-    // Tenta capturar token JWT se não foi capturado via network
-    if (!capturedToken) {
-      capturedToken = await page.evaluate(() => {
-        return localStorage.getItem('token') ||
-          localStorage.getItem('access_token') ||
-          sessionStorage.getItem('token') ||
-          null;
-      }).catch(() => null);
-    }
-
-    // Busca consultor_id
-    let consultorId = null;
-    try {
-      const consultantRes = await page.request.get(`${API_BASE}/consultant`, { timeout: 20000 });
-      if (consultantRes.ok()) {
-        const j = await consultantRes.json();
-        consultorId = String(j?.id || j?.consultor?.id || j?.data?.id || j?.idconsultor || '') || null;
-      }
-    } catch (e) {
-      console.warn(`[login] ${email} → não consegui consultor_id: ${e.message}`);
-    }
-
-    await context.close();
-
-    dbg(`[login] ${email} → token=${capturedToken ? 'sim' : 'via-cookies'}, consultor=${consultorId}`);
-    return { token: capturedToken, consultorId };
-
+    dbg(`[login] ${email} → OK! token=sim consultor=${consultorId}`);
+    return { token, consultorId, context, page };
   } catch (e) {
     dbg(`[login] ERRO: ${e.message}`);
     await context.close().catch(() => {});
@@ -365,12 +181,21 @@ async function loginAndGetToken(email, password) {
 async function getOrCreateSession(email, password) {
   const now = Date.now();
   let s = sessions.get(email);
-  if (s && (now - s.createdAt) > SESSION_TTL_MS) { sessions.delete(email); s = null; }
+  if (s && (now - s.createdAt) > SESSION_TTL_MS) {
+    await s.context?.close().catch(() => {});
+    sessions.delete(email);
+    s = null;
+  }
+  // valida se a página ainda está viva
+  if (s) {
+    try { await s.page.evaluate(() => 1); }
+    catch { await s.context?.close().catch(() => {}); sessions.delete(email); s = null; }
+  }
   if (s) { s.lastUsed = now; return s; }
   if (sessions.size >= MAX_SESSIONS) await evictOldest();
 
-  const { token, consultorId } = await loginAndGetToken(email, password);
-  s = { token, consultorId, createdAt: now, lastUsed: now, lock: Promise.resolve() };
+  const { token, consultorId, context, page } = await loginAndGetToken(email, password);
+  s = { token, consultorId, context, page, createdAt: now, lastUsed: now, lock: Promise.resolve() };
   sessions.set(email, s);
   return s;
 }
@@ -386,26 +211,20 @@ async function withSession(email, password, fn) {
   } finally { release(); }
 }
 
-// ------------ API direta com token JWT (sem proxy) ------------
-async function fetchPaginated(token, url, { pageParam = 'page', sizeParam = 'pageSize', size = 500 } = {}) {
+// ------------ Paginação via page.evaluate (passa Cloudflare) ------------
+async function fetchPaginated(session, path, { pageParam = 'page', sizeParam = 'pageSize', size = 500 } = {}) {
   const all = [];
   for (let p = 1; p <= 200; p++) {
-    const sep = url.includes('?') ? '&' : '?';
-    const full = `${url}${sep}${pageParam}=${p}&${sizeParam}=${size}`;
-    let res;
-    try {
-      res = await fetch(full, {
-        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(60000),
-      });
-    } catch (e) { throw new HttpError(500, `Rede: ${e.message}`); }
+    const sep = path.includes('?') ? '&' : '?';
+    const full = `${path}${sep}${pageParam}=${p}&${sizeParam}=${size}`;
+    const res = await apiFetch(session.page, 'GET', full, { token: session.token });
 
-    const status = res.status;
-    if (status === 429) { console.warn('[fetch] 429 — aguardando 30s'); await new Promise(r => setTimeout(r, 30000)); continue; }
-    if (status === 401 || status === 403) throw new HttpError(status, `Token expirado (${status})`);
-    if (!res.ok) throw new HttpError(status, `HTTP ${status}`);
+    if (res.status === 429) { dbg('[fetch] 429 — aguardando 30s'); await new Promise(r => setTimeout(r, 30000)); continue; }
+    if (res.status === 401 || res.status === 403) throw new HttpError(res.status, `Token expirado (${res.status})`);
+    if (res.status !== 200) throw new HttpError(res.status || 502, `HTTP ${res.status}`);
 
-    const j = await res.json();
+    let j;
+    try { j = JSON.parse(res.body); } catch { throw new HttpError(502, 'Resposta não-JSON'); }
     const arr = Array.isArray(j) ? j :
       Array.isArray(j?.data) ? j.data :
       Array.isArray(j?.items) ? j.items :
@@ -413,8 +232,9 @@ async function fetchPaginated(token, url, { pageParam = 'page', sizeParam = 'pag
       Array.isArray(j?.customers) ? j.customers :
       Array.isArray(j?.members) ? j.members : [];
     all.push(...arr);
-    console.log(`  page ${p}: ${arr.length} (total: ${all.length})`);
-    if (arr.length < size) break;
+    dbg(`  page ${p}: ${arr.length} (total: ${all.length})`);
+    const total = Number(j?.total || 0);
+    if (arr.length < size || (total && p * size >= total)) break;
   }
   return all;
 }
@@ -455,8 +275,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor-playwright-2captcha',
-        tor: true, twocaptcha: !!TWOCAPTCHA_KEY,
+        mode: 'tor-playwright-api-direct',
+        tor: true,
       });
     }
 
@@ -467,46 +287,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'not_found' });
     if (!authOk(req)) return send(res, 401, { ok: false, error: 'unauthorized' });
 
-    // /debug-page não precisa de credenciais — só inspeciona a página
-    if (req.url === '/debug-page') {
-      const browser = await getBrowser();
-      const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1280, height: 800 },
-      });
-      await context.addInitScript(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
-      const p = await context.newPage();
-      try {
-        await p.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 40000 });
-        await p.waitForTimeout(5000);
-        const title = await p.title().catch(() => '');
-        const url = p.url();
-        const html = await p.content().catch(() => '');
-        const sitekeys = html.match(/data-sitekey="([^"]+)"/g) || [];
-        const iframeSrcs = (html.match(/recaptcha[^"']*\/anchor[^"']*/g) || []).slice(0, 2);
-        // Inspeciona estrutura do reCAPTCHA e do form
-        const recaptchaInfo = await p.evaluate(() => {
-          const info = {};
-          info.hasGrecaptcha = typeof window.grecaptcha !== 'undefined';
-          info.hasEnterprise = typeof window.grecaptcha?.enterprise !== 'undefined';
-          info.gResponseFields = [...document.querySelectorAll('[name="g-recaptcha-response"], textarea[id^="g-recaptcha"]')].map(e => e.id || e.name);
-          info.recaptchaDivs = [...document.querySelectorAll('.g-recaptcha, [class*="recaptcha"]')].map(e => ({ cls: e.className, sitekey: e.getAttribute('data-sitekey'), size: e.getAttribute('data-size') }));
-          info.buttons = [...document.querySelectorAll('button')].map(b => ({ text: b.innerText.trim(), type: b.type, disabled: b.disabled }));
-          info.forms = [...document.querySelectorAll('form')].map(f => f.action || 'no-action');
-          // procura sitekey em scripts
-          const scripts = [...document.querySelectorAll('script')].map(s => s.src).filter(s => s.includes('recaptcha'));
-          info.recaptchaScripts = scripts;
-          return info;
-        }).catch(e => ({ error: e.message }));
-        const bodyText = await p.locator('body').innerText().catch(() => '');
-        await context.close();
-        return send(res, 200, { title, url, sitekeys, iframeSrcs, recaptchaInfo, bodySnippet: bodyText.slice(0, 400) });
-      } catch (e) {
-        await context.close().catch(() => {});
-        return send(res, 500, { error: e.message });
-      }
-    }
-
     const body = await readJsonBody(req);
     const email = String(body.portal_email || '').trim().toLowerCase();
     const password = String(body.portal_password || '');
@@ -515,7 +295,7 @@ const server = http.createServer(async (req, res) => {
     if (req.url === '/sync-customers') {
       const result = await withSession(email, password, async s => {
         if (!s.consultorId) throw new HttpError(500, 'consultor_id indisponível');
-        const customers = await fetchPaginated(s.token, `${API_BASE}/customer-map/${s.consultorId}`, { pageParam: 'page', sizeParam: 'pageSize', size: 500 });
+        const customers = await fetchPaginated(s, `/customer-map/${s.consultorId}`, { pageParam: 'page', sizeParam: 'pageSize', size: 500 });
         return { ok: true, consultor_id: s.consultorId, customers };
       });
       return send(res, 200, result);
@@ -523,7 +303,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === '/sync-network') {
       const result = await withSession(email, password, async s => {
-        const members = await fetchPaginated(s.token, `${API_BASE}/network-map`, { pageParam: 'page', sizeParam: 'per_page', size: 100 });
+        const members = await fetchPaginated(s, `/network-map`, { pageParam: 'page', sizeParam: 'per_page', size: 100 });
         return { ok: true, consultor_id: s.consultorId, members };
       });
       return send(res, 200, result);
@@ -538,20 +318,22 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v6 (tor+playwright+2captcha) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v7 (tor+playwright+api-direct) porta ${PORT}`);
 });
 
-setInterval(() => {
+setInterval(async () => {
   const now = Date.now();
   for (const [email, s] of sessions) {
     if ((now - s.createdAt) > SESSION_TTL_MS) {
       console.log(`[gc] expirando sessão ${email}`);
+      await s.context?.close().catch(() => {});
       sessions.delete(email);
     }
   }
 }, 60000);
 
 process.on('SIGTERM', async () => {
+  for (const [, s] of sessions) await s.context?.close().catch(() => {});
   sessions.clear();
   if (sharedBrowser) await sharedBrowser.close().catch(() => {});
   process.exit(0);
