@@ -1,29 +1,41 @@
-# igreen-sync-worker (v7)
+# igreen-sync-worker (v9 — http-direct + 2captcha)
 
 Worker dedicado à **leitura** dos dados do portal iGreen
 (clientes e rede). Consumido apenas pela edge function `sync-igreen-customers`.
 
-## Como funciona (auditoria 2026-06-07)
+## Como funciona
 
-O portal **não precisa de captcha para login via API**. O reCAPTCHA só existe
-na *página* da SPA (`escritorio.igreenenergy.com.br/login`). A API REST por trás
-(`api-voffice.igreenenergy.com.br/v1/login`) aceita `{email, password}` e devolve
-um `accessToken` — sem captcha. (Padrão já usado em `worker-portal/playwright-automation.mjs`.)
+O endpoint `POST https://api-voffice.igreenenergy.com.br/v1/login` **exige
+reCAPTCHA v2** (sitekey `6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6`, página
+`https://escritorio.igreenenergy.com.br/login`). Sem o token, devolve 401
+"Unauthorized action" mesmo com email/senha corretos.
 
-O único obstáculo é o **Cloudflare WAF**, que bloqueia IPs de datacenter (403) e
-o TLS fingerprint do Node. Solução:
+Fluxo a cada sync (token de login dura ~30 min, então só roda 1x por meia hora
+por consultor):
 
-1. **Tor SOCKS5** → IP residencial, passa a reputação de IP do Cloudflare.
-2. **Playwright Chromium** navega numa página iGreen → seta o cookie `cf_clearance`.
-3. As chamadas à API são feitas de **dentro da página** (`page.evaluate(fetch)`),
-   usando o fingerprint do browser real → Cloudflare devolve 200.
+1. `solveRecaptcha()` chama **2captcha** (`method=userrecaptcha`) → recebe `gToken` em ~20s.
+2. `POST /v1/login` com `{ email, password, recaptchaToken: gToken, keepConnected: true }` → `accessToken`.
+3. `GET /v1/customer-map/{consultorId}?page=N&pageSize=500` paginado com `Bearer accessToken`.
 
 ```
-Painel → edge function sync-igreen-customers → este worker → API iGreen
+Painel → edge sync-igreen-customers → worker-igreen-sync
+                                          │
+                                          ├─► 2captcha.com (resolve reCAPTCHA)
+                                          └─► api-voffice.igreenenergy.com.br
 ```
 
-Sem 2captcha, sem GitHub Actions, sem Cloudflare Worker proxy (abordagens
-abandonadas, removidas do repo).
+Sem Tor, sem Playwright, sem Chromium. Imagem Docker ~150MB.
+
+## Variáveis de ambiente
+
+| Nome                  | Obrigatória | Descrição                                      |
+|-----------------------|-------------|------------------------------------------------|
+| `WORKER_TOKEN`        | sim         | header `X-Worker-Token` esperado das chamadas  |
+| `TWOCAPTCHA_API_KEY`  | sim         | chave do serviço 2captcha (resolve reCAPTCHA)  |
+| `PORT`                | não         | default `3102`                                 |
+| `SESSION_TTL_MS`      | não         | default `1800000` (30 min)                     |
+
+
 
 ## Endpoints
 
