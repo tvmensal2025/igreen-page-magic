@@ -847,13 +847,23 @@ async function buscarCadastroExistenteIgreen(cliente, data, consultorId) {
     'Origin': 'https://escritorio.igreenenergy.com.br',
     'Referer': 'https://escritorio.igreenenergy.com.br/',
   };
+  let recaptchaToken;
+  try {
+    recaptchaToken = await solveIgreenRecaptcha();
+  } catch (e) {
+    console.warn(`   ⚠️ Falha ao resolver reCAPTCHA iGreen: ${e.message}`);
+    return null;
+  }
   const loginRes = await fetch(`${IGREEN_API_BASE}/login`, {
-    method: 'POST', headers, body: JSON.stringify({ email: emailLogin, password: senhaLogin }), signal: AbortSignal.timeout(30000),
+    method: 'POST', headers,
+    body: JSON.stringify({ email: emailLogin, password: senhaLogin, recaptchaToken, keepConnected: true }),
+    signal: AbortSignal.timeout(30000),
   });
   if (!loginRes.ok) {
     console.warn(`   ⚠️ Login API iGreen falhou (${loginRes.status}) ao buscar cadastro existente`);
     return null;
   }
+
   const loginData = await loginRes.json();
   const token = loginData.accessToken || loginData.token || loginData.access_token;
   if (!token) return null;
