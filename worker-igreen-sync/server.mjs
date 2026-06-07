@@ -27,8 +27,8 @@ const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '20', 10);
 const PLAYWRIGHT_HEADLESS = (process.env.PLAYWRIGHT_HEADLESS || 'true') !== 'false';
 
-const PORTAL_LOGIN_URL = 'https://escritorio.igreenenergy.com.br/login';
-const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
+const API_ORIGIN = 'https://api-voffice.igreenenergy.com.br';
+const API_BASE = `${API_ORIGIN}/v1`;
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
@@ -67,8 +67,11 @@ async function waitCloudflare(page) {
     const body = await page.locator('body').innerText().catch(() => '');
     dbg(`[cf] [${i + 1}/15] title="${title}" url=${page.url()}`);
     const blocked = title.includes('Attention Required') || title.includes('Just a moment') ||
-      body.includes('Checking your browser') || body.includes('Verifying you are human');
-    if (!blocked && title) return true;
+      body.includes('Checking your browser') || body.includes('Verifying you are human') ||
+      body.includes('Enable JavaScript and cookies');
+    // Liberado: não é desafio CF. O domínio da API pode devolver JSON (sem title),
+    // então não exigimos title — basta não estar no desafio.
+    if (!blocked) return true;
     if (i === 14) throw new HttpError(503, 'Cloudflare bloqueou via Tor');
   }
   return false;
@@ -127,12 +130,14 @@ async function loginAndGetToken(email, password) {
   const page = await context.newPage();
 
   try {
-    dbg(`[login] ${email} → navegando via Tor`);
-    await page.goto(PORTAL_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // Navega DIRETO no domínio da API (api-voffice tem o próprio Cloudflare).
+    // Assim o fetch /login vira same-origin → sem CORS, sem "Failed to fetch".
+    dbg(`[login] ${email} → navegando via Tor para ${API_ORIGIN}`);
+    await page.goto(`${API_ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     await waitCloudflare(page);
 
-    // Login via API REST (sem captcha) — de dentro da página
-    dbg('[login] POST /login via página...');
+    // Login via API REST (sem captcha) — same-origin
+    dbg('[login] POST /login (same-origin)...');
     const loginRes = await apiFetch(page, 'POST', '/login', { body: { email, password } });
     dbg(`[login] status=${loginRes.status} body=${String(loginRes.body).slice(0, 200)}`);
 
