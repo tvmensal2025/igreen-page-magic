@@ -1,4 +1,4 @@
-// server.mjs — igreen-sync-worker v8 (HTTP direto, sem Tor/Playwright)
+// server.mjs — igreen-sync-worker v9 (HTTP direto + 2captcha)
 //
 // Estratégia (alinhada com worker-portal/playwright-automation.mjs:826):
 //   - fetch nativo do Node direto contra api-voffice.igreenenergy.com.br/v1/login
@@ -261,7 +261,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'http-direct-v8',
+        mode: 'http-direct-2captcha-v9',
       });
     }
 
@@ -299,7 +299,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v8 (http-direct) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v9 (http-direct + 2captcha) porta ${PORT}`);
 });
 
 setInterval(() => {
