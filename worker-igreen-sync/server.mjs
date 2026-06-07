@@ -309,8 +309,9 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v10',
-        ia_vision: Boolean(LOVABLE_API_KEY),
+        mode: 'tor+playwright+2captcha-v11',
+        ia_vision: Boolean(OPENAI_API_KEY),
+        ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
       });
     }
     if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
