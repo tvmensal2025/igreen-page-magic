@@ -581,7 +581,7 @@ async function runAll(): Promise<ConvResult[]> {
   const jobs: { id: string; run: () => Promise<ConvResult> }[] = [];
 
   if (ONLY !== "persona") {
-    for (const s of SCRIPTED_SCENARIOS) {
+    for (const s of SCENARIOS_BY_SET[SCENARIO_SET]) {
       jobs.push({ id: s.id, run: () => runConversation({ id: s.id, kind: "scripted", scripted: s.turns }) });
     }
   }
