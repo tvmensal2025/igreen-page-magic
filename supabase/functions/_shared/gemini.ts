@@ -98,10 +98,9 @@ export interface GeminiResult {
   raw: any;
 }
 
-function getApiKey(): string {
+function getApiKey(): string | null {
   const k = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY");
-  if (!k) throw new Error("GEMINI_API_KEY (or GOOGLE_AI_API_KEY) not configured");
-  return k;
+  return k || null;
 }
 
 function estimateCostCents(model: string, tokensIn: number, tokensOut: number): number {
