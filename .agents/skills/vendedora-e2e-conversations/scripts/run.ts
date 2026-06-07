@@ -750,8 +750,8 @@ function reportMd(results: ConvResult[]): string {
 // ─── main ────────────────────────────────────────────────────────────────────
 (async () => {
   await mkdir(OUT_DIR, { recursive: true });
-  console.log(`[info] consultor=${CONSULTANT_ID} out=${OUT_DIR} only=${ONLY} max=${MAX_TURNS} concurrency=${CONCURRENCY}`);
-  console.log(`[info] iniciando ${ONLY === "all" ? 20 : 10} conversas…`);
+  console.log(`[info] consultor=${CONSULTANT_ID} out=${OUT_DIR} only=${ONLY} set=${SCENARIO_SET} max=${MAX_TURNS} concurrency=${CONCURRENCY}`);
+  console.log(`[info] iniciando conversas…`);
   const t0 = Date.now();
   const results = await runAll();
   for (let i = 0; i < results.length; i++) {
