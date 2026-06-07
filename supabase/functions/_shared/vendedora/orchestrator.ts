@@ -1,5 +1,6 @@
-// Orchestrator V2 — state machine determinística + extractors + micro-writer.
-// Mesma assinatura de runVendedoraV1.
+// Orchestrator da Vendedora (Fluxo B) — state machine determinística +
+// extractors + micro-writer + redes anti-foto-cedo/anti-repetição.
+// Chamado por fluxo-b-ai.ts via runVendedoraV2.
 
 import { chatCascade, type ChatMsg } from "./gateway.ts";
 import { perfilar } from "./perfilador.ts";
