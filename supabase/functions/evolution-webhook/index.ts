@@ -1604,7 +1604,7 @@ Deno.serve(async (req) => {
       // força engine=flow mesmo que o step legacy esteja setado.
       const currentStepRaw = stripPrefix((customer as any).conversation_step || "");
       const isCadastroStep = CADASTRO_STEPS.has(currentStepRaw);
-      if (engine === "sys" && !isCadastroStep && consultantFlag && customerOverride !== false) {
+      if (engine === "sys" && !isCadastroStep && consultantFlag && customerOverride !== false && _fbVariantLegacy !== "B") {
         try {
           // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
           // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
