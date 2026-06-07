@@ -780,6 +780,30 @@ export async function retryFacialLinkForCustomer(customerId) {
 }
 
 const IGREEN_API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
+const IGREEN_RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
+const IGREEN_RECAPTCHA_PAGEURL = 'https://escritorio.igreenenergy.com.br/login';
+
+// Resolve reCAPTCHA v2 do portal iGreen via 2captcha.
+// API exige `recaptchaToken` no body do POST /v1/login desde 2026-06.
+async function solveIgreenRecaptcha() {
+  const key = process.env.TWOCAPTCHA_API_KEY;
+  if (!key) throw new Error('TWOCAPTCHA_API_KEY não configurada');
+  const inUrl = `https://2captcha.com/in.php?key=${key}&method=userrecaptcha` +
+    `&googlekey=${IGREEN_RECAPTCHA_SITEKEY}` +
+    `&pageurl=${encodeURIComponent(IGREEN_RECAPTCHA_PAGEURL)}&json=1`;
+  const inRes = await fetch(inUrl, { signal: AbortSignal.timeout(20000) });
+  const inJson = await inRes.json().catch(() => ({}));
+  if (inJson.status !== 1) throw new Error(`2captcha in.php: ${inJson.request || inRes.status}`);
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const r = await fetch(`https://2captcha.com/res.php?key=${key}&action=get&id=${inJson.request}&json=1`, { signal: AbortSignal.timeout(15000) });
+    const j = await r.json().catch(() => ({}));
+    if (j.status === 1) return j.request;
+    if (j.request && j.request !== 'CAPCHA_NOT_READY') throw new Error(`2captcha res.php: ${j.request}`);
+  }
+  throw new Error('2captcha timeout (>150s)');
+}
+
 const normDigits = (v) => String(v || '').replace(/\D/g, '');
 const normLower = (v) => String(v || '').trim().toLowerCase();
 const pickField = (obj, keys) => {
@@ -823,13 +847,23 @@ async function buscarCadastroExistenteIgreen(cliente, data, consultorId) {
     'Origin': 'https://escritorio.igreenenergy.com.br',
     'Referer': 'https://escritorio.igreenenergy.com.br/',
   };
+  let recaptchaToken;
+  try {
+    recaptchaToken = await solveIgreenRecaptcha();
+  } catch (e) {
+    console.warn(`   ⚠️ Falha ao resolver reCAPTCHA iGreen: ${e.message}`);
+    return null;
+  }
   const loginRes = await fetch(`${IGREEN_API_BASE}/login`, {
-    method: 'POST', headers, body: JSON.stringify({ email: emailLogin, password: senhaLogin }), signal: AbortSignal.timeout(30000),
+    method: 'POST', headers,
+    body: JSON.stringify({ email: emailLogin, password: senhaLogin, recaptchaToken, keepConnected: true }),
+    signal: AbortSignal.timeout(30000),
   });
   if (!loginRes.ok) {
     console.warn(`   ⚠️ Login API iGreen falhou (${loginRes.status}) ao buscar cadastro existente`);
     return null;
   }
+
   const loginData = await loginRes.json();
   const token = loginData.accessToken || loginData.token || loginData.access_token;
   if (!token) return null;
