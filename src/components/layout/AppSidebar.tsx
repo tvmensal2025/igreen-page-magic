@@ -207,51 +207,19 @@ export function AppSidebar({
           ))}
         </nav>
 
-        {/* Footer profile card */}
-        <div className={`${collapsed ? "p-2" : "p-3"} shrink-0`}>
-          {collapsed ? (
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-9 h-9 rounded-full overflow-hidden border-2" style={{ borderColor: "var(--pe-accent)" }} title={consultantName}>
-                {consultantPhoto ? (
-                  <img src={consultantPhoto} alt={consultantName} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs font-bold" style={{ background: "var(--pe-emerald-strong)", color: "var(--pe-accent)" }}>
-                    {consultantName.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-              </div>
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-                  aria-label="Sair"
-                  title="Sair"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          ) : (
-            <div
-              className="rounded-xl p-2.5 flex items-center gap-3 border"
-              style={{
-                background: "rgba(2, 44, 34, 0.6)",
-                borderColor: "rgba(16, 185, 129, 0.15)",
-              }}
+        {collapsed && onLogout && (
+          <div className="p-2 shrink-0 flex justify-center">
+            <button
+              type="button"
+              onClick={onLogout}
+              className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label="Sair"
+              title="Sair"
             >
-              <div
-                className="w-9 h-9 rounded-full overflow-hidden shrink-0 border-2"
-                style={{ borderColor: "var(--pe-accent)" }}
-              >
-                {consultantPhoto ? (
-                  <img src={consultantPhoto} alt={consultantName} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-sm font-bold" style={{ background: "var(--pe-emerald-strong)", color: "var(--pe-accent)" }}>
-                    {consultantName.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-              </div>
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white truncate">{consultantName}</p>
                 <p className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--pe-accent-soft)" }}>
