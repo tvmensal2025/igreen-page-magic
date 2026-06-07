@@ -1,95 +1,70 @@
-## Problema (raiz)
+## Objetivo
 
-No `orchestrator.ts` (linha 163), todas as etapas determinísticas (`nome`, `valor`, `foto_conta`, `doc`, `email`) usam **somente** `fallbackPorEtapa(...)` — o conteúdo da mensagem do lead é descartado. Resultado observado nas 10 conversas:
+Validar a correção do bloco de "responder dúvida + reancorar" com 10 conversas **mais difíceis** — leads que prolongam, voltam ao mesmo tema com nuance diferente, misturam objeções, pedem prova social, e só fecham depois de 3-5 dúvidas reais. Cada conversa precisa terminar em `cadastro_finalizando` ou em `aguardando_humano` com handoff coerente (não em loop).
 
-| Conv | Etapa | Lead perguntou | Bot respondeu |
-|---|---|---|---|
-| 04 | nome | "tem fidelidade?" / "tem fidelidade mesmo?" | "qual o seu nome?" (3x) |
-| 05 | foto_conta | "ah na verdade não quero" / "tchau" | "me manda a foto da conta" (2x) |
-| 06 | nome | "vai vir boleto?" / "vão chegar dois boletos?" | "qual o seu nome?" (2x) |
-| 07 | nome | "tem fidelidade?" / "posso cancelar?" | "qual o seu nome?" (2x) |
-| 08 | nome | "moro de aluguel, dá?" / "e se eu mudar de casa?" | "qual o seu nome?" (2x) |
-| 09 | nome/email | "quando começa a vir o desconto?" | template fixo |
-| 10 | nome | "posso já mandar a foto?" | "qual o seu nome?" |
+## O que vai mudar
 
-E na etapa rica `simulacao` (conv-03) o LLM responde com a mesma frase de economia para perguntas diferentes ("quanto economizo?" vs "demora quanto pra começar?") — anti-repetição não cobre tema novo.
+**Apenas o arquivo da skill de teste** (`.agents/skills/vendedora-e2e-conversations/scripts/run.ts`). Nada de código de produção, nada de banco, nada de portal — segue `dryRun`, segue sem enviar pro iGreen.
 
-## Solução
+### Nova bateria: `SCRIPTED_DIFICEIS`
 
-Introduzir uma camada de **"responder dúvida + reancorar pergunta da etapa"** que roda **antes** do fallback determinístico em toda etapa mecânica, e expandir o banco de respostas pra cobrir as objeções/dúvidas reais que aparecem nas conversas.
+10 cenários novos, cada um com 12-18 turnos. Estrutura: o lead **sempre** acaba mandando os dados (nome, valor, foto, doc, email) — o que muda é a quantidade de objeções/dúvidas antes de cada passo. Assim eu consigo medir se a IA:
 
-### 1. Novo detector: `leadFezPergunta(inbound, etapaEsperava)`
-Em `extractors.ts`. Determinístico, sem LLM:
-- Tem `?` OU começa com interrogativo (`como`, `quanto`, `quando`, `qual`, `tem`, `vai`, `vão`, `posso`, `e se`, `dá pra`, `precisa`)
-- E **não** é uma resposta válida à etapa (ex: na etapa `nome` não é um nome reconhecível; na etapa `valor` não é um número; etc.)
-- Retorna `{ pergunta: true, tipo: "fidelidade"|"boleto"|"prazo"|"mudanca"|"aluguel"|"cancelamento"|"como_funciona"|"foto_antes"|"desistencia"|"outro" }`
+1. Responde a dúvida específica (não repete a anterior)
+2. Reancora a pergunta da etapa depois de responder
+3. Não conta dúvida como tentativa falha (não cai em handoff cedo demais)
+4. Não trava em loop quando o lead repete a dúvida com palavras diferentes
+5. Sabe encerrar educado quando o lead desiste de verdade
 
-### 2. Novo template: `respostaPerguntaCurta(tipo, nome, etapa, valor?)`
-Em `templates.ts`. Devolve **1 frase respondendo a dúvida + 1 frase reancorando a pergunta da etapa**:
+Os 10 cenários cobrem ângulos diferentes:
 
-- `fidelidade` → "Sem fidelidade, *Ana* — cancela quando quiser, sem multa. {ask_etapa}"
-- `boleto` → "Vem *só 1 boleto*, da iGreen, já com o desconto aplicado. {ask_etapa}"
-- `prazo` → "Em média *30 a 60 dias* após o cadastro o desconto começa. {ask_etapa}"
-- `mudanca` / `aluguel` → "Funciona em casa alugada e você pode levar pra próxima — é digital. {ask_etapa}"
-- `cancelamento` → "Pode cancelar quando quiser, é só avisar — sem taxa. {ask_etapa}"
-- `como_funciona` → "É uma conexão digital com uma usina solar — você paga menos pela mesma luz, sem obra. {ask_etapa}"
-- `foto_antes` → "Pode mandar sim! Mas antes me confirma {ask_etapa}"
-- `desistencia` → encerra com handoff suave (não reancora) — vira sinal pra `shouldHandoff = true`
-- `outro` → cai no LLM micro-writer com prompt enxuto ("responda a dúvida em 1 frase e reancore")
+| # | id | Dificuldade principal |
+|---|---|---|
+| 1 | `dificil-bombardeio-inicio` | 5 perguntas seguidas antes de dar o nome (fidelidade, boleto, prazo, mudança, segurança) |
+| 2 | `dificil-volta-mesmo-tema` | Pergunta fidelidade em 3 momentos diferentes (antes do nome, depois do valor, depois da foto) — testa variação anti-repetição |
+| 3 | `dificil-objecao-no-meio` | Dá nome+valor, mas no `simulacao` joga "tá caro pra que isso", "minha vizinha disse que não funciona", "e se a empresa quebrar?" |
+| 4 | `dificil-tecnico-engenheiro` | "Como funciona compensação de créditos?", "quem é a geradora?", "tem ANEEL homologando?", "qual o CNPJ?" — força respostas com fato |
+| 5 | `dificil-reclamacao-enel` | Começa xingando a Enel, depois pergunta se isso é a Enel mesmo, depois pede prova de que não é golpe — 4 dúvidas de credibilidade |
+| 6 | `dificil-conta-baixa-insiste` | Conta R$ 140, pergunta se vale a pena 3x, depois aceita e segue até o fim |
+| 7 | `dificil-aluguel-medo` | Mora alugado, pergunta sobre mudança 2x, multa, contrato em nome de terceiro, e só depois manda doc |
+| 8 | `dificil-quase-desiste-volta` | Diz "ah não sei", "deixa eu pensar", "talvez outra hora" — bot precisa reengajar sem ser chato; no fim fecha |
+| 9 | `dificil-desiste-de-verdade` | Depois de 4 dúvidas diz "olha, melhor não, valeu" — bot precisa encerrar educado + handoff (NÃO seguir pedindo foto) |
+| 10 | `dificil-pede-falar-humano` | No meio do fluxo: "quero falar com alguém de verdade" — bot precisa escalar, não insistir no script |
 
-`{ask_etapa}` reusa as variantes já existentes de `fallbackPorEtapa`.
+### Como vai rodar
 
-### 3. Mudança no `orchestrator.ts`
-Substituir o bloco da linha 163:
-
-```ts
-if (ETAPAS_DETERMINISTICAS.has(state.etapa)) {
-  const q = leadFezPergunta(inboundText, state.etapa, customer);
-  if (q.pergunta) {
-    if (q.tipo === "desistencia") {
-      shouldHandoff = true;
-      reply = sanitize(respostaDespedida(customer.name));
-    } else if (q.tipo === "outro") {
-      // micro-writer enxuto: responde dúvida + reancora
-      const r = await microWriteDuvida({ etapa, inbound, nome, valor, ... });
-      reply = sanitize(r.text);
-      modelUsed = r.modelUsed;
-    } else {
-      reply = sanitize(respostaPerguntaCurta(q.tipo, customer.name, state.etapa, customer.electricity_bill_value));
-      modelUsed = `deterministic_duvida:${q.tipo}`;
-    }
-    state.objecoes_tratadas = [...(state.objecoes_tratadas||[]), q.tipo].slice(-12);
-  } else {
-    reply = sanitize(fallbackPorEtapa(state.etapa, customer.name, customer.electricity_bill_value, state.tentativas_etapa));
-    modelUsed = "deterministic_template";
-  }
-}
+```bash
+bun /tmp/run.ts --only scripted --out /mnt/documents/vendedora-runs/duvidas-dificeis-v1
 ```
 
-E ajustar o `tentativas_etapa`: se respondeu dúvida, **não conta como tentativa falha** da etapa (não bate `tetoTentativas` por engano).
+A flag `--only scripted` já existe. Vou **adicionar a flag `--scenario-set <basico|dificil|todos>`** (default `basico` pra não quebrar runs anteriores). Quando `dificil`, ele roda só os 10 novos; `todos` roda os 20.
 
-### 4. Corrigir a etapa `simulacao` (conv-03)
-Em `templates.ts`, expandir `classificarObjecao` e `respostaConsideracao` com os mesmos 9 tipos acima (hoje só cobre `economia/calculo` e `generica`). Assim o anti-repetição no orchestrator (linha 193-200) consegue trocar de tema em vez de repetir a frase de economia.
+### Validação automática no REPORT.md
 
-### 5. Tratar "desistência" em qualquer etapa
-Detector adicional: se `q.tipo === "desistencia"` (`"não quero"`, `"desisti"`, `"tchau"`, `"deixa pra lá"`), o bot manda **1 frase de despedida educada + libera o handoff** em vez de continuar pedindo foto. Vale para `foto_conta`, `doc`, `email` também (conv-05).
+O REPORT atual já marca `LOOP (mesma resposta 2x)`, `LLM_FALLBACK`, etapa final. Vou somar 3 checks novos por conversa:
 
-### 6. Re-rodar a skill e validar
-Rodar `bun /tmp/run.ts --only scripted` e conferir no novo REPORT.md:
-- 0 turnos com `LOOP (mesma resposta 2x)` causados por pergunta ignorada
-- conv-04, 06, 07, 08, 10 → bot responde a objeção antes de pedir nome
-- conv-05 → bot encerra educadamente quando lead diz "tchau"
-- conv-03 → bot responde "demora quanto?" com frase diferente da de economia
-- 10/10 ainda chegam em `cadastro_finalizando` no happy path
+1. **`DUVIDA_IGNORADA`** — turno em que o lead fez pergunta (heurística: tem `?` ou interrogativo) e a resposta do bot é idêntica à etapa anterior (= não respondeu, só reancorou)
+2. **`REPETIU_TEMA`** — 2 respostas seguidas com o mesmo `modelUsed: deterministic_duvida:<tipo>` e texto >70% similar
+3. **`HANDOFF_INCOERENTE`** — handoff disparado sem o lead ter pedido humano nem desistido
 
-## Arquivos a alterar
+Cada conversa vira `conv-NN-<id>.md` no diretório de saída, igual hoje.
 
-- `supabase/functions/_shared/vendedora/extractors.ts` — adicionar `leadFezPergunta`
-- `supabase/functions/_shared/vendedora/templates.ts` — adicionar `respostaPerguntaCurta`, `respostaDespedida`, expandir `classificarObjecao`/`respostaConsideracao`
-- `supabase/functions/_shared/vendedora/orchestrator.ts` — novo bloco de decisão em ETAPAS_DETERMINISTICAS + tratamento de desistência
+### Critério de sucesso
+
+- **≥ 8/10** chegam em `cadastro_finalizando` (cenários 9 e 10 são handoff de propósito, não contam como falha)
+- **0** ocorrências de `DUVIDA_IGNORADA` nas etapas determinísticas
+- **0** loops de mesma resposta exata 2× consecutivas
+- Cenário 9 termina com `respostaDespedida` + `shouldHandoff=true`
+- Cenário 10 escala pra humano dentro de 1 turno após o pedido
+
+Se algum critério falhar, eu analiso a conversa específica antes de mexer em código de novo — pode ser ajuste de template, pode ser tipo de dúvida novo a adicionar em `leadFezPergunta`.
 
 ## Fora do escopo
 
-- Trocar provedor de LLM ou plataforma SaaS (assunto da pergunta anterior, fica pra outro momento).
-- Mudar a state machine — ela está correta, o problema é só "responder a pergunta antes de avançar".
-- Persistir nada no banco — segue tudo em `dryRun` na skill de teste.
+- Trocar provedor de LLM
+- Mexer no orchestrator/templates de produção (só ajusto se a bateria difícil expor bug novo — aí volto a pedir aprovação)
+- Persistir nada no banco / enviar nada pro portal iGreen
+
+## Arquivos a alterar
+
+- `.agents/skills/vendedora-e2e-conversations/scripts/run.ts` — adicionar `SCRIPTED_DIFICEIS[]`, flag `--scenario-set`, e os 3 checks novos no gerador do REPORT

@@ -20,6 +20,7 @@ function arg(name: string, def?: string): string | undefined {
 }
 const CONSULTANT_ID = arg("consultant-id", "81fe673d-253e-46bc-993a-85c286ae54b5")!;
 const ONLY = (arg("only", "all") || "all") as "all" | "scripted" | "persona";
+const SCENARIO_SET = (arg("scenario-set", "basico") || "basico") as "basico" | "dificil" | "todos";
 const MAX_TURNS = parseInt(arg("max-turns", "25")!, 10);
 const CONCURRENCY = parseInt(arg("concurrency", "3")!, 10);
 const TS = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -136,6 +137,168 @@ const SCRIPTED_SCENARIOS: { id: string; turns: ScriptedTurn[] }[] = [
     ],
   },
 ];
+
+// ─── scripted scenarios DIFÍCEIS (bateria de validação v1) ──────────────────
+// Leads que prolongam a conversa com 3-5 dúvidas reais antes de cada passo.
+// Validam: responder dúvida → reancorar etapa → não contar como tentativa falha
+// → anti-repetição quando o tema volta → handoff coerente em desistência real.
+const SCRIPTED_DIFICEIS: { id: string; turns: ScriptedTurn[] }[] = [
+  {
+    id: "dificil-bombardeio-inicio",
+    turns: [
+      "oi",
+      "tem fidelidade?",
+      "vai vir 2 boletos?",
+      "quanto tempo demora pra começar?",
+      "e se eu mudar de casa?",
+      "isso é seguro mesmo?",
+      "ok, Mariana Castro",
+      "480",
+      "quero",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "mariana.castro@gmail.com",
+    ],
+  },
+  {
+    id: "dificil-volta-mesmo-tema",
+    turns: [
+      "oi",
+      "tem fidelidade?",
+      "Bruno Almeida",
+      "mas tem fidelidade mesmo né?",
+      "550",
+      "quero",
+      "antes da foto, me confirma de novo: tem fidelidade?",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "bruno.al@gmail.com",
+    ],
+  },
+  {
+    id: "dificil-objecao-no-meio",
+    turns: [
+      "oi",
+      "sim",
+      "Patricia Mendes",
+      "620",
+      "tá caro pra que isso",
+      "minha vizinha disse que não funciona",
+      "e se a empresa quebrar?",
+      "ok, quero tentar",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "patricia.m@gmail.com",
+    ],
+  },
+  {
+    id: "dificil-tecnico-engenheiro",
+    turns: [
+      "oi",
+      "como funciona a compensação de créditos?",
+      "quem é a geradora?",
+      "tem homologação na ANEEL?",
+      "qual o CNPJ da iGreen?",
+      "ok, Rodrigo Sales",
+      "890",
+      "quero",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "rodrigo.sales@engenharia.com",
+    ],
+  },
+  {
+    id: "dificil-reclamacao-enel",
+    turns: [
+      "oi",
+      "odeio a Enel, me roubam todo mês",
+      "espera, isso é a Enel mesmo?",
+      "como sei que não é golpe?",
+      "tem alguma garantia escrita?",
+      "ok confio, Cláudia Reis",
+      "710",
+      "quero",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "claudia.reis@gmail.com",
+    ],
+  },
+  {
+    id: "dificil-conta-baixa-insiste",
+    turns: [
+      "oi",
+      "sim",
+      "minha conta é só 140, vale a pena?",
+      "tipo, 20% de 140 dá quase nada né",
+      "mas mesmo assim economizo alguma coisa?",
+      "ok vamo, Felipe Tavares",
+      "140",
+      "quero",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "felipe.t@gmail.com",
+    ],
+  },
+  {
+    id: "dificil-aluguel-medo",
+    turns: [
+      "oi",
+      "moro de aluguel, dá pra fazer?",
+      "e se eu mudar de casa daqui 6 meses?",
+      "tem multa de cancelamento?",
+      "o contrato fica no nome de quem, meu ou do dono?",
+      "ok, Renata Borges",
+      "330",
+      "quero",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "renata.b@gmail.com",
+    ],
+  },
+  {
+    id: "dificil-quase-desiste-volta",
+    turns: [
+      "oi",
+      "ah não sei",
+      "deixa eu pensar",
+      "talvez outra hora",
+      "tá, me explica de novo rapidinho",
+      "ok, Marcos Vinicius",
+      "470",
+      "quero",
+      MIDIA_CONTA,
+      MIDIA_DOC,
+      "marcos.v@gmail.com",
+    ],
+  },
+  {
+    id: "dificil-desiste-de-verdade",
+    turns: [
+      "oi",
+      "tem fidelidade?",
+      "e vem dois boletos?",
+      "ah, e demora 60 dias?",
+      "sabe, olha, melhor não, valeu",
+    ],
+  },
+  {
+    id: "dificil-pede-falar-humano",
+    turns: [
+      "oi",
+      "sim",
+      "Diego Ramos",
+      "390",
+      "antes de seguir quero falar com alguém de verdade",
+      "tipo, um humano mesmo, não bot",
+    ],
+  },
+];
+
+const SCENARIOS_BY_SET: Record<typeof SCENARIO_SET, { id: string; turns: ScriptedTurn[] }[]> = {
+  basico: SCRIPTED_SCENARIOS,
+  dificil: SCRIPTED_DIFICEIS,
+  todos: [...SCRIPTED_SCENARIOS, ...SCRIPTED_DIFICEIS],
+};
 
 // ─── personas LLM ───────────────────────────────────────────────────────────
 const PERSONA_SYSTEM_COMUM = `Você é um lead BRASILEIRO simulando uma conversa real de WhatsApp com uma vendedora de economia na conta de luz. Responda APENAS com a próxima mensagem do lead. Sem aspas, sem prefixo "Lead:", sem narração. Linguagem informal de WhatsApp (minúsculas ok, abreviações ok, 1-2 frases curtas). Se a vendedora pedir foto da conta ou documento e fizer sentido, diga "manda aí como faço" ou "pode". Se ela pedir email, invente um plausível baseado no nome. Se a conversa estiver acabando ou já fechou, diga tchau ou "valeu" naturalmente. NUNCA narre que é uma simulação.`;
@@ -372,6 +535,35 @@ async function runConversation(opts: {
       result.problems.push(`turn ${turn}: FOTO_CEDO (bot pediu mídia antes de interesse confirmado)`);
     }
 
+    // DUVIDA_IGNORADA: lead fez pergunta e bot devolveu resposta idêntica à anterior
+    const leadAskedQ = /\?/.test(leadMsg) || /^(como|quanto|quando|qual|tem|vai|vão|posso|e se|dá pra|precisa|isso é)\b/i.test(leadMsg.trim());
+    if (leadAskedQ && lastReply && sha1(lastReply) === h) {
+      result.problems.push(`turn ${turn}: DUVIDA_IGNORADA (lead perguntou e bot repetiu reply anterior)`);
+    }
+
+    // REPETIU_TEMA: 2 respostas seguidas com mesmo deterministic_duvida:<tipo>
+    const modelTag = t.modelUsed || "";
+    const prevTurn = result.turns[result.turns.length - 2];
+    if (modelTag.startsWith("deterministic_duvida:") && prevTurn?.modelUsed === modelTag) {
+      const prevReply = prevTurn.reply || "";
+      // similaridade simples: 70%+ tokens em comum
+      const toks = (s: string) => new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 3));
+      const a = toks(reply), b = toks(prevReply);
+      const inter = [...a].filter((w) => b.has(w)).length;
+      const sim = inter / Math.max(1, Math.min(a.size, b.size));
+      if (sim > 0.7) result.problems.push(`turn ${turn}: REPETIU_TEMA (${modelTag}, sim=${(sim * 100).toFixed(0)}%)`);
+    }
+
+    // HANDOFF_INCOERENTE: handoff sem o lead ter pedido humano nem desistido
+    if (t.shouldHandoff) {
+      const lastLeadMsgs = (result.turns.slice(-3).map((x) => x.leadMsg).join(" ") + " " + leadMsg).toLowerCase();
+      const pediuHumano = /(humano|atendente|pessoa|consultor|alguém de verdade|falar com)/i.test(lastLeadMsgs);
+      const desistiu = /(não quero|nao quero|desisti|melhor não|melhor nao|tchau|deixa pra lá|deixa pra la|valeu|outra hora)/i.test(lastLeadMsgs);
+      if (!pediuHumano && !desistiu) {
+        result.problems.push(`turn ${turn}: HANDOFF_INCOERENTE (handoff sem pedido humano nem desistência)`);
+      }
+    }
+
     // aplica updates ao state local
     customerState = applyDryRunLog(customerState, json?.dryRunLog || []);
 
@@ -418,7 +610,7 @@ async function runAll(): Promise<ConvResult[]> {
   const jobs: { id: string; run: () => Promise<ConvResult> }[] = [];
 
   if (ONLY !== "persona") {
-    for (const s of SCRIPTED_SCENARIOS) {
+    for (const s of SCENARIOS_BY_SET[SCENARIO_SET]) {
       jobs.push({ id: s.id, run: () => runConversation({ id: s.id, kind: "scripted", scripted: s.turns }) });
     }
   }
@@ -558,8 +750,8 @@ function reportMd(results: ConvResult[]): string {
 // ─── main ────────────────────────────────────────────────────────────────────
 (async () => {
   await mkdir(OUT_DIR, { recursive: true });
-  console.log(`[info] consultor=${CONSULTANT_ID} out=${OUT_DIR} only=${ONLY} max=${MAX_TURNS} concurrency=${CONCURRENCY}`);
-  console.log(`[info] iniciando ${ONLY === "all" ? 20 : 10} conversas…`);
+  console.log(`[info] consultor=${CONSULTANT_ID} out=${OUT_DIR} only=${ONLY} set=${SCENARIO_SET} max=${MAX_TURNS} concurrency=${CONCURRENCY}`);
+  console.log(`[info] iniciando conversas…`);
   const t0 = Date.now();
   const results = await runAll();
   for (let i = 0; i < results.length; i++) {
