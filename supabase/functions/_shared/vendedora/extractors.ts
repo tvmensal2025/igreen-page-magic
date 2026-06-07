@@ -2,6 +2,9 @@
 // Cada extractor retorna o campo que ele extraiu (ou null se não houver).
 
 import { chatForced } from "./gateway.ts";
+import { extractNome as extractNomeRegex } from "../captureExtractors.ts";
+
+
 
 const MODEL = "google/gemini-2.5-flash-lite";
 
