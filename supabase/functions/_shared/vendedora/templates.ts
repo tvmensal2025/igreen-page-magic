@@ -416,6 +416,11 @@ const TEMA_KEYWORDS: Record<ObjecaoTipo, RegExp> = {
   como_funciona: /mesma distribuidora|desconto.*fatura|usina|sem obra/i,
   foto_antes: /pode (?:mandar|enviar)|antes|claro/i,
   desistencia: /tudo bem|sem press[ãa]o|qualquer hora/i,
+  pedido_humano: /atendente|humano|transferir|aguarda/i,
+  titularidade: /no nome|titular|paga a conta|inquilino|dono/i,
+  cnpj: /cnpj|35\.704|receita federal/i,
+  homologacao_aneel: /aneel|14\.300|homolog|lei/i,
+  pedido_recap: /distribuidora|8.*20|desconto|sem obra|cadastro/i,
 };
 
 /**
