@@ -202,7 +202,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
             : "🤖 IA analisou (confiança indisponível)",
         cls: "border-sky-500/40 bg-sky-500/10 text-sky-200",
       }
-    : { label: "🤖 IA não analisou", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-300" };
+    : { label: "🤖 IA não analisou", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-950" };
 
   // ── Motivo da queda em manual (Req 5.7/5.8) ──
   // Lê apenas campos já sanitizados pelo worker; nunca reconstrói PII (Req 5.9/12.3).
