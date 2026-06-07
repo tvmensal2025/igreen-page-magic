@@ -20,6 +20,7 @@ function arg(name: string, def?: string): string | undefined {
 }
 const CONSULTANT_ID = arg("consultant-id", "81fe673d-253e-46bc-993a-85c286ae54b5")!;
 const ONLY = (arg("only", "all") || "all") as "all" | "scripted" | "persona";
+const SCENARIO_SET = (arg("scenario-set", "basico") || "basico") as "basico" | "dificil" | "todos";
 const MAX_TURNS = parseInt(arg("max-turns", "25")!, 10);
 const CONCURRENCY = parseInt(arg("concurrency", "3")!, 10);
 const TS = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
