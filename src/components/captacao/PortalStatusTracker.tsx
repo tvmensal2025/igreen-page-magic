@@ -152,12 +152,12 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   let icon = <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />;
   let title = "Abrindo portal no navegador da VPS…";
   let tone = "border-yellow-500/40 bg-yellow-500/10 text-yellow-100";
-  if (showError) { icon = <XCircle className="w-4 h-4 text-red-300" />; title = needsHuman ? "Cadastro precisa de ação manual" : "Cadastro recusado pelo portal iGreen"; tone = "border-red-500/50 bg-red-500/15 text-red-100"; }
+  if (showError) { icon = <XCircle className="w-4 h-4 text-red-300" />; title = needsHuman ? "Cadastro precisa de ação manual" : "Cadastro recusado pelo portal iGreen"; tone = "border-red-500/50 bg-red-500/15 text-stone-600"; }
   else if (isOtp) { icon = <KeyRound className="w-4 h-4 text-orange-300" />; title = "Código enviado ao WhatsApp do cliente — aguardando digitar"; tone = "border-orange-500/40 bg-orange-500/10 text-orange-100"; }
   else if (isValidating) { icon = <Loader2 className="w-4 h-4 animate-spin text-blue-300" />; title = "Validando código no portal…"; tone = "border-blue-500/40 bg-blue-500/10 text-blue-100"; }
   else if (isSign) { icon = <ScanFace className="w-4 h-4 text-purple-300" />; title = "Link de selfie enviado ao cliente"; tone = "border-purple-500/40 bg-purple-500/10 text-purple-100"; }
   else if (isDone) { icon = <CheckCircle2 className="w-4 h-4 text-emerald-300" />; title = "Cadastro concluído ✅"; tone = "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"; }
-  else if (isOffline) { icon = <AlertTriangle className="w-4 h-4 text-red-300" />; title = "Portal momentaneamente offline"; tone = "border-red-500/40 bg-red-500/10 text-red-100"; }
+  else if (isOffline) { icon = <AlertTriangle className="w-4 h-4 text-red-300" />; title = "Portal momentaneamente offline"; tone = "border-red-500/40 bg-red-500/10 text-stone-600"; }
 
   const retry = async () => {
     if (retrying) return;
@@ -191,7 +191,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
       ? { label: "✅ Extração automática (IA do portal)", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200" }
       : extractionMode === "manual"
         ? { label: "✋ Preenchimento manual", cls: "border-amber-500/40 bg-amber-500/10 text-amber-200" }
-        : { label: "⏳ Extração não determinada", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-300" };
+        : { label: "⏳ Extração não determinada", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-900" };
 
   // ── Badge IA_Gemini (Req 5.4/5.5) ──
   const geminiBadge = row?.ocr_done
@@ -202,7 +202,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
             : "🤖 IA analisou (confiança indisponível)",
         cls: "border-sky-500/40 bg-sky-500/10 text-sky-200",
       }
-    : { label: "🤖 IA não analisou", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-300" };
+    : { label: "🤖 IA não analisou", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-950" };
 
   // ── Motivo da queda em manual (Req 5.7/5.8) ──
   // Lê apenas campos já sanitizados pelo worker; nunca reconstrói PII (Req 5.9/12.3).
