@@ -97,6 +97,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
 
   const updates: Record<string, any> = {};
   const toolsApplied: string[] = [];
+  let shouldHandoff = false;
 
   const [perfil, nomeExt, valorExt, emailExt, interesseExt] = await Promise.all([
     perfilar(historyText, inboundText),
@@ -296,7 +297,7 @@ export async function runVendedoraV2(input: VendedoraInput): Promise<VendedoraRe
 
   // 9) Step do banco
   let conversationStepUpdate: string | null = STEP_BY_ETAPA[state.etapa] || null;
-  let shouldHandoff = false;
+  // shouldHandoff já foi declarado lá em cima (pode ser setado pelo bloco de desistência)
 
   // Handoff por excesso de tentativas. A etapa `consideracao` é EXCEÇÃO:
   // o lead pode legitimamente fazer várias perguntas/objeções antes de
