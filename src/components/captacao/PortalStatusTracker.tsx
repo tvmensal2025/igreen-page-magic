@@ -191,7 +191,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
       ? { label: "✅ Extração automática (IA do portal)", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200" }
       : extractionMode === "manual"
         ? { label: "✋ Preenchimento manual", cls: "border-amber-500/40 bg-amber-500/10 text-amber-200" }
-        : { label: "⏳ Extração não determinada", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-300" };
+        : { label: "⏳ Extração não determinada", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-900" };
 
   // ── Badge IA_Gemini (Req 5.4/5.5) ──
   const geminiBadge = row?.ocr_done
