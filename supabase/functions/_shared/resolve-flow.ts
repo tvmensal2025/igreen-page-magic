@@ -74,3 +74,49 @@ export async function resolveFlowId(
   }
   return null;
 }
+
+/**
+ * Resolve o consultant_id "dono" das mídias (áudio/vídeo/imagem) e do
+ * `flow_step_media_order` que devem ser usados no runtime.
+ *
+ * - Quando o fluxo do consultor está em `sync_mode='public'` (default), as
+ *   mídias vêm do dono do flow PÚBLICO (Super Admin) — assim qualquer
+ *   consultor em modo público recebe os MESMOS áudios/vídeos/imagens.
+ * - Quando `sync_mode='custom'`, mantém o próprio consultor.
+ *
+ * Fallback seguro: retorna `consultantId` se algo falhar.
+ */
+export async function resolveMediaOwnerId(
+  supabase: any,
+  consultantId: string | null | undefined,
+  variant: string | null | undefined,
+): Promise<string> {
+  const fallback = String(consultantId || "");
+  if (!consultantId) return fallback;
+  const v = String(variant || "A").toUpperCase();
+  try {
+    const { data: own } = await supabase
+      .from("bot_flows")
+      .select("sync_mode")
+      .eq("consultant_id", consultantId)
+      .eq("is_active", true)
+      .eq("variant", v)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const mode = String((own as any)?.sync_mode ?? "public").toLowerCase();
+    if (own && mode !== "public") return fallback;
+    const { data: pub } = await supabase
+      .from("bot_flows")
+      .select("consultant_id")
+      .eq("is_public", true)
+      .eq("is_active", true)
+      .eq("variant", v)
+      .limit(1)
+      .maybeSingle();
+    const pubOwner = (pub as any)?.consultant_id as string | undefined;
+    return pubOwner || fallback;
+  } catch {
+    return fallback;
+  }
+}
