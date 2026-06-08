@@ -330,8 +330,37 @@ Deno.serve(async (req) => {
         if (error) { console.error("network upsert", error); errors += batch.length; }
         else upserted += data?.length || 0;
       }
+      // Espelha em network_members (tabela usada pelo painel "Rede")
+      let nmUpserted = 0, nmErrors = 0;
+      const nmRecs: Record<string, unknown>[] = [];
+      for (const r of recs) {
+        const igreenId = parseInt(String(r.codigo_igreen).replace(/\D/g, ""), 10);
+        if (!Number.isFinite(igreenId) || igreenId <= 0) continue;
+        const sponsor = r.patrocinador_codigo ? parseInt(String(r.patrocinador_codigo).replace(/\D/g, ""), 10) : null;
+        nmRecs.push({
+          consultant_id: consultantId,
+          igreen_id: igreenId,
+          name: r.nome || `Consultor ${igreenId}`,
+          phone: r.celular || null,
+          sponsor_id: Number.isFinite(sponsor as number) && (sponsor as number) > 0 ? sponsor : null,
+          nivel: r.nivel ?? null,
+          cidade: r.cidade || null,
+          uf: r.uf || null,
+          graduacao: r.graduacao || null,
+          gp: r.gp_qualificados ?? null,
+          gi: r.gl_qualificados ?? null,
+        });
+      }
+      for (let i = 0; i < nmRecs.length; i += 100) {
+        const batch = nmRecs.slice(i, i + 100);
+        const { data, error } = await supabase.from("network_members")
+          .upsert(batch, { onConflict: "consultant_id,igreen_id", ignoreDuplicates: false })
+          .select("id");
+        if (error) { console.error("network_members upsert", error.message); nmErrors += batch.length; }
+        else nmUpserted += data?.length || 0;
+      }
       if (!(result.rede as { swapped?: boolean } | undefined)?.swapped) {
-        result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+        result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped, network_members_upserted: nmUpserted, network_members_errors: nmErrors };
       }
     }
 
