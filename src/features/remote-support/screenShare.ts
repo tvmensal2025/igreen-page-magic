@@ -50,6 +50,7 @@ export async function getInboundVideoFps(pc: RTCPeerConnection): Promise<number 
       }
     });
     return fps;
+  } catch { return null; }
 }
 
 export type RtcStage =
