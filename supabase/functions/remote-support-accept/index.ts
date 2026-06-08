@@ -37,9 +37,6 @@ Deno.serve(async (req) => {
     const { data: { user }, error: uerr } = await userClient.auth.getUser();
     if (uerr || !user) return json({ error: "invalid user" }, 401);
 
-    const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: user.id });
-    if (!isSuper) return json({ error: "forbidden" }, 403);
-
     const { session_id } = await req.json();
     if (!session_id) return json({ error: "session_id required" }, 400);
 
@@ -51,6 +48,17 @@ Deno.serve(async (req) => {
     if (serr || !session) return json({ error: "session not found" }, 404);
     if (!["requested", "pending_code"].includes(session.status)) {
       return json({ error: `session in status ${session.status}` }, 400);
+    }
+
+    // Autorização:
+    //  - Sessão iniciada pelo requester: apenas Super Admin pode aceitar (vira operador).
+    //  - Sessão iniciada pelo operador: o próprio requester autoriza (consultor clica autorizar)
+    //    OU um Super Admin pode aceitar em seu lugar.
+    const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: user.id });
+    const isRequesterAuthorizing =
+      session.initiated_by === "operator" && session.requester_id === user.id;
+    if (!isSuper && !isRequesterAuthorizing) {
+      return json({ error: "forbidden" }, 403);
     }
 
     const code = genCode();
@@ -72,16 +80,23 @@ Deno.serve(async (req) => {
 
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
 
+    // Operator_id: se Super Admin aceitou, ele vira operator; se requester autorizou
+    // sessão iniciada pelo operador, preserva o operator_id que já está na sessão.
+    const updatePayload: Record<string, unknown> = { status: "pending_code" };
+    if (isSuper) {
+      updatePayload.operator_id = user.id;
+      updatePayload.ip_operator = ip;
+    }
     await supabase
       .from("remote_support_sessions")
-      .update({ status: "pending_code", operator_id: user.id, ip_operator: ip })
+      .update(updatePayload)
       .eq("id", session_id);
 
     await supabase.from("remote_support_logs").insert({
       session_id,
-      actor: "operator",
-      action: "operator_accepted",
-      payload: { operator_id: user.id },
+      actor: isRequesterAuthorizing ? "requester" : "operator",
+      action: isRequesterAuthorizing ? "requester_authorized" : "operator_accepted",
+      payload: { user_id: user.id },
     });
 
     // Broadcast code to the requester via realtime HTTP API (no subscribe needed)
@@ -107,7 +122,9 @@ Deno.serve(async (req) => {
       console.warn("[remote-support-accept] broadcast failed", e);
     }
 
-    return json({ ok: true, rotates_at: rotatesAt });
+    // Retorna code também na resposta — útil quando o requester é quem autoriza
+    // (ele já está autenticado como dono da sessão, então pode ver o code).
+    return json({ ok: true, rotates_at: rotatesAt, code: isRequesterAuthorizing ? code : undefined });
   } catch (e: any) {
     console.error("[remote-support-accept]", e);
     return json({ error: e.message || String(e) }, 500);

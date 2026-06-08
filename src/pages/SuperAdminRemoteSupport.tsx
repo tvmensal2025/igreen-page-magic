@@ -14,7 +14,7 @@ import { ArrowLeft, ShieldAlert, Check, X, Eye, Send, Play, Square, Loader2 } fr
 import { toast } from "sonner";
 import type { SupportSession, RemoteCommand, CommandResult } from "@/features/remote-support/types";
 import { acceptSession, endSession, operatorRequest, verifyCode } from "@/features/remote-support/api";
-import { createOperatorPeer } from "@/features/remote-support/screenShare";
+import { createOperatorPeer, type RtcStage } from "@/features/remote-support/screenShare";
 
 interface ConsultantRow { id: string; name: string; license: string }
 
@@ -213,7 +213,8 @@ function SessionWorkbench({ session, consultantName, onClose }: {
   const dcRef = useRef<RTCDataChannel | null>(null);
   const pendingRef = useRef<Map<string, (r: CommandResult) => void>>(new Map());
   const [logs, setLogs] = useState<{ id: string; text: string; ok?: boolean }[]>([]);
-  const [connecting, setConnecting] = useState(false);
+  const [stage, setStage] = useState<RtcStage>("idle");
+  const [hasStream, setHasStream] = useState(false);
   const [navUrl, setNavUrl] = useState("");
   const [clickSel, setClickSel] = useState("");
   const [fillSel, setFillSel] = useState("");
@@ -234,17 +235,17 @@ function SessionWorkbench({ session, consultantName, onClose }: {
   // When active, establish WebRTC
   useEffect(() => {
     if (status !== "active" || peerRef.current) return;
-    setConnecting(true);
+    setStage("subscribed");
     (async () => {
       try {
         const peer = await createOperatorPeer(
           session.id,
           (stream) => {
             if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
-            setConnecting(false);
+            setHasStream(true);
             pushLog("📺 Vídeo recebido");
           },
-          (dc) => { dcRef.current = dc; setConnecting(false); pushLog("🟢 Canal de comandos aberto"); },
+          (dc) => { dcRef.current = dc; pushLog("🟢 Canal de comandos aberto"); },
           (msg) => {
             try {
               const r = JSON.parse(msg) as CommandResult;
@@ -253,15 +254,18 @@ function SessionWorkbench({ session, consultantName, onClose }: {
               pushLog(`${r.ok ? "✅" : "❌"} resp ${r.id}${r.error ? `: ${r.error}` : ""}`, r.ok);
             } catch {}
           },
-          (state) => pushLog(`📡 ${state}`),
+          (s, info) => { setStage(s); pushLog(`📡 ${s}${info ? ` (${info})` : ""}`); },
         );
         peerRef.current = peer;
       } catch (e: any) {
         toast.error(e.message || "Falha WebRTC");
-        setConnecting(false);
+        setStage("failed");
       }
     })();
-    return () => { peerRef.current?.close(); peerRef.current = null; dcRef.current = null; };
+    return () => {
+      peerRef.current?.close(); peerRef.current = null; dcRef.current = null;
+      setHasStream(false); setStage("idle");
+    };
   }, [status, session.id]);
 
   const pushLog = (text: string, ok?: boolean) =>
@@ -322,14 +326,15 @@ function SessionWorkbench({ session, consultantName, onClose }: {
           <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 overflow-hidden">
             <div className="md:col-span-2 bg-black rounded-md overflow-hidden relative">
               <video ref={videoRef} className="w-full h-full object-contain" autoPlay playsInline muted />
-              {connecting && (
-                <div className="absolute inset-0 flex items-center justify-center text-white">
-                  <Loader2 className="animate-spin mr-2" /> Conectando…
-                </div>
-              )}
-              {!connecting && !videoRef.current?.srcObject && (
-                <div className="absolute inset-0 flex items-center justify-center text-white text-sm text-center p-4">
-                  Aguardando o consultor clicar em "Compartilhar tela" no banner vermelho.
+              {!hasStream && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-sm text-center p-4 gap-2">
+                  {stage === "offer-received" || stage === "answer-sent" || stage === "ice-checking" || stage === "connected" ? (
+                    <><Loader2 className="animate-spin" /> Conectando vídeo… ({stage})</>
+                  ) : stage === "failed" ? (
+                    <span className="text-destructive">Falha na conexão. Peça ao consultor para clicar novamente em "Compartilhar tela".</span>
+                  ) : (
+                    <>Aguardando o consultor clicar em <b>"Compartilhar tela"</b> no banner vermelho.</>
+                  )}
                 </div>
               )}
             </div>
