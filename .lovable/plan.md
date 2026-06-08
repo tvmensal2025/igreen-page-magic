@@ -1,121 +1,69 @@
+
 ## Diagnóstico
 
-Há dois problemas separados:
+Investiguei o banco e o código. Encontrei 3 causas raiz distintas, que vou resolver de uma vez.
 
-1. **Controle remoto marcando/clicando errado**
-   - O vídeo compartilhado pode estar vindo como tela inteira/janela/aba, mas o comando remoto hoje converte `x/y` direto para `window.innerWidth/window.innerHeight` do consultor.
-   - Quando o consultor compartilha a tela inteira ou uma janela com barra do navegador, a coordenada do vídeo não bate com a coordenada real da página. Por isso aparece que marcou um ponto, mas o clique cai em outro ou não navega.
-   - O clique também ainda depende de eventos sintéticos genéricos; alguns botões/links/inputs precisam do alvo interativo correto e de sequência mais fiel de `pointer/mouse/focus/key`.
+### 1. "Não consigo criar outras variantes"
+A RPC `ensure_bot_flow_variant` existe, mas tem 2 problemas:
+- Ela exige que `auth.uid() = _consultant_id` (ou super admin). Quando o consultor logado tem um `auth.users.id` diferente do `consultants.id` (caso comum: consultor cadastrado por outro usuário), ela devolve `forbidden` e o painel só mostra essa string crua no toast — daí a impressão de "deu erro sem explicação".
+- A UI também não revalida `existingVariants` se a criação falhar, então o usuário não entende o estado.
 
-2. **Variantes de fluxo travadas por ordem**
-   - O botão atual “Adicionar fluxo” escolhe automaticamente a primeira variante faltante. O consultor não consegue escolher livremente A, B, C, D ou E.
-   - A regra de roteamento precisa considerar apenas variantes que estão ativas **e** têm fluxo existente, para não mandar lead para variante sem fluxo configurado.
+### 2. "Passos removidos" no fluxo da Bruna e diferente do público
+Confirmado no banco. O fluxo da Bruna (`577f46d1…`, variante D) tem `fallback.success_goto_step_id` apontando para IDs que só existem no fluxo público (`320bf22c…`) — ex.: `b1e1a001-…`, `9f2d47d4-…`, `4df1f90a-…`. Isso aconteceu porque o clone antigo (e o atual) só remapeia `transitions[].goto_step_id` e `fallback.goto_step_id`, **não** remapeia `fallback.success_goto_step_id`, nem campos análogos dentro de `captures`. Resultado: o editor mostra "⚠ Passo removido" em vários passos.
 
-## Plano de implementação
+Além disso, o fluxo da Bruna está com `sync_mode='public'`. Isso significa que o runtime (resolveFlowId) ignora os passos da Bruna e roda o público — então qualquer ajuste que ela fizer no editor **não tem efeito real**. O editor não deixa isso claro.
 
-### 1. Corrigir mapeamento do mouse no suporte remoto
+### 3. "Modo mouse desativado no suporte"
+No operador o controle vem ligado por padrão (`controlEnabled=true`), mas o `RemoteControlOverlay` só monta quando `hasStream && controlEnabled && !paused`. No lado do consultor (`useRequesterSession`) o estado `paused` começa `false`, porém o overlay no operador esconde-se atrás da `PlayerToolbar` quando ela está aberta (z-index/pointer-events) e o cursor virtual some assim que o ponteiro sai do vídeo — dá a sensação de "não dá pra clicar". Também há um caso em que `controlEnabled` fica falso por causa de prefs antigos salvos em `localStorage` (`PREFS_KEY`).
 
-- Guardar, no lado do consultor, metadados reais do compartilhamento:
-  - tipo de captura (`browser`, `window`, `monitor`, quando disponível);
-  - tamanho do track de vídeo;
-  - `window.innerWidth/innerHeight`, `outerWidth/outerHeight`, `screenX/screenY`, `screen.width/height`, `devicePixelRatio`.
-- Alterar `toViewportXY` para converter a coordenada conforme o tipo de captura:
-  - **aba atual/browser tab:** mapear direto para o viewport da página;
-  - **janela/tela inteira:** descontar offset da janela/viewport antes de clicar;
-  - se não houver metadados confiáveis, cair no modo atual como fallback.
-- Ajustar `getDisplayMedia` para preferir “esta guia/aba atual” quando o navegador suportar, reduzindo erro de coordenada.
-- Mostrar aviso no banner se o usuário estiver compartilhando tela inteira/janela em vez da aba, porque esse modo é menos preciso.
+---
 
-### 2. Tornar o clique/navegação remoto mais fiel
+## Plano de correção
 
-- Normalizar o alvo antes de disparar eventos:
-  - se clicar em `svg`, `span` ou ícone dentro de botão/link, subir para o botão/link/input/select/elemento com `role` interativo.
-- Corrigir sequência de eventos:
-  - `pointermove` enquanto move;
-  - `pointerdown` imediato no apertar;
-  - `pointerup` no soltar;
-  - `click` apenas uma vez quando não for drag.
-- Evitar clique duplicado depois de arrastar.
-- Adicionar logs curtos de diagnóstico para comandos que falham (`no element`, coordenada fora do viewport, alvo protegido), para a próxima auditoria ter sinal real.
+### A. Variantes A–E livres e com erro legível
+1. **Migration**: relaxar a checagem da RPC `ensure_bot_flow_variant` para aceitar qualquer um destes casos:
+   - `auth.uid() = _consultant_id` (consultor editando o próprio).
+   - `is_super_admin(auth.uid())`.
+   - existe `consultants` com `id = _consultant_id` cujo `auth_user_id` (ou e-mail) bate com o caller.
+   - Mensagens de erro passam a vir com prefixo legível (`'Sem permissão para criar variante neste consultor'`, etc.).
+2. **UI** (`VariantDistributionBar.tsx`):
+   - Capturar `error.message` e mostrar toast amigável ("Não foi possível criar o fluxo X: …").
+   - Chamar `onChanged()` mesmo em erro para refrescar a lista.
+   - Após criar, dar feedback claro (qual variante foi criada e de onde foi clonada — público ou outra variante).
 
-### 3. Melhorar drag/seleção/scroll remoto
+### B. Clone fiel ao público + tela de "Passo removido" zerada
+1. **Migration**: nova versão da `ensure_bot_flow_variant` que também remapeia:
+   - `fallback.success_goto_step_id`
+   - `fallback.failure_goto_step_id` (quando existir)
+   - qualquer `goto_step_id` aninhado dentro de `captures` (varre o jsonb).
+   - Preserva `position` (já preserva) e copia `text_delay_ms`, `persuasive_text`, `respect_business_hours`, `business_hour_*`, `wait_seconds`, `wait_for`, `media_order` — campos que hoje ficam de fora.
+2. **Migration de "reparo" idempotente** para fluxos já existentes:
+   - Para cada `bot_flow` não-público, varrer steps cujo `fallback.success_goto_step_id` aponta para um step de outro flow; tentar casar com um step da MESMA `position` ou MESMO `step_key` dentro do flow do consultor; se casar, atualiza; se não, limpa o campo (vira "repeat") em vez de manter referência quebrada. Isso elimina os "Passo removido" da Bruna sem perder semântica.
+3. **Sincronizar Bruna com o público**:
+   - Como ela está em `sync_mode='public'`, ofereço duas saídas (sem decidir por ela em runtime):
+     - Botão "Re-clonar do público" na barra de variantes (visível quando `sync_mode='public'` ou quando há refs quebradas) que dispara a nova `ensure_bot_flow_variant` com `force=true`, recriando os steps a partir do público atual e marcando `sync_mode='custom'`.
+     - Aviso no topo do editor explicando: "Esta variante está espelhando o fluxo público — edições aqui não afetam o atendimento até clicar em ‘Personalizar’."
 
-- Enviar `mouseDown` no `pointerdown` real, não só depois que ultrapassar limite de drag.
-- No `pointermove` com botão pressionado, manter `buttons=1` no lado do consultor.
-- No `pointerleave`, finalizar `mouseUp` no último ponto válido.
-- Manter wheel/scroll com fallback programático para containers roláveis.
+### C. Suporte remoto — destravar o mouse
+1. **Operador (`SuperAdminRemoteSupport.tsx` + `RemoteControlOverlay`)**:
+   - Forçar `controlEnabled=true` na primeira sessão (ignorar `localStorage` antigo) e mostrar aviso "Controle ativo" por 3s no topo do vídeo.
+   - Garantir `pointer-events: auto` no overlay e `z-index` acima da toolbar; toolbar passa a `pointer-events: none` exceto nos botões.
+   - Manter cursor virtual visível mesmo sem movimento (não esconder em `pointerleave` — só some quando a aba perde foco).
+   - Logar no console (`[remote-support]`) cada `mouseClick`/`mouseDown`/`mouseUp` enviado para facilitar diagnosticar próximos casos.
+2. **Consultor (`actionHandler.ts`)**:
+   - Quando `mouseClick` chega, fazer `element.focus()` antes do `pointerdown` para inputs/selects (faltava em alguns casos do Radix).
+   - Habilitar `wheel` e `keydown` mesmo quando o foco está em iframe interno (usa `document.elementFromPoint` + fallback no `document.activeElement`).
+   - Mostrar um overlay sutil "Controle remoto ativo" no canto inferior do consultor quando estiver recebendo eventos — confirmação visual de que o mouse está chegando.
 
-### 4. Liberar criação independente das variantes A–E
+---
 
-- Trocar “Adicionar fluxo” por um menu/dialog com botões explícitos:
-  - Criar A
-  - Criar B
-  - Criar C
-  - Criar D
-  - Criar E
-- Variantes já criadas aparecem como indisponíveis para criação, mas continuam selecionáveis/editáveis.
-- O consultor poderá criar qualquer letra em qualquer ordem, sem depender da próxima livre.
+## Arquivos que vou tocar
 
-### 5. Criar RPC segura para garantir fluxo por variante
-
-Criar uma migração com uma função tipo `ensure_bot_flow_variant(_consultant_id, _variant, _source_variant)`:
-
-- Valida que a variante é A–E.
-- Garante permissão: próprio consultor ou super admin.
-- Se o fluxo da variante já existir, retorna o fluxo existente.
-- Se não existir:
-  - cria `bot_flows` para a variante escolhida;
-  - clona passos de uma fonte funcional, nesta ordem:
-    1. template público da mesma variante, se existir;
-    2. variante fonte escolhida/atual do consultor;
-    3. primeira variante existente do consultor;
-    4. fluxo vazio apenas se realmente não houver fonte.
-- Não coloca a variante automaticamente para receber leads sem o switch estar ativo em `consultants.active_variants`.
-
-### 6. Garantir que o sistema obedece 100% as regras de variantes
-
-- Atualizar `assign_flow_variant` e o trigger de inserção de clientes para usar:
-
-```text
-variantes_disponíveis = consultants.active_variants ∩ bot_flows existentes/ativos
-```
-
-- Se só uma variante disponível: todos os leads novos vão para ela.
-- Se houver várias: round-robin 1 a 1 somente entre as disponíveis.
-- Se `active_variants` apontar para uma letra sem fluxo, ela será ignorada em vez de quebrar o atendimento.
-- O lead já existente mantém sua variante; só lead novo entra na nova regra.
-
-### 7. Ajustar a UI do editor de fluxo
-
-- Depois de criar uma variante específica, selecionar automaticamente essa variante.
-- Atualizar a barra para deixar claro:
-  - “criado/editável”;
-  - “recebendo leads” via switch;
-  - “pausado” continua editável, mas não recebe leads.
-- Melhorar as mensagens de erro para mostrar o motivo real em vez de erro genérico.
-
-### 8. Validação
-
-- Testar controle remoto com:
-  - compartilhar aba atual;
-  - clicar em botão/link;
-  - abrir dropdown/select;
-  - digitar em input;
-  - rolar página;
-  - arrastar/selecionar.
-- Testar variantes:
-  - criar C antes de B;
-  - criar A/B/C/D/E em qualquer ordem;
-  - ativar/desativar switches;
-  - confirmar que novos leads só entram nas variantes ativas com fluxo existente.
-
-## Arquivos principais previstos
-
-- `src/features/remote-support/screenShare.ts`
-- `src/features/remote-support/actionHandler.ts`
-- `src/features/remote-support/types.ts`
-- `src/pages/SuperAdminRemoteSupport.tsx`
-- `src/features/remote-support/ActiveSessionBanner.tsx`
+- `supabase/migrations/<new>_fix_variant_clone_and_perms.sql` (RPC v2 + reparo idempotente)
 - `src/components/admin/flow-builder/VariantDistributionBar.tsx`
-- `src/pages/FluxoBuilder.tsx`
-- nova migração Supabase para RPC/regras de distribuição
+- `src/pages/FluxoBuilder.tsx` (aviso de sync_mode + botão "Personalizar/Re-clonar")
+- `src/pages/SuperAdminRemoteSupport.tsx`
+- `src/features/remote-support/actionHandler.ts`
+- (talvez) `src/features/remote-support/useRequesterSession.ts` para o overlay de confirmação
+
+Nada será removido — só correções. Posso começar?
