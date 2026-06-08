@@ -17,7 +17,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Volume2, Loader2, Play, Pause, Download,
   RotateCcw, Music, MapPin, Clock, Navigation, Gift,
-  Store, Megaphone, History, Globe2, Search, Lock, Upload, Copy, Trash2,
+  Store, Megaphone, History, Globe2, Search, Lock, Upload, Copy, Trash2, Send,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@/lib/audioProcessing";
+import { AudioWhatsAppPopover } from "./AudioWhatsAppPopover";
 
 // ─── ElevenLabs via proxy ─────────────────────────────────────────────────────
 const VOICE_ID = "rpNe0HOx7heUulPiOEaG";
@@ -263,6 +264,7 @@ export function AudioStudio({ userId }: { userId: string }) {
   const [audioBlob,  setAudioBlob]  = useState<Blob | null>(null);
   const [lastRowId,  setLastRowId]  = useState<string | null>(null);
   const [lastIsPublic, setLastIsPublic] = useState(false);
+  const [lastPublicUrl, setLastPublicUrl] = useState<string | null>(null);
   const [playing,    setPlaying]    = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -273,6 +275,7 @@ export function AudioStudio({ userId }: { userId: string }) {
   const [publicAudios, setPublicAudios] = useState<AudioRow[]>([]);
   const [allAudios, setAllAudios] = useState<AudioRow[]>([]);
   const [loadingLib, setLoadingLib] = useState(false);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   // Persistência sorteio
   useEffect(() => {
@@ -419,7 +422,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       setAudioUrl(URL.createObjectURL(mp3Blob));
 
       const row = await saveToLibrary(mp3Blob, textoPreview);
-      if (row) { setLastRowId(row.id); setLastIsPublic(false); }
+      if (row) { setLastRowId(row.id); setLastIsPublic(false); setLastPublicUrl(row.audio_url); }
       toast({ title: "✅ Áudio gerado e salvo no seu histórico!" });
       loadLibrary();
     } catch (e: any) {
@@ -505,6 +508,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       setAudioUrl(url);
       setLastRowId(row.consultant_id === userId ? row.id : null);
       setLastIsPublic(row.is_public);
+      setLastPublicUrl(row.audio_url);
       const a = audioRef.current || new Audio(url);
       audioRef.current = a; a.src = url;
       a.onended = () => setPlaying(false);
@@ -790,6 +794,18 @@ export function AudioStudio({ userId }: { userId: string }) {
                 </Button>
               </div>
 
+              {lastPublicUrl && (
+                <AudioWhatsAppPopover
+                  audioUrl={lastPublicUrl}
+                  label={`${kindLabel} — ${cidade || "cidade"}`}
+                  trigger={
+                    <Button variant="outline" className="w-full h-10 text-xs gap-2 rounded-xl">
+                      <Send className="w-4 h-4" /> Enviar no WhatsApp
+                    </Button>
+                  }
+                />
+              )}
+
               {lastRowId && (
                 <Button
                   onClick={publishCurrent}
@@ -858,15 +874,23 @@ export function AudioStudio({ userId }: { userId: string }) {
               <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio gerado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</p>
             )}
 
-            {(libTab === "mine" ? myAudios : libTab === "public" ? publicAudios : allAudios).map((row) => (
+            {(libTab === "mine" ? myAudios : libTab === "public" ? publicAudios : allAudios).map((row) => {
+              const isOpen = expandedRowId === row.id;
+              const rowLabel = `${row.kind === "comercio" ? "Comércio" : "Mutirão"} — ${row.city || "cidade"}`;
+              return (
               <div key={row.id} className="rounded-lg border border-border/40 bg-background/40 p-2.5 space-y-1.5">
                 <div className="flex items-start gap-2">
                   <button
-                    onClick={() => playRowAudio(row)}
-                    className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 hover:bg-primary/20"
-                    title="Tocar"
+                    onClick={() => {
+                      setExpandedRowId(isOpen ? null : row.id);
+                      if (!isOpen) {
+                        supabase.rpc("audio_library_increment_play", { _id: row.id }).then(() => {});
+                      }
+                    }}
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${isOpen ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
+                    title={isOpen ? "Recolher" : "Tocar"}
                   >
-                    <Play className="w-4 h-4 ml-0.5" />
+                    {isOpen ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
                   </button>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold truncate">
@@ -884,9 +908,28 @@ export function AudioStudio({ userId }: { userId: string }) {
                   </div>
                 </div>
 
-                <div className="flex gap-1">
-                  <button onClick={() => copyRowUrl(row)} className="flex-1 h-7 rounded-md bg-muted/50 hover:bg-muted text-[10px] font-medium flex items-center justify-center gap-1">
-                    <Copy className="w-3 h-3" /> Copiar link
+                {isOpen && (
+                  <audio
+                    src={row.audio_url}
+                    controls
+                    autoPlay
+                    preload="metadata"
+                    className="w-full h-9"
+                  />
+                )}
+
+                <div className="flex gap-1 flex-wrap">
+                  <AudioWhatsAppPopover
+                    audioUrl={row.audio_url}
+                    label={rowLabel}
+                    trigger={
+                      <button className="flex-1 h-7 rounded-md bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-semibold flex items-center justify-center gap-1">
+                        <Send className="w-3 h-3" /> WhatsApp
+                      </button>
+                    }
+                  />
+                  <button onClick={() => copyRowUrl(row)} className="h-7 px-2 rounded-md bg-muted/50 hover:bg-muted text-[10px] font-medium flex items-center justify-center gap-1" title="Copiar link">
+                    <Copy className="w-3 h-3" />
                   </button>
                   {libTab === "mine" && (
                     <>
@@ -902,7 +945,8 @@ export function AudioStudio({ userId }: { userId: string }) {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </aside>
       </div>

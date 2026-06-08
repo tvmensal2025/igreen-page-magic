@@ -1,45 +1,41 @@
-# Corrigir geração de áudio + Histórico do Super Admin
+## O que muda
 
-## Diagnóstico (o que eu já verifiquei)
+Hoje as listas "Meus" e "Pública" mostram só um botãozinho de play que toca o áudio no player principal. Vou:
 
-1. **Não existe áudio antigo para recuperar.** Procurei em `audio_library` (vazia), `ai_media_library` (só áudios de gravações de voz, nenhum MP3 de mutirão/comércio) e no bucket `ai-agent-media` (zero arquivos `.mp3`). Os "áudios gerados" anteriores ficaram só no cache local do navegador (IndexedDB), não no servidor.
-2. **O bucket `tts-cache` NÃO existe.** A migração anterior que tentou criá-lo falhou silenciosamente. Por isso toda nova geração precisa chamar a ElevenLabs do zero — gasta token e o cache compartilhado entre consultores nunca funcionou.
-3. **A última tentativa nem chegou a chamar a ElevenLabs.** Nas requisições de rede capturadas, não há nenhuma chamada para `tts-proxy`. Significa que o erro aconteceu antes — provavelmente uma validação travou ou o botão não disparou.
+1. **Player inline em cada item** — ao clicar em "Tocar", o item expande e mostra um `<audio controls>` nativo (barra de progresso, volume, tempo). Toca o MP3 público direto, sem chamar a ElevenLabs (zero custo). Fechar = recolhe.
+2. **Botão "Enviar no WhatsApp"** em cada item (Meus, Pública e Todos do super admin) — abre um popover idêntico ao `SendViaWhatsAppPopover` dos materiais, pedindo telefone + legenda opcional, e envia o áudio pela instância Evolution conectada do consultor logado.
+3. **Mesmas ações no player principal** (logo após gerar) — adiciono o mesmo botão "Enviar no WhatsApp" ao lado de Baixar/Publicar.  
+4. o playeronline permite ja escutar com vinheta ou normal e baixar com vinheta e normal
 
-## O que vou fazer
+## Backend (edge function)
 
-### 1. Criar o bucket `tts-cache` (faltando)
+A `admin-send-material` atual só envia image/video/document via `sendMedia`. Áudio no WhatsApp precisa do endpoint específico do Evolution (`/message/sendWhatsAppAudio/{instance}`, que entrega como PTT/voice note). Duas opções:
 
-Via tool `supabase--storage_create_bucket` (público, 5MB, `audio/mpeg`) + políticas de leitura pública e upload autenticado em `storage.objects`. Sem isso, o reaproveitamento de token nunca funciona.
+- **A. Estender `admin-send-material**` para aceitar `mediatype: "audio"` e rotear para `sendAudio` adicionando essa função em `_shared/whatsapp-api.ts`. (menor superfície)
+- **B. Criar `admin-send-audio**` separada. (mais explícito, mas duplica auth/anti-ban/quota)
 
-### 2. Super admin enxerga TUDO no histórico
+Vou pela **A** — adiciono `sendAudio(chatId, audioUrl)` em `_shared/whatsapp-api.ts` e um `case "audio"` no `admin-send-material/index.ts` (mantendo checkSendQuota + registerSend + validação JWT).
 
-Ampliar a política RLS de `SELECT` em `audio_library`:
+## Frontend
 
-```sql
-USING (consultant_id = auth.uid() OR is_public = true OR is_super_admin(auth.uid()))
-```
+`**AudioStudio.tsx**` — sem mudar lógica de geração:
 
-E, no painel lateral do `AudioStudio.tsx`, quando o usuário for super admin, adicionar uma **3ª aba "Todos (super admin)"** que lista os áudios de todos os consultores com o nome do dono. Detecção via hook `useUserRole`/`is_super_admin` que já existe no projeto.
+- Novo estado `expandedRowId: string | null` para mostrar player inline no item ativo.
+- Novo componente local `<RowAudioActions row={row} consultantId={...} />` que renderiza:
+  - `<audio src={row.audio_url} controls preload="none" />` quando expandido
+  - Botão "WhatsApp" abrindo `<AudioWhatsAppPopover>` (cópia adaptada do `SendViaWhatsAppPopover` chamando `admin-send-material` com `mediatype: "audio"`).
+- Botão "WhatsApp" também no painel do áudio recém-gerado (logo abaixo de Publicar).
+- Continua tocando via `audio_url` direto (sem chamar TTS), preservando o ganho de custo zero.
 
-### 3. Diagnóstico do erro de geração
+## Arquivos tocados
 
-Para descobrir POR QUE deu errado preciso da mensagem exata. Vou adicionar logs detalhados (`console.error`) em cada etapa de `handleGenerate` (TTS → decode → concat → encode → upload → insert) para que da próxima vez o erro apareça claro no console e no toast. Também vou trocar o `confirm()` nativo (que pode estar bloqueado) por toast de erro mais informativo.
+- `src/components/admin/AudioStudio.tsx` — UI: player inline + botões WhatsApp.
+- `src/components/admin/AudioWhatsAppPopover.tsx` — novo, baseado no `SendViaWhatsAppPopover`.
+- `supabase/functions/_shared/whatsapp-api.ts` — adiciona `sendAudio`.
+- `supabase/functions/admin-send-material/index.ts` — aceita `mediatype: "audio"`.
 
-### 4. Backfill (não tem o que recuperar)
+## Fora de escopo
 
-Confirmei via banco que não há MP3 de mutirão/comércio salvo em lugar nenhum. Os áudios em `ai_media_library` são gravações de voz (boas-vindas, "como funciona a energia") e continuam aparecendo na biblioteca normal — não são geração TTS de mutirão.
-
-## Arquivos a tocar
-
-- **Bucket novo**: `tts-cache` (via tool, não SQL).
-- **Migração**: ampliar RLS `SELECT` de `audio_library` para incluir super admin.
-- **Editado**: `src/components/admin/AudioStudio.tsx` — aba "Todos" para super admin + logs detalhados em `handleGenerate`.
-
-## Preciso de você
-
-Para fechar o diagnóstico do erro: **quando você clicou em "Gerar Áudio de Comércio", qual mensagem apareceu?** (toast vermelho, popup, ou simplesmente nada aconteceu?) Pode me dizer e eu termino de corrigir junto com as outras 3 entregas.  
-  
-o audio foi gerado
-
-&nbsp;
+- Não mudo geração, cache TTS, RLS nem schema.
+- Não toco no bucket `tts-cache` (separado).
+- Não adiciono envio em massa — só 1-pra-1 por enquanto.
