@@ -21,6 +21,7 @@ import { TopConsumersCard } from "./TopConsumersCard";
 import { GeographyCard } from "./GeographyCard";
 import { RetentionCard } from "./RetentionCard";
 import { TeamRankingTab } from "./TeamRankingTab";
+import { IGreenExtensionCard } from "./IGreenExtensionCard";
 
 // Formata moeda BRL de forma compacta em telas pequenas (R$ 50,4 mil / R$ 1,2 mi)
 function formatCompactBRL(value: number): string {
