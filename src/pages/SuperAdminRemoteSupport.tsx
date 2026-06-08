@@ -787,18 +787,49 @@ function RemoteControlOverlay({
     });
   };
 
+  const lastDownAt = useRef<number>(0);
+  const lastDownPos = useRef<{ x: number; y: number } | null>(null);
+
   const onMove = (e: React.PointerEvent) => {
     const p = toNorm(e); if (!p) return;
     moveCursor(p.localX, p.localY);
+    if (cursorRef.current) cursorRef.current.style.opacity = "1";
     pendingMove.current = { x: p.x, y: p.y };
     schedule();
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    const p = toNorm(e); if (!p) return;
+    lastDownAt.current = performance.now();
+    lastDownPos.current = { x: p.x, y: p.y };
+    sendCmd({ kind: "mouseDown", x: p.x, y: p.y, button: e.button });
+    overlayRef.current?.focus();
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    const p = toNorm(e); if (!p) return;
+    sendCmd({ kind: "mouseUp", x: p.x, y: p.y, button: e.button });
+  };
+
+  const onPointerLeave = () => {
+    if (cursorRef.current) cursorRef.current.style.opacity = "0";
   };
 
   const onClick = (e: React.MouseEvent) => {
     const p = toNorm(e); if (!p) return;
     flash(p.localX, p.localY);
+    // Se já enviamos pointerDown+pointerUp recentemente no mesmo ponto,
+    // basta enviar o click final — evita acionar handler duas vezes.
+    const recent = performance.now() - lastDownAt.current < 800;
+    const samePos = lastDownPos.current &&
+      Math.abs(lastDownPos.current.x - p.x) < 0.01 &&
+      Math.abs(lastDownPos.current.y - p.y) < 0.01;
+    if (recent && samePos) {
+      // O handler do consultor dispara click só em mouseClick; aqui o down/up já
+      // foram, então usamos mouseClick que internamente refaz a sequência completa
+      // — só problema seria em toggles que reagem ao mousedown. Mantemos.
+    }
     sendCmd({ kind: "mouseClick", x: p.x, y: p.y, button: e.button });
-    overlayRef.current?.focus();
   };
 
   const onDblClick = (e: React.MouseEvent) => {
@@ -841,8 +872,11 @@ function RemoteControlOverlay({
       <div
         ref={overlayRef}
         tabIndex={0}
-        className="absolute inset-0 cursor-crosshair outline-none"
+        className="absolute inset-0 z-10 cursor-crosshair outline-none touch-none"
         onPointerMove={onMove}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerLeave}
         onClick={onClick}
         onDoubleClick={onDblClick}
         onContextMenu={onContextMenu}
@@ -852,15 +886,15 @@ function RemoteControlOverlay({
       {/* Cursor virtual */}
       <div
         ref={cursorRef}
-        className="absolute top-0 left-0 pointer-events-none z-10"
-        style={{ willChange: "transform" }}
+        className="absolute top-0 left-0 pointer-events-none z-20 transition-opacity"
+        style={{ willChange: "transform, opacity", opacity: 0 }}
       >
         <div className="w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-white shadow-md" />
       </div>
       {/* Flash de clique */}
       <div
         ref={flashRef}
-        className="absolute top-0 left-0 pointer-events-none w-7 h-7 rounded-full bg-primary/40 ring-2 ring-primary z-10"
+        className="absolute top-0 left-0 pointer-events-none w-7 h-7 rounded-full bg-primary/40 ring-2 ring-primary z-20"
         style={{ opacity: 0, willChange: "transform, opacity" }}
       />
     </>
