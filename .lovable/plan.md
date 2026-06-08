@@ -1,116 +1,79 @@
-## Objetivo
+# Plano — Quick View completo do Lead/Cliente com preview de mensagens
 
-Trazer o CRM Clientes (Pós-Venda iGreen) para o mesmo nível do CRM Leads:
-1. Unificar as duas colunas iniciais ("Em análise" + "Em Espera") numa única coluna profissional.
-2. Adicionar **autoprogressão** com mensagens automáticas (texto, áudio, imagem, vídeo) em cada estágio.
-3. Garantir que todo envio passe pelo mesmo resolver de canal: **Evolution (instância do consultor) → fallback Whapi**, já usado em `crm-auto-progress`.
+Hoje o ícone do olho (`CustomerQuickViewDialog`) só mostra dados cadastrais. O usuário quer ver, no mesmo clique:
+- quando o lead/cliente foi cadastrado, aprovado, reprovado e quando vai entrar em 30/60/90/120 dias
+- qual será a próxima mensagem automática que o sistema vai enviar, com **preview real** (texto, áudio com player, imagem em miniatura, vídeo embed)
+- tudo bem dimensionado tanto no celular quanto no desktop
 
----
+## 1. Reescrever `CustomerQuickViewDialog` em um layout responsivo com 3 blocos
 
-## 1. Unificar "Em análise" + "Em Espera"
+Trocar o dialog estreito atual por um **layout adaptativo**:
+- `max-w-md` no mobile, `max-w-2xl` no desktop, com `max-h-[90vh] overflow-y-auto`
+- 3 abas (`Tabs` do shadcn): **Dados** · **Linha do tempo** · **Próxima mensagem**
+- Cabeçalho fixo com nome + telefone + badges grandes (etapa atual, origem, status), legíveis em 360px de largura
 
-Hoje `PosVendaKanban.tsx` mostra duas colunas iniciais que confundem o consultor. Vamos fundi-las em **uma única coluna chamada "Aguardando Classificação"** (cor âmbar, mais clara que "Em Espera"):
+Resolve a queixa "tamanho não dá para ver certo".
 
-- Stage interno: manter `espera` (já é a coluna onde os clientes ficam parados aguardando ação manual).
-- Remover `em_analise` do array `STAGES`.
-- Migração de dados: `UPDATE customers SET pos_venda_stage='espera' WHERE pos_venda_stage='em_analise' OR (pos_venda_stage IS NULL AND customer_origin='igreen_sync' AND status NOT IN ('rejected','cancelled','canceled'))`.
-- Função `computeStage()` passa a devolver `espera` em vez de `em_analise` no fallback.
-- `PendingApprovalDialog` continua disparando para clientes em `espera`.
+## 2. Bloco "Linha do tempo" (timeline real)
 
-Layout final das colunas do CRM Clientes:
-```text
-Aguardando Classificação → Aprovado → Reprovado → 30d → 60d → 90d → 120d
-```
+Calcular eventos a partir das colunas já existentes em `customers` / `crm_deals`:
 
-## 2. Autoprogressão de mensagens (paridade com CRM Leads)
+| Evento | Fonte |
+| --- | --- |
+| Cadastrado | `data_cadastro` / `created_at` |
+| Entrou em análise | `portal_submitted_at` |
+| Aprovado | `data_ativo` / `approved_at` |
+| Reprovado | `rejected_at` + `rejection_reason` |
+| 30 / 60 / 90 / 120 dias | `portal_submitted_at + N dias` (mostra "faltam X dias" se futuro, "há X dias" se passado) |
+| Última msg automática enviada | `customer_auto_message_log` (último registro por `stage_key`) |
 
-### 2.1 Reaproveitar `kanban_stages` + `stage_auto_messages`
+Render: lista vertical com bolinha colorida (mesmas cores das colunas do kanban), data em `dd/MM/yyyy HH:mm`, e label.
 
-Em vez de criar uma tabela nova, criar **stages dedicados Pós-Venda** por consultor com prefixo `pv_`:
+## 3. Bloco "Próxima mensagem" (preview real)
 
-- `pv_espera`, `pv_aprovado`, `pv_reprovado`, `pv_d30`, `pv_d60`, `pv_d90`, `pv_d120`
+Buscar do `kanban_stages` a configuração da **próxima etapa** que esse cliente/lead vai cair (ex.: hoje está em `aprovado`, próxima é `d30`):
+- Calcular `nextStage` via mesma lógica de `computeStage` + offsets de 30/60/90/120
+- Carregar `auto_message_enabled`, `auto_message_text`, `auto_message_type`, `auto_message_media_url`, `auto_message_image_url` daquela etapa
+- Renderizar preview conforme `auto_message_type`:
+  - **text** → balão WhatsApp simulado (fundo verde-escuro, bolha à direita) com `{{nome}}` substituído pelo nome real
+  - **audio** → `<audio controls>` apontando para `auto_message_media_url` + duração
+  - **image** → `<img>` em miniatura clicável (abre em nova aba)
+  - **video** → `<video controls>` com poster
+- Mostrar também: "Será enviada em **DD/MM/YYYY** às **HH:00**" (baseado em `portal_submitted_at + N dias` e janela do cron horário)
+- Se `auto_message_enabled = false`, mostrar aviso "Autoprogressão desativada para esta etapa" com link para abrir `PosVendaAutoConfigDialog`
 
-Isso permite reaproveitar 100% o componente `StageAutoMessageConfig` (texto + imagem + vídeo + áudio + voice template + delay + motivo de reprovação).
+Também mostrar a **mensagem que já foi enviada** na etapa atual (vinda de `customer_auto_message_log`) com o mesmo formato de preview, para o usuário saber exatamente o que o cliente recebeu.
 
-Migração:
-- Adicionar coluna `kanban_stages.stage_scope text default 'lead'` (valores: `lead` | `pos_venda`).
-- Seed inicial: para cada consultor existente, inserir as 7 linhas `pv_*` com `stage_scope='pos_venda'` (sem auto-mensagem ativada por padrão — consultor configura depois).
+## 4. Aplicar o mesmo quick view aos LEADS (CRM Leads)
 
-### 2.2 UI no `PosVendaKanban`
+Hoje `KanbanDealCard` já tem o botão de olho que abre `CustomerQuickViewDialog` quando há `customer_id`. Para leads **sem** `customer_id` (só `crm_deals`):
+- Adicionar um modo `dealId` no mesmo componente
+- Carregar de `crm_deals` + `kanban_stages` do consultor, calcular próxima etapa e preview da mensagem do `auto_message_*` daquela stage
+- Mostrar linha do tempo do lead: criado, última interação do bot (`last_step_advanced_at`), aprovado/reprovado
 
-- Botão **"⚙ Configurar autoprogressão"** no header → abre dialog com lista das colunas Pós-Venda; em cada uma um `<StageAutoMessageConfig>` (mesmo componente do CRM Leads).
-- Em cada card, manter botão 👁 (ver detalhes) já existente.
-- Badge sutil "📨 auto ativa" quando o stage tem mensagens configuradas.
+## 5. Responsividade
 
-### 2.3 Engine — nova edge function `pos-venda-auto-progress`
+- Grid de badges no header: `flex-wrap gap-1.5`
+- Abas: `grid-cols-3` no desktop, `grid-cols-3 text-[11px]` no mobile
+- Áudio/vídeo: `w-full` para preencher o dialog
+- Testar em 360px (mobile) e 1280px (desktop)
 
-Reusar resolver/sender já testado em `crm-auto-progress` (movemos para `_shared/channel-sender.ts` para evitar duplicação).
+## Detalhes técnicos
 
-Lógica (rodando a cada hora via pg_cron):
+**Arquivos a editar/criar:**
+- `src/components/whatsapp/CustomerQuickViewDialog.tsx` — reescrever com Tabs + suportar `customerId | dealId`
+- novo `src/components/whatsapp/QuickViewTimeline.tsx` — componente da timeline
+- novo `src/components/whatsapp/QuickViewNextMessage.tsx` — preview de mídia
+- `src/components/whatsapp/KanbanDealCard.tsx` — passar `dealId` quando não houver `customerId`
 
-```text
-para cada customer com customer_origin='igreen_sync':
-  - se status == aprovado e pos_venda_stage IS NULL ou 'espera' e o consultor já confirmou no popup
-       → mover para 'aprovado' + disparar mensagens do pv_aprovado
-  - se status == reprovado e pos_venda_stage != 'reprovado'
-       → mover para 'reprovado' + mensagens do pv_reprovado (com filtro por motivo)
-  - se está 'aprovado' há ≥30/60/90/120 dias e ainda não foi para o bucket
-       → mover + disparar pv_d30 / pv_d60 / pv_d90 / pv_d120
-```
+**Queries adicionais:**
+- `kanban_stages` filtrado por `consultant_id` + `stage_scope` (`leads` ou `pos_venda`) para descobrir config da próxima etapa
+- `customer_auto_message_log` (já tem RLS) para histórico de envios
 
-Idempotência: nova tabela `customer_auto_message_log` (espelho do `crm_auto_message_log`) com `(customer_id, stage_key)` único — evita reenvio.
+**Sem mudanças de schema** — todas as colunas e tabelas necessárias já existem.
 
-Respeitar: `quiet-hours`, `isConsultantAIDisabled`, `isPausedByPhone`, `checkSendQuota` (anti-ban). Idêntico ao `crm-auto-progress`.
+**Sem mudanças em edge functions** — `pos-venda-auto-progress` continua igual; o quick view só lê e renderiza.
 
-### 2.4 Canal de envio (Evolution + Whapi)
-
-O mesmo `resolveChannel()` do `crm-auto-progress`:
-1. Procura `whatsapp_instances` do consultor → usa Evolution.
-2. Senão usa Whapi (`settings.whapi_token`) como fallback compartilhado.
-
-Toda mensagem (texto/áudio/imagem/vídeo) sai pelo `ChannelAdapter` unificado (`_shared/channels/index.ts`) — mesma pipeline já validada nos leads.
-
-### 2.5 Cron
-
-```sql
-select cron.schedule(
-  'pos-venda-auto-progress-hourly',
-  '15 * * * *',
-  $$ select net.http_post(url:='…/pos-venda-auto-progress', headers:='{…anon…}'::jsonb, body:='{}'::jsonb) $$
-);
-```
-
-## 3. Salvaguarda anti-disparo nos clientes antigos
-
-Os ~890 clientes antigos importados estão em `espera` com `pos_venda_manual=true` (já feito no v1.3.0). A nova engine **ignora `pos_venda_manual=true`** na hora de mover automaticamente — só age quando o consultor confirma no `PendingApprovalDialog` (que faz `pos_venda_manual=false` + setta stage final). Assim antigos só progridem se o consultor mandar; novos seguem o fluxo automático normal.
-
-## 4. Arquivos alterados / criados
-
-**Database (migração):**
-- ALTER `kanban_stages` add `stage_scope`.
-- INSERT `pv_*` stages por consultor.
-- CREATE TABLE `customer_auto_message_log` (+ GRANTs + RLS).
-- UPDATE `customers` movendo `em_analise` → `espera`.
-
-**Frontend:**
-- `src/components/whatsapp/PosVendaKanban.tsx` — remover coluna `em_analise`, renomear `espera`, botão de configurar autoprogressão.
-- `src/components/whatsapp/PosVendaAutoConfigDialog.tsx` *(novo)* — lista 7 stages com `<StageAutoMessageConfig>`.
-
-**Edge functions:**
-- `supabase/functions/_shared/channel-sender.ts` *(novo)* — extrai `resolveChannel`, `sendText/Media/Audio`, `sendAutoMessages` do `crm-auto-progress`.
-- `supabase/functions/crm-auto-progress/index.ts` — refatorar para usar shared.
-- `supabase/functions/pos-venda-auto-progress/index.ts` *(novo)* — engine descrita em 2.3.
-- `supabase/functions/pos-venda-bucket-cron/index.ts` — continua só fazendo bucket por tempo (sem mensagens), ou é absorvido pelo novo.
-
-**Cron:** schedule do `pos-venda-auto-progress` via `supabase--insert`.
-
-## 5. Validação
-
-- [ ] Coluna única "Aguardando Classificação" aparece com badge âmbar.
-- [ ] Botão "Configurar autoprogressão" abre 7 stages editáveis.
-- [ ] Cliente aprovado no popup → mensagem `pv_aprovado` chega no WhatsApp via Evolution (ou Whapi se sem instância).
-- [ ] Cliente parado em `aprovado` há 30 dias é movido pra `d30` e recebe a mensagem configurada (texto+áudio).
-- [ ] Cliente reprovado com motivo X recebe só a mensagem `pv_reprovado` filtrada por motivo.
-- [ ] `customer_auto_message_log` registra `sent`, evita duplicata.
-- [ ] Anti-ban / quiet hours / consultor IA pausado bloqueiam envio.
-- [ ] Clientes antigos (`pos_venda_manual=true`) não recebem nada até confirmação manual.
+## Fora do escopo
+- Não mexer no cron, na engine de envio, nas RLS, nem nas cores do kanban (já ajustadas antes)
+- Não adicionar edição inline dentro do quick view (continua sendo só visualização — para editar, o usuário abre o cadastro completo)

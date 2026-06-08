@@ -19,7 +19,7 @@ interface KanbanColumnProps {
   onEditDeal: (deal: CrmDealRow) => void;
   onDeleteDeal: (id: string) => void;
   onReclassify?: (deal: CrmDealRow) => void;
-  onView?: (customerId: string) => void;
+  onView?: (params: { customerId?: string | null; dealId?: string | null }) => void;
 }
 
 export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", customStepMap, onDrop, onDragStart, onEditDeal, onDeleteDeal, onReclassify, onView }: KanbanColumnProps) {
