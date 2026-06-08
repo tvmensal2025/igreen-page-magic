@@ -26,6 +26,7 @@ import { AdImageLibraryPanel } from "./AdImageLibraryPanel";
 import { SaveTemplateDialog } from "./SaveTemplateDialog";
 import type { AdImageLibraryItem } from "@/services/adImageLibrary";
 import { CtwaPreflightCard } from "./CtwaPreflightCard";
+import { useAdBonusTiers } from "@/hooks/useAdBonusTiers";
 
 
 interface Props {
@@ -97,6 +98,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
   const { connection } = useFacebookConnection(consultantId);
   const { isSuperAdmin } = useUserRole(consultantId);
   const { phone: consultantPhone, loading: phoneLoading } = useConsultantPhone(consultantId);
+  const { tiers: bonusTiers } = useAdBonusTiers();
   const [step, setStep] = useState<Step>(1);
   const [submitting, setSubmitting] = useState(false);
   const [aiResizingIdx, setAiResizingIdx] = useState<number | null>(null);
