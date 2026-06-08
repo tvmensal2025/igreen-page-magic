@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { File, Image, Trash2, Eye, Pencil, Save, X, Loader2, Upload, Copy, Star } from "lucide-react";
+import { File, Image, Trash2, Eye, Pencil, Save, X, Loader2, Upload, Copy, Star, Globe2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -264,6 +264,23 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
           className="text-muted-foreground hover:text-foreground h-8 w-8 opacity-0 group-hover:opacity-100 transition-all">
           <Eye className="w-3.5 h-3.5" />
         </Button>
+        {isSuperAdmin && (
+          <Button
+            variant="ghost"
+            size="icon"
+            title={(t as any).is_public ? "Tornar privado" : "Tornar público para todos"}
+            onClick={async () => {
+              const next = !(t as any).is_public;
+              const { error } = await supabase.from("message_templates").update({ is_public: next }).eq("id", t.id);
+              if (error) { toast.error("Falha ao alternar visibilidade"); return; }
+              toast.success(next ? "🌎 Template público" : "🔒 Template privado");
+              await onForked?.();
+            }}
+            className={`h-8 w-8 transition-all ${(t as any).is_public ? "text-emerald-400" : "text-muted-foreground opacity-0 group-hover:opacity-100"}`}
+          >
+            {(t as any).is_public ? <Globe2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+          </Button>
+        )}
         {canDelete && (
           <AlertDialog>
             <AlertDialogTrigger asChild>

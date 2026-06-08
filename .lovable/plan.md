@@ -1,122 +1,87 @@
+## Objetivo
 
-# Auditoria — Plano anterior, Suporte Remoto e mercado
+Garantir que **FAQ (atalhos) e Base da IA** apareçam para todos os consultores (obrigatoriamente públicos), e dar ao **Super Admin** controle uniforme nos cards de cada item (templates de mensagem, áudios, vídeos, imagens, templates de anúncio, FAQ, knowledge) com:
 
-## 1. O plano antigo (`.lovable/plan.md`) — veredito
+- Menu de **3 pontinhos** → alternar **🌎 Público / 🔒 Privado**
+- Botão **X** → apagar com **diálogo de confirmação**
 
-O plano cobre 3 frentes (variantes A-E, "Passo removido", suporte remoto) e a maior parte já foi executada nas últimas iterações. Status real hoje:
+## Estado atual (auditoria rápida)
 
-| Item do plano | Estado | Observação |
+| Tipo | Tabela | Como "público" funciona hoje |
 |---|---|---|
-| RPC `ensure_bot_flow_variant` com permissão relaxada + erro legível | ✅ feito (migration `20260608205444…`) | Falta UI mostrar de qual variante foi clonada |
-| Remap de `fallback.success_goto_step_id` + `captures.*.goto_step_id` no clone | ✅ feito | OK |
-| Migration de reparo idempotente (Bruna) | ✅ feito | Verificar se ainda há refs órfãs com `SELECT` antes de fechar |
-| Aviso "sync_mode=public" + botão "Re-clonar" no editor | ⚠️ parcial | Migration entrega o backend, mas **não vi o botão na UI do `FluxoBuilder.tsx`** |
-| Remote support: `controlEnabled=true` por padrão (v2 prefs) | ✅ feito | |
-| Cursor virtual visível em `pointerleave` | ✅ feito | |
-| `focus()` antes do click (Radix) | ✅ feito | |
-| Overlay "Controle remoto ativo" no consultor | ❌ não feito | Plano previa, mas não foi implementado |
-| Logs `[remote-support]` por evento de mouse | ⚠️ só `logAction` no servidor — sem `console.log` local | |
+| Templates de mensagem | `message_templates` | `is_public boolean` — 22 linhas, todas `false` |
+| Áudios | `audio_library` | `is_public` (toggle já existe no AudioStudio) |
+| Mídia IA (imagem/vídeo) | `ai_media_library` | `is_public` (sem toggle UI) |
+| Templates de voz | `voice_templates` | `is_public` (sem toggle UI) |
+| Anúncios | `ad_templates` | `consultant_id IS NULL` + `status='published'` |
+| **FAQ atalhos** | `bot_flow_qa` | ❌ ligado a `flow_id` de um consultor → nunca aparece pro outro |
+| **Knowledge IA** | `ai_knowledge_sections` | 27 linhas com `consultant_id NULL` → já são globais, mas leitura pelo consultor pode estar bloqueada |
 
-**Conclusão:** o plano é sólido e foi 80% executado. Faltam 2 entregas visíveis (botão re-clonar + overlay no consultor) que são as que o usuário continua sentindo na pele.
+**Diagnóstico do que o cliente reportou:** Os atalhos da Bruna e do Rafael não aparecem como "público" porque `bot_flow_qa` não tem coluna pública — cada consultor só lê o próprio fluxo. E `ai_knowledge_sections` precisa de RLS de leitura para todos os autenticados.
 
----
+## Mudanças
 
-## 2. Auditoria do fluxo de **mouse remoto** (vai funcionar?)
+### 1. Banco (migration única)
 
-Fluxo atual:
+- `ALTER TABLE bot_flow_qa ADD COLUMN is_public boolean NOT NULL DEFAULT false`
+- RLS: SELECT em `bot_flow_qa` para `authenticated` quando `is_public = true` (mantém leitura do próprio fluxo)
+- RLS: SELECT em `ai_knowledge_sections` para `authenticated` quando `consultant_id IS NULL OR consultant_id = auth.uid()` (e UPDATE/DELETE só para Super Admin nos globais)
+- Backfill: marcar como `is_public=true` os QAs de fluxos do Super Admin (rafael.ids@icloud.com) — eles viram a base pública
 
-```text
-Operador (overlay) ──pointerdown/click──► sendCmd (DataChannel)
-        │                                       │
-        │ raf coalescing                        ▼
-        ▼                              Consultor (actionHandler.ts)
-   cursor virtual                      ├─ elementFromPoint(x,y)
-                                       ├─ normalizeInteractiveTarget (sobe até botão/Radix)
-                                       ├─ focus() em editáveis e triggers
-                                       └─ pointerover→down→up + mousedown→up + click
+### 2. Componente novo `SuperAdminItemMenu`
+
+Um único componente reutilizável (DropdownMenu shadcn) usado em todos os cards:
+
+```
+[⋯]  → 🌎 Tornar público / 🔒 Tornar privado
+       ─────────
+       🗑 Apagar (vermelho)
+
+[X]  → AlertDialog "Apagar '{nome}'? Esta ação é irreversível."
 ```
 
-### O que está **certo** e vai funcionar
-- Sequência pointer + mouse + click cobre Radix/shadcn (Select, Dropdown, Dialog).
-- `normalizeInteractiveTarget` resolve o caso "cliquei no `<span>` filho do botão".
-- Coordenadas normalizadas + `preferCurrentTab: true` na `getDisplayMedia` deixam pixel-a-pixel.
-- Coalescing por `requestAnimationFrame` evita inundar o DataChannel.
-- Detecção de drag por threshold (4px) evita "todo click virar drag".
+Aparece **apenas** quando `isSuperAdmin === true`. Recebe props `{ isPublic, onTogglePublic, onDelete, itemName, itemKind }`.
 
-### Riscos reais que ainda travam o mouse
-1. **`object-contain` + cálculo de offset**: `toNorm` calcula `dispW/dispH` pelo `videoWidth`, mas se o `<video>` ainda não tem metadata (`videoWidth=0`), cai no `rect.width` e os cliques saem fora do alvo nos primeiros 200–500 ms. Precisa esperar `loadedmetadata`.
-2. **Foco no iframe / página com `tabindex=-1`**: `typeChar` usa `document.activeElement`. Quando o consultor tem um modal Radix aberto que rouba foco, a tecla vai pro lugar errado. Falta `focusEl?.focus()` antes de cada `key`.
-3. **`elementFromPoint` ignora `pointer-events:none`**: alguns overlays do próprio app do consultor (toasts, splash) podem cobrir e devolver `null` → `"no element"`. Não há fallback para `document.elementsFromPoint` (plural) que ignora a primeira camada.
-4. **Sem retry/ACK por comando**: se o DataChannel está `connecting` ou cai por 200 ms, o click é perdido silenciosamente. Falta uma fila com TTL.
-5. **iframes cross-origin** (ex.: gateway de pagamento, painel embutido): WebRTC + `dispatchEvent` **não atravessam** iframe cross-origin. Hoje o usuário vai sentir como "o mouse parou de funcionar nesta tela" — precisa avisar.
-6. **Inputs nativos `<select>`**: o sistema operacional desenha o popup; nenhum `dispatchEvent` consegue escolher uma opção. Precisa fallback `el.value = …` + `change`.
+### 3. Pontos de integração na UI
 
----
+| Arquivo | Mudança |
+|---|---|
+| `TemplateListItem` (msg templates) | Adiciona `<SuperAdminItemMenu>` com toggle `is_public` e delete |
+| `AudioStudio.tsx` | Substitui os botões soltos por `<SuperAdminItemMenu>` (já tem toggle, falta delete confirmado e padronização) |
+| `AIMediaPicker` / `MediaLibraryPicker` | Adiciona menu nos cards de imagem/vídeo |
+| `TemplateInfoCard` (ads) | Já tem ações; padroniza com X de confirmação |
+| `FaqSection.tsx` | Cada FAQ ganha menu (toggle is_public) e X; lista também os FAQs públicos de outros consultores em aba "Globais" |
+| `AdminFaq.tsx` / `EmbeddingsControl` | Knowledge sections ganham toggle público/privado e X |
+| `voice templates` (se houver UI) | Mesmo menu |
 
-## 3. Como **outras empresas** fazem (TeamViewer, AnyDesk, Chrome Remote Desktop, Zoom)
+### 4. Confirmação de exclusão
 
-| Empresa | Captura | Controle | Por que funciona em 100% |
-|---|---|---|---|
-| **TeamViewer / AnyDesk** | Driver de tela em kernel | Driver de mouse/teclado em kernel (HID virtual) | Não dispara eventos no DOM — injeta no SO. Funciona em qualquer app, inclusive popups nativos. |
-| **Chrome Remote Desktop** | `getDisplayMedia` no host + Native Messaging | Extensão nativa + helper instalado | Mesma coisa: o helper local injeta no SO via APIs do Windows/Mac. |
-| **Zoom Remote Control** | Compartilhamento de tela do Zoom | Cliente nativo do Zoom recebe eventos | Idem. |
-| **Lovable (vocês hoje)** | `getDisplayMedia` (browser) | `dispatchEvent` no DOM via WebRTC DataChannel | **Limitação fundamental**: só funciona dentro da **mesma aba**, no DOM, em elementos same-origin. |
+Usar o `useConfirm()` já existente em `src/components/ui/confirm-dialog.tsx` com `tone: "danger"`. Mensagem padrão:
 
-### O que isso significa para vocês
-- Para **operar dentro do app** de vocês (consultor mexendo no próprio painel): a abordagem atual é a **correta e suficiente** — só precisa polir os 6 riscos acima.
-- Para **operar fora do app** (WhatsApp Web em outra aba, Portal igreen, Excel): **impossível sem extensão/nativo**. Se isso for requisito, o caminho é:
-  1. Extensão Chrome (já têm `extension/igreen-sync`) com permissão `debugger` → injeta eventos via CDP em qualquer aba.
-  2. Ou app desktop (Tauri/Electron) com `robotjs` / `nut.js` no consultor.
+> Apagar **{nome do item}**?
+> Esta ação é irreversível.
 
-Recomendação pragmática: ficar com a abordagem DOM (escopo realista) e deixar **muito explícito na UI** que "controle remoto funciona dentro do painel iGreen; em outras abas só visualização".
+## Detalhes técnicos
 
----
+- `useUserRole(authUserId).isSuperAdmin` controla a renderização do menu
+- Toggle público faz `UPDATE ... SET is_public = NOT is_public` + toast "🌎 Publicado" / "🔒 Despublicado"
+- Para `ad_templates` (que usa `status`), o toggle alterna `published ↔ archived`
+- Para `bot_flow_qa`, toggle só faz sentido em FAQs de fluxos do Super Admin (mostra mensagem de aviso em outros casos)
+- Realtime/refetch após cada ação para refletir na UI
 
-## 4. Análise rápida do código (pontos críticos encontrados)
+## Fora de escopo
 
-| Arquivo | Problema | Impacto |
-|---|---|---|
-| `actionHandler.ts` L307 | `key` usa `document.activeElement` sem refoco — perde tecla se foco mudou | Médio |
-| `actionHandler.ts` L37 | `elementFromPoint` único — não atravessa overlays transparentes | Médio |
-| `actionHandler.ts` (geral) | Sem ACK/retry, sem console.log estruturado | Diagnóstico difícil |
-| `SuperAdminRemoteSupport.tsx` L497 | `RemoteControlOverlay` só monta com `controlEnabled` — toggle apaga overlay sem aviso visual | Baixo |
-| `SuperAdminRemoteSupport.tsx` L760 | `toNorm` quebra antes do `loadedmetadata` do vídeo | **Alto** — clique cai fora nos primeiros segundos |
-| `screenShare.ts` L249 | `preferCurrentTab: true` é Chromium-only — Firefox/Safari já erram aqui | Médio |
-| `useRequesterSession.ts` | Não trata `track.onended` quando o consultor "para de compartilhar" pelo botão do navegador | Médio — fica fantasma "ativo" |
-| `RemoteSupportProvider.tsx` L51 | Botão de ajuda some quando há sessão — bom; mas não há indicador visual de "alguém está te controlando" | Privacidade/UX |
+- Não mexer no fluxo de suporte remoto desta vez
+- Não criar novas tabelas (só adicionar coluna em `bot_flow_qa`)
+- Não alterar lógica de fork de templates (já funciona)
 
----
+## Arquivos tocados
 
-## 5. Plano de correção proposto (curto, focado no que está doendo)
-
-### A. Mouse — destravar de verdade (alta prioridade)
-1. `toNorm` espera `videoWidth>0` (listener `loadedmetadata` em `videoRef`); enquanto não estiver pronto, mostra "Carregando vídeo…" sobre o overlay.
-2. `actionHandler.ts`: 
-   - `elementsFromPoint` (plural) com fallback — pula camadas com `pointer-events:none` reais.
-   - `key`: refoca `focusable(elAt(lastMouseX, lastMouseY))` antes de despachar.
-   - `<select>` nativo: se alvo for `HTMLSelectElement`, setar `value` + `dispatchEvent('change')`.
-3. Fila de comandos no operador com retry (até 3×, TTL 1s) quando DataChannel `connecting`.
-4. Console logs `[remote-support][cmd]` em cada `sendCmd` e cada `executeCommand` para diagnóstico do próximo caso.
-
-### B. Feedback visual (UX)
-5. Banner pequeno e persistente no consultor: "🔴 Suporte remoto controlando sua tela — pausar" (já existe `togglePause`; falta o botão flutuante).
-6. Aviso no operador quando o vídeo ainda está sem metadata.
-7. Toast curto "Controle ativo" ao abrir sessão (3s).
-
-### C. Editor de fluxos — fechar o que faltou do plano antigo
-8. Botão **"Re-clonar do público"** em `FluxoBuilder.tsx` (visível quando `sync_mode='public'` ou quando `flowHasBrokenRefs(steps) === true`).
-9. Banner amarelo no topo do editor: "Esta variante está espelhando o público — clique em Personalizar para editar".
-
-### D. Honestidade de escopo (decisão)
-10. Adicionar nota fixa no painel do operador: **"Controle remoto funciona apenas dentro do painel iGreen na aba compartilhada. Para WhatsApp Web, Portal ou outras abas, é só visualização."** — alinhamento de expectativa.
-
----
-
-## Arquivos que vou tocar
-
-- `src/features/remote-support/actionHandler.ts` (A2, A4)
-- `src/pages/SuperAdminRemoteSupport.tsx` (A1, A3, B2, B3, D)
-- `src/features/remote-support/RemoteSupportProvider.tsx` ou novo `RemoteControlIndicator.tsx` (B1)
-- `src/pages/FluxoBuilder.tsx` (C8, C9)
-
-Nada de banco. Tudo frontend e bem isolado. Posso começar?
+- `supabase/migrations/<novo>.sql`
+- `src/components/admin/SuperAdminItemMenu.tsx` (novo)
+- `src/components/whatsapp/TemplateListItem.tsx`
+- `src/components/admin/AudioStudio.tsx`
+- `src/components/admin/ads/TemplateInfoCard.tsx`
+- `src/components/admin/fluxo/FaqSection.tsx`
+- `src/pages/AdminFaq.tsx`
+- `src/components/admin/AIAgentTab/MediaColumn.tsx` (se for o picker de mídia)

@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   HelpCircle, Plus, Trash2, X, ChevronUp, ChevronDown,
-  Search, Sparkles, AlertTriangle, CheckCircle2, Mic, Loader2,
+  Search, Sparkles, AlertTriangle, CheckCircle2, Mic, Loader2, Globe2, Lock,
 } from "lucide-react";
+import { useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
 import { AudioRecorderInline } from "@/components/admin/AIAgentTab/AudioRecorderInline";
 import {
@@ -36,6 +37,7 @@ type QA = {
   intent_name: string;
   is_opening: boolean;
   is_closing: boolean;
+  is_public?: boolean;
   text_response: string | null;
   triggers: Trigger[];
   medias: Media[];
@@ -46,6 +48,8 @@ type LibraryAudio = { id: string; label: string; url: string | null };
 
 export default function FaqSection({ flowId }: { flowId: string }) {
   const confirm = useConfirm();
+  const [userId, setUserId] = useState<string | null>(null);
+  const { isSuperAdmin } = useUserRole(userId);
   const [qas, setQas] = useState<QA[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [availableVideos, setAvailableVideos] = useState<LibraryVideo[]>([]);
@@ -55,6 +59,8 @@ export default function FaqSection({ flowId }: { flowId: string }) {
   const [search, setSearch] = useState("");
   const [seeding, setSeeding] = useState(false);
   const [seedingPack, setSeedingPack] = useState(false);
+
+  useEffect(() => { supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null)); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,7 +74,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         .from("ai_media_library").select("id, label, url")
         .eq("kind", "audio").eq("active", true).not("url", "is", null)
         .order("created_at", { ascending: false }),
-      supabase.from("bot_flow_qa").select("*").eq("flow_id", flowId).order("position"),
+      supabase.from("bot_flow_qa").select("*").or(`flow_id.eq.${flowId},is_public.eq.true`).order("position"),
     ]);
     setSlots((slotsRow as Slot[]) || []);
     setAvailableVideos(((videoRows as LibraryVideo[]) || []).filter((v) => !!v.url));
@@ -378,6 +384,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         <div className="space-y-3">
           {filtered.map((qa) => {
             const realIdx = qas.findIndex((q) => q.id === qa.id);
+            const isOwned = qa.flow_id === flowId;
             return (
               <QACard
                 key={qa.id}
@@ -386,8 +393,10 @@ export default function FaqSection({ flowId }: { flowId: string }) {
                 availableVideos={availableVideos}
                 availableAudios={availableAudios}
                 triggerIndex={triggerIndex}
-                onMoveUp={realIdx > 0 ? () => moveQA(qa.id, -1) : undefined}
-                onMoveDown={realIdx < qas.length - 1 ? () => moveQA(qa.id, 1) : undefined}
+                readOnly={!isOwned && !isSuperAdmin}
+                isSuperAdmin={isSuperAdmin}
+                onMoveUp={isOwned && realIdx > 0 ? () => moveQA(qa.id, -1) : undefined}
+                onMoveDown={isOwned && realIdx < qas.length - 1 ? () => moveQA(qa.id, 1) : undefined}
                 onUpdate={(p) => updateQA(qa.id, p)}
                 onDelete={() => deleteQA(qa.id)}
                 onAddTrigger={(p) => addTrigger(qa, p)}
@@ -442,6 +451,8 @@ function QACard(props: {
   availableVideos: LibraryVideo[];
   availableAudios: LibraryAudio[];
   triggerIndex: Map<string, string[]>;
+  readOnly?: boolean;
+  isSuperAdmin?: boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onUpdate: (p: Partial<QA>) => void;
@@ -453,7 +464,7 @@ function QACard(props: {
   onRemoveMedia: (m: Media) => void;
   onAudioRecorded: (blob: Blob) => Promise<void>;
 }) {
-  const { qa, slots, availableVideos, availableAudios, triggerIndex } = props;
+  const { qa, slots, availableVideos, availableAudios, triggerIndex, readOnly, isSuperAdmin } = props;
   const [phraseInput, setPhraseInput] = useState("");
   const [name, setName] = useState(qa.intent_name);
   const [text, setText] = useState(qa.text_response ?? "");
@@ -498,7 +509,22 @@ function QACard(props: {
           )}
           {props.onMoveUp && <Button size="icon" variant="ghost" onClick={props.onMoveUp}><ChevronUp className="w-4 h-4" /></Button>}
           {props.onMoveDown && <Button size="icon" variant="ghost" onClick={props.onMoveDown}><ChevronDown className="w-4 h-4" /></Button>}
-          <Button size="icon" variant="ghost" onClick={props.onDelete}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+          {isSuperAdmin && (
+            <Button
+              size="icon"
+              variant="ghost"
+              title={qa.is_public ? "Tornar privado" : "Tornar público (todos os consultores veem)"}
+              onClick={() => props.onUpdate({ is_public: !qa.is_public })}
+            >
+              {qa.is_public ? <Globe2 className="w-4 h-4 text-emerald-500" /> : <Lock className="w-4 h-4 text-muted-foreground" />}
+            </Button>
+          )}
+          {qa.is_public && !isSuperAdmin && (
+            <Badge variant="secondary" className="gap-1"><Globe2 className="w-3 h-3" /> Público</Badge>
+          )}
+          {!readOnly && (
+            <Button size="icon" variant="ghost" onClick={props.onDelete}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+          )}
         </div>
       </div>
 
