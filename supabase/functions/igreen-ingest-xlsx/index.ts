@@ -262,6 +262,15 @@ Deno.serve(async (req) => {
         const ex = existingMap.get(String(r.phone_whatsapp));
         if (ex && ex.conversation_step && ex.conversation_step !== "complete") delete r.status;
       }
+      // Para NOVOS clientes: parquear em "espera" + calcular pending_stage (popup)
+      const computePending = (rec: Record<string, unknown>): string => {
+        const andamento = String(rec.andamento_igreen || "").toLowerCase();
+        const status = String(rec.status || "").toLowerCase();
+        if (/reprov|cancel/.test(andamento) || ["rejected", "cancelled", "canceled"].includes(status)) return "reprovado";
+        if (andamento.includes("devolutiva") || status === "devolutiva") return "devolutiva";
+        return "aprovado";
+      };
+      const errorsDetail: Array<{ phone: string; codigo: string | null; motivo: string }> = [];
       let upserted = 0, errors = 0;
       const lastError: { msg?: string } = {};
       // UPDATE existentes
