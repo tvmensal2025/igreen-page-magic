@@ -446,3 +446,25 @@ function Stat({ icon, label, value, highlight, tooltip }: { icon: React.ReactNod
     </div>
   );
 }
+
+function CreativeThumb({ creative }: { creative?: Creative }) {
+  const c = creative || { kind: "none", url: null };
+  if (c.kind === "none" || !c.url) {
+    return (
+      <div className="w-16 h-16 shrink-0 rounded-lg border border-dashed border-border bg-secondary/40 flex flex-col items-center justify-center text-[9px] text-muted-foreground gap-0.5">
+        <ImageIcon className="w-4 h-4" />
+        Sem mídia
+      </div>
+    );
+  }
+  return (
+    <div className="relative w-16 h-16 shrink-0 rounded-lg overflow-hidden border border-border bg-black/40">
+      <img src={c.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+      {c.kind === "video" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/35">
+          <PlayCircle className="w-7 h-7 text-white drop-shadow" />
+        </div>
+      )}
+    </div>
+  );
+}
