@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Copy, FileText, Loader2, Lock, Unlock } from "lucide-react";
+import { Download, Copy, FileText, Loader2 } from "lucide-react";
 
 type Format = "a4" | "banner";
 
@@ -17,6 +16,10 @@ interface PanfletoModalProps {
   nomeConsultor: string;
   telefoneConsultor?: string;
   igreenId?: string;
+  /** URL alvo do QR. Se ausente, usa o redirect padrão do panfleto. */
+  shareUrl?: string;
+  /** Título customizado do modal (ex.: "QR Code — Link pessoal"). */
+  title?: string;
 }
 
 const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
@@ -27,7 +30,7 @@ const A4_H = 1280;
 const BANNER_W = 1008;
 const BANNER_H = 1808;
 
-// ============ Templates (defaults em % do canvas) ============
+// ============ Templates (defaults em % do canvas — TRAVADOS) ============
 type TemplateCfg = {
   bg: string;
   canvasW: number;
@@ -126,86 +129,23 @@ export function PanfletoModal({
   nomeConsultor,
   telefoneConsultor = "",
   igreenId = "",
+  shareUrl,
+  title,
 }: PanfletoModalProps) {
   const [format, setFormat] = useState<Format>("a4");
   const template = TEMPLATES[format];
 
-  const [qrX, setQrX] = useState(template.qrX);
-  const [qrY, setQrY] = useState(template.qrY);
-  const [qrSize, setQrSize] = useState(template.qrSize);
-  const [footerY, setFooterY] = useState(template.footerY);
-  const [unlockedMap, setUnlockedMap] = useState<Record<Format, boolean>>({ a4: false, banner: false });
-  const locked = !unlockedMap[format];
-
-  const draggingRef = useRef<null | "qr" | "footer">(null);
-  const previewRef = useRef<HTMLDivElement>(null);
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  const redirectUrl = `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
+  const redirectUrl =
+    shareUrl ?? `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
 
-  // Reset posições ao abrir ou trocar formato
-  useEffect(() => {
-    if (!open) return;
-    const t = TEMPLATES[format];
-    setQrX(t.qrX);
-    setQrY(t.qrY);
-    setQrSize(t.qrSize);
-    setFooterY(t.footerY);
-  }, [open, format]);
-
-  const effQrX = locked ? template.qrX : qrX;
-  const effQrY = locked ? template.qrY : qrY;
-  const effQrSize = locked ? template.qrSize : qrSize;
-  const effFooterY = locked ? template.footerY : footerY;
-
-  const setLocked = (v: boolean) => {
-    setUnlockedMap((m) => ({ ...m, [format]: !v }));
-    if (v) {
-      setQrX(template.qrX);
-      setQrY(template.qrY);
-      setQrSize(template.qrSize);
-      setFooterY(template.footerY);
-    }
-  };
-
-  const updatePosFromClient = useCallback(
-    (clientX: number, clientY: number, what: "qr" | "footer") => {
-      const el = previewRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const yPct = ((clientY - rect.top) / rect.height) * 100;
-      const xPct = ((clientX - rect.left) / rect.width) * 100;
-      const cy = Math.max(0, Math.min(100, yPct));
-      const cx = Math.max(0, Math.min(100, xPct));
-      if (what === "qr") {
-        setQrX(cx);
-        setQrY(cy);
-      } else {
-        setFooterY(cy);
-      }
-    },
-    [],
-  );
-
-  const handlePointerDown =
-    (what: "qr" | "footer") => (e: React.PointerEvent<HTMLDivElement>) => {
-      if (locked) return;
-      e.stopPropagation();
-      draggingRef.current = what;
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-      updatePosFromClient(e.clientX, e.clientY, what);
-    };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingRef.current) return;
-    updatePosFromClient(e.clientX, e.clientY, draggingRef.current);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    draggingRef.current = null;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-  };
+  // Posições TRAVADAS nos defaults do template
+  const effQrX = template.qrX;
+  const effQrY = template.qrY;
+  const effQrSize = template.qrSize;
+  const effFooterY = template.footerY;
 
   const previewAspect = template.canvasH / template.canvasW;
   const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
@@ -236,11 +176,9 @@ export function PanfletoModal({
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
-    // Fundo verde caso a arte não cubra
     ctx.fillStyle = "#0a3d2c";
     ctx.fillRect(0, 0, CW, CH);
 
-    // Background
     try {
       const bg = await loadImage(template.bg);
       drawImageCover(ctx, bg, 0, 0, CW, CH);
@@ -248,7 +186,6 @@ export function PanfletoModal({
       console.warn("[panfleto] bg load failed", e);
     }
 
-    // QR
     const svgData = new XMLSerializer().serializeToString(svgEl);
     const svgUrl = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
     await new Promise<void>((resolve) => {
@@ -260,7 +197,6 @@ export function PanfletoModal({
         const dx = cx - qrPx / 2;
         const dy = cy - qrPx / 2;
         const pad = qrPx * 0.06;
-        // Borda dourada
         ctx.save();
         ctx.shadowColor = "rgba(0,0,0,0.35)";
         ctx.shadowBlur = 16;
@@ -269,7 +205,6 @@ export function PanfletoModal({
         roundRect(ctx, dx - pad - 4, dy - pad - 4, qrPx + pad * 2 + 8, qrPx + pad * 2 + 8, qrPx * 0.05);
         ctx.fill();
         ctx.restore();
-        // Cartão branco
         ctx.fillStyle = "#ffffff";
         roundRect(ctx, dx - pad, dy - pad, qrPx + pad * 2, qrPx + pad * 2, qrPx * 0.04);
         ctx.fill();
@@ -280,7 +215,6 @@ export function PanfletoModal({
       img.src = svgUrl;
     });
 
-    // Faixa
     const bandHeight = CH * (template.footerH / 100);
     const bandY = (effFooterY / 100) * CH - bandHeight / 2;
     ctx.fillStyle = "#0d3b1f";
@@ -355,7 +289,7 @@ export function PanfletoModal({
 
   const copyLink = () => {
     navigator.clipboard.writeText(redirectUrl);
-    toast({ title: "✅ Link do redirect copiado!" });
+    toast({ title: "✅ Link copiado!" });
   };
 
   return (
@@ -363,7 +297,7 @@ export function PanfletoModal({
       <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <FileText className="w-5 h-5 text-primary" /> Arte Mutirão Lei 14.300
+            <FileText className="w-5 h-5 text-primary" /> {title ?? "Arte Mutirão Lei 14.300"}
           </DialogTitle>
         </DialogHeader>
 
@@ -371,9 +305,6 @@ export function PanfletoModal({
           {/* Preview */}
           <div className="flex flex-col items-center gap-3">
             <div
-              ref={previewRef}
-              role="application"
-              aria-label="Editor do panfleto. Destrave para arrastar o QR e a faixa."
               className="relative overflow-hidden rounded-xl border bg-emerald-900 shadow-sm"
               style={{
                 width: PREVIEW_W,
@@ -383,15 +314,10 @@ export function PanfletoModal({
                 backgroundRepeat: "no-repeat",
                 backgroundPosition: "center",
               }}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
             >
-              {/* QR draggable */}
               <div
                 ref={qrSvgWrapperRef}
-                onPointerDown={handlePointerDown("qr")}
-                className={`absolute select-none touch-none bg-white rounded-md shadow-md ring-2 ring-[#d4a017] ${locked ? "cursor-not-allowed" : "cursor-move"}`}
+                className="absolute select-none bg-white rounded-md shadow-md ring-2 ring-[#d4a017]"
                 style={{
                   left: `calc(${effQrX}% - ${qrCardPxPreview / 2}px)`,
                   top: `calc(${effQrY}% - ${qrCardPxPreview / 2}px)`,
@@ -408,10 +334,8 @@ export function PanfletoModal({
                 />
               </div>
 
-              {/* Footer band draggable */}
               <div
-                onPointerDown={handlePointerDown("footer")}
-                className={`absolute left-0 right-0 select-none touch-none flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
+                className="absolute left-0 right-0 select-none flex items-center justify-between leading-tight px-2"
                 style={{
                   top: `calc(${effFooterY}% - ${footerHPreview / 2}px)`,
                   height: footerHPreview,
@@ -428,9 +352,7 @@ export function PanfletoModal({
               </div>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px]">
-              {locked
-                ? "Layout travado — bate 1:1 com a impressão."
-                : "Arraste o QR ou a faixa. Use os sliders para ajuste fino."}
+              Layout travado — bate 1:1 com a impressão.
             </p>
           </div>
 
@@ -453,54 +375,13 @@ export function PanfletoModal({
                   variant={format === "banner" ? "default" : "outline"}
                   onClick={() => setFormat("banner")}
                 >
-                  Banner 504×904mm
+                  Banner 504×940mm
                 </Button>
               </div>
-              <button
-                type="button"
-                onClick={() => setLocked(!locked)}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 hover:bg-muted border border-border rounded-md px-2 py-1.5 mt-1 transition-colors w-full text-left"
-              >
-                {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5 text-emerald-500" />}
-                {locked
-                  ? "Layout travado — clique para destravar e ajustar"
-                  : "Layout destravado — clique para travar de novo"}
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm">Posição do QR (vertical)</Label>
-                <span className="text-xs text-muted-foreground tabular-nums">{Math.round(effQrY)}%</span>
-              </div>
-              <Slider value={[effQrY]} onValueChange={([v]) => setQrY(v)} min={0} max={100} step={0.5} disabled={locked} />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm">Posição do QR (horizontal)</Label>
-                <span className="text-xs text-muted-foreground tabular-nums">{Math.round(effQrX)}%</span>
-              </div>
-              <Slider value={[effQrX]} onValueChange={([v]) => setQrX(v)} min={0} max={100} step={0.5} disabled={locked} />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm">Tamanho do QR</Label>
-                <span className="text-xs text-muted-foreground tabular-nums">{Math.round(effQrSize)}%</span>
-              </div>
-              <Slider value={[effQrSize]} onValueChange={([v]) => setQrSize(v)} min={8} max={45} step={0.5} disabled={locked} />
-            </div>
-
-            <div className="space-y-1.5 border-t pt-3">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm">Posição da faixa (vertical)</Label>
-                <span className="text-xs text-muted-foreground tabular-nums">{Math.round(effFooterY)}%</span>
-              </div>
-              <Slider value={[effFooterY]} onValueChange={([v]) => setFooterY(v)} min={0} max={100} step={0.5} disabled={locked} />
             </div>
 
             <div className="text-xs text-muted-foreground space-y-1 mt-1">
+              <p className="opacity-80">Link do QR:</p>
               <p className="break-all opacity-70">{redirectUrl}</p>
             </div>
           </div>

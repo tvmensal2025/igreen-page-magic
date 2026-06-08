@@ -101,7 +101,7 @@ const AdminContent = () => {
       window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
     }
   }, []);
-  const [qrModal, setQrModal] = useState<{ url: string; label: string } | null>(null);
+  const [qrPanfleto, setQrPanfleto] = useState<{ url: string; label: string } | null>(null);
   const [panfletoOpen, setPanfletoOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -321,7 +321,7 @@ const AdminContent = () => {
               slug={slug}
               baseUrl={baseUrl}
               onCopy={copyLink}
-              onQrOpen={(url, label) => setQrModal({ url, label })}
+              onQrOpen={(url, label) => setQrPanfleto({ url, label })}
               onPanfletoOpen={() => setPanfletoOpen(true)}
             />
           )}
@@ -425,49 +425,20 @@ const AdminContent = () => {
         </SheetContent>
       </Sheet>
 
-      {/* QR Code Modal */}
-      {qrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setQrModal(null)}>
-          <div className="bg-card rounded-2xl border border-border p-6 sm:p-8 max-w-sm w-full mx-4 space-y-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="font-heading font-bold text-foreground text-lg">QR Code</h3>
-              <button onClick={() => setQrModal(null)} className="text-muted-foreground hover:text-foreground transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-sm text-muted-foreground">{qrModal.label}</p>
-            <div className="flex justify-center bg-white rounded-xl p-6">
-              <Suspense fallback={<div className="w-[200px] h-[200px] flex items-center justify-center"><div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" /></div>}>
-                <QRCodeSVG id="qr-canvas" value={qrModal.url} size={200} level="H" includeMargin={false} />
-              </Suspense>
-            </div>
-            <p className="text-xs text-muted-foreground text-center break-all">{qrModal.url}</p>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1 gap-2 rounded-xl" onClick={() => copyLink(qrModal.url)}>
-                <Copy className="w-4 h-4" /> Copiar link
-              </Button>
-              <Button className="flex-1 gap-2 rounded-xl" style={{ background: "var(--gradient-green)" }} onClick={() => {
-                const svg = document.getElementById("qr-canvas");
-                if (!svg) return;
-                const svgData = new XMLSerializer().serializeToString(svg);
-                const canvas = document.createElement("canvas");
-                canvas.width = 600; canvas.height = 600;
-                const ctx = canvas.getContext("2d")!;
-                ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, 600, 600);
-                const img = new Image();
-                img.onload = () => {
-                  ctx.drawImage(img, 50, 50, 500, 500);
-                  const a = document.createElement("a");
-                  a.download = `qrcode-${qrModal.label.toLowerCase().replace(/[^a-z0-9]/g, "-")}.png`;
-                  a.href = canvas.toDataURL("image/png"); a.click();
-                };
-                img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
-              }}>
-                <Download className="w-4 h-4" /> Baixar PNG
-              </Button>
-            </div>
-          </div>
-        </div>
+      {/* QR Code Modal (link pessoal) — usa o mesmo PanfletoModal */}
+      {qrPanfleto && (
+        <Suspense fallback={null}>
+          <PanfletoModal
+            open={!!qrPanfleto}
+            onClose={() => setQrPanfleto(null)}
+            licenca={slug}
+            nomeConsultor={form.name || ""}
+            telefoneConsultor={form.phone || ""}
+            igreenId={form.igreen_id || ""}
+            shareUrl={qrPanfleto.url}
+            title={`QR Code — ${qrPanfleto.label}`}
+          />
+        </Suspense>
       )}
 
       {/* AI Chat Panel */}
