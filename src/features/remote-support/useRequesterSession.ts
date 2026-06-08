@@ -140,6 +140,7 @@ export function useRequesterSession(userId: string | null | undefined) {
         },
       );
       peerRef.current = peer;
+      setActivePeerForQuality(peer.pc);
       await logAction(session.id, "requester", "screen_started");
       toast.success("Compartilhando tela com o suporte");
     } catch (e: any) {
@@ -150,5 +151,5 @@ export function useRequesterSession(userId: string | null | undefined) {
     }
   }, [session, sharing]);
 
-  return { session, code, codeExpiresAt, sharing, request, end, startScreenShare };
+  return { session, code, codeExpiresAt, sharing, paused, togglePause, request, end, startScreenShare };
 }
