@@ -1841,6 +1841,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       if (isFirstContact) {
         const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
+        const { resolveMediaOwnerId } = await import("../../_shared/resolve-flow.ts");
+        const mediaOwnerId = await resolveMediaOwnerId(
+          supabase,
+          customer.consultant_id,
+          (customer as any)?.flow_variant || "A",
+        );
 
         if (activeFlow) {
           const { data: openingQa } = await supabase
