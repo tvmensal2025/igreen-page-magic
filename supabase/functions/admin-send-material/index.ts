@@ -7,7 +7,7 @@ interface Body {
   phone: string;
   mediaUrl: string;
   caption?: string;
-  mediatype?: "video" | "image" | "document";
+  mediatype?: "video" | "image" | "document" | "audio";
 }
 
 Deno.serve(async (req) => {
