@@ -12,13 +12,14 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw,
+  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import PendingApprovalDialog from "./PendingApprovalDialog";
+import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
 
 type Stage = "em_analise" | "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
 
@@ -39,15 +40,15 @@ interface PosVendaCustomer {
   pending_snoozed_until: string | null;
 }
 
-const STAGES: { key: Stage; label: string; color: string }[] = [
-  { key: "em_analise", label: "Em análise", color: "bg-slate-500/10 text-slate-300 border-slate-500/20" },
-  { key: "espera",    label: "Em Espera", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  { key: "aprovado",  label: "Aprovado",  color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
-  { key: "reprovado", label: "Reprovado", color: "bg-red-500/10 text-red-500 border-red-500/20" },
-  { key: "d30",       label: "30 dias",   color: "bg-sky-500/10 text-sky-500 border-sky-500/20" },
-  { key: "d60",       label: "60 dias",   color: "bg-violet-500/10 text-violet-500 border-violet-500/20" },
-  { key: "d90",       label: "90 dias",   color: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
-  { key: "d120",      label: "120 dias",  color: "bg-rose-500/10 text-rose-500 border-rose-500/20" },
+const STAGES: { key: Stage; label: string; badge: string; bar: string; dot: string }[] = [
+  { key: "em_analise", label: "Em análise", badge: "bg-amber-500/15 text-amber-300 border-amber-500/40",   bar: "bg-amber-500",   dot: "bg-amber-400" },
+  { key: "espera",     label: "Em Espera",  badge: "bg-sky-500/15 text-sky-300 border-sky-500/40",         bar: "bg-sky-500",     dot: "bg-sky-400" },
+  { key: "aprovado",   label: "Aprovado",   badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/50", bar: "bg-emerald-500", dot: "bg-emerald-400" },
+  { key: "reprovado",  label: "Reprovado",  badge: "bg-rose-500/20 text-rose-300 border-rose-500/50",      bar: "bg-rose-500",    dot: "bg-rose-400" },
+  { key: "d30",        label: "30 dias",    badge: "bg-lime-500/15 text-lime-300 border-lime-500/40",      bar: "bg-lime-500",    dot: "bg-lime-400" },
+  { key: "d60",        label: "60 dias",    badge: "bg-teal-500/15 text-teal-300 border-teal-500/40",      bar: "bg-teal-500",    dot: "bg-teal-400" },
+  { key: "d90",        label: "90 dias",    badge: "bg-cyan-500/15 text-cyan-300 border-cyan-500/40",      bar: "bg-cyan-500",    dot: "bg-cyan-400" },
+  { key: "d120",       label: "120 dias",   badge: "bg-indigo-500/15 text-indigo-300 border-indigo-500/40", bar: "bg-indigo-500",  dot: "bg-indigo-400" },
 ];
 
 function daysSince(iso: string | null): number | null {
@@ -80,6 +81,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
   const [rejectReason, setRejectReason] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
+  const [viewCustomerId, setViewCustomerId] = useState<string | null>(null);
   // "mine" = registered_by_igreen_id = meu | "assigned" | "all" | <igreen_id específico>
   const [ownerFilter, setOwnerFilter] = useState<string>("mine");
 
@@ -198,6 +200,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
   return (
     <div className="space-y-4">
       <PendingApprovalDialog consultantId={consultantId} onResolved={load} />
+      <CustomerQuickViewDialog customerId={viewCustomerId} onClose={() => setViewCustomerId(null)} />
 
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <Input
@@ -244,13 +247,14 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                 else moveTo(c, stage.key);
                 setDragId(null);
               }}
-              className="bg-muted/30 rounded-xl border border-border/40 flex flex-col min-h-[300px]"
+              className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] overflow-hidden shadow-sm"
             >
-              <div className="px-3 py-2.5 border-b border-border/30 flex items-center justify-between">
-                <Badge variant="secondary" className={`text-[10px] font-medium ${stage.color} border`}>
+              <div className={`h-1 w-full ${stage.bar}`} />
+              <div className="px-3 py-2.5 border-b border-border/40 flex items-center justify-between">
+                <Badge variant="secondary" className={`text-[10px] font-semibold ${stage.badge} border`}>
                   {stage.label}
                 </Badge>
-                <span className="text-[11px] font-semibold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">
+                <span className="text-[12px] font-bold text-foreground bg-muted/60 px-2 py-0.5 rounded-full min-w-[24px] text-center">
                   {grouped[stage.key].length}
                 </span>
               </div>
@@ -264,41 +268,53 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                         key={c.id}
                         draggable={isOwner || c.assigned_consultant_id === consultantId}
                         onDragStart={() => setDragId(c.id)}
-                        className="bg-background border border-border/40 rounded-lg p-2.5 space-y-1.5 cursor-grab active:cursor-grabbing hover:border-primary/30 transition-colors"
+                        className="relative bg-background border border-border/50 rounded-lg p-2.5 pl-3 space-y-1.5 cursor-grab active:cursor-grabbing hover:border-primary/40 hover:shadow-md transition-all"
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r ${stage.dot}`} />
+                        <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold truncate">{c.name || "Sem nome"}</p>
+                            <p className="text-xs font-semibold truncate text-foreground">{c.name || "Sem nome"}</p>
                             <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
                               <Phone className="w-2.5 h-2.5" />
                               {c.phone_whatsapp}
                             </p>
                           </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0">
-                                <MoreHorizontal className="w-3 h-3" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => moveTo(c, "aprovado")}>
-                                <CheckCircle2 className="w-3.5 h-3.5 mr-2" /> Marcar Aprovado
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => { setRejectDialog(c); setRejectReason(c.pos_venda_reason || ""); }}>
-                                <XCircle className="w-3.5 h-3.5 mr-2" /> Marcar Reprovado
-                              </DropdownMenuItem>
-                              {c.pos_venda_manual && (
-                                <DropdownMenuItem onClick={() => resetAuto(c)}>
-                                  <RotateCcw className="w-3.5 h-3.5 mr-2" /> Voltar ao automático
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-primary"
+                              title="Ver detalhes do cliente"
+                              onClick={(e) => { e.stopPropagation(); setViewCustomerId(c.id); }}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6">
+                                  <MoreHorizontal className="w-3 h-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => moveTo(c, "aprovado")}>
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-2" /> Marcar Aprovado
                                 </DropdownMenuItem>
-                              )}
-                              {isOwner && (
-                                <DropdownMenuItem onClick={() => { setAssignDialog(c); setAssignTo(c.assigned_consultant_id || ""); }}>
-                                  <UserPlus className="w-3.5 h-3.5 mr-2" /> Atribuir consultor
+                                <DropdownMenuItem onClick={() => { setRejectDialog(c); setRejectReason(c.pos_venda_reason || ""); }}>
+                                  <XCircle className="w-3.5 h-3.5 mr-2" /> Marcar Reprovado
                                 </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                {c.pos_venda_manual && (
+                                  <DropdownMenuItem onClick={() => resetAuto(c)}>
+                                    <RotateCcw className="w-3.5 h-3.5 mr-2" /> Voltar ao automático
+                                  </DropdownMenuItem>
+                                )}
+                                {isOwner && (
+                                  <DropdownMenuItem onClick={() => { setAssignDialog(c); setAssignTo(c.assigned_consultant_id || ""); }}>
+                                    <UserPlus className="w-3.5 h-3.5 mr-2" /> Atribuir consultor
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                         {c.electricity_bill_value != null && (
                           <p className="text-[10px] text-muted-foreground">
