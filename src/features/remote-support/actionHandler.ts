@@ -44,9 +44,24 @@ function dispatchMouse(type: string, el: Element, x: number, y: number, button =
   const ev = new MouseEvent(type, {
     bubbles: true, cancelable: true, view: window,
     clientX: x, clientY: y, screenX: x, screenY: y,
-    button, buttons: type === "mouseup" ? 0 : 1,
+    button, buttons: type === "mouseup" || type === "click" ? 0 : 1,
   });
   el.dispatchEvent(ev);
+}
+
+/** Dispara PointerEvent quando suportado — essencial para Radix/shadcn (Select, Dropdown, Dialog, Slider…). */
+function dispatchPointer(type: string, el: Element, x: number, y: number, button = 0, isDown = false) {
+  if (typeof PointerEvent === "undefined") return;
+  try {
+    const ev = new PointerEvent(type, {
+      bubbles: true, cancelable: true, view: window,
+      clientX: x, clientY: y, screenX: x, screenY: y,
+      button, buttons: isDown ? 1 : 0,
+      pointerId: 1, pointerType: "mouse", isPrimary: true,
+      width: 1, height: 1, pressure: isDown ? 0.5 : 0,
+    });
+    el.dispatchEvent(ev);
+  } catch { /* fallback silencioso */ }
 }
 
 function focusable(el: Element | null): HTMLElement | null {
@@ -163,7 +178,10 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
       case "mouseMove": {
         const { x, y } = toViewportXY(cmd);
         const el = elAt(x, y);
-        if (el) dispatchMouse("mousemove", el, x, y, cmd.button ?? 0);
+        if (el) {
+          dispatchPointer("pointermove", el, x, y, cmd.button ?? 0, false);
+          dispatchMouse("mousemove", el, x, y, cmd.button ?? 0);
+        }
         return { id: cmd.id, ok: true };
       }
 
@@ -171,6 +189,7 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         const { x, y } = toViewportXY(cmd);
         const el = elAt(x, y);
         if (!el) return { id: cmd.id, ok: false, error: "no element" };
+        dispatchPointer("pointerdown", el, x, y, cmd.button ?? 0, true);
         dispatchMouse("mousedown", el, x, y, cmd.button ?? 0);
         return { id: cmd.id, ok: true };
       }
@@ -178,6 +197,7 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         const { x, y } = toViewportXY(cmd);
         const el = elAt(x, y);
         if (!el) return { id: cmd.id, ok: false, error: "no element" };
+        dispatchPointer("pointerup", el, x, y, cmd.button ?? 0, false);
         dispatchMouse("mouseup", el, x, y, cmd.button ?? 0);
         return { id: cmd.id, ok: true };
       }
@@ -186,13 +206,28 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         const { x, y } = toViewportXY(cmd);
         const el = elAt(x, y);
         if (!el) return { id: cmd.id, ok: false, error: "no element" };
-        const focusEl = focusable(el);
-        focusEl?.focus?.();
-        dispatchMouse("mousedown", el, x, y, cmd.button ?? 0);
-        dispatchMouse("mouseup", el, x, y, cmd.button ?? 0);
-        dispatchMouse("click", el, x, y, cmd.button ?? 0);
-        // fallback para click "real" (cobre handlers React/synthetic)
-        if (el instanceof HTMLElement) el.click();
+        const button = cmd.button ?? 0;
+        // foca apenas se for campo editável (evita roubar foco de triggers Radix)
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable) {
+          (el as HTMLElement).focus?.();
+        }
+        // sequência completa de pointer + mouse + click
+        dispatchPointer("pointerover", el, x, y, button, false);
+        dispatchPointer("pointerenter", el, x, y, button, false);
+        dispatchPointer("pointerdown", el, x, y, button, true);
+        dispatchMouse("mousedown", el, x, y, button);
+        dispatchPointer("pointerup", el, x, y, button, false);
+        dispatchMouse("mouseup", el, x, y, button);
+        // dispatcha um único click sintético — sem el.click() duplicado
+        const clickEv = new MouseEvent("click", {
+          bubbles: true, cancelable: true, view: window,
+          clientX: x, clientY: y, screenX: x, screenY: y, button,
+        });
+        const notCancelled = el.dispatchEvent(clickEv);
+        // fallback apenas para <a>/<button> nativos cuja navegação só ocorre via .click()
+        if (notCancelled && (el instanceof HTMLAnchorElement || el instanceof HTMLButtonElement)) {
+          try { (el as HTMLElement).click(); } catch {}
+        }
         return { id: cmd.id, ok: true };
       }
 
@@ -200,9 +235,18 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         const { x, y } = toViewportXY(cmd);
         const el = elAt(x, y);
         if (!el) return { id: cmd.id, ok: false, error: "no element" };
-        dispatchMouse("click", el, x, y);
-        dispatchMouse("click", el, x, y);
-        dispatchMouse("dblclick", el, x, y);
+        const button = cmd.button ?? 0;
+        dispatchPointer("pointerdown", el, x, y, button, true);
+        dispatchMouse("mousedown", el, x, y, button);
+        dispatchPointer("pointerup", el, x, y, button, false);
+        dispatchMouse("mouseup", el, x, y, button);
+        dispatchMouse("click", el, x, y, button);
+        dispatchPointer("pointerdown", el, x, y, button, true);
+        dispatchMouse("mousedown", el, x, y, button);
+        dispatchPointer("pointerup", el, x, y, button, false);
+        dispatchMouse("mouseup", el, x, y, button);
+        dispatchMouse("click", el, x, y, button);
+        dispatchMouse("dblclick", el, x, y, button);
         return { id: cmd.id, ok: true };
       }
 
@@ -210,9 +254,11 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         const { x, y } = toViewportXY(cmd);
         const el = elAt(x, y);
         if (!el) return { id: cmd.id, ok: false, error: "no element" };
+        dispatchPointer("pointerdown", el, x, y, 2, true);
         el.dispatchEvent(new MouseEvent("contextmenu", {
           bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2,
         }));
+        dispatchPointer("pointerup", el, x, y, 2, false);
         return { id: cmd.id, ok: true };
       }
 

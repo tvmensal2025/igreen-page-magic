@@ -627,7 +627,7 @@ function PlayerToolbar(props: {
 
   return (
     <div
-      className={`absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-black/75 backdrop-blur text-white text-xs px-2 py-1.5 rounded-lg shadow-lg transition-opacity ${visible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      className={`absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 bg-black/75 backdrop-blur text-white text-xs px-2 py-1.5 rounded-lg shadow-lg transition-opacity ${visible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
     >
       <button
         onClick={onToggleControl}
@@ -787,18 +787,58 @@ function RemoteControlOverlay({
     });
   };
 
+  // Drag detection — só promove a mouseDown quando há movimento real após pressionar.
+  const downInfo = useRef<{ x: number; y: number; button: number; promoted: boolean } | null>(null);
+  const DRAG_THRESHOLD = 0.004; // ~4px em 1000px
+
   const onMove = (e: React.PointerEvent) => {
     const p = toNorm(e); if (!p) return;
     moveCursor(p.localX, p.localY);
+    if (cursorRef.current) cursorRef.current.style.opacity = "1";
+    // Se há um botão pressionado e o movimento ultrapassou o limite, promove para drag.
+    const d = downInfo.current;
+    if (d && !d.promoted) {
+      const dx = p.x - d.x, dy = p.y - d.y;
+      if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+        d.promoted = true;
+        sendCmd({ kind: "mouseDown", x: d.x, y: d.y, button: d.button });
+      }
+    }
     pendingMove.current = { x: p.x, y: p.y };
     schedule();
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    const p = toNorm(e); if (!p) return;
+    downInfo.current = { x: p.x, y: p.y, button: e.button, promoted: false };
+    overlayRef.current?.focus();
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    const p = toNorm(e); if (!p) return;
+    const d = downInfo.current;
+    downInfo.current = null;
+    if (d?.promoted) {
+      // Foi drag — fecha com mouseUp; click nativo será suprimido pelo browser.
+      sendCmd({ kind: "mouseUp", x: p.x, y: p.y, button: e.button });
+    }
+    // Caso contrário, esperamos o evento onClick → mouseClick (self-contained).
+  };
+
+  const onPointerLeave = () => {
+    if (cursorRef.current) cursorRef.current.style.opacity = "0";
+    // Se tinha drag em andamento, finaliza-o no último ponto conhecido.
+    const d = downInfo.current;
+    if (d?.promoted) {
+      sendCmd({ kind: "mouseUp", x: d.x, y: d.y, button: d.button });
+    }
+    downInfo.current = null;
   };
 
   const onClick = (e: React.MouseEvent) => {
     const p = toNorm(e); if (!p) return;
     flash(p.localX, p.localY);
     sendCmd({ kind: "mouseClick", x: p.x, y: p.y, button: e.button });
-    overlayRef.current?.focus();
   };
 
   const onDblClick = (e: React.MouseEvent) => {
@@ -841,8 +881,11 @@ function RemoteControlOverlay({
       <div
         ref={overlayRef}
         tabIndex={0}
-        className="absolute inset-0 cursor-crosshair outline-none"
+        className="absolute inset-0 z-10 cursor-crosshair outline-none touch-none"
         onPointerMove={onMove}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerLeave}
         onClick={onClick}
         onDoubleClick={onDblClick}
         onContextMenu={onContextMenu}
@@ -852,15 +895,15 @@ function RemoteControlOverlay({
       {/* Cursor virtual */}
       <div
         ref={cursorRef}
-        className="absolute top-0 left-0 pointer-events-none z-10"
-        style={{ willChange: "transform" }}
+        className="absolute top-0 left-0 pointer-events-none z-20 transition-opacity"
+        style={{ willChange: "transform, opacity", opacity: 0 }}
       >
         <div className="w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-white shadow-md" />
       </div>
       {/* Flash de clique */}
       <div
         ref={flashRef}
-        className="absolute top-0 left-0 pointer-events-none w-7 h-7 rounded-full bg-primary/40 ring-2 ring-primary z-10"
+        className="absolute top-0 left-0 pointer-events-none w-7 h-7 rounded-full bg-primary/40 ring-2 ring-primary z-20"
         style={{ opacity: 0, willChange: "transform, opacity" }}
       />
     </>

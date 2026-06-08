@@ -1,63 +1,59 @@
-# Painel de Suporte Remoto — Tela cheia e melhorias
+## Auditoria do clique no suporte remoto
 
-Foco: deixar o painel do operador mais rápido, profissional e com modo tela cheia para você operar sem distração.
+### Causa raiz principal — cliques não funcionam em componentes Radix/shadcn
 
-## 1. Modo tela cheia (Fullscreen real)
-- Botão "Tela cheia" no topo do vídeo usando a Fullscreen API (`requestFullscreen` no container do vídeo + overlay de controle).
-- Atalho **F11** local (capturado só no painel) e **ESC** para sair.
-- Ao entrar em fullscreen: esconder cabeçalho/sidebar do Admin, vídeo ocupa 100% da tela, overlay de controle remoto continua ativo por cima.
-- Layout cinema: fundo preto, vídeo centralizado com `object-contain`, barra flutuante de ações no rodapé que some após 3s sem movimento do mouse (estilo player).
+No lado do operador, o overlay (`RemoteControlOverlay` em `src/pages/SuperAdminRemoteSupport.tsx:721`) já captura `pointer/click/wheel` e envia comandos `mouseClick / mouseMove / mouseDblClick` para o consultor pelo DataChannel.
 
-## 2. Barra de ações profissional (flutuante)
-Substitui os botões soltos atuais. Agrupa em uma toolbar única no topo/rodapé do vídeo:
-- **Controle ATIVO / Visualizar** (toggle existente, com indicador colorido).
-- **Tela cheia / Sair**.
-- **Qualidade** (Auto / Alta / Média / Baixa) — ajusta `frameRate` e `scaleResolutionDownBy` do sender via `RTCRtpSender.setParameters()` sem reconectar.
-- **Mudo do consultor** (apenas visual no banner — o consultor mantém controle real).
-- **Tirar screenshot** — captura o frame atual do vídeo em PNG e baixa.
-- **Copiar código da sessão**.
-- **Encerrar sessão** (vermelho, confirmação).
+No lado do consultor (`src/features/remote-support/actionHandler.ts:163-207`), os handlers `mouseClick / mouseDown / mouseUp / mouseMove` disparam **apenas `MouseEvent`** (`mousedown`, `mouseup`, `click`) e fazem fallback com `el.click()`.
 
-## 3. Atalhos de teclado (quando o painel tem foco)
-- `Ctrl+Shift+C` — alternar controle ativo/visualizar.
-- `Ctrl+Shift+F` — fullscreen.
-- `Ctrl+Shift+S` — screenshot.
-- `Ctrl+Shift+E` — encerrar sessão (com confirmação).
-- Setas/PageUp/PageDown enviados como `wheel`/`key` para o consultor.
+**O problema:** quase toda a UI do app é **Radix UI (shadcn)**. Componentes como `Select`, `DropdownMenu`, `Dialog/Sheet`, `Popover`, `Slider`, `Tooltip`, `Switch` e os botões dentro deles escutam `pointerdown` / `pointerup` / `pointermove` — não `mousedown/click`. Como nenhum `PointerEvent` é dispatched, dropdowns, selects, menus, abas de fluxo, links em popovers etc. não abrem nem reagem aos cliques. É exatamente o sintoma "vejo os links na lateral mas não consigo clicar".
 
-## 4. Performance e responsividade do controle
-- **Throttle inteligente de mouseMove**: hoje envia a cada movimento; passar para ~30 msg/s via `requestAnimationFrame` + coalescing (só envia a última posição por frame). Reduz tráfego no DataChannel e elimina lag percebido.
-- **Cursor remoto**: desenhar um cursor virtual sobre o vídeo mostrando onde o operador está clicando, com flash no clique (feedback imediato sem esperar o vídeo).
-- **Coalescing de wheel**: somar deltas dentro do mesmo frame antes de enviar.
-- **Indicador de latência (RTT)**: pequeno badge com ping medido via DataChannel (envia `ping` a cada 2s, mede ida e volta). Verde <100ms, amarelo <300ms, vermelho acima.
-- **Indicador de FPS recebido** usando `RTCStatsReport` (framesPerSecond do track de vídeo).
+Além disso, `mouseClick` hoje dispara `click` sintético **e** `el.click()`, o que aciona o handler duas vezes — em toggles, abas e checkboxes isso abre-e-fecha imediatamente, dando a sensação de "não clica".
 
-## 5. Conforto operacional
-- **Painel lateral colapsável** com:
-  - Log ao vivo de comandos (últimos 50, com status ok/erro).
-  - Lista de URLs/abas do consultor + botão "Ir para esta URL".
-  - Histórico de screenshots tirados na sessão.
-- **Modo claro/escuro do player** independente do tema do Admin.
-- **Lembrar preferências** (controle ativo, qualidade, fullscreen) em `localStorage` por operador.
+### Outros bugs que pioram a experiência
 
-## 6. Segurança visível
-- Banner persistente no consultor já existe — adicionar timer ("sessão ativa há 03:42") visível para ambos os lados.
-- Botão "Pausar controle" do lado do consultor (kill switch instantâneo) — quando pausado, o operador vê overlay "Consultor pausou o controle".
+1. **Toolbar flutuante sobre o overlay (`PlayerToolbar`, linha 630)** — está em `z-20` enquanto o `RemoteControlOverlay` não tem z-index. Cliques no topo central do vídeo são consumidos pelos botões da toolbar do operador, não enviados ao consultor.
+2. **Sem `pointerleave` → cursor "fantasma"** — ao sair do vídeo, o cursor virtual continua no último ponto e o consultor pode receber hovers presos.
+3. **Sem coalescing de `mousedown/up` para drag** — atualmente só `mouseClick` é enviado; o usuário não consegue arrastar sliders, redimensionar painéis nem selecionar texto.
+4. **`elementFromPoint` ignora o elemento que está sob o ponteiro virtual visível no consultor** — se o consultor estiver com um cursor de outro app por cima, o elemento real ainda é detectado, mas overlays próprios do projeto (banner de suporte) já são respeitados via `data-remote-support-banner`. OK.
+5. **`focusable()` chama `focus()` antes do click** — em alguns inputs do Radix isso pode roubar foco antes do menu abrir. Vamos manter, mas só focar quando o alvo for de fato campo de input.
 
-## Arquivos a alterar
+### Plano de correção
 
-```text
-src/pages/SuperAdminRemoteSupport.tsx     → fullscreen, toolbar, atalhos, painel lateral, cursor remoto, badges
-src/features/remote-support/screenShare.ts → API de qualidade (setParameters), ping/stats helpers
-src/features/remote-support/types.ts       → comandos novos: pause, resume, qualityChange
-src/features/remote-support/actionHandler.ts → handler de pause/resume
-src/features/remote-support/ActiveSessionBanner.tsx → timer + botão pausar
-```
+**A. `actionHandler.ts` — emitir PointerEvents + simplificar clique (resolve 95% do caso)**
 
-## Fora deste plano (posso fazer depois se quiser)
-- Gravação da sessão em vídeo (MediaRecorder do track recebido).
-- Áudio bidirecional (mic do operador).
-- Anotações desenháveis sobre a tela do consultor.
-- Transferência de arquivos pelo DataChannel.
+1. Adicionar helper `dispatchPointer(type, el, x, y, button)` que dispara `PointerEvent` com `pointerType: 'mouse'`, `isPrimary: true`, `pointerId: 1`, `bubbles`, `cancelable`.
+2. Em `mouseMove`: disparar `pointermove` + `mousemove`.
+3. Em `mouseDown`: `pointerdown` → `mousedown`.
+4. Em `mouseUp`: `pointerup` → `mouseup`.
+5. Em `mouseClick`: sequência completa `pointerdown → mousedown → pointerup → mouseup → click`. **Remover o `el.click()` duplicado**; só faz fallback `el.click()` se `defaultPrevented` for `false` E o elemento não tiver capturado o `pointerup` (heurística: se for `<a>`/`<button>` nativo sem React handler).
+6. Em `mouseDblClick`: dois `pointerdown/up` + `dblclick`.
+7. Adicionar caso `pointerLeave` (opcional, para limpar hover) — disparado quando o operador sai do overlay.
 
-Confirma que quer tudo isso, ou prefere que eu corte algo (por ex. deixar para depois o painel lateral / cursor remoto) para entregar mais rápido?
+**B. `SuperAdminRemoteSupport.tsx` — ajustes de overlay**
+
+1. `RemoteControlOverlay`: adicionar `z-10` no container do overlay e mover toolbar para `z-30`, garantindo que cliques na área central do vídeo cheguem ao overlay (sem mudar a toolbar visual).
+2. Adicionar `onPointerLeave` no overlay que envia `mouseMove` com x/y fora de tela (ou novo `pointerLeave`) e esconde o cursor virtual.
+3. Adicionar `onPointerDown`/`onPointerUp` no overlay enviando `mouseDown`/`mouseUp` — habilita **drag** (sliders, seleção de texto, arrastar abas).
+4. Manter `onClick` como hoje, mas só enviar `mouseClick` se não houve `mouseDown` recente no mesmo ponto (evita clique duplicado quando o navegador já gerou pointerdown→pointerup→click).
+
+**C. `types.ts`** — sem mudança de schema; comandos existentes (`mouseDown/mouseUp/mouseMove/mouseClick/mouseDblClick`) já cobrem tudo. Opcional: adicionar `pointerLeave` se quisermos resetar hover; pode ficar para depois.
+
+### Detalhes técnicos
+
+- `PointerEvent` precisa de polyfill? Não — todos os browsers modernos têm `window.PointerEvent`. Adicionar guard: `if (typeof PointerEvent !== 'undefined') dispatch(new PointerEvent(...))`.
+- Radix usa `onPointerDown` em `DropdownMenu.Trigger`, `Select.Trigger`, `Dialog.Trigger`, etc. Com `pointerdown` bubbling e `cancelable`, abrirão normalmente.
+- `el.setPointerCapture(pointerId)` é chamado por Radix em sliders — funcionará pois o pointerId é constante (1) entre down/up.
+- Manter `data-remote-support-banner` para continuar protegendo o ícone do consultor.
+
+### Arquivos afetados
+
+- `src/features/remote-support/actionHandler.ts` — adicionar pointer dispatch e reordenar `mouseClick`.
+- `src/pages/SuperAdminRemoteSupport.tsx` — z-index do overlay/toolbar, handlers `onPointerDown/Up/Leave` no `RemoteControlOverlay`.
+
+### Critério de aceite
+
+- Abrir Select/Dropdown/Combobox da UI remota com um clique.
+- Conseguir arrastar slider e selecionar texto.
+- Toolbar do operador não bloqueia mais a região central do vídeo.
+- Cursor virtual desaparece quando o operador tira o mouse do vídeo.
