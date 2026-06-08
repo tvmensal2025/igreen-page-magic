@@ -365,19 +365,26 @@ export function AudioStudio({ userId }: { userId: string }) {
     if (!userId) return;
     setLoadingLib(true);
     try {
-      const [mine, pub] = await Promise.all([
+      const term = librarySearch.trim();
+      const tasks: Promise<any>[] = [
         supabase.from("audio_library").select("*").eq("consultant_id", userId).eq("kind", kind).order("created_at", { ascending: false }).limit(50),
         (() => {
           let q = supabase.from("audio_library").select("*").eq("is_public", true).eq("kind", kind);
-          const term = librarySearch.trim();
           if (term) q = q.ilike("city", `%${term}%`);
           return q.order("play_count", { ascending: false }).order("created_at", { ascending: false }).limit(50);
         })(),
-      ]);
-      if (mine.data) setMyAudios(mine.data as AudioRow[]);
-      if (pub.data) setPublicAudios(pub.data as AudioRow[]);
+      ];
+      if (isSuperAdmin) {
+        let qAll = supabase.from("audio_library").select("*").eq("kind", kind);
+        if (term && libTab === "all") qAll = qAll.ilike("city", `%${term}%`);
+        tasks.push(qAll.order("created_at", { ascending: false }).limit(200));
+      }
+      const results = await Promise.all(tasks);
+      if (results[0]?.data) setMyAudios(results[0].data as AudioRow[]);
+      if (results[1]?.data) setPublicAudios(results[1].data as AudioRow[]);
+      if (isSuperAdmin && results[2]?.data) setAllAudios(results[2].data as AudioRow[]);
     } finally { setLoadingLib(false); }
-  }, [userId, kind, librarySearch]);
+  }, [userId, kind, librarySearch, isSuperAdmin, libTab]);
 
   useEffect(() => { loadLibrary(); }, [loadLibrary]);
 
