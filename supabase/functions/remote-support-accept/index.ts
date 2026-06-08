@@ -84,14 +84,28 @@ Deno.serve(async (req) => {
       payload: { operator_id: user.id },
     });
 
-    // Broadcast code to the requester via realtime (private channel by session id)
-    const channel = supabase.channel(`support:${session_id}:code`);
-    await channel.send({
-      type: "broadcast",
-      event: "new_code",
-      payload: { code, rotates_at: rotatesAt },
-    });
-    await supabase.removeChannel(channel);
+    // Broadcast code to the requester via realtime HTTP API (no subscribe needed)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    try {
+      await fetch(`${supabaseUrl}/realtime/v1/api/broadcast`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          messages: [{
+            topic: `support:${session_id}:code`,
+            event: "new_code",
+            payload: { code, rotates_at: rotatesAt },
+          }],
+        }),
+      });
+    } catch (e) {
+      console.warn("[remote-support-accept] broadcast failed", e);
+    }
 
     return json({ ok: true, rotates_at: rotatesAt });
   } catch (e: any) {
