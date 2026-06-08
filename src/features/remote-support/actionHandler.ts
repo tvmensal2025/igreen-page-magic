@@ -111,6 +111,12 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
       logAction(sessionId, "operator", `cmd:${cmd.kind}`, cmd.selector || cmd.url || null, cmd as never).catch(() => {});
     }
 
+    // Comandos sempre permitidos mesmo em pausa
+    const ALWAYS_ALLOWED: RemoteCommand["kind"][] = ["ping", "qualityChange"];
+    if (_paused && !ALWAYS_ALLOWED.includes(cmd.kind)) {
+      return { id: cmd.id, ok: false, error: "paused_by_user" };
+    }
+
     switch (cmd.kind) {
       case "ping":
         return { id: cmd.id, ok: true, data: { pong: true } };
