@@ -136,7 +136,9 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
     if (ph.length < 10 || ph.length > 11) invalid.push({ field: "phone_whatsapp", label: "WhatsApp", reason: "Telefone com DDD precisa de 10–11 dígitos" });
   }
   if (isStrFilled(c.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(c.email).trim())) {
-    invalid.push({ field: "email", label: "E-mail", reason: "E-mail em formato inválido" });
+    invalid.push({ field: "email", label: "E-mail", reason: `"${c.email}" não é um e-mail válido — corrija para enviar ao portal` });
+    const emailField = PORTAL_FIELDS.find((f) => f.key === "email");
+    if (emailField && !missing.includes(emailField)) missing.push(emailField);
   }
   if (isStrFilled(c.cep) && digits(c.cep).length !== 8) {
     invalid.push({ field: "cep", label: "CEP", reason: "CEP precisa de 8 dígitos" });
