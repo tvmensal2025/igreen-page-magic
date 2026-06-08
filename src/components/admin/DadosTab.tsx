@@ -280,6 +280,45 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         </div>
       </div>
 
+      {/* Sua IA — nome da persona usada em todo o sistema */}
+      <div className="bg-card rounded-2xl border border-border p-6">
+        <h3 className="font-heading font-bold text-foreground mb-1 flex items-center gap-2">
+          <Bot className="w-5 h-5 text-primary" /> Sua IA
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Escolha o nome da sua atendente virtual. Esse nome aparece nas conversas com seus leads.
+        </p>
+        <div className="space-y-2 max-w-md">
+          <Label htmlFor="persona_name" className="text-sm text-muted-foreground">Nome da IA</Label>
+          <div className="flex gap-2">
+            <Input
+              id="persona_name"
+              value={personaName}
+              onChange={(e) => setPersonaName(e.target.value.slice(0, 20))}
+              onBlur={savePersonaName}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
+              placeholder="Ex: Camila, Ana, Bia..."
+              className="bg-secondary border-border"
+              disabled={personaLoading || personaSaving}
+              maxLength={20}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={savePersonaName}
+              disabled={personaLoading || personaSaving}
+              className="shrink-0"
+            >
+              {personaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Salvo automaticamente ao sair do campo. Default: Camila.
+          </p>
+        </div>
+      </div>
+
       {/* Pixel Tracking */}
       <div className="bg-card rounded-2xl border border-border p-6">
         <h3 className="font-heading font-bold text-foreground mb-4 flex items-center gap-2">
