@@ -232,6 +232,7 @@ interface AudioRow {
 // ─── Componente principal ────────────────────────────────────────────────────
 export function AudioStudio({ userId }: { userId: string }) {
   const { toast } = useToast();
+  const { isSuperAdmin } = useUserRole(userId);
 
   // Tab variante
   const [kind, setKind] = useState<Kind>("mutirao");
