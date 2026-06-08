@@ -17,6 +17,7 @@ export function useRequesterSession(userId: string | null | undefined) {
   const [codeExpiresAt, setCodeExpiresAt] = useState<number | null>(null);
   const [sharing, setSharing] = useState(false);
   const [paused, setPausedState] = useState(false);
+  const [shareSurface, setShareSurface] = useState<string | null>(null);
   const peerRef = useRef<Awaited<ReturnType<typeof createRequesterPeer>> | null>(null);
 
   const togglePause = useCallback(() => {
