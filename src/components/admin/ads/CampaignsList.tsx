@@ -339,6 +339,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     </Button>
                   </div>
                 )}
+                </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {(c.status === "active" || c.status === "paused") && c.fb_campaign_id && (
