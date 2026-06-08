@@ -101,6 +101,7 @@ const App = () => (
             </Routes>
             <CookieBanner />
             <RechargeRequiredDialog />
+            <RemoteSupportProvider />
           </Suspense>
         </BrowserRouter>
         </PromptDialogProvider>
