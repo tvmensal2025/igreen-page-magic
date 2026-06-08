@@ -78,6 +78,33 @@ export type Database = {
           },
         ]
       }
+      ad_bonus_tiers: {
+        Row: {
+          created_at: string
+          label: string
+          percent: number
+          tier: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          label: string
+          percent?: number
+          tier: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          label?: string
+          percent?: number
+          tier?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       ad_competitor_creatives: {
         Row: {
           active_days: number | null
