@@ -228,9 +228,11 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         const el = elAt(x, y);
         if (!el) return { id: cmd.id, ok: false, error: "no element" };
         const button = cmd.button ?? 0;
-        // foca apenas se for campo editável (evita roubar foco de triggers Radix)
-        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable) {
-          (el as HTMLElement).focus?.();
+        // Foca elementos editáveis E também triggers de combobox/select (Radix)
+        // que dependem de foco para abrir corretamente.
+        const focusEl = focusable(el);
+        if (focusEl) {
+          try { focusEl.focus({ preventScroll: true } as FocusOptions); } catch { try { focusEl.focus(); } catch {} }
         }
         // sequência completa de pointer + mouse + click
         dispatchPointer("pointerover", el, x, y, button, false);
@@ -239,14 +241,12 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         dispatchMouse("mousedown", el, x, y, button);
         dispatchPointer("pointerup", el, x, y, button, false);
         dispatchMouse("mouseup", el, x, y, button);
-        // dispatcha um único click sintético — sem el.click() duplicado
         const clickEv = new MouseEvent("click", {
           bubbles: true, cancelable: true, view: window,
           clientX: x, clientY: y, screenX: x, screenY: y, button,
         });
         const notCancelled = el.dispatchEvent(clickEv);
-        // fallback apenas para <a>/<button> nativos cuja navegação só ocorre via .click()
-        if (notCancelled && (el instanceof HTMLAnchorElement || el instanceof HTMLButtonElement)) {
+        if (notCancelled && (el instanceof HTMLAnchorElement || el instanceof HTMLButtonElement || (el as HTMLElement).getAttribute?.("role") === "button")) {
           try { (el as HTMLElement).click(); } catch {}
         }
         return { id: cmd.id, ok: true };
