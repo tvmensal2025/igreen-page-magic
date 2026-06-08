@@ -332,24 +332,38 @@ async function sendToCloud(token, payload) {
 }
 
 // ===== Sync principal — SEQUENCIAL (clientes -> envia -> fecha -> rede -> envia -> fecha) =====
+async function setProgress(step) {
+  try { await chrome.storage.local.set({ syncProgress: { step, at: Date.now() } }); } catch {}
+}
+
 async function syncOnePage(token, page, mesRef) {
   const url = `${IGREEN_ORIGIN}${page.path}`;
   downloadsByTab.clear();
   let tabId = null;
   try {
+    await setProgress(`Abrindo ${page.kind}...`);
     tabId = await chrome.tabs.create({ url, active: false });
     tabId = tabId.id;
     await waitForTabComplete(tabId);
+
+    // Detecta tela de login/captcha do portal
+    const finalTab = await chrome.tabs.get(tabId);
+    const finalUrl = finalTab.url || "";
+    if (/\/login|\/auth|\/signin/i.test(finalUrl) && !finalUrl.includes(page.path)) {
+      throw new Error(`portal pediu login. Abra ${IGREEN_ORIGIN} em outra aba, faca login (resolva captcha se aparecer) e tente sincronizar de novo.`);
+    }
+
+    await setProgress(`Esperando ${page.kind} carregar...`);
     const cap = await captureFromPage(tabId, page.kind);
     if (!cap.ok) throw new Error(cap.error);
 
+    await setProgress(`Enviando ${page.kind} para o iGreen Cloud...`);
     const payload = { mes_ref: mesRef };
     payload[`${page.kind}_b64`] = cap.b64;
     const ingest = await sendToCloud(token, payload);
     return { ok: true, size: cap.size, ingest: ingest[page.kind] || ingest, via: cap.via };
   } finally {
     if (tabId) { try { await chrome.tabs.remove(tabId); } catch {} }
-    // pequena pausa entre downloads para o Chrome nao agrupar como "varios downloads"
     await sleep(1500);
   }
 }
@@ -359,13 +373,13 @@ async function runSync() {
   if (!pairingToken) throw new Error("Token de pareamento nao configurado");
 
   installDownloadsListener();
+  await setProgress("Iniciando...");
 
   const mesRef = new Date().toISOString().slice(0, 7);
   const result = { ok: true };
   const errors = [];
   let lastClientesSize = 0, lastRedeSize = 0;
 
-  // 1) CLIENTES primeiro, do inicio ao fim
   try {
     const r = await syncOnePage(pairingToken, PAGES[0], mesRef);
     result.clientes = r.ingest;
@@ -374,7 +388,6 @@ async function runSync() {
     errors.push(`clientes: ${e?.message || String(e)}`);
   }
 
-  // 2) Depois REDE
   try {
     const r = await syncOnePage(pairingToken, PAGES[1], mesRef);
     result.rede = r.ingest;
@@ -382,6 +395,8 @@ async function runSync() {
   } catch (e) {
     errors.push(`rede: ${e?.message || String(e)}`);
   }
+
+  await setProgress("Concluido");
 
   if (!result.clientes && !result.rede) {
     throw new Error(
