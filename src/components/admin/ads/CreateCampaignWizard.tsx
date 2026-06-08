@@ -834,7 +834,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
                     {/* TIER MEDIO */}
                     <div className="flex items-center justify-between gap-2 pt-1">
-                      <div className="text-[10px] uppercase tracking-wider text-amber-400/80 font-bold">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-amber-900">
                         🟡 Bônus até {bonusTiers.medio.percent}%
                       </div>
                     </div>
@@ -920,8 +920,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         <span className="text-muted-foreground">Alcance estimado:</span>
                         <strong className="text-foreground">{liveReach.lower.toLocaleString("pt-BR")}–{liveReach.upper.toLocaleString("pt-BR")}</strong>
                         <span className="text-muted-foreground">pessoas</span>
-                        {liveReach.lower < 50000 && <span className="text-amber-400 ml-2">⚠ pequeno — adicione mais cidades</span>}
-                        {liveReach.upper > 5_000_000 && <span className="text-amber-400 ml-2">⚠ muito amplo — divida em 2 campanhas</span>}
+                        {liveReach.lower < 50000 && <span className="ml-2 text-red-500">⚠ pequeno — adicione mais cidades</span>}
+                        {liveReach.upper > 5_000_000 && <span className="ml-2 text-red-500">⚠ muito amplo — divida em 2 campanhas</span>}
                       </>
                     ) : (
                       <span className="text-muted-foreground">Calculando alcance...</span>
@@ -931,9 +931,9 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
                 {/* Auto-split: quando muito amplo, ajuda a dividir em 2 campanhas */}
                 {liveReach && liveReach.upper > 5_000_000 && cities.length > 20 && (
-                  <div className="text-xs rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
-                    <div className="font-bold text-amber-200">Está muito amplo — o algoritmo do Facebook gasta mal acima de 5M.</div>
-                    <div className="text-amber-200/80">Recomendo dividir em 2 campanhas: mantém metade aqui e cria outra depois com a outra metade.</div>
+                  <div className="text-xs rounded-lg border border-amber-500/40 p-3 space-y-2 bg-red-400">
+                    <div className="font-bold text-green-900">Está muito amplo — o algoritmo do Facebook gasta mal acima de 5M.</div>
+                    <div className="text-gray-900">Recomendo dividir em 2 campanhas: mantém metade aqui e cria outra depois com a outra metade.</div>
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" size="sm" variant="outline" className="h-7 text-[11px]"
                         onClick={() => {
@@ -1024,8 +1024,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                       return (
                         <div className="text-xs rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex items-start justify-between gap-2">
                           <div>
-                            <div className="font-bold text-amber-200">⚠ {offenders.length} cidade(s) fora da área da distribuidora</div>
-                            <div className="text-amber-200/80 mt-0.5">
+                            <div className="font-bold text-green-900">⚠ {offenders.length} cidade(s) fora da área da distribuidora</div>
+                            <div className="text-gray-900 mt-0.5">
                               {names}{extra} — fora de {Array.from(allowedUFs).join("/")}. Lead daqui não pode ser ativado pela iGreen.
                             </div>
                           </div>
