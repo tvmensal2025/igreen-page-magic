@@ -102,7 +102,9 @@ Deno.serve(async (req) => {
     }
 
     const sender = createWhatsAppSender(evolutionUrl, evolutionKey, inst.instance_name);
-    const ok = await sender.sendMedia(phone, mediaUrl, caption, mediatype);
+    const ok = mediatype === "audio"
+      ? await sender.sendAudio(phone, mediaUrl)
+      : await sender.sendMedia(phone, mediaUrl, caption, mediatype as "video" | "image" | "document");
 
     if (!ok) {
       return new Response(JSON.stringify({ error: "Evolution recusou o envio" }), {
