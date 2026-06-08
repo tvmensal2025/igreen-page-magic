@@ -1023,8 +1023,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                       const extra = offenders.length > 5 ? ` +${offenders.length - 5}` : "";
                       return (
                         <div className="text-xs rounded-lg border border-amber-500/40 p-3 flex items-start justify-between gap-2 bg-red-400">
-                          <div>
-                            <div className="font-bold text-green-900">⚠ {offenders.length} cidade(s) fora da área da distribuidora</div>
+                          <div className="text-green-900">
+                            <div className="font-bold">⚠ {offenders.length} cidade(s) fora da área da distribuidora</div>
                             <div className="text-gray-900 mt-0.5">
                               {names}{extra} — fora de {Array.from(allowedUFs).join("/")}. Lead daqui não pode ser ativado pela iGreen.
                             </div>
