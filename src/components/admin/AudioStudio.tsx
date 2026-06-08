@@ -810,7 +810,7 @@ export function AudioStudio({ userId }: { userId: string }) {
 
         {/* ─── Coluna do histórico / biblioteca ─────────────────────────── */}
         <aside className="bg-card rounded-xl border border-border/40 p-3 h-fit lg:sticky lg:top-4 space-y-3">
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className={`grid ${isSuperAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
             <button
               onClick={() => setLibTab("mine")}
               className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "mine" ? "bg-primary text-primary-foreground" : "bg-muted/40 border border-border/40 text-muted-foreground"}`}
@@ -821,11 +821,20 @@ export function AudioStudio({ userId }: { userId: string }) {
               onClick={() => setLibTab("public")}
               className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "public" ? "bg-primary text-primary-foreground" : "bg-muted/40 border border-border/40 text-muted-foreground"}`}
             >
-              <Globe2 className="w-3.5 h-3.5" /> Biblioteca pública
+              <Globe2 className="w-3.5 h-3.5" /> Pública
             </button>
+            {isSuperAdmin && (
+              <button
+                onClick={() => setLibTab("all")}
+                className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "all" ? "bg-primary text-primary-foreground" : "bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400"}`}
+                title="Visível apenas para super admin"
+              >
+                <Globe2 className="w-3.5 h-3.5" /> Todos
+              </button>
+            )}
           </div>
 
-          {libTab === "public" && (
+          {(libTab === "public" || libTab === "all") && (
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
@@ -845,8 +854,11 @@ export function AudioStudio({ userId }: { userId: string }) {
             {!loadingLib && libTab === "public" && publicAudios.length === 0 && (
               <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio publicado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</p>
             )}
+            {!loadingLib && libTab === "all" && allAudios.length === 0 && (
+              <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio gerado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</p>
+            )}
 
-            {(libTab === "mine" ? myAudios : publicAudios).map((row) => (
+            {(libTab === "mine" ? myAudios : libTab === "public" ? publicAudios : allAudios).map((row) => (
               <div key={row.id} className="rounded-lg border border-border/40 bg-background/40 p-2.5 space-y-1.5">
                 <div className="flex items-start gap-2">
                   <button
