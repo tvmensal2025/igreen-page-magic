@@ -68,7 +68,7 @@ function TimelineItem({
     <div className="flex gap-3 relative">
       <div className="flex flex-col items-center">
         <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${future ? "bg-muted/40 border-border" : color}`}>
-          <Icon className={`h-3.5 w-3.5 ${future ? "text-muted-foreground" : "text-white"}`} />
+          <Icon className={`h-3.5 w-3.5 ${future ? "text-muted-foreground" : "text-primary-foreground"}`} />
         </div>
         <div className="w-px flex-1 bg-border/40 mt-1" />
       </div>
@@ -86,7 +86,7 @@ function MessagePreview({
 }: { type: string; text?: string | null; mediaUrl?: string | null; imageUrl?: string | null; displayName: string }) {
   const rendered = (text || "").replace(/\{\{nome\}\}/g, displayName).replace(/\{\{telefone\}\}/g, "");
   return (
-    <div className="rounded-lg p-3 space-y-2 border border-emerald-900/40 bg-lime-100">
+    <div className="rounded-lg p-3 space-y-2 border border-border/60 bg-card/60">
       {imageUrl && (
         <div className="rounded-md overflow-hidden bg-black/40 max-h-48">
           <img src={imageUrl} alt="" className="w-full object-contain max-h-48" loading="lazy" />
@@ -136,7 +136,7 @@ function StageBlock({
   return (
     <div className="rounded-lg border border-border/60 p-3 bg-card/40 space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <p className="text-xs font-semibold text-foreground flex-1 text-white">{title}</p>
+        <p className="text-xs font-semibold text-foreground flex-1">{title}</p>
         {badge}
         <Badge variant="outline" className="text-[9px] gap-1">
           <TypeIcon className="h-2.5 w-2.5" /> {type}
