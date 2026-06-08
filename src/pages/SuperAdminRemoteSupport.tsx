@@ -241,6 +241,7 @@ function SessionWorkbench({ session, consultantName, onClose }: {
   const [fps, setFps] = useState<number | null>(null);
   const [paused, setPaused] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
 
   const initialPrefs = useRef(loadPrefs()).current;
   const [controlEnabled, setControlEnabled] = useState(initialPrefs.control);
