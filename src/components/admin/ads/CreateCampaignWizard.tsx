@@ -809,14 +809,10 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                   <p className="text-xs text-muted-foreground mb-2">Clique pra carregar/remover as cidades da distribuidora. Pode escolher várias — quanto mais cidades, mais barato fica o lead.</p>
 
                   <div className="space-y-2">
-                    {/* TIER ALTO (100%) */}
+                    {/* TIER ALTO */}
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] uppercase tracking-wider text-primary/80 font-bold">🟢 Bônus até 100%</div>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant="outline" className="h-6 text-[10px] px-2"
-                          disabled={presetLoading} onClick={() => loadAllOfTier("alto")}>
-                          Carregar TODAS 100%
-                        </Button>
+                      <div className="text-[10px] uppercase tracking-wider text-primary/80 font-bold">
+                        🟢 Bônus até {bonusTiers.alto.percent}%
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -834,14 +830,10 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                       })}
                     </div>
 
-                    {/* TIER MEDIO (50%) */}
+                    {/* TIER MEDIO */}
                     <div className="flex items-center justify-between gap-2 pt-1">
-                      <div className="text-[10px] uppercase tracking-wider text-amber-400/80 font-bold">🟡 Bônus até 50%</div>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant="outline" className="h-6 text-[10px] px-2"
-                          disabled={presetLoading} onClick={() => loadAllOfTier("medio")}>
-                          Carregar TODAS 50%
-                        </Button>
+                      <div className="text-[10px] uppercase tracking-wider text-amber-400/80 font-bold">
+                        🟡 Bônus até {bonusTiers.medio.percent}%
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -859,12 +851,13 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                       })}
                     </div>
 
-                    {/* TIER SEM BÔNUS (separado pra não misturar com 100%) */}
+                    {/* TIER SEM BÔNUS */}
                     {DISTRIBUIDORAS_PRESETS.some(p => p.tier === "sem_bonus") && (
                       <>
                         <div className="flex items-center justify-between gap-2 pt-1">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">⚪ Sem bônus extra</div>
-                          <div className="text-[10px] text-muted-foreground italic">não entra no "Carregar TODAS 100%"</div>
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                            ⚪ Sem bônus extra ({bonusTiers.sem_bonus.percent}%)
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {DISTRIBUIDORAS_PRESETS.filter(p => p.tier === "sem_bonus").map(p => {
@@ -879,6 +872,9 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                               </button>
                             );
                           })}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground italic pt-0.5">
+                          💡 Dica: selecione manualmente as cidades — carregar tudo cria audiência de milhões e dilui o anúncio (CPL alto).
                         </div>
                       </>
                     )}
