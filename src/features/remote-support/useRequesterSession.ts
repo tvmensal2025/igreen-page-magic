@@ -123,13 +123,19 @@ export function useRequesterSession(userId: string | null | undefined) {
           peerRef.current?.close(); peerRef.current = null; setSharing(false);
           logAction(session.id, "system", "screen_stopped");
         },
-        (state) => console.log("[remote-support][rtc]", state),
+        (state, info) => {
+          console.log("[remote-support][rtc]", state, info || "");
+          if (state === "connected") logAction(session.id, "system", "rtc_connected");
+          if (state === "failed") logAction(session.id, "system", "rtc_failed", null, { info });
+        },
       );
       peerRef.current = peer;
       await logAction(session.id, "requester", "screen_started");
       toast.success("Compartilhando tela com o suporte");
     } catch (e: any) {
       setSharing(false);
+      const isPerm = /Permission|denied|NotAllowed/i.test(e?.message || "");
+      if (isPerm) logAction(session.id, "system", "screen_permission_denied");
       toast.error(e.message || "Falha ao compartilhar tela");
     }
   }, [session, sharing]);

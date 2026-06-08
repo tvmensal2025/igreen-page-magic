@@ -1,28 +1,51 @@
 // WebRTC helper. Requester (consultor) é o offerer; operador apenas escuta e responde.
 //
-// Auditoria 2026-06-08 — correções aplicadas:
-//   1) ICE buffering: candidatos chegando antes de setRemoteDescription são enfileirados
-//      e drenados depois (antes apenas falhavam num try/catch vazio → conexão incompleta).
-//   2) Handshake "operator-ready": operador, ao subscrever, anuncia presença.
-//      Requester espera por esse anúncio antes de emitir offer; se já tiver subscrito
-//      antes do operador, também reenvia a offer ao receber "operator-ready". Elimina a
-//      race do broadcast (sem buffer de entrega).
-//   3) Telemetria: callbacks opcionais `onState` para o caller mostrar o que está acontecendo.
+// Auditoria 2 — robustez:
+//   - Fases explícitas via onStage (não só strings opacas).
+//   - Operador idempotente: ignora offer duplicada quando já conectado.
+//   - Requester nunca cria offer fora de signalingState=="stable".
+//   - Retry reenvia a localDescription existente (sem createOffer novo).
+//   - ICE buffering preservado.
+//   - TURN opcional via VITE_TURN_URL / VITE_TURN_USER / VITE_TURN_PASS.
 
 import { supabase } from "@/integrations/supabase/client";
 
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [
+export type RtcStage =
+  | "idle"
+  | "subscribed"
+  | "waiting-share"     // operador: sessão ativa, sem offer ainda
+  | "offer-sent"        // requester: enviou offer
+  | "offer-received"    // operador: recebeu offer
+  | "answer-sent"       // operador: respondeu
+  | "answer-received"   // requester: recebeu answer
+  | "ice-checking"
+  | "connected"
+  | "stream-received"   // operador: track chegou
+  | "datachannel-open"
+  | "failed"
+  | "closed";
+
+function buildIceServers(): RTCIceServer[] {
+  const list: RTCIceServer[] = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
+  ];
+  const turnUrl = (import.meta as any).env?.VITE_TURN_URL as string | undefined;
+  const turnUser = (import.meta as any).env?.VITE_TURN_USER as string | undefined;
+  const turnPass = (import.meta as any).env?.VITE_TURN_PASS as string | undefined;
+  if (turnUrl) {
+    list.push({ urls: turnUrl, username: turnUser, credential: turnPass });
+  }
+  return list;
+}
+
+const RTC_CONFIG: RTCConfiguration = { iceServers: buildIceServers() };
 
 export type SignalEvent =
   | { type: "offer"; sdp: RTCSessionDescriptionInit }
   | { type: "answer"; sdp: RTCSessionDescriptionInit }
   | { type: "ice"; candidate: RTCIceCandidateInit }
-  | { type: "ready" }      // operador anuncia que já está pronto a receber offer
+  | { type: "ready" }
   | { type: "bye" };
 
 export function signalChannel(sessionId: string, role: "operator" | "requester") {
@@ -50,7 +73,6 @@ export function signalChannel(sessionId: string, role: "operator" | "requester")
   return { subscribed, send, onSignal, close };
 }
 
-// Drena candidatos ICE que chegaram antes de setRemoteDescription.
 function makeIceBuffer(pc: RTCPeerConnection) {
   const queue: RTCIceCandidateInit[] = [];
   let remoteSet = false;
@@ -69,46 +91,71 @@ function makeIceBuffer(pc: RTCPeerConnection) {
   };
 }
 
-// Operator side: subscreve, anuncia "ready" e responde offers.
+// Operator: subscreve, anuncia ready, responde offer (idempotente).
 export async function createOperatorPeer(
   sessionId: string,
   onStream: (s: MediaStream) => void,
   onDataChannelOpen: (dc: RTCDataChannel) => void,
   onDataMessage: (msg: string) => void,
-  onState?: (s: string) => void,
+  onStage?: (s: RtcStage, info?: string) => void,
 ) {
   const pc = new RTCPeerConnection(RTC_CONFIG);
   const sig = signalChannel(sessionId, "operator");
   const ice = makeIceBuffer(pc);
   let dc: RTCDataChannel | null = null;
+  let answered = false;
 
   pc.ondatachannel = (e) => {
     dc = e.channel;
-    dc.onopen = () => dc && onDataChannelOpen(dc);
+    dc.onopen = () => {
+      onStage?.("datachannel-open");
+      dc && onDataChannelOpen(dc);
+    };
     dc.onmessage = (ev) => onDataMessage(typeof ev.data === "string" ? ev.data : "");
   };
-  pc.ontrack = (e) => onStream(e.streams[0]);
+  pc.ontrack = (e) => {
+    onStage?.("stream-received");
+    onStream(e.streams[0]);
+  };
   pc.onicecandidate = (e) => { if (e.candidate) sig.send({ type: "ice", candidate: e.candidate.toJSON() }); };
-  pc.onconnectionstatechange = () => onState?.(pc.connectionState);
-  pc.oniceconnectionstatechange = () => onState?.(`ice:${pc.iceConnectionState}`);
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if (s === "connected") onStage?.("connected");
+    else if (s === "failed") onStage?.("failed", "pc.connectionState=failed");
+    else if (s === "closed") onStage?.("closed");
+  };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === "checking") onStage?.("ice-checking");
+  };
 
   sig.onSignal(async (ev) => {
-    if (ev.type === "offer") {
-      await pc.setRemoteDescription(ev.sdp);
-      await ice.flush();
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await sig.send({ type: "answer", sdp: answer });
-    } else if (ev.type === "ice") {
-      ice.push(ev.candidate);
-    } else if (ev.type === "bye") {
-      onState?.("bye");
+    try {
+      if (ev.type === "offer") {
+        // idempotente: aceita offer enquanto não respondemos OU se for renegociação após stable
+        if (answered && pc.signalingState !== "stable") return;
+        onStage?.("offer-received");
+        await pc.setRemoteDescription(ev.sdp);
+        await ice.flush();
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await sig.send({ type: "answer", sdp: answer });
+        answered = true;
+        onStage?.("answer-sent");
+      } else if (ev.type === "ice") {
+        ice.push(ev.candidate);
+      } else if (ev.type === "bye") {
+        onStage?.("closed", "peer bye");
+      }
+    } catch (e: any) {
+      console.warn("[rtc][operator] signal error", e);
+      onStage?.("failed", e?.message || String(e));
     }
   });
 
   await sig.subscribed;
-  onState?.("subscribed");
-  // Anuncia presença para o requester que talvez já esteja pronto para mandar offer.
+  onStage?.("subscribed");
+  onStage?.("waiting-share");
+  // Anuncia presença; requester usa para reenviar a offer já existente.
   await sig.send({ type: "ready" });
 
   return {
@@ -119,18 +166,19 @@ export async function createOperatorPeer(
   };
 }
 
-// Requester side: getDisplayMedia, espera operador "ready", manda offer.
+// Requester: getDisplayMedia, espera ready (ou já tem subscribed), envia offer.
 export async function createRequesterPeer(
   sessionId: string,
   onDataMessage: (msg: string, reply: (s: string) => void) => void,
   onClose: () => void,
-  onState?: (s: string) => void,
+  onStage?: (s: RtcStage, info?: string) => void,
 ) {
   const pc = new RTCPeerConnection(RTC_CONFIG);
   const sig = signalChannel(sessionId, "requester");
   const ice = makeIceBuffer(pc);
 
   const dc = pc.createDataChannel("cmd");
+  dc.onopen = () => onStage?.("datachannel-open");
   dc.onmessage = (ev) => onDataMessage(
     typeof ev.data === "string" ? ev.data : "",
     (s) => dc.readyState === "open" && dc.send(s),
@@ -138,10 +186,16 @@ export async function createRequesterPeer(
 
   pc.onicecandidate = (e) => { if (e.candidate) sig.send({ type: "ice", candidate: e.candidate.toJSON() }); };
   pc.onconnectionstatechange = () => {
-    onState?.(pc.connectionState);
-    if (["failed", "closed", "disconnected"].includes(pc.connectionState)) onClose();
+    const s = pc.connectionState;
+    if (s === "connected") onStage?.("connected");
+    if (["failed", "closed", "disconnected"].includes(s)) {
+      onStage?.(s === "failed" ? "failed" : "closed", `pc.connectionState=${s}`);
+      onClose();
+    }
   };
-  pc.oniceconnectionstatechange = () => onState?.(`ice:${pc.iceConnectionState}`);
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === "checking") onStage?.("ice-checking");
+  };
 
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { frameRate: 15 } as MediaTrackConstraints,
@@ -152,49 +206,63 @@ export async function createRequesterPeer(
     t.addEventListener("ended", onClose);
   });
 
-  let offerSent = false;
+  // Envia offer apenas se signalingState=="stable". Reenvio reaproveita localDescription.
   const sendOffer = async () => {
-    if (offerSent) return;
-    offerSent = true;
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await sig.send({ type: "offer", sdp: offer });
-    onState?.("offer-sent");
+    try {
+      if (pc.signalingState === "stable") {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await sig.send({ type: "offer", sdp: offer });
+        onStage?.("offer-sent");
+      } else if (pc.localDescription) {
+        await sig.send({ type: "offer", sdp: pc.localDescription });
+        onStage?.("offer-sent", "resent");
+      }
+    } catch (e: any) {
+      console.warn("[rtc][requester] sendOffer fail", e);
+      onStage?.("failed", e?.message || String(e));
+    }
   };
 
   sig.onSignal(async (ev) => {
-    if (ev.type === "ready") {
-      // Operador acabou de subscrever — (re)envia a offer.
-      offerSent = false;
-      await sendOffer();
-    } else if (ev.type === "answer") {
-      await pc.setRemoteDescription(ev.sdp);
-      await ice.flush();
-    } else if (ev.type === "ice") {
-      ice.push(ev.candidate);
-    } else if (ev.type === "bye") {
-      onClose();
+    try {
+      if (ev.type === "ready") {
+        await sendOffer();           // se já tem localDescription, só reenvia
+      } else if (ev.type === "answer") {
+        if (pc.signalingState !== "have-local-offer") return; // ignora answer fora de fase
+        await pc.setRemoteDescription(ev.sdp);
+        await ice.flush();
+        onStage?.("answer-received");
+      } else if (ev.type === "ice") {
+        ice.push(ev.candidate);
+      } else if (ev.type === "bye") {
+        onClose();
+      }
+    } catch (e: any) {
+      console.warn("[rtc][requester] signal error", e);
+      onStage?.("failed", e?.message || String(e));
     }
   });
 
   await sig.subscribed;
-  onState?.("subscribed");
-  // Manda offer já — se o operador ainda não estiver pronto, ele responderá ao
-  // próprio "ready" dele e nós reenviamos a offer.
+  onStage?.("subscribed");
   await sendOffer();
 
-  // Retry de segurança: se em 3s não chegou answer, reenvia offer.
-  const retry = setTimeout(async () => {
-    if (pc.signalingState === "have-local-offer") {
-      offerSent = false;
-      try { await sendOffer(); } catch {}
+  // Reenvio periódico até receber answer; só reenvia a SDP local (sem renegociar).
+  const retry = setInterval(async () => {
+    if (pc.signalingState === "have-local-offer" && pc.localDescription) {
+      try { await sig.send({ type: "offer", sdp: pc.localDescription }); } catch {}
+    } else if (pc.signalingState === "stable" && pc.connectionState !== "connected") {
+      // nada — esperando ICE finalizar
+    } else {
+      clearInterval(retry);
     }
   }, 3000);
 
   return {
     pc, sig, stream, dc,
     close: () => {
-      clearTimeout(retry);
+      clearInterval(retry);
       try { sig.send({ type: "bye" }); } catch {}
       stream.getTracks().forEach(t => t.stop());
       pc.close(); sig.close();

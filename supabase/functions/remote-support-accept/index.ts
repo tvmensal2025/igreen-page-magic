@@ -37,9 +37,6 @@ Deno.serve(async (req) => {
     const { data: { user }, error: uerr } = await userClient.auth.getUser();
     if (uerr || !user) return json({ error: "invalid user" }, 401);
 
-    const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: user.id });
-    if (!isSuper) return json({ error: "forbidden" }, 403);
-
     const { session_id } = await req.json();
     if (!session_id) return json({ error: "session_id required" }, 400);
 
@@ -51,6 +48,17 @@ Deno.serve(async (req) => {
     if (serr || !session) return json({ error: "session not found" }, 404);
     if (!["requested", "pending_code"].includes(session.status)) {
       return json({ error: `session in status ${session.status}` }, 400);
+    }
+
+    // Autorização:
+    //  - Sessão iniciada pelo requester: apenas Super Admin pode aceitar (vira operador).
+    //  - Sessão iniciada pelo operador: o próprio requester autoriza (consultor clica autorizar)
+    //    OU um Super Admin pode aceitar em seu lugar.
+    const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: user.id });
+    const isRequesterAuthorizing =
+      session.initiated_by === "operator" && session.requester_id === user.id;
+    if (!isSuper && !isRequesterAuthorizing) {
+      return json({ error: "forbidden" }, 403);
     }
 
     const code = genCode();

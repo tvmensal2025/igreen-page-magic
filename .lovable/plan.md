@@ -1,43 +1,141 @@
-# Corrigir Suporte Remoto travado em "Conectando…"
+## Auditoria do suporte remoto
 
-## Problema
+Não dá para afirmar com 100% de certeza que vai funcionar em todos os casos ainda. O fluxo melhorou, mas a auditoria encontrou pontos que ainda podem deixar o painel preso em “Conectando…”.
 
-Depois que o consultor autoriza com o código, a sessão fica em `active`, mas no painel do operador a tela continua em "Conectando…" eternamente.
+### O que está OK
 
-**Causa raiz (handshake WebRTC fora de ordem):**
+- O provedor de suporte remoto está montado globalmente no app, então o consultor consegue receber a sessão em qualquer tela: `src/App.tsx:104`.
+- A sessão sai de `pending_code` para `active` corretamente depois do código válido: `supabase/functions/remote-support-verify-code/index.ts:78-80`.
+- O operador cria o peer quando a sessão fica `active`: `src/pages/SuperAdminRemoteSupport.tsx:235-265`.
+- O fluxo atual já tenta evitar perda de `offer` usando `ready` e retry: `src/features/remote-support/screenShare.ts:95-112` e `src/features/remote-support/screenShare.ts:165-190`.
 
-1. Assim que a sessão vira `active`, o operador chama `createOperatorPeer` e dispara o `offer` no canal de broadcast `support:<id>:rtc`.
-2. O consultor **só assina** esse canal quando clica em **"Compartilhar tela"** (dentro de `createRequesterPeer`).
-3. Supabase Realtime broadcast **não enfileira** mensagens — quem não está inscrito perde a oferta. Resultado: o operador fica esperando um `answer` que nunca chega → "Conectando…" infinito.
+### Problemas encontrados
 
-Mesmo se o consultor clicar em "Compartilhar tela" depois, ele só recebe ofertas **futuras**, e o operador não envia outra.
+1. **A tela mostra “Conectando…” antes da tentativa WebRTC real**
+   - Hoje o painel define `connecting=true` assim que a sessão fica `active`: `src/pages/SuperAdminRemoteSupport.tsx:235-237`.
+   - Ele só remove “Conectando…” quando chega vídeo ou DataChannel: `src/pages/SuperAdminRemoteSupport.tsx:242-247`.
+   - Se o consultor ainda não clicou em “Compartilhar tela”, o operador vê “Conectando…” mesmo sem conexão em andamento.
+   - Isso bate com o histórico: a última sessão ficou `active`, mas não registrou `screen_started`; ou seja, entrou na sessão mas a tela não começou a ser compartilhada.
 
-## Solução
+2. **Retry de offer pode recriar offer no estado errado**
+   - O requester faz `createOffer()` de novo se ainda estiver em `have-local-offer`: `src/features/remote-support/screenShare.ts:186-190`.
+   - Isso pode gerar erro de estado no WebRTC ou deixar a sinalização inconsistente.
+   - O correto é reenviar a mesma `localDescription` quando já existe uma offer pendente, não criar outra.
 
-Inverter o papel: o **consultor (requester) vira o offerer**, e o operador apenas escuta. Assim a oferta só é enviada depois que o consultor já compartilhou a tela (já tem `MediaStream` + `DataChannel`), garantindo que o operador (que está inscrito desde que a sessão ficou `active`) receba.
+3. **`ready` duplicado pode causar renegociação desnecessária**
+   - Ao receber `ready`, o requester força `offerSent=false` e chama `sendOffer()`: `src/features/remote-support/screenShare.ts:165-169`.
+   - Se já houver uma offer local pendente, isso pode tentar criar outra offer.
+   - O correto é tratar `ready` como “reenviar offer atual se existir” ou “criar offer só se o estado estiver estável”.
 
-### Mudanças
+4. **Sem TURN, não há garantia em redes restritas**
+   - A configuração usa apenas STUN Google: `src/features/remote-support/screenShare.ts:14-19`.
+   - Em algumas redes corporativas, CGNAT ou NAT simétrico, STUN não basta.
+   - Sem servidor TURN, WebRTC pode ficar em `checking/failed` mesmo com código correto e tela compartilhada.
 
-**`src/features/remote-support/screenShare.ts`**
-- `createRequesterPeer`: passa a criar o `RTCDataChannel("cmd")` e o `offer`. Após `getDisplayMedia` + `addTrack`, faz `setLocalDescription(offer)` e envia `{type:"offer"}`. Trata `answer` recebido do operador.
-- `createOperatorPeer`: remove a criação do data channel e do offer. Usa `pc.ondatachannel` para receber o canal do requester, `pc.ontrack` continua igual. Ao receber `{type:"offer"}`, faz `setRemoteDescription` → `createAnswer` → envia `{type:"answer"}`.
-- Mantém troca de ICE candidates nos dois lados.
+5. **Estado visual depende do DOM, não de estado React**
+   - O placeholder usa `videoRef.current?.srcObject` diretamente no render: `src/pages/SuperAdminRemoteSupport.tsx:330`.
+   - Como `srcObject` não é estado React, a tela pode não refletir corretamente a fase real.
+   - Deve existir um estado explícito, por exemplo `hasStream` e `rtcStage`.
 
-**`src/pages/SuperAdminRemoteSupport.tsx` (workbench)**
-- Mantém a chamada a `createOperatorPeer` quando `status === "active"` (ele agora só assina e espera). O overlay "Conectando…" continua até `ondatachannel` abrir.
-- Mensagem "Aguardando o consultor clicar em Compartilhar tela" segue válida.
+6. **Fluxo iniciado pelo operador tem risco no aceite do consultor**
+   - O diálogo do consultor chama `acceptSession()`: `src/features/remote-support/IncomingOperatorRequestDialog.tsx:31-35`.
+   - Mas a função `remote-support-accept` exige Super Admin: `supabase/functions/remote-support-accept/index.ts:40-41`.
+   - Se o consultor comum autorizar uma sessão iniciada pelo operador, esse aceite pode falhar ou depender de um fluxo inconsistente.
 
-**`src/features/remote-support/useRequesterSession.ts`**
-- Sem mudanças de fluxo: `startScreenShare` continua sendo disparado pelo botão. Como o requester agora é offerer, a oferta sai **depois** do clique, momento em que o operador já está inscrito.
+## Plano de correção
 
-### Fora de escopo
-- UI/textos do banner.
-- Lógica de código rotativo e verificação (já funciona — a sessão chega corretamente em `active`).
-- Comandos remotos (navigate/click/fill) — o data channel continua chamado `"cmd"` e o handler do consultor é o mesmo.
+### 1. Separar os estados da conexão no painel do operador
 
-## Validação
+Trocar o booleano `connecting` por uma fase explícita:
 
-1. Operador aceita pedido → consultor lê código → operador valida → sessão `active`.
-2. Painel mostra "Aguardando consultor clicar em Compartilhar tela".
-3. Consultor clica em **Compartilhar tela** no banner vermelho → escolhe a aba/tela.
-4. Esperado: vídeo aparece no painel do operador em poucos segundos e o log mostra "🟢 Canal de comandos aberto".
+```text
+idle -> waiting_share -> offer_received -> connecting -> connected -> failed
+```
+
+Resultado esperado:
+
+- Depois do código: mostrar “Aguardando o consultor clicar em Compartilhar tela”.
+- Quando chegar offer: mostrar “Conectando…”.
+- Quando chegar vídeo: mostrar a tela.
+- Se falhar: mostrar erro claro e botão “Tentar novamente”.
+
+Arquivos:
+
+- `src/pages/SuperAdminRemoteSupport.tsx`
+- `src/features/remote-support/screenShare.ts`
+
+### 2. Corrigir o envio/reenvio de offer
+
+Ajustar `createRequesterPeer` para:
+
+- Criar nova offer apenas quando `pc.signalingState === "stable"`.
+- Se já existir `pc.localDescription` com offer, apenas reenviar essa mesma SDP.
+- No retry, não chamar `createOffer()` em `have-local-offer`.
+- Registrar estados como `offer-created`, `offer-resent`, `answer-received`, `ice-connected`, `failed`.
+
+Arquivo:
+
+- `src/features/remote-support/screenShare.ts`
+
+### 3. Fortalecer o lado operador contra mensagens duplicadas
+
+Ajustar `createOperatorPeer` para:
+
+- Ignorar offers duplicadas quando já estiver conectado.
+- Responder offer de forma idempotente quando estiver em estado aceitável.
+- Emitir estados `subscribed`, `waiting-offer`, `offer-received`, `answer-sent`, `stream-received`.
+
+Arquivo:
+
+- `src/features/remote-support/screenShare.ts`
+
+### 4. Corrigir o fluxo iniciado pelo operador
+
+Separar autorização do consultor de aceite do Super Admin:
+
+- Criar ou ajustar função para permitir que o próprio requester autorize sessão `initiated_by='operator'`.
+- Garantir que o código seja retornado diretamente para o consultor que autorizou, além do broadcast, para evitar perda de mensagem realtime.
+- Manter Super Admin como único operador que valida código e assume controle.
+
+Arquivos:
+
+- `supabase/functions/remote-support-accept/index.ts`
+- `src/features/remote-support/IncomingOperatorRequestDialog.tsx`
+- `src/features/remote-support/api.ts`
+
+### 5. Adicionar diagnóstico visível e logs de falha
+
+Registrar no log da sessão:
+
+- `rtc_operator_waiting_share`
+- `rtc_requester_offer_sent`
+- `rtc_operator_answer_sent`
+- `rtc_connected`
+- `rtc_failed`
+- `screen_permission_denied`
+
+Isso permite saber se travou por falta de clique, permissão negada, SDP, ICE ou rede.
+
+Arquivos:
+
+- `src/features/remote-support/useRequesterSession.ts`
+- `src/pages/SuperAdminRemoteSupport.tsx`
+- `src/features/remote-support/api.ts`
+
+### 6. Preparar suporte a TURN
+
+Manter STUN como fallback, mas permitir configurar TURN por variável segura quando disponível.
+
+Sem TURN, o sistema pode funcionar em muitas redes, mas não dá para garantir 100%.
+
+Arquivo:
+
+- `src/features/remote-support/screenShare.ts`
+
+## Como vou validar depois da implementação
+
+- Conferir se a sessão muda `requested -> pending_code -> active`.
+- Confirmar que o operador vê “aguardando compartilhamento” antes do clique do consultor.
+- Confirmar que, após “Compartilhar tela”, chegam `offer`, `answer`, ICE e vídeo.
+- Confirmar que o painel sai de “Conectando…” ao receber stream.
+- Confirmar logs de sucesso/falha para saber onde travou se acontecer novamente.
