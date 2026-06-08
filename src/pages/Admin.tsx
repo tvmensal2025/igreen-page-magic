@@ -105,6 +105,11 @@ const AdminContent = () => {
   const [panfletoOpen, setPanfletoOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    const h = () => setSettingsOpen(true);
+    window.addEventListener("open-admin-settings", h);
+    return () => window.removeEventListener("open-admin-settings", h);
+  }, []);
   const [periodDays, setPeriodDays] = useState(30);
 
   const { instanceName, isWhapi } = useWhatsApp(userId || "");
