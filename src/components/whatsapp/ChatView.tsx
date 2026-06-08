@@ -409,10 +409,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   const phoneNumber = chat.remoteJid.split("@")[0];
 
-  // Em telas xl+ (≥1280px), o painel Captação fica como coluna lateral inline.
-  // Abaixo disso, vira Sheet (overlay) pra não esmagar o chat e o composer.
-  const showInlineCapture = isXl && captureOpen && !!customerId;
-  const showSheetCapture = !isXl && !!customerId;
+  // Em desktop/tablet (≥768px), o painel Captação fica como coluna lateral inline.
+  // Em mobile real (<768px), continua como Sheet (overlay) por baixo.
+  const showInlineCapture = !isMobile && captureOpen && !!customerId;
+  const showSheetCapture = isMobile && !!customerId;
+
 
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
