@@ -4,52 +4,224 @@
 <meta charset="utf-8" />
 <title>iGreen Sync</title>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; width: 340px; padding: 0; margin: 0; background: #0f172a; color: #f1f5f9; }
-  .header { background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); padding: 16px 16px 14px; display: flex; align-items: center; gap: 10px; }
-  .header img { width: 36px; height: 36px; border-radius: 8px; background: white; padding: 2px; }
-  .header h1 { font-size: 15px; margin: 0; font-weight: 700; }
-  .header p { font-size: 11px; margin: 2px 0 0; opacity: 0.9; }
-  .body { padding: 14px; }
-  .motivation { font-size: 11px; color: #86efac; font-style: italic; text-align: center; padding: 8px; background: rgba(34, 197, 94, 0.08); border-radius: 6px; margin-bottom: 12px; min-height: 30px; display: flex; align-items: center; justify-content: center; }
-  label { font-size: 12px; color: #94a3b8; display: block; margin-top: 4px; }
-  input[type=password], input[type=text] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #f1f5f9; font-size: 12px; box-sizing: border-box; margin-top: 4px; }
-  button { width: 100%; padding: 10px; margin-top: 12px; background: linear-gradient(135deg, #16a34a, #15803d); border: none; border-radius: 6px; color: white; font-weight: 600; cursor: pointer; font-size: 13px; transition: transform 0.1s; }
-  button:hover:not(:disabled) { transform: translateY(-1px); }
-  button:disabled { opacity: 0.6; cursor: not-allowed; }
-  .row { display: flex; gap: 6px; align-items: center; margin-top: 10px; font-size: 12px; }
-  .row label { margin: 0; color: #cbd5e1; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; display: inline-block; margin-right: 6px; }
-  .dot.ok { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
-  .dot.err { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
-  .status { margin-top: 12px; padding: 10px; background: #1e293b; border-radius: 6px; font-size: 11px; color: #cbd5e1; max-height: 120px; overflow: auto; white-space: pre-wrap; line-height: 1.5; }
-  small { color: #64748b; font-size: 10px; display: block; margin-top: 10px; line-height: 1.4; }
+  :root {
+    --bg: #0b1220;
+    --bg-2: #111a2e;
+    --card: #16223a;
+    --border: #1f2d4d;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --primary: #22c55e;
+    --primary-2: #15803d;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    width: 340px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  /* HEADER */
+  .header {
+    background: linear-gradient(135deg, #16a34a 0%, #15803d 60%, #0e6b32 100%);
+    padding: 18px 18px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::after {
+    content: "";
+    position: absolute;
+    right: -30px;
+    top: -30px;
+    width: 120px;
+    height: 120px;
+    background: radial-gradient(circle, rgba(255,255,255,0.15), transparent 70%);
+  }
+  .logo {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: #fff; padding: 4px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+  }
+  .header h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.2px; }
+  .header p { margin: 2px 0 0; font-size: 11px; opacity: 0.85; }
+
+  /* BODY */
+  .body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* STATUS BADGE */
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    background: rgba(100, 116, 139, 0.2); color: var(--muted);
+    border: 1px solid var(--border);
+    align-self: flex-start;
+  }
+  .status-badge.ok    { background: rgba(34,197,94,0.15);  color: #86efac; border-color: rgba(34,197,94,0.35); }
+  .status-badge.err   { background: rgba(239,68,68,0.15);  color: #fca5a5; border-color: rgba(239,68,68,0.35); }
+  .status-badge.warn  { background: rgba(245,158,11,0.15); color: #fcd34d; border-color: rgba(245,158,11,0.35); }
+  .status-badge.busy  { background: rgba(59,130,246,0.15); color: #93c5fd; border-color: rgba(59,130,246,0.35); }
+  .status-badge .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  /* TOKEN CARD */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .card .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--muted); font-weight: 600; margin-bottom: 6px;
+  }
+  .token-mask {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; color: #e2e8f0;
+    background: #0a1224; border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px;
+  }
+  .token-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .btn-mini {
+    flex: 1; padding: 6px 8px; border-radius: 6px;
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border);
+    font-size: 11px; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-mini:hover { color: var(--text); border-color: #2a3b5e; background: #1a2a4a; }
+  .btn-mini.danger:hover { color: #fca5a5; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.08); }
+
+  input[type=password], input[type=text] {
+    width: 100%; padding: 9px 10px;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: #0a1224; color: var(--text);
+    font-size: 12px; font-family: inherit;
+  }
+  input:focus { outline: none; border-color: var(--primary); }
+
+  /* SYNC BUTTON */
+  .btn-primary {
+    width: 100%; padding: 12px;
+    background: linear-gradient(135deg, #16a34a, #15803d);
+    border: none; border-radius: 10px;
+    color: white; font-weight: 700; font-size: 14px;
+    cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
+    box-shadow: 0 6px 18px rgba(22,163,74,0.25);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(22,163,74,0.35); }
+  .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* AUTO TOGGLE */
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  .switch-row label { font-size: 12px; color: #cbd5e1; cursor: pointer; }
+  .switch { position: relative; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: #334155; border-radius: 999px; transition: 0.2s;
+  }
+  .slider::before {
+    content: ""; position: absolute; height: 14px; width: 14px; left: 3px; top: 3px;
+    background: white; border-radius: 50%; transition: 0.2s;
+  }
+  .switch input:checked + .slider { background: var(--primary); }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
+
+  /* STATUS / DIAGNOSTIC */
+  .status-text {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 12px;
+    font-size: 11px; color: #cbd5e1; line-height: 1.5;
+    white-space: pre-wrap; max-height: 110px; overflow: auto;
+  }
+  .motivation {
+    font-size: 11px; color: #86efac; font-style: italic; text-align: center;
+    padding: 8px 10px; background: rgba(34,197,94,0.08);
+    border-radius: 8px; min-height: 14px;
+    border: 1px dashed rgba(34,197,94,0.25);
+  }
+  .footer-link {
+    font-size: 11px; color: var(--muted); text-align: center;
+    text-decoration: none; display: block; padding: 4px;
+  }
+  .footer-link:hover { color: var(--primary); }
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>
   <div class="header">
-    <img src="icon.png" alt="G" />
-    <div>
+    <img class="logo" src="icon.png" alt="iGreen" />
+    <div style="position:relative; z-index:1;">
       <h1>iGreen Sync</h1>
       <p>Sincronizando energia limpa</p>
     </div>
   </div>
+
   <div class="body">
+    <span id="badge" class="status-badge"><span class="dot"></span><span id="badgeText">Verificando...</span></span>
+
     <div class="motivation" id="motivation">Cada sync acende um novo cliente solar.</div>
 
-    <label>Token de pareamento</label>
-    <input id="token" type="password" placeholder="cole o token gerado no painel" />
+    <!-- Token card: 2 estados -->
+    <div class="card">
+      <div class="label">Token de pareamento</div>
 
-    <button id="sync"><span class="dot" id="dot"></span>Sincronizar agora</button>
+      <!-- Estado: token salvo (mascarado) -->
+      <div id="tokenSaved" class="hidden">
+        <div class="token-mask">
+          <span id="tokenPreview">••••••••</span>
+          <span style="font-size:10px; color: var(--muted);">salvo</span>
+        </div>
+        <div class="token-actions">
+          <button class="btn-mini" id="changeToken">Trocar token</button>
+          <button class="btn-mini danger" id="removeToken">Remover</button>
+        </div>
+      </div>
 
-    <div class="row">
-      <input type="checkbox" id="auto" />
-      <label for="auto">Sincronizar automaticamente (a cada 6h)</label>
+      <!-- Estado: sem token / colando -->
+      <div id="tokenEmpty" class="hidden">
+        <input id="tokenInput" type="password" placeholder="cole o token gerado no painel" autocomplete="off" />
+        <div class="token-actions">
+          <button class="btn-mini" id="saveToken" style="flex:2;">Salvar token</button>
+          <button class="btn-mini" id="cancelToken">Cancelar</button>
+        </div>
+      </div>
     </div>
 
-    <div class="status" id="status">Aguardando...</div>
+    <button id="sync" class="btn-primary">
+      <span id="syncIcon">⟳</span>
+      <span id="syncText">Sincronizar agora</span>
+    </button>
 
-    <small>Voce precisa estar logado em <b>escritorio.igreenenergy.com.br</b> nesta mesma sessao do navegador.</small>
+    <div class="switch-row">
+      <label for="auto">Sincronizar a cada 6h</label>
+      <div class="switch">
+        <input type="checkbox" id="auto" />
+        <span class="slider"></span>
+      </div>
+    </div>
+
+    <div class="status-text" id="status">Aguardando primeira sincronização.</div>
+
+    <a class="footer-link" href="https://escritorio.igreenenergy.com.br/" target="_blank">Abrir escritório iGreen ↗</a>
   </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

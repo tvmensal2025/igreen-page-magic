@@ -1,13 +1,16 @@
 {
   "manifest_version": 3,
   "name": "iGreen Sync",
-  "version": "1.3.0",
-  "description": "Baixa automaticamente os Excel de clientes e da rede do portal iGreen e envia para o iGreen Cloud.",
+  "version": "1.4.0",
+  "description": "Sincroniza seus clientes e rede do portal iGreen para o iGreen Cloud com 1 clique.",
   "permissions": ["storage", "alarms", "tabs", "scripting", "downloads"],
   "host_permissions": [
     "https://escritorio.igreenenergy.com.br/*",
     "https://*.igreenenergy.com.br/*",
-    "https://zlzasfhcxcznaprrragl.supabase.co/*"
+    "https://zlzasfhcxcznaprrragl.supabase.co/*",
+    "https://igreen.cloud/*",
+    "https://*.igreen.cloud/*",
+    "https://*.lovable.app/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -16,6 +19,19 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://igreen.cloud/*",
+        "https://*.igreen.cloud/*",
+        "https://*.lovable.app/*",
+        "http://localhost/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
   "icons": {
     "48": "icon.png",
     "128": "icon.png"

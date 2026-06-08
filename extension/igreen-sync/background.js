@@ -416,6 +416,25 @@ async function runSync() {
   return status;
 }
 
+// ===== Detecção de login no escritório iGreen =====
+// Faz um GET silencioso em /mapa-clientes; se a URL final virar /login
+// (ou retornar 401/302 pra login), o usuário não está logado.
+async function isLoggedInPortal() {
+  try {
+    const res = await fetch(`${IGREEN_ORIGIN}/mapa-clientes`, {
+      credentials: "include",
+      redirect: "follow",
+      cache: "no-store",
+    });
+    const finalUrl = res.url || "";
+    if (/\/login|\/auth|\/signin/i.test(finalUrl)) return false;
+    if (res.status === 401 || res.status === 403) return false;
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ===== Mensagens =====
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "SYNC_NOW") {
@@ -427,6 +446,39 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       });
     return true;
   }
+
+  // Chamado pelo content-script bridge.js quando o app aciona "Sincronizar".
+  // Faz pré-validações (token + login) e devolve uma razão estruturada que
+  // o app usa para mostrar o popup certo.
+  if (msg?.type === "APP_SYNC_NOW") {
+    (async () => {
+      try {
+        const { pairingToken } = await chrome.storage.local.get(["pairingToken"]);
+        if (!pairingToken) {
+          sendResponse({ ok: false, reason: "no_token" });
+          return;
+        }
+        const logged = await isLoggedInPortal();
+        if (!logged) {
+          sendResponse({ ok: false, reason: "not_logged_in" });
+          return;
+        }
+        const status = await runSync();
+        sendResponse({ ok: true, status });
+      } catch (err) {
+        const msg = err?.message || String(err);
+        await chrome.storage.local.set({ lastError: msg, lastErrorAt: new Date().toISOString() });
+        // Se o runSync explodiu por causa de login, devolve reason específico
+        if (/login|captcha|sessao|sessão/i.test(msg)) {
+          sendResponse({ ok: false, reason: "not_logged_in", error: msg });
+        } else {
+          sendResponse({ ok: false, reason: "failed", error: msg });
+        }
+      }
+    })();
+    return true;
+  }
+
   if (msg?.type === "SET_AUTO") {
     (async () => {
       await chrome.storage.local.set({ autoSync: !!msg.enabled });

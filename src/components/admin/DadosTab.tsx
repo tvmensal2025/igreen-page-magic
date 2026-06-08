@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Camera, Settings, Globe, KeyRound, Save, Eye, EyeOff } from "lucide-react";
+import { Camera, Settings, Globe, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,8 +16,6 @@ interface DadosTabProps {
     licenciada_cadastro_url: string;
     facebook_pixel_id: string;
     google_analytics_id: string;
-    igreen_portal_email: string;
-    igreen_portal_password: string;
     portal_kind: "digital" | "autoconexao";
   };
   photoPreview: string | null;
@@ -30,7 +27,6 @@ interface DadosTabProps {
 }
 
 export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChange, onSave, userId }: DadosTabProps) {
-  const [showPortalPassword, setShowPortalPassword] = useState(false);
   const { toast } = useToast();
 
   // Auto-save do portal_kind quando o consultor clica no radio.
@@ -250,29 +246,6 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           <div className="space-y-2">
             <Label htmlFor="google_analytics_id" className="text-sm text-muted-foreground">Google Analytics ID (GA4)</Label>
             <Input id="google_analytics_id" value={form.google_analytics_id} onChange={(e) => onFormChange({ google_analytics_id: e.target.value })} placeholder="Ex: G-XXXXXXXXXX" className="bg-secondary border-border" />
-          </div>
-
-          {/* Portal iGreen Credentials */}
-          <div className="bg-card rounded-2xl border border-border p-6 col-span-full">
-            <h3 className="font-heading font-bold text-foreground mb-4 flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-primary" /> Credenciais Portal iGreen
-            </h3>
-            <p className="text-xs text-muted-foreground mb-4">Email e senha do escritório virtual iGreen para sincronização automática de clientes</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="igreen_portal_email" className="text-sm text-muted-foreground">Email do Portal</Label>
-                <Input id="igreen_portal_email" type="email" value={form.igreen_portal_email} onChange={(e) => onFormChange({ igreen_portal_email: e.target.value })} placeholder="seu@email.com" className="bg-secondary border-border" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="igreen_portal_password" className="text-sm text-muted-foreground">Senha do Portal</Label>
-                <div className="relative">
-                  <Input id="igreen_portal_password" type={showPortalPassword ? "text" : "password"} value={form.igreen_portal_password} onChange={(e) => onFormChange({ igreen_portal_password: e.target.value })} placeholder="••••••••" className="bg-secondary border-border pr-10" />
-                  <button type="button" onClick={() => setShowPortalPassword(!showPortalPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    {showPortalPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>

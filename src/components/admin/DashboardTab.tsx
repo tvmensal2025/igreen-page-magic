@@ -1,10 +1,8 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { Eye as EyeIcon, EyeOff, Users, Zap, TrendingUp, RefreshCw, Loader2, Filter, KeyRound, FileDown, AlertTriangle, Trash2, DollarSign, PiggyBank, Crown } from "lucide-react";
+import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, Chrome, ExternalLink, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -14,6 +12,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
 import { useUserRole } from "@/hooks/useUserRole";
 import { adminHardResetPhone, adminHardResetPhoneTraceCounts } from "@/services/resetConversation";
+import { requestSync as requestExtSync, type SyncResult } from "@/lib/igreenExtensionBridge";
 import { StatCard } from "./StatCard";
 import { HardResetPhoneCard } from "./HardResetPhoneCard";
 import { CustomerCharts } from "./CustomerCharts";
@@ -33,13 +32,13 @@ function formatCompactBRL(value: number): string {
 
 interface DashboardTabProps {
   userId: string;
-  form: { igreen_portal_email: string; igreen_portal_password: string };
-  onFormUpdate: (updates: Record<string, string>) => void;
+  form?: Record<string, unknown>;
+  onFormUpdate?: (updates: Record<string, string>) => void;
   periodDays: number;
   onPeriodChange: (days: number) => void;
 }
 
-export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodChange }: DashboardTabProps) {
+export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTabProps) {
   const [scope, setScope] = useState<"me" | "team">("me");
   const { data: teamIds = [] } = useTeamConsultantIds(userId);
   const isLeader = teamIds.length > 1;
@@ -54,13 +53,11 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   const [syncingDashboard, setSyncingDashboard] = useState(false);
   const [syncCooldown, setSyncCooldown] = useState(0);
   const [selectedLicenciado, setSelectedLicenciado] = useState("all");
-  const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
-  const [credForm, setCredForm] = useState({ email: "", password: "" });
-  const [showCredPassword, setShowCredPassword] = useState(false);
+  const [extDialog, setExtDialog] = useState<null | "no_extension" | "no_token" | "not_logged_in" | "failed">(null);
+  const [extDialogMsg, setExtDialogMsg] = useState<string>("");
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [resettingPerf, setResettingPerf] = useState(false);
-  const [sharedAccountCount, setSharedAccountCount] = useState(0);
   const { isAdmin } = useUserRole(userId);
   const [resetPhone, setResetPhone] = useState("");
   const [resetting, setResetting] = useState(false);
@@ -71,29 +68,12 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   }, []);
 
   useEffect(() => {
-    const email = form.igreen_portal_email?.trim().toLowerCase();
-    if (!email) { setSharedAccountCount(0); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const { count } = await supabase
-          .from("consultants")
-          .select("id", { count: "exact", head: true })
-          .eq("igreen_portal_email", email);
-        if (cancelled) return;
-        setSharedAccountCount(Math.max(0, (count ?? 1) - 1));
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
-  }, [form.igreen_portal_email]);
-
-  useEffect(() => {
     if (syncCooldown <= 0) return;
     const timer = setInterval(() => { setSyncCooldown((prev) => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; }); }, 1000);
     return () => clearInterval(timer);
   }, [syncCooldown]);
 
-  const startCooldown = () => { setSyncCooldown(60); localStorage.setItem("sync_cooldown_until", String(Date.now() + 60000)); };
+  const startCooldown = () => { setSyncCooldown(30); localStorage.setItem("sync_cooldown_until", String(Date.now() + 30000)); };
 
   const licenciadoOptions = useMemo(() => {
     if (!analytics?.allCustomers) return [];
@@ -156,58 +136,34 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
     return { totalCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
   }, [analytics, selectedLicenciado, periodDays]);
 
-  const runSync = async () => {
-    setSyncingDashboard(true); startCooldown();
+  const handleDashboardSync = async () => {
+    setSyncingDashboard(true);
     try {
-      // 1) Clientes — edge function carrega credenciais salvas via service_role.
-      const { data: cData, error: cErr } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { consultant_id: userId },
-      });
-      if (cErr) throw cErr;
-      if (!cData?.success) {
-        toast({ title: "Erro ao sincronizar clientes", description: cData?.error || "Erro desconhecido", variant: "destructive" });
+      const res: SyncResult = await requestExtSync();
+      if (res.ok === false) {
+        if (res.reason === "no_extension") {
+          setExtDialogMsg("Não detectamos a extensão iGreen Sync neste navegador. Instale a extensão para sincronizar seus clientes e rede com 1 clique.");
+          setExtDialog("no_extension");
+        } else if (res.reason === "no_token") {
+          setExtDialogMsg("A extensão está instalada mas ainda não foi pareada. Gere um token no painel e cole na extensão.");
+          setExtDialog("no_token");
+        } else if (res.reason === "not_logged_in") {
+          setExtDialogMsg("Você precisa estar logado no escritório iGreen em outra aba deste mesmo navegador para a extensão conseguir baixar seus dados.");
+          setExtDialog("not_logged_in");
+        } else {
+          setExtDialogMsg(res.error || "Falha ao sincronizar. Tente novamente em alguns segundos.");
+          setExtDialog("failed");
+        }
         return;
       }
-      // 2) Rede (delay 3s p/ evitar rate-limit do portal)
-      await new Promise((r) => setTimeout(r, 3000));
-      const { data: nData, error: nErr } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { consultant_id: userId, mode: "sync_network" },
-      });
-      if (nErr) throw nErr;
-      if (!nData?.success) {
-        toast({
-          title: "Clientes OK, mas falhou a rede",
-          description: nData?.error || "Erro desconhecido ao sincronizar a rede.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "✅ Sincronização concluída!",
-          description: `${cData.processed ?? cData.updated ?? 0} clientes • ${nData.total_members ?? 0} membros da rede`,
-        });
-      }
+      startCooldown();
+      toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
     } catch (err: unknown) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
-    } finally { setSyncingDashboard(false); }
-  };
-
-  const handleDashboardSync = () => {
-    // Senha não é mais lida do banco; basta ter email configurado para acionar.
-    if (form.igreen_portal_email) runSync();
-    else { setCredForm({ email: "", password: "" }); setShowCredentialsDialog(true); }
-  };
-
-  const handleSaveCredentialsAndSync = async () => {
-    if (!credForm.email || !credForm.password) return;
-    try {
-      const { error } = await supabase.from("consultants").update({ igreen_portal_email: credForm.email, igreen_portal_password: credForm.password }).eq("id", userId);
-      if (error) throw error;
-      onFormUpdate({ igreen_portal_email: credForm.email, igreen_portal_password: credForm.password });
-      setShowCredentialsDialog(false);
-      toast({ title: "✅ Credenciais salvas!", description: "Baixando clientes e rede do portal iGreen…" });
-      runSync();
-    } catch (err: unknown) { toast({ title: "Erro ao salvar credenciais", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
+    } finally {
+      setSyncingDashboard(false);
+    }
   };
 
   const handleExportPdf = async () => {
@@ -308,15 +264,6 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
 
   return (
     <div ref={dashboardRef} className="space-y-6">
-      {sharedAccountCount > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-amber-200/90">
-            <strong className="text-amber-300">Conta iGreen compartilhada</strong> com {sharedAccountCount} outro{sharedAccountCount > 1 ? "s" : ""} consultor{sharedAccountCount > 1 ? "es" : ""}.
-            Cada consultor vê apenas seus próprios clientes no painel — a sincronização não afeta os dados dos outros.
-          </div>
-        </div>
-      )}
 
       {/* TOOLBAR */}
       <div className="flex items-center justify-between gap-1.5 flex-wrap p-1.5 rounded-xl bg-card/40 border border-border/40 backdrop-blur">
@@ -381,24 +328,39 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
       <RetentionCard customers={filteredMetrics?.filteredCustomers} />
 
 
-      {/* Credentials Dialog */}
-      <Dialog open={showCredentialsDialog} onOpenChange={setShowCredentialsDialog}>
+      {/* Extensão iGreen Sync — diálogos de status */}
+      <Dialog open={extDialog !== null} onOpenChange={(o) => !o && setExtDialog(null)}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><KeyRound className="w-5 h-5 text-primary" />Conectar ao Portal iGreen</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">Informe suas credenciais do portal iGreen para sincronizar seus clientes automaticamente.</p>
-          <div className="space-y-4 mt-2">
-            <div><Label htmlFor="cred-email">Email do Portal</Label><Input id="cred-email" type="email" placeholder="seu@email.com" value={credForm.email} onChange={(e) => setCredForm(prev => ({ ...prev, email: e.target.value }))} /></div>
-            <div>
-              <Label htmlFor="cred-password">Senha do Portal</Label>
-              <div className="relative">
-                <Input id="cred-password" type={showCredPassword ? "text" : "password"} placeholder="••••••••" value={credForm.password} onChange={(e) => setCredForm(prev => ({ ...prev, password: e.target.value }))} />
-                <button type="button" onClick={() => setShowCredPassword(!showCredPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  {showCredPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-                </button>
-              </div>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {extDialog === "not_logged_in" ? <KeyRound className="w-5 h-5 text-primary" /> : <Chrome className="w-5 h-5 text-primary" />}
+              {extDialog === "no_extension" && "Instale a extensão iGreen Sync"}
+              {extDialog === "no_token" && "Extensão sem pareamento"}
+              {extDialog === "not_logged_in" && "Faça login no escritório iGreen"}
+              {extDialog === "failed" && "Falha na sincronização"}
+            </DialogTitle>
+            <DialogDescription className="pt-2">{extDialogMsg}</DialogDescription>
+          </DialogHeader>
+          {extDialog === "not_logged_in" && (
+            <div className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/40 p-3">
+              <strong>Como resolver:</strong> abra <code>escritorio.igreenenergy.com.br</code> em outra aba, faça login (resolva o captcha se aparecer) e volte aqui para clicar em <b>Sincronizar</b> novamente.
             </div>
-            <Button className="w-full" onClick={handleSaveCredentialsAndSync} disabled={!credForm.email || !credForm.password}><RefreshCw className="w-4 h-4 mr-2" />Conectar e Sincronizar</Button>
-          </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            {extDialog === "not_logged_in" && (
+              <Button asChild>
+                <a href="https://escritorio.igreenenergy.com.br/" target="_blank" rel="noreferrer">
+                  <ExternalLink className="w-4 h-4 mr-2" /> Abrir escritório iGreen
+                </a>
+              </Button>
+            )}
+            {(extDialog === "no_extension" || extDialog === "no_token") && (
+              <Button onClick={() => { setExtDialog(null); window.dispatchEvent(new CustomEvent("open-admin-settings")); }}>
+                <Chrome className="w-4 h-4 mr-2" /> Abrir extensão no painel
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setExtDialog(null)}>Fechar</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
