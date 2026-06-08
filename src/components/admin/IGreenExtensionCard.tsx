@@ -105,7 +105,7 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
         <div>
           <h3 className="font-semibold flex items-center gap-2"><Chrome className="h-4 w-4" /> Sincronizacao iGreen via Extensao</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            O portal iGreen esta bloqueando logins automaticos. Use a extensao no seu navegador, ja logado no portal, para enviar seus clientes para o sistema.
+            A extensao usa sua propria sessao logada no portal para baixar automaticamente os Excel de <b>Mapa de Clientes</b> e <b>Mapa de Rede</b> e enviar para o iGreen Cloud. Sem login automatizado, sem risco de bloqueio.
           </p>
         </div>
       </div>
@@ -179,10 +179,10 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
             <li>Abra <code>chrome://extensions</code> no Chrome (ou Edge, Brave, Opera).</li>
             <li>Ative o <b>Modo desenvolvedor</b> (canto superior direito).</li>
             <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada.</li>
-            <li>No painel, clique em <b>Gerar token</b> e copie o token.</li>
+            <li>No painel aqui, clique em <b>Gerar token</b> e copie o token.</li>
             <li>Clique no icone da extensao, cole o token e clique em <b>Salvar token</b>.</li>
-            <li>Faca login em <code>escritorio.igreenenergy.com.br</code> normalmente.</li>
-            <li>Clique em <b>Sincronizar agora</b> na extensao.</li>
+            <li>Em outra aba do mesmo navegador, faca login em <code>escritorio.igreenenergy.com.br</code>.</li>
+            <li>Volte na extensao e clique em <b>Sincronizar agora</b>. Ela vai abrir <code>/mapa-clientes</code> e <code>/mapa-rede</code>, clicar nos botoes "Exportar Excel" e enviar tudo para o iGreen Cloud automaticamente.</li>
           </ol>
         </DialogContent>
       </Dialog>

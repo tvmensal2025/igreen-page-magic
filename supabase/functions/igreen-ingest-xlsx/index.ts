@@ -1,0 +1,291 @@
+// igreen-ingest-xlsx
+// Recebe os arquivos .xlsx exportados pelos botoes "Exportar Excel" do portal
+// /mapa-clientes e /mapa-rede. Faz parse, upsert em customers e consultant_network.
+import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-pairing-token",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+async function sha256Hex(input: string): Promise<string> {
+  const buf = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function b64ToUint8(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function parseXlsx(b64: string): Record<string, unknown>[] {
+  if (!b64) return [];
+  const bytes = b64ToUint8(b64);
+  const wb = XLSX.read(bytes, { type: "array" });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) return [];
+  const sheet = wb.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    defval: null,
+    raw: false,
+    blankrows: false,
+  });
+}
+
+const safeStr = (v: unknown): string | null => {
+  if (v == null || v === "") return null;
+  const s = String(v).trim();
+  return s.length ? s : null;
+};
+const safeNum = (v: unknown): number | null => {
+  if (v == null || v === "") return null;
+  const n = parseFloat(String(v).replace(/\./g, "").replace(",", ".").replace("%", ""));
+  return isNaN(n) ? null : n;
+};
+
+function pick(row: Record<string, unknown>, ...keys: string[]): unknown {
+  const lowerMap: Record<string, unknown> = {};
+  for (const k of Object.keys(row)) lowerMap[k.toLowerCase().trim()] = row[k];
+  for (const k of keys) {
+    const v = lowerMap[k.toLowerCase().trim()];
+    if (v != null && v !== "") return v;
+  }
+  return null;
+}
+
+function normalizePhone(raw: unknown): string {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("55") && digits.length >= 12) return digits;
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  if (digits.length >= 12) return digits;
+  return "";
+}
+
+function mapStatus(a?: string | null): string {
+  if (!a) return "pending";
+  const l = a.toLowerCase().trim();
+  if (l === "validado" || l === "aprovado" || l === "ativo") return "approved";
+  if (l === "devolutiva") return "devolutiva";
+  if (l === "reprovado" || l === "cancelado") return "rejected";
+  if (l.includes("falta assinatura")) return "awaiting_signature";
+  if (l.includes("aguardando")) return "pending";
+  if (l === "pendente" || l === "em análise" || l === "em analise") return "pending";
+  if (l === "lead" || l === "novo") return "lead";
+  return "pending";
+}
+
+function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown> | null {
+  const phoneRaw = pick(r, "Celular", "celular", "Telefone", "telefone", "WhatsApp", "phone");
+  let phone = normalizePhone(phoneRaw);
+  let placeholder = false;
+  const codigo = safeStr(pick(r, "Código", "Codigo", "codigoCliente", "codigoIgreen", "ID", "Cód"));
+  if (!phone || phone.length < 12) {
+    const fb = codigo || safeStr(pick(r, "Instalação", "Instalacao", "numeroInstalacao"));
+    if (!fb) return null;
+    phone = `sem_celular_${String(fb).replace(/\D/g, "")}`;
+    placeholder = true;
+  }
+  const rec: Record<string, unknown> = {
+    phone_whatsapp: phone,
+    customer_origin: "igreen_extension",
+    phone_contact_confirmed: false,
+  };
+  const name = safeStr(pick(r, "Nome do Cliente", "Nome", "Cliente", "nomeCliente", "name"));
+  if (name) rec.name = name;
+  const statusRaw = safeStr(pick(r, "Andamento", "Status", "andamento"));
+  rec.status = placeholder ? "contato_incompleto" : mapStatus(statusRaw);
+  const cpf = safeStr(pick(r, "CPF", "Documento", "cpf"));
+  if (cpf) rec.cpf = String(cpf).replace(/\D/g, "");
+  const email = safeStr(pick(r, "E-mail", "Email", "email"));
+  if (email) rec.email = email;
+  const city = safeStr(pick(r, "Cidade", "Município", "Municipio"));
+  if (city) rec.address_city = city;
+  const state = safeStr(pick(r, "UF", "Estado"));
+  if (state) rec.address_state = String(state).toUpperCase();
+  const dist = safeStr(pick(r, "Distribuidora"));
+  if (dist) rec.distribuidora = dist;
+  if (statusRaw) rec.andamento_igreen = statusRaw;
+  const dev = safeStr(pick(r, "Devolutiva"));
+  if (dev) rec.devolutiva = dev;
+  if (codigo) rec.igreen_code = codigo;
+  const cons = safeNum(pick(r, "Consumo Médio", "Consumo Medio", "consumoMedio"));
+  if (cons != null) rec.media_consumo = cons;
+  const desc = safeNum(pick(r, "Desconto", "Desconto Cliente", "descontoCliente"));
+  if (desc != null) rec.desconto_cliente = desc;
+  const inst = safeStr(pick(r, "Instalação", "Instalacao", "Nº Instalação", "numeroInstalacao"));
+  if (inst) rec.numero_instalacao = inst;
+  return rec;
+}
+
+function buildNetworkRecord(r: Record<string, unknown>, mesRef: string): Record<string, unknown> | null {
+  const codigo = safeStr(pick(r, "ID", "Código", "Codigo", "Cód", "codigo"));
+  if (!codigo) return null;
+  return {
+    codigo_igreen: codigo,
+    nivel: (() => { const n = safeNum(pick(r, "Nível", "Nivel", "Level")); return n == null ? null : Math.round(n); })(),
+    nome: safeStr(pick(r, "Nome", "Consultor", "Nome do Consultor")),
+    patrocinador_codigo: safeStr(pick(r, "Patrocinador", "Patrocinador Código", "Cod Patrocinador")),
+    celular: safeStr(pick(r, "Celular", "Telefone", "WhatsApp")),
+    cidade: safeStr(pick(r, "Cidade", "Município")),
+    uf: (() => { const s = safeStr(pick(r, "UF", "Estado")); return s ? s.toUpperCase() : null; })(),
+    graduacao: safeStr(pick(r, "Graduação", "Graduacao", "Cargo")),
+    gp_qualificados: safeNum(pick(r, "GP Qualificados", "GP")),
+    gl_qualificados: safeNum(pick(r, "GL Qualificados", "GL")),
+    mes_ref: mesRef,
+    raw_json: r,
+    source: "igreen_extension_xlsx",
+  };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  try {
+    const token = req.headers.get("x-pairing-token") || "";
+    if (!token) {
+      return new Response(JSON.stringify({ error: "missing_pairing_token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const tokenHash = await sha256Hex(token);
+    const { data: tokenRow, error: tErr } = await supabase
+      .from("igreen_extension_tokens")
+      .select("id, consultant_id, expires_at, revoked_at")
+      .eq("token_hash", tokenHash)
+      .maybeSingle();
+    if (tErr || !tokenRow) {
+      return new Response(JSON.stringify({ error: "invalid_pairing_token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (tokenRow.revoked_at) {
+      return new Response(JSON.stringify({ error: "token_revoked" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (tokenRow.expires_at && new Date(tokenRow.expires_at).getTime() < Date.now()) {
+      return new Response(JSON.stringify({ error: "token_expired" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+    await supabase.from("igreen_extension_tokens")
+      .update({ last_used_at: new Date().toISOString(), last_used_ip: ip })
+      .eq("id", tokenRow.id);
+
+    const body = await req.json().catch(() => ({}));
+    const consultantId = tokenRow.consultant_id as string;
+    const result: Record<string, unknown> = { ok: true };
+
+    // --- CLIENTES ---
+    const clientesB64 = typeof body?.clientes_b64 === "string" ? body.clientes_b64 : "";
+    if (clientesB64) {
+      let rows: Record<string, unknown>[] = [];
+      try { rows = parseXlsx(clientesB64); }
+      catch (e) { result.clientes_parse_error = e instanceof Error ? e.message : String(e); }
+      const seen = new Set<string>();
+      const recs: Record<string, unknown>[] = [];
+      let skipped = 0;
+      for (const r of rows) {
+        const rec = buildCustomerRecord(r);
+        if (!rec?.phone_whatsapp) { skipped++; continue; }
+        let phone = String(rec.phone_whatsapp);
+        if (seen.has(phone)) {
+          const icode = safeStr(pick(r, "Código", "Codigo", "codigoCliente"));
+          if (!icode) continue;
+          phone = `${phone}_${icode}`;
+          rec.phone_whatsapp = phone;
+        }
+        seen.add(phone);
+        rec.consultant_id = consultantId;
+        recs.push(rec);
+      }
+      const phones = recs.map((r) => String(r.phone_whatsapp));
+      const midConv = new Set<string>();
+      for (let i = 0; i < phones.length; i += 200) {
+        const chunk = phones.slice(i, i + 200);
+        const { data } = await supabase.from("customers")
+          .select("phone_whatsapp, conversation_step").in("phone_whatsapp", chunk)
+          .not("conversation_step", "is", null);
+        for (const e of (data || []) as Array<{ phone_whatsapp: string; conversation_step: string | null }>) {
+          if (e.conversation_step && e.conversation_step !== "complete") midConv.add(e.phone_whatsapp);
+        }
+      }
+      for (const r of recs) if (midConv.has(String(r.phone_whatsapp))) delete r.status;
+      let upserted = 0, errors = 0;
+      for (let i = 0; i < recs.length; i += 100) {
+        const batch = recs.slice(i, i + 100);
+        const { data, error } = await supabase.from("customers")
+          .upsert(batch, { onConflict: "phone_whatsapp,consultant_id", ignoreDuplicates: false })
+          .select("id");
+        if (error) { console.error("customers upsert", error); errors += batch.length; }
+        else upserted += data?.length || 0;
+      }
+      result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+    }
+
+    // --- REDE ---
+    const redeB64 = typeof body?.rede_b64 === "string" ? body.rede_b64 : "";
+    const mesRef = safeStr(body?.mes_ref) || new Date().toISOString().slice(0, 7);
+    if (redeB64) {
+      let rows: Record<string, unknown>[] = [];
+      try { rows = parseXlsx(redeB64); }
+      catch (e) { result.rede_parse_error = e instanceof Error ? e.message : String(e); }
+      const recs: Record<string, unknown>[] = [];
+      let skipped = 0;
+      const seen = new Set<string>();
+      for (const r of rows) {
+        const rec = buildNetworkRecord(r, mesRef);
+        if (!rec) { skipped++; continue; }
+        const key = String(rec.codigo_igreen);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rec.consultant_id = consultantId;
+        recs.push(rec);
+      }
+      let upserted = 0, errors = 0;
+      for (let i = 0; i < recs.length; i += 100) {
+        const batch = recs.slice(i, i + 100);
+        const { data, error } = await supabase.from("consultant_network")
+          .upsert(batch, { onConflict: "consultant_id,codigo_igreen", ignoreDuplicates: false })
+          .select("id");
+        if (error) { console.error("network upsert", error); errors += batch.length; }
+        else upserted += data?.length || 0;
+      }
+      result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+    }
+
+    await supabase.from("settings").upsert(
+      { key: `last_igreen_ext_sync_${consultantId}`, value: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+
+    return new Response(JSON.stringify(result), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error("igreen-ingest-xlsx error:", err);
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+});
