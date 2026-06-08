@@ -77,15 +77,21 @@ export default function VariantDistributionBar({
       return;
     }
     setCreating(true);
-    const { data, error } = await (supabase as any).rpc("ensure_bot_flow_variant", {
+    const { error } = await (supabase as any).rpc("ensure_bot_flow_variant", {
       _consultant_id: consultantId,
       _variant: target,
       _source_variant: editingVariant,
     });
     setCreating(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`Fluxo ${target} criado`);
+    // Sempre revalida a lista de variantes existentes — mesmo em erro,
+    // garante que a UI não fique "presa" mostrando que o fluxo não existe.
     await onChanged();
+    if (error) {
+      const msg = String(error.message || "").trim();
+      toast.error(`Não foi possível criar o fluxo ${target}${msg ? `: ${msg}` : ""}`);
+      return;
+    }
+    toast.success(`Fluxo ${target} criado a partir do modelo público (ou da variante ${editingVariant})`);
     onSelectVariant(target);
   }
 
