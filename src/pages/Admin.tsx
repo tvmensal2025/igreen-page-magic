@@ -321,7 +321,7 @@ const AdminContent = () => {
               slug={slug}
               baseUrl={baseUrl}
               onCopy={copyLink}
-              onQrOpen={(url, label) => setQrModal({ url, label })}
+              onQrOpen={(url, label) => setQrPanfleto({ url, label })}
               onPanfletoOpen={() => setPanfletoOpen(true)}
             />
           )}
