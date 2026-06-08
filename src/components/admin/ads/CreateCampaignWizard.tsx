@@ -813,7 +813,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                   <div className="space-y-2">
                     {/* TIER ALTO */}
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] uppercase tracking-wider text-primary/80 font-bold">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-green-900">
                         🟢 Bônus até {bonusTiers.alto.percent}%
                       </div>
                     </div>
