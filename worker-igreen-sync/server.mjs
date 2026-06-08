@@ -38,7 +38,7 @@ const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
-if (!OPENAI_API_KEY) console.warn('[boot] WARN: OPENAI_API_KEY não definido (debug IA desativado)');
+if (!OPENAI_API_KEY) console.warn('[boot] WARN: OPENAI_API_KEY não definido (debug visual desativado)');
 
 // ---------- Debug ----------
 let lastDebug = { ts: null, steps: [] };
