@@ -107,8 +107,25 @@ export function useCaptureSession(customerId: string | null) {
   const validation: ValidationResult = useMemo(() => validateForPortal(customer as any), [customer]);
 
   const totalFields = validation.totalFields;
-  const filledCount = Math.max(0, totalFields - validation.pendingItems.length);
+  // filledCount = só presença (missing). Inválidos NÃO descontam — senão um
+  // único campo torto (ex: email com formato errado, name_mismatch, distrib
+  // fora da allow-list) jogava o "X/Y" de 18/18 pra 2/18 mesmo com a ficha
+  // toda preenchida.
+  const filledCount = Math.max(0, totalFields - validation.missing.length);
   const progress = Math.round((filledCount / totalFields) * 100);
+
+  if (typeof window !== "undefined" && (import.meta as any)?.env?.DEV && customer) {
+    // eslint-disable-next-line no-console
+    console.debug("[useCaptureSession]", {
+      customerId: customer.id,
+      filledCount,
+      totalFields,
+      missing: validation.missing.map((m) => m.key),
+      invalid: validation.invalid.map((i) => `${i.field}: ${i.reason}`),
+      ok: validation.ok,
+    });
+  }
+
 
   // Lista descritiva pra UI: presença + inválidos no mesmo array, mesma ordem
   // que aparece pro consultor — sem desencontro entre card e sheet.
