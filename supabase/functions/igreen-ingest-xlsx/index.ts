@@ -458,9 +458,15 @@ Deno.serve(async (req) => {
         rec.consultant_id = consultantId;
         recs.push(rec);
       }
+      // Separa campos extras (_*) que vão pro network_members mas não pro consultant_network
+      const stripExtras = (r: Record<string, unknown>): Record<string, unknown> => {
+        const out: Record<string, unknown> = {};
+        for (const k of Object.keys(r)) if (!k.startsWith("_")) out[k] = r[k];
+        return out;
+      };
       let upserted = 0, errors = 0;
       for (let i = 0; i < recs.length; i += 100) {
-        const batch = recs.slice(i, i + 100);
+        const batch = recs.slice(i, i + 100).map(stripExtras);
         const { data, error } = await supabase.from("consultant_network")
           .upsert(batch, { onConflict: "consultant_id,codigo_igreen", ignoreDuplicates: false })
           .select("id");
@@ -486,6 +492,24 @@ Deno.serve(async (req) => {
           graduacao: r.graduacao || null,
           gp: r.gp_qualificados ?? null,
           gi: r.gl_qualificados ?? null,
+          gt_qualificavel: r._gt_qualificavel ?? null,
+          bonificavel: r._bonificavel ?? null,
+          green_points_ano: r._green_points_ano ?? null,
+          gp_mes: r._gp_mes ?? null,
+          gi_mes: r._gi_mes ?? null,
+          green_points_mes: r._green_points_mes ?? null,
+          graduacao_expansao: r._graduacao_expansao ?? null,
+          licenciados_diretos: r._licenciados_diretos ?? null,
+          licenciados_diretos_ativos: r._licenciados_diretos_ativos ?? null,
+          clientes_ativos: r._clientes_ativos ?? null,
+          pro: r._pro ?? null,
+          green_telecom_mes: r._green_telecom_mes ?? null,
+          livre_mes: r._livre_mes ?? null,
+          placas_mes: r._placas_mes ?? null,
+          club_mes: r._club_mes ?? null,
+          expansao_mes: r._expansao_mes ?? null,
+          data_ativo: r._data_ativo ?? null,
+          data_nascimento: r._data_nascimento ?? null,
         });
       }
       for (let i = 0; i < nmRecs.length; i += 100) {
