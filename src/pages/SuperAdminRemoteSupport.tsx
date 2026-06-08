@@ -215,7 +215,8 @@ function loadPrefs(): Prefs {
   // desativado". Migramos silenciosamente.
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
-    return { control: true, quality: "auto", sidePanel: true, ...raw, control: raw.control !== false };
+    const merged = { control: true, quality: "auto" as QualityLevel, sidePanel: true, ...raw };
+    return { ...merged, control: merged.control !== false };
   } catch { return { control: true, quality: "auto", sidePanel: true }; }
 }
 function savePrefs(p: Prefs) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {} }
