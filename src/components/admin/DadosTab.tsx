@@ -161,7 +161,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
                 required
               />
             </div>
-            <p className="text-xs text-muted-foreground">Número onde a Camila atende seus leads</p>
+            <p className="text-xs text-muted-foreground">Número onde {personaName || "sua IA"} atende seus leads</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="notification_phone" className="text-sm text-muted-foreground">WhatsApp para alertas (humano)</Label>
