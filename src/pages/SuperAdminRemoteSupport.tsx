@@ -627,7 +627,7 @@ function PlayerToolbar(props: {
 
   return (
     <div
-      className={`absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-black/75 backdrop-blur text-white text-xs px-2 py-1.5 rounded-lg shadow-lg transition-opacity ${visible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      className={`absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 bg-black/75 backdrop-blur text-white text-xs px-2 py-1.5 rounded-lg shadow-lg transition-opacity ${visible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
     >
       <button
         onClick={onToggleControl}
