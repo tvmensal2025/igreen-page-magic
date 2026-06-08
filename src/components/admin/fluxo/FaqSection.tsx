@@ -451,6 +451,8 @@ function QACard(props: {
   availableVideos: LibraryVideo[];
   availableAudios: LibraryAudio[];
   triggerIndex: Map<string, string[]>;
+  readOnly?: boolean;
+  isSuperAdmin?: boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onUpdate: (p: Partial<QA>) => void;
@@ -462,7 +464,7 @@ function QACard(props: {
   onRemoveMedia: (m: Media) => void;
   onAudioRecorded: (blob: Blob) => Promise<void>;
 }) {
-  const { qa, slots, availableVideos, availableAudios, triggerIndex } = props;
+  const { qa, slots, availableVideos, availableAudios, triggerIndex, readOnly, isSuperAdmin } = props;
   const [phraseInput, setPhraseInput] = useState("");
   const [name, setName] = useState(qa.intent_name);
   const [text, setText] = useState(qa.text_response ?? "");
