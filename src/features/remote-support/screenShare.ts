@@ -246,17 +246,13 @@ export async function createRequesterPeer(
     // pixel-a-pixel com o viewport da página.
     video: {
       frameRate: 15,
-      // @ts-expect-error — preferCurrentTab é não-padrão (Chromium)
       preferCurrentTab: true,
-      // @ts-expect-error — displaySurface é hint do W3C
       displaySurface: "browser",
-    } as MediaTrackConstraints,
+    } as any,
     audio: false,
-    // @ts-expect-error — selfBrowserSurface não está no lib.dom
     selfBrowserSurface: "include",
-    // @ts-expect-error — surfaceSwitching não está no lib.dom
     surfaceSwitching: "exclude",
-  });
+  } as any);
   stream.getTracks().forEach(t => {
     pc.addTrack(t, stream);
     t.addEventListener("ended", onClose);
