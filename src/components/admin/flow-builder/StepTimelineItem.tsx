@@ -34,6 +34,7 @@ interface Props {
   isLast: boolean;
   pulse?: boolean;
   mediaCount?: { audio: number; image: number; video: number };
+  consultantName?: string;
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -44,7 +45,7 @@ interface Props {
 }
 
 export default function StepTimelineItem({
-  step, steps, selected, isStart, isLast, pulse, mediaCount,
+  step, steps, selected, isStart, isLast, pulse, mediaCount, consultantName,
   onSelect, onEdit, onDelete, onDuplicate, onJumpTo, onEditExits,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
@@ -57,7 +58,7 @@ export default function StepTimelineItem({
 
   const typeMeta = STEP_TYPE_OPTIONS.find((t) => t.value === step.step_type) ?? STEP_TYPE_OPTIONS[0];
   const buttons = getButtons(step);
-  const previewText = renderVarsPreview(step.message_text).slice(0, 90);
+  const previewText = renderVarsPreview(step.message_text, consultantName).slice(0, 90);
   const warnings = buildWarnings(step, steps);
 
   // Saídas unificadas (botão / palavra-chave / padrão → destino).
