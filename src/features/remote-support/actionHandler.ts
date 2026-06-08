@@ -328,7 +328,14 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
       }
 
       case "key": {
-        const target = (document.activeElement as HTMLElement) || document.body;
+        // Refoca o elemento sob o último cursor — evita perder tecla quando
+        // foco saiu para outro lugar (modal Radix etc.).
+        let target = (document.activeElement as HTMLElement) || document.body;
+        if (!target || target === document.body) {
+          const under = elAt(_lastMouseX, _lastMouseY);
+          const f = focusable(under);
+          if (f) { try { f.focus({ preventScroll: true } as FocusOptions); } catch {} target = f; }
+        }
         if (isProtected(target)) throw new Error("element is protected");
         const init: KeyboardEventInit = {
           key: cmd.key || "", code: cmd.code || cmd.key || "",
