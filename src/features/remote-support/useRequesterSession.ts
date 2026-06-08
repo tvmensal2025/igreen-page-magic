@@ -142,6 +142,13 @@ export function useRequesterSession(userId: string | null | undefined) {
       );
       peerRef.current = peer;
       setActivePeerForQuality(peer.pc);
+      // Detecta o tipo de superfície compartilhada (browser/window/monitor).
+      // 'browser' = aba atual → cliques mapeiam pixel-a-pixel.
+      try {
+        const videoTrack = peer.stream.getVideoTracks()[0];
+        const settings: any = videoTrack?.getSettings?.() ?? {};
+        setShareSurface(settings.displaySurface ?? null);
+      } catch { setShareSurface(null); }
       await logAction(session.id, "requester", "screen_started");
       toast.success("Compartilhando tela com o suporte");
     } catch (e: any) {
@@ -152,5 +159,5 @@ export function useRequesterSession(userId: string | null | undefined) {
     }
   }, [session, sharing]);
 
-  return { session, code, codeExpiresAt, sharing, paused, togglePause, request, end, startScreenShare };
+  return { session, code, codeExpiresAt, sharing, paused, shareSurface, togglePause, request, end, startScreenShare };
 }
