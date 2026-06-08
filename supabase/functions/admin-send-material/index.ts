@@ -52,10 +52,11 @@ Deno.serve(async (req) => {
     const phone = String(body.phone || "").replace(/\D/g, "");
     const mediaUrl = String(body.mediaUrl || "");
     const caption = String(body.caption || "").slice(0, 500);
-    const mediatype = (body.mediatype === "image" || body.mediatype === "document" ? body.mediatype : "video") as
-      | "video"
-      | "image"
-      | "document";
+    const mediatype = (
+      body.mediatype === "image" || body.mediatype === "document" || body.mediatype === "audio"
+        ? body.mediatype
+        : "video"
+    ) as "video" | "image" | "document" | "audio";
 
     if (phone.length < 10 || phone.length > 13) {
       return new Response(JSON.stringify({ error: "Telefone inválido" }), {
