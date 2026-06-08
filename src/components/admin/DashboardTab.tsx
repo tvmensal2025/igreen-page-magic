@@ -350,6 +350,9 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
         </div>
       </div>
 
+      {/* SINCRONIZACAO via extensao do navegador */}
+      <IGreenExtensionCard userId={userId} />
+
       {/* MANUTENÇÃO — Hard reset por telefone (admin only, temporário) */}
       <HardResetPhoneCard userId={userId} />
 
