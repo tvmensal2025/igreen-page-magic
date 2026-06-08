@@ -480,6 +480,8 @@ function SessionWorkbench({ session, consultantName, onClose }: {
             >
               <video
                 ref={videoRef}
+                onLoadedMetadata={() => { setVideoReady(true); toast.success("Controle ativo", { duration: 2500 }); }}
+                onEmptied={() => setVideoReady(false)}
                 className="w-full h-full object-contain pointer-events-none select-none"
                 autoPlay playsInline muted
               />
