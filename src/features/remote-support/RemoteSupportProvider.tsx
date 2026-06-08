@@ -50,7 +50,7 @@ export function RemoteSupportProvider() {
           onClick={request}
           title="Pedir ajuda ao suporte"
           aria-label="Pedir ajuda ao suporte"
-          className="fixed bottom-3 left-3 z-[9998] p-2 rounded-full bg-background/80 backdrop-blur border border-border shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors opacity-60 hover:opacity-100"
+          className="fixed top-20 right-2 z-[9998] p-2 rounded-full bg-background/80 backdrop-blur border border-border shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors opacity-60 hover:opacity-100"
           data-remote-support-banner
         >
           <LifeBuoy className="size-4" />
