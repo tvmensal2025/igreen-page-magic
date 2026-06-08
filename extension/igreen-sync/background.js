@@ -1,6 +1,6 @@
 // iGreen Sync — service worker
 const INGEST_URL = "https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/igreen-ingest-customers";
-const IGREEN_ORIGIN = "https://app.igreenenergia.com.br";
+const IGREEN_ORIGIN = "https://escritorio.igreenenergy.com.br";
 const CUSTOMER_MAP_PATH = "/customer-map";
 const ALARM_NAME = "igreen-sync-auto";
 
