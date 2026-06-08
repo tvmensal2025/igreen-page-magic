@@ -16,7 +16,17 @@ export function useRequesterSession(userId: string | null | undefined) {
   const [code, setCode] = useState<string | null>(null);
   const [codeExpiresAt, setCodeExpiresAt] = useState<number | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [paused, setPausedState] = useState(false);
   const peerRef = useRef<Awaited<ReturnType<typeof createRequesterPeer>> | null>(null);
+
+  const togglePause = useCallback(() => {
+    setPausedState(p => {
+      const next = !p;
+      setRemoteControlPaused(next);
+      if (session) logAction(session.id, "requester", next ? "control_paused" : "control_resumed");
+      return next;
+    });
+  }, [session]);
 
   // Load latest active/pending session on mount
   useEffect(() => {
