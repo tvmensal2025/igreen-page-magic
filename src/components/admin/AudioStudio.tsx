@@ -792,6 +792,18 @@ export function AudioStudio({ userId }: { userId: string }) {
                 </Button>
               </div>
 
+              {audioUrl && (
+                <AudioWhatsAppPopover
+                  audioUrl={audioUrl}
+                  label={`${kindLabel} — ${cidade || "cidade"}`}
+                  trigger={
+                    <Button variant="outline" className="w-full h-10 text-xs gap-2 rounded-xl">
+                      <Send className="w-4 h-4" /> Enviar no WhatsApp
+                    </Button>
+                  }
+                />
+              )}
+
               {lastRowId && (
                 <Button
                   onClick={publishCurrent}
