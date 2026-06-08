@@ -470,6 +470,9 @@ export function PartnerQrCode({
                 ? "Layout travado — bate 1:1 com a impressão."
                 : "Arraste o QR ou a faixa de rodapé. Use os sliders para ajuste fino."}
             </p>
+
+            {/* Link direto do WhatsApp — alternativa ao QR para quem quer copiar/colar */}
+            <PartnerLinkCard url={url} phrase={phrase} />
           </div>
 
           {/* Controls */}
