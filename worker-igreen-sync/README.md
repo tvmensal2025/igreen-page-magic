@@ -1,6 +1,6 @@
-# igreen-sync-worker (v13 — Tor + Playwright + 2captcha + OpenAI Vision + context fallback)
+# igreen-sync-worker (v14 — Tor + Playwright + 2captcha + OpenAI Vision + context fallback)
 
-> **v13**: se o clique visual em **Entrar** não disparar `/v1/login` em ~15s, o worker faz
+> **v14**: se o clique visual em **Entrar** não disparar `/v1/login` em ~15s, o worker faz
 > um `context.request.post` do Playwright para `POST /v1/login` com
 > `{ email, password, recaptchaToken, keepConnected: true }`. Isso evita o CORS do
 > `page.evaluate(fetch)`, que em produção estava falhando com `TypeError: Failed to fetch`.

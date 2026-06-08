@@ -1,6 +1,6 @@
 {
   "name": "igreen-sync-worker",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Tor + Playwright + 2captcha + visão IA + context fallback contra api-voffice.igreenenergy.com.br",
   "type": "module",
   "main": "server.mjs",

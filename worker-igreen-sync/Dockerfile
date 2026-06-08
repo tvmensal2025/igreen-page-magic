@@ -1,4 +1,4 @@
-# Dockerfile — igreen-sync-worker v13
+# Dockerfile — igreen-sync-worker v14
 # Tor (IP residencial) + Playwright Chromium (passa CF) + 2captcha (resolve reCAPTCHA)
 # + OpenAI Vision para debug visual + fallback context.request.post /v1/login
 # com recaptchaToken quando o clique no botão "Entrar" não dispara a chamada.
@@ -6,7 +6,7 @@
 FROM node:20-bookworm-slim
 
 LABEL service="igreen-sync-worker"
-LABEL version="v13.0-2026.06.07"
+LABEL version="v14.0-2026.06.07"
 
 # Deps de sistema: Tor + libs do Chromium headless
 RUN apt-get update && apt-get install -y --no-install-recommends \
