@@ -107,7 +107,7 @@ const TEMPLATE_DIMS: Record<
   TemplateId,
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
-  a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // A4 real
+  a4: { canvasW: 853, canvasH: 1280, pdfWmm: 210, pdfHmm: 297 }, // proporção da arte (sem corte)
   banner: { canvasW: 1008, canvasH: 1808, pdfWmm: 504, pdfHmm: 904 },
 };
 const PREVIEW_W = 320;
