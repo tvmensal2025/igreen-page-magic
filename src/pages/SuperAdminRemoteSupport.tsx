@@ -207,11 +207,17 @@ export default function SuperAdminRemoteSupport() {
 
 /* ============== Session workbench (player + commands) ============== */
 
-const PREFS_KEY = "remote_support_prefs_v1";
+const PREFS_KEY = "remote_support_prefs_v2";
 type Prefs = { control: boolean; quality: QualityLevel; sidePanel: boolean };
 function loadPrefs(): Prefs {
-  try { return { control: true, quality: "auto", sidePanel: true, ...JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") }; }
-  catch { return { control: true, quality: "auto", sidePanel: true }; }
+  // v2 sempre força control=true por padrão; preferências antigas (v1) que
+  // tinham control=false ficavam grudadas e davam a impressão de "mouse
+  // desativado". Migramos silenciosamente.
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
+    const merged = { control: true, quality: "auto" as QualityLevel, sidePanel: true, ...raw };
+    return { ...merged, control: merged.control !== false };
+  } catch { return { control: true, quality: "auto", sidePanel: true }; }
 }
 function savePrefs(p: Prefs) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {} }
 
@@ -826,8 +832,9 @@ function RemoteControlOverlay({
   };
 
   const onPointerLeave = () => {
-    if (cursorRef.current) cursorRef.current.style.opacity = "0";
-    // Se tinha drag em andamento, finaliza-o no último ponto conhecido.
+    // Mantém o cursor virtual visível mesmo quando o ponteiro sai do vídeo —
+    // ele só some quando a aba perde foco. Antes ficava invisível e dava a
+    // sensação de "controle desativado".
     const d = downInfo.current;
     if (d?.promoted) {
       sendCmd({ kind: "mouseUp", x: d.x, y: d.y, button: d.button });
