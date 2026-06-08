@@ -1,25 +1,43 @@
-## Objetivo
+# Corrigir Suporte Remoto travado em "Conectando…"
 
-1. Travar de vez o tamanho/posição do A4 no modal de Panfleto (sem opção de destravar).
-2. Reaproveitar esse mesmo modal (Panfleto A4) quando o usuário clicar em "QR Code" nos links pessoais — substituindo o modal simples atual.
+## Problema
 
-## Mudanças
+Depois que o consultor autoriza com o código, a sessão fica em `active`, mas no painel do operador a tela continua em "Conectando…" eternamente.
 
-### 1. `src/components/admin/PanfletoModal.tsx`
-- Manter os defaults atuais do A4 já travados (`qrX: 25, qrY: 91, qrSize: 18, footerY: 99`) e do banner.
-- Remover o botão de Destravar/Travar layout e os sliders de posição (QR vertical/horizontal, tamanho do QR, posição do rodapé). O layout fica fixo nos defaults do template.
-- Manter: trocar formato (A4 / Banner), enviar imagem de fundo, toggle "Mostrar faixa", copiar link, Baixar PNG, Baixar PDF.
-- Aceitar uma `url` opcional via prop (`shareUrl?: string`) para o QR. Se não vier, segue gerando a URL do link pessoal `https://wa.me/...` como hoje.
-- Permitir um `title` opcional (ex.: "QR Code — Horacio (Página inicial)") pra refletir qual link/página o usuário está gerando.
+**Causa raiz (handshake WebRTC fora de ordem):**
 
-### 2. `src/pages/Admin.tsx`
-- Remover o `qrModal` simples (estado + JSX do modal de QR básico).
-- Trocar `onQrOpen={(url, label) => setQrModal(...)}` por uma versão que abre o `PanfletoModal` já existente, passando `shareUrl=url` e `title=label`.
-- Reusar o mesmo `panfletoOpen` (estendido para guardar `{ url?, label? }`) ou criar `qrPanfletoState` separado — implementação interna.
+1. Assim que a sessão vira `active`, o operador chama `createOperatorPeer` e dispara o `offer` no canal de broadcast `support:<id>:rtc`.
+2. O consultor **só assina** esse canal quando clica em **"Compartilhar tela"** (dentro de `createRequesterPeer`).
+3. Supabase Realtime broadcast **não enfileira** mensagens — quem não está inscrito perde a oferta. Resultado: o operador fica esperando um `answer` que nunca chega → "Conectando…" infinito.
 
-### 3. `src/components/admin/LinksTab.tsx`
-- Sem mudança de contrato. Continua chamando `onQrOpen(fullUrl, label)` em cada link pessoal; quem decide qual modal abrir é o `Admin.tsx`.
+Mesmo se o consultor clicar em "Compartilhar tela" depois, ele só recebe ofertas **futuras**, e o operador não envia outra.
 
-## Fora de escopo
-- Não mexer em `PartnerQrCode.tsx` (parceiro) — já está travado conforme combinado antes.
-- Não alterar lógica de export PDF/PNG nem as dimensões nativas do canvas.
+## Solução
+
+Inverter o papel: o **consultor (requester) vira o offerer**, e o operador apenas escuta. Assim a oferta só é enviada depois que o consultor já compartilhou a tela (já tem `MediaStream` + `DataChannel`), garantindo que o operador (que está inscrito desde que a sessão ficou `active`) receba.
+
+### Mudanças
+
+**`src/features/remote-support/screenShare.ts`**
+- `createRequesterPeer`: passa a criar o `RTCDataChannel("cmd")` e o `offer`. Após `getDisplayMedia` + `addTrack`, faz `setLocalDescription(offer)` e envia `{type:"offer"}`. Trata `answer` recebido do operador.
+- `createOperatorPeer`: remove a criação do data channel e do offer. Usa `pc.ondatachannel` para receber o canal do requester, `pc.ontrack` continua igual. Ao receber `{type:"offer"}`, faz `setRemoteDescription` → `createAnswer` → envia `{type:"answer"}`.
+- Mantém troca de ICE candidates nos dois lados.
+
+**`src/pages/SuperAdminRemoteSupport.tsx` (workbench)**
+- Mantém a chamada a `createOperatorPeer` quando `status === "active"` (ele agora só assina e espera). O overlay "Conectando…" continua até `ondatachannel` abrir.
+- Mensagem "Aguardando o consultor clicar em Compartilhar tela" segue válida.
+
+**`src/features/remote-support/useRequesterSession.ts`**
+- Sem mudanças de fluxo: `startScreenShare` continua sendo disparado pelo botão. Como o requester agora é offerer, a oferta sai **depois** do clique, momento em que o operador já está inscrito.
+
+### Fora de escopo
+- UI/textos do banner.
+- Lógica de código rotativo e verificação (já funciona — a sessão chega corretamente em `active`).
+- Comandos remotos (navigate/click/fill) — o data channel continua chamado `"cmd"` e o handler do consultor é o mesmo.
+
+## Validação
+
+1. Operador aceita pedido → consultor lê código → operador valida → sessão `active`.
+2. Painel mostra "Aguardando consultor clicar em Compartilhar tela".
+3. Consultor clica em **Compartilhar tela** no banner vermelho → escolhe a aba/tela.
+4. Esperado: vídeo aparece no painel do operador em poucos segundos e o log mostra "🟢 Canal de comandos aberto".
