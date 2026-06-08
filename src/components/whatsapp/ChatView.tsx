@@ -703,10 +703,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             }}
             title="Arraste pra redimensionar"
           />
-          <div className="flex shrink-0" style={{ width: "var(--cap-side-w, 300px)" }}>
+          <div className="flex shrink-0" style={{ width: "var(--cap-side-w, 320px)" }}>
             <CaptureSheet
-              open={captureOpen}
-              onOpenChange={setCaptureOpen}
+              open
+              onOpenChange={() => { /* painel persistente — não fecha */ }}
               consultantId={consultantId}
               customerId={customerId!}
               customerName={chat?.name}
