@@ -48,6 +48,33 @@ const safeNum = (v: unknown): number | null => {
   const n = parseFloat(String(v).replace(/\./g, "").replace(",", ".").replace("%", ""));
   return isNaN(n) ? null : n;
 };
+const safeInt = (v: unknown): number | null => {
+  const n = safeNum(v);
+  return n == null ? null : Math.round(n);
+};
+// dd/mm/yyyy → yyyy-mm-dd (Postgres date). Aceita também ISO já formatado.
+const parseDateBR = (v: unknown): string | null => {
+  const s = safeStr(v);
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    const [, d, mo, y] = m;
+    const yyyy = y.length === 2 ? `20${y}` : y;
+    return `${yyyy}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return null;
+};
+// Limpa devolutiva: remove prefixos "caminhoarquivo:", "caminhoarquivodoc1:", etc.
+const cleanDevolutiva = (v: unknown): string | null => {
+  const s = safeStr(v);
+  if (!s) return null;
+  return s
+    .replace(/caminho[a-z0-9]*\s*:\s*/gi, "")
+    .replace(/\s*,\s+/g, " | ")
+    .replace(/\s{2,}/g, " ")
+    .trim() || null;
+};
 
 function pick(row: Record<string, unknown>, ...keys: string[]): unknown {
   const lowerMap: Record<string, unknown> = {};
@@ -100,7 +127,23 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   const name = safeStr(pick(r, "Nome do Cliente", "Nome", "Cliente", "nomeCliente", "name"));
   if (name) rec.name = name;
   const statusRaw = safeStr(pick(r, "Andamento", "Status", "andamento"));
-  rec.status = placeholder ? "contato_incompleto" : mapStatus(statusRaw);
+
+  // Datas iGreen (define aprovado se vier Data Validado ou Data Ativo)
+  const dCadastro = parseDateBR(pick(r, "Data Cadastro", "data cadastro", "dataCadastro"));
+  const dAtivo = parseDateBR(pick(r, "Data Ativo", "data ativo", "dataAtivo"));
+  const dValidado = parseDateBR(pick(r, "Data Validado", "data validado", "dataValidado"));
+  if (dCadastro) rec.data_cadastro_igreen = dCadastro;
+  if (dAtivo) rec.data_ativo_igreen = dAtivo;
+  if (dValidado) rec.data_validado_igreen = dValidado;
+
+  if (placeholder) {
+    rec.status = "contato_incompleto";
+  } else if (dValidado || dAtivo) {
+    rec.status = "approved";
+  } else {
+    rec.status = mapStatus(statusRaw);
+  }
+
   const cpf = safeStr(pick(r, "CPF", "Documento", "cpf"));
   if (cpf) rec.cpf = String(cpf).replace(/\D/g, "");
   const email = safeStr(pick(r, "E-mail", "Email", "email"));
@@ -112,7 +155,7 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   const dist = safeStr(pick(r, "Distribuidora"));
   if (dist) rec.distribuidora = dist;
   if (statusRaw) rec.andamento_igreen = statusRaw;
-  const dev = safeStr(pick(r, "Devolutiva"));
+  const dev = cleanDevolutiva(pick(r, "Devolutiva"));
   if (dev) rec.devolutiva = dev;
   if (codigo) rec.igreen_code = codigo;
   const cons = safeNum(pick(r, "Consumo Médio", "Consumo Medio", "consumoMedio"));
@@ -121,6 +164,31 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   if (desc != null) rec.desconto_cliente = desc;
   const inst = safeStr(pick(r, "Instalação", "Instalacao", "Nº Instalação", "numeroInstalacao"));
   if (inst) rec.numero_instalacao = inst;
+
+  // Licenciado (CRÍTICO para Top Licenciado)
+  const licName = safeStr(pick(r, "Licenciado", "licenciado", "Nome Licenciado"));
+  if (licName) rec.registered_by_name = licName;
+  const licCode = safeInt(pick(r, "Código Licenciado", "Codigo Licenciado", "codigoLicenciado", "Cod Licenciado"));
+  if (licCode != null && licCode > 0) rec.registered_by_igreen_id = licCode;
+
+  // Demais campos
+  const nivel = safeInt(pick(r, "Nível", "Nivel", "Level"));
+  if (nivel != null) rec.nivel_licenciado = nivel;
+  const dNasc = parseDateBR(pick(r, "Data Nascimento", "Nascimento", "dataNascimento"));
+  if (dNasc) rec.data_nascimento = dNasc;
+  const cashback = safeStr(pick(r, "Cashback"));
+  if (cashback) rec.cashback_igreen = cashback;
+  const statusFin = safeStr(pick(r, "Status Financeiro", "statusFinanceiro"));
+  if (statusFin) rec.status_financeiro = statusFin;
+  const assCliente = safeStr(pick(r, "Assinatura Cliente"));
+  if (assCliente) rec.assinatura_cliente_status = assCliente;
+  const assIgreen = safeStr(pick(r, "Assinatura iGreen", "Assinatura Igreen"));
+  if (assIgreen) rec.assinatura_igreen_status = assIgreen;
+  const linkAss = safeStr(pick(r, "Link Assinatura", "linkAssinatura"));
+  if (linkAss) rec.link_assinatura = linkAss;
+  const obs = safeStr(pick(r, "Observação", "Observacao"));
+  if (obs) rec.observacao_igreen = obs;
+
   return rec;
 }
 
@@ -129,15 +197,35 @@ function buildNetworkRecord(r: Record<string, unknown>, mesRef: string): Record<
   if (!codigo) return null;
   return {
     codigo_igreen: codigo,
-    nivel: (() => { const n = safeNum(pick(r, "Nível", "Nivel", "Level")); return n == null ? null : Math.round(n); })(),
+    nivel: safeInt(pick(r, "Nível", "Nivel", "Level")),
     nome: safeStr(pick(r, "Nome", "Consultor", "Nome do Consultor")),
     patrocinador_codigo: safeStr(pick(r, "Patrocinador", "Patrocinador Código", "Cod Patrocinador")),
     celular: safeStr(pick(r, "Celular", "Telefone", "WhatsApp")),
     cidade: safeStr(pick(r, "Cidade", "Município")),
     uf: (() => { const s = safeStr(pick(r, "UF", "Estado")); return s ? s.toUpperCase() : null; })(),
     graduacao: safeStr(pick(r, "Graduação", "Graduacao", "Cargo")),
-    gp_qualificados: safeNum(pick(r, "GP Qualificados", "GP")),
-    gl_qualificados: safeNum(pick(r, "GL Qualificados", "GL")),
+    // Planilha usa "GP Qualificável" / "GI Qualificável" (singular, com acento)
+    gp_qualificados: safeNum(pick(r, "GP Qualificável", "GP Qualificavel", "GP Qualificados", "GP")),
+    gl_qualificados: safeNum(pick(r, "GI Qualificável", "GI Qualificavel", "GI Qualificados", "GL Qualificados", "GI", "GL")),
+    // Extras
+    _gt_qualificavel: safeNum(pick(r, "GT Qualificável", "GT Qualificavel")),
+    _bonificavel: safeNum(pick(r, "Bonificável", "Bonificavel")),
+    _green_points_ano: safeNum(pick(r, "Green Points 2026", "Green Points 2025", "Green Points Ano")),
+    _gp_mes: safeNum(pick(r, "GP junho", "GP mes", "GP Mês")),
+    _gi_mes: safeNum(pick(r, "GI junho", "GI mes", "GI Mês")),
+    _green_points_mes: safeNum(pick(r, "Green Points junho", "Green Points mes")),
+    _data_nascimento: parseDateBR(pick(r, "Data Nascimento", "Nascimento")),
+    _data_ativo: parseDateBR(pick(r, "Data Ativo")),
+    _graduacao_expansao: safeStr(pick(r, "Graduação Expansão", "Graduacao Expansao")),
+    _licenciados_diretos: safeInt(pick(r, "Licenciados Diretos")),
+    _licenciados_diretos_ativos: safeInt(pick(r, "Licenciados Diretos Ativos")),
+    _clientes_ativos: safeInt(pick(r, "Clientes Ativos")),
+    _pro: safeStr(pick(r, "PRO")),
+    _green_telecom_mes: safeNum(pick(r, "Green Telecom junho", "Green Telecom mes")),
+    _livre_mes: safeNum(pick(r, "Livre junho", "Livre mes")),
+    _placas_mes: safeNum(pick(r, "Placas junho", "Placas mes")),
+    _club_mes: safeNum(pick(r, "Club junho", "Club mes")),
+    _expansao_mes: safeNum(pick(r, "Expansão junho", "Expansao junho", "Expansão mes")),
     mes_ref: mesRef,
     raw_json: r,
     source: "igreen_extension_xlsx",
@@ -243,8 +331,9 @@ Deno.serve(async (req) => {
         recs.push(rec);
       }
       const phones = recs.map((r) => String(r.phone_whatsapp));
-      // Carrega existentes (id, conversation_step) por phone+consultant
-      const existingMap = new Map<string, { id: string; conversation_step: string | null }>();
+      const codes = recs.map((r) => safeStr(r.igreen_code)).filter(Boolean) as string[];
+      // Carrega existentes por phone+consultant
+      const existingByPhone = new Map<string, { id: string; conversation_step: string | null; phone_whatsapp: string }>();
       for (let i = 0; i < phones.length; i += 200) {
         const chunk = phones.slice(i, i + 200);
         const { data } = await supabase.from("customers")
@@ -252,17 +341,35 @@ Deno.serve(async (req) => {
           .eq("consultant_id", consultantId)
           .in("phone_whatsapp", chunk);
         for (const e of (data || []) as Array<{ id: string; phone_whatsapp: string; conversation_step: string | null }>) {
-          existingMap.set(e.phone_whatsapp, { id: e.id, conversation_step: e.conversation_step });
+          existingByPhone.set(e.phone_whatsapp, e);
         }
       }
-      // Garante que registros novos respeitem o indice unico parcial (producao)
+      // Carrega existentes por igreen_code (para encontrar registros com phone_whatsapp placeholder
+      // que agora têm celular real — RECUPERA TELEFONE)
+      const existingByCode = new Map<string, { id: string; conversation_step: string | null; phone_whatsapp: string }>();
+      for (let i = 0; i < codes.length; i += 200) {
+        const chunk = codes.slice(i, i + 200);
+        const { data } = await supabase.from("customers")
+          .select("id, phone_whatsapp, conversation_step, igreen_code")
+          .eq("consultant_id", consultantId)
+          .in("igreen_code", chunk);
+        for (const e of (data || []) as Array<{ id: string; phone_whatsapp: string; conversation_step: string | null; igreen_code: string }>) {
+          existingByCode.set(e.igreen_code, e);
+        }
+      }
+      // Resolve cada rec -> registro existente (prefere phone, depois código)
+      const resolveExisting = (r: Record<string, unknown>) => {
+        const byPhone = existingByPhone.get(String(r.phone_whatsapp));
+        if (byPhone) return byPhone;
+        const code = safeStr(r.igreen_code);
+        return code ? existingByCode.get(code) : undefined;
+      };
       for (const r of recs) {
         r.is_test_lead = false;
         r.is_sandbox = false;
-        const ex = existingMap.get(String(r.phone_whatsapp));
+        const ex = resolveExisting(r);
         if (ex && ex.conversation_step && ex.conversation_step !== "complete") delete r.status;
       }
-      // Para NOVOS clientes: parquear em "espera" + calcular pending_stage (popup)
       const computePending = (rec: Record<string, unknown>): string => {
         const andamento = String(rec.andamento_igreen || "").toLowerCase();
         const status = String(rec.status || "").toLowerCase();
@@ -271,16 +378,29 @@ Deno.serve(async (req) => {
         return "aprovado";
       };
       const errorsDetail: Array<{ phone: string; codigo: string | null; motivo: string }> = [];
-      let upserted = 0, errors = 0;
+      let upserted = 0, errors = 0, phoneRecovered = 0;
       const lastError: { msg?: string } = {};
       // UPDATE existentes (NUNCA toca pos_venda_stage / pending — sao decisao do consultor)
+      const newRecs: Record<string, unknown>[] = [];
       for (const r of recs) {
-        const ex = existingMap.get(String(r.phone_whatsapp));
-        if (!ex) continue;
-        const patch = { ...r };
-        delete patch.phone_whatsapp; delete patch.consultant_id;
+        const ex = resolveExisting(r);
+        if (!ex) { newRecs.push(r); continue; }
+        const patch: Record<string, unknown> = { ...r };
+        delete patch.consultant_id;
         delete patch.is_test_lead; delete patch.is_sandbox;
         delete patch.customer_origin; delete patch.phone_contact_confirmed;
+        // RECUPERAR TELEFONE: se o registro existente tem placeholder e o XLSX trouxe número real,
+        // substituir o phone_whatsapp. Caso contrário, NÃO mexer no phone (já estava certo).
+        const newPhone = String(r.phone_whatsapp);
+        const oldPhone = ex.phone_whatsapp;
+        const newIsReal = !newPhone.startsWith("sem_celular_");
+        const oldIsPlaceholder = oldPhone.startsWith("sem_celular_");
+        if (newIsReal && oldIsPlaceholder) {
+          // mantém phone_whatsapp no patch para atualizar
+          phoneRecovered++;
+        } else {
+          delete patch.phone_whatsapp;
+        }
         const { error } = await supabase.from("customers").update(patch).eq("id", ex.id);
         if (error) {
           errors++; lastError.msg = error.message;
@@ -289,14 +409,13 @@ Deno.serve(async (req) => {
         } else upserted++;
       }
       // INSERT novos em lotes — parqueia em "espera" + pending_stage
-      const news = recs.filter((r) => !existingMap.has(String(r.phone_whatsapp)));
-      for (const r of news) {
+      for (const r of newRecs) {
         r.pos_venda_stage = "espera";
         r.pos_venda_manual = true;
         r.pos_venda_pending_stage = computePending(r);
       }
-      for (let i = 0; i < news.length; i += 100) {
-        const batch = news.slice(i, i + 100);
+      for (let i = 0; i < newRecs.length; i += 100) {
+        const batch = newRecs.slice(i, i + 100);
         const { data, error } = await supabase.from("customers").insert(batch).select("id");
         if (error) {
           lastError.msg = error.message;
@@ -311,7 +430,7 @@ Deno.serve(async (req) => {
         } else upserted += data?.length || 0;
       }
       if (!(result.clientes as { swapped?: boolean } | undefined)?.swapped) {
-        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped, last_error: lastError.msg || null, errors_detail: errorsDetail };
+        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped, phone_recovered: phoneRecovered, last_error: lastError.msg || null, errors_detail: errorsDetail };
       }
     }
 
@@ -339,9 +458,15 @@ Deno.serve(async (req) => {
         rec.consultant_id = consultantId;
         recs.push(rec);
       }
+      // Separa campos extras (_*) que vão pro network_members mas não pro consultant_network
+      const stripExtras = (r: Record<string, unknown>): Record<string, unknown> => {
+        const out: Record<string, unknown> = {};
+        for (const k of Object.keys(r)) if (!k.startsWith("_")) out[k] = r[k];
+        return out;
+      };
       let upserted = 0, errors = 0;
       for (let i = 0; i < recs.length; i += 100) {
-        const batch = recs.slice(i, i + 100);
+        const batch = recs.slice(i, i + 100).map(stripExtras);
         const { data, error } = await supabase.from("consultant_network")
           .upsert(batch, { onConflict: "consultant_id,codigo_igreen", ignoreDuplicates: false })
           .select("id");
@@ -367,6 +492,24 @@ Deno.serve(async (req) => {
           graduacao: r.graduacao || null,
           gp: r.gp_qualificados ?? null,
           gi: r.gl_qualificados ?? null,
+          gt_qualificavel: r._gt_qualificavel ?? null,
+          bonificavel: r._bonificavel ?? null,
+          green_points_ano: r._green_points_ano ?? null,
+          gp_mes: r._gp_mes ?? null,
+          gi_mes: r._gi_mes ?? null,
+          green_points_mes: r._green_points_mes ?? null,
+          graduacao_expansao: r._graduacao_expansao ?? null,
+          licenciados_diretos: r._licenciados_diretos ?? null,
+          licenciados_diretos_ativos: r._licenciados_diretos_ativos ?? null,
+          clientes_ativos: r._clientes_ativos ?? null,
+          pro: r._pro ?? null,
+          green_telecom_mes: r._green_telecom_mes ?? null,
+          livre_mes: r._livre_mes ?? null,
+          placas_mes: r._placas_mes ?? null,
+          club_mes: r._club_mes ?? null,
+          expansao_mes: r._expansao_mes ?? null,
+          data_ativo: r._data_ativo ?? null,
+          data_nascimento: r._data_nascimento ?? null,
         });
       }
       for (let i = 0; i < nmRecs.length; i += 100) {

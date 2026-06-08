@@ -3040,7 +3040,9 @@ export type Database = {
           assigned_consultant_id: string | null
           assigned_human_id: string | null
           assinatura_cliente: string | null
+          assinatura_cliente_status: string | null
           assinatura_igreen: string | null
+          assinatura_igreen_status: string | null
           bill_base64: string | null
           bill_data_confirmation_by: string | null
           bill_data_confirmed_at: string | null
@@ -3057,6 +3059,7 @@ export type Database = {
           capture_mode: string
           capture_started_at: string | null
           cashback: string | null
+          cashback_igreen: string | null
           cep: string | null
           chat_cleared_at: string | null
           commission_rate: number | null
@@ -3076,9 +3079,12 @@ export type Database = {
           customer_referred_by_name: string | null
           customer_referred_by_phone: string | null
           data_ativo: string | null
+          data_ativo_igreen: string | null
           data_cadastro: string | null
+          data_cadastro_igreen: string | null
           data_nascimento: string | null
           data_validado: string | null
+          data_validado_igreen: string | null
           debitos_aberto: boolean | null
           desconto_cliente: number | null
           detour_count: number
@@ -3149,6 +3155,7 @@ export type Database = {
           nome_pai: string | null
           numero_instalacao: string | null
           observacao: string | null
+          observacao_igreen: string | null
           ocr_confianca: number | null
           ocr_consumo_original: number | null
           ocr_consumo_rejeitado: boolean | null
@@ -3229,7 +3236,9 @@ export type Database = {
           assigned_consultant_id?: string | null
           assigned_human_id?: string | null
           assinatura_cliente?: string | null
+          assinatura_cliente_status?: string | null
           assinatura_igreen?: string | null
+          assinatura_igreen_status?: string | null
           bill_base64?: string | null
           bill_data_confirmation_by?: string | null
           bill_data_confirmed_at?: string | null
@@ -3246,6 +3255,7 @@ export type Database = {
           capture_mode?: string
           capture_started_at?: string | null
           cashback?: string | null
+          cashback_igreen?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
           commission_rate?: number | null
@@ -3265,9 +3275,12 @@ export type Database = {
           customer_referred_by_name?: string | null
           customer_referred_by_phone?: string | null
           data_ativo?: string | null
+          data_ativo_igreen?: string | null
           data_cadastro?: string | null
+          data_cadastro_igreen?: string | null
           data_nascimento?: string | null
           data_validado?: string | null
+          data_validado_igreen?: string | null
           debitos_aberto?: boolean | null
           desconto_cliente?: number | null
           detour_count?: number
@@ -3338,6 +3351,7 @@ export type Database = {
           nome_pai?: string | null
           numero_instalacao?: string | null
           observacao?: string | null
+          observacao_igreen?: string | null
           ocr_confianca?: number | null
           ocr_consumo_original?: number | null
           ocr_consumo_rejeitado?: boolean | null
@@ -3418,7 +3432,9 @@ export type Database = {
           assigned_consultant_id?: string | null
           assigned_human_id?: string | null
           assinatura_cliente?: string | null
+          assinatura_cliente_status?: string | null
           assinatura_igreen?: string | null
+          assinatura_igreen_status?: string | null
           bill_base64?: string | null
           bill_data_confirmation_by?: string | null
           bill_data_confirmed_at?: string | null
@@ -3435,6 +3451,7 @@ export type Database = {
           capture_mode?: string
           capture_started_at?: string | null
           cashback?: string | null
+          cashback_igreen?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
           commission_rate?: number | null
@@ -3454,9 +3471,12 @@ export type Database = {
           customer_referred_by_name?: string | null
           customer_referred_by_phone?: string | null
           data_ativo?: string | null
+          data_ativo_igreen?: string | null
           data_cadastro?: string | null
+          data_cadastro_igreen?: string | null
           data_nascimento?: string | null
           data_validado?: string | null
+          data_validado_igreen?: string | null
           debitos_aberto?: boolean | null
           desconto_cliente?: number | null
           detour_count?: number
@@ -3527,6 +3547,7 @@ export type Database = {
           nome_pai?: string | null
           numero_instalacao?: string | null
           observacao?: string | null
+          observacao_igreen?: string | null
           ocr_confianca?: number | null
           ocr_consumo_original?: number | null
           ocr_consumo_rejeitado?: boolean | null
@@ -4750,12 +4771,14 @@ export type Database = {
           bonificavel: number | null
           cidade: string | null
           clientes_ativos: number | null
+          club_mes: number | null
           consultant_id: string
           data_ativo: string | null
           data_nascimento: string | null
           diretos_ativos: number | null
           diretos_inicio_rapido: number | null
           diretos_mes: number | null
+          expansao_mes: number | null
           gi: number | null
           gi_mes: number | null
           gi_total: number | null
@@ -4765,13 +4788,20 @@ export type Database = {
           graduacao: string | null
           graduacao_expansao: string | null
           green_points: number | null
+          green_points_ano: number | null
           green_points_mes: number | null
+          green_telecom_mes: number | null
+          gt_qualificavel: number | null
           id: string
           igreen_id: number
           inicio_rapido: string | null
+          licenciados_diretos: number | null
+          licenciados_diretos_ativos: number | null
+          livre_mes: number | null
           name: string
           nivel: number | null
           phone: string | null
+          placas_mes: number | null
           pro: string | null
           qtde_diretos: number | null
           sponsor_id: number | null
@@ -4783,12 +4813,14 @@ export type Database = {
           bonificavel?: number | null
           cidade?: string | null
           clientes_ativos?: number | null
+          club_mes?: number | null
           consultant_id: string
           data_ativo?: string | null
           data_nascimento?: string | null
           diretos_ativos?: number | null
           diretos_inicio_rapido?: number | null
           diretos_mes?: number | null
+          expansao_mes?: number | null
           gi?: number | null
           gi_mes?: number | null
           gi_total?: number | null
@@ -4798,13 +4830,20 @@ export type Database = {
           graduacao?: string | null
           graduacao_expansao?: string | null
           green_points?: number | null
+          green_points_ano?: number | null
           green_points_mes?: number | null
+          green_telecom_mes?: number | null
+          gt_qualificavel?: number | null
           id?: string
           igreen_id: number
           inicio_rapido?: string | null
+          licenciados_diretos?: number | null
+          licenciados_diretos_ativos?: number | null
+          livre_mes?: number | null
           name: string
           nivel?: number | null
           phone?: string | null
+          placas_mes?: number | null
           pro?: string | null
           qtde_diretos?: number | null
           sponsor_id?: number | null
@@ -4816,12 +4855,14 @@ export type Database = {
           bonificavel?: number | null
           cidade?: string | null
           clientes_ativos?: number | null
+          club_mes?: number | null
           consultant_id?: string
           data_ativo?: string | null
           data_nascimento?: string | null
           diretos_ativos?: number | null
           diretos_inicio_rapido?: number | null
           diretos_mes?: number | null
+          expansao_mes?: number | null
           gi?: number | null
           gi_mes?: number | null
           gi_total?: number | null
@@ -4831,13 +4872,20 @@ export type Database = {
           graduacao?: string | null
           graduacao_expansao?: string | null
           green_points?: number | null
+          green_points_ano?: number | null
           green_points_mes?: number | null
+          green_telecom_mes?: number | null
+          gt_qualificavel?: number | null
           id?: string
           igreen_id?: number
           inicio_rapido?: string | null
+          licenciados_diretos?: number | null
+          licenciados_diretos_ativos?: number | null
+          livre_mes?: number | null
           name?: string
           nivel?: number | null
           phone?: string | null
+          placas_mes?: number | null
           pro?: string | null
           qtde_diretos?: number | null
           sponsor_id?: number | null

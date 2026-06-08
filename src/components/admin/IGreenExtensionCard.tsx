@@ -69,13 +69,17 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
     } finally { setGenerating(false); }
   };
 
-  const revoke = async (id: string) => {
+  const removeToken = async (id: string, prefix: string) => {
+    if (!confirm(`Excluir o token ${prefix}…?\nEsta ação é permanente e a extensão pareada com este token deixará de funcionar imediatamente.`)) return;
     const { error } = await supabase
       .from("igreen_extension_tokens")
-      .update({ revoked_at: new Date().toISOString() })
+      .delete()
       .eq("id", id);
-    if (error) toast({ title: "Erro ao revogar", variant: "destructive" });
-    else load();
+    if (error) toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
+    else {
+      toast({ title: "Token excluído", description: "Pareamento removido permanentemente." });
+      load();
+    }
   };
 
   const copyToken = () => {
@@ -136,15 +140,13 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
                 <div className="font-mono">{t.token_prefix}••••••••</div>
                 <div className={`${statusColor}`}>
                   {status}
-                  {t.last_used_at && ` • Ultimo uso: ${new Date(t.last_used_at).toLocaleString("pt-BR")}`}
+                  {t.last_used_at && ` • Último uso: ${new Date(t.last_used_at).toLocaleString("pt-BR")}`}
                   {!t.last_used_at && ` • Nunca usado`}
                 </div>
               </div>
-              {!t.revoked_at && (
-                <Button onClick={() => revoke(t.id)} variant="ghost" size="sm">
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              )}
+              <Button onClick={() => removeToken(t.id, t.token_prefix)} variant="ghost" size="sm" title="Excluir token permanentemente">
+                <Trash2 className="h-3 w-3" />
+              </Button>
             </div>
           );
         })}

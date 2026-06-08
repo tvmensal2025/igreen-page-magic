@@ -1,0 +1,31 @@
+ALTER TABLE public.customers
+  ADD COLUMN IF NOT EXISTS data_cadastro_igreen date,
+  ADD COLUMN IF NOT EXISTS data_ativo_igreen date,
+  ADD COLUMN IF NOT EXISTS data_validado_igreen date,
+  ADD COLUMN IF NOT EXISTS nivel_licenciado int,
+  ADD COLUMN IF NOT EXISTS cashback_igreen text,
+  ADD COLUMN IF NOT EXISTS status_financeiro text,
+  ADD COLUMN IF NOT EXISTS assinatura_cliente_status text,
+  ADD COLUMN IF NOT EXISTS assinatura_igreen_status text,
+  ADD COLUMN IF NOT EXISTS link_assinatura text,
+  ADD COLUMN IF NOT EXISTS observacao_igreen text;
+
+ALTER TABLE public.network_members
+  ADD COLUMN IF NOT EXISTS gt_qualificavel numeric,
+  ADD COLUMN IF NOT EXISTS bonificavel numeric,
+  ADD COLUMN IF NOT EXISTS green_points_ano numeric,
+  ADD COLUMN IF NOT EXISTS gp_mes numeric,
+  ADD COLUMN IF NOT EXISTS gi_mes numeric,
+  ADD COLUMN IF NOT EXISTS green_points_mes numeric,
+  ADD COLUMN IF NOT EXISTS graduacao_expansao text,
+  ADD COLUMN IF NOT EXISTS licenciados_diretos int,
+  ADD COLUMN IF NOT EXISTS licenciados_diretos_ativos int,
+  ADD COLUMN IF NOT EXISTS clientes_ativos int,
+  ADD COLUMN IF NOT EXISTS pro text,
+  ADD COLUMN IF NOT EXISTS green_telecom_mes numeric,
+  ADD COLUMN IF NOT EXISTS livre_mes numeric,
+  ADD COLUMN IF NOT EXISTS placas_mes numeric,
+  ADD COLUMN IF NOT EXISTS club_mes numeric,
+  ADD COLUMN IF NOT EXISTS expansao_mes numeric,
+  ADD COLUMN IF NOT EXISTS data_ativo date,
+  ADD COLUMN IF NOT EXISTS data_nascimento date;
