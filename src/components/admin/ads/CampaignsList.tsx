@@ -276,9 +276,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         return (
           <Card key={c.id} className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="font-bold text-foreground truncate">{c.name}</h4>
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <CreativeThumb creative={creatives[c.id]} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-bold text-foreground truncate">{c.name}</h4>
                   <Badge className={STATUS_COLOR[c.status] || "bg-secondary"}>{STATUS_LABEL[c.status] || c.status}</Badge>
                   {(() => {
                     const h = healthOf(m);
