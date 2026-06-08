@@ -404,13 +404,15 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   const phoneNumber = chat.remoteJid.split("@")[0];
 
-  // Em desktop, o painel de Captação fica como coluna lateral integrada ao chat.
-  // Em mobile, continua como Sheet (overlay) — única opção razoável em telas pequenas.
+  // Em telas xl+, o painel de Captação fica como coluna lateral integrada ao chat.
+  // Em telas menores (mobile/tablet/desktop apertado), continua como Sheet (overlay)
+  // pra não roubar largura do chat — usuário abre via botão e fecha quando precisa digitar.
   const showInlineCapture = !isMobile && captureOpen && !!customerId;
 
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
       <div className={`flex flex-col min-h-0 min-w-0 ${showInlineCapture ? "flex-1" : "flex-1"}`}>
+
       {/* Chat header — h-14, mais ar */}
       <div className="flex items-center gap-2.5 px-3.5 h-14 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
         <Avatar className="h-9 w-9 shrink-0 ring-1 ring-primary/20">
