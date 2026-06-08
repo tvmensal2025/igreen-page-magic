@@ -176,38 +176,35 @@ Deno.serve(async (req) => {
     let moved = 0;
     let sent = 0;
 
-    // 1. Clientes em status aprovado e ainda em 'espera' (mas SEM manual override)
-    //    → mover para 'aprovado' + disparar pv_aprovado.
-    const { data: newApproved } = await supabase
+    // 1. Clientes já marcados como APROVADOS (pelo popup ou drag manual) que
+    //    ainda não receberam mensagem do estágio pv_aprovado → enviar.
+    //    Antigos backfilled ficam em pos_venda_stage='espera' e não disparam.
+    const { data: approvedCustomers } = await supabase
       .from("customers")
       .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, portal_submitted_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
-      .eq("status", "aprovado")
-      .eq("pos_venda_manual", false)
-      .in("pos_venda_stage", ["espera"]);
+      .eq("pos_venda_stage", "aprovado");
 
-    for (const c of newApproved || []) {
+    for (const c of approvedCustomers || []) {
       const r = await processCustomer(supabase, env, c, "aprovado");
       if (r.moved) moved++;
       if (r.sent) sent++;
     }
 
-    // 2. Clientes reprovados que ainda não foram para 'reprovado'
-    const { data: newRejected } = await supabase
+    // 2. Clientes REPROVADOS
+    const { data: rejectedCustomers } = await supabase
       .from("customers")
       .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, portal_submitted_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
-      .eq("pos_venda_manual", false)
-      .in("status", ["rejected", "cancelled", "canceled"])
-      .neq("pos_venda_stage", "reprovado");
+      .eq("pos_venda_stage", "reprovado");
 
-    for (const c of newRejected || []) {
+    for (const c of rejectedCustomers || []) {
       const r = await processCustomer(supabase, env, c, "reprovado");
       if (r.moved) moved++;
       if (r.sent) sent++;
     }
 
-    // 3. Progressão de aprovados → 30/60/90/120 dias
+    // 3. Progressão aprovados → 30/60/90/120 dias (somente quem já passou por aprovado)
     const { data: approvedTrack } = await supabase
       .from("customers")
       .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, portal_submitted_at, status, andamento_igreen")
