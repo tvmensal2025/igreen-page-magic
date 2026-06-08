@@ -258,26 +258,44 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
     const lines = pasteText.trim().split("\n").filter(l => l.trim());
     const existing = new Set(contacts.map(c => c.phone));
     const parsed: BulkContact[] = [];
+    // Regex que captura uma sequência contígua de dígitos (eventualmente com
+    // espaços, hífens, parênteses ou "+") com 10+ dígitos — cobre formatos
+    // como "(11) 99999-8888", "+55 11 99999 8888", "11999998888".
+    const phoneRe = /(\+?\d[\d\s().-]{8,}\d)/;
     for (const line of lines) {
+      let phone = "";
+      let name = "";
+      // 1. Tenta separadores explícitos (;, vírgula, tab) — formato planilha.
       const parts = line.split(/[;,\t]/).map(p => p.trim()).filter(Boolean);
-      if (parts.length < 1) continue;
-      let name = "", phone = "";
-      if (parts.length === 1) {
-        phone = parts[0].replace(/\D/g, "");
-        name = phone;
-      } else {
-        const first = parts[0].replace(/\D/g, "");
-        if (first.length >= 10) { phone = first; name = parts[1]; }
-        else { name = parts[0]; phone = parts[1].replace(/\D/g, ""); }
+      if (parts.length >= 2) {
+        const aDigits = parts[0].replace(/\D/g, "");
+        const bDigits = parts[1].replace(/\D/g, "");
+        if (aDigits.length >= 10 && bDigits.length < 10) { phone = aDigits; name = parts[1]; }
+        else if (bDigits.length >= 10) { phone = bDigits; name = parts[0]; }
+        else if (aDigits.length >= 10) { phone = aDigits; name = parts.slice(1).join(" "); }
       }
-      if (phone.length >= 10 && !existing.has(phone)) {
-        existing.add(phone);
-        parsed.push({ id: `paste-${phone}`, name, phone, source: "pasted" });
+      // 2. Sem separador — procura o telefone dentro da linha por regex.
+      if (!phone) {
+        const m = line.match(phoneRe);
+        if (m) {
+          phone = m[1].replace(/\D/g, "");
+          name = line.replace(m[1], "").replace(/[;,\t-]+/g, " ").trim();
+        }
       }
+      if (!phone) continue;
+      if (phone.length < 10) continue;
+      if (!name) name = phone;
+      if (existing.has(phone)) continue;
+      existing.add(phone);
+      parsed.push({ id: `paste-${phone}`, name, phone, source: "pasted" });
     }
     onContactsChange([...contacts, ...parsed]);
     setPasteText("");
-    toast({ title: `${parsed.length} contatos colados`, description: `Total: ${contacts.length + parsed.length}` });
+    toast({
+      title: parsed.length ? `${parsed.length} contatos colados` : "Nenhum telefone válido encontrado",
+      description: parsed.length ? `Total: ${contacts.length + parsed.length}` : "Verifique se os números têm pelo menos 10 dígitos (DDD + número).",
+      variant: parsed.length ? "default" : "destructive",
+    });
   }, [pasteText, contacts, onContactsChange, toast]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -794,11 +812,20 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
 
         {/* ─── PASTE TAB ─── */}
         <TabsContent value="paste" className="space-y-3 mt-2">
-          <p className="text-xs text-muted-foreground">
-            Cole os contatos, um por linha, no formato: <code className="px-1 py-0.5 bg-secondary rounded text-primary">nome;telefone</code> ou <code className="px-1 py-0.5 bg-secondary rounded text-primary">telefone;nome</code>
-          </p>
+          <div className="rounded-lg bg-primary/5 border border-primary/20 p-2.5 space-y-1.5">
+            <p className="text-xs font-semibold text-foreground">Como funciona</p>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Cole <strong>um contato por linha</strong>. Aceita qualquer um destes formatos —
+              o sistema descobre sozinho:
+            </p>
+            <ul className="text-[11px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+              <li><code className="px-1 bg-secondary rounded text-primary">11999998888</code> (só o telefone)</li>
+              <li><code className="px-1 bg-secondary rounded text-primary">João Silva 11999998888</code> (nome e telefone, do jeito que vier)</li>
+              <li><code className="px-1 bg-secondary rounded text-primary">João;11999998888</code> ou com vírgula / tab (colado do Excel funciona)</li>
+            </ul>
+          </div>
           <Textarea
-            placeholder={"João Silva;5511999998888\nMaria Souza;5521988887777\n5531977776666;Carlos"}
+            placeholder={"João Silva 11999998888\nMaria 21988887777\n11977776666"}
             value={pasteText}
             onChange={e => setPasteText(e.target.value)}
             rows={6}
@@ -812,15 +839,49 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
 
         {/* ─── IMPORT TAB ─── */}
         <TabsContent value="import" className="space-y-3 mt-2">
-          <p className="text-xs text-muted-foreground">
-            Importe um arquivo Excel ou CSV com as colunas <strong>nome</strong> e <strong>telefone</strong>.
-          </p>
-          <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5 rounded-lg h-8 text-xs">
-            <Download className="w-3.5 h-3.5" /> Baixar modelo de planilha
-          </Button>
-          <div>
+          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-2.5 space-y-2">
+            <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+              Jeito mais fácil: usar o Google Planilhas
+            </p>
+            <ol className="text-[11px] text-muted-foreground space-y-0.5 pl-4 list-decimal">
+              <li>Clique em <strong>"Abrir Google Planilhas"</strong> — abre uma planilha em branco.</li>
+              <li>Crie 2 colunas: <code className="px-1 bg-secondary rounded text-primary">nome</code> e <code className="px-1 bg-secondary rounded text-primary">telefone</code>.</li>
+              <li>Cole ou digite seus contatos.</li>
+              <li>Em <em>Arquivo → Baixar → Excel (.xlsx)</em> e envie aqui embaixo.</li>
+            </ol>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              asChild
+              className="w-full gap-1.5 rounded-lg h-9 text-xs font-bold"
+            >
+              <a
+                href="https://docs.google.com/spreadsheets/create?title=Contatos%20WhatsApp"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Abrir Google Planilhas
+              </a>
+            </Button>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-muted-foreground">
+              Ou baixe um modelo pronto em Excel (mesmo formato):
+            </p>
+            <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5 rounded-lg h-8 text-xs">
+              <Download className="w-3.5 h-3.5" /> Baixar modelo .xlsx
+            </Button>
+          </div>
+
+          <div className="space-y-1.5 border-t pt-2.5">
+            <p className="text-[11px] text-muted-foreground font-medium">
+              Envie sua planilha (.xlsx, .xls ou .csv):
+            </p>
             <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload}
-              className="text-xs rounded-lg h-8 file:text-xs file:mr-2" />
+              className="text-xs rounded-lg h-9 file:text-xs file:mr-2" />
           </div>
         </TabsContent>
       </Tabs>
