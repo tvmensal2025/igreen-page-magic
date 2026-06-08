@@ -1,4 +1,5 @@
-import { Camera, Settings, Globe, Save } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Camera, Settings, Globe, Save, Bot, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,53 @@ interface DadosTabProps {
 
 export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChange, onSave, userId }: DadosTabProps) {
   const { toast } = useToast();
+
+  // ─── Nome da IA (persona_name de ai_agent_config) ─────────────────────
+  // O consultor escolhe como sua IA se chama (default "Camila"). Esse nome
+  // aparece em todo lugar que antes era hardcoded "Camila".
+  const [personaName, setPersonaName] = useState<string>("Camila");
+  const [personaLoading, setPersonaLoading] = useState<boolean>(true);
+  const [personaSaving, setPersonaSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!userId) return;
+      const { data } = await supabase
+        .from("ai_agent_config")
+        .select("persona_name")
+        .eq("consultant_id", userId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data && (data as any).persona_name) setPersonaName((data as any).persona_name);
+      setPersonaLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const savePersonaName = async () => {
+    if (!userId) return;
+    const trimmed = personaName.trim() || "Camila";
+    setPersonaSaving(true);
+    try {
+      const { data: existing } = await supabase
+        .from("ai_agent_config")
+        .select("id")
+        .eq("consultant_id", userId)
+        .maybeSingle();
+      const { error } = existing?.id
+        ? await supabase.from("ai_agent_config").update({ persona_name: trimmed }).eq("id", existing.id)
+        : await supabase.from("ai_agent_config").insert({ consultant_id: userId, persona_name: trimmed, enabled: true });
+      if (error) throw error;
+      setPersonaName(trimmed);
+      toast({ title: "✅ Nome da IA salvo", description: `Sua IA agora se chama "${trimmed}".`, duration: 1800 });
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar nome da IA", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setPersonaSaving(false);
+    }
+  };
+
 
   // Auto-save do portal_kind quando o consultor clica no radio.
   // Sem isso, o consultor escolhia "Autoconexão" mas se não clicasse "Salvar"
@@ -113,7 +161,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
                 required
               />
             </div>
-            <p className="text-xs text-muted-foreground">Número onde a Camila atende seus leads</p>
+            <p className="text-xs text-muted-foreground">Número onde {personaName || "sua IA"} atende seus leads</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="notification_phone" className="text-sm text-muted-foreground">WhatsApp para alertas (humano)</Label>
@@ -229,6 +277,45 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         <div className="mt-4 space-y-2">
           <Label htmlFor="licenciada_cadastro_url" className="text-sm text-muted-foreground">Link de cadastro Licença</Label>
           <Input id="licenciada_cadastro_url" value={form.licenciada_cadastro_url} readOnly className="bg-secondary/50 border-border text-muted-foreground cursor-not-allowed" />
+        </div>
+      </div>
+
+      {/* Sua IA — nome da persona usada em todo o sistema */}
+      <div className="bg-card rounded-2xl border border-border p-6">
+        <h3 className="font-heading font-bold text-foreground mb-1 flex items-center gap-2">
+          <Bot className="w-5 h-5 text-primary" /> Sua IA
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Escolha o nome da sua atendente virtual. Esse nome aparece nas conversas com seus leads.
+        </p>
+        <div className="space-y-2 max-w-md">
+          <Label htmlFor="persona_name" className="text-sm text-muted-foreground">Nome da IA</Label>
+          <div className="flex gap-2">
+            <Input
+              id="persona_name"
+              value={personaName}
+              onChange={(e) => setPersonaName(e.target.value.slice(0, 20))}
+              onBlur={savePersonaName}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
+              placeholder="Ex: Camila, Ana, Bia..."
+              className="bg-secondary border-border"
+              disabled={personaLoading || personaSaving}
+              maxLength={20}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={savePersonaName}
+              disabled={personaLoading || personaSaving}
+              className="shrink-0"
+            >
+              {personaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Salvo automaticamente ao sair do campo. Default: Camila.
+          </p>
         </div>
       </div>
 

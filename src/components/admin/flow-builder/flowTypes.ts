@@ -241,15 +241,22 @@ export function resolveGotoLabel(
   return { label: "⚠ Sem destino", missing: true };
 }
 
-/** Substitui variáveis padrão por exemplos pro preview. */
-export function renderVarsPreview(text: string | null | undefined): string {
+/** Substitui variáveis padrão por exemplos pro preview.
+ *  `consultantName` permite renderizar `{{representante}}` com o nome real
+ *  do consultor logado em vez do placeholder "Rafael". */
+export function renderVarsPreview(
+  text: string | null | undefined,
+  consultantName?: string,
+): string {
   if (!text) return "";
+  const rep = (consultantName && consultantName.trim().split(/\s+/)[0]) || "seu consultor";
   return text
     .replace(/\{\{nome\}\}/gi, "João")
     .replace(/\{\{valor_conta\}\}/gi, "450,00")
     .replace(/\{\{economia_range\}\}/gi, "R$ 80 a R$ 90")
     .replace(/\{\{telefone\}\}/gi, "(11) 99999-8888")
     .replace(/\{\{cpf\}\}/gi, "123.456.789-00")
-    .replace(/\{\{representante\}\}/gi, "Rafael")
+    .replace(/\{\{representante\}\}/gi, rep)
+    .replace(/\{\{consultor\}\}/gi, rep)
     .replace(/\{\{email\}\}/gi, "joao@email.com");
 }

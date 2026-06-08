@@ -416,9 +416,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   const phoneNumber = chat.remoteJid.split("@")[0];
 
-  // Em desktop/tablet (≥768px), o painel Captação fica como coluna lateral inline.
+  // Em desktop/tablet (≥768px), a Ficha de Captação fica SEMPRE visível como
+  // coluna lateral fixa quando há cliente selecionado (consultor pediu pra
+  // não ter que abrir manualmente toda hora — fica acessível na lateral).
   // Em mobile real (<768px), continua como Sheet (overlay) por baixo.
-  const showInlineCapture = !isMobile && captureOpen && !!customerId;
+  const showInlineCapture = !isMobile && !!customerId;
   const showSheetCapture = isMobile && !!customerId;
 
 
@@ -701,10 +703,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             }}
             title="Arraste pra redimensionar"
           />
-          <div className="flex shrink-0" style={{ width: "var(--cap-side-w, 300px)" }}>
+          <div className="flex shrink-0" style={{ width: "var(--cap-side-w, 320px)" }}>
             <CaptureSheet
-              open={captureOpen}
-              onOpenChange={setCaptureOpen}
+              open
+              onOpenChange={() => { /* painel persistente — não fecha */ }}
               consultantId={consultantId}
               customerId={customerId!}
               customerName={chat?.name}
