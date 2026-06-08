@@ -1390,7 +1390,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // o default semeado em bot_flow_steps.media_order.
       // Tenta primeiro por step_key (como a UI /admin/fluxos salva) e cai
       // em slot_key como compatibilidade retroativa.
-      const uiOrder = await getStepMediaOrder(supabase, customer.consultant_id, [stepKey, slotKey]);
+      const uiOrder = await getStepMediaOrder(supabase, mediaOwnerId, [stepKey, slotKey]);
       const stepOrder = Array.isArray((stepRow as any).media_order) && (stepRow as any).media_order.length > 0
         ? (stepRow as any).media_order.map((k: any) => String(k).toLowerCase())
         : null;
