@@ -48,6 +48,33 @@ const safeNum = (v: unknown): number | null => {
   const n = parseFloat(String(v).replace(/\./g, "").replace(",", ".").replace("%", ""));
   return isNaN(n) ? null : n;
 };
+const safeInt = (v: unknown): number | null => {
+  const n = safeNum(v);
+  return n == null ? null : Math.round(n);
+};
+// dd/mm/yyyy → yyyy-mm-dd (Postgres date). Aceita também ISO já formatado.
+const parseDateBR = (v: unknown): string | null => {
+  const s = safeStr(v);
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    const [, d, mo, y] = m;
+    const yyyy = y.length === 2 ? `20${y}` : y;
+    return `${yyyy}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return null;
+};
+// Limpa devolutiva: remove prefixos "caminhoarquivo:", "caminhoarquivodoc1:", etc.
+const cleanDevolutiva = (v: unknown): string | null => {
+  const s = safeStr(v);
+  if (!s) return null;
+  return s
+    .replace(/caminho[a-z0-9]*\s*:\s*/gi, "")
+    .replace(/\s*,\s+/g, " | ")
+    .replace(/\s{2,}/g, " ")
+    .trim() || null;
+};
 
 function pick(row: Record<string, unknown>, ...keys: string[]): unknown {
   const lowerMap: Record<string, unknown> = {};
@@ -100,7 +127,23 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   const name = safeStr(pick(r, "Nome do Cliente", "Nome", "Cliente", "nomeCliente", "name"));
   if (name) rec.name = name;
   const statusRaw = safeStr(pick(r, "Andamento", "Status", "andamento"));
-  rec.status = placeholder ? "contato_incompleto" : mapStatus(statusRaw);
+
+  // Datas iGreen (define aprovado se vier Data Validado ou Data Ativo)
+  const dCadastro = parseDateBR(pick(r, "Data Cadastro", "data cadastro", "dataCadastro"));
+  const dAtivo = parseDateBR(pick(r, "Data Ativo", "data ativo", "dataAtivo"));
+  const dValidado = parseDateBR(pick(r, "Data Validado", "data validado", "dataValidado"));
+  if (dCadastro) rec.data_cadastro_igreen = dCadastro;
+  if (dAtivo) rec.data_ativo_igreen = dAtivo;
+  if (dValidado) rec.data_validado_igreen = dValidado;
+
+  if (placeholder) {
+    rec.status = "contato_incompleto";
+  } else if (dValidado || dAtivo) {
+    rec.status = "approved";
+  } else {
+    rec.status = mapStatus(statusRaw);
+  }
+
   const cpf = safeStr(pick(r, "CPF", "Documento", "cpf"));
   if (cpf) rec.cpf = String(cpf).replace(/\D/g, "");
   const email = safeStr(pick(r, "E-mail", "Email", "email"));
@@ -112,7 +155,7 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   const dist = safeStr(pick(r, "Distribuidora"));
   if (dist) rec.distribuidora = dist;
   if (statusRaw) rec.andamento_igreen = statusRaw;
-  const dev = safeStr(pick(r, "Devolutiva"));
+  const dev = cleanDevolutiva(pick(r, "Devolutiva"));
   if (dev) rec.devolutiva = dev;
   if (codigo) rec.igreen_code = codigo;
   const cons = safeNum(pick(r, "Consumo Médio", "Consumo Medio", "consumoMedio"));
@@ -121,6 +164,31 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   if (desc != null) rec.desconto_cliente = desc;
   const inst = safeStr(pick(r, "Instalação", "Instalacao", "Nº Instalação", "numeroInstalacao"));
   if (inst) rec.numero_instalacao = inst;
+
+  // Licenciado (CRÍTICO para Top Licenciado)
+  const licName = safeStr(pick(r, "Licenciado", "licenciado", "Nome Licenciado"));
+  if (licName) rec.registered_by_name = licName;
+  const licCode = safeInt(pick(r, "Código Licenciado", "Codigo Licenciado", "codigoLicenciado", "Cod Licenciado"));
+  if (licCode != null && licCode > 0) rec.registered_by_igreen_id = licCode;
+
+  // Demais campos
+  const nivel = safeInt(pick(r, "Nível", "Nivel", "Level"));
+  if (nivel != null) rec.nivel_licenciado = nivel;
+  const dNasc = parseDateBR(pick(r, "Data Nascimento", "Nascimento", "dataNascimento"));
+  if (dNasc) rec.data_nascimento = dNasc;
+  const cashback = safeStr(pick(r, "Cashback"));
+  if (cashback) rec.cashback_igreen = cashback;
+  const statusFin = safeStr(pick(r, "Status Financeiro", "statusFinanceiro"));
+  if (statusFin) rec.status_financeiro = statusFin;
+  const assCliente = safeStr(pick(r, "Assinatura Cliente"));
+  if (assCliente) rec.assinatura_cliente_status = assCliente;
+  const assIgreen = safeStr(pick(r, "Assinatura iGreen", "Assinatura Igreen"));
+  if (assIgreen) rec.assinatura_igreen_status = assIgreen;
+  const linkAss = safeStr(pick(r, "Link Assinatura", "linkAssinatura"));
+  if (linkAss) rec.link_assinatura = linkAss;
+  const obs = safeStr(pick(r, "Observação", "Observacao"));
+  if (obs) rec.observacao_igreen = obs;
+
   return rec;
 }
 
@@ -129,15 +197,16 @@ function buildNetworkRecord(r: Record<string, unknown>, mesRef: string): Record<
   if (!codigo) return null;
   return {
     codigo_igreen: codigo,
-    nivel: (() => { const n = safeNum(pick(r, "Nível", "Nivel", "Level")); return n == null ? null : Math.round(n); })(),
+    nivel: safeInt(pick(r, "Nível", "Nivel", "Level")),
     nome: safeStr(pick(r, "Nome", "Consultor", "Nome do Consultor")),
     patrocinador_codigo: safeStr(pick(r, "Patrocinador", "Patrocinador Código", "Cod Patrocinador")),
     celular: safeStr(pick(r, "Celular", "Telefone", "WhatsApp")),
     cidade: safeStr(pick(r, "Cidade", "Município")),
     uf: (() => { const s = safeStr(pick(r, "UF", "Estado")); return s ? s.toUpperCase() : null; })(),
     graduacao: safeStr(pick(r, "Graduação", "Graduacao", "Cargo")),
-    gp_qualificados: safeNum(pick(r, "GP Qualificados", "GP")),
-    gl_qualificados: safeNum(pick(r, "GL Qualificados", "GL")),
+    // Planilha usa "GP Qualificável" / "GI Qualificável" (singular, com acento)
+    gp_qualificados: safeNum(pick(r, "GP Qualificável", "GP Qualificavel", "GP Qualificados", "GP")),
+    gl_qualificados: safeNum(pick(r, "GI Qualificável", "GI Qualificavel", "GI Qualificados", "GL Qualificados", "GI", "GL")),
     mes_ref: mesRef,
     raw_json: r,
     source: "igreen_extension_xlsx",
