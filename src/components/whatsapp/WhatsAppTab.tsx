@@ -323,7 +323,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                       consultantId={userId}
                     />
                   </div>
-                  <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={280} minPx={240} maxPx={420} />
+                  <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={240} minPx={200} maxPx={360} />
                   <div className="flex-1 min-w-0 min-h-0 flex flex-col">
                     <ChatView
                       instanceName={instanceName}
