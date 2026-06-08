@@ -384,6 +384,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         <div className="space-y-3">
           {filtered.map((qa) => {
             const realIdx = qas.findIndex((q) => q.id === qa.id);
+            const isOwned = qa.flow_id === flowId;
             return (
               <QACard
                 key={qa.id}
@@ -392,8 +393,10 @@ export default function FaqSection({ flowId }: { flowId: string }) {
                 availableVideos={availableVideos}
                 availableAudios={availableAudios}
                 triggerIndex={triggerIndex}
-                onMoveUp={realIdx > 0 ? () => moveQA(qa.id, -1) : undefined}
-                onMoveDown={realIdx < qas.length - 1 ? () => moveQA(qa.id, 1) : undefined}
+                readOnly={!isOwned && !isSuperAdmin}
+                isSuperAdmin={isSuperAdmin}
+                onMoveUp={isOwned && realIdx > 0 ? () => moveQA(qa.id, -1) : undefined}
+                onMoveDown={isOwned && realIdx < qas.length - 1 ? () => moveQA(qa.id, 1) : undefined}
                 onUpdate={(p) => updateQA(qa.id, p)}
                 onDelete={() => deleteQA(qa.id)}
                 onAddTrigger={(p) => addTrigger(qa, p)}
