@@ -1,82 +1,91 @@
-## Diagnóstico
+## 1. Botão "Invalidar" no popup de confirmação pendente
 
-Os 4 consultores com Fluxo D estão configurados assim:
+**Problema:** Alguns clientes vêm marcados como "Validado" mas não foram. Sempre aparecem no popup.
 
-| Consultor | sync_mode | steps | media_order | ai_media_library |
-|---|---|---|---|---|
-| Rafael (público) | custom | 16 | 732 chars (cheio) | dezenas de áudios/vídeos pessoais |
-| Bruna | public | 16 | `{}` vazio | 0 mídias pessoais |
-| tvmensal01 | public | 16 | 56 chars | 0 |
-| tvmensal22 | public | 16 | `{}` vazio | 0 |
+**Mudanças em `src/components/whatsapp/PendingApprovalDialog.tsx`:**
+- Adicionar 4º botão `Invalidar` (ícone XCircle, variante destructive-ghost) em cada linha.
+- Ao clicar → confirmação ("Marcar como inválido e remover da fila?") → chama nova ação `invalidate` na RPC `confirm_pending_classification`.
+- Cliente recebe `pos_venda_pending_stage = NULL`, `pos_venda_invalid = true`, sai do popup permanentemente.
 
-**Os textos das 16 etapas batem 100%** (já validado linha a linha entre o flow público e o da Bruna). O que diverge no runtime é a **camada de mídia**, porque ela NÃO segue o `sync_mode`:
+**Migration:** adicionar coluna `pos_venda_invalid boolean default false` em `customers` e estender a RPC `confirm_pending_classification` para aceitar `_action = 'invalidate'`.
 
-- `bot_flow_steps.message_text` → resolvido pelo flow público ✅
-- `bot_flow_qa` (FAQ) → resolvido pelo flow público ✅ (após migração recente)
-- **`consultants.flow_step_media_order`** → lido do consultor logado ❌ (Bruna = `{}`, sem áudio/vídeo/imagem por passo)
-- **`ai_media_library`** → filtrado por `consultant_id = caller` ❌ (Bruna não tem nenhum item pessoal, só pega o `is_public=true` global, que é uma fração do que o Rafael tem)
+## 2. Visual do popup melhorado
 
-Resultado: a Bruna recebe **só os textos e botões**, sem os áudios e vídeos que o Rafael tem cadastrados no Fluxo D público. Por isso "não está igual".
+**Problema:** Layout pesado, "sem_celular_1431733" fica feio ao lado do nome, badges desalinhados.
 
-Arquivos onde isso vive hoje:
-- `supabase/functions/_shared/engine/loader.ts` (linhas 115-168) — engine v3
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (linhas 1220-1240, 1638-1830) — legacy
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` — legacy espelhado
+**Mudanças em `PendingApprovalDialog.tsx`:**
+- Esconder telefone quando começar com `sem_celular_` — mostrar badge cinza "Sem WhatsApp" no lugar.
+- Avatar circular com inicial do nome (cor por hash) à esquerda.
+- Nome em negrito + linha secundária com telefone formatado (+55 11 99999-9999) OU badge "Sem WhatsApp".
+- Botões compactos: `Confirmar` (primary), `Rever` (outline), `Invalidar` (ghost vermelho), `Adiar` (ícone só).
+- Hover sutil, divisórias mais leves, padding reduzido, contagem por seção com chip colorido.
+- Header sticky com busca rápida quando >20 itens.
 
-## Plano
+## 3. Passos do fluxo com nomes amigáveis
 
-**Regra única:** quando `bot_flows.sync_mode = 'public'`, todo o lookup de mídia deve usar o **dono do flow público** (Rafael), não o consultor logado. Assim o consultor herda 100% áudio + vídeo + imagem + ordem.
+**Problema:** Steps aparecem com IDs como `passo_mp8yc0bp` no admin de templates.
 
-### 1. Edge functions
+**Mudanças em `src/components/whatsapp/templates/TemplateListItem.tsx` e onde lista steps:**
+- Criar helper `prettyStepLabel(stepId, stepTitle)` que:
+  - Usa `title` se existir.
+  - Mapeia slugs conhecidos (`boas_vindas` → "Boas-vindas", `fazenda_solar` → "Fazenda Solar", etc.).
+  - Para IDs gerados (`passo_xxxx`), mostra apenas "Passo N" baseado na ordem.
+- Aplicar nos cards de mídia e na listagem de steps.
 
-**`_shared/engine/loader.ts`**
-- Já resolve o `flow_id` público quando `sync_mode='public'`. Adicionar resolução paralela do `media_owner_id`:
-  - se `sync_mode='public'` → `media_owner_id = consultant_id do flow público`
-  - senão → `media_owner_id = consultantId` (atual)
-- Trocar:
-  - `consultants.flow_step_media_order` → buscar por `media_owner_id`
-  - `ai_media_library .or(consultant_id.eq.${media_owner_id},is_public.eq.true)`
-- Manter o fallback "personal trumps public" exatamente como está.
+## 4. Link curto personalizado de WhatsApp do parceiro
 
-**`evolution-webhook/handlers/bot-flow.ts` e `whapi-webhook/handlers/bot-flow.ts`**
-- Resolver `media_owner_id` uma vez no topo do handler (mesma regra).
-- Substituir todas as chamadas `ai_media_library ... eq("consultant_id", consultantId)` por `eq("consultant_id", mediaOwnerId)`.
-- Idem para a leitura de `consultants.flow_step_media_order`.
+**Problema:** Link `https://wa.me/55119999...?text=...` fica gigante na UI.
 
-### 2. Áudio (`audio_library`)
-Mesma regra: quando `sync_mode='public'`, fallback consulta `audio_library` do dono do flow público + `is_public=true`. Hoje a Bruna não recebe nenhum áudio "mutirão" porque o único `is_public=true` está sob outro consultor (tvmensal01).
+**Mudanças:**
+- Migration: tabela `consultant_short_links` (`slug` único curto, `consultant_id`, `target_url`, `clicks`).
+- Edge function `s` (rota `/s/:slug`) faz 302 para o `target_url` e incrementa `clicks`.
+- Gerar slug curto automaticamente (`igreen.cloud/s/bruna` ou similar) por consultor.
+- Exibir só o link curto no painel do parceiro com botão "Copiar".
 
-### 3. Botões
-Botões vivem dentro de `bot_flow_steps.captures._buttons` — já vêm do flow público. **Sem mudança** necessária. (Validado: bate.)
+## 5. Polish geral — Atendente de IA + Templates
 
-### 4. UI Super Admin — auditoria de paridade
-Adicionar um botão "Validar paridade com público" no painel do Fluxo D que, para cada consultor com `sync_mode='public'`, mostra:
-- ✅ Texto bate
-- ⚠️ Mídia divergente em N passos
-- Botão "Reaplicar mídia do público" (no-op se a regra acima já cobrir, só para inspeção visual)
+**Escopo:**
+- `src/pages/AdminFluxoB.tsx`, painel de templates, lista de mídias:
+  - Tipografia consistente (heading display, body refinado).
+  - Cards com `border border-border/40 bg-card/40 backdrop-blur`.
+  - Estados vazios com ilustração + CTA claro.
+  - Microinterações (hover lift, transição 200ms).
+  - Reescrever copy: títulos diretos, descrições curtas, sem jargão técnico.
+  - Botões de ação agrupados, ícones com label, confirmações com motivo.
+- Revisar funcionalidades quebradas: upload de mídia, troca de áudio, toggle público/privado, exclusão com X.
 
-Isso permite ao Super Admin verificar que Bruna, tvmensal01 e tvmensal22 estão 100% iguais ao Rafael sem precisar abrir cada flow.
+## 6. Wizard de configuração de mídias pós-venda (antes de confirmar)
 
-### 5. Migração de dados (opcional, só limpeza)
-Nenhuma migração de schema é necessária. Como bônus, podemos zerar `flow_step_media_order` dos 3 consultores em `sync_mode='public'` para deixar explícito que nada local é usado — mas a regra acima já ignora.
+**Objetivo:** Antes do parceiro clicar "Confirmar" nos clientes aprovados, mostrar um popup que o ajude a configurar suas mídias para cada estágio.
+
+**Novo componente `src/components/whatsapp/PosVendaSetupWizard.tsx`:**
+- Trigger: ao abrir o CRM pela 1ª vez OU quando faltar mídia em algum estágio, OU ao tentar "Confirmar todos" sem ter mídias setadas.
+- 6 abas/steps: **Aprovado, Reprovado, 30d, 60d, 90d, 120d**.
+- Para cada estágio, 4 slots opcionais: **Texto, Áudio, Imagem, Vídeo**.
+- Cada slot tem 2 opções claras:
+  - **"Usar o nosso"** (mídia pública padrão da Fluxo D, preview inline)
+  - **"Subir o meu"** (upload + preview + trocar)
+- Botão "Pular" por estágio (usa padrão público).
+- Barra de progresso no topo (1/6, 2/6...).
+- Ao terminar: salva referências em `consultant_pos_venda_media` (nova tabela) e libera o botão "Confirmar todos".
+
+**Migration:** tabela `consultant_pos_venda_media` (`consultant_id`, `stage` ∈ {aprovado,reprovado,d30,d60,d90,d120}, `text`, `audio_media_id`, `image_media_id`, `video_media_id`, `use_default boolean`).
+
+**Backend reaquecimento:** atualizar `pos-venda-bucket-cron` (ou a edge que dispara as mensagens dos buckets) para ler `consultant_pos_venda_media` antes do fallback público.
 
 ## Detalhes técnicos
 
-- Não há mudança de schema, só edge-functions + 1 componente React.
-- A resolução do `media_owner_id` pode ser cacheada por turno (mesmo `flow_id` público resolvido para os steps).
-- Sem impacto em consultores com `sync_mode='custom'` (Rafael).
-- Sem impacto em outras variants — a regra é puramente sobre `sync_mode='public'`.
+- RPCs novas: `confirm_pending_classification` (estendido), `upsert_pos_venda_media`.
+- RLS: consultor lê/escreve só suas próprias linhas em `consultant_pos_venda_media`; service_role full.
+- Edge function `s` lê `consultant_short_links` com service_role.
+- Sem mudanças no engine v3 do bot — só consumo de novas tabelas no disparador pós-venda.
+- UI usa tokens semânticos existentes (sem cores hardcoded).
 
-## Arquivos a tocar
+## Ordem de implementação
 
-- `supabase/functions/_shared/engine/loader.ts`
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
-- `src/pages/AdminFluxoD.tsx` (ou painel equivalente) — botão "Validar paridade"
-- `src/components/admin/flow-builder/PublicParityCheck.tsx` (novo, ~120 linhas)
-
-## Fora de escopo
-
-- Mudar a forma como Super Admin edita mídia (continua tudo no consultor dono do flow público).
-- Tocar QAs/FAQ (já está resolvido na migração anterior).
-- Remote support, parceiros, disparo em massa.
+1. Migrations (invalid flag, short_links, pos_venda_media) + RPCs.
+2. Botão invalidar + visual do popup.
+3. prettyStepLabel + aplicação nos templates.
+4. Wizard pós-venda.
+5. Short link + edge `s`.
+6. Polish geral (IA/templates).
