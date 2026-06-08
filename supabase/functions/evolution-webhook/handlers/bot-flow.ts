@@ -1294,7 +1294,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // Precedência: UI (consultants.flow_step_media_order[slotKey]) → bot_flow_steps.media_order → default.
       // A UI do /admin/fluxos grava em consultants.flow_step_media_order, então ela vence
       // o default semeado em bot_flow_steps.media_order.
-      const uiOrder = await getStepMediaOrder(supabase, customer.consultant_id, [(stepRow as any).step_key || stepKey, slotKey]);
+      const uiOrder = await getStepMediaOrder(supabase, mediaOwnerId, [(stepRow as any).step_key || stepKey, slotKey]);
       const stepOrder = Array.isArray((stepRow as any).media_order) && (stepRow as any).media_order.length > 0
         ? (stepRow as any).media_order.map((k: any) => String(k).toLowerCase())
         : null;
