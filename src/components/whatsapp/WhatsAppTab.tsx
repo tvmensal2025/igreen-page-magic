@@ -278,7 +278,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                   )}
                 </div>
               )}
-              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "280px" } as React.CSSProperties}>
+              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "240px" } as React.CSSProperties}>
               {/* Mobile: show sidebar OR chat, not both */}
               {isMobile ? (
                 selectedChatJid ? (
