@@ -35,10 +35,26 @@ function toViewportXY(cmd: RemoteCommand): { x: number; y: number } {
 }
 
 function elAt(x: number, y: number): Element | null {
-  const el = document.elementFromPoint(x, y);
-  if (!el || isProtected(el)) return null;
-  return normalizeInteractiveTarget(el);
+  // elementsFromPoint (plural) deixa "perfurar" overlays transparentes/decorativos.
+  // Procuramos o primeiro elemento que NÃO seja protegido e que tenha pointer-events
+  // efetivos. Se todos forem protegidos, devolve null.
+  const stack = (document as any).elementsFromPoint?.(x, y) as Element[] | undefined;
+  const list = stack && stack.length ? stack : [document.elementFromPoint(x, y)].filter(Boolean) as Element[];
+  for (const candidate of list) {
+    if (!candidate) continue;
+    if (isProtected(candidate)) return null; // banner do suporte é sagrado
+    try {
+      const style = getComputedStyle(candidate as Element);
+      if (style.pointerEvents === "none") continue;
+    } catch { /* ignore */ }
+    return normalizeInteractiveTarget(candidate);
+  }
+  return null;
 }
+
+// Memoriza última posição do mouse para refoco em comandos `key`.
+let _lastMouseX = 0;
+let _lastMouseY = 0;
 
 const INTERACTIVE_SEL = [
   "button", "a[href]", "input", "textarea", "select", "label",
