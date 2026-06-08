@@ -708,18 +708,17 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       )}
 
       {/* Capture Sheet (overlay) — mobile e desktop apertado (<xl) */}
-      {customerId && (
-        <div className="xl:hidden">
-          <CaptureSheet
-            open={captureOpen}
-            onOpenChange={setCaptureOpen}
-            consultantId={consultantId}
-            customerId={customerId}
-            customerName={chat?.name}
-            phoneNumber={phoneNumber}
-          />
-        </div>
+      {showSheetCapture && (
+        <CaptureSheet
+          open={captureOpen}
+          onOpenChange={setCaptureOpen}
+          consultantId={consultantId}
+          customerId={customerId}
+          customerName={chat?.name}
+          phoneNumber={phoneNumber}
+        />
       )}
+
     </div>
 
   );
