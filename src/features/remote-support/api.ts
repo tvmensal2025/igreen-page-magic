@@ -60,14 +60,15 @@ export async function logAction(
   sessionId: string,
   actor: "operator" | "requester" | "system",
   action: string,
-  target?: string,
-  payload?: Record<string, unknown>,
+  target?: string | null,
+  payload?: Record<string, unknown> | null,
 ) {
   try {
-    await supabase.from("remote_support_logs").insert({
+    await (supabase.from("remote_support_logs" as never) as never).insert({
       session_id: sessionId, actor, action, target: target ?? null, payload: payload ?? null,
-    } as never);
+    });
   } catch (e) {
     console.warn("[remote-support] log failed", e);
   }
 }
+
