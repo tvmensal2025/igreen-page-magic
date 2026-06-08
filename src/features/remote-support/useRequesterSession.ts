@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { SupportSession } from "./types";
 import { requestSupport, endSession, rotateCode, logAction } from "./api";
 import { createRequesterPeer } from "./screenShare";
-import { executeCommand } from "./actionHandler";
+import { executeCommand, setActivePeerForQuality, setRemoteControlPaused } from "./actionHandler";
 import type { RemoteCommand } from "./types";
 import { toast } from "sonner";
 
