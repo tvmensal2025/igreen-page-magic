@@ -208,7 +208,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle className="text-sm">Configurar Colunas do Kanban</DialogTitle></DialogHeader>
-              <p className="text-[11px] text-muted-foreground -mt-1">Leads aprovados progridem automaticamente para 30 → 60 → 90 → 120 DIAS.</p>
+              <p className="text-[11px] text-muted-foreground -mt-1">O funil termina em <strong>Finalizando cadastro</strong>. Depois que a extensão iGreen sincronizar, o lead vira cliente e segue no <strong>CRM Pós-Venda</strong> (Aprovado/Reprovado/30-60-90-120 dias).</p>
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                 {stages.map((stage) => (
                   <div

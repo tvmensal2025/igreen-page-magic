@@ -6,6 +6,9 @@ import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 type KanbanStageRow = Tables<"kanban_stages">;
 type KanbanStageInsert = TablesInsert<"kanban_stages">;
 
+// Lead CRM termina em "Finalizando cadastro". A partir daí o cliente passa
+// para o CRM de Pós-Venda (aprovado / reprovado / 30-60-90-120 dias) quando
+// a extensão sincroniza com o iGreen.
 const DEFAULT_STAGES: Omit<KanbanStageInsert, "consultant_id">[] = [
   { stage_key: "novo_lead", label: "Novo Lead", color: "bg-purple-500/20 text-purple-400", position: 0, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
   { stage_key: "qualificando", label: "Em qualificação", color: "bg-indigo-500/20 text-indigo-400", position: 1, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
@@ -13,13 +16,6 @@ const DEFAULT_STAGES: Omit<KanbanStageInsert, "consultant_id">[] = [
   { stage_key: "conta_enviada", label: "Conta enviada", color: "bg-cyan-500/20 text-cyan-400", position: 3, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
   { stage_key: "doc_enviado", label: "Documento enviado", color: "bg-blue-500/20 text-blue-400", position: 4, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
   { stage_key: "finalizando", label: "Finalizando cadastro", color: "bg-pink-500/20 text-pink-400", position: 5, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
-  { stage_key: "espera", label: "Em Espera", color: "bg-slate-500/20 text-slate-400", position: 6, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
-  { stage_key: "aprovado", label: "Aprovado", color: "bg-green-500/20 text-green-400", position: 7, auto_message_text: "Olá *{{nome}}*! 🎉\n\nSeu cadastro foi *aprovado* com sucesso!\n\nEm breve entraremos em contato.", auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
-  { stage_key: "reprovado", label: "Reprovado", color: "bg-red-500/20 text-red-400", position: 8, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
-  { stage_key: "30_dias", label: "30 DIAS", color: "bg-blue-500/20 text-blue-400", position: 9, auto_message_text: "Olá *{{nome}}*! 👋\n\nJá se passaram *30 dias* desde sua aprovação.\n\nComo está indo? Precisa de alguma ajuda?", auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
-  { stage_key: "60_dias", label: "60 DIAS", color: "bg-cyan-500/20 text-cyan-400", position: 10, auto_message_text: "Olá *{{nome}}*! 🌱\n\nJá são *60 dias* desde sua aprovação!\n\nEstamos acompanhando seu progresso.", auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
-  { stage_key: "90_dias", label: "90 DIAS", color: "bg-yellow-500/20 text-yellow-400", position: 11, auto_message_text: "Olá *{{nome}}*! ☀️\n\n*90 dias* de aprovação!\n\nComo está a economia na sua conta de luz?", auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
-  { stage_key: "120_dias", label: "120 DIAS", color: "bg-orange-500/20 text-orange-400", position: 12, auto_message_text: "Olá *{{nome}}*! 🏆\n\n*120 dias* de aprovação!\n\nQue tal indicar um amigo e ganhar benefícios?", auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
 ];
 
 export const COLOR_OPTIONS = [
@@ -44,6 +40,7 @@ export function useKanbanStages(consultantId: string) {
       .from("kanban_stages")
       .select("*")
       .eq("consultant_id", consultantId)
+      .or("stage_scope.eq.lead,stage_scope.is.null")
       .order("position", { ascending: true });
 
     if (data && data.length > 0) {
@@ -52,6 +49,7 @@ export function useKanbanStages(consultantId: string) {
       const inserts: KanbanStageInsert[] = DEFAULT_STAGES.map((s) => ({
         ...s,
         consultant_id: consultantId,
+        stage_scope: "lead",
       }));
       const { data: inserted } = await supabase
         .from("kanban_stages")

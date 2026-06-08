@@ -97,16 +97,9 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
     }
 
     const updateData: CrmDealUpdate = { stage: stageKey };
-    if (stageKey === "aprovado") {
-      updateData.approved_at = new Date().toISOString();
-      (updateData as any).deal_origin = "aprovado";
-      (updateData as any).rejected_at = null;
-      (updateData as any).rejection_reason = null;
-    }
-    if (stageKey === "reprovado") {
-      (updateData as any).rejected_at = new Date().toISOString();
-      (updateData as any).deal_origin = "reprovado";
-    }
+    // Lead CRM termina em "finalizando". Aprovado/Reprovado/30-120 dias
+    // pertencem ao CRM Pós-Venda (customers.pos_venda_stage), populado pela
+    // extensão iGreen — não tratamos esses casos aqui.
     if (rejectionReason) {
       (updateData as any).rejection_reason = rejectionReason;
     }
