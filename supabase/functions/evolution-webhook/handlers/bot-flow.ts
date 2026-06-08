@@ -1508,6 +1508,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
     if (!activeFlow) return null;
+    const { resolveMediaOwnerId } = await import("../../_shared/resolve-flow.ts");
+    const mediaOwnerId = await resolveMediaOwnerId(
+      supabase,
+      customer.consultant_id,
+      (customer as any)?.flow_variant || "A",
+    );
 
     const { data: qaRows } = await supabase
       .from("bot_flow_qa")
