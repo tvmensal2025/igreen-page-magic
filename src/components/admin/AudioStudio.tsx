@@ -508,6 +508,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       setAudioUrl(url);
       setLastRowId(row.consultant_id === userId ? row.id : null);
       setLastIsPublic(row.is_public);
+      setLastPublicUrl(row.audio_url);
       const a = audioRef.current || new Audio(url);
       audioRef.current = a; a.src = url;
       a.onended = () => setPlaying(false);
