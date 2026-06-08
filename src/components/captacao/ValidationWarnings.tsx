@@ -18,7 +18,7 @@ interface Props {
 export function ValidationWarnings({ validation, onApplySuggestion }: Props) {
   if (!validation || validation.invalid.length === 0) return null;
   return (
-    <div className="mx-2 mb-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-100 space-y-1">
+    <div className="mx-2 mb-1.5 rounded-md border border-amber-500/50 px-2 py-1.5 text-[11px] space-y-1 text-green-900 bg-red-200">
       {validation.invalid.map((i, idx) => (
         <div key={idx} className="flex items-start gap-1.5">
           <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0 text-amber-300" />
