@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "iGreen Sync",
+  "version": "1.0.0",
+  "description": "Sincroniza seus clientes do portal iGreen com o iGreen Cloud usando sua propria sessao logada.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://app.igreenenergia.com.br/*",
+    "https://*.igreenenergia.com.br/*",
+    "https://zlzasfhcxcznaprrragl.supabase.co/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "iGreen Sync"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

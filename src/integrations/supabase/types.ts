@@ -4189,6 +4189,48 @@ export type Database = {
         }
         Relationships: []
       }
+      igreen_extension_tokens: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          label: string
+          last_used_at: string | null
+          last_used_ip: string | null
+          revoked_at: string | null
+          token_hash: string
+          token_prefix: string
+          updated_at: string
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          last_used_ip?: string | null
+          revoked_at?: string | null
+          token_hash: string
+          token_prefix: string
+          updated_at?: string
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          label?: string
+          last_used_at?: string | null
+          last_used_ip?: string | null
+          revoked_at?: string | null
+          token_hash?: string
+          token_prefix?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       inbound_media_failures: {
         Row: {
           consultant_id: string

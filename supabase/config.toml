@@ -128,3 +128,6 @@ verify_jwt = false
 [functions.process-followups]
 verify_jwt = false
 
+
+[functions.igreen-ingest-customers]
+verify_jwt = false
