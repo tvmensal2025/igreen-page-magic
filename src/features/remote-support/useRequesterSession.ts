@@ -123,6 +123,7 @@ export function useRequesterSession(userId: string | null | undefined) {
           peerRef.current?.close(); peerRef.current = null; setSharing(false);
           logAction(session.id, "system", "screen_stopped");
         },
+        (state) => console.log("[remote-support][rtc]", state),
       );
       peerRef.current = peer;
       await logAction(session.id, "requester", "screen_started");

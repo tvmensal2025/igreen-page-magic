@@ -239,7 +239,11 @@ function SessionWorkbench({ session, consultantName, onClose }: {
       try {
         const peer = await createOperatorPeer(
           session.id,
-          (stream) => { if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); } },
+          (stream) => {
+            if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
+            setConnecting(false);
+            pushLog("📺 Vídeo recebido");
+          },
           (dc) => { dcRef.current = dc; setConnecting(false); pushLog("🟢 Canal de comandos aberto"); },
           (msg) => {
             try {
@@ -249,6 +253,7 @@ function SessionWorkbench({ session, consultantName, onClose }: {
               pushLog(`${r.ok ? "✅" : "❌"} resp ${r.id}${r.error ? `: ${r.error}` : ""}`, r.ok);
             } catch {}
           },
+          (state) => pushLog(`📡 ${state}`),
         );
         peerRef.current = peer;
       } catch (e: any) {
