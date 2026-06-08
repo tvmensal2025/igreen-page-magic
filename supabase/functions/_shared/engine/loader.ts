@@ -151,17 +151,15 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
 
   const mediaOrderJson = (consultantRow?.flow_step_media_order as Record<string, unknown>) || {};
 
-  // ─── 4b. Read ai_media_library — consultant + public, active only ────
-  // Each step's "audio"/"image"/"video"/"document" entry in
-  // `flow_step_media_order` resolves to a real file via slot_key match.
-  // The legacy webhooks (whapi-webhook + evolution-webhook) do this lookup
-  // per-step; v3 hoists it into the loader so the runner stays pure.
-  // Fallback order: personal slot_key → public slot_key → unkeyed personal.
-  // (Mirrors `evolution-webhook/handlers/bot-flow.ts:1420-1440`.)
+  // ─── 4b. Read ai_media_library — media owner + public, active only ───
+  // Em sync_mode='public', filtra pelo consultant dono do flow público
+  // (mediaOwnerId), não pelo caller. Sem isso, consultores em modo público
+  // só recebiam o subconjunto `is_public=true` (vs. o catálogo cheio do
+  // Super Admin marcado como pessoal).
   const { data: mediaLib } = await supabase
     .from("ai_media_library")
     .select("id, kind, url, slot_key, send_order, duration_sec, is_public, consultant_id")
-    .or(`consultant_id.eq.${consultantId},is_public.eq.true`)
+    .or(`consultant_id.eq.${mediaOwnerId},is_public.eq.true`)
     .eq("active", true);
 
   const mediaBySlotAndKind = new Map<string, Map<string, {
