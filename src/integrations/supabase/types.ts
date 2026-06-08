@@ -2780,6 +2780,42 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_auto_message_log: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          customer_id: string
+          customer_name: string | null
+          id: string
+          message_preview: string | null
+          remote_jid: string | null
+          stage_key: string
+          status: string
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          customer_id: string
+          customer_name?: string | null
+          id?: string
+          message_preview?: string | null
+          remote_jid?: string | null
+          stage_key: string
+          status?: string
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          customer_id?: string
+          customer_name?: string | null
+          id?: string
+          message_preview?: string | null
+          remote_jid?: string | null
+          stage_key?: string
+          status?: string
+        }
+        Relationships: []
+      }
       customer_flow_state: {
         Row: {
           ai_questions_this_step: number
@@ -4497,6 +4533,7 @@ export type Database = {
           label: string
           position: number
           stage_key: string
+          stage_scope: string
         }
         Insert: {
           auto_message_enabled?: boolean
@@ -4511,6 +4548,7 @@ export type Database = {
           label: string
           position?: number
           stage_key: string
+          stage_scope?: string
         }
         Update: {
           auto_message_enabled?: boolean
@@ -4525,6 +4563,7 @@ export type Database = {
           label?: string
           position?: number
           stage_key?: string
+          stage_scope?: string
         }
         Relationships: []
       }
