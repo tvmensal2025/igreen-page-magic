@@ -178,11 +178,11 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
             <li>Descompacte <code>igreen-sync-extension.zip</code>.</li>
             <li>Abra <code>chrome://extensions</code> (Chrome, Edge, Brave ou Opera).</li>
             <li>Ative o <b>Modo desenvolvedor</b> (canto superior direito).</li>
-            <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada. Se ja tinha uma versao antiga, clique em <b>Atualizar</b> no card da extensao.</li>
+            <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada. Se ja tinha uma versao antiga, clique em <b>Atualizar</b> no card da extensao (icone <b>G</b> verde).</li>
             <li>No painel aqui, clique <b>Gerar token</b> e copie.</li>
-            <li>Clique no icone da extensao, cole o token e clique <b>Salvar token</b>.</li>
+            <li>Clique no icone <b>G</b> verde da extensao e cole o token no campo — ele e salvo automaticamente.</li>
             <li>Em outra aba, faca login em <code>escritorio.igreenenergy.com.br</code> e abra <b>/mapa-clientes</b> e <b>/mapa-rede</b> uma vez para conferir que a tabela carrega e o botao <b>Exportar Excel</b> aparece.</li>
-            <li>Volte na extensao e clique <b>Sincronizar agora</b>.</li>
+            <li>Volte na extensao e clique <b>Sincronizar agora</b>. A extensao baixa <b>primeiro o de Clientes</b> e depois o de Rede (um por vez, para evitar o aviso de varios downloads).</li>
           </ol>
           <div className="mt-4 p-3 rounded bg-muted text-xs space-y-1">
             <p className="font-semibold">Sobre a sincronizacao automatica (a cada 6h):</p>
