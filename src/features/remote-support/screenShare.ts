@@ -50,18 +50,19 @@ export async function getInboundVideoFps(pc: RTCPeerConnection): Promise<number 
       }
     });
     return fps;
-  } catch { return null; }
 }
+
+export type RtcStage =
   | "idle"
   | "subscribed"
-  | "waiting-share"     // operador: sessão ativa, sem offer ainda
-  | "offer-sent"        // requester: enviou offer
-  | "offer-received"    // operador: recebeu offer
-  | "answer-sent"       // operador: respondeu
-  | "answer-received"   // requester: recebeu answer
+  | "waiting-share"
+  | "offer-sent"
+  | "offer-received"
+  | "answer-sent"
+  | "answer-received"
   | "ice-checking"
   | "connected"
-  | "stream-received"   // operador: track chegou
+  | "stream-received"
   | "datachannel-open"
   | "failed"
   | "closed";
