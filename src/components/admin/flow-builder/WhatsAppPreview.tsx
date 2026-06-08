@@ -17,7 +17,10 @@ interface Props {
  * Abaixo das bolhas, mostra as transições configuradas (pergunta → resposta).
  */
 export default function WhatsAppPreview({ step, steps = [], consultantName }: Props) {
-  const renderedText = useMemo(() => renderVarsPreview(step?.message_text), [step?.message_text]);
+  const renderedText = useMemo(
+    () => renderVarsPreview(step?.message_text, consultantName),
+    [step?.message_text, consultantName],
+  );
   const buttons = useMemo(() => (step ? getButtons(step) : []), [step]);
 
   // Transições com destino resolvido para mostrar o mapa pergunta→resposta
