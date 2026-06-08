@@ -38,7 +38,7 @@ const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
-if (!OPENAI_API_KEY) console.warn('[boot] WARN: OPENAI_API_KEY não definido (debug IA desativado)');
+if (!OPENAI_API_KEY) console.warn('[boot] WARN: OPENAI_API_KEY não definido (debug visual desativado)');
 
 // ---------- Debug ----------
 let lastDebug = { ts: null, steps: [] };
@@ -52,7 +52,7 @@ function dbg(msg) {
 }
 
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, code = null) { super(message); this.status = status; this.code = code; }
 }
 
 async function readResponseLike(resp) {
@@ -284,16 +284,16 @@ async function loginWithPlaywright(email, password) {
     }
     await snapStep(page, 'pos_submit');
 
-    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada (clique + fallback falharam)');
+    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada (clique + fallback falharam)', 'no_login_response');
     dbg(`[login] response /login status=${loginResponseData.status}${isHtmlResponse(loginResponseData) ? ' html' : ''}`);
     if (isHtmlResponse(loginResponseData)) {
-      throw new HttpError(502, `Cloudflare/WAF retornou HTML no /login (${loginResponseData.status}): ${String(loginResponseData.body?.raw || '').slice(0, 180)}`);
+      throw new HttpError(503, `Portal iGreen bloqueou o login automatizado (Cloudflare/WAF ${loginResponseData.status}). Use a importação manual enquanto o portal estiver bloqueando o worker.`, 'igreen_waf_blocked');
     }
     if (loginResponseData.status === 401 || loginResponseData.status === 403) {
-      throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${bodyPreview(loginResponseData.body)}`);
+      throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${bodyPreview(loginResponseData.body)}`, 'invalid_credentials');
     }
     if (loginResponseData.status >= 400) {
-      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${bodyPreview(loginResponseData.body)}`);
+      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${bodyPreview(loginResponseData.body)}`, 'login_api_error');
     }
 
     const data = loginResponseData.body;
@@ -391,7 +391,9 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v14',
+        mode: 'tor+playwright+2captcha-v15',
+        worker_token_configured: Boolean(WORKER_TOKEN),
+        twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
       });
@@ -426,12 +428,12 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     const status = e?.status || 500;
     console.error(`[err] ${req.method} ${req.url} → ${status}: ${e?.message}`);
-    return sendJson(res, status, { ok: false, error: e?.message || 'erro interno' });
+    return sendJson(res, status, { ok: false, error: e?.message || 'erro interno', error_code: e?.code || null });
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v14 (tor+playwright+2captcha+captcha-click+context-fallback) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v15 (tor+playwright+2captcha+waf-classify) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
