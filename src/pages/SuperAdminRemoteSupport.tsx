@@ -325,7 +325,13 @@ function SessionWorkbench({ session, consultantName, onClose }: {
         {status === "active" && (
           <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 overflow-hidden">
             <div className="md:col-span-2 bg-black rounded-md overflow-hidden relative">
-              <video ref={videoRef} className="w-full h-full object-contain" autoPlay playsInline muted />
+              <video ref={videoRef} className="w-full h-full object-contain pointer-events-none select-none" autoPlay playsInline muted />
+              {hasStream && (
+                <RemoteControlOverlay
+                  videoRef={videoRef}
+                  sendCmd={sendCmd}
+                />
+              )}
               {!hasStream && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-sm text-center p-4 gap-2">
                   {stage === "offer-received" || stage === "answer-sent" || stage === "ice-checking" || stage === "connected" ? (
@@ -429,5 +435,107 @@ function HistoryView({ consultants }: { consultants: ConsultantRow[] }) {
         </ScrollArea>
       </CardContent>
     </Card>
+  );
+}
+
+/* ============== Overlay de controle remoto (mouse + teclado) ============== */
+function RemoteControlOverlay({
+  videoRef, sendCmd,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  sendCmd: (cmd: Omit<RemoteCommand, "id">) => void;
+}) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const lastMoveRef = useRef(0);
+  const [enabled, setEnabled] = useState(true);
+
+  const toNorm = (e: { clientX: number; clientY: number }) => {
+    const video = videoRef.current;
+    const host = overlayRef.current;
+    if (!video || !host) return null;
+    const rect = host.getBoundingClientRect();
+    const vw = video.videoWidth || rect.width;
+    const vh = video.videoHeight || rect.height;
+    const scale = Math.min(rect.width / vw, rect.height / vh);
+    const dispW = vw * scale;
+    const dispH = vh * scale;
+    const offsetX = (rect.width - dispW) / 2;
+    const offsetY = (rect.height - dispH) / 2;
+    const px = e.clientX - rect.left - offsetX;
+    const py = e.clientY - rect.top - offsetY;
+    if (px < 0 || py < 0 || px > dispW || py > dispH) return null;
+    return { x: px / dispW, y: py / dispH };
+  };
+
+  const onMove = (e: React.PointerEvent) => {
+    if (!enabled) return;
+    const now = performance.now();
+    if (now - lastMoveRef.current < 40) return;
+    lastMoveRef.current = now;
+    const p = toNorm(e); if (!p) return;
+    sendCmd({ kind: "mouseMove", x: p.x, y: p.y });
+  };
+
+  const onClick = (e: React.MouseEvent) => {
+    if (!enabled) return;
+    const p = toNorm(e); if (!p) return;
+    sendCmd({ kind: "mouseClick", x: p.x, y: p.y, button: e.button });
+    overlayRef.current?.focus();
+  };
+
+  const onDblClick = (e: React.MouseEvent) => {
+    if (!enabled) return;
+    const p = toNorm(e); if (!p) return;
+    sendCmd({ kind: "mouseDblClick", x: p.x, y: p.y });
+  };
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!enabled) return;
+    const p = toNorm(e); if (!p) return;
+    sendCmd({ kind: "contextMenu", x: p.x, y: p.y });
+  };
+
+  const onWheel = (e: React.WheelEvent) => {
+    if (!enabled) return;
+    const p = toNorm(e); if (!p) return;
+    sendCmd({ kind: "wheel", x: p.x, y: p.y, dx: e.deltaX, dy: e.deltaY });
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (!enabled) return;
+    if ((e.ctrlKey || e.metaKey) && ["t", "n", "w", "r", "l"].includes(e.key.toLowerCase())) return;
+    e.preventDefault();
+    sendCmd({
+      kind: "key",
+      key: e.key, code: e.code,
+      ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey,
+    });
+  };
+
+  return (
+    <>
+      <div
+        ref={overlayRef}
+        tabIndex={0}
+        className="absolute inset-0 cursor-crosshair outline-none"
+        onPointerMove={onMove}
+        onClick={onClick}
+        onDoubleClick={onDblClick}
+        onContextMenu={onContextMenu}
+        onWheel={onWheel}
+        onKeyDown={onKeyDown}
+      />
+      <div className="absolute top-2 right-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md">
+        <button
+          className={`px-2 py-0.5 rounded ${enabled ? "bg-green-600" : "bg-zinc-600"}`}
+          onClick={() => setEnabled(v => !v)}
+          title="Alternar controle remoto"
+        >
+          {enabled ? "Controle ATIVO" : "Apenas visualização"}
+        </button>
+        <span className="opacity-70 hidden md:inline">clique no vídeo p/ focar teclado</span>
+      </div>
+    </>
   );
 }
