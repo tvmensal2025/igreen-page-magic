@@ -1,9 +1,12 @@
-# igreen-sync-worker (v14 — Tor + Playwright + 2captcha + OpenAI Vision + context fallback)
+# igreen-sync-worker (v15 — Tor + Playwright + 2captcha + OpenAI Vision + WAF classification)
 
-> **v14**: se o clique visual em **Entrar** não disparar `/v1/login` em ~15s, o worker faz
-> um `context.request.post` do Playwright para `POST /v1/login` com
-> `{ email, password, recaptchaToken, keepConnected: true }`. Isso evita o CORS do
-> `page.evaluate(fetch)`, que em produção estava falhando com `TypeError: Failed to fetch`.
+> **v15**: quando o Cloudflare/WAF retorna HTML 403/503 no `/v1/login`, o worker classifica
+> como `igreen_waf_blocked` (HTTP 503) e retorna `error_code` na resposta JSON. Isso para
+> o loop frágil de tentativas de bypass e deixa claro no painel que o portal está
+> bloqueando a automação, sem consumir mais 2captcha.
+>
+> O fallback `context.request.post` continua existente, mas se também for bloqueado,
+> o erro agora é acionável: "Use a importação manual enquanto o portal estiver bloqueando o worker."
 
 Worker dedicado à **leitura** dos dados do portal iGreen (clientes e rede).
 Consumido pela edge function `sync-igreen-customers`.
@@ -50,13 +53,13 @@ no navegador.
 
 Auth: header `X-Worker-Token: <WORKER_TOKEN>`.
 
-| Método | Path                | Função                                                    |
-|--------|---------------------|-----------------------------------------------------------|
-| GET    | `/health`           | `{ ok, sessions, uptime_s, mode, ia_vision, ia_model }`   |
-| GET    | `/last-debug`       | passos + análise IA do último login                       |
-| GET    | `/last-screenshot`  | PNG do último step                                        |
-| POST   | `/sync-customers`   | `{ portal_email, portal_password }` → clientes            |
-| POST   | `/sync-network`     | `{ portal_email, portal_password }` → rede                |
+| Método | Path                | Função                                                                  |
+|--------|---------------------|-------------------------------------------------------------------------|
+| GET    | `/health`           | `{ ok, sessions, uptime_s, mode, worker_token_configured, twocaptcha_configured, ia_vision, ia_model }` |
+| GET    | `/last-debug`       | passos + análise IA do último login                                     |
+| GET    | `/last-screenshot`  | PNG do último step                                                      |
+| POST   | `/sync-customers`   | `{ portal_email, portal_password }` → clientes (ou erro `igreen_waf_blocked`) |
+| POST   | `/sync-network`     | `{ portal_email, portal_password }` → rede                              |
 
 ## Variáveis de ambiente
 
