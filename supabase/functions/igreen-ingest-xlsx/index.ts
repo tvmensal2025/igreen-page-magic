@@ -263,7 +263,9 @@ Deno.serve(async (req) => {
         if (error) { console.error("customers upsert", error); errors += batch.length; }
         else upserted += data?.length || 0;
       }
-      result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      if (!(result.clientes as { swapped?: boolean } | undefined)?.swapped) {
+        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      }
     }
 
     // --- REDE ---
@@ -299,7 +301,9 @@ Deno.serve(async (req) => {
         if (error) { console.error("network upsert", error); errors += batch.length; }
         else upserted += data?.length || 0;
       }
-      result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      if (!(result.rede as { swapped?: boolean } | undefined)?.swapped) {
+        result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      }
     }
 
     await supabase.from("settings").upsert(
