@@ -265,68 +265,56 @@ function waitForTabComplete(tabId, timeoutMs = 30000) {
 }
 
 async function captureFromPage(tabId, kind) {
-  // instala interceptor MAIN world
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    func: injectInterceptor,
-  });
+  await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: injectInterceptor });
 
-  // espera SPA renderizar
-  await sleep(2500);
+  // espera dados carregarem (ate 30s) — evita clicar com "0 de 0 registros"
+  const tReady0 = Date.now();
+  let readyInfo = null;
+  while (Date.now() - tReady0 < 30000) {
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: waitForDataReady });
+    readyInfo = r?.[0]?.result;
+    if (readyInfo?.ready) break;
+    await sleep(800);
+  }
 
-  // clica botao
-  const clickRes = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    func: clickExportButton,
-  });
+  const clickRes = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: clickExportButton });
   const cinfo = clickRes?.[0]?.result;
 
-  // polling pelo blob capturado
   const t0 = Date.now();
   let captured = null;
   while (Date.now() - t0 < CAPTURE_TIMEOUT_MS) {
-    // 1) tenta MAIN-world capture
-    const r = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      func: readCaptured,
-    });
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: readCaptured });
     captured = r?.[0]?.result;
-    if (captured?.b64) return { ok: true, ...captured, via: "main-world", click: cinfo };
+    if (captured?.b64) return { ok: true, ...captured, via: "main-world", click: cinfo, ready: readyInfo };
 
-    // 2) tenta downloads pendentes
     const queued = downloadsByTab.get(tabId) || downloadsByTab.get(-1) || [];
     if (queued.length) {
       const item = queued.shift();
       try {
         const { b64, size } = await fetchAsBase64(item.url);
-        return { ok: true, b64, size, source: item.url, via: "downloads", click: cinfo };
-      } catch (e) {
-        console.warn("[fetch fallback]", e);
-      }
+        return { ok: true, b64, size, source: item.url, via: "downloads", click: cinfo, ready: readyInfo };
+      } catch (e) { console.warn("[fetch fallback]", e); }
     }
-
     await sleep(700);
   }
 
-  // logs do MAIN world pra debug
   let mainLog = [];
   try {
-    const lg = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      func: () => window.__igreenLog || [],
-    });
+    const lg = await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: () => window.__igreenLog || [] });
     mainLog = lg?.[0]?.result || [];
   } catch {}
 
+  const clickMsg = cinfo?.ok ? `clique OK em <${cinfo.tag}> "${cinfo.text}"` : `clique FALHOU (${cinfo?.err || "sem info"})`;
+  const readyMsg = readyInfo
+    ? (readyInfo.total != null ? `pagina: ${readyInfo.shown}/${readyInfo.total} registros` : `pagina renderizada`)
+    : `pagina nao carregou`;
+
   return {
     ok: false,
-    error: `Timeout capturando XLSX de ${kind}. Clique: ${cinfo?.ok ? `OK (${cinfo.text})` : `FALHOU (${cinfo?.err})`}. Log: ${mainLog.slice(-5).join(" | ")}`,
+    error: `Timeout capturando XLSX de ${kind}. ${readyMsg}. ${clickMsg}. Log: ${mainLog.slice(-6).join(" | ") || "(vazio)"}`,
     via: null,
     click: cinfo,
+    ready: readyInfo,
   };
 }
 
