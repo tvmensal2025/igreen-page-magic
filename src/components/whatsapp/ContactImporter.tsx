@@ -258,26 +258,44 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
     const lines = pasteText.trim().split("\n").filter(l => l.trim());
     const existing = new Set(contacts.map(c => c.phone));
     const parsed: BulkContact[] = [];
+    // Regex que captura uma sequência contígua de dígitos (eventualmente com
+    // espaços, hífens, parênteses ou "+") com 10+ dígitos — cobre formatos
+    // como "(11) 99999-8888", "+55 11 99999 8888", "11999998888".
+    const phoneRe = /(\+?\d[\d\s().-]{8,}\d)/;
     for (const line of lines) {
+      let phone = "";
+      let name = "";
+      // 1. Tenta separadores explícitos (;, vírgula, tab) — formato planilha.
       const parts = line.split(/[;,\t]/).map(p => p.trim()).filter(Boolean);
-      if (parts.length < 1) continue;
-      let name = "", phone = "";
-      if (parts.length === 1) {
-        phone = parts[0].replace(/\D/g, "");
-        name = phone;
-      } else {
-        const first = parts[0].replace(/\D/g, "");
-        if (first.length >= 10) { phone = first; name = parts[1]; }
-        else { name = parts[0]; phone = parts[1].replace(/\D/g, ""); }
+      if (parts.length >= 2) {
+        const aDigits = parts[0].replace(/\D/g, "");
+        const bDigits = parts[1].replace(/\D/g, "");
+        if (aDigits.length >= 10 && bDigits.length < 10) { phone = aDigits; name = parts[1]; }
+        else if (bDigits.length >= 10) { phone = bDigits; name = parts[0]; }
+        else if (aDigits.length >= 10) { phone = aDigits; name = parts.slice(1).join(" "); }
       }
-      if (phone.length >= 10 && !existing.has(phone)) {
-        existing.add(phone);
-        parsed.push({ id: `paste-${phone}`, name, phone, source: "pasted" });
+      // 2. Sem separador — procura o telefone dentro da linha por regex.
+      if (!phone) {
+        const m = line.match(phoneRe);
+        if (m) {
+          phone = m[1].replace(/\D/g, "");
+          name = line.replace(m[1], "").replace(/[;,\t-]+/g, " ").trim();
+        }
       }
+      if (!phone) continue;
+      if (phone.length < 10) continue;
+      if (!name) name = phone;
+      if (existing.has(phone)) continue;
+      existing.add(phone);
+      parsed.push({ id: `paste-${phone}`, name, phone, source: "pasted" });
     }
     onContactsChange([...contacts, ...parsed]);
     setPasteText("");
-    toast({ title: `${parsed.length} contatos colados`, description: `Total: ${contacts.length + parsed.length}` });
+    toast({
+      title: parsed.length ? `${parsed.length} contatos colados` : "Nenhum telefone válido encontrado",
+      description: parsed.length ? `Total: ${contacts.length + parsed.length}` : "Verifique se os números têm pelo menos 10 dígitos (DDD + número).",
+      variant: parsed.length ? "default" : "destructive",
+    });
   }, [pasteText, contacts, onContactsChange, toast]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
