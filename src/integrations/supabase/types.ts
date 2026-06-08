@@ -1467,6 +1467,57 @@ export type Database = {
         }
         Relationships: []
       }
+      audio_library: {
+        Row: {
+          audio_hash: string
+          audio_url: string
+          city: string
+          consultant_id: string
+          created_at: string
+          id: string
+          is_public: boolean
+          kind: string
+          place_name: string
+          play_count: number
+          script_text: string
+          street: string
+          time_slot: string
+          updated_at: string
+        }
+        Insert: {
+          audio_hash?: string
+          audio_url: string
+          city?: string
+          consultant_id: string
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          kind: string
+          place_name?: string
+          play_count?: number
+          script_text?: string
+          street?: string
+          time_slot?: string
+          updated_at?: string
+        }
+        Update: {
+          audio_hash?: string
+          audio_url?: string
+          city?: string
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          is_public?: boolean
+          kind?: string
+          place_name?: string
+          play_count?: number
+          script_text?: string
+          street?: string
+          time_slot?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bot_flow_audit_log: {
         Row: {
           action: string
@@ -6262,6 +6313,10 @@ export type Database = {
         Returns: boolean
       }
       assign_flow_variant: { Args: { _consultant_id: string }; Returns: string }
+      audio_library_increment_play: {
+        Args: { _id: string }
+        Returns: undefined
+      }
       can_view_consultant: {
         Args: { _consultant: string; _user: string }
         Returns: boolean
