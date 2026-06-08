@@ -57,6 +57,7 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
   const [extDialogMsg, setExtDialogMsg] = useState<string>("");
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [resettingPerf, setResettingPerf] = useState(false);
   const { isAdmin } = useUserRole(userId);
   const [resetPhone, setResetPhone] = useState("");
   const [resetting, setResetting] = useState(false);
@@ -135,58 +136,34 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
     return { totalCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
   }, [analytics, selectedLicenciado, periodDays]);
 
-  const runSync = async () => {
-    setSyncingDashboard(true); startCooldown();
+  const handleDashboardSync = async () => {
+    setSyncingDashboard(true);
     try {
-      // 1) Clientes — edge function carrega credenciais salvas via service_role.
-      const { data: cData, error: cErr } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { consultant_id: userId },
-      });
-      if (cErr) throw cErr;
-      if (!cData?.success) {
-        toast({ title: "Erro ao sincronizar clientes", description: cData?.error || "Erro desconhecido", variant: "destructive" });
+      const res: SyncResult = await requestExtSync();
+      if (!res.ok) {
+        if (res.reason === "no_extension") {
+          setExtDialogMsg("Não detectamos a extensão iGreen Sync neste navegador. Instale a extensão para sincronizar seus clientes e rede com 1 clique.");
+          setExtDialog("no_extension");
+        } else if (res.reason === "no_token") {
+          setExtDialogMsg("A extensão está instalada mas ainda não foi pareada. Gere um token no painel e cole na extensão.");
+          setExtDialog("no_token");
+        } else if (res.reason === "not_logged_in") {
+          setExtDialogMsg("Você precisa estar logado no escritório iGreen em outra aba deste mesmo navegador para a extensão conseguir baixar seus dados.");
+          setExtDialog("not_logged_in");
+        } else {
+          setExtDialogMsg(res.error || "Falha ao sincronizar. Tente novamente em alguns segundos.");
+          setExtDialog("failed");
+        }
         return;
       }
-      // 2) Rede (delay 3s p/ evitar rate-limit do portal)
-      await new Promise((r) => setTimeout(r, 3000));
-      const { data: nData, error: nErr } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { consultant_id: userId, mode: "sync_network" },
-      });
-      if (nErr) throw nErr;
-      if (!nData?.success) {
-        toast({
-          title: "Clientes OK, mas falhou a rede",
-          description: nData?.error || "Erro desconhecido ao sincronizar a rede.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "✅ Sincronização concluída!",
-          description: `${cData.processed ?? cData.updated ?? 0} clientes • ${nData.total_members ?? 0} membros da rede`,
-        });
-      }
+      startCooldown();
+      toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
     } catch (err: unknown) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
-    } finally { setSyncingDashboard(false); }
-  };
-
-  const handleDashboardSync = () => {
-    // Senha não é mais lida do banco; basta ter email configurado para acionar.
-    if (form.igreen_portal_email) runSync();
-    else { setCredForm({ email: "", password: "" }); setShowCredentialsDialog(true); }
-  };
-
-  const handleSaveCredentialsAndSync = async () => {
-    if (!credForm.email || !credForm.password) return;
-    try {
-      const { error } = await supabase.from("consultants").update({ igreen_portal_email: credForm.email, igreen_portal_password: credForm.password }).eq("id", userId);
-      if (error) throw error;
-      onFormUpdate({ igreen_portal_email: credForm.email, igreen_portal_password: credForm.password });
-      setShowCredentialsDialog(false);
-      toast({ title: "✅ Credenciais salvas!", description: "Baixando clientes e rede do portal iGreen…" });
-      runSync();
-    } catch (err: unknown) { toast({ title: "Erro ao salvar credenciais", description: err instanceof Error ? err.message : "Erro", variant: "destructive" }); }
+    } finally {
+      setSyncingDashboard(false);
+    }
   };
 
   const handleExportPdf = async () => {
