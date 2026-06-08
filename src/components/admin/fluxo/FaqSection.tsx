@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   HelpCircle, Plus, Trash2, X, ChevronUp, ChevronDown,
-  Search, Sparkles, AlertTriangle, CheckCircle2, Mic, Loader2,
+  Search, Sparkles, AlertTriangle, CheckCircle2, Mic, Loader2, Globe2, Lock,
 } from "lucide-react";
+import { useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
 import { AudioRecorderInline } from "@/components/admin/AIAgentTab/AudioRecorderInline";
 import {
