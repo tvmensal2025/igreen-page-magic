@@ -251,11 +251,11 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
               </div>
             </div>
 
-            <div className="text-xs flex gap-2 rounded border border-amber-500/40 bg-amber-500/10 p-3">
-              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="text-xs flex gap-2 rounded border border-amber-500/40 p-3 bg-red-400">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
               <div className="space-y-0.5">
-                <div className="font-semibold text-amber-700 dark:text-amber-400">Use WhatsApp Business</div>
-                <div className="text-muted-foreground">
+                <div className="font-semibold text-green-900">Use WhatsApp Business</div>
+                <div className="text-gray-900">
                   O Facebook só entrega anúncios de mensagem para números cadastrados como <strong>WhatsApp Business</strong>. Se ainda usa o WhatsApp comum, baixe o app <em>WhatsApp Business</em> e migre o número antes de publicar — caso contrário a campanha será reprovada.
                 </div>
               </div>
