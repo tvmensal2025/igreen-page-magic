@@ -78,7 +78,7 @@ export function BonusTiersAdminCard() {
       <div className="grid sm:grid-cols-3 gap-3">
         {TIER_META.map((m) => (
           <div key={m.tier} className={`rounded-lg border ${m.accent} bg-card/50 p-3 space-y-2`}>
-            <div className="text-xs font-bold">{m.title}</div>
+            <div className="text-xs font-bold text-green-900">{m.title}</div>
             <p className="text-[11px] text-muted-foreground">{m.hint}</p>
             <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Percentual exibido</Label>
             <div className="flex items-center gap-1">
