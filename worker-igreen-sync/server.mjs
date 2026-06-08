@@ -428,12 +428,12 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     const status = e?.status || 500;
     console.error(`[err] ${req.method} ${req.url} → ${status}: ${e?.message}`);
-    return sendJson(res, status, { ok: false, error: e?.message || 'erro interno' });
+    return sendJson(res, status, { ok: false, error: e?.message || 'erro interno', error_code: e?.code || null });
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v14 (tor+playwright+2captcha+captcha-click+context-fallback) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v15 (tor+playwright+2captcha+waf-classify) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
