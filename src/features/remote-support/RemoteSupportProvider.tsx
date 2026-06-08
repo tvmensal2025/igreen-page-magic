@@ -43,18 +43,18 @@ export function RemoteSupportProvider() {
         onResolved={() => setRefreshKey(k => k + 1)}
       />
 
-      {/* Floating help button — visível quando não há sessão */}
+      {/* Ícone de ajuda discreto no topo direito — visível quando não há sessão */}
       {!session && (
-        <Button
-          size="sm"
-          variant="outline"
+        <button
+          type="button"
           onClick={request}
-          className="fixed bottom-4 right-4 z-[9998] shadow-lg gap-2"
+          title="Pedir ajuda ao suporte"
+          aria-label="Pedir ajuda ao suporte"
+          className="fixed top-2 right-2 z-[9998] p-2 rounded-full bg-background/80 backdrop-blur border border-border shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors"
           data-remote-support-banner
         >
           <LifeBuoy className="size-4" />
-          Pedir ajuda ao suporte
-        </Button>
+        </button>
       )}
     </>
   );
