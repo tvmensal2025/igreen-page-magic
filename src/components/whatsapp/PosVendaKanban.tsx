@@ -197,6 +197,8 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
 
   return (
     <div className="space-y-4">
+      <PendingApprovalDialog consultantId={consultantId} onResolved={load} />
+
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <Input
           placeholder="Buscar por nome ou telefone..."
