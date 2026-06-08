@@ -1,61 +1,63 @@
+## Diagnóstico
 
-## Problema
+O Estúdio de Áudio do mutirão (`src/components/admin/AudioStudio.tsx` + edge `tts-proxy`) já está bem montado, mas hoje **não funciona** e ainda **gastaria tokens em duplicidade** por dois motivos:
 
-Lead da Damiana (phone 5511989000650) está com TODOS os 18 campos do portal preenchidos no banco (nome, CPF, nascimento, endereço completo, CPFL Paulista, instalação, valor, kWh, doc frente, doc verso, conta de luz), mas a ficha mostra **2/18** e o botão fica `2/18` desabilitado em vez de **CADASTRAR**.
+1. **`ELEVENLABS_API_KEY` NÃO está nos secrets do Supabase.** Conferi: só existem `LOVABLE_API_KEY` e `TWOCAPTCHA_API_KEY`. O `tts-proxy` retorna 503 com a mensagem "ELEVENLABS_API_KEY não configurada".
+2. **O bucket `tts-cache` NÃO existe no Storage.** O código tenta criar pelo frontend (`supabase.storage.createBucket`), mas isso exige service_role e falha silenciosamente. Resultado: o cache L2 (compartilhado entre consultores/dispositivos) **nunca grava**, só funcionam IndexedDB local (L1) e memória (L0). Cada navegador novo regenera tudo do zero = ElevenLabs cobrado de novo.
 
-Checando o banco:
+A boa notícia: a estratégia de chunking do texto já está perfeita pra reaproveitamento — o texto do mutirão é quebrado em pedaços determinísticos antes de hash:
 
 ```
-name: Damiana Nascimento De Souza Silva
-cpf: 71678964891
-data_nascimento: 16/09/1955
-phone: 5511989000650
-email: TVMENSAL01           ← ❌ NÃO É E-MAIL VÁLIDO
-cep: 13360000
-address: R OSVALDO CRUZ, 78, CENTRO, CAPIVARI/SP
-distribuidora: CPFL PAULISTA
-numero_instalacao: 01000000001
-valor: 163.26   kWh: 148
-docs: frente ✓ verso ✓ conta ✓
-name_mismatch: flag=true, acknowledged ✓
+trecho1   → "Atenção, moradores e comerciantes de {cidade} e região!"   ← cacheia por CIDADE
+FIXO_2    → texto fixo do mutirão (sempre igual)                         ← cacheia 1× e nunca mais gera
+"na {rua}." → endereço expandido + número por extenso                    ← cacheia por RUA+Nº+BAIRRO+REF
+horarioP  → "Das {x} às {y}."                                            ← cacheia por HORÁRIO
+FIXO_3    → "Traga documento, fatura..."                                 ← cacheia 1× e nunca mais gera
+sorteio   → variação opcional                                            ← cacheia por sorteio
 ```
 
-Duas causas prováveis (vou confirmar com console no preview antes de aplicar):
+Hash determinístico (`hashText` com versionamento `v6`) → mesma cidade/rua/horário = mesmo arquivo no bucket.
 
-### Causa 1 — E-mail `"TVMENSAL01"` invalida o cadastro
+## Plano
 
-O OCR/bot gravou um nome de plano da conta de luz como e-mail. `validateForPortal` marca como `invalid` mas o campo continua "preenchido", então **filledCount deveria** ser 18/18 e o botão deveria aceitar (só fica vermelho com aviso de e-mail). Mesmo assim o lead não pode ir pro portal sem e-mail real.
+### 1. Adicionar o secret `ELEVENLABS_API_KEY`
+Vou disparar o tool `secrets--add_secret` para você colar a chave da ElevenLabs no painel seguro. O `tts-proxy` é redeployado automático.
 
-### Causa 2 — `useCaptureSession` carregando customer errado / desatualizado
+### 2. Migration: criar bucket `tts-cache` definitivo + políticas
+- Bucket público (leitura aberta, para o `download()` funcionar sem token).
+- Policies de Storage: qualquer `authenticated` pode **fazer upload e read** em `tts-cache` (todo consultor compartilha o cache — é justamente o ponto, não regenerar).
+- Limite de 5 MB por arquivo, MIME `audio/mpeg`.
 
-A ficha mostrar 2/18 com tudo cheio no banco indica que `captureCustomer` no front está NULL ou é uma versão velha (antes do realtime). Possível: o resolver de `ChatView` (linha ~270) usa `.maybeSingle()` no lookup por phone — se houver mais de uma linha com o mesmo phone+consultant a query erra e cai no fallback fuzzy `.like('%tail').limit(1)` sem `order by`, podendo trazer um shell vazio.
+### 3. Pequenos ajustes no `AudioStudio.tsx`
+- Remover o `createBucket` client-side (agora o bucket já existe pela migration; chamada falhava em silêncio).
+- Manter `upsert: true` no upload (idempotente).
+- Adicionar log discreto "cache hit/miss" no console pra você auditar economia.
 
-## Plano de correção
+### 4. (Opcional, recomendado) Tabela `tts_cache_index`
+Pequena tabela só pra você visualizar/auditar o que já está cacheado:
+`hash, text, consultant_id, bytes, created_at`. Insert feito no `setCachedTTS`. Não bloqueia nada se falhar.
 
-### 1. `src/lib/captacao/portalValidation.ts`
-- Quando o e-mail está preenchido mas formato inválido, contar como **missing** (não só invalid), pra a UI listar "E-mail" entre as pendências em vez de bloquear silenciosamente o botão. Isso já força o consultor a corrigir o `TVMENSAL01`.
+Pergunta: quer essa tabela ou pula? (Padrão: **pulo**, deixa só o bucket — é o que importa pro custo.)
 
-### 2. `src/components/whatsapp/ChatView.tsx` (resolver de customer)
-- Trocar `.maybeSingle()` por `.select().order('created_at', { ascending: false }).limit(1).maybeSingle()` filtrando por `customer_origin='whatsapp_lead'`.
-- No fallback fuzzy, idem: `order by created_at desc` pra sempre pegar o registro mais recente do mesmo phone (evita carregar um shell antigo).
-
-### 3. `src/hooks/useCaptureSession.ts`
-- Logar `customer_id` carregado + `filledCount` em `console.debug` quando `import.meta.env.DEV` — ajuda a confirmar se está realmente lendo a linha certa.
-- Garantir que após o `UPDATE` realtime, o `validateForPortal` é re-rodado (já é via `useMemo([customer])`, mas confirmar que o payload tem todos os campos — caso contrário fazer `reload()`).
-
-### 4. `src/components/captacao/CaptureSheet.tsx`
-- No bloco "Faltam X dados", mostrar EXATAMENTE a lista `validation.pendingItems` (já existe), e adicionar no botão um tooltip com o primeiro item pendente quando `!canSubmit`, pra o usuário entender o que falta sem ter que abrir a ficha.
-
-### 5. Edge function `finalize-capture`
-- Sem mudança — a validação canônica é a mesma do front (`portalValidation.ts` espelhado). Se o front liberar, o portal aceita.
-
-## Verificação
-
-1. Abrir o lead Damiana, abrir DevTools → conferir `console.debug` mostrando `filledCount=17, missing=[email]`.
-2. Corrigir e-mail do lead pela ficha → contador vai pra 18/18 e botão vira **CADASTRAR 🚀**.
-3. Clicar → `finalize-capture` aceita e dispatcha pro portal.
+### 5. Verificação
+- `supabase--curl_edge_functions` POST `/tts-proxy` com um texto curto → confirma 200 + bytes de MP3.
+- Gerar o áudio na UI 2× com a **mesma cidade/rua/horário** → segunda vez deve mostrar "cache hit" em todos os 5 trechos (0 chamada à ElevenLabs).
+- Mudar só a cidade → só `trecho1` regenera, resto vem do cache.
 
 ## Detalhes técnicos
 
-- `validateForPortal` muda só o trecho do e-mail: se `isStrFilled(c.email) && !regex.test(...)`, em vez de só empurrar `invalid`, marcar também como missing (push em `missing` array). Mantém `invalid` pra mensagem de motivo.
-- O resolver de `ChatView` precisa lidar com `error.code === 'PGRST116'` (multiple rows) caindo no `order by created_at desc limit 1` em vez de criar um novo customer.
+**SQL da migration (resumo):**
+```sql
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('tts-cache', 'tts-cache', true, 5242880, array['audio/mpeg'])
+on conflict (id) do update set public = true, file_size_limit = 5242880;
+
+create policy "tts-cache public read"   on storage.objects for select using (bucket_id = 'tts-cache');
+create policy "tts-cache auth upload"   on storage.objects for insert to authenticated with check (bucket_id = 'tts-cache');
+create policy "tts-cache auth update"   on storage.objects for update to authenticated using (bucket_id = 'tts-cache');
+```
+
+**O que NÃO vou mexer:** template do texto, vozes, vinheta, fluxo de salvar em `ai_media_library`, processamento MP3 — tudo isso já funciona.
+
+## Próximo passo
+Aprova o plano? Assim que aprovar eu: (a) peço a chave do ElevenLabs no popup seguro, (b) rodo a migration do bucket, (c) limpo o `createBucket` no front, (d) testo `tts-proxy` e te mostro o resultado.
