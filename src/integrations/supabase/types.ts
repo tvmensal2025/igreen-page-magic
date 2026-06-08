@@ -2490,6 +2490,48 @@ export type Database = {
         }
         Relationships: []
       }
+      consultant_pos_venda_media: {
+        Row: {
+          audio_media_id: string | null
+          configured_at: string | null
+          consultant_id: string
+          created_at: string
+          id: string
+          image_media_id: string | null
+          stage: string
+          text_content: string | null
+          updated_at: string
+          use_default: boolean
+          video_media_id: string | null
+        }
+        Insert: {
+          audio_media_id?: string | null
+          configured_at?: string | null
+          consultant_id: string
+          created_at?: string
+          id?: string
+          image_media_id?: string | null
+          stage: string
+          text_content?: string | null
+          updated_at?: string
+          use_default?: boolean
+          video_media_id?: string | null
+        }
+        Update: {
+          audio_media_id?: string | null
+          configured_at?: string | null
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          image_media_id?: string | null
+          stage?: string
+          text_content?: string | null
+          updated_at?: string
+          use_default?: boolean
+          video_media_id?: string | null
+        }
+        Relationships: []
+      }
       consultant_presence: {
         Row: {
           consultant_id: string
@@ -3225,6 +3267,7 @@ export type Database = {
           portal2_otp_sent_at: string | null
           portal2_otp_validated_at: string | null
           portal2_status: string | null
+          pos_venda_invalid: boolean
           pos_venda_manual: boolean
           pos_venda_pending_stage: string | null
           pos_venda_reason: string | null
@@ -3421,6 +3464,7 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
+          pos_venda_invalid?: boolean
           pos_venda_manual?: boolean
           pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
@@ -3617,6 +3661,7 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
+          pos_venda_invalid?: boolean
           pos_venda_manual?: boolean
           pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
