@@ -268,13 +268,18 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     const insertPhone = rawPhone.startsWith("55") ? rawPhone : `55${rawPhone}`;
     let cancelled = false;
     (async () => {
-      const { data: existing } = await supabase
+      // Sempre pega o registro MAIS RECENTE — havia bug onde, com 2 customers
+      // mesmo phone (lead antigo + novo do mesmo consultor por algum motivo),
+      // .maybeSingle() falhava ou trazia o shell antigo vazio → ficha 2/18.
+      const { data: existingRows } = await supabase
         .from("customers")
-        .select("id")
+        .select("id, created_at")
         .eq("consultant_id", consultantId)
         .in("phone_whatsapp", candidatesArr)
-        .maybeSingle();
+        .order("created_at", { ascending: false })
+        .limit(1);
       if (cancelled) return;
+      const existing = (existingRows as Array<{ id: string }> | null)?.[0];
       if (existing?.id) {
         setIsCustomer(true);
         setCustomerId(existing.id);
@@ -286,9 +291,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       if (tail.length === 9) {
         const { data: fuzzy } = await supabase
           .from("customers")
-          .select("id, phone_whatsapp")
+          .select("id, phone_whatsapp, created_at")
           .eq("consultant_id", consultantId)
           .like("phone_whatsapp", `%${tail}`)
+          .order("created_at", { ascending: false })
           .limit(1);
         if (cancelled) return;
         const found = (fuzzy as Array<{ id: string }> | null)?.[0];
@@ -298,6 +304,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           return;
         }
       }
+
       const fallbackName = (chat as { pushName?: string | null }).pushName || (chat as { name?: string | null }).name || insertPhone;
       const { data: created, error } = await supabase
         .from("customers")
