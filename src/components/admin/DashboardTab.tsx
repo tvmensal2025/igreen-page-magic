@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, AlertTriangle, Chrome, ExternalLink, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
+import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, Chrome, ExternalLink, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
