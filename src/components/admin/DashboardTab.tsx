@@ -1,10 +1,8 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { Eye as EyeIcon, EyeOff, Users, Zap, TrendingUp, RefreshCw, Loader2, Filter, KeyRound, FileDown, AlertTriangle, Trash2, DollarSign, PiggyBank, Crown } from "lucide-react";
+import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, AlertTriangle, Chrome, ExternalLink, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -14,6 +12,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
 import { useUserRole } from "@/hooks/useUserRole";
 import { adminHardResetPhone, adminHardResetPhoneTraceCounts } from "@/services/resetConversation";
+import { requestSync as requestExtSync, type SyncResult } from "@/lib/igreenExtensionBridge";
 import { StatCard } from "./StatCard";
 import { HardResetPhoneCard } from "./HardResetPhoneCard";
 import { CustomerCharts } from "./CustomerCharts";
@@ -33,13 +32,13 @@ function formatCompactBRL(value: number): string {
 
 interface DashboardTabProps {
   userId: string;
-  form: { igreen_portal_email: string; igreen_portal_password: string };
-  onFormUpdate: (updates: Record<string, string>) => void;
+  form?: Record<string, unknown>;
+  onFormUpdate?: (updates: Record<string, string>) => void;
   periodDays: number;
   onPeriodChange: (days: number) => void;
 }
 
-export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodChange }: DashboardTabProps) {
+export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTabProps) {
   const [scope, setScope] = useState<"me" | "team">("me");
   const { data: teamIds = [] } = useTeamConsultantIds(userId);
   const isLeader = teamIds.length > 1;
@@ -54,13 +53,10 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   const [syncingDashboard, setSyncingDashboard] = useState(false);
   const [syncCooldown, setSyncCooldown] = useState(0);
   const [selectedLicenciado, setSelectedLicenciado] = useState("all");
-  const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
-  const [credForm, setCredForm] = useState({ email: "", password: "" });
-  const [showCredPassword, setShowCredPassword] = useState(false);
+  const [extDialog, setExtDialog] = useState<null | "no_extension" | "no_token" | "not_logged_in" | "failed">(null);
+  const [extDialogMsg, setExtDialogMsg] = useState<string>("");
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const [resettingPerf, setResettingPerf] = useState(false);
-  const [sharedAccountCount, setSharedAccountCount] = useState(0);
   const { isAdmin } = useUserRole(userId);
   const [resetPhone, setResetPhone] = useState("");
   const [resetting, setResetting] = useState(false);
@@ -71,29 +67,12 @@ export function DashboardTab({ userId, form, onFormUpdate, periodDays, onPeriodC
   }, []);
 
   useEffect(() => {
-    const email = form.igreen_portal_email?.trim().toLowerCase();
-    if (!email) { setSharedAccountCount(0); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const { count } = await supabase
-          .from("consultants")
-          .select("id", { count: "exact", head: true })
-          .eq("igreen_portal_email", email);
-        if (cancelled) return;
-        setSharedAccountCount(Math.max(0, (count ?? 1) - 1));
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
-  }, [form.igreen_portal_email]);
-
-  useEffect(() => {
     if (syncCooldown <= 0) return;
     const timer = setInterval(() => { setSyncCooldown((prev) => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; }); }, 1000);
     return () => clearInterval(timer);
   }, [syncCooldown]);
 
-  const startCooldown = () => { setSyncCooldown(60); localStorage.setItem("sync_cooldown_until", String(Date.now() + 60000)); };
+  const startCooldown = () => { setSyncCooldown(30); localStorage.setItem("sync_cooldown_until", String(Date.now() + 30000)); };
 
   const licenciadoOptions = useMemo(() => {
     if (!analytics?.allCustomers) return [];
