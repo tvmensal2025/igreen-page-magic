@@ -191,17 +191,22 @@ export default function VariantDistributionBar({
             );
           })}
 
-          {existingVariants.length < ALL_VARIANTS.length && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={addVariant}
-              disabled={creating}
-            >
-              {creating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
-              Adicionar fluxo
-            </Button>
+          {ALL_VARIANTS.filter((v) => !existingVariants.includes(v)).length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs" disabled={creating}>
+                  {creating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
+                  Criar fluxo
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {ALL_VARIANTS.filter((v) => !existingVariants.includes(v)).map((v) => (
+                  <DropdownMenuItem key={v} onClick={() => createVariant(v)}>
+                    Criar fluxo {v} — {VARIANT_LABEL[v].replace(/^[A-E]\s*/, "")}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
 
