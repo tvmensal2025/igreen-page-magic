@@ -255,9 +255,17 @@ function SessionWorkbench({ session, consultantName, onClose }: {
 
   const sendCmd = useCallback((cmd: Omit<RemoteCommand, "id">) => {
     const dc = dcRef.current;
-    if (!dc || dc.readyState !== "open") return;
+    if (!dc || dc.readyState !== "open") {
+      if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
+        // eslint-disable-next-line no-console
+        console.warn("[remote-support][send] dropped (channel not open)", cmd.kind, dc?.readyState);
+      }
+      return;
+    }
     const full: RemoteCommand = { ...cmd, id: crypto.randomUUID() };
     if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
+      // eslint-disable-next-line no-console
+      console.log("[remote-support][send]", full.kind, full);
       pushLog(`→ ${full.kind} ${full.selector || full.url || full.value || ""}`);
     }
     dc.send(JSON.stringify(full));
