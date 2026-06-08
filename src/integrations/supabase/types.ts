@@ -1595,6 +1595,7 @@ export type Database = {
           intent_name: string
           is_closing: boolean
           is_opening: boolean
+          is_public: boolean
           position: number
           text_response: string | null
           updated_at: string
@@ -1606,6 +1607,7 @@ export type Database = {
           intent_name?: string
           is_closing?: boolean
           is_opening?: boolean
+          is_public?: boolean
           position?: number
           text_response?: string | null
           updated_at?: string
@@ -1617,6 +1619,7 @@ export type Database = {
           intent_name?: string
           is_closing?: boolean
           is_opening?: boolean
+          is_public?: boolean
           position?: number
           text_response?: string | null
           updated_at?: string
