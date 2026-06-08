@@ -68,7 +68,7 @@ function TimelineItem({
     <div className="flex gap-3 relative">
       <div className="flex flex-col items-center">
         <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${future ? "bg-muted/40 border-border" : color}`}>
-          <Icon className={`h-3.5 w-3.5 ${future ? "text-muted-foreground" : "text-white"}`} />
+          <Icon className={`h-3.5 w-3.5 ${future ? "text-muted-foreground" : "text-primary-foreground"}`} />
         </div>
         <div className="w-px flex-1 bg-border/40 mt-1" />
       </div>
