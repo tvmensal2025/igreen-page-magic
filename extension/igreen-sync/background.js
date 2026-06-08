@@ -17,22 +17,23 @@ async function fetchCustomersFromPortal() {
   for (const url of candidates) {
     try {
       const res = await fetch(url, { method: "GET", credentials: "include", headers: { Accept: "application/json" } });
-      if (!res.ok) { lastErr = `HTTP ${res.status} em ${url}`; continue; }
+      if (!res.ok) { tried.push(`${url} -> HTTP ${res.status}`); continue; }
       const ct = res.headers.get("content-type") || "";
-      if (!ct.includes("json")) { lastErr = `Resposta nao-JSON em ${url}`; continue; }
+      if (!ct.includes("json")) { tried.push(`${url} -> nao-JSON (${ct || "sem content-type"})`); continue; }
       const data = await res.json();
       const list = Array.isArray(data) ? data
         : Array.isArray(data?.customers) ? data.customers
         : Array.isArray(data?.data) ? data.data
         : Array.isArray(data?.result) ? data.result
+        : Array.isArray(data?.items) ? data.items
         : null;
       if (list) return { ok: true, customers: list, source: url };
-      lastErr = `Formato inesperado em ${url}`;
+      tried.push(`${url} -> formato inesperado`);
     } catch (e) {
-      lastErr = e?.message || String(e);
+      tried.push(`${url} -> ${e?.message || String(e)}`);
     }
   }
-  return { ok: false, error: lastErr };
+  return { ok: false, error: `Nenhum endpoint respondeu. Tentativas:\n- ${tried.join("\n- ")}` };
 }
 
 async function sendToCloud(token, customers) {
