@@ -105,7 +105,7 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
         <div>
           <h3 className="font-semibold flex items-center gap-2"><Chrome className="h-4 w-4" /> Sincronizacao iGreen via Extensao</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            O portal iGreen esta bloqueando logins automaticos. Use a extensao no seu navegador, ja logado no portal, para enviar seus clientes para o sistema.
+            A extensao usa sua propria sessao logada no portal para baixar automaticamente os Excel de <b>Mapa de Clientes</b> e <b>Mapa de Rede</b> e enviar para o iGreen Cloud. Sem login automatizado, sem risco de bloqueio.
           </p>
         </div>
       </div>
