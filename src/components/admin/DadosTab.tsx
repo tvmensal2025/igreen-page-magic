@@ -30,6 +30,53 @@ interface DadosTabProps {
 export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChange, onSave, userId }: DadosTabProps) {
   const { toast } = useToast();
 
+  // ─── Nome da IA (persona_name de ai_agent_config) ─────────────────────
+  // O consultor escolhe como sua IA se chama (default "Camila"). Esse nome
+  // aparece em todo lugar que antes era hardcoded "Camila".
+  const [personaName, setPersonaName] = useState<string>("Camila");
+  const [personaLoading, setPersonaLoading] = useState<boolean>(true);
+  const [personaSaving, setPersonaSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!userId) return;
+      const { data } = await supabase
+        .from("ai_agent_config")
+        .select("persona_name")
+        .eq("consultant_id", userId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data && (data as any).persona_name) setPersonaName((data as any).persona_name);
+      setPersonaLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const savePersonaName = async () => {
+    if (!userId) return;
+    const trimmed = personaName.trim() || "Camila";
+    setPersonaSaving(true);
+    try {
+      const { data: existing } = await supabase
+        .from("ai_agent_config")
+        .select("id")
+        .eq("consultant_id", userId)
+        .maybeSingle();
+      const { error } = existing?.id
+        ? await supabase.from("ai_agent_config").update({ persona_name: trimmed }).eq("id", existing.id)
+        : await supabase.from("ai_agent_config").insert({ consultant_id: userId, persona_name: trimmed, enabled: true });
+      if (error) throw error;
+      setPersonaName(trimmed);
+      toast({ title: "✅ Nome da IA salvo", description: `Sua IA agora se chama "${trimmed}".`, duration: 1800 });
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar nome da IA", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setPersonaSaving(false);
+    }
+  };
+
+
   // Auto-save do portal_kind quando o consultor clica no radio.
   // Sem isso, o consultor escolhia "Autoconexão" mas se não clicasse "Salvar"
   // depois, o banco continuava em "digital" e o cadastro ia pro Portal 1 errado.
