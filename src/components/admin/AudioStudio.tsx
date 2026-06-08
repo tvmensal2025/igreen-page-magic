@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/useUserRole";
 import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@/lib/audioProcessing";
 
 // ─── ElevenLabs via proxy ─────────────────────────────────────────────────────
@@ -231,6 +232,7 @@ interface AudioRow {
 // ─── Componente principal ────────────────────────────────────────────────────
 export function AudioStudio({ userId }: { userId: string }) {
   const { toast } = useToast();
+  const { isSuperAdmin } = useUserRole(userId);
 
   // Tab variante
   const [kind, setKind] = useState<Kind>("mutirao");
@@ -265,10 +267,11 @@ export function AudioStudio({ userId }: { userId: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Biblioteca
-  const [libTab, setLibTab] = useState<"mine" | "public">("mine");
+  const [libTab, setLibTab] = useState<"mine" | "public" | "all">("mine");
   const [librarySearch, setLibrarySearch] = useState("");
   const [myAudios, setMyAudios] = useState<AudioRow[]>([]);
   const [publicAudios, setPublicAudios] = useState<AudioRow[]>([]);
+  const [allAudios, setAllAudios] = useState<AudioRow[]>([]);
   const [loadingLib, setLoadingLib] = useState(false);
 
   // Persistência sorteio
@@ -362,19 +365,26 @@ export function AudioStudio({ userId }: { userId: string }) {
     if (!userId) return;
     setLoadingLib(true);
     try {
-      const [mine, pub] = await Promise.all([
-        supabase.from("audio_library").select("*").eq("consultant_id", userId).eq("kind", kind).order("created_at", { ascending: false }).limit(50),
+      const term = librarySearch.trim();
+      const tasks: PromiseLike<any>[] = [
+        supabase.from("audio_library").select("*").eq("consultant_id", userId).eq("kind", kind).order("created_at", { ascending: false }).limit(50).then(r => r),
         (() => {
           let q = supabase.from("audio_library").select("*").eq("is_public", true).eq("kind", kind);
-          const term = librarySearch.trim();
           if (term) q = q.ilike("city", `%${term}%`);
-          return q.order("play_count", { ascending: false }).order("created_at", { ascending: false }).limit(50);
+          return q.order("play_count", { ascending: false }).order("created_at", { ascending: false }).limit(50).then(r => r);
         })(),
-      ]);
-      if (mine.data) setMyAudios(mine.data as AudioRow[]);
-      if (pub.data) setPublicAudios(pub.data as AudioRow[]);
+      ];
+      if (isSuperAdmin) {
+        let qAll = supabase.from("audio_library").select("*").eq("kind", kind);
+        if (term && libTab === "all") qAll = qAll.ilike("city", `%${term}%`);
+        tasks.push(qAll.order("created_at", { ascending: false }).limit(200).then(r => r));
+      }
+      const results = await Promise.all(tasks);
+      if (results[0]?.data) setMyAudios(results[0].data as AudioRow[]);
+      if (results[1]?.data) setPublicAudios(results[1].data as AudioRow[]);
+      if (isSuperAdmin && results[2]?.data) setAllAudios(results[2].data as AudioRow[]);
     } finally { setLoadingLib(false); }
-  }, [userId, kind, librarySearch]);
+  }, [userId, kind, librarySearch, isSuperAdmin, libTab]);
 
   useEffect(() => { loadLibrary(); }, [loadLibrary]);
 
@@ -800,7 +810,7 @@ export function AudioStudio({ userId }: { userId: string }) {
 
         {/* ─── Coluna do histórico / biblioteca ─────────────────────────── */}
         <aside className="bg-card rounded-xl border border-border/40 p-3 h-fit lg:sticky lg:top-4 space-y-3">
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className={`grid ${isSuperAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
             <button
               onClick={() => setLibTab("mine")}
               className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "mine" ? "bg-primary text-primary-foreground" : "bg-muted/40 border border-border/40 text-muted-foreground"}`}
@@ -811,11 +821,20 @@ export function AudioStudio({ userId }: { userId: string }) {
               onClick={() => setLibTab("public")}
               className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "public" ? "bg-primary text-primary-foreground" : "bg-muted/40 border border-border/40 text-muted-foreground"}`}
             >
-              <Globe2 className="w-3.5 h-3.5" /> Biblioteca pública
+              <Globe2 className="w-3.5 h-3.5" /> Pública
             </button>
+            {isSuperAdmin && (
+              <button
+                onClick={() => setLibTab("all")}
+                className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "all" ? "bg-primary text-primary-foreground" : "bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400"}`}
+                title="Visível apenas para super admin"
+              >
+                <Globe2 className="w-3.5 h-3.5" /> Todos
+              </button>
+            )}
           </div>
 
-          {libTab === "public" && (
+          {(libTab === "public" || libTab === "all") && (
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
@@ -835,8 +854,11 @@ export function AudioStudio({ userId }: { userId: string }) {
             {!loadingLib && libTab === "public" && publicAudios.length === 0 && (
               <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio publicado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</p>
             )}
+            {!loadingLib && libTab === "all" && allAudios.length === 0 && (
+              <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio gerado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</p>
+            )}
 
-            {(libTab === "mine" ? myAudios : publicAudios).map((row) => (
+            {(libTab === "mine" ? myAudios : libTab === "public" ? publicAudios : allAudios).map((row) => (
               <div key={row.id} className="rounded-lg border border-border/40 bg-background/40 p-2.5 space-y-1.5">
                 <div className="flex items-start gap-2">
                   <button
