@@ -206,11 +206,11 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
       if (cust?.id) {
         const { data: logs } = await supabase
           .from("customer_auto_message_log")
-          .select("stage_key,sent_at,message_preview,status")
+          .select("stage_key,created_at,message_preview,status")
           .eq("customer_id", cust.id)
-          .order("sent_at", { ascending: false })
+          .order("created_at", { ascending: false })
           .limit(20);
-        setSentLogs(logs || []);
+        setSentLogs((logs || []).map((l: any) => ({ ...l, sent_at: l.created_at })));
       } else if (dl?.id) {
         const { data: logs } = await supabase
           .from("crm_auto_message_log")
