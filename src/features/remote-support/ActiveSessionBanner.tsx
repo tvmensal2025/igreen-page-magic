@@ -10,6 +10,7 @@ interface Props {
   codeExpiresAt: number | null;
   sharing: boolean;
   paused: boolean;
+  shareSurface?: string | null;
   onStartShare: () => void;
   onTogglePause: () => void;
   onEnd: () => void;
@@ -27,7 +28,7 @@ function fmtDuration(ms: number) {
 
 /** Banner fixo enquanto há uma sessão ativa/pending. Mostra o código rotativo, timer e ações. */
 export function ActiveSessionBanner({
-  session, code, codeExpiresAt, sharing, paused,
+  session, code, codeExpiresAt, sharing, paused, shareSurface,
   onStartShare, onTogglePause, onEnd,
 }: Props) {
   const [remaining, setRemaining] = useState(0);
@@ -69,6 +70,11 @@ export function ActiveSessionBanner({
             <>
               <b>Suporte ATIVO</b> — sua tela {sharing ? "está sendo compartilhada" : "não está sendo compartilhada ainda"}.
               {paused && <span className="ml-2 px-2 py-0.5 rounded bg-yellow-400 text-black text-xs font-semibold">CONTROLE PAUSADO</span>}
+              {sharing && shareSurface && shareSurface !== "browser" && (
+                <span className="ml-2 px-2 py-0.5 rounded bg-yellow-400 text-black text-xs font-semibold">
+                  Compartilhamento de {shareSurface === "monitor" ? "tela inteira" : "janela"} — cliques podem cair fora do alvo. Prefira compartilhar a aba.
+                </span>
+              )}
             </>
           )}
           {session.status === "requested" && <b>Aguardando o suporte aceitar seu pedido…</b>}

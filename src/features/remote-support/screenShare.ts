@@ -241,9 +241,18 @@ export async function createRequesterPeer(
   };
 
   const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: 15 } as MediaTrackConstraints,
+    // Pede a aba atual quando o navegador suportar (Chrome ≥107):
+    // melhora muito a precisão de clique porque o vídeo passa a bater
+    // pixel-a-pixel com o viewport da página.
+    video: {
+      frameRate: 15,
+      preferCurrentTab: true,
+      displaySurface: "browser",
+    } as any,
     audio: false,
-  });
+    selfBrowserSurface: "include",
+    surfaceSwitching: "exclude",
+  } as any);
   stream.getTracks().forEach(t => {
     pc.addTrack(t, stream);
     t.addEventListener("ended", onClose);

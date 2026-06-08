@@ -6604,6 +6604,14 @@ export type Database = {
         Args: { _customer_id: string; _message_id: string }
         Returns: undefined
       }
+      ensure_bot_flow_variant: {
+        Args: {
+          _consultant_id: string
+          _source_variant?: string
+          _variant: string
+        }
+        Returns: string
+      }
       fb_emit_capi: {
         Args: {
           _consultant_id: string
