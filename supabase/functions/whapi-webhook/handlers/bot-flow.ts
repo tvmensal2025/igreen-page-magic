@@ -1687,7 +1687,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }));
     if (responseText) items.push({ kind: "text", text: responseText });
 
-    const _qaOrder = (await getStepMediaOrder(supabase, customer.consultant_id, [step])) || ["text", "audio", "image", "video", "document"];
+    const _qaOrder = (await getStepMediaOrder(supabase, mediaOwnerId, [step])) || ["text", "audio", "image", "video", "document"];
     items.sort(makeKindComparator((it: QaItem) => it.kind, _qaOrder));
 
     for (let mi = 0; mi < items.length; mi++) {
