@@ -208,7 +208,10 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     }
   }
   if (isStrFilled(c.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email!.trim())) {
-    invalid.push({ field: "email", label: "E-mail", reason: "E-mail em formato inválido" });
+    invalid.push({ field: "email", label: "E-mail", reason: `"${c.email}" não é um e-mail válido — corrija para enviar ao portal` });
+    // Conta como missing também pra UI mostrar e bloquear o botão CADASTRAR.
+    const emailField = PORTAL_FIELDS.find((f) => f.key === "email");
+    if (emailField && !missing.includes(emailField)) missing.push(emailField);
   }
   if (isStrFilled(c.cep) && digits(c.cep).length !== 8) {
     invalid.push({ field: "cep", label: "CEP", reason: "CEP precisa de 8 dígitos" });
