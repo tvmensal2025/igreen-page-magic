@@ -123,22 +123,71 @@ function injectInterceptor() {
 }
 
 function clickExportButton() {
-  const matches = ["exportar excel", "exportar excell", "exportar planilha", "exportar xlsx", "baixar excel", "download excel"];
-  const all = Array.from(document.querySelectorAll('button, a, [role="button"], span, div'));
-  for (const el of all) {
-    const t = (el.textContent || "").trim().toLowerCase();
-    if (!t) continue;
-    if (matches.some((m) => t === m || (t.length < 60 && t.includes(m)))) {
-      try {
-        el.scrollIntoView({ behavior: "instant", block: "center" });
-        el.click();
-        // alguns botoes precisam de event MouseEvent
-        el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-        return { ok: true, text: t.slice(0, 80) };
-      } catch (e) { return { ok: false, err: String(e) }; }
+  const patterns = [/^\s*exportar\s+excel(\s*\(\d+\))?\s*$/i, /^\s*exportar\s+planilha\s*$/i, /^\s*exportar\s+xlsx\s*$/i, /^\s*baixar\s+excel\s*$/i, /^\s*download\s+excel\s*$/i];
+  const looseRe = /exportar\s+excel|exportar\s+planilha|exportar\s+xlsx|baixar\s+excel/i;
+  const isVisible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return false;
+    const cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || cs.pointerEvents === "none") return false;
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") return false;
+    return true;
+  };
+  // somente elementos realmente clicaveis
+  const clickables = Array.from(document.querySelectorAll('button, a[href], [role="button"], input[type="button"], input[type="submit"]'));
+  // 1a passada: match exato no texto direto
+  let candidates = clickables.filter((el) => {
+    if (!isVisible(el)) return false;
+    const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (!t || t.length > 40) return false;
+    return patterns.some((p) => p.test(t));
+  });
+  // 2a passada: contem texto loose mas e botao pequeno
+  if (!candidates.length) {
+    candidates = clickables.filter((el) => {
+      if (!isVisible(el)) return false;
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (!t || t.length > 60) return false;
+      return looseRe.test(t);
+    });
+  }
+  // 3a passada: icone/span dentro de botao
+  if (!candidates.length) {
+    const inner = Array.from(document.querySelectorAll('span, i, svg title'));
+    for (const el of inner) {
+      const t = (el.textContent || "").trim();
+      if (t && looseRe.test(t) && t.length < 40) {
+        const btn = el.closest('button, a[href], [role="button"]');
+        if (btn && isVisible(btn)) { candidates.push(btn); break; }
+      }
     }
   }
-  return { ok: false, err: "botao nao encontrado" };
+  if (!candidates.length) return { ok: false, err: "botao Exportar Excel nao encontrado" };
+  const el = candidates[0];
+  const text = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const tag = (el.tagName || "").toLowerCase();
+  const cls = (el.className && el.className.toString ? el.className.toString() : "").slice(0, 80);
+  try {
+    el.scrollIntoView({ behavior: "instant", block: "center" });
+    el.click();
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+    return { ok: true, text, tag, cls };
+  } catch (e) { return { ok: false, err: String(e), text, tag }; }
+}
+
+// roda no MAIN world: espera a tabela sair de "0 de 0 registros" / loading
+function waitForDataReady() {
+  const body = (document.body && document.body.innerText) || "";
+  const m = body.match(/(\d+)\s+de\s+(\d+)\s+registros/i);
+  if (m) {
+    const shown = parseInt(m[1], 10), total = parseInt(m[2], 10);
+    if (total > 0 && shown > 0) return { ready: true, shown, total };
+    if (total === 0 && shown === 0) return { ready: false, shown: 0, total: 0 };
+  }
+  // se nao achou contador, considera pronto apos render basico
+  const hasTable = !!document.querySelector("table, [role='table'], .ant-table, .MuiDataGrid-root");
+  return { ready: hasTable, shown: null, total: null };
 }
 
 function readCaptured() {
