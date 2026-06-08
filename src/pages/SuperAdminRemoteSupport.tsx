@@ -505,8 +505,13 @@ function SessionWorkbench({ session, consultantName, onClose }: {
                 />
               )}
 
-              {hasStream && controlEnabled && (
+              {hasStream && controlEnabled && videoReady && (
                 <RemoteControlOverlay videoRef={videoRef} sendCmd={sendCmd} />
+              )}
+              {hasStream && controlEnabled && !videoReady && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs pointer-events-none">
+                  <Loader2 className="size-4 animate-spin mr-2" /> Preparando controle (aguardando metadados do vídeo)…
+                </div>
               )}
 
               {paused && hasStream && (
