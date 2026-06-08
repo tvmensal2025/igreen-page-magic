@@ -55,6 +55,12 @@ $("token").addEventListener("input", () => {
 });
 $("token").addEventListener("blur", saveToken);
 
+let progressTimer = null;
+async function pollProgress() {
+  const { syncProgress } = await chrome.storage.local.get(["syncProgress"]);
+  if (syncProgress?.step) $("status").textContent = `${syncProgress.step}`;
+}
+
 $("sync").addEventListener("click", async () => {
   await saveToken();
   const token = $("token").value.trim();
@@ -64,8 +70,11 @@ $("sync").addEventListener("click", async () => {
   }
   $("sync").disabled = true;
   $("motivation").textContent = pickMotivation();
-  $("status").textContent = "Sincronizando... abrindo Clientes primeiro, depois Rede. Pode levar 1 a 2 min.";
+  $("status").textContent = "Iniciando sincronizacao... (Clientes -> Rede, um por vez)";
+  await chrome.storage.local.set({ syncProgress: { step: "Iniciando...", at: Date.now() } });
+  progressTimer = setInterval(pollProgress, 800);
   chrome.runtime.sendMessage({ type: "SYNC_NOW" }, async (resp) => {
+    clearInterval(progressTimer); progressTimer = null;
     $("sync").disabled = false;
     if (!resp?.ok) $("status").textContent = `Erro: ${resp?.error || "desconhecido"}`;
     await refresh();

@@ -185,10 +185,12 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
             <li>Volte na extensao e clique <b>Sincronizar agora</b>. A extensao baixa <b>primeiro o de Clientes</b> e depois o de Rede (um por vez, para evitar o aviso de varios downloads).</li>
           </ol>
           <div className="mt-4 p-3 rounded bg-muted text-xs space-y-1">
-            <p className="font-semibold">Sobre a sincronizacao automatica (a cada 6h):</p>
-            <p>• A extensao roda dentro do navegador. Para o automatico funcionar, o Chrome/Edge precisa estar <b>aberto</b> e voce precisa estar <b>logado</b> em <code>escritorio.igreenenergy.com.br</code>.</p>
-            <p>• O token gerado aqui <b>nao</b> da acesso ao portal da iGreen — ele so autoriza o envio para o iGreen Cloud. Por isso o login no portal continua sendo necessario.</p>
-            <p>• Se o portal deslogar, a extensao vai avisar no proximo sync e basta voce logar de novo.</p>
+            <p className="font-semibold">Login e captcha do portal iGreen:</p>
+            <p>• A extensao <b>nao</b> digita usuario, senha nem resolve captcha por voce. Ela so usa a sessao do navegador onde voce ja esta logado.</p>
+            <p>• Faca login em <code>escritorio.igreenenergy.com.br</code> uma vez (resolva o captcha quando aparecer) e deixe a aba aberta.</p>
+            <p>• A extensao abre <b>/mapa-clientes</b>, espera carregar, clica <b>Exportar Excel</b>, captura o arquivo e fecha. Depois faz o mesmo com <b>/mapa-rede</b>. Um por vez, para evitar o aviso de "varios downloads".</p>
+            <p>• Os dados da <b>Rede</b> agora aparecem automaticamente na aba Rede do sistema apos cada sync.</p>
+            <p>• Sincronizacao automatica a cada 6h funciona <b>somente com o navegador aberto e logado no portal</b>.</p>
           </div>
         </DialogContent>
       </Dialog>

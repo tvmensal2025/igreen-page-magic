@@ -243,28 +243,57 @@ Deno.serve(async (req) => {
         recs.push(rec);
       }
       const phones = recs.map((r) => String(r.phone_whatsapp));
-      const midConv = new Set<string>();
+      // Carrega existentes (id, conversation_step) por phone+consultant
+      const existingMap = new Map<string, { id: string; conversation_step: string | null }>();
       for (let i = 0; i < phones.length; i += 200) {
         const chunk = phones.slice(i, i + 200);
         const { data } = await supabase.from("customers")
-          .select("phone_whatsapp, conversation_step").in("phone_whatsapp", chunk)
-          .not("conversation_step", "is", null);
-        for (const e of (data || []) as Array<{ phone_whatsapp: string; conversation_step: string | null }>) {
-          if (e.conversation_step && e.conversation_step !== "complete") midConv.add(e.phone_whatsapp);
+          .select("id, phone_whatsapp, conversation_step")
+          .eq("consultant_id", consultantId)
+          .in("phone_whatsapp", chunk);
+        for (const e of (data || []) as Array<{ id: string; phone_whatsapp: string; conversation_step: string | null }>) {
+          existingMap.set(e.phone_whatsapp, { id: e.id, conversation_step: e.conversation_step });
         }
       }
-      for (const r of recs) if (midConv.has(String(r.phone_whatsapp))) delete r.status;
+      // Garante que registros novos respeitem o indice unico parcial (producao)
+      for (const r of recs) {
+        r.is_test_lead = false;
+        r.is_sandbox = false;
+        const ex = existingMap.get(String(r.phone_whatsapp));
+        if (ex && ex.conversation_step && ex.conversation_step !== "complete") delete r.status;
+      }
       let upserted = 0, errors = 0;
-      for (let i = 0; i < recs.length; i += 100) {
-        const batch = recs.slice(i, i + 100);
-        const { data, error } = await supabase.from("customers")
-          .upsert(batch, { onConflict: "phone_whatsapp,consultant_id", ignoreDuplicates: false })
-          .select("id");
-        if (error) { console.error("customers upsert", error); errors += batch.length; }
-        else upserted += data?.length || 0;
+      const lastError: { msg?: string } = {};
+      // UPDATE existentes
+      for (const r of recs) {
+        const ex = existingMap.get(String(r.phone_whatsapp));
+        if (!ex) continue;
+        const patch = { ...r };
+        delete patch.phone_whatsapp; delete patch.consultant_id;
+        delete patch.is_test_lead; delete patch.is_sandbox;
+        delete patch.customer_origin; delete patch.phone_contact_confirmed;
+        const { error } = await supabase.from("customers").update(patch).eq("id", ex.id);
+        if (error) { errors++; lastError.msg = error.message; console.error("customers update", error.message); }
+        else upserted++;
+      }
+      // INSERT novos em lotes
+      const news = recs.filter((r) => !existingMap.has(String(r.phone_whatsapp)));
+      for (let i = 0; i < news.length; i += 100) {
+        const batch = news.slice(i, i + 100);
+        const { data, error } = await supabase.from("customers").insert(batch).select("id");
+        if (error) {
+          // tenta linha a linha pra nao perder tudo por causa de 1 conflito
+          lastError.msg = error.message;
+          console.error("customers insert batch", error.message);
+          for (const row of batch) {
+            const { data: one, error: e2 } = await supabase.from("customers").insert(row).select("id");
+            if (e2) { errors++; lastError.msg = e2.message; }
+            else upserted += one?.length || 0;
+          }
+        } else upserted += data?.length || 0;
       }
       if (!(result.clientes as { swapped?: boolean } | undefined)?.swapped) {
-        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped, last_error: lastError.msg || null };
       }
     }
 
@@ -301,8 +330,37 @@ Deno.serve(async (req) => {
         if (error) { console.error("network upsert", error); errors += batch.length; }
         else upserted += data?.length || 0;
       }
+      // Espelha em network_members (tabela usada pelo painel "Rede")
+      let nmUpserted = 0, nmErrors = 0;
+      const nmRecs: Record<string, unknown>[] = [];
+      for (const r of recs) {
+        const igreenId = parseInt(String(r.codigo_igreen).replace(/\D/g, ""), 10);
+        if (!Number.isFinite(igreenId) || igreenId <= 0) continue;
+        const sponsor = r.patrocinador_codigo ? parseInt(String(r.patrocinador_codigo).replace(/\D/g, ""), 10) : null;
+        nmRecs.push({
+          consultant_id: consultantId,
+          igreen_id: igreenId,
+          name: r.nome || `Consultor ${igreenId}`,
+          phone: r.celular || null,
+          sponsor_id: Number.isFinite(sponsor as number) && (sponsor as number) > 0 ? sponsor : null,
+          nivel: r.nivel ?? null,
+          cidade: r.cidade || null,
+          uf: r.uf || null,
+          graduacao: r.graduacao || null,
+          gp: r.gp_qualificados ?? null,
+          gi: r.gl_qualificados ?? null,
+        });
+      }
+      for (let i = 0; i < nmRecs.length; i += 100) {
+        const batch = nmRecs.slice(i, i + 100);
+        const { data, error } = await supabase.from("network_members")
+          .upsert(batch, { onConflict: "consultant_id,igreen_id", ignoreDuplicates: false })
+          .select("id");
+        if (error) { console.error("network_members upsert", error.message); nmErrors += batch.length; }
+        else nmUpserted += data?.length || 0;
+      }
       if (!(result.rede as { swapped?: boolean } | undefined)?.swapped) {
-        result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+        result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped, network_members_upserted: nmUpserted, network_members_errors: nmErrors };
       }
     }
 
