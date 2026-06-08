@@ -86,7 +86,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
     setLoading(true);
     let q = supabase
       .from("customers")
-      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,registered_by_igreen_id,registered_by_name")
+      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
       .eq("customer_origin", "igreen_sync")
       .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
 
