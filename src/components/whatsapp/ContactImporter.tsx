@@ -794,11 +794,20 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
 
         {/* ─── PASTE TAB ─── */}
         <TabsContent value="paste" className="space-y-3 mt-2">
-          <p className="text-xs text-muted-foreground">
-            Cole os contatos, um por linha, no formato: <code className="px-1 py-0.5 bg-secondary rounded text-primary">nome;telefone</code> ou <code className="px-1 py-0.5 bg-secondary rounded text-primary">telefone;nome</code>
-          </p>
+          <div className="rounded-lg bg-primary/5 border border-primary/20 p-2.5 space-y-1.5">
+            <p className="text-xs font-semibold text-foreground">Como funciona</p>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Cole <strong>um contato por linha</strong>. Aceita qualquer um destes formatos —
+              o sistema descobre sozinho:
+            </p>
+            <ul className="text-[11px] text-muted-foreground space-y-0.5 pl-3 list-disc">
+              <li><code className="px-1 bg-secondary rounded text-primary">11999998888</code> (só o telefone)</li>
+              <li><code className="px-1 bg-secondary rounded text-primary">João Silva 11999998888</code> (nome e telefone, do jeito que vier)</li>
+              <li><code className="px-1 bg-secondary rounded text-primary">João;11999998888</code> ou com vírgula / tab (colado do Excel funciona)</li>
+            </ul>
+          </div>
           <Textarea
-            placeholder={"João Silva;5511999998888\nMaria Souza;5521988887777\n5531977776666;Carlos"}
+            placeholder={"João Silva 11999998888\nMaria 21988887777\n11977776666"}
             value={pasteText}
             onChange={e => setPasteText(e.target.value)}
             rows={6}
@@ -812,15 +821,49 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
 
         {/* ─── IMPORT TAB ─── */}
         <TabsContent value="import" className="space-y-3 mt-2">
-          <p className="text-xs text-muted-foreground">
-            Importe um arquivo Excel ou CSV com as colunas <strong>nome</strong> e <strong>telefone</strong>.
-          </p>
-          <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5 rounded-lg h-8 text-xs">
-            <Download className="w-3.5 h-3.5" /> Baixar modelo de planilha
-          </Button>
-          <div>
+          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-2.5 space-y-2">
+            <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+              Jeito mais fácil: usar o Google Planilhas
+            </p>
+            <ol className="text-[11px] text-muted-foreground space-y-0.5 pl-4 list-decimal">
+              <li>Clique em <strong>"Abrir Google Planilhas"</strong> — abre uma planilha em branco.</li>
+              <li>Crie 2 colunas: <code className="px-1 bg-secondary rounded text-primary">nome</code> e <code className="px-1 bg-secondary rounded text-primary">telefone</code>.</li>
+              <li>Cole ou digite seus contatos.</li>
+              <li>Em <em>Arquivo → Baixar → Excel (.xlsx)</em> e envie aqui embaixo.</li>
+            </ol>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              asChild
+              className="w-full gap-1.5 rounded-lg h-9 text-xs font-bold"
+            >
+              <a
+                href="https://docs.google.com/spreadsheets/create?title=Contatos%20WhatsApp"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Abrir Google Planilhas
+              </a>
+            </Button>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-muted-foreground">
+              Ou baixe um modelo pronto em Excel (mesmo formato):
+            </p>
+            <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5 rounded-lg h-8 text-xs">
+              <Download className="w-3.5 h-3.5" /> Baixar modelo .xlsx
+            </Button>
+          </div>
+
+          <div className="space-y-1.5 border-t pt-2.5">
+            <p className="text-[11px] text-muted-foreground font-medium">
+              Envie sua planilha (.xlsx, .xls ou .csv):
+            </p>
             <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload}
-              className="text-xs rounded-lg h-8 file:text-xs file:mr-2" />
+              className="text-xs rounded-lg h-9 file:text-xs file:mr-2" />
           </div>
         </TabsContent>
       </Tabs>
