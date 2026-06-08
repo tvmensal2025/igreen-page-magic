@@ -628,10 +628,9 @@ export function PartnerQrCode({
 
             <div className="text-xs text-muted-foreground space-y-1 mt-1">
               <p>
-                Ao escanear, abre WhatsApp com:{" "}
+                Ao escanear o QR ou abrir o link, abre WhatsApp com:{" "}
                 <span className="font-medium">&quot;{phrase}&quot;</span>
               </p>
-              <p className="break-all opacity-70">{url}</p>
             </div>
           </div>
         </div>
