@@ -15,6 +15,8 @@ import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useViewportWidth } from "@/hooks/useViewportWidth";
+
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 
 import {
