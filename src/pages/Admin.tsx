@@ -42,6 +42,7 @@ const AdsCentralTab = lazy(() => import("@/components/admin/ads/AdsCentralTab").
 const CaptacaoPanel = lazy(() => import("@/components/captacao/CaptacaoPanel").then(m => ({ default: m.CaptacaoPanel })));
 const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTab").then(m => ({ default: m.ParceirosTab })));
 const ConversaoTab = lazy(() => import("@/components/admin/ConversaoTab").then(m => ({ default: m.ConversaoTab })));
+const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
 
 
 
@@ -78,7 +79,7 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao") return tab as AdminTabId;
+      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio") return tab as AdminTabId;
     }
     return "dashboard";
   });
@@ -225,6 +226,7 @@ const AdminContent = () => {
     "central-anuncios": { title: "Central de Anúncios", subtitle: "Performance de campanhas" },
     "links": { title: "Links", subtitle: "Sua landing, QR Codes e materiais" },
     "materiais": { title: "Materiais", subtitle: "Biblioteca de assets de divulgação" },
+    "audio-studio": { title: "Estúdio de Áudio", subtitle: "Grave sua voz ou gere com IA e envie pelo WhatsApp" },
   };
   const currentMeta = TAB_META[activeTab];
 
@@ -384,6 +386,12 @@ const AdminContent = () => {
               consultantName={form.name || ""}
               consultantIgreenId={form.igreen_id || ""}
             />
+          )}
+
+          {userId && activeTab === "audio-studio" && (
+            <div className="max-w-2xl mx-auto w-full">
+              <AudioStudioPanel userId={userId} />
+            </div>
           )}
 
         </Suspense>

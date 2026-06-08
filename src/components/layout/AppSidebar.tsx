@@ -15,6 +15,7 @@ import {
   FolderDown,
   ChevronLeft,
   LogOut,
+  Mic,
 } from "lucide-react";
 
 export type AdminTabId =
@@ -29,7 +30,8 @@ export type AdminTabId =
   | "whatsapp"
   | "central-anuncios"
   | "links"
-  | "materiais";
+  | "materiais"
+  | "audio-studio";
 
 interface NavItem {
   id: AdminTabId;
@@ -70,6 +72,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
       { id: "links", label: "Links", icon: LinkIcon },
       { id: "materiais", label: "Materiais", icon: FolderDown },
+      { id: "audio-studio", label: "Estúdio de Áudio", icon: Mic },
     ],
   },
 ];
