@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Mic, Image as ImageIcon, Video, Trash2, Upload, ArrowUp, ArrowDown, Loader2, Library, Check } from "lucide-react";
 import { toast } from "sonner";
 import { AudioRecorderInline } from "@/components/admin/AIAgentTab/AudioRecorderInline";
+import { prettyStepLabel } from "@/lib/posVenda/format";
 
 type Kind = "audio" | "image" | "video";
 type Media = {
