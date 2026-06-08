@@ -86,30 +86,24 @@ async function idbSet(hash: string, blob: Blob): Promise<void> {
   } catch { /* silencioso */ }
 }
 
-let bucketEnsured = false;
-async function ensureTTSBucket() {
-  if (bucketEnsured) return;
-  try { await supabase.storage.createBucket(TTS_BUCKET, { public: true, fileSizeLimit: 5 * 1024 * 1024 }); } catch {}
-  bucketEnsured = true;
-}
-
 async function getCachedTTS(text: string): Promise<Blob | null> {
   const hash = hashText(text);
   // L0 — in-memory
-  if (cacheMap.has(hash)) return cacheMap.get(hash)!;
+  if (cacheMap.has(hash)) { console.debug("[tts-cache] hit L0", hash); return cacheMap.get(hash)!; }
   // L1 — IndexedDB
   const local = await idbGet(hash);
-  if (local) { cacheMap.set(hash, local); return local; }
-  // L2 — Supabase Storage
+  if (local) { console.debug("[tts-cache] hit L1 (idb)", hash); cacheMap.set(hash, local); return local; }
+  // L2 — Supabase Storage (bucket criado via migration; nada de createBucket no client)
   try {
-    await ensureTTSBucket();
     const { data, error } = await supabase.storage.from(TTS_BUCKET).download(`${hash}.mp3`);
     if (!error && data && data.size > 0) {
+      console.debug("[tts-cache] hit L2 (supabase)", hash, data.size, "bytes");
       cacheMap.set(hash, data);
       await idbSet(hash, data);
       return data;
     }
   } catch {}
+  console.debug("[tts-cache] MISS — vai gerar via ElevenLabs:", text.slice(0, 60));
   return null;
 }
 
@@ -117,10 +111,13 @@ async function setCachedTTS(text: string, blob: Blob): Promise<void> {
   const hash = hashText(text);
   cacheMap.set(hash, blob);
   await idbSet(hash, blob);
-  // Supabase em background
-  ensureTTSBucket().then(() =>
-    supabase.storage.from(TTS_BUCKET).upload(`${hash}.mp3`, blob, { contentType: "audio/mpeg", upsert: true })
-  ).catch(() => {});
+  // Sobe para o bucket compartilhado em background (upsert idempotente)
+  supabase.storage.from(TTS_BUCKET)
+    .upload(`${hash}.mp3`, blob, { contentType: "audio/mpeg", upsert: true })
+    .then(({ error }) => {
+      if (error) console.warn("[tts-cache] upload supabase falhou:", error.message);
+      else console.debug("[tts-cache] salvo L2", hash, blob.size, "bytes");
+    });
 }
 
 // ─── Helpers de texto ────────────────────────────────────────────────────────
