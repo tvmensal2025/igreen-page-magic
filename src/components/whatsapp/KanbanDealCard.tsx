@@ -13,7 +13,7 @@ interface KanbanDealCardProps {
   onEdit: (deal: CrmDealRow) => void;
   onDelete: (id: string) => void;
   onReclassify?: (deal: CrmDealRow) => void;
-  onView?: (customerId: string) => void;
+  onView?: (params: { customerId?: string | null; dealId?: string | null }) => void;
 }
 
 export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, onReclassify, onView }: KanbanDealCardProps) {
@@ -97,11 +97,11 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
-          {onView && deal.customer_id && (
+          {onView && (
             <button
               className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-muted opacity-60 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
-              title="Ver detalhes do cliente"
-              onClick={(e) => { e.stopPropagation(); onView(deal.customer_id!); }}
+              title="Ver detalhes, linha do tempo e próxima mensagem"
+              onClick={(e) => { e.stopPropagation(); onView({ customerId: deal.customer_id, dealId: deal.id }); }}
               onMouseDown={(e) => e.stopPropagation()}
             >
               <Eye className="h-3.5 w-3.5" />
