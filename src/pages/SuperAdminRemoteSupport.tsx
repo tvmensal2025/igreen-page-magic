@@ -241,6 +241,7 @@ function SessionWorkbench({ session, consultantName, onClose }: {
   const [fps, setFps] = useState<number | null>(null);
   const [paused, setPaused] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
 
   const initialPrefs = useRef(loadPrefs()).current;
   const [controlEnabled, setControlEnabled] = useState(initialPrefs.control);
@@ -254,9 +255,17 @@ function SessionWorkbench({ session, consultantName, onClose }: {
 
   const sendCmd = useCallback((cmd: Omit<RemoteCommand, "id">) => {
     const dc = dcRef.current;
-    if (!dc || dc.readyState !== "open") return;
+    if (!dc || dc.readyState !== "open") {
+      if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
+        // eslint-disable-next-line no-console
+        console.warn("[remote-support][send] dropped (channel not open)", cmd.kind, dc?.readyState);
+      }
+      return;
+    }
     const full: RemoteCommand = { ...cmd, id: crypto.randomUUID() };
     if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
+      // eslint-disable-next-line no-console
+      console.log("[remote-support][send]", full.kind, full);
       pushLog(`→ ${full.kind} ${full.selector || full.url || full.value || ""}`);
     }
     dc.send(JSON.stringify(full));
@@ -471,6 +480,8 @@ function SessionWorkbench({ session, consultantName, onClose }: {
             >
               <video
                 ref={videoRef}
+                onLoadedMetadata={() => { setVideoReady(true); toast.success("Controle ativo", { duration: 2500 }); }}
+                onEmptied={() => setVideoReady(false)}
                 className="w-full h-full object-contain pointer-events-none select-none"
                 autoPlay playsInline muted
               />
@@ -494,8 +505,13 @@ function SessionWorkbench({ session, consultantName, onClose }: {
                 />
               )}
 
-              {hasStream && controlEnabled && (
+              {hasStream && controlEnabled && videoReady && (
                 <RemoteControlOverlay videoRef={videoRef} sendCmd={sendCmd} />
+              )}
+              {hasStream && controlEnabled && !videoReady && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xs pointer-events-none">
+                  <Loader2 className="size-4 animate-spin mr-2" /> Preparando controle (aguardando metadados do vídeo)…
+                </div>
               )}
 
               {paused && hasStream && (
@@ -532,6 +548,10 @@ function SessionWorkbench({ session, consultantName, onClose }: {
                     <div>Controle: <Badge className={controlEnabled ? "bg-green-600" : "bg-zinc-600"}>{controlEnabled ? "ATIVO" : "Off"}</Badge></div>
                   </CardContent>
                 </Card>
+
+                <div className="text-[11px] text-muted-foreground border border-dashed rounded p-2">
+                  ℹ️ O controle remoto só funciona <b>dentro do painel iGreen</b> (mesma aba compartilhada). Em outras abas (WhatsApp Web, Portal, etc.) é apenas visualização.
+                </div>
 
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Navegar</CardTitle></CardHeader>

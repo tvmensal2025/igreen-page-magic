@@ -1,69 +1,122 @@
 
-## Diagnóstico
+# Auditoria — Plano anterior, Suporte Remoto e mercado
 
-Investiguei o banco e o código. Encontrei 3 causas raiz distintas, que vou resolver de uma vez.
+## 1. O plano antigo (`.lovable/plan.md`) — veredito
 
-### 1. "Não consigo criar outras variantes"
-A RPC `ensure_bot_flow_variant` existe, mas tem 2 problemas:
-- Ela exige que `auth.uid() = _consultant_id` (ou super admin). Quando o consultor logado tem um `auth.users.id` diferente do `consultants.id` (caso comum: consultor cadastrado por outro usuário), ela devolve `forbidden` e o painel só mostra essa string crua no toast — daí a impressão de "deu erro sem explicação".
-- A UI também não revalida `existingVariants` se a criação falhar, então o usuário não entende o estado.
+O plano cobre 3 frentes (variantes A-E, "Passo removido", suporte remoto) e a maior parte já foi executada nas últimas iterações. Status real hoje:
 
-### 2. "Passos removidos" no fluxo da Bruna e diferente do público
-Confirmado no banco. O fluxo da Bruna (`577f46d1…`, variante D) tem `fallback.success_goto_step_id` apontando para IDs que só existem no fluxo público (`320bf22c…`) — ex.: `b1e1a001-…`, `9f2d47d4-…`, `4df1f90a-…`. Isso aconteceu porque o clone antigo (e o atual) só remapeia `transitions[].goto_step_id` e `fallback.goto_step_id`, **não** remapeia `fallback.success_goto_step_id`, nem campos análogos dentro de `captures`. Resultado: o editor mostra "⚠ Passo removido" em vários passos.
+| Item do plano | Estado | Observação |
+|---|---|---|
+| RPC `ensure_bot_flow_variant` com permissão relaxada + erro legível | ✅ feito (migration `20260608205444…`) | Falta UI mostrar de qual variante foi clonada |
+| Remap de `fallback.success_goto_step_id` + `captures.*.goto_step_id` no clone | ✅ feito | OK |
+| Migration de reparo idempotente (Bruna) | ✅ feito | Verificar se ainda há refs órfãs com `SELECT` antes de fechar |
+| Aviso "sync_mode=public" + botão "Re-clonar" no editor | ⚠️ parcial | Migration entrega o backend, mas **não vi o botão na UI do `FluxoBuilder.tsx`** |
+| Remote support: `controlEnabled=true` por padrão (v2 prefs) | ✅ feito | |
+| Cursor virtual visível em `pointerleave` | ✅ feito | |
+| `focus()` antes do click (Radix) | ✅ feito | |
+| Overlay "Controle remoto ativo" no consultor | ❌ não feito | Plano previa, mas não foi implementado |
+| Logs `[remote-support]` por evento de mouse | ⚠️ só `logAction` no servidor — sem `console.log` local | |
 
-Além disso, o fluxo da Bruna está com `sync_mode='public'`. Isso significa que o runtime (resolveFlowId) ignora os passos da Bruna e roda o público — então qualquer ajuste que ela fizer no editor **não tem efeito real**. O editor não deixa isso claro.
-
-### 3. "Modo mouse desativado no suporte"
-No operador o controle vem ligado por padrão (`controlEnabled=true`), mas o `RemoteControlOverlay` só monta quando `hasStream && controlEnabled && !paused`. No lado do consultor (`useRequesterSession`) o estado `paused` começa `false`, porém o overlay no operador esconde-se atrás da `PlayerToolbar` quando ela está aberta (z-index/pointer-events) e o cursor virtual some assim que o ponteiro sai do vídeo — dá a sensação de "não dá pra clicar". Também há um caso em que `controlEnabled` fica falso por causa de prefs antigos salvos em `localStorage` (`PREFS_KEY`).
+**Conclusão:** o plano é sólido e foi 80% executado. Faltam 2 entregas visíveis (botão re-clonar + overlay no consultor) que são as que o usuário continua sentindo na pele.
 
 ---
 
-## Plano de correção
+## 2. Auditoria do fluxo de **mouse remoto** (vai funcionar?)
 
-### A. Variantes A–E livres e com erro legível
-1. **Migration**: relaxar a checagem da RPC `ensure_bot_flow_variant` para aceitar qualquer um destes casos:
-   - `auth.uid() = _consultant_id` (consultor editando o próprio).
-   - `is_super_admin(auth.uid())`.
-   - existe `consultants` com `id = _consultant_id` cujo `auth_user_id` (ou e-mail) bate com o caller.
-   - Mensagens de erro passam a vir com prefixo legível (`'Sem permissão para criar variante neste consultor'`, etc.).
-2. **UI** (`VariantDistributionBar.tsx`):
-   - Capturar `error.message` e mostrar toast amigável ("Não foi possível criar o fluxo X: …").
-   - Chamar `onChanged()` mesmo em erro para refrescar a lista.
-   - Após criar, dar feedback claro (qual variante foi criada e de onde foi clonada — público ou outra variante).
+Fluxo atual:
 
-### B. Clone fiel ao público + tela de "Passo removido" zerada
-1. **Migration**: nova versão da `ensure_bot_flow_variant` que também remapeia:
-   - `fallback.success_goto_step_id`
-   - `fallback.failure_goto_step_id` (quando existir)
-   - qualquer `goto_step_id` aninhado dentro de `captures` (varre o jsonb).
-   - Preserva `position` (já preserva) e copia `text_delay_ms`, `persuasive_text`, `respect_business_hours`, `business_hour_*`, `wait_seconds`, `wait_for`, `media_order` — campos que hoje ficam de fora.
-2. **Migration de "reparo" idempotente** para fluxos já existentes:
-   - Para cada `bot_flow` não-público, varrer steps cujo `fallback.success_goto_step_id` aponta para um step de outro flow; tentar casar com um step da MESMA `position` ou MESMO `step_key` dentro do flow do consultor; se casar, atualiza; se não, limpa o campo (vira "repeat") em vez de manter referência quebrada. Isso elimina os "Passo removido" da Bruna sem perder semântica.
-3. **Sincronizar Bruna com o público**:
-   - Como ela está em `sync_mode='public'`, ofereço duas saídas (sem decidir por ela em runtime):
-     - Botão "Re-clonar do público" na barra de variantes (visível quando `sync_mode='public'` ou quando há refs quebradas) que dispara a nova `ensure_bot_flow_variant` com `force=true`, recriando os steps a partir do público atual e marcando `sync_mode='custom'`.
-     - Aviso no topo do editor explicando: "Esta variante está espelhando o fluxo público — edições aqui não afetam o atendimento até clicar em ‘Personalizar’."
+```text
+Operador (overlay) ──pointerdown/click──► sendCmd (DataChannel)
+        │                                       │
+        │ raf coalescing                        ▼
+        ▼                              Consultor (actionHandler.ts)
+   cursor virtual                      ├─ elementFromPoint(x,y)
+                                       ├─ normalizeInteractiveTarget (sobe até botão/Radix)
+                                       ├─ focus() em editáveis e triggers
+                                       └─ pointerover→down→up + mousedown→up + click
+```
 
-### C. Suporte remoto — destravar o mouse
-1. **Operador (`SuperAdminRemoteSupport.tsx` + `RemoteControlOverlay`)**:
-   - Forçar `controlEnabled=true` na primeira sessão (ignorar `localStorage` antigo) e mostrar aviso "Controle ativo" por 3s no topo do vídeo.
-   - Garantir `pointer-events: auto` no overlay e `z-index` acima da toolbar; toolbar passa a `pointer-events: none` exceto nos botões.
-   - Manter cursor virtual visível mesmo sem movimento (não esconder em `pointerleave` — só some quando a aba perde foco).
-   - Logar no console (`[remote-support]`) cada `mouseClick`/`mouseDown`/`mouseUp` enviado para facilitar diagnosticar próximos casos.
-2. **Consultor (`actionHandler.ts`)**:
-   - Quando `mouseClick` chega, fazer `element.focus()` antes do `pointerdown` para inputs/selects (faltava em alguns casos do Radix).
-   - Habilitar `wheel` e `keydown` mesmo quando o foco está em iframe interno (usa `document.elementFromPoint` + fallback no `document.activeElement`).
-   - Mostrar um overlay sutil "Controle remoto ativo" no canto inferior do consultor quando estiver recebendo eventos — confirmação visual de que o mouse está chegando.
+### O que está **certo** e vai funcionar
+- Sequência pointer + mouse + click cobre Radix/shadcn (Select, Dropdown, Dialog).
+- `normalizeInteractiveTarget` resolve o caso "cliquei no `<span>` filho do botão".
+- Coordenadas normalizadas + `preferCurrentTab: true` na `getDisplayMedia` deixam pixel-a-pixel.
+- Coalescing por `requestAnimationFrame` evita inundar o DataChannel.
+- Detecção de drag por threshold (4px) evita "todo click virar drag".
+
+### Riscos reais que ainda travam o mouse
+1. **`object-contain` + cálculo de offset**: `toNorm` calcula `dispW/dispH` pelo `videoWidth`, mas se o `<video>` ainda não tem metadata (`videoWidth=0`), cai no `rect.width` e os cliques saem fora do alvo nos primeiros 200–500 ms. Precisa esperar `loadedmetadata`.
+2. **Foco no iframe / página com `tabindex=-1`**: `typeChar` usa `document.activeElement`. Quando o consultor tem um modal Radix aberto que rouba foco, a tecla vai pro lugar errado. Falta `focusEl?.focus()` antes de cada `key`.
+3. **`elementFromPoint` ignora `pointer-events:none`**: alguns overlays do próprio app do consultor (toasts, splash) podem cobrir e devolver `null` → `"no element"`. Não há fallback para `document.elementsFromPoint` (plural) que ignora a primeira camada.
+4. **Sem retry/ACK por comando**: se o DataChannel está `connecting` ou cai por 200 ms, o click é perdido silenciosamente. Falta uma fila com TTL.
+5. **iframes cross-origin** (ex.: gateway de pagamento, painel embutido): WebRTC + `dispatchEvent` **não atravessam** iframe cross-origin. Hoje o usuário vai sentir como "o mouse parou de funcionar nesta tela" — precisa avisar.
+6. **Inputs nativos `<select>`**: o sistema operacional desenha o popup; nenhum `dispatchEvent` consegue escolher uma opção. Precisa fallback `el.value = …` + `change`.
+
+---
+
+## 3. Como **outras empresas** fazem (TeamViewer, AnyDesk, Chrome Remote Desktop, Zoom)
+
+| Empresa | Captura | Controle | Por que funciona em 100% |
+|---|---|---|---|
+| **TeamViewer / AnyDesk** | Driver de tela em kernel | Driver de mouse/teclado em kernel (HID virtual) | Não dispara eventos no DOM — injeta no SO. Funciona em qualquer app, inclusive popups nativos. |
+| **Chrome Remote Desktop** | `getDisplayMedia` no host + Native Messaging | Extensão nativa + helper instalado | Mesma coisa: o helper local injeta no SO via APIs do Windows/Mac. |
+| **Zoom Remote Control** | Compartilhamento de tela do Zoom | Cliente nativo do Zoom recebe eventos | Idem. |
+| **Lovable (vocês hoje)** | `getDisplayMedia` (browser) | `dispatchEvent` no DOM via WebRTC DataChannel | **Limitação fundamental**: só funciona dentro da **mesma aba**, no DOM, em elementos same-origin. |
+
+### O que isso significa para vocês
+- Para **operar dentro do app** de vocês (consultor mexendo no próprio painel): a abordagem atual é a **correta e suficiente** — só precisa polir os 6 riscos acima.
+- Para **operar fora do app** (WhatsApp Web em outra aba, Portal igreen, Excel): **impossível sem extensão/nativo**. Se isso for requisito, o caminho é:
+  1. Extensão Chrome (já têm `extension/igreen-sync`) com permissão `debugger` → injeta eventos via CDP em qualquer aba.
+  2. Ou app desktop (Tauri/Electron) com `robotjs` / `nut.js` no consultor.
+
+Recomendação pragmática: ficar com a abordagem DOM (escopo realista) e deixar **muito explícito na UI** que "controle remoto funciona dentro do painel iGreen; em outras abas só visualização".
+
+---
+
+## 4. Análise rápida do código (pontos críticos encontrados)
+
+| Arquivo | Problema | Impacto |
+|---|---|---|
+| `actionHandler.ts` L307 | `key` usa `document.activeElement` sem refoco — perde tecla se foco mudou | Médio |
+| `actionHandler.ts` L37 | `elementFromPoint` único — não atravessa overlays transparentes | Médio |
+| `actionHandler.ts` (geral) | Sem ACK/retry, sem console.log estruturado | Diagnóstico difícil |
+| `SuperAdminRemoteSupport.tsx` L497 | `RemoteControlOverlay` só monta com `controlEnabled` — toggle apaga overlay sem aviso visual | Baixo |
+| `SuperAdminRemoteSupport.tsx` L760 | `toNorm` quebra antes do `loadedmetadata` do vídeo | **Alto** — clique cai fora nos primeiros segundos |
+| `screenShare.ts` L249 | `preferCurrentTab: true` é Chromium-only — Firefox/Safari já erram aqui | Médio |
+| `useRequesterSession.ts` | Não trata `track.onended` quando o consultor "para de compartilhar" pelo botão do navegador | Médio — fica fantasma "ativo" |
+| `RemoteSupportProvider.tsx` L51 | Botão de ajuda some quando há sessão — bom; mas não há indicador visual de "alguém está te controlando" | Privacidade/UX |
+
+---
+
+## 5. Plano de correção proposto (curto, focado no que está doendo)
+
+### A. Mouse — destravar de verdade (alta prioridade)
+1. `toNorm` espera `videoWidth>0` (listener `loadedmetadata` em `videoRef`); enquanto não estiver pronto, mostra "Carregando vídeo…" sobre o overlay.
+2. `actionHandler.ts`: 
+   - `elementsFromPoint` (plural) com fallback — pula camadas com `pointer-events:none` reais.
+   - `key`: refoca `focusable(elAt(lastMouseX, lastMouseY))` antes de despachar.
+   - `<select>` nativo: se alvo for `HTMLSelectElement`, setar `value` + `dispatchEvent('change')`.
+3. Fila de comandos no operador com retry (até 3×, TTL 1s) quando DataChannel `connecting`.
+4. Console logs `[remote-support][cmd]` em cada `sendCmd` e cada `executeCommand` para diagnóstico do próximo caso.
+
+### B. Feedback visual (UX)
+5. Banner pequeno e persistente no consultor: "🔴 Suporte remoto controlando sua tela — pausar" (já existe `togglePause`; falta o botão flutuante).
+6. Aviso no operador quando o vídeo ainda está sem metadata.
+7. Toast curto "Controle ativo" ao abrir sessão (3s).
+
+### C. Editor de fluxos — fechar o que faltou do plano antigo
+8. Botão **"Re-clonar do público"** em `FluxoBuilder.tsx` (visível quando `sync_mode='public'` ou quando `flowHasBrokenRefs(steps) === true`).
+9. Banner amarelo no topo do editor: "Esta variante está espelhando o público — clique em Personalizar para editar".
+
+### D. Honestidade de escopo (decisão)
+10. Adicionar nota fixa no painel do operador: **"Controle remoto funciona apenas dentro do painel iGreen na aba compartilhada. Para WhatsApp Web, Portal ou outras abas, é só visualização."** — alinhamento de expectativa.
 
 ---
 
 ## Arquivos que vou tocar
 
-- `supabase/migrations/<new>_fix_variant_clone_and_perms.sql` (RPC v2 + reparo idempotente)
-- `src/components/admin/flow-builder/VariantDistributionBar.tsx`
-- `src/pages/FluxoBuilder.tsx` (aviso de sync_mode + botão "Personalizar/Re-clonar")
-- `src/pages/SuperAdminRemoteSupport.tsx`
-- `src/features/remote-support/actionHandler.ts`
-- (talvez) `src/features/remote-support/useRequesterSession.ts` para o overlay de confirmação
+- `src/features/remote-support/actionHandler.ts` (A2, A4)
+- `src/pages/SuperAdminRemoteSupport.tsx` (A1, A3, B2, B3, D)
+- `src/features/remote-support/RemoteSupportProvider.tsx` ou novo `RemoteControlIndicator.tsx` (B1)
+- `src/pages/FluxoBuilder.tsx` (C8, C9)
 
-Nada será removido — só correções. Posso começar?
+Nada de banco. Tudo frontend e bem isolado. Posso começar?

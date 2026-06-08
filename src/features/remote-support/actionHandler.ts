@@ -35,10 +35,26 @@ function toViewportXY(cmd: RemoteCommand): { x: number; y: number } {
 }
 
 function elAt(x: number, y: number): Element | null {
-  const el = document.elementFromPoint(x, y);
-  if (!el || isProtected(el)) return null;
-  return normalizeInteractiveTarget(el);
+  // elementsFromPoint (plural) deixa "perfurar" overlays transparentes/decorativos.
+  // Procuramos o primeiro elemento que NÃO seja protegido e que tenha pointer-events
+  // efetivos. Se todos forem protegidos, devolve null.
+  const stack = (document as any).elementsFromPoint?.(x, y) as Element[] | undefined;
+  const list = stack && stack.length ? stack : [document.elementFromPoint(x, y)].filter(Boolean) as Element[];
+  for (const candidate of list) {
+    if (!candidate) continue;
+    if (isProtected(candidate)) return null; // banner do suporte é sagrado
+    try {
+      const style = getComputedStyle(candidate as Element);
+      if (style.pointerEvents === "none") continue;
+    } catch { /* ignore */ }
+    return normalizeInteractiveTarget(candidate);
+  }
+  return null;
 }
+
+// Memoriza última posição do mouse para refoco em comandos `key`.
+let _lastMouseX = 0;
+let _lastMouseY = 0;
 
 const INTERACTIVE_SEL = [
   "button", "a[href]", "input", "textarea", "select", "label",
@@ -143,8 +159,16 @@ function backspace() {
 export async function executeCommand(sessionId: string, cmd: RemoteCommand): Promise<CommandResult> {
   try {
     // log apenas comandos relevantes (evita spam de mouseMove)
-    if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel") {
+    if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
+      // eslint-disable-next-line no-console
+      console.log("[remote-support][exec]", cmd.kind, cmd);
       logAction(sessionId, "operator", `cmd:${cmd.kind}`, cmd.selector || cmd.url || null, cmd as never).catch(() => {});
+    }
+
+    // Atualiza última posição para refoco em comandos `key`.
+    if ((cmd.kind === "mouseMove" || cmd.kind === "mouseClick" || cmd.kind === "mouseDown") && cmd.x != null && cmd.y != null) {
+      _lastMouseX = Math.max(0, Math.min(1, cmd.x)) * window.innerWidth;
+      _lastMouseY = Math.max(0, Math.min(1, cmd.y)) * window.innerHeight;
     }
 
     // Comandos sempre permitidos mesmo em pausa
@@ -304,7 +328,14 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
       }
 
       case "key": {
-        const target = (document.activeElement as HTMLElement) || document.body;
+        // Refoca o elemento sob o último cursor — evita perder tecla quando
+        // foco saiu para outro lugar (modal Radix etc.).
+        let target = (document.activeElement as HTMLElement) || document.body;
+        if (!target || target === document.body) {
+          const under = elAt(_lastMouseX, _lastMouseY);
+          const f = focusable(under);
+          if (f) { try { f.focus({ preventScroll: true } as FocusOptions); } catch {} target = f; }
+        }
         if (isProtected(target)) throw new Error("element is protected");
         const init: KeyboardEventInit = {
           key: cmd.key || "", code: cmd.code || cmd.key || "",
