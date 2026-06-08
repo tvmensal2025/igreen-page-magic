@@ -203,20 +203,15 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
         <div className="p-2 border-t border-border bg-card sticky bottom-0 space-y-1.5">
           <Button
             className="w-full h-9 gap-1.5 font-bold text-xs"
-            onClick={() => onSend({ continueFlow: true })}
-            disabled={sending}
-          >
-            {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-            Seguir fluxo ({step.variant})
-          </Button>
-          <Button
-            variant="outline"
-            className="w-full h-7 gap-1.5 text-[10px]"
             onClick={() => onSend({ continueFlow: false })}
             disabled={sending}
           >
-            Só este passo
+            {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            Enviar este passo ({step.variant})
           </Button>
+          <p className="text-[9px] text-center text-muted-foreground leading-tight">
+            Envia apenas este passo. O próximo só vai quando você clicar de novo.
+          </p>
         </div>
       </DialogContent>
     </Dialog>

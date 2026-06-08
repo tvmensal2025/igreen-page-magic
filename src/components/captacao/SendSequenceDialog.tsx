@@ -38,6 +38,8 @@ export function SendSequenceDialog({
   const [lastError, setLastError] = useState<string | null>(null);
   const [lastErrorCode, setLastErrorCode] = useState<string | null>(null);
   const sentAtRef = useRef<number>(0);
+  // Trava síncrona para impedir duplo-clique antes do React atualizar `phase`.
+  const inFlightRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (open) {
@@ -46,6 +48,7 @@ export function SendSequenceDialog({
       setLastError(null);
       setLastErrorCode(null);
       sentAtRef.current = 0;
+      inFlightRef.current = false;
     }
   }, [open, customerId]);
 
@@ -78,44 +81,50 @@ export function SendSequenceDialog({
 
   const sendNext = async (opts?: { force?: boolean }) => {
     if (!nextStep) return;
+    // Trava síncrona — evita disparo duplicado se o consultor clicar 2x rápido.
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setPhase("sending");
     setLastError(null);
     setLastErrorCode(null);
-    const res = await sendStepWithFeedback(
-      {
-        consultantId,
-        customerId,
-        stepId: nextStep.step_id,
-        part: "all",
-        continueFlow: false,
-        variant,
-        force: opts?.force,
-      },
-      { silent: true },
-    );
-    if (res.ok) {
-      onStepSent(nextStep.step_key);
-      sentAtRef.current = Date.now();
-      const newIdx = idx + 1;
-      setIdx(newIdx);
-      if (newIdx >= steps.length) {
-        setPhase("done");
-        toast.success("Todos os passos enviados!");
+    try {
+      const res = await sendStepWithFeedback(
+        {
+          consultantId,
+          customerId,
+          stepId: nextStep.step_id,
+          part: "all",
+          continueFlow: false,
+          variant,
+          force: opts?.force,
+        },
+        { silent: true },
+      );
+      if (res.ok) {
+        onStepSent(nextStep.step_key);
+        sentAtRef.current = Date.now();
+        const newIdx = idx + 1;
+        setIdx(newIdx);
+        if (newIdx >= steps.length) {
+          setPhase("done");
+          toast.success("Todos os passos enviados!");
+        } else {
+          setPhase("waiting_inbound");
+        }
       } else {
-        setPhase("waiting_inbound");
+        setLastError(res.message || res.code || "erro");
+        setLastErrorCode(res.code || null);
+        setPhase("error");
+        if (res.code === "name_not_captured_yet") {
+          toast.error("Peça o nome do lead primeiro.");
+        } else if (res.code === "awaiting_inbound") {
+          setPhase("waiting_inbound");
+        } else if (res.code === "instance_disconnected" || res.code === "whapi_token_missing") {
+          toast.error(res.message || "Whatsapp do consultor com problema");
+        }
       }
-    } else {
-      setLastError(res.message || res.code || "erro");
-      setLastErrorCode(res.code || null);
-      setPhase("error");
-      if (res.code === "name_not_captured_yet") {
-        toast.error("Peça o nome do lead primeiro.");
-      } else if (res.code === "awaiting_inbound") {
-        // Cai num modo "esperando inbound" sem ter mandado.
-        setPhase("waiting_inbound");
-      } else if (res.code === "instance_disconnected" || res.code === "whapi_token_missing") {
-        toast.error(res.message || "Whatsapp do consultor com problema");
-      }
+    } finally {
+      inFlightRef.current = false;
     }
   };
 
