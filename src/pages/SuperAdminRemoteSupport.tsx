@@ -325,7 +325,13 @@ function SessionWorkbench({ session, consultantName, onClose }: {
         {status === "active" && (
           <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 overflow-hidden">
             <div className="md:col-span-2 bg-black rounded-md overflow-hidden relative">
-              <video ref={videoRef} className="w-full h-full object-contain" autoPlay playsInline muted />
+              <video ref={videoRef} className="w-full h-full object-contain pointer-events-none select-none" autoPlay playsInline muted />
+              {hasStream && (
+                <RemoteControlOverlay
+                  videoRef={videoRef}
+                  sendCmd={sendCmd}
+                />
+              )}
               {!hasStream && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-sm text-center p-4 gap-2">
                   {stage === "offer-received" || stage === "answer-sent" || stage === "ice-checking" || stage === "connected" ? (
