@@ -71,25 +71,22 @@ export default function VariantDistributionBar({
     toast.success(on ? `Fluxo ${v} recebendo leads` : `Fluxo ${v} pausado (continua editável)`);
   }
 
-  async function addVariant() {
-    const next = ALL_VARIANTS.find((v) => !existingVariants.includes(v));
-    if (!next) { toast.error("Todos os fluxos (A–E) já foram criados (limite: 5)."); return; }
+  async function createVariant(target: Variant) {
+    if (existingVariants.includes(target)) {
+      onSelectVariant(target);
+      return;
+    }
     setCreating(true);
-    const { data: cons } = await supabase
-      .from("consultants").select("name").eq("id", consultantId).maybeSingle();
-    const baseName = (cons as any)?.name ? `Fluxo de ${(cons as any).name}` : "Fluxo";
-    const { error } = await (supabase as any).from("bot_flows").insert({
-      consultant_id: consultantId,
-      name: `${baseName} (${next})`,
-      is_active: true,
-      variant: next,
-      initial_delay_seconds: 0,
+    const { data, error } = await (supabase as any).rpc("ensure_bot_flow_variant", {
+      _consultant_id: consultantId,
+      _variant: target,
+      _source_variant: editingVariant,
     });
     setCreating(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`Fluxo ${next} criado`);
+    toast.success(`Fluxo ${target} criado`);
     await onChanged();
-    onSelectVariant(next);
+    onSelectVariant(target);
   }
 
   async function deleteVariant(v: Variant) {
