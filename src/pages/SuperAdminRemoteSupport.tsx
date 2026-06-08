@@ -10,11 +10,14 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, ShieldAlert, Check, X, Eye, Send, Play, Square, Loader2 } from "lucide-react";
+import {
+  ArrowLeft, ShieldAlert, Check, X, Eye, Send, Play, Square, Loader2,
+  Maximize2, Minimize2, Camera, Copy, Activity, MousePointer2, KeyboardIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { SupportSession, RemoteCommand, CommandResult } from "@/features/remote-support/types";
 import { acceptSession, endSession, operatorRequest, verifyCode } from "@/features/remote-support/api";
-import { createOperatorPeer, type RtcStage } from "@/features/remote-support/screenShare";
+import { createOperatorPeer, getInboundVideoFps, type RtcStage, type QualityLevel } from "@/features/remote-support/screenShare";
 
 interface ConsultantRow { id: string; name: string; license: string }
 
