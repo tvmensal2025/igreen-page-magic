@@ -794,9 +794,9 @@ export function AudioStudio({ userId }: { userId: string }) {
                 </Button>
               </div>
 
-              {audioUrl && (
+              {lastPublicUrl && (
                 <AudioWhatsAppPopover
-                  audioUrl={audioUrl}
+                  audioUrl={lastPublicUrl}
                   label={`${kindLabel} — ${cidade || "cidade"}`}
                   trigger={
                     <Button variant="outline" className="w-full h-10 text-xs gap-2 rounded-xl">
