@@ -832,8 +832,9 @@ function RemoteControlOverlay({
   };
 
   const onPointerLeave = () => {
-    if (cursorRef.current) cursorRef.current.style.opacity = "0";
-    // Se tinha drag em andamento, finaliza-o no último ponto conhecido.
+    // Mantém o cursor virtual visível mesmo quando o ponteiro sai do vídeo —
+    // ele só some quando a aba perde foco. Antes ficava invisível e dava a
+    // sensação de "controle desativado".
     const d = downInfo.current;
     if (d?.promoted) {
       sendCmd({ kind: "mouseUp", x: d.x, y: d.y, button: d.button });
