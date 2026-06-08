@@ -37,7 +37,28 @@ function toViewportXY(cmd: RemoteCommand): { x: number; y: number } {
 function elAt(x: number, y: number): Element | null {
   const el = document.elementFromPoint(x, y);
   if (!el || isProtected(el)) return null;
-  return el;
+  return normalizeInteractiveTarget(el);
+}
+
+const INTERACTIVE_SEL = [
+  "button", "a[href]", "input", "textarea", "select", "label",
+  "[role='button']", "[role='link']", "[role='menuitem']",
+  "[role='option']", "[role='tab']", "[role='checkbox']",
+  "[role='radio']", "[role='switch']", "[role='combobox']",
+  "[role='treeitem']", "[contenteditable='true']",
+  "[data-radix-collection-item]", "[data-state]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+/**
+ * Sobe a árvore a partir do alvo do `elementFromPoint` até achar o elemento
+ * interativo mais próximo. Resolve o caso clássico em que o ponteiro caiu em
+ * um `<span>` ou `<svg>` filho de um botão/Radix trigger, e o clique sintético
+ * no filho era ignorado pelo handler do pai.
+ */
+function normalizeInteractiveTarget(el: Element): Element {
+  const closest = (el as HTMLElement).closest?.(INTERACTIVE_SEL);
+  return closest ?? el;
 }
 
 function dispatchMouse(type: string, el: Element, x: number, y: number, button = 0) {
