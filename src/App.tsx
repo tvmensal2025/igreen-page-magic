@@ -34,6 +34,9 @@ const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
 import { CookieBanner } from "@/components/CookieBanner";
 import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
+import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportProvider";
+
+const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
 
 
 const queryClient = new QueryClient();
@@ -80,6 +83,7 @@ const App = () => (
               <Route path="/admin/bot-audit" element={<Navigate to="/admin/whatsapp-clients" replace />} />
 
               <Route path="/super-admin" element={<SuperAdmin />} />
+              <Route path="/super-admin/suporte" element={<SuperAdminRemoteSupport />} />
               <Route path="/assistente" element={<AssistentePage />} />
               <Route path="/crm" element={<CRMLandingPage />} />
               <Route path="/licenciado/preview" element={<LicenciadaPreview />} />
@@ -97,6 +101,7 @@ const App = () => (
             </Routes>
             <CookieBanner />
             <RechargeRequiredDialog />
+            <RemoteSupportProvider />
           </Suspense>
         </BrowserRouter>
         </PromptDialogProvider>

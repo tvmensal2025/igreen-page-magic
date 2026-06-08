@@ -5453,6 +5453,130 @@ export type Database = {
           },
         ]
       }
+      remote_support_codes: {
+        Row: {
+          attempts: number
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          id: string
+          max_attempts: number
+          rotates_at: string
+          session_id: string
+        }
+        Insert: {
+          attempts?: number
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          max_attempts?: number
+          rotates_at: string
+          session_id: string
+        }
+        Update: {
+          attempts?: number
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          max_attempts?: number
+          rotates_at?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remote_support_codes_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "remote_support_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      remote_support_logs: {
+        Row: {
+          action: string
+          actor: string
+          created_at: string
+          id: string
+          payload: Json | null
+          session_id: string
+          target: string | null
+        }
+        Insert: {
+          action: string
+          actor: string
+          created_at?: string
+          id?: string
+          payload?: Json | null
+          session_id: string
+          target?: string | null
+        }
+        Update: {
+          action?: string
+          actor?: string
+          created_at?: string
+          id?: string
+          payload?: Json | null
+          session_id?: string
+          target?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remote_support_logs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "remote_support_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      remote_support_sessions: {
+        Row: {
+          created_at: string
+          end_reason: string | null
+          ended_at: string | null
+          id: string
+          initiated_by: string
+          ip_operator: string | null
+          ip_requester: string | null
+          operator_id: string | null
+          requester_id: string
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          initiated_by?: string
+          ip_operator?: string | null
+          ip_requester?: string | null
+          operator_id?: string | null
+          requester_id: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          initiated_by?: string
+          ip_operator?: string | null
+          ip_requester?: string | null
+          operator_id?: string | null
+          requester_id?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rollout_alerts: {
         Row: {
           acknowledged: boolean
