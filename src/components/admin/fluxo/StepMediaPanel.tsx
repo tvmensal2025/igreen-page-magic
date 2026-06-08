@@ -690,7 +690,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
                   {m.url && m.kind === "audio" && <audio controls src={m.url} className="w-full h-8" onClick={e => e.stopPropagation()} />}
                   {m.url && m.kind === "image" && <img src={m.url} alt={m.label} className="w-full max-h-32 object-cover rounded" />}
                   {m.url && m.kind === "video" && <video controls src={m.url} className="w-full max-h-40 rounded" onClick={e => e.stopPropagation()} />}
-                  {m.slot_key && <div className="text-[10px] text-muted-foreground mt-1">já usada em: {m.slot_key}</div>}
+                  {m.slot_key && <div className="text-[10px] text-muted-foreground mt-1">já usada em: {prettyStepLabel(m.slot_key)}</div>}
                 </button>
               ))}
             </div>
