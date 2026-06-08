@@ -284,16 +284,16 @@ async function loginWithPlaywright(email, password) {
     }
     await snapStep(page, 'pos_submit');
 
-    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada (clique + fallback falharam)');
+    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada (clique + fallback falharam)', 'no_login_response');
     dbg(`[login] response /login status=${loginResponseData.status}${isHtmlResponse(loginResponseData) ? ' html' : ''}`);
     if (isHtmlResponse(loginResponseData)) {
-      throw new HttpError(502, `Cloudflare/WAF retornou HTML no /login (${loginResponseData.status}): ${String(loginResponseData.body?.raw || '').slice(0, 180)}`);
+      throw new HttpError(503, `Portal iGreen bloqueou o login automatizado (Cloudflare/WAF ${loginResponseData.status}). Use a importação manual enquanto o portal estiver bloqueando o worker.`, 'igreen_waf_blocked');
     }
     if (loginResponseData.status === 401 || loginResponseData.status === 403) {
-      throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${bodyPreview(loginResponseData.body)}`);
+      throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${bodyPreview(loginResponseData.body)}`, 'invalid_credentials');
     }
     if (loginResponseData.status >= 400) {
-      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${bodyPreview(loginResponseData.body)}`);
+      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${bodyPreview(loginResponseData.body)}`, 'login_api_error');
     }
 
     const data = loginResponseData.body;
