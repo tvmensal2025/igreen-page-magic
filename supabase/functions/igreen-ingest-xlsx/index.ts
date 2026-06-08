@@ -94,7 +94,7 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   }
   const rec: Record<string, unknown> = {
     phone_whatsapp: phone,
-    customer_origin: "igreen_extension",
+    customer_origin: "igreen_sync",
     phone_contact_confirmed: false,
   };
   const name = safeStr(pick(r, "Nome do Cliente", "Nome", "Cliente", "nomeCliente", "name"));
