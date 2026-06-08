@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import PendingApprovalDialog from "./PendingApprovalDialog";
 
 type Stage = "em_analise" | "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
 
