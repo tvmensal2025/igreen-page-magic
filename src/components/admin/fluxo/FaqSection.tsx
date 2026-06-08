@@ -48,6 +48,8 @@ type LibraryAudio = { id: string; label: string; url: string | null };
 
 export default function FaqSection({ flowId }: { flowId: string }) {
   const confirm = useConfirm();
+  const [userId, setUserId] = useState<string | null>(null);
+  const { isSuperAdmin } = useUserRole(userId);
   const [qas, setQas] = useState<QA[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [availableVideos, setAvailableVideos] = useState<LibraryVideo[]>([]);
@@ -57,6 +59,8 @@ export default function FaqSection({ flowId }: { flowId: string }) {
   const [search, setSearch] = useState("");
   const [seeding, setSeeding] = useState(false);
   const [seedingPack, setSeedingPack] = useState(false);
+
+  useEffect(() => { supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null)); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
