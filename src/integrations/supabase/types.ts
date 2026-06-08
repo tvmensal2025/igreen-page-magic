@@ -2349,6 +2349,66 @@ export type Database = {
         }
         Relationships: []
       }
+      consultant_network: {
+        Row: {
+          celular: string | null
+          cidade: string | null
+          codigo_igreen: string
+          consultant_id: string
+          created_at: string
+          gl_qualificados: number | null
+          gp_qualificados: number | null
+          graduacao: string | null
+          id: string
+          mes_ref: string | null
+          nivel: number | null
+          nome: string | null
+          patrocinador_codigo: string | null
+          raw_json: Json | null
+          source: string
+          uf: string | null
+          updated_at: string
+        }
+        Insert: {
+          celular?: string | null
+          cidade?: string | null
+          codigo_igreen: string
+          consultant_id: string
+          created_at?: string
+          gl_qualificados?: number | null
+          gp_qualificados?: number | null
+          graduacao?: string | null
+          id?: string
+          mes_ref?: string | null
+          nivel?: number | null
+          nome?: string | null
+          patrocinador_codigo?: string | null
+          raw_json?: Json | null
+          source?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Update: {
+          celular?: string | null
+          cidade?: string | null
+          codigo_igreen?: string
+          consultant_id?: string
+          created_at?: string
+          gl_qualificados?: number | null
+          gp_qualificados?: number | null
+          graduacao?: string | null
+          id?: string
+          mes_ref?: string | null
+          nivel?: number | null
+          nome?: string | null
+          patrocinador_codigo?: string | null
+          raw_json?: Json | null
+          source?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       consultant_presence: {
         Row: {
           consultant_id: string
