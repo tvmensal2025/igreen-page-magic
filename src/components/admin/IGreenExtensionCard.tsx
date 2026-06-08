@@ -181,7 +181,7 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
             <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada.</li>
             <li>No painel, clique em <b>Gerar token</b> e copie o token.</li>
             <li>Clique no icone da extensao, cole o token e clique em <b>Salvar token</b>.</li>
-            <li>Faca login em <code>app.igreenenergia.com.br</code> normalmente.</li>
+            <li>Faca login em <code>escritorio.igreenenergy.com.br</code> normalmente.</li>
             <li>Clique em <b>Sincronizar agora</b> na extensao.</li>
           </ol>
         </DialogContent>

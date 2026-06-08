@@ -5,8 +5,8 @@
   "description": "Sincroniza seus clientes do portal iGreen com o iGreen Cloud usando sua propria sessao logada.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
-    "https://app.igreenenergia.com.br/*",
-    "https://*.igreenenergia.com.br/*",
+    "https://escritorio.igreenenergy.com.br/*",
+    "https://*.igreenenergy.com.br/*",
     "https://zlzasfhcxcznaprrragl.supabase.co/*"
   ],
   "action": {
