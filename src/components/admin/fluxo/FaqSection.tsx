@@ -509,7 +509,22 @@ function QACard(props: {
           )}
           {props.onMoveUp && <Button size="icon" variant="ghost" onClick={props.onMoveUp}><ChevronUp className="w-4 h-4" /></Button>}
           {props.onMoveDown && <Button size="icon" variant="ghost" onClick={props.onMoveDown}><ChevronDown className="w-4 h-4" /></Button>}
-          <Button size="icon" variant="ghost" onClick={props.onDelete}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+          {isSuperAdmin && (
+            <Button
+              size="icon"
+              variant="ghost"
+              title={qa.is_public ? "Tornar privado" : "Tornar público (todos os consultores veem)"}
+              onClick={() => props.onUpdate({ is_public: !qa.is_public })}
+            >
+              {qa.is_public ? <Globe2 className="w-4 h-4 text-emerald-500" /> : <Lock className="w-4 h-4 text-muted-foreground" />}
+            </Button>
+          )}
+          {qa.is_public && !isSuperAdmin && (
+            <Badge variant="secondary" className="gap-1"><Globe2 className="w-3 h-3" /> Público</Badge>
+          )}
+          {!readOnly && (
+            <Button size="icon" variant="ghost" onClick={props.onDelete}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+          )}
         </div>
       </div>
 
