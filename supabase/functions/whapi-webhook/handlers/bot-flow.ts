@@ -1722,7 +1722,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const { data: personal } = await supabase
           .from("ai_media_library")
           .select("id, url, duration_sec")
-          .eq("consultant_id", customer.consultant_id)
+          .eq("consultant_id", mediaOwnerId)
           .eq("slot_key", m.slot_key)
           .eq("active", true).eq("is_draft", false)
           .order("send_order", { ascending: true })
