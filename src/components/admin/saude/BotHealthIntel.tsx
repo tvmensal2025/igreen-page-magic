@@ -219,22 +219,33 @@ export default function BotHealthIntel({ consultantId }: { consultantId: string 
             </TabsContent>
 
             <TabsContent value="ab" className="mt-3">
-              {!diag.kpis?.variants ? <Empty /> : (
-                <div className="grid grid-cols-3 gap-2">
-                  {(["A","B","C"] as const).map((v) => {
-                    const x = diag.kpis.variants[v] || { total: 0, approved: 0 };
-                    const rate = x.total ? Math.round((x.approved / x.total) * 1000) / 10 : 0;
-                    const labels: Record<string, string> = { A: "Áudio", B: "Sem áudio", C: "Vídeo" };
-                    return (
-                      <div key={v} className="border rounded-lg p-3 text-center">
-                        <div className="text-[10px] uppercase text-muted-foreground">{labels[v]}</div>
-                        <div className="text-xl font-bold">{rate}%</div>
-                        <div className="text-[10px] text-muted-foreground">{x.approved}/{x.total}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {!diag.kpis?.variants ? <Empty /> : (() => {
+                const variantData = diag.kpis.variants as Record<string, { total: number; approved: number }>;
+                const labels: Record<string, string> = {
+                  A: "Áudio", B: "Sem áudio", C: "Vídeo", D: "Botões/auto", E: "Custom",
+                };
+                // Mostra apenas variantes que têm dados, em ordem A→E.
+                const present = (["A", "B", "C", "D", "E"] as const).filter(
+                  (v) => variantData[v] && variantData[v].total > 0,
+                );
+                const shown = present.length > 0 ? present : (["A", "B", "C"] as const);
+                const cols = shown.length <= 3 ? "grid-cols-3" : shown.length === 4 ? "grid-cols-4" : "grid-cols-5";
+                return (
+                  <div className={`grid ${cols} gap-2`}>
+                    {shown.map((v) => {
+                      const x = variantData[v] || { total: 0, approved: 0 };
+                      const rate = x.total ? Math.round((x.approved / x.total) * 1000) / 10 : 0;
+                      return (
+                        <div key={v} className="border rounded-lg p-3 text-center">
+                          <div className="text-[10px] uppercase text-muted-foreground">{labels[v] || v}</div>
+                          <div className="text-xl font-bold">{rate}%</div>
+                          <div className="text-[10px] text-muted-foreground">{x.approved}/{x.total}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </TabsContent>
           </Tabs>
 

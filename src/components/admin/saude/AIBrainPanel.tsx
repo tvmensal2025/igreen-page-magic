@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Brain, DollarSign, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { aiOutputText, type AiDecisionOutput } from "@/lib/aiDecisionOutput";
 
 type Decision = {
   id: string;
@@ -14,7 +15,7 @@ type Decision = {
   tool_called: string | null;
   model: string;
   user_input: string | null;
-  ai_output: string | null;
+  ai_output: AiDecisionOutput;
   intent_detected: string | null;
   confidence: number | null;
   latency_ms: number | null;
@@ -167,9 +168,12 @@ export default function AIBrainPanel({ consultantId }: { consultantId: string })
                       {d.user_input && (
                         <div><span className="text-muted-foreground">Lead:</span> "{d.user_input}"</div>
                       )}
-                      {d.ai_output && (
-                        <div><span className="text-muted-foreground">IA:</span> "{d.ai_output}"</div>
-                      )}
+                      {(() => {
+                        const outText = aiOutputText(d.ai_output);
+                        return outText ? (
+                          <div><span className="text-muted-foreground">IA:</span> "{outText}"</div>
+                        ) : null;
+                      })()}
                     </div>
                   )}
                 </li>

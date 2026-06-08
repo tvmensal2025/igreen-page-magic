@@ -178,9 +178,19 @@ export function useMessages(
         return true;
       });
 
-      const firstTs = normalizeMessageTimestamp(unique[0]?.messageTimestamp);
-      const lastTs = normalizeMessageTimestamp(unique[unique.length - 1]?.messageTimestamp);
-      const newestFirst = firstTs >= lastTs;
+      // Detecta a direção do feed bruto comparando o PRIMEIRO PAR de timestamps
+      // DIFERENTES (não só os extremos). Comparar apenas first/last falha quando
+      // o lead manda várias mensagens no mesmo segundo: nesse caso firstTs===lastTs
+      // e o desempate ficava imprevisível, fazendo uma msg nova aparecer acima de
+      // uma anterior. Varrendo o primeiro par distinto, a direção é confiável mesmo
+      // com blocos de mensagens no mesmo segundo. Default newest-first (padrão
+      // Evolution/Whapi) quando todos os timestamps são iguais.
+      let newestFirst = true;
+      for (let i = 0; i < unique.length - 1; i++) {
+        const a = normalizeMessageTimestamp(unique[i]?.messageTimestamp);
+        const b = normalizeMessageTimestamp(unique[i + 1]?.messageTimestamp);
+        if (a !== b) { newestFirst = a > b; break; }
+      }
 
       const mapped = unique
         .map((msg, sourceIndex) => ({ ...mapMessage(msg), sourceIndex }))

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, MessagesSquare, Library, Loader2, Brain, Mic, FileText, BookOpen, Workflow, Activity } from "lucide-react";
+import { Bot, MessagesSquare, Library, Loader2, Brain, Mic, FileText, BookOpen, Workflow, HeartPulse } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
@@ -10,8 +10,9 @@ import { RoteiroColumn } from "./RoteiroColumn";
 import { AIDecisionsPanel } from "./AIDecisionsPanel";
 import { SlotsPanel } from "./SlotsPanel";
 import { BotTelemetryStrip } from "./BotTelemetryStrip";
+import BotHealthDashboard from "@/components/admin/saude/BotHealthDashboard";
 
-type SubTab = "atendimentos" | "agente" | "decisoes";
+type SubTab = "atendimentos" | "agente" | "decisoes" | "desempenho";
 type AgenteSub = "audios" | "midias" | "roteiro";
 
 export function AIAgentTab({ userId }: { userId: string }) {
@@ -133,6 +134,7 @@ export function AIAgentTab({ userId }: { userId: string }) {
     { id: "atendimentos", label: "Atendimentos", icon: MessagesSquare },
     { id: "agente", label: "Agente & Mídias", icon: Library },
     { id: "decisoes", label: "Decisões da IA", icon: Brain },
+    { id: "desempenho", label: "Desempenho & Saúde", icon: HeartPulse },
   ];
 
   return (
@@ -159,13 +161,6 @@ export function AIAgentTab({ userId }: { userId: string }) {
             Atendimento humanizado 24/7. Desligar bloqueia a IA para leads atuais e futuros.
           </p>
         </div>
-        <Link
-          to="/admin/saude-bot"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 text-xs font-medium transition-colors"
-        >
-          <Activity className="w-3.5 h-3.5" />
-          Saúde do bot
-        </Link>
         <Link
           to="/admin/fluxos"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors"
@@ -248,6 +243,11 @@ export function AIAgentTab({ userId }: { userId: string }) {
           </div>
         )}
         {sub === "decisoes" && <AIDecisionsPanel userId={userId} />}
+        {sub === "desempenho" && (
+          <div className="h-full overflow-y-auto pr-1">
+            <BotHealthDashboard userId={userId} />
+          </div>
+        )}
       </div>
     </div>
   );

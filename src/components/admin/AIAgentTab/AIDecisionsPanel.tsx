@@ -4,6 +4,7 @@ import { Brain, Clock, ArrowRight, AlertCircle, CheckCircle2, Loader2, MessageSq
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
+import { aiOutputText } from "@/lib/aiDecisionOutput";
 
 interface Decision {
   id: string;
@@ -125,11 +126,14 @@ export function AIDecisionsPanel({ userId }: { userId: string }) {
                     💭 {d.reasoning}
                   </p>
                 )}
-                {d.ai_output?.message && (
-                  <p className="text-xs text-foreground mt-1 bg-primary/5 border-l-2 border-primary/40 pl-2 py-1 rounded-r">
-                    {d.ai_output.message}
-                  </p>
-                )}
+                {(() => {
+                  const outText = aiOutputText(d.ai_output);
+                  return outText ? (
+                    <p className="text-xs text-foreground mt-1 bg-primary/5 border-l-2 border-primary/40 pl-2 py-1 rounded-r">
+                      {outText}
+                    </p>
+                  ) : null;
+                })()}
                 <div className="flex items-center gap-2 mt-1.5">
                   {d.latency_ms != null && (
                     <span className="text-[10px] text-muted-foreground">⚡ {d.latency_ms}ms</span>
