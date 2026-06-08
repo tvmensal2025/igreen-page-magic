@@ -74,7 +74,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         .from("ai_media_library").select("id, label, url")
         .eq("kind", "audio").eq("active", true).not("url", "is", null)
         .order("created_at", { ascending: false }),
-      supabase.from("bot_flow_qa").select("*").eq("flow_id", flowId).order("position"),
+      supabase.from("bot_flow_qa").select("*").or(`flow_id.eq.${flowId},is_public.eq.true`).order("position"),
     ]);
     setSlots((slotsRow as Slot[]) || []);
     setAvailableVideos(((videoRows as LibraryVideo[]) || []).filter((v) => !!v.url));
