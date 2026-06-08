@@ -304,6 +304,9 @@ const SuperAdmin = () => {
             </div>
           </div>
           <div className="flex items-center gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => window.location.assign("/super-admin/suporte")} className="gap-2">
+              <Shield className="w-4 h-4" /> Suporte Remoto
+            </Button>
             <ThemeToggle />
             <Button variant="ghost" size="icon" onClick={loadConsultants} disabled={loadingData} className="text-muted-foreground hover:text-foreground">
               <RefreshCw className={`w-4 h-4 ${loadingData ? "animate-spin" : ""}`} />
