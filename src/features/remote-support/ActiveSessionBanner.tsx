@@ -28,7 +28,7 @@ function fmtDuration(ms: number) {
 
 /** Banner fixo enquanto há uma sessão ativa/pending. Mostra o código rotativo, timer e ações. */
 export function ActiveSessionBanner({
-  session, code, codeExpiresAt, sharing, paused,
+  session, code, codeExpiresAt, sharing, paused, shareSurface,
   onStartShare, onTogglePause, onEnd,
 }: Props) {
   const [remaining, setRemaining] = useState(0);
