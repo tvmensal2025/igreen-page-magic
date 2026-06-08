@@ -44,9 +44,24 @@ function dispatchMouse(type: string, el: Element, x: number, y: number, button =
   const ev = new MouseEvent(type, {
     bubbles: true, cancelable: true, view: window,
     clientX: x, clientY: y, screenX: x, screenY: y,
-    button, buttons: type === "mouseup" ? 0 : 1,
+    button, buttons: type === "mouseup" || type === "click" ? 0 : 1,
   });
   el.dispatchEvent(ev);
+}
+
+/** Dispara PointerEvent quando suportado — essencial para Radix/shadcn (Select, Dropdown, Dialog, Slider…). */
+function dispatchPointer(type: string, el: Element, x: number, y: number, button = 0, isDown = false) {
+  if (typeof PointerEvent === "undefined") return;
+  try {
+    const ev = new PointerEvent(type, {
+      bubbles: true, cancelable: true, view: window,
+      clientX: x, clientY: y, screenX: x, screenY: y,
+      button, buttons: isDown ? 1 : 0,
+      pointerId: 1, pointerType: "mouse", isPrimary: true,
+      width: 1, height: 1, pressure: isDown ? 0.5 : 0,
+    });
+    el.dispatchEvent(ev);
+  } catch { /* fallback silencioso */ }
 }
 
 function focusable(el: Element | null): HTMLElement | null {
