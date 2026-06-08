@@ -144,7 +144,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
       const q = search.toLowerCase();
       return (c.name || "").toLowerCase().includes(q) || (c.phone_whatsapp || "").includes(q);
     });
-    const out: Record<Stage, PosVendaCustomer[]> = { em_analise: [], aprovado: [], reprovado: [], d30: [], d60: [], d90: [], d120: [] };
+    const out: Record<Stage, PosVendaCustomer[]> = { em_analise: [], espera: [], aprovado: [], reprovado: [], d30: [], d60: [], d90: [], d120: [] };
     for (const c of filtered) out[computeStage(c)].push(c);
     return out;
   }, [customers, search]);
