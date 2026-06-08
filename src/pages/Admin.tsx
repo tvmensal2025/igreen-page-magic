@@ -284,7 +284,7 @@ const AdminContent = () => {
                 onClearAll={clearAll}
                 onAction={(n) => {
                   if (n.type === "new_lead" || n.type === "deal_moved") setActiveTab("crm");
-                  else if (n.type === "devolutiva" || n.type === "status_change" || n.type === "new_customer") setActiveTab("clientes");
+                  else if (n.type === "devolutiva" || n.type === "status_change" || n.type === "new_customer") setActiveTab("crm-clientes");
                 }}
               />
             </Suspense>
