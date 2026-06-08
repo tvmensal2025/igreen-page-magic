@@ -70,6 +70,11 @@ export function ActiveSessionBanner({
             <>
               <b>Suporte ATIVO</b> — sua tela {sharing ? "está sendo compartilhada" : "não está sendo compartilhada ainda"}.
               {paused && <span className="ml-2 px-2 py-0.5 rounded bg-yellow-400 text-black text-xs font-semibold">CONTROLE PAUSADO</span>}
+              {sharing && shareSurface && shareSurface !== "browser" && (
+                <span className="ml-2 px-2 py-0.5 rounded bg-yellow-400 text-black text-xs font-semibold">
+                  Compartilhamento de {shareSurface === "monitor" ? "tela inteira" : "janela"} — cliques podem cair fora do alvo. Prefira compartilhar a aba.
+                </span>
+              )}
             </>
           )}
           {session.status === "requested" && <b>Aguardando o suporte aceitar seu pedido…</b>}
