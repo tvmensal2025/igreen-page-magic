@@ -207,11 +207,16 @@ export default function SuperAdminRemoteSupport() {
 
 /* ============== Session workbench (player + commands) ============== */
 
-const PREFS_KEY = "remote_support_prefs_v1";
+const PREFS_KEY = "remote_support_prefs_v2";
 type Prefs = { control: boolean; quality: QualityLevel; sidePanel: boolean };
 function loadPrefs(): Prefs {
-  try { return { control: true, quality: "auto", sidePanel: true, ...JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") }; }
-  catch { return { control: true, quality: "auto", sidePanel: true }; }
+  // v2 sempre força control=true por padrão; preferências antigas (v1) que
+  // tinham control=false ficavam grudadas e davam a impressão de "mouse
+  // desativado". Migramos silenciosamente.
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
+    return { control: true, quality: "auto", sidePanel: true, ...raw, control: raw.control !== false };
+  } catch { return { control: true, quality: "auto", sidePanel: true }; }
 }
 function savePrefs(p: Prefs) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {} }
 
