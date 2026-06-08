@@ -2,8 +2,10 @@ import { useState } from "react";
 import {
   BarChart3,
   LayoutGrid,
+  UserCheck,
   Flame,
   Users,
+  Database,
   ClipboardList,
   Handshake,
   Network,
@@ -18,6 +20,7 @@ import {
 export type AdminTabId =
   | "dashboard"
   | "crm"
+  | "crm-clientes"
   | "conversao"
   | "clientes"
   | "captacao"
@@ -46,9 +49,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Visão Geral",
     items: [
       { id: "dashboard", label: "Dashboard", icon: BarChart3 },
-      { id: "crm", label: "CRM", icon: LayoutGrid },
+      { id: "crm", label: "CRM Leads", icon: LayoutGrid },
+      { id: "crm-clientes", label: "CRM Clientes", icon: UserCheck },
       { id: "conversao", label: "Conversão", icon: Flame },
-      { id: "clientes", label: "Clientes", icon: Users },
+      { id: "clientes", label: "Clientes", icon: Database },
     ],
   },
   {

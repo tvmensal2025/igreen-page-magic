@@ -30,6 +30,7 @@ const NotificationCenter = lazy(() => import("@/components/admin/NotificationCen
 const AIChatPanel = lazy(() => import("@/components/admin/AIChatPanel").then(m => ({ default: m.AIChatPanel })));
 const WhatsAppTab = lazy(() => import("@/components/whatsapp/WhatsAppTab").then(m => ({ default: m.WhatsAppTab })));
 const CrmTabs = lazy(() => import("@/components/whatsapp/CrmTabs").then(m => ({ default: m.CrmTabs })));
+const PosVendaKanban = lazy(() => import("@/components/whatsapp/PosVendaKanban"));
 
 const CustomerManager = lazy(() => import("@/components/whatsapp/CustomerManager").then(m => ({ default: m.CustomerManager })));
 
@@ -77,7 +78,7 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao") return tab as AdminTabId;
+      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao") return tab as AdminTabId;
     }
     return "dashboard";
   });
@@ -213,7 +214,8 @@ const AdminContent = () => {
   // Labels e subtítulos por aba — alimenta o AppTopbar
   const TAB_META: Record<AdminTabId, { title: string; subtitle: string }> = {
     "dashboard": { title: "Dashboard", subtitle: "Resumo operacional do dia" },
-    "crm": { title: "CRM", subtitle: "Funil de oportunidades e relacionamento" },
+    "crm": { title: "CRM Leads", subtitle: "Funil de leads do WhatsApp até finalizar cadastro" },
+    "crm-clientes": { title: "CRM Clientes", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
     "conversao": { title: "Conversão", subtitle: "Análise de funil e gargalos" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
     "captacao": { title: "Captação", subtitle: "Novos leads e originação" },
@@ -292,7 +294,7 @@ const AdminContent = () => {
       <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSave}>
 
       {/* Content */}
-      <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm"
+      <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm" || activeTab === "crm-clientes"
         ? "w-full flex-1 min-h-0 px-2 sm:px-3 py-2 overflow-hidden flex flex-col gap-2"
         : "flex-1 min-h-0 overflow-y-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6 overflow-x-hidden"}>
         {/* OCR Review Banner */}
@@ -321,6 +323,12 @@ const AdminContent = () => {
 
           {userId && activeTab === "crm" && (
             <CrmTabs consultantId={userId} instanceName={instanceName} />
+          )}
+
+          {userId && activeTab === "crm-clientes" && (
+            <div className="flex-1 min-h-0 overflow-y-auto px-1">
+              <PosVendaKanban consultantId={userId} />
+            </div>
           )}
 
 
