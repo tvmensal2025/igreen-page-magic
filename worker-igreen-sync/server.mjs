@@ -1,4 +1,4 @@
-// server.mjs — igreen-sync-worker v13
+// server.mjs — igreen-sync-worker v14
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
@@ -217,6 +217,38 @@ async function loginWithPlaywright(email, password) {
     }, captchaToken);
     await snapStep(page, 'injetou_captcha');
 
+    // Confirma se o widget aparenta estar marcado; se não, clica no checkbox
+    // antes de tentar o "Entrar". Cobre o caso em que apenas injetar o token
+    // no textarea não dispara o callback do reCAPTCHA.
+    dbg('[captcha] token injetado; verificando checkbox');
+    const tokenPresent = await page.evaluate(() => {
+      const ta = document.querySelector('textarea#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+      return !!(ta && ta.value && ta.value.length > 20);
+    }).catch(() => false);
+
+    if (!tokenPresent) {
+      dbg('[captcha] widget ainda não marcado; clicando checkbox antes de Entrar');
+      try {
+        const frame = page.frames().find(f => /recaptcha\/api2\/anchor/.test(f.url()));
+        if (frame) {
+          await frame.click('#recaptcha-anchor, .recaptcha-checkbox', { timeout: 5000 }).catch(() => {});
+        } else {
+          await page.click('.g-recaptcha, #g-recaptcha, iframe[src*="recaptcha/api2/anchor"]', { timeout: 5000 }).catch(() => {});
+        }
+        await page.waitForTimeout(2500);
+        // Reinjeta o token caso o clique tenha resetado o widget
+        await page.evaluate((token) => {
+          const ta = document.querySelector('textarea#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+          if (ta) { ta.value = token; ta.innerHTML = token; }
+        }, captchaToken).catch(() => {});
+      } catch (e) {
+        dbg(`[captcha] clique no checkbox falhou: ${e.message}`);
+      }
+      await snapStep(page, 'pos_click_captcha');
+    } else {
+      dbg('[captcha] widget aparenta estar marcado; seguindo para Entrar');
+    }
+
     dbg('[login] clicando "Entrar"');
     const [clickedLoginResp] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/v1/login'), { timeout: 15000 }).catch(() => null),
@@ -359,7 +391,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v13',
+        mode: 'tor+playwright+2captcha-v14',
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
       });
@@ -399,7 +431,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v13 (tor+playwright+2captcha+context-fallback) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v14 (tor+playwright+2captcha+captcha-click+context-fallback) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
