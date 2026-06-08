@@ -20,8 +20,9 @@ import { ptBR } from "date-fns/locale";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import PendingApprovalDialog from "./PendingApprovalDialog";
 import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
+import PosVendaAutoConfigDialog from "./PosVendaAutoConfigDialog";
 
-type Stage = "em_analise" | "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
+type Stage = "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
 
 interface PosVendaCustomer {
   id: string;
@@ -41,8 +42,7 @@ interface PosVendaCustomer {
 }
 
 const STAGES: { key: Stage; label: string; badge: string; bar: string; dot: string }[] = [
-  { key: "em_analise", label: "Em análise", badge: "bg-amber-500/15 text-amber-300 border-amber-500/40",   bar: "bg-amber-500",   dot: "bg-amber-400" },
-  { key: "espera",     label: "Em Espera",  badge: "bg-sky-500/15 text-sky-300 border-sky-500/40",         bar: "bg-sky-500",     dot: "bg-sky-400" },
+  { key: "espera",     label: "Aguardando Classificação", badge: "bg-amber-500/15 text-amber-300 border-amber-500/40",   bar: "bg-amber-500",   dot: "bg-amber-400" },
   { key: "aprovado",   label: "Aprovado",   badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/50", bar: "bg-emerald-500", dot: "bg-emerald-400" },
   { key: "reprovado",  label: "Reprovado",  badge: "bg-rose-500/20 text-rose-300 border-rose-500/50",      bar: "bg-rose-500",    dot: "bg-rose-400" },
   { key: "d30",        label: "30 dias",    badge: "bg-lime-500/15 text-lime-300 border-lime-500/40",      bar: "bg-lime-500",    dot: "bg-lime-400" },
@@ -57,10 +57,10 @@ function daysSince(iso: string | null): number | null {
 }
 
 function computeStage(c: PosVendaCustomer): Stage {
-  if (c.pos_venda_stage) return c.pos_venda_stage;
+  if (c.pos_venda_stage && c.pos_venda_stage !== ("em_analise" as Stage)) return c.pos_venda_stage;
   if (/reprov|cancel/i.test(c.andamento_igreen || "") || ["rejected","cancelled","canceled"].includes(c.status)) return "reprovado";
   const d = daysSince(c.portal_submitted_at);
-  if (d == null) return "em_analise";
+  if (d == null) return "espera";
   if (d >= 120) return "d120";
   if (d >= 90)  return "d90";
   if (d >= 60)  return "d60";
@@ -147,7 +147,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
       const q = search.toLowerCase();
       return (c.name || "").toLowerCase().includes(q) || (c.phone_whatsapp || "").includes(q);
     });
-    const out: Record<Stage, PosVendaCustomer[]> = { em_analise: [], espera: [], aprovado: [], reprovado: [], d30: [], d60: [], d90: [], d120: [] };
+    const out: Record<Stage, PosVendaCustomer[]> = { espera: [], aprovado: [], reprovado: [], d30: [], d60: [], d90: [], d120: [] };
     for (const c of filtered) out[computeStage(c)].push(c);
     return out;
   }, [customers, search]);
@@ -224,17 +224,20 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl">
-          <RefreshCw className={`w-4 h-4 ${recomputing ? "animate-spin" : ""}`} />
-          Recalcular colunas (auto)
-        </Button>
+        <div className="flex gap-2">
+          <PosVendaAutoConfigDialog consultantId={consultantId} />
+          <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl">
+            <RefreshCw className={`w-4 h-4 ${recomputing ? "animate-spin" : ""}`} />
+            Recalcular colunas (auto)
+          </Button>
+        </div>
       </div>
 
 
       {loading ? (
         <div className="text-center py-12 text-sm text-muted-foreground">Carregando…</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
           {STAGES.map((stage) => (
             <div
               key={stage.key}
