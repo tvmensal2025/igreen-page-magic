@@ -64,7 +64,7 @@ export async function logAction(
   payload?: Record<string, unknown> | null,
 ) {
   try {
-    await (supabase.from("remote_support_logs" as never) as never).insert({
+    await (supabase as any).from("remote_support_logs").insert({
       session_id: sessionId, actor, action, target: target ?? null, payload: payload ?? null,
     });
   } catch (e) {
