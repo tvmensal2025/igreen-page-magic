@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "iGreen Sync",
-  "version": "1.0.0",
-  "description": "Sincroniza seus clientes do portal iGreen com o iGreen Cloud usando sua propria sessao logada.",
-  "permissions": ["storage", "alarms"],
+  "version": "1.1.0",
+  "description": "Baixa automaticamente os Excel de clientes e da rede do portal iGreen e envia para o iGreen Cloud.",
+  "permissions": ["storage", "alarms", "tabs", "scripting", "downloads"],
   "host_permissions": [
     "https://escritorio.igreenenergy.com.br/*",
     "https://*.igreenenergy.com.br/*",
