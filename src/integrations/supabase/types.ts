@@ -3080,6 +3080,7 @@ export type Database = {
           pending_flow_switch: string | null
           pending_inbound_at: string | null
           pending_inbound_message_id: string | null
+          pending_snoozed_until: string | null
           phone_contact_confirmed: boolean
           phone_landline: string | null
           phone_whatsapp: string
@@ -3101,6 +3102,7 @@ export type Database = {
           portal2_otp_validated_at: string | null
           portal2_status: string | null
           pos_venda_manual: boolean
+          pos_venda_pending_stage: string | null
           pos_venda_reason: string | null
           pos_venda_stage: string | null
           possui_procurador: boolean | null
@@ -3267,6 +3269,7 @@ export type Database = {
           pending_flow_switch?: string | null
           pending_inbound_at?: string | null
           pending_inbound_message_id?: string | null
+          pending_snoozed_until?: string | null
           phone_contact_confirmed?: boolean
           phone_landline?: string | null
           phone_whatsapp: string
@@ -3288,6 +3291,7 @@ export type Database = {
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
           pos_venda_manual?: boolean
+          pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
           pos_venda_stage?: string | null
           possui_procurador?: boolean | null
@@ -3454,6 +3458,7 @@ export type Database = {
           pending_flow_switch?: string | null
           pending_inbound_at?: string | null
           pending_inbound_message_id?: string | null
+          pending_snoozed_until?: string | null
           phone_contact_confirmed?: boolean
           phone_landline?: string | null
           phone_whatsapp?: string
@@ -3475,6 +3480,7 @@ export type Database = {
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
           pos_venda_manual?: boolean
+          pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
           pos_venda_stage?: string | null
           possui_procurador?: boolean | null
@@ -6246,6 +6252,10 @@ export type Database = {
       confirm_media_send: {
         Args: { p_ok: boolean; p_res_id: string }
         Returns: undefined
+      }
+      confirm_pending_classification: {
+        Args: { _action: string; _customer_id: string }
+        Returns: Json
       }
       consume_gemini_token: {
         Args: { p_consultant: string; p_tokens?: number }

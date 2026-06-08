@@ -18,8 +18,9 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import PendingApprovalDialog from "./PendingApprovalDialog";
 
-type Stage = "em_analise" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
+type Stage = "em_analise" | "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
 
 interface PosVendaCustomer {
   id: string;
@@ -34,10 +35,13 @@ interface PosVendaCustomer {
   pos_venda_stage: Stage | null;
   pos_venda_manual: boolean;
   pos_venda_reason: string | null;
+  pos_venda_pending_stage: string | null;
+  pending_snoozed_until: string | null;
 }
 
 const STAGES: { key: Stage; label: string; color: string }[] = [
   { key: "em_analise", label: "Em análise", color: "bg-slate-500/10 text-slate-300 border-slate-500/20" },
+  { key: "espera",    label: "Em Espera", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
   { key: "aprovado",  label: "Aprovado",  color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
   { key: "reprovado", label: "Reprovado", color: "bg-red-500/10 text-red-500 border-red-500/20" },
   { key: "d30",       label: "30 dias",   color: "bg-sky-500/10 text-sky-500 border-sky-500/20" },
@@ -83,7 +87,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
     setLoading(true);
     let q = supabase
       .from("customers")
-      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,registered_by_igreen_id,registered_by_name")
+      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
       .eq("customer_origin", "igreen_sync")
       .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
 
@@ -141,7 +145,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
       const q = search.toLowerCase();
       return (c.name || "").toLowerCase().includes(q) || (c.phone_whatsapp || "").includes(q);
     });
-    const out: Record<Stage, PosVendaCustomer[]> = { em_analise: [], aprovado: [], reprovado: [], d30: [], d60: [], d90: [], d120: [] };
+    const out: Record<Stage, PosVendaCustomer[]> = { em_analise: [], espera: [], aprovado: [], reprovado: [], d30: [], d60: [], d90: [], d120: [] };
     for (const c of filtered) out[computeStage(c)].push(c);
     return out;
   }, [customers, search]);
@@ -193,6 +197,8 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
 
   return (
     <div className="space-y-4">
+      <PendingApprovalDialog consultantId={consultantId} onResolved={load} />
+
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <Input
           placeholder="Buscar por nome ou telefone..."

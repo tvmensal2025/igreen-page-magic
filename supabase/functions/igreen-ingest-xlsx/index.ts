@@ -94,7 +94,7 @@ function buildCustomerRecord(r: Record<string, unknown>): Record<string, unknown
   }
   const rec: Record<string, unknown> = {
     phone_whatsapp: phone,
-    customer_origin: "igreen_extension",
+    customer_origin: "igreen_sync",
     phone_contact_confirmed: false,
   };
   const name = safeStr(pick(r, "Nome do Cliente", "Nome", "Cliente", "nomeCliente", "name"));
@@ -262,9 +262,18 @@ Deno.serve(async (req) => {
         const ex = existingMap.get(String(r.phone_whatsapp));
         if (ex && ex.conversation_step && ex.conversation_step !== "complete") delete r.status;
       }
+      // Para NOVOS clientes: parquear em "espera" + calcular pending_stage (popup)
+      const computePending = (rec: Record<string, unknown>): string => {
+        const andamento = String(rec.andamento_igreen || "").toLowerCase();
+        const status = String(rec.status || "").toLowerCase();
+        if (/reprov|cancel/.test(andamento) || ["rejected", "cancelled", "canceled"].includes(status)) return "reprovado";
+        if (andamento.includes("devolutiva") || status === "devolutiva") return "devolutiva";
+        return "aprovado";
+      };
+      const errorsDetail: Array<{ phone: string; codigo: string | null; motivo: string }> = [];
       let upserted = 0, errors = 0;
       const lastError: { msg?: string } = {};
-      // UPDATE existentes
+      // UPDATE existentes (NUNCA toca pos_venda_stage / pending — sao decisao do consultor)
       for (const r of recs) {
         const ex = existingMap.get(String(r.phone_whatsapp));
         if (!ex) continue;
@@ -273,27 +282,36 @@ Deno.serve(async (req) => {
         delete patch.is_test_lead; delete patch.is_sandbox;
         delete patch.customer_origin; delete patch.phone_contact_confirmed;
         const { error } = await supabase.from("customers").update(patch).eq("id", ex.id);
-        if (error) { errors++; lastError.msg = error.message; console.error("customers update", error.message); }
-        else upserted++;
+        if (error) {
+          errors++; lastError.msg = error.message;
+          if (errorsDetail.length < 50) errorsDetail.push({ phone: String(r.phone_whatsapp), codigo: (r.igreen_code as string) || null, motivo: error.message });
+          console.error("customers update", error.message);
+        } else upserted++;
       }
-      // INSERT novos em lotes
+      // INSERT novos em lotes — parqueia em "espera" + pending_stage
       const news = recs.filter((r) => !existingMap.has(String(r.phone_whatsapp)));
+      for (const r of news) {
+        r.pos_venda_stage = "espera";
+        r.pos_venda_manual = true;
+        r.pos_venda_pending_stage = computePending(r);
+      }
       for (let i = 0; i < news.length; i += 100) {
         const batch = news.slice(i, i + 100);
         const { data, error } = await supabase.from("customers").insert(batch).select("id");
         if (error) {
-          // tenta linha a linha pra nao perder tudo por causa de 1 conflito
           lastError.msg = error.message;
           console.error("customers insert batch", error.message);
           for (const row of batch) {
             const { data: one, error: e2 } = await supabase.from("customers").insert(row).select("id");
-            if (e2) { errors++; lastError.msg = e2.message; }
-            else upserted += one?.length || 0;
+            if (e2) {
+              errors++; lastError.msg = e2.message;
+              if (errorsDetail.length < 50) errorsDetail.push({ phone: String(row.phone_whatsapp), codigo: (row.igreen_code as string) || null, motivo: e2.message });
+            } else upserted += one?.length || 0;
           }
         } else upserted += data?.length || 0;
       }
       if (!(result.clientes as { swapped?: boolean } | undefined)?.swapped) {
-        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped, last_error: lastError.msg || null };
+        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped, last_error: lastError.msg || null, errors_detail: errorsDetail };
       }
     }
 
