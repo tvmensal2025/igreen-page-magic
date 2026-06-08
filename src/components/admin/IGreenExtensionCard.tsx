@@ -179,10 +179,10 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
             <li>Abra <code>chrome://extensions</code> no Chrome (ou Edge, Brave, Opera).</li>
             <li>Ative o <b>Modo desenvolvedor</b> (canto superior direito).</li>
             <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada.</li>
-            <li>No painel, clique em <b>Gerar token</b> e copie o token.</li>
+            <li>No painel aqui, clique em <b>Gerar token</b> e copie o token.</li>
             <li>Clique no icone da extensao, cole o token e clique em <b>Salvar token</b>.</li>
-            <li>Faca login em <code>escritorio.igreenenergy.com.br</code> normalmente.</li>
-            <li>Clique em <b>Sincronizar agora</b> na extensao.</li>
+            <li>Em outra aba do mesmo navegador, faca login em <code>escritorio.igreenenergy.com.br</code>.</li>
+            <li>Volte na extensao e clique em <b>Sincronizar agora</b>. Ela vai abrir <code>/mapa-clientes</code> e <code>/mapa-rede</code>, clicar nos botoes "Exportar Excel" e enviar tudo para o iGreen Cloud automaticamente.</li>
           </ol>
         </DialogContent>
       </Dialog>
