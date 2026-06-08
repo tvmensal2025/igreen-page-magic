@@ -140,7 +140,7 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
     setSyncingDashboard(true);
     try {
       const res: SyncResult = await requestExtSync();
-      if (!res.ok) {
+      if (res.ok === false) {
         if (res.reason === "no_extension") {
           setExtDialogMsg("Não detectamos a extensão iGreen Sync neste navegador. Instale a extensão para sincronizar seus clientes e rede com 1 clique.");
           setExtDialog("no_extension");
@@ -264,15 +264,6 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
 
   return (
     <div ref={dashboardRef} className="space-y-6">
-      {sharedAccountCount > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-amber-200/90">
-            <strong className="text-amber-300">Conta iGreen compartilhada</strong> com {sharedAccountCount} outro{sharedAccountCount > 1 ? "s" : ""} consultor{sharedAccountCount > 1 ? "es" : ""}.
-            Cada consultor vê apenas seus próprios clientes no painel — a sincronização não afeta os dados dos outros.
-          </div>
-        </div>
-      )}
 
       {/* TOOLBAR */}
       <div className="flex items-center justify-between gap-1.5 flex-wrap p-1.5 rounded-xl bg-card/40 border border-border/40 backdrop-blur">
@@ -337,24 +328,39 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
       <RetentionCard customers={filteredMetrics?.filteredCustomers} />
 
 
-      {/* Credentials Dialog */}
-      <Dialog open={showCredentialsDialog} onOpenChange={setShowCredentialsDialog}>
+      {/* Extensão iGreen Sync — diálogos de status */}
+      <Dialog open={extDialog !== null} onOpenChange={(o) => !o && setExtDialog(null)}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><KeyRound className="w-5 h-5 text-primary" />Conectar ao Portal iGreen</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">Informe suas credenciais do portal iGreen para sincronizar seus clientes automaticamente.</p>
-          <div className="space-y-4 mt-2">
-            <div><Label htmlFor="cred-email">Email do Portal</Label><Input id="cred-email" type="email" placeholder="seu@email.com" value={credForm.email} onChange={(e) => setCredForm(prev => ({ ...prev, email: e.target.value }))} /></div>
-            <div>
-              <Label htmlFor="cred-password">Senha do Portal</Label>
-              <div className="relative">
-                <Input id="cred-password" type={showCredPassword ? "text" : "password"} placeholder="••••••••" value={credForm.password} onChange={(e) => setCredForm(prev => ({ ...prev, password: e.target.value }))} />
-                <button type="button" onClick={() => setShowCredPassword(!showCredPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  {showCredPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-                </button>
-              </div>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {extDialog === "not_logged_in" ? <KeyRound className="w-5 h-5 text-primary" /> : <Chrome className="w-5 h-5 text-primary" />}
+              {extDialog === "no_extension" && "Instale a extensão iGreen Sync"}
+              {extDialog === "no_token" && "Extensão sem pareamento"}
+              {extDialog === "not_logged_in" && "Faça login no escritório iGreen"}
+              {extDialog === "failed" && "Falha na sincronização"}
+            </DialogTitle>
+            <DialogDescription className="pt-2">{extDialogMsg}</DialogDescription>
+          </DialogHeader>
+          {extDialog === "not_logged_in" && (
+            <div className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/40 p-3">
+              <strong>Como resolver:</strong> abra <code>escritorio.igreenenergy.com.br</code> em outra aba, faça login (resolva o captcha se aparecer) e volte aqui para clicar em <b>Sincronizar</b> novamente.
             </div>
-            <Button className="w-full" onClick={handleSaveCredentialsAndSync} disabled={!credForm.email || !credForm.password}><RefreshCw className="w-4 h-4 mr-2" />Conectar e Sincronizar</Button>
-          </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            {extDialog === "not_logged_in" && (
+              <Button asChild>
+                <a href="https://escritorio.igreenenergy.com.br/" target="_blank" rel="noreferrer">
+                  <ExternalLink className="w-4 h-4 mr-2" /> Abrir escritório iGreen
+                </a>
+              </Button>
+            )}
+            {(extDialog === "no_extension" || extDialog === "no_token") && (
+              <Button onClick={() => { setExtDialog(null); window.location.hash = "#dados"; }}>
+                <Chrome className="w-4 h-4 mr-2" /> Ir para a extensão
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setExtDialog(null)}>Fechar</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
