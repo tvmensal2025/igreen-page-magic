@@ -274,6 +274,7 @@ export function AudioStudio({ userId }: { userId: string }) {
   const [publicAudios, setPublicAudios] = useState<AudioRow[]>([]);
   const [allAudios, setAllAudios] = useState<AudioRow[]>([]);
   const [loadingLib, setLoadingLib] = useState(false);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   // Persistência sorteio
   useEffect(() => {
