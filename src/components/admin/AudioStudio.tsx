@@ -366,18 +366,18 @@ export function AudioStudio({ userId }: { userId: string }) {
     setLoadingLib(true);
     try {
       const term = librarySearch.trim();
-      const tasks: Promise<any>[] = [
-        supabase.from("audio_library").select("*").eq("consultant_id", userId).eq("kind", kind).order("created_at", { ascending: false }).limit(50),
+      const tasks: PromiseLike<any>[] = [
+        supabase.from("audio_library").select("*").eq("consultant_id", userId).eq("kind", kind).order("created_at", { ascending: false }).limit(50).then(r => r),
         (() => {
           let q = supabase.from("audio_library").select("*").eq("is_public", true).eq("kind", kind);
           if (term) q = q.ilike("city", `%${term}%`);
-          return q.order("play_count", { ascending: false }).order("created_at", { ascending: false }).limit(50);
+          return q.order("play_count", { ascending: false }).order("created_at", { ascending: false }).limit(50).then(r => r);
         })(),
       ];
       if (isSuperAdmin) {
         let qAll = supabase.from("audio_library").select("*").eq("kind", kind);
         if (term && libTab === "all") qAll = qAll.ilike("city", `%${term}%`);
-        tasks.push(qAll.order("created_at", { ascending: false }).limit(200));
+        tasks.push(qAll.order("created_at", { ascending: false }).limit(200).then(r => r));
       }
       const results = await Promise.all(tasks);
       if (results[0]?.data) setMyAudios(results[0].data as AudioRow[]);
