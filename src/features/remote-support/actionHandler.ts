@@ -159,8 +159,16 @@ function backspace() {
 export async function executeCommand(sessionId: string, cmd: RemoteCommand): Promise<CommandResult> {
   try {
     // log apenas comandos relevantes (evita spam de mouseMove)
-    if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel") {
+    if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
+      // eslint-disable-next-line no-console
+      console.log("[remote-support][exec]", cmd.kind, cmd);
       logAction(sessionId, "operator", `cmd:${cmd.kind}`, cmd.selector || cmd.url || null, cmd as never).catch(() => {});
+    }
+
+    // Atualiza última posição para refoco em comandos `key`.
+    if ((cmd.kind === "mouseMove" || cmd.kind === "mouseClick" || cmd.kind === "mouseDown") && cmd.x != null && cmd.y != null) {
+      _lastMouseX = Math.max(0, Math.min(1, cmd.x)) * window.innerWidth;
+      _lastMouseY = Math.max(0, Math.min(1, cmd.y)) * window.innerHeight;
     }
 
     // Comandos sempre permitidos mesmo em pausa
