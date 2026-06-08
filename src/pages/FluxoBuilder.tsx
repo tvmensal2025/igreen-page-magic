@@ -967,6 +967,7 @@ export default function FluxoBuilder() {
                           isLast={i === orderedSteps.length - 1}
                           pulse={pulseStepId === s.id}
                           mediaCount={s.slot_key ? mediaCounts[s.slot_key] : undefined}
+                          consultantName={consultantName}
                           onSelect={() => setSelectedId(s.id)}
                           onEdit={() => { setSelectedId(s.id); setInspectorTab("conteudo"); setInspectorId(s.id); }}
                           onEditExits={() => { setSelectedId(s.id); setInspectorTab("regras"); setInspectorId(s.id); }}
