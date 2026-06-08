@@ -19,7 +19,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-type Stage = "em_analise" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
+type Stage = "em_analise" | "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
 
 interface PosVendaCustomer {
   id: string;
@@ -34,10 +34,13 @@ interface PosVendaCustomer {
   pos_venda_stage: Stage | null;
   pos_venda_manual: boolean;
   pos_venda_reason: string | null;
+  pos_venda_pending_stage: string | null;
+  pending_snoozed_until: string | null;
 }
 
 const STAGES: { key: Stage; label: string; color: string }[] = [
   { key: "em_analise", label: "Em análise", color: "bg-slate-500/10 text-slate-300 border-slate-500/20" },
+  { key: "espera",    label: "Em Espera", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
   { key: "aprovado",  label: "Aprovado",  color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
   { key: "reprovado", label: "Reprovado", color: "bg-red-500/10 text-red-500 border-red-500/20" },
   { key: "d30",       label: "30 dias",   color: "bg-sky-500/10 text-sky-500 border-sky-500/20" },
