@@ -355,8 +355,8 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
               </Button>
             )}
             {(extDialog === "no_extension" || extDialog === "no_token") && (
-              <Button onClick={() => { setExtDialog(null); window.location.hash = "#dados"; }}>
-                <Chrome className="w-4 h-4 mr-2" /> Ir para a extensão
+              <Button onClick={() => { setExtDialog(null); window.dispatchEvent(new CustomEvent("open-admin-settings")); }}>
+                <Chrome className="w-4 h-4 mr-2" /> Abrir extensão no painel
               </Button>
             )}
             <Button variant="outline" onClick={() => setExtDialog(null)}>Fechar</Button>
