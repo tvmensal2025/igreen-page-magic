@@ -175,15 +175,21 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
             <DialogTitle>Como instalar a extensao</DialogTitle>
           </DialogHeader>
           <ol className="text-sm space-y-2 list-decimal pl-5">
-            <li>Descompacte o arquivo <code>igreen-sync-extension.zip</code> baixado.</li>
-            <li>Abra <code>chrome://extensions</code> no Chrome (ou Edge, Brave, Opera).</li>
+            <li>Descompacte <code>igreen-sync-extension.zip</code>.</li>
+            <li>Abra <code>chrome://extensions</code> (Chrome, Edge, Brave ou Opera).</li>
             <li>Ative o <b>Modo desenvolvedor</b> (canto superior direito).</li>
-            <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada.</li>
-            <li>No painel aqui, clique em <b>Gerar token</b> e copie o token.</li>
-            <li>Clique no icone da extensao, cole o token e clique em <b>Salvar token</b>.</li>
-            <li>Em outra aba do mesmo navegador, faca login em <code>escritorio.igreenenergy.com.br</code>.</li>
-            <li>Volte na extensao e clique em <b>Sincronizar agora</b>. Ela vai abrir <code>/mapa-clientes</code> e <code>/mapa-rede</code>, clicar nos botoes "Exportar Excel" e enviar tudo para o iGreen Cloud automaticamente.</li>
+            <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada. Se ja tinha uma versao antiga, clique em <b>Atualizar</b> no card da extensao.</li>
+            <li>No painel aqui, clique <b>Gerar token</b> e copie.</li>
+            <li>Clique no icone da extensao, cole o token e clique <b>Salvar token</b>.</li>
+            <li>Em outra aba, faca login em <code>escritorio.igreenenergy.com.br</code> e abra <b>/mapa-clientes</b> e <b>/mapa-rede</b> uma vez para conferir que a tabela carrega e o botao <b>Exportar Excel</b> aparece.</li>
+            <li>Volte na extensao e clique <b>Sincronizar agora</b>.</li>
           </ol>
+          <div className="mt-4 p-3 rounded bg-muted text-xs space-y-1">
+            <p className="font-semibold">Sobre a sincronizacao automatica (a cada 6h):</p>
+            <p>• A extensao roda dentro do navegador. Para o automatico funcionar, o Chrome/Edge precisa estar <b>aberto</b> e voce precisa estar <b>logado</b> em <code>escritorio.igreenenergy.com.br</code>.</p>
+            <p>• O token gerado aqui <b>nao</b> da acesso ao portal da iGreen — ele so autoriza o envio para o iGreen Cloud. Por isso o login no portal continua sendo necessario.</p>
+            <p>• Se o portal deslogar, a extensao vai avisar no proximo sync e basta voce logar de novo.</p>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
