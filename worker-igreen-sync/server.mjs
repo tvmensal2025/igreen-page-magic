@@ -217,6 +217,38 @@ async function loginWithPlaywright(email, password) {
     }, captchaToken);
     await snapStep(page, 'injetou_captcha');
 
+    // Confirma se o widget aparenta estar marcado; se não, clica no checkbox
+    // antes de tentar o "Entrar". Cobre o caso em que apenas injetar o token
+    // no textarea não dispara o callback do reCAPTCHA.
+    dbg('[captcha] token injetado; verificando checkbox');
+    const tokenPresent = await page.evaluate(() => {
+      const ta = document.querySelector('textarea#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+      return !!(ta && ta.value && ta.value.length > 20);
+    }).catch(() => false);
+
+    if (!tokenPresent) {
+      dbg('[captcha] widget ainda não marcado; clicando checkbox antes de Entrar');
+      try {
+        const frame = page.frames().find(f => /recaptcha\/api2\/anchor/.test(f.url()));
+        if (frame) {
+          await frame.click('#recaptcha-anchor, .recaptcha-checkbox', { timeout: 5000 }).catch(() => {});
+        } else {
+          await page.click('.g-recaptcha, #g-recaptcha, iframe[src*="recaptcha/api2/anchor"]', { timeout: 5000 }).catch(() => {});
+        }
+        await page.waitForTimeout(2500);
+        // Reinjeta o token caso o clique tenha resetado o widget
+        await page.evaluate((token) => {
+          const ta = document.querySelector('textarea#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+          if (ta) { ta.value = token; ta.innerHTML = token; }
+        }, captchaToken).catch(() => {});
+      } catch (e) {
+        dbg(`[captcha] clique no checkbox falhou: ${e.message}`);
+      }
+      await snapStep(page, 'pos_click_captcha');
+    } else {
+      dbg('[captcha] widget aparenta estar marcado; seguindo para Entrar');
+    }
+
     dbg('[login] clicando "Entrar"');
     const [clickedLoginResp] = await Promise.all([
       page.waitForResponse(r => r.url().includes('/v1/login'), { timeout: 15000 }).catch(() => null),

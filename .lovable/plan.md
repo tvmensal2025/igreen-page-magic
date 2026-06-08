@@ -1,77 +1,30 @@
-## Plano
+Plano para ajustar o login do `igreen-sync-worker`:
 
-Os logs mostram que o container em produção ainda está rodando `igreen-sync-worker v10 (tor+playwright+2captcha)`. Esse build antigo para em `Nenhuma response /v1/login capturada` logo após clicar em **Entrar**.
+1. Criar uma rotina dedicada de confirmação do reCAPTCHA após injetar o token do 2captcha.
+   - Verificar se o widget aparenta estar marcado usando sinais do DOM/iframe/textarea.
+   - Se ainda parecer “não marcado”, tentar clicar imediatamente no checkbox/iframe do reCAPTCHA antes de clicar em “Entrar”.
+   - Aguardar alguns segundos curtos após esse clique para o widget atualizar.
 
-No código atual do projeto, o worker já está em `v12` e já tem o fallback esperado:
+2. Alterar o fluxo de login antes do botão “Entrar”.
+   - Hoje o worker injeta o token e já vai para `clicando "Entrar"`.
+   - O novo fluxo será: resolver 2captcha → injetar token → confirmar/acionar checkbox se necessário → tirar snapshot → clicar “Entrar”.
+   - Adicionar logs claros como:
+     - `[captcha] token injetado; verificando checkbox`
+     - `[captcha] widget ainda não marcado; clicando checkbox antes de Entrar`
+     - `[captcha] widget aparenta estar marcado; seguindo para Entrar`
 
-```text
-[login] clique não gerou /v1/login; tentando fallback POST direto com recaptchaToken
-[login] fallback status=...
-```
+3. Manter o fallback v13 existente.
+   - Se mesmo após confirmar/clicar no captcha o botão “Entrar” não gerar `/v1/login`, manter o fallback `context.request.post` com `recaptchaToken`.
+   - Continuar distinguindo HTML/Cloudflare 403 de erro real de credencial.
 
-### 1. Alinhar versão nos arquivos de deploy
-Atualizar os metadados ainda antigos para evitar confusão e forçar um novo build claro no Easypanel:
+4. Atualizar versão e documentação.
+   - Subir o worker para `v14` no `server.mjs`, `Dockerfile`, `README.md` e `package.json`.
+   - Documentar que a v14 tenta acionar/confirmar o reCAPTCHA antes de clicar em “Entrar”.
 
-- `worker-igreen-sync/Dockerfile`
-  - trocar comentários/label de `v10` para `v12`
-- `worker-igreen-sync/README.md`
-  - trocar título de `v11` para `v12`
-  - documentar o fallback POST quando o clique não dispara `/v1/login`
+5. Validar localmente sem rodar deploy.
+   - Rodar apenas checagem de sintaxe com `node --check worker-igreen-sync/server.mjs`.
+   - Após rebuild/redeploy no Easypanel, validar:
+     - `/health` com `mode: tor+playwright+2captcha-v14`
+     - `/last-debug` contendo os novos logs de verificação/clique do captcha antes de `clicando "Entrar"`.
 
-### 2. Manter o código de login v12
-Não reverter o fluxo atual. Ele deve continuar assim:
-
-1. abre a página real de login via Playwright + Tor;
-2. preenche email/senha;
-3. resolve reCAPTCHA com 2captcha;
-4. injeta token e tenta clicar em **Entrar**;
-5. se nenhuma resposta `/v1/login` aparecer, faz `fetch` direto no browser com:
-
-```json
-{
-  "email": "...",
-  "password": "...",
-  "recaptchaToken": "TOKEN_2CAPTCHA",
-  "keepConnected": true
-}
-```
-
-### 3. Validar sintaxe localmente
-Rodar apenas validação estática do worker:
-
-```text
-node --check worker-igreen-sync/server.mjs
-```
-
-### 4. Rebuild/redeploy no Easypanel
-Depois de aplicado, fazer rebuild do serviço `igreen-sync-worker` no Easypanel.
-
-Validação esperada em `/health`:
-
-```json
-{
-  "mode": "tor+playwright+2captcha-v12"
-}
-```
-
-### 5. Interpretar o próximo `/last-debug`
-Após o rebuild, o log correto precisa conter uma destas linhas:
-
-```text
-[login] fallback status=200
-```
-
-ou, se houver bloqueio real:
-
-```text
-[login] fallback status=401
-[login] fallback status=403
-```
-
-Se ainda aparecer só:
-
-```text
-Nenhuma response /v1/login capturada
-```
-
-sem a linha de fallback, então o Easypanel ainda não está rodando o build v12.
+Observação: `.lovable/` está no `.gitignore`, então este plano não será versionado e pode se perder no próximo snapshot. Se quiser planos persistentes no repositório, depois posso remover essa entrada do `.gitignore`.
