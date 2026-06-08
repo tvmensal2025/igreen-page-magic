@@ -725,8 +725,31 @@ function RemoteControlOverlay({
   sendCmd: (cmd: Omit<RemoteCommand, "id">) => void;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
-  const lastMoveRef = useRef(0);
-  const [enabled, setEnabled] = useState(true);
+  const cursorRef = useRef<HTMLDivElement>(null);
+  const flashRef = useRef<HTMLDivElement>(null);
+
+  // Coalescing
+  const pendingMove = useRef<{ x: number; y: number } | null>(null);
+  const pendingWheel = useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
+  const rafId = useRef<number | null>(null);
+
+  const schedule = () => {
+    if (rafId.current != null) return;
+    rafId.current = requestAnimationFrame(() => {
+      rafId.current = null;
+      if (pendingMove.current) {
+        sendCmd({ kind: "mouseMove", x: pendingMove.current.x, y: pendingMove.current.y });
+        pendingMove.current = null;
+      }
+      if (pendingWheel.current) {
+        const w = pendingWheel.current;
+        sendCmd({ kind: "wheel", x: w.x, y: w.y, dx: w.dx, dy: w.dy });
+        pendingWheel.current = null;
+      }
+    });
+  };
+
+  useEffect(() => () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); }, []);
 
   const toNorm = (e: { clientX: number; clientY: number }) => {
     const video = videoRef.current;
@@ -743,46 +766,67 @@ function RemoteControlOverlay({
     const px = e.clientX - rect.left - offsetX;
     const py = e.clientY - rect.top - offsetY;
     if (px < 0 || py < 0 || px > dispW || py > dispH) return null;
-    return { x: px / dispW, y: py / dispH };
+    return { x: px / dispW, y: py / dispH, localX: px + offsetX, localY: py + offsetY };
+  };
+
+  const moveCursor = (lx: number, ly: number) => {
+    if (cursorRef.current) {
+      cursorRef.current.style.transform = `translate(${lx}px, ${ly}px)`;
+    }
+  };
+
+  const flash = (lx: number, ly: number) => {
+    const el = flashRef.current; if (!el) return;
+    el.style.transform = `translate(${lx - 14}px, ${ly - 14}px)`;
+    el.style.opacity = "1";
+    el.style.transition = "none";
+    requestAnimationFrame(() => {
+      el.style.transition = "opacity 400ms ease-out, transform 400ms ease-out";
+      el.style.opacity = "0";
+      el.style.transform = `translate(${lx - 22}px, ${ly - 22}px) scale(1.6)`;
+    });
   };
 
   const onMove = (e: React.PointerEvent) => {
-    if (!enabled) return;
-    const now = performance.now();
-    if (now - lastMoveRef.current < 40) return;
-    lastMoveRef.current = now;
     const p = toNorm(e); if (!p) return;
-    sendCmd({ kind: "mouseMove", x: p.x, y: p.y });
+    moveCursor(p.localX, p.localY);
+    pendingMove.current = { x: p.x, y: p.y };
+    schedule();
   };
 
   const onClick = (e: React.MouseEvent) => {
-    if (!enabled) return;
     const p = toNorm(e); if (!p) return;
+    flash(p.localX, p.localY);
     sendCmd({ kind: "mouseClick", x: p.x, y: p.y, button: e.button });
     overlayRef.current?.focus();
   };
 
   const onDblClick = (e: React.MouseEvent) => {
-    if (!enabled) return;
     const p = toNorm(e); if (!p) return;
     sendCmd({ kind: "mouseDblClick", x: p.x, y: p.y });
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!enabled) return;
     const p = toNorm(e); if (!p) return;
+    flash(p.localX, p.localY);
     sendCmd({ kind: "contextMenu", x: p.x, y: p.y });
   };
 
   const onWheel = (e: React.WheelEvent) => {
-    if (!enabled) return;
     const p = toNorm(e); if (!p) return;
-    sendCmd({ kind: "wheel", x: p.x, y: p.y, dx: e.deltaX, dy: e.deltaY });
+    const prev = pendingWheel.current;
+    pendingWheel.current = {
+      x: p.x, y: p.y,
+      dx: (prev?.dx ?? 0) + e.deltaX,
+      dy: (prev?.dy ?? 0) + e.deltaY,
+    };
+    schedule();
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (!enabled) return;
+    // Não bloquear atalhos globais do operador (Ctrl+Shift+...)
+    if (e.ctrlKey && e.shiftKey) return;
     if ((e.ctrlKey || e.metaKey) && ["t", "n", "w", "r", "l"].includes(e.key.toLowerCase())) return;
     e.preventDefault();
     sendCmd({
@@ -805,16 +849,21 @@ function RemoteControlOverlay({
         onWheel={onWheel}
         onKeyDown={onKeyDown}
       />
-      <div className="absolute top-2 right-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md">
-        <button
-          className={`px-2 py-0.5 rounded ${enabled ? "bg-green-600" : "bg-zinc-600"}`}
-          onClick={() => setEnabled(v => !v)}
-          title="Alternar controle remoto"
-        >
-          {enabled ? "Controle ATIVO" : "Apenas visualização"}
-        </button>
-        <span className="opacity-70 hidden md:inline">clique no vídeo p/ focar teclado</span>
+      {/* Cursor virtual */}
+      <div
+        ref={cursorRef}
+        className="absolute top-0 left-0 pointer-events-none z-10"
+        style={{ willChange: "transform" }}
+      >
+        <div className="w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-white shadow-md" />
       </div>
+      {/* Flash de clique */}
+      <div
+        ref={flashRef}
+        className="absolute top-0 left-0 pointer-events-none w-7 h-7 rounded-full bg-primary/40 ring-2 ring-primary z-10"
+        style={{ opacity: 0, willChange: "transform, opacity" }}
+      />
     </>
   );
 }
+
