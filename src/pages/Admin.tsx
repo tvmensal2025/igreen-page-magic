@@ -101,7 +101,7 @@ const AdminContent = () => {
       window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
     }
   }, []);
-  const [qrModal, setQrModal] = useState<{ url: string; label: string } | null>(null);
+  const [qrPanfleto, setQrPanfleto] = useState<{ url: string; label: string } | null>(null);
   const [panfletoOpen, setPanfletoOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
