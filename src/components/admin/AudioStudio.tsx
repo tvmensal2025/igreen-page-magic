@@ -264,6 +264,7 @@ export function AudioStudio({ userId }: { userId: string }) {
   const [audioBlob,  setAudioBlob]  = useState<Blob | null>(null);
   const [lastRowId,  setLastRowId]  = useState<string | null>(null);
   const [lastIsPublic, setLastIsPublic] = useState(false);
+  const [lastPublicUrl, setLastPublicUrl] = useState<string | null>(null);
   const [playing,    setPlaying]    = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
