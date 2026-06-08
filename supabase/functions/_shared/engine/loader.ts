@@ -87,15 +87,43 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
   }
 
   // ─── 2. Read active flow for variant ──────────────────────────────────
-  const { data: flowRow } = await supabase
+  // Respeita sync_mode='public': quando o consultor está em modo público,
+  // lemos o flow PÚBLICO (mesma fonte que o engine legado via
+  // resolveFlowId). Sem isso, este loader carregava o flow LOCAL do
+  // consultor — que pode estar vazio ou desatualizado em relação ao
+  // template público mantido pelo Super Admin.
+  const { data: ownFlowRow } = await supabase
     .from("bot_flows")
-    .select("id, strict_mode, variant")
+    .select("id, strict_mode, variant, sync_mode, is_public, consultant_id")
     .eq("consultant_id", consultantId)
     .eq("variant", variant)
     .eq("is_active", true)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
+
+  let flowRow: any = ownFlowRow;
+  // mediaOwnerId determina de QUEM são as mídias (áudios/vídeos/imagens)
+  // e o `flow_step_media_order`. Em sync_mode='public', tudo vem do dono
+  // do flow público — assim qualquer consultor em modo público recebe
+  // os MESMOS áudios/vídeos/imagens cadastrados pelo Super Admin.
+  let mediaOwnerId: string = consultantId;
+
+  const ownSyncMode = String((ownFlowRow as any)?.sync_mode ?? "public").toLowerCase();
+  if (!ownFlowRow || ownSyncMode === "public") {
+    const { data: pub } = await supabase
+      .from("bot_flows")
+      .select("id, strict_mode, variant, sync_mode, is_public, consultant_id")
+      .eq("is_public", true)
+      .eq("is_active", true)
+      .eq("variant", variant)
+      .limit(1)
+      .maybeSingle();
+    if (pub) {
+      flowRow = pub;
+      mediaOwnerId = (pub as any).consultant_id as string;
+    }
+  }
 
   if (!flowRow) {
     throw new Error(`v3-loader: no active flow for consultant=${consultantId} variant=${variant}`);
@@ -112,26 +140,26 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
   const stepsRaw = (stepRows as any[]) || [];
   const stepIds = stepsRaw.map((s) => s.id as string);
 
-  // ─── 4. Read consultor's flow_step_media_order ────────────────────────
+  // ─── 4. Read media owner's flow_step_media_order ──────────────────────
+  // Em sync_mode='public', mediaOwnerId = consultant dono do flow público
+  // (não o caller). Garante paridade total de mídia entre consultores.
   const { data: consultantRow } = await supabase
     .from("consultants")
     .select("flow_step_media_order")
-    .eq("id", consultantId)
+    .eq("id", mediaOwnerId)
     .maybeSingle();
 
   const mediaOrderJson = (consultantRow?.flow_step_media_order as Record<string, unknown>) || {};
 
-  // ─── 4b. Read ai_media_library — consultant + public, active only ────
-  // Each step's "audio"/"image"/"video"/"document" entry in
-  // `flow_step_media_order` resolves to a real file via slot_key match.
-  // The legacy webhooks (whapi-webhook + evolution-webhook) do this lookup
-  // per-step; v3 hoists it into the loader so the runner stays pure.
-  // Fallback order: personal slot_key → public slot_key → unkeyed personal.
-  // (Mirrors `evolution-webhook/handlers/bot-flow.ts:1420-1440`.)
+  // ─── 4b. Read ai_media_library — media owner + public, active only ───
+  // Em sync_mode='public', filtra pelo consultant dono do flow público
+  // (mediaOwnerId), não pelo caller. Sem isso, consultores em modo público
+  // só recebiam o subconjunto `is_public=true` (vs. o catálogo cheio do
+  // Super Admin marcado como pessoal).
   const { data: mediaLib } = await supabase
     .from("ai_media_library")
     .select("id, kind, url, slot_key, send_order, duration_sec, is_public, consultant_id")
-    .or(`consultant_id.eq.${consultantId},is_public.eq.true`)
+    .or(`consultant_id.eq.${mediaOwnerId},is_public.eq.true`)
     .eq("active", true);
 
   const mediaBySlotAndKind = new Map<string, Map<string, {

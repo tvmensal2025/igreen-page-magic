@@ -1101,6 +1101,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (!flow?.id) return false;
+      // mediaOwnerId: em sync_mode='public', mídias e flow_step_media_order vêm
+      // do dono do flow público (Super Admin). Garante paridade 100% entre
+      // todos os consultores em modo público.
+      const { resolveMediaOwnerId } = await import("../../_shared/resolve-flow.ts");
+      const mediaOwnerId = await resolveMediaOwnerId(
+        supabase,
+        customer.consultant_id,
+        (customer as any)?.flow_variant || "A",
+      );
 
       const { data: stepRow } = await supabase
         .from("bot_flow_steps")
@@ -1223,7 +1232,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const { data: personalRows } = await supabase
         .from("ai_media_library")
         .select("id, kind, url, slot_key, send_order, duration_sec, delay_before_ms, consultant_id, is_public")
-        .eq("consultant_id", customer.consultant_id)
+        .eq("consultant_id", mediaOwnerId)
         .eq("slot_key", slotKey)
         .eq("active", true)
         .eq("is_draft", false)
@@ -1285,7 +1294,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // Precedência: UI (consultants.flow_step_media_order[slotKey]) → bot_flow_steps.media_order → default.
       // A UI do /admin/fluxos grava em consultants.flow_step_media_order, então ela vence
       // o default semeado em bot_flow_steps.media_order.
-      const uiOrder = await getStepMediaOrder(supabase, customer.consultant_id, [(stepRow as any).step_key || stepKey, slotKey]);
+      const uiOrder = await getStepMediaOrder(supabase, mediaOwnerId, [(stepRow as any).step_key || stepKey, slotKey]);
       const stepOrder = Array.isArray((stepRow as any).media_order) && (stepRow as any).media_order.length > 0
         ? (stepRow as any).media_order.map((k: any) => String(k).toLowerCase())
         : null;
@@ -1499,6 +1508,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
     if (!activeFlow) return null;
+    const { resolveMediaOwnerId } = await import("../../_shared/resolve-flow.ts");
+    const mediaOwnerId = await resolveMediaOwnerId(
+      supabase,
+      customer.consultant_id,
+      (customer as any)?.flow_variant || "A",
+    );
 
     const { data: qaRows } = await supabase
       .from("bot_flow_qa")
@@ -1611,7 +1626,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }));
     if (responseText) items.push({ kind: "text", text: responseText });
 
-    const _qaOrder = (await getStepMediaOrder(supabase, customer.consultant_id, [step])) || ["text", "audio", "image", "video", "document"];
+    const _qaOrder = (await getStepMediaOrder(supabase, mediaOwnerId, [step])) || ["text", "audio", "image", "video", "document"];
     items.sort(makeKindComparator((it: QaItem) => it.kind, _qaOrder));
 
     for (let mi = 0; mi < items.length; mi++) {
@@ -1646,7 +1661,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const { data: personal } = await supabase
           .from("ai_media_library")
           .select("id, url, duration_sec")
-          .eq("consultant_id", customer.consultant_id)
+          .eq("consultant_id", mediaOwnerId)
           .eq("slot_key", m.slot_key)
           .eq("active", true).eq("is_draft", false)
           .order("send_order", { ascending: true })
@@ -1766,6 +1781,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       if (isFirstContact) {
         const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
+        const { resolveMediaOwnerId } = await import("../../_shared/resolve-flow.ts");
+        const mediaOwnerId = await resolveMediaOwnerId(
+          supabase,
+          customer.consultant_id,
+          (customer as any)?.flow_variant || "A",
+        );
 
         if (activeFlow) {
           const { data: openingQa } = await supabase
@@ -1783,7 +1804,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               .order("position");
 
             const orderedMedia = (medias as any[]) || [];
-            const _openOrder = await getStepMediaOrder(supabase, customer.consultant_id, [step]);
+            const _openOrder = await getStepMediaOrder(supabase, mediaOwnerId, [step]);
             if (_openOrder) orderedMedia.sort(makeKindComparator((m: any) => m.media_kind, _openOrder));
             let sentSomething = false;
 
@@ -1814,7 +1835,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 const { data: personal } = await supabase
                   .from("ai_media_library")
                   .select("id, url, duration_sec")
-                  .eq("consultant_id", customer.consultant_id)
+                  .eq("consultant_id", mediaOwnerId)
                   .eq("slot_key", m.slot_key)
                   .eq("active", true)
                   .eq("is_draft", false)
