@@ -83,6 +83,7 @@ const App = () => (
               <Route path="/admin/bot-audit" element={<Navigate to="/admin/whatsapp-clients" replace />} />
 
               <Route path="/super-admin" element={<SuperAdmin />} />
+              <Route path="/super-admin/suporte" element={<SuperAdminRemoteSupport />} />
               <Route path="/assistente" element={<AssistentePage />} />
               <Route path="/crm" element={<CRMLandingPage />} />
               <Route path="/licenciado/preview" element={<LicenciadaPreview />} />
