@@ -34,6 +34,9 @@ const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
 import { CookieBanner } from "@/components/CookieBanner";
 import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
+import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportProvider";
+
+const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
 
 
 const queryClient = new QueryClient();
