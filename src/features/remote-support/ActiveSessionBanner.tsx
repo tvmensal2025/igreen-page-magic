@@ -10,6 +10,7 @@ interface Props {
   codeExpiresAt: number | null;
   sharing: boolean;
   paused: boolean;
+  shareSurface?: string | null;
   onStartShare: () => void;
   onTogglePause: () => void;
   onEnd: () => void;
