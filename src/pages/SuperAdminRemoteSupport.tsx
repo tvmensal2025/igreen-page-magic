@@ -549,6 +549,10 @@ function SessionWorkbench({ session, consultantName, onClose }: {
                   </CardContent>
                 </Card>
 
+                <div className="text-[11px] text-muted-foreground border border-dashed rounded p-2">
+                  ℹ️ O controle remoto só funciona <b>dentro do painel iGreen</b> (mesma aba compartilhada). Em outras abas (WhatsApp Web, Portal, etc.) é apenas visualização.
+                </div>
+
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Navegar</CardTitle></CardHeader>
                   <CardContent className="space-y-2">
