@@ -10,7 +10,48 @@
 
 import { supabase } from "@/integrations/supabase/client";
 
-export type RtcStage =
+export type QualityLevel = "auto" | "high" | "medium" | "low";
+
+export interface QualityProfile {
+  frameRate: number;
+  scaleResolutionDownBy: number;
+  maxBitrate?: number;
+}
+
+export const QUALITY_PROFILES: Record<QualityLevel, QualityProfile> = {
+  auto:   { frameRate: 15, scaleResolutionDownBy: 1,   maxBitrate: 1_500_000 },
+  high:   { frameRate: 24, scaleResolutionDownBy: 1,   maxBitrate: 2_500_000 },
+  medium: { frameRate: 15, scaleResolutionDownBy: 1.5, maxBitrate: 1_200_000 },
+  low:    { frameRate: 8,  scaleResolutionDownBy: 2,   maxBitrate: 500_000 },
+};
+
+/** Aplica perfil de qualidade ao primeiro sender de vídeo da peer connection (lado do consultor). */
+export async function applyVideoQuality(pc: RTCPeerConnection, level: QualityLevel) {
+  const sender = pc.getSenders().find(s => s.track?.kind === "video");
+  if (!sender) return;
+  const profile = QUALITY_PROFILES[level];
+  try { await sender.track?.applyConstraints({ frameRate: profile.frameRate } as MediaTrackConstraints); } catch {}
+  const params = sender.getParameters();
+  if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+  params.encodings[0].scaleResolutionDownBy = profile.scaleResolutionDownBy;
+  if (profile.maxBitrate) params.encodings[0].maxBitrate = profile.maxBitrate;
+  params.encodings[0].maxFramerate = profile.frameRate;
+  try { await sender.setParameters(params); } catch (e) { console.warn("[rtc] setParameters", e); }
+}
+
+/** FPS recebido (operador) a partir de getStats(). */
+export async function getInboundVideoFps(pc: RTCPeerConnection): Promise<number | null> {
+  try {
+    const stats = await pc.getStats();
+    let fps: number | null = null;
+    stats.forEach((r: any) => {
+      if (r.type === "inbound-rtp" && r.kind === "video" && typeof r.framesPerSecond === "number") {
+        fps = r.framesPerSecond;
+      }
+    });
+    return fps;
+  } catch { return null; }
+}
   | "idle"
   | "subscribed"
   | "waiting-share"     // operador: sessão ativa, sem offer ainda
