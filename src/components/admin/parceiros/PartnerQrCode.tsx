@@ -674,3 +674,58 @@ function roundRect(
   ctx.quadraticCurveTo(x, y, x + radius, y);
   ctx.closePath();
 }
+
+/**
+ * Cartão com o link do WhatsApp pronto pra copiar/abrir — fica ao lado do QR
+ * pra atender quem prefere mandar o link no lugar de escanear o QR code.
+ */
+function PartnerLinkCard({ url, phrase }: { url: string; phrase: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore — alguns browsers bloqueiam sem HTTPS; usuário pode copiar manual
+    }
+  };
+  return (
+    <div className="w-full max-w-[320px] rounded-lg border bg-card p-2.5 space-y-2">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Link direto para WhatsApp
+      </div>
+      <div className="text-[11px] break-all font-mono leading-snug text-foreground/90 bg-muted/40 rounded px-2 py-1.5">
+        {url}
+      </div>
+      <div className="flex gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant={copied ? "default" : "outline"}
+          onClick={handleCopy}
+          className="flex-1 gap-1.5 h-8 text-xs"
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? "Copiado!" : "Copiar link"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          asChild
+          className="flex-1 gap-1.5 h-8 text-xs"
+        >
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="h-3.5 w-3.5" /> Abrir
+          </a>
+        </Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground leading-snug">
+        Cole esse link em status, story, bio do Instagram ou em qualquer
+        mensagem. Abre o WhatsApp já com a frase{" "}
+        <span className="font-medium">"{phrase}"</span>.
+      </p>
+    </div>
+  );
+}
