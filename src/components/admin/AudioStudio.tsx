@@ -267,10 +267,11 @@ export function AudioStudio({ userId }: { userId: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Biblioteca
-  const [libTab, setLibTab] = useState<"mine" | "public">("mine");
+  const [libTab, setLibTab] = useState<"mine" | "public" | "all">("mine");
   const [librarySearch, setLibrarySearch] = useState("");
   const [myAudios, setMyAudios] = useState<AudioRow[]>([]);
   const [publicAudios, setPublicAudios] = useState<AudioRow[]>([]);
+  const [allAudios, setAllAudios] = useState<AudioRow[]>([]);
   const [loadingLib, setLoadingLib] = useState(false);
 
   // Persistência sorteio
