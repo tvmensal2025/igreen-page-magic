@@ -52,7 +52,7 @@ function dbg(msg) {
 }
 
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, code = null) { super(message); this.status = status; this.code = code; }
 }
 
 async function readResponseLike(resp) {
