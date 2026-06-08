@@ -1,30 +1,41 @@
-Plano para ajustar o login do `igreen-sync-worker`:
+## Plano seguro para resolver a sincronização iGreen
 
-1. Criar uma rotina dedicada de confirmação do reCAPTCHA após injetar o token do 2captcha.
-   - Verificar se o widget aparenta estar marcado usando sinais do DOM/iframe/textarea.
-   - Se ainda parecer “não marcado”, tentar clicar imediatamente no checkbox/iframe do reCAPTCHA antes de clicar em “Entrar”.
-   - Aguardar alguns segundos curtos após esse clique para o widget atualizar.
+Os logs mostram que o worker chega ao portal, resolve/injeta CAPTCHA, mas o login continua bloqueado por Cloudflare/WAF com HTML 403. Não vou implementar novas tentativas de burlar CAPTCHA/Cloudflare. Em vez disso, vou ajustar o fluxo para falhar de forma clara e oferecer um caminho de sync estável.
 
-2. Alterar o fluxo de login antes do botão “Entrar”.
-   - Hoje o worker injeta o token e já vai para `clicando "Entrar"`.
-   - O novo fluxo será: resolver 2captcha → injetar token → confirmar/acionar checkbox se necessário → tirar snapshot → clicar “Entrar”.
-   - Adicionar logs claros como:
-     - `[captcha] token injetado; verificando checkbox`
-     - `[captcha] widget ainda não marcado; clicando checkbox antes de Entrar`
-     - `[captcha] widget aparenta estar marcado; seguindo para Entrar`
+### 1. Parar o loop de bypass frágil
+- Remover novas tentativas de clicar/forçar CAPTCHA quando o WAF retornar HTML 403.
+- Classificar esse caso como `igreen_waf_blocked`, sem repetir chamadas que só consomem 2captcha e tempo.
+- Manter logs claros em `/last-debug` para diferenciar:
+  - credencial inválida;
+  - timeout;
+  - CAPTCHA não configurado;
+  - bloqueio Cloudflare/WAF.
 
-3. Manter o fallback v13 existente.
-   - Se mesmo após confirmar/clicar no captcha o botão “Entrar” não gerar `/v1/login`, manter o fallback `context.request.post` com `recaptchaToken`.
-   - Continuar distinguindo HTML/Cloudflare 403 de erro real de credencial.
+### 2. Corrigir mensagens e diagnóstico do worker
+- Atualizar `/health` para mostrar versão real, modo ativo e variáveis críticas configuradas sem expor valores.
+- Padronizar o aviso de chave IA para `OPENAI_API_KEY`, porque o código atual usa essa env, enquanto logs antigos mostram `LOVABLE_API_KEY`.
+- Melhorar o erro retornado pela edge function para o painel mostrar uma mensagem acionável, não só `502`.
 
-4. Atualizar versão e documentação.
-   - Subir o worker para `v14` no `server.mjs`, `Dockerfile`, `README.md` e `package.json`.
-   - Documentar que a v14 tenta acionar/confirmar o reCAPTCHA antes de clicar em “Entrar”.
+### 3. Criar caminho alternativo de sync sem bypass
+- Adicionar suporte a importação de exportação oficial do iGreen, via CSV/Excel/JSON, reaproveitando o mesmo mapeamento já existente na edge function.
+- O usuário exporta os clientes/rede pelo portal autorizado e envia o arquivo; o sistema normaliza e faz upsert igual ao sync automático.
+- Isso mantém o CRM atualizado sem depender de Tor, 2captcha ou WAF.
 
-5. Validar localmente sem rodar deploy.
-   - Rodar apenas checagem de sintaxe com `node --check worker-igreen-sync/server.mjs`.
-   - Após rebuild/redeploy no Easypanel, validar:
-     - `/health` com `mode: tor+playwright+2captcha-v14`
-     - `/last-debug` contendo os novos logs de verificação/clique do captcha antes de `clicando "Entrar"`.
+### 4. Preservar a estrutura atual para caso exista API oficial
+- Deixar o código preparado para trocar o worker por uma integração oficial, caso a iGreen forneça endpoint/token/credenciais de parceiro.
+- Centralizar o método de entrada de dados em uma interface comum:
 
-Observação: `.lovable/` está no `.gitignore`, então este plano não será versionado e pode se perder no próximo snapshot. Se quiser planos persistentes no repositório, depois posso remover essa entrada do `.gitignore`.
+```text
+iGreen source
+  ├─ official API, se disponível
+  └─ arquivo exportado manualmente
+        ↓
+normalização existente
+        ↓
+upsert clientes/rede
+```
+
+### 5. Validação
+- Verificar sintaxe do worker e da edge function.
+- Testar cenário WAF bloqueado para confirmar que retorna erro claro.
+- Testar importação com um arquivo de amostra pequeno para garantir que clientes continuam sendo criados/atualizados corretamente.
