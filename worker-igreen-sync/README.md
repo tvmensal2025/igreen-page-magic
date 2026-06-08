@@ -53,13 +53,13 @@ no navegador.
 
 Auth: header `X-Worker-Token: <WORKER_TOKEN>`.
 
-| Método | Path                | Função                                                    |
-|--------|---------------------|-----------------------------------------------------------|
-| GET    | `/health`           | `{ ok, sessions, uptime_s, mode, ia_vision, ia_model }`   |
-| GET    | `/last-debug`       | passos + análise IA do último login                       |
-| GET    | `/last-screenshot`  | PNG do último step                                        |
-| POST   | `/sync-customers`   | `{ portal_email, portal_password }` → clientes            |
-| POST   | `/sync-network`     | `{ portal_email, portal_password }` → rede                |
+| Método | Path                | Função                                                                  |
+|--------|---------------------|-------------------------------------------------------------------------|
+| GET    | `/health`           | `{ ok, sessions, uptime_s, mode, worker_token_configured, twocaptcha_configured, ia_vision, ia_model }` |
+| GET    | `/last-debug`       | passos + análise IA do último login                                     |
+| GET    | `/last-screenshot`  | PNG do último step                                                      |
+| POST   | `/sync-customers`   | `{ portal_email, portal_password }` → clientes (ou erro `igreen_waf_blocked`) |
+| POST   | `/sync-network`     | `{ portal_email, portal_password }` → rede                              |
 
 ## Variáveis de ambiente
 
