@@ -17,7 +17,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Volume2, Loader2, Play, Pause, Download,
   RotateCcw, Music, MapPin, Clock, Navigation, Gift,
-  Store, Megaphone, History, Globe2, Search, Lock, Upload, Copy, Trash2,
+  Store, Megaphone, History, Globe2, Search, Lock, Upload, Copy, Trash2, Send,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
 import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@/lib/audioProcessing";
+import { AudioWhatsAppPopover } from "./AudioWhatsAppPopover";
 
 // ─── ElevenLabs via proxy ─────────────────────────────────────────────────────
 const VOICE_ID = "rpNe0HOx7heUulPiOEaG";
