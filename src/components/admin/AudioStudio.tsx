@@ -422,7 +422,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       setAudioUrl(URL.createObjectURL(mp3Blob));
 
       const row = await saveToLibrary(mp3Blob, textoPreview);
-      if (row) { setLastRowId(row.id); setLastIsPublic(false); }
+      if (row) { setLastRowId(row.id); setLastIsPublic(false); setLastPublicUrl(row.audio_url); }
       toast({ title: "✅ Áudio gerado e salvo no seu histórico!" });
       loadLibrary();
     } catch (e: any) {
