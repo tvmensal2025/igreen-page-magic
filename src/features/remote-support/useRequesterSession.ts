@@ -23,7 +23,7 @@ export function useRequesterSession(userId: string | null | undefined) {
     if (!userId) return;
     (async () => {
       const { data } = await supabase
-        .from("remote_support_sessions")
+        .from("remote_support_sessions" as any)
         .select("*")
         .eq("requester_id", userId)
         .in("status", ["requested", "pending_code", "active"])

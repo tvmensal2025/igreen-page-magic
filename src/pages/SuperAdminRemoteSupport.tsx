@@ -43,7 +43,7 @@ export default function SuperAdminRemoteSupport() {
 
   const refresh = async () => {
     const { data } = await supabase
-      .from("remote_support_sessions")
+      .from("remote_support_sessions" as any)
       .select("*")
       .in("status", ["requested", "pending_code", "active"])
       .order("created_at", { ascending: false });
@@ -391,7 +391,7 @@ function SessionWorkbench({ session, consultantName, onClose }: {
 function HistoryView({ consultants }: { consultants: ConsultantRow[] }) {
   const [rows, setRows] = useState<SupportSession[]>([]);
   useEffect(() => {
-    supabase.from("remote_support_sessions").select("*")
+    supabase.from("remote_support_sessions" as any).select("*")
       .order("created_at", { ascending: false }).limit(50)
       .then(({ data }) => setRows((data || []) as unknown as SupportSession[]));
   }, []);
