@@ -267,6 +267,12 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         return { id: cmd.id, ok: true };
       }
 
+      case "qualityChange": {
+        const level = (cmd.value as QualityLevel) || "auto";
+        if (_peerForQuality) await applyVideoQuality(_peerForQuality, level);
+        return { id: cmd.id, ok: true, data: { level } };
+      }
+
       case "openTab":
       case "closeTab":
         throw new Error("requires browser extension v1.5+");
