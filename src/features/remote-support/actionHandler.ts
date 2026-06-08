@@ -20,7 +20,7 @@ export function onRemoteControlPauseChange(fn: (p: boolean) => void) {
 }
 export function setActivePeerForQuality(pc: RTCPeerConnection | null) { _peerForQuality = pc; }
 
-const PROTECTED_SELECTOR = "[data-remote-support-banner]";
+
 
 function isProtected(el: Element | null): boolean {
   if (!el) return false;
