@@ -19,9 +19,10 @@ interface KanbanColumnProps {
   onEditDeal: (deal: CrmDealRow) => void;
   onDeleteDeal: (id: string) => void;
   onReclassify?: (deal: CrmDealRow) => void;
+  onView?: (customerId: string) => void;
 }
 
-export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", customStepMap, onDrop, onDragStart, onEditDeal, onDeleteDeal, onReclassify }: KanbanColumnProps) {
+export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", customStepMap, onDrop, onDragStart, onEditDeal, onDeleteDeal, onReclassify, onView }: KanbanColumnProps) {
   const allStageDeals = deals.filter((d) => d.stage === stage.stage_key);
   const stageDeals = allStageDeals.filter((d) => {
     if (searchQuery.trim()) {
@@ -77,6 +78,7 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
               onEdit={onEditDeal}
               onDelete={onDeleteDeal}
               onReclassify={onReclassify}
+              onView={onView}
             />
           ))}
           {stageDeals.length === 0 && (

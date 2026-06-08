@@ -21,6 +21,7 @@ import { sendWhatsAppMessage, resolveRecipient } from "@/services/messageSender"
 import type { MediaCategory } from "@/services/messageSender";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Tables } from "@/integrations/supabase/types";
+import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
 
 type KanbanStageRow = Tables<"kanban_stages">;
 type CrmDealRow = Tables<"crm_deals">;
@@ -50,6 +51,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
   const [editingDeal, setEditingDeal] = useState<CrmDealRow | null>(null);
   const [editForm, setEditForm] = useState({ phone: "", notes: "" });
   const [deletingDealId, setDeletingDealId] = useState<string | null>(null);
+  const [viewCustomerId, setViewCustomerId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => { fetchStages(); fetchDeals().then(() => resolveNames(deals)); }, [fetchStages, fetchDeals]);
@@ -264,9 +266,11 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       <div className="flex-1 min-h-0 flex gap-2 overflow-x-auto pb-2 items-stretch" data-resize-scope style={{ "--kanban-col-w": "248px" } as React.CSSProperties}>
         <DragResizer storageKey="kanban-col" cssVar="kanban-col-w" defaultPx={248} minPx={200} maxPx={480} />
         {stages.map((s) => (
-          <KanbanColumn key={s.id} stage={s} deals={deals} searchQuery={searchQuery} stepFilter={stepFilter} customStepMap={customStepMap} onDrop={handleDrop} onDragStart={setDraggedId} onEditDeal={openEditDeal} onDeleteDeal={setDeletingDealId} onReclassify={reclassifyAsReal} />
+          <KanbanColumn key={s.id} stage={s} deals={deals} searchQuery={searchQuery} stepFilter={stepFilter} customStepMap={customStepMap} onDrop={handleDrop} onDragStart={setDraggedId} onEditDeal={openEditDeal} onDeleteDeal={setDeletingDealId} onReclassify={reclassifyAsReal} onView={setViewCustomerId} />
         ))}
       </div>
+
+      <CustomerQuickViewDialog customerId={viewCustomerId} onClose={() => setViewCustomerId(null)} />
 
       {/* Drop confirmation */}
       {pendingDrop && (
