@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "iGreen Sync",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Baixa automaticamente os Excel de clientes e da rede do portal iGreen e envia para o iGreen Cloud.",
   "permissions": ["storage", "alarms", "tabs", "scripting", "downloads"],
   "host_permissions": [
