@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<title>iGreen Sync</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; width: 340px; padding: 14px; margin: 0; background: #0f172a; color: #f1f5f9; }
+  h1 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
+  .dot.ok { background: #22c55e; }
+  .dot.err { background: #ef4444; }
+  label { font-size: 12px; color: #94a3b8; display: block; margin-top: 10px; }
+  input[type=password], input[type=text] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #f1f5f9; font-size: 12px; box-sizing: border-box; }
+  button { width: 100%; padding: 9px; margin-top: 10px; background: #16a34a; border: none; border-radius: 6px; color: white; font-weight: 600; cursor: pointer; font-size: 13px; }
+  button.secondary { background: #334155; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .row { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 12px; }
+  .status { margin-top: 10px; padding: 8px; background: #1e293b; border-radius: 6px; font-size: 11px; color: #cbd5e1; max-height: 110px; overflow: auto; white-space: pre-wrap; }
+  small { color: #64748b; font-size: 10px; }
+</style>
+</head>
+<body>
+  <h1><span class="dot" id="dot"></span> iGreen Sync</h1>
+  <label>Token de pareamento (gerado no painel)</label>
+  <input id="token" type="password" placeholder="cole aqui" />
+  <button id="save" class="secondary">Salvar token</button>
+  <button id="sync">Sincronizar agora</button>
+  <div class="row">
+    <input type="checkbox" id="auto" />
+    <label for="auto" style="margin:0">Sincronizar automaticamente (a cada 6h)</label>
+  </div>
+  <div class="status" id="status">Aguardando...</div>
+  <small>Voce precisa estar logado em app.igreenenergia.com.br nesta mesma sessao.</small>
+  <script src="popup.js"></script>
+</body>
+</html>
