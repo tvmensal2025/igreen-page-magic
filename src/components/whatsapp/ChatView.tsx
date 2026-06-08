@@ -15,6 +15,8 @@ import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useViewportWidth } from "@/hooks/useViewportWidth";
+
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 
 import {
@@ -59,6 +61,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [globalAiEnabled, setGlobalAiEnabled] = useState<boolean>(true);
   const [togglingBot, setTogglingBot] = useState(false);
   const isMobile = useIsMobile();
+  const { width: vw } = useViewportWidth();
+  const isXl = vw >= 1280;
+
 
   // Restaura largura do painel lateral de Captação salva pelo consultor.
   useEffect(() => {
@@ -404,13 +409,16 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   const phoneNumber = chat.remoteJid.split("@")[0];
 
-  // Em desktop, o painel de Captação fica como coluna lateral integrada ao chat.
-  // Em mobile, continua como Sheet (overlay) — única opção razoável em telas pequenas.
-  const showInlineCapture = !isMobile && captureOpen && !!customerId;
+  // Em telas xl+ (≥1280px), o painel Captação fica como coluna lateral inline.
+  // Abaixo disso, vira Sheet (overlay) pra não esmagar o chat e o composer.
+  const showInlineCapture = isXl && captureOpen && !!customerId;
+  const showSheetCapture = !isXl && !!customerId;
 
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
-      <div className={`flex flex-col min-h-0 min-w-0 ${showInlineCapture ? "flex-1" : "flex-1"}`}>
+      <div className="flex flex-col min-h-0 min-w-0 flex-1">
+
+
       {/* Chat header — h-14, mais ar */}
       <div className="flex items-center gap-2.5 px-3.5 h-14 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
         <Avatar className="h-9 w-9 shrink-0 ring-1 ring-primary/20">
@@ -658,19 +666,20 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       )}
       </div>
 
-      {/* Painel de Captação — coluna lateral em desktop (resizable), Sheet em mobile */}
+      {/* Painel de Captação — coluna lateral inline só em telas xl+ (≥1280px).
+          Abaixo disso vira Sheet (overlay) pra não esmagar o chat. */}
       {showInlineCapture && (
         <>
           <div
             role="separator"
             aria-orientation="vertical"
-            className="hidden md:block w-1 cursor-col-resize bg-border/60 hover:bg-primary/40 transition-colors shrink-0"
+            className="hidden xl:block w-1 cursor-col-resize bg-border/60 hover:bg-primary/40 transition-colors shrink-0"
             onMouseDown={(e) => {
               e.preventDefault();
               const startX = e.clientX;
-              const startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--cap-side-w") || "400", 10);
+              const startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--cap-side-w") || "360", 10);
               const onMove = (ev: MouseEvent) => {
-                const w = Math.min(640, Math.max(320, startW - (ev.clientX - startX)));
+                const w = Math.min(560, Math.max(300, startW - (ev.clientX - startX)));
                 document.documentElement.style.setProperty("--cap-side-w", `${w}px`);
               };
               const onUp = () => {
@@ -684,7 +693,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             }}
             title="Arraste pra redimensionar"
           />
-          <div className="hidden md:flex shrink-0" style={{ width: "var(--cap-side-w, 400px)" }}>
+          <div className="hidden xl:flex shrink-0" style={{ width: "var(--cap-side-w, 360px)" }}>
             <CaptureSheet
               open={captureOpen}
               onOpenChange={setCaptureOpen}
@@ -698,8 +707,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         </>
       )}
 
-      {/* Capture Sheet (mobile fullscreen) */}
-      {isMobile && customerId && (
+      {/* Capture Sheet (overlay) — mobile e desktop apertado (<xl) */}
+      {showSheetCapture && (
         <CaptureSheet
           open={captureOpen}
           onOpenChange={setCaptureOpen}
@@ -709,7 +718,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           phoneNumber={phoneNumber}
         />
       )}
+
     </div>
 
   );
 }
+

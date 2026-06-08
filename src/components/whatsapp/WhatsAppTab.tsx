@@ -212,7 +212,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
       </div>
 
       {/* Sub-tab navigation — underline animado, hover suave, pill de badge */}
-      <div className="flex border-x border-border/60 bg-card/80 backdrop-blur-sm overflow-x-auto shrink-0 h-10 px-1 gap-0.5">
+      <div className="flex flex-wrap border-x border-border/60 bg-card/80 backdrop-blur-sm shrink-0 min-h-10 px-1 gap-0.5">
         {SUB_TABS.map((tab) => {
           const Icon = tab.icon;
           const showBadge = tab.key === "conversas" && totalUnread > 0;
@@ -278,7 +278,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                   )}
                 </div>
               )}
-              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "280px" } as React.CSSProperties}>
+              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "240px" } as React.CSSProperties}>
               {/* Mobile: show sidebar OR chat, not both */}
               {isMobile ? (
                 selectedChatJid ? (
@@ -323,7 +323,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                       consultantId={userId}
                     />
                   </div>
-                  <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={280} minPx={240} maxPx={420} />
+                  <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={240} minPx={200} maxPx={360} />
                   <div className="flex-1 min-w-0 min-h-0 flex flex-col">
                     <ChatView
                       instanceName={instanceName}
