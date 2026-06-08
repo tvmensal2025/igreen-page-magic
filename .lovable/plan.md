@@ -1,59 +1,121 @@
-## Auditoria do clique no suporte remoto
+## Diagnóstico
 
-### Causa raiz principal — cliques não funcionam em componentes Radix/shadcn
+Há dois problemas separados:
 
-No lado do operador, o overlay (`RemoteControlOverlay` em `src/pages/SuperAdminRemoteSupport.tsx:721`) já captura `pointer/click/wheel` e envia comandos `mouseClick / mouseMove / mouseDblClick` para o consultor pelo DataChannel.
+1. **Controle remoto marcando/clicando errado**
+   - O vídeo compartilhado pode estar vindo como tela inteira/janela/aba, mas o comando remoto hoje converte `x/y` direto para `window.innerWidth/window.innerHeight` do consultor.
+   - Quando o consultor compartilha a tela inteira ou uma janela com barra do navegador, a coordenada do vídeo não bate com a coordenada real da página. Por isso aparece que marcou um ponto, mas o clique cai em outro ou não navega.
+   - O clique também ainda depende de eventos sintéticos genéricos; alguns botões/links/inputs precisam do alvo interativo correto e de sequência mais fiel de `pointer/mouse/focus/key`.
 
-No lado do consultor (`src/features/remote-support/actionHandler.ts:163-207`), os handlers `mouseClick / mouseDown / mouseUp / mouseMove` disparam **apenas `MouseEvent`** (`mousedown`, `mouseup`, `click`) e fazem fallback com `el.click()`.
+2. **Variantes de fluxo travadas por ordem**
+   - O botão atual “Adicionar fluxo” escolhe automaticamente a primeira variante faltante. O consultor não consegue escolher livremente A, B, C, D ou E.
+   - A regra de roteamento precisa considerar apenas variantes que estão ativas **e** têm fluxo existente, para não mandar lead para variante sem fluxo configurado.
 
-**O problema:** quase toda a UI do app é **Radix UI (shadcn)**. Componentes como `Select`, `DropdownMenu`, `Dialog/Sheet`, `Popover`, `Slider`, `Tooltip`, `Switch` e os botões dentro deles escutam `pointerdown` / `pointerup` / `pointermove` — não `mousedown/click`. Como nenhum `PointerEvent` é dispatched, dropdowns, selects, menus, abas de fluxo, links em popovers etc. não abrem nem reagem aos cliques. É exatamente o sintoma "vejo os links na lateral mas não consigo clicar".
+## Plano de implementação
 
-Além disso, `mouseClick` hoje dispara `click` sintético **e** `el.click()`, o que aciona o handler duas vezes — em toggles, abas e checkboxes isso abre-e-fecha imediatamente, dando a sensação de "não clica".
+### 1. Corrigir mapeamento do mouse no suporte remoto
 
-### Outros bugs que pioram a experiência
+- Guardar, no lado do consultor, metadados reais do compartilhamento:
+  - tipo de captura (`browser`, `window`, `monitor`, quando disponível);
+  - tamanho do track de vídeo;
+  - `window.innerWidth/innerHeight`, `outerWidth/outerHeight`, `screenX/screenY`, `screen.width/height`, `devicePixelRatio`.
+- Alterar `toViewportXY` para converter a coordenada conforme o tipo de captura:
+  - **aba atual/browser tab:** mapear direto para o viewport da página;
+  - **janela/tela inteira:** descontar offset da janela/viewport antes de clicar;
+  - se não houver metadados confiáveis, cair no modo atual como fallback.
+- Ajustar `getDisplayMedia` para preferir “esta guia/aba atual” quando o navegador suportar, reduzindo erro de coordenada.
+- Mostrar aviso no banner se o usuário estiver compartilhando tela inteira/janela em vez da aba, porque esse modo é menos preciso.
 
-1. **Toolbar flutuante sobre o overlay (`PlayerToolbar`, linha 630)** — está em `z-20` enquanto o `RemoteControlOverlay` não tem z-index. Cliques no topo central do vídeo são consumidos pelos botões da toolbar do operador, não enviados ao consultor.
-2. **Sem `pointerleave` → cursor "fantasma"** — ao sair do vídeo, o cursor virtual continua no último ponto e o consultor pode receber hovers presos.
-3. **Sem coalescing de `mousedown/up` para drag** — atualmente só `mouseClick` é enviado; o usuário não consegue arrastar sliders, redimensionar painéis nem selecionar texto.
-4. **`elementFromPoint` ignora o elemento que está sob o ponteiro virtual visível no consultor** — se o consultor estiver com um cursor de outro app por cima, o elemento real ainda é detectado, mas overlays próprios do projeto (banner de suporte) já são respeitados via `data-remote-support-banner`. OK.
-5. **`focusable()` chama `focus()` antes do click** — em alguns inputs do Radix isso pode roubar foco antes do menu abrir. Vamos manter, mas só focar quando o alvo for de fato campo de input.
+### 2. Tornar o clique/navegação remoto mais fiel
 
-### Plano de correção
+- Normalizar o alvo antes de disparar eventos:
+  - se clicar em `svg`, `span` ou ícone dentro de botão/link, subir para o botão/link/input/select/elemento com `role` interativo.
+- Corrigir sequência de eventos:
+  - `pointermove` enquanto move;
+  - `pointerdown` imediato no apertar;
+  - `pointerup` no soltar;
+  - `click` apenas uma vez quando não for drag.
+- Evitar clique duplicado depois de arrastar.
+- Adicionar logs curtos de diagnóstico para comandos que falham (`no element`, coordenada fora do viewport, alvo protegido), para a próxima auditoria ter sinal real.
 
-**A. `actionHandler.ts` — emitir PointerEvents + simplificar clique (resolve 95% do caso)**
+### 3. Melhorar drag/seleção/scroll remoto
 
-1. Adicionar helper `dispatchPointer(type, el, x, y, button)` que dispara `PointerEvent` com `pointerType: 'mouse'`, `isPrimary: true`, `pointerId: 1`, `bubbles`, `cancelable`.
-2. Em `mouseMove`: disparar `pointermove` + `mousemove`.
-3. Em `mouseDown`: `pointerdown` → `mousedown`.
-4. Em `mouseUp`: `pointerup` → `mouseup`.
-5. Em `mouseClick`: sequência completa `pointerdown → mousedown → pointerup → mouseup → click`. **Remover o `el.click()` duplicado**; só faz fallback `el.click()` se `defaultPrevented` for `false` E o elemento não tiver capturado o `pointerup` (heurística: se for `<a>`/`<button>` nativo sem React handler).
-6. Em `mouseDblClick`: dois `pointerdown/up` + `dblclick`.
-7. Adicionar caso `pointerLeave` (opcional, para limpar hover) — disparado quando o operador sai do overlay.
+- Enviar `mouseDown` no `pointerdown` real, não só depois que ultrapassar limite de drag.
+- No `pointermove` com botão pressionado, manter `buttons=1` no lado do consultor.
+- No `pointerleave`, finalizar `mouseUp` no último ponto válido.
+- Manter wheel/scroll com fallback programático para containers roláveis.
 
-**B. `SuperAdminRemoteSupport.tsx` — ajustes de overlay**
+### 4. Liberar criação independente das variantes A–E
 
-1. `RemoteControlOverlay`: adicionar `z-10` no container do overlay e mover toolbar para `z-30`, garantindo que cliques na área central do vídeo cheguem ao overlay (sem mudar a toolbar visual).
-2. Adicionar `onPointerLeave` no overlay que envia `mouseMove` com x/y fora de tela (ou novo `pointerLeave`) e esconde o cursor virtual.
-3. Adicionar `onPointerDown`/`onPointerUp` no overlay enviando `mouseDown`/`mouseUp` — habilita **drag** (sliders, seleção de texto, arrastar abas).
-4. Manter `onClick` como hoje, mas só enviar `mouseClick` se não houve `mouseDown` recente no mesmo ponto (evita clique duplicado quando o navegador já gerou pointerdown→pointerup→click).
+- Trocar “Adicionar fluxo” por um menu/dialog com botões explícitos:
+  - Criar A
+  - Criar B
+  - Criar C
+  - Criar D
+  - Criar E
+- Variantes já criadas aparecem como indisponíveis para criação, mas continuam selecionáveis/editáveis.
+- O consultor poderá criar qualquer letra em qualquer ordem, sem depender da próxima livre.
 
-**C. `types.ts`** — sem mudança de schema; comandos existentes (`mouseDown/mouseUp/mouseMove/mouseClick/mouseDblClick`) já cobrem tudo. Opcional: adicionar `pointerLeave` se quisermos resetar hover; pode ficar para depois.
+### 5. Criar RPC segura para garantir fluxo por variante
 
-### Detalhes técnicos
+Criar uma migração com uma função tipo `ensure_bot_flow_variant(_consultant_id, _variant, _source_variant)`:
 
-- `PointerEvent` precisa de polyfill? Não — todos os browsers modernos têm `window.PointerEvent`. Adicionar guard: `if (typeof PointerEvent !== 'undefined') dispatch(new PointerEvent(...))`.
-- Radix usa `onPointerDown` em `DropdownMenu.Trigger`, `Select.Trigger`, `Dialog.Trigger`, etc. Com `pointerdown` bubbling e `cancelable`, abrirão normalmente.
-- `el.setPointerCapture(pointerId)` é chamado por Radix em sliders — funcionará pois o pointerId é constante (1) entre down/up.
-- Manter `data-remote-support-banner` para continuar protegendo o ícone do consultor.
+- Valida que a variante é A–E.
+- Garante permissão: próprio consultor ou super admin.
+- Se o fluxo da variante já existir, retorna o fluxo existente.
+- Se não existir:
+  - cria `bot_flows` para a variante escolhida;
+  - clona passos de uma fonte funcional, nesta ordem:
+    1. template público da mesma variante, se existir;
+    2. variante fonte escolhida/atual do consultor;
+    3. primeira variante existente do consultor;
+    4. fluxo vazio apenas se realmente não houver fonte.
+- Não coloca a variante automaticamente para receber leads sem o switch estar ativo em `consultants.active_variants`.
 
-### Arquivos afetados
+### 6. Garantir que o sistema obedece 100% as regras de variantes
 
-- `src/features/remote-support/actionHandler.ts` — adicionar pointer dispatch e reordenar `mouseClick`.
-- `src/pages/SuperAdminRemoteSupport.tsx` — z-index do overlay/toolbar, handlers `onPointerDown/Up/Leave` no `RemoteControlOverlay`.
+- Atualizar `assign_flow_variant` e o trigger de inserção de clientes para usar:
 
-### Critério de aceite
+```text
+variantes_disponíveis = consultants.active_variants ∩ bot_flows existentes/ativos
+```
 
-- Abrir Select/Dropdown/Combobox da UI remota com um clique.
-- Conseguir arrastar slider e selecionar texto.
-- Toolbar do operador não bloqueia mais a região central do vídeo.
-- Cursor virtual desaparece quando o operador tira o mouse do vídeo.
+- Se só uma variante disponível: todos os leads novos vão para ela.
+- Se houver várias: round-robin 1 a 1 somente entre as disponíveis.
+- Se `active_variants` apontar para uma letra sem fluxo, ela será ignorada em vez de quebrar o atendimento.
+- O lead já existente mantém sua variante; só lead novo entra na nova regra.
+
+### 7. Ajustar a UI do editor de fluxo
+
+- Depois de criar uma variante específica, selecionar automaticamente essa variante.
+- Atualizar a barra para deixar claro:
+  - “criado/editável”;
+  - “recebendo leads” via switch;
+  - “pausado” continua editável, mas não recebe leads.
+- Melhorar as mensagens de erro para mostrar o motivo real em vez de erro genérico.
+
+### 8. Validação
+
+- Testar controle remoto com:
+  - compartilhar aba atual;
+  - clicar em botão/link;
+  - abrir dropdown/select;
+  - digitar em input;
+  - rolar página;
+  - arrastar/selecionar.
+- Testar variantes:
+  - criar C antes de B;
+  - criar A/B/C/D/E em qualquer ordem;
+  - ativar/desativar switches;
+  - confirmar que novos leads só entram nas variantes ativas com fluxo existente.
+
+## Arquivos principais previstos
+
+- `src/features/remote-support/screenShare.ts`
+- `src/features/remote-support/actionHandler.ts`
+- `src/features/remote-support/types.ts`
+- `src/pages/SuperAdminRemoteSupport.tsx`
+- `src/features/remote-support/ActiveSessionBanner.tsx`
+- `src/components/admin/flow-builder/VariantDistributionBar.tsx`
+- `src/pages/FluxoBuilder.tsx`
+- nova migração Supabase para RPC/regras de distribuição
