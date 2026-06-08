@@ -1092,6 +1092,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       const flow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
       if (!flow?.id) return false;
+      const { resolveMediaOwnerId } = await import("../../_shared/resolve-flow.ts");
+      const mediaOwnerId = await resolveMediaOwnerId(
+        supabase,
+        customer.consultant_id,
+        (customer as any)?.flow_variant || "A",
+      );
 
       const { data: stepRow } = await supabase
         .from("bot_flow_steps")
