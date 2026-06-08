@@ -1,58 +1,67 @@
-# Anúncios — ajustes para começar a publicar
+# Plano — Sync iGreen 100% via extensão
 
-## 1. Remover o atalho grande "Replicar campanha Uberlândia"
+## 1. Remover credenciais do portal iGreen
 
-- `AdsCentralTab.tsx`: tirar o `ReplicateUberlandiaCard` do bento do dashboard e deixar o KPI hero (`AdMetricsCards`) ocupar a linha inteira (`colSpan=12`).
-- Apagar o arquivo `src/components/admin/ads/ReplicateUberlandiaCard.tsx` (não é mais usado em lugar nenhum depois desse passo).
+- `**src/components/admin/DadosTab.tsx**`: deletar o bloco "Credenciais Portal iGreen" (email + senha + toggle de mostrar senha) e os campos `igreen_portal_email` / `igreen_portal_password` do form. Remover imports `KeyRound`, `Eye`, `EyeOff` se ficarem sem uso.
+- `**src/components/admin/DashboardTab.tsx**`:
+  - Remover o `Dialog` de "Conectar ao Portal iGreen" (credForm, showCredentialsDialog, handleSaveCredentialsAndSync, showCredPassword).
+  - Remover o `useEffect` que dispara `runSync` automaticamente quando há `igreen_portal_email`.
+  - Remover qualquer auto-prompt de credenciais no boot.
+- Manter as colunas `igreen_portal_email/password` no banco (sem migração) — apenas paramos de usá-las na UI.
 
-## 2. Um único botão "Criar campanha" (modo avançado sempre)
+## 2. "Sincronizar agora" passa a falar com a extensão
 
-- No header do `AdsCentralTab.tsx`, remover o botão "Avançado" e manter só o CTA dourado **"Criar campanha"**, que abre direto o `CreateCampaignWizard` (modo completo).
-- Apagar o `ExpressCampaignDialog` da rota do header (mantém o arquivo no repo por enquanto pra não quebrar nada que ainda importe; é só deixar de abrir).
-- No wizard, remover o link "Modo avançado (controle total)" — não faz mais sentido com um único caminho.
+- O botão **Sincronizar** do header do Dashboard deixa de chamar a edge `sync-igreen-customers` e passa a:
+  1. Tentar `chrome.runtime.sendMessage(EXT_ID, { type: "SYNC_NOW" })`.
+  2. Se não houver resposta → modal "Instale/atualize a extensão iGreen Sync" com botão para a aba de instalação (`IGreenExtensionCard` já existente).
+  3. Se a extensão responder `{ ok:false, reason:"not_logged_in" }` → modal "Você precisa estar logado no escritório iGreen" com botão "Abrir escritório em nova aba" (`https://escritorio.igreenenergy.com.br/`) e instrução de voltar e clicar de novo.
+  4. Se `{ ok:false, reason:"no_token" }` → modal apontando para o card de pareamento (gerar token).
+  5. Se `{ ok:true }` → toast verde + cooldown de 30 s já existente.
+- Criar helper `src/lib/igreenExtensionBridge.ts` com `requestSync()` e `pingExtension()` usando o ID público da extensão (vamos publicar o ID hardcoded — para dev usamos o `chrome-extension://<id>` impresso pelo manifest após `Load unpacked`; o card de pareamento já mostra esse ID).
 
-## 3. Miniatura (vídeo/imagem) em TODA campanha listada
+### Mudanças na extensão
 
-- Em `CampaignsList.tsx`, ao carregar campanhas, buscar também o criativo vinculado (preferência: `ad_template_usages.template_id` → `ad_templates.video_thumb_url` / `photos[0].url`; fallback: primeiro item de `facebook_creative_packs` ou `ad_image_library` do consultor associado à campanha).
-- Renderizar um thumbnail 64×64 (quadrado) à esquerda de cada card de campanha:
-  - Se houver `video_url` ou `video_thumb_url` → mostra a thumb com um ícone de "play" sobreposto.
-  - Se houver foto → mostra a foto.
-  - Sem mídia → placeholder cinza com ícone de imagem e texto "Sem criativo".
-- Mesmo tratamento na visão compacta da lista (mobile).
+- `**manifest.json**`: adicionar
+  ```json
+  "externally_connectable": { "matches": [
+    "https://igreen.cloud/*", "https://*.igreen.cloud/*",
+    "https://*.lovable.app/*", "http://localhost/*"
+  ] }
+  ```
+- `**background.js**`: adicionar listener `chrome.runtime.onMessageExternal` que:
+  - valida origem,
+  - checa se há token salvo (`no_token`),
+  - faz um `fetch` rápido em `https://escritorio.igreenenergy.com.br/` (ou abre aba em background e inspeciona) para detectar sessão; se 401/redirect login → `not_logged_in`,
+  - se OK, dispara o mesmo fluxo do `SYNC_NOW` interno e responde `{ ok:true }` quando termina.
 
-## 4. Bônus editável pelo admin (não fixar 100%)
+## 3. Popup da extensão: visual + token oculto
 
-Hoje os rótulos dizem "Bônus até 100% / 50%", mas no campo a média real é 60%. O super-admin precisa editar.
+`**extension/igreen-sync/popup.html` + `popup.js**` (reescrita do popup):
 
-- Migration nova: criar tabela `public.ad_bonus_tiers` com colunas `tier` (`alto`|`medio`|`sem_bonus`), `label`, `percent` (int), `updated_by`. Seed inicial: `alto=60`, `medio=30`, `sem_bonus=0`. Inclui GRANTs + RLS (leitura `authenticated`, escrita só `admin` via `has_role`).
-- Novo card em **Configurações do admin** ("Bônus por tier de distribuidora") para editar os 3 valores.
-- `CreateCampaignWizard.tsx` e `UseTemplateDialog.tsx`: ler `ad_bonus_tiers` no mount e substituir todo texto hardcoded "100% / 50%" pelo valor vindo do banco (ex: "🟢 Bônus até {alto}%", botão "Carregar TODAS {alto}%", toast também).
-- Esse número é só rótulo/UX — não muda a lógica do `loadAllOfTier`.
+- Visual mais polido: cabeçalho com gradiente verde, badge de status "Conectado / Não pareado / Sincronizando", card de "Último sync" com ícones, botão principal grande "Sincronizar agora", switch estilizado para auto-sync.
+- **Token mascarado por padrão**:
+  - Se já existe token salvo → mostrar apenas `abcd1234••••••••` (read-only), com 2 botões pequenos: **Trocar token** (abre input) e **Remover** (limpa storage). Sem campo de input visível.
+  - Se não existe token → mostrar input + botão "Salvar".
+  - Nunca renderizar o token completo na tela, mesmo após salvar.
+- Adicionar seção colapsável "Diagnóstico" com último erro e link "Abrir escritório iGreen" (target=_blank).
 
-## 5. Não carregar todas as cidades de uma vez (limite 5M)
+## 4. Empacotar nova extensão
 
-- Remover os botões **"Carregar TODAS 100%"** e **"Carregar TODAS 50%"** do wizard.
-- Substituir por uma única ação **"Sugerir 8 cidades fortes deste tier"** que pega as N melhores (já temos `loadPresetCities` com `budgetLeft`); aplica preset por preset com cap=8 cidades/preset e cap global=50 cidades.
-- Mostrar contador "X / 50 cidades selecionadas" e badge amarelo quando passar de 30 ("alcance grande, CPL pode subir").
-- Tooltip explicando: "Carregar tudo cria audiência de milhões e diluiu o anúncio — selecione manualmente ou use os atalhos."
+- Após as alterações, regerar o `public/igreen-sync-extension.zip` (o `IGreenExtensionCard` já distribui esse arquivo).
+- Bump da versão do manifest para `1.4.0`.
 
-## 6. Visual mais profissional (ambos os modos)
+## Arquivos tocados
 
-Polimento focado, sem mudar layout estrutural:
+- `src/components/admin/DadosTab.tsx` (remover bloco credenciais)
+- `src/components/admin/DashboardTab.tsx` (remover dialog + auto-sync; novo handler do botão Sincronizar)
+- `src/lib/igreenExtensionBridge.ts` (novo)
+- `extension/igreen-sync/manifest.json` (externally_connectable, v1.4.0)
+- `extension/igreen-sync/background.js` (handler externo + detecção de login)
+- `extension/igreen-sync/popup.html` + `popup.js` (visual + token oculto)
+- `public/igreen-sync-extension.zip` (regerar)
 
-- **Cards de campanha** (`CampaignsList.tsx`): bordas `border-[hsl(var(--ads-border))]`, gradiente sutil do tema dourado/verde no topo da campanha ativa, status como `Badge` com dot animado quando `active`, KPIs (gasto/leads/CPL) em grid de 3 com tipografia consistente (`font-heading` no número, `text-muted-foreground` no rótulo).
-- **Wizard** (`CreateCampaignWizard.tsx`):
-  - Tabs "Cidades inteiras" / "Endereço + raio" viram pílulas grandes com ícone à esquerda e descrição embaixo ("Cidades inteiras — alcance maior" / "Endereço + raio — ultra-local, menos desperdício").
-  - Seção de distribuidoras: cada tier vira um bloco com cor de borda (verde / âmbar / cinza), o percentual vindo do banco em destaque grande no canto.
-  - Step indicator no topo (`1 Mídia · 2 Público · 3 Orçamento · 4 Revisão`) com a etapa atual em dourado.
+## Pergunta
 
-## Resumo técnico
-
-- Arquivos editados: `AdsCentralTab.tsx`, `CampaignsList.tsx`, `CreateCampaignWizard.tsx`, `UseTemplateDialog.tsx`, novo `BonusTiersAdminCard.tsx`, settings tab do `Admin.tsx` (registrar o card).
-- Arquivo removido: `ReplicateUberlandiaCard.tsx`.
-- 1 migration: tabela `ad_bonus_tiers` + GRANT + RLS + seed.
-- Sem mudança em edge functions.
-
-## Pergunta antes de implementar
-
-- Confirma os valores iniciais **alto = 60%**, **médio = 30%**, **sem bônus = 0%**? Se preferir outros, me diz que já entra no seed. deixe editavel
+1. Posso publicar o **ID fixo da extensão** (precisamos de uma `key` no manifest para o ID não mudar entre máquinas) ou prefere que o usuário cole o ID dele uma vez no painel? Recomendo a `key` fixa — torna o "Sincronizar" funcionar sem configuração extra.  
+  
+fixo id o id dele ja é colocado em dados e assim que ele faz  o cadastro 
