@@ -9,9 +9,11 @@ async function fetchCustomersFromPortal() {
   const candidates = [
     `${IGREEN_ORIGIN}${CUSTOMER_MAP_PATH}`,
     `${IGREEN_ORIGIN}/api${CUSTOMER_MAP_PATH}`,
+    `${IGREEN_ORIGIN}/api/customer/list`,
     `${IGREEN_ORIGIN}/customer/list`,
+    `${IGREEN_ORIGIN}/api/customers`,
   ];
-  let lastErr = "no_endpoint";
+  const tried = [];
   for (const url of candidates) {
     try {
       const res = await fetch(url, { method: "GET", credentials: "include", headers: { Accept: "application/json" } });
