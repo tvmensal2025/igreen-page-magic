@@ -37,6 +37,7 @@ type QA = {
   intent_name: string;
   is_opening: boolean;
   is_closing: boolean;
+  is_public?: boolean;
   text_response: string | null;
   triggers: Trigger[];
   medias: Media[];
