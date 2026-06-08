@@ -787,48 +787,57 @@ function RemoteControlOverlay({
     });
   };
 
-  const lastDownAt = useRef<number>(0);
-  const lastDownPos = useRef<{ x: number; y: number } | null>(null);
+  // Drag detection — só promove a mouseDown quando há movimento real após pressionar.
+  const downInfo = useRef<{ x: number; y: number; button: number; promoted: boolean } | null>(null);
+  const DRAG_THRESHOLD = 0.004; // ~4px em 1000px
 
   const onMove = (e: React.PointerEvent) => {
     const p = toNorm(e); if (!p) return;
     moveCursor(p.localX, p.localY);
     if (cursorRef.current) cursorRef.current.style.opacity = "1";
+    // Se há um botão pressionado e o movimento ultrapassou o limite, promove para drag.
+    const d = downInfo.current;
+    if (d && !d.promoted) {
+      const dx = p.x - d.x, dy = p.y - d.y;
+      if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD) {
+        d.promoted = true;
+        sendCmd({ kind: "mouseDown", x: d.x, y: d.y, button: d.button });
+      }
+    }
     pendingMove.current = { x: p.x, y: p.y };
     schedule();
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
     const p = toNorm(e); if (!p) return;
-    lastDownAt.current = performance.now();
-    lastDownPos.current = { x: p.x, y: p.y };
-    sendCmd({ kind: "mouseDown", x: p.x, y: p.y, button: e.button });
+    downInfo.current = { x: p.x, y: p.y, button: e.button, promoted: false };
     overlayRef.current?.focus();
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
     const p = toNorm(e); if (!p) return;
-    sendCmd({ kind: "mouseUp", x: p.x, y: p.y, button: e.button });
+    const d = downInfo.current;
+    downInfo.current = null;
+    if (d?.promoted) {
+      // Foi drag — fecha com mouseUp; click nativo será suprimido pelo browser.
+      sendCmd({ kind: "mouseUp", x: p.x, y: p.y, button: e.button });
+    }
+    // Caso contrário, esperamos o evento onClick → mouseClick (self-contained).
   };
 
   const onPointerLeave = () => {
     if (cursorRef.current) cursorRef.current.style.opacity = "0";
+    // Se tinha drag em andamento, finaliza-o no último ponto conhecido.
+    const d = downInfo.current;
+    if (d?.promoted) {
+      sendCmd({ kind: "mouseUp", x: d.x, y: d.y, button: d.button });
+    }
+    downInfo.current = null;
   };
 
   const onClick = (e: React.MouseEvent) => {
     const p = toNorm(e); if (!p) return;
     flash(p.localX, p.localY);
-    // Se já enviamos pointerDown+pointerUp recentemente no mesmo ponto,
-    // basta enviar o click final — evita acionar handler duas vezes.
-    const recent = performance.now() - lastDownAt.current < 800;
-    const samePos = lastDownPos.current &&
-      Math.abs(lastDownPos.current.x - p.x) < 0.01 &&
-      Math.abs(lastDownPos.current.y - p.y) < 0.01;
-    if (recent && samePos) {
-      // O handler do consultor dispara click só em mouseClick; aqui o down/up já
-      // foram, então usamos mouseClick que internamente refaz a sequência completa
-      // — só problema seria em toggles que reagem ao mousedown. Mantemos.
-    }
     sendCmd({ kind: "mouseClick", x: p.x, y: p.y, button: e.button });
   };
 
