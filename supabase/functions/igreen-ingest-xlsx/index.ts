@@ -331,8 +331,9 @@ Deno.serve(async (req) => {
         recs.push(rec);
       }
       const phones = recs.map((r) => String(r.phone_whatsapp));
-      // Carrega existentes (id, conversation_step) por phone+consultant
-      const existingMap = new Map<string, { id: string; conversation_step: string | null }>();
+      const codes = recs.map((r) => safeStr(r.igreen_code)).filter(Boolean) as string[];
+      // Carrega existentes por phone+consultant
+      const existingByPhone = new Map<string, { id: string; conversation_step: string | null; phone_whatsapp: string }>();
       for (let i = 0; i < phones.length; i += 200) {
         const chunk = phones.slice(i, i + 200);
         const { data } = await supabase.from("customers")
@@ -340,17 +341,35 @@ Deno.serve(async (req) => {
           .eq("consultant_id", consultantId)
           .in("phone_whatsapp", chunk);
         for (const e of (data || []) as Array<{ id: string; phone_whatsapp: string; conversation_step: string | null }>) {
-          existingMap.set(e.phone_whatsapp, { id: e.id, conversation_step: e.conversation_step });
+          existingByPhone.set(e.phone_whatsapp, e);
         }
       }
-      // Garante que registros novos respeitem o indice unico parcial (producao)
+      // Carrega existentes por igreen_code (para encontrar registros com phone_whatsapp placeholder
+      // que agora têm celular real — RECUPERA TELEFONE)
+      const existingByCode = new Map<string, { id: string; conversation_step: string | null; phone_whatsapp: string }>();
+      for (let i = 0; i < codes.length; i += 200) {
+        const chunk = codes.slice(i, i + 200);
+        const { data } = await supabase.from("customers")
+          .select("id, phone_whatsapp, conversation_step, igreen_code")
+          .eq("consultant_id", consultantId)
+          .in("igreen_code", chunk);
+        for (const e of (data || []) as Array<{ id: string; phone_whatsapp: string; conversation_step: string | null; igreen_code: string }>) {
+          existingByCode.set(e.igreen_code, e);
+        }
+      }
+      // Resolve cada rec -> registro existente (prefere phone, depois código)
+      const resolveExisting = (r: Record<string, unknown>) => {
+        const byPhone = existingByPhone.get(String(r.phone_whatsapp));
+        if (byPhone) return byPhone;
+        const code = safeStr(r.igreen_code);
+        return code ? existingByCode.get(code) : undefined;
+      };
       for (const r of recs) {
         r.is_test_lead = false;
         r.is_sandbox = false;
-        const ex = existingMap.get(String(r.phone_whatsapp));
+        const ex = resolveExisting(r);
         if (ex && ex.conversation_step && ex.conversation_step !== "complete") delete r.status;
       }
-      // Para NOVOS clientes: parquear em "espera" + calcular pending_stage (popup)
       const computePending = (rec: Record<string, unknown>): string => {
         const andamento = String(rec.andamento_igreen || "").toLowerCase();
         const status = String(rec.status || "").toLowerCase();
@@ -359,16 +378,29 @@ Deno.serve(async (req) => {
         return "aprovado";
       };
       const errorsDetail: Array<{ phone: string; codigo: string | null; motivo: string }> = [];
-      let upserted = 0, errors = 0;
+      let upserted = 0, errors = 0, phoneRecovered = 0;
       const lastError: { msg?: string } = {};
       // UPDATE existentes (NUNCA toca pos_venda_stage / pending — sao decisao do consultor)
+      const newRecs: Record<string, unknown>[] = [];
       for (const r of recs) {
-        const ex = existingMap.get(String(r.phone_whatsapp));
-        if (!ex) continue;
-        const patch = { ...r };
-        delete patch.phone_whatsapp; delete patch.consultant_id;
+        const ex = resolveExisting(r);
+        if (!ex) { newRecs.push(r); continue; }
+        const patch: Record<string, unknown> = { ...r };
+        delete patch.consultant_id;
         delete patch.is_test_lead; delete patch.is_sandbox;
         delete patch.customer_origin; delete patch.phone_contact_confirmed;
+        // RECUPERAR TELEFONE: se o registro existente tem placeholder e o XLSX trouxe número real,
+        // substituir o phone_whatsapp. Caso contrário, NÃO mexer no phone (já estava certo).
+        const newPhone = String(r.phone_whatsapp);
+        const oldPhone = ex.phone_whatsapp;
+        const newIsReal = !newPhone.startsWith("sem_celular_");
+        const oldIsPlaceholder = oldPhone.startsWith("sem_celular_");
+        if (newIsReal && oldIsPlaceholder) {
+          // mantém phone_whatsapp no patch para atualizar
+          phoneRecovered++;
+        } else {
+          delete patch.phone_whatsapp;
+        }
         const { error } = await supabase.from("customers").update(patch).eq("id", ex.id);
         if (error) {
           errors++; lastError.msg = error.message;
@@ -377,14 +409,13 @@ Deno.serve(async (req) => {
         } else upserted++;
       }
       // INSERT novos em lotes — parqueia em "espera" + pending_stage
-      const news = recs.filter((r) => !existingMap.has(String(r.phone_whatsapp)));
-      for (const r of news) {
+      for (const r of newRecs) {
         r.pos_venda_stage = "espera";
         r.pos_venda_manual = true;
         r.pos_venda_pending_stage = computePending(r);
       }
-      for (let i = 0; i < news.length; i += 100) {
-        const batch = news.slice(i, i + 100);
+      for (let i = 0; i < newRecs.length; i += 100) {
+        const batch = newRecs.slice(i, i + 100);
         const { data, error } = await supabase.from("customers").insert(batch).select("id");
         if (error) {
           lastError.msg = error.message;
@@ -399,7 +430,7 @@ Deno.serve(async (req) => {
         } else upserted += data?.length || 0;
       }
       if (!(result.clientes as { swapped?: boolean } | undefined)?.swapped) {
-        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped, last_error: lastError.msg || null, errors_detail: errorsDetail };
+        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped, phone_recovered: phoneRecovered, last_error: lastError.msg || null, errors_detail: errorsDetail };
       }
     }
 
