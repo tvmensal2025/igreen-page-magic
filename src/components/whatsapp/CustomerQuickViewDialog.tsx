@@ -136,7 +136,7 @@ function StageBlock({
   return (
     <div className="rounded-lg border border-border/60 p-3 bg-card/40 space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <p className="text-xs font-semibold text-foreground flex-1 text-white">{title}</p>
+        <p className="text-xs font-semibold text-foreground flex-1">{title}</p>
         {badge}
         <Badge variant="outline" className="text-[9px] gap-1">
           <TypeIcon className="h-2.5 w-2.5" /> {type}
