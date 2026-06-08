@@ -86,7 +86,7 @@ function MessagePreview({
 }: { type: string; text?: string | null; mediaUrl?: string | null; imageUrl?: string | null; displayName: string }) {
   const rendered = (text || "").replace(/\{\{nome\}\}/g, displayName).replace(/\{\{telefone\}\}/g, "");
   return (
-    <div className="rounded-lg p-3 space-y-2 border border-emerald-900/40 bg-lime-100">
+    <div className="rounded-lg p-3 space-y-2 border border-border/60 bg-card/60">
       {imageUrl && (
         <div className="rounded-md overflow-hidden bg-black/40 max-h-48">
           <img src={imageUrl} alt="" className="w-full object-contain max-h-48" loading="lazy" />
