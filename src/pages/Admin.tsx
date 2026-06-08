@@ -25,6 +25,7 @@ const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCo
 const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => ({ default: m.DashboardTab })));
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
 const IGreenExtensionCard = lazy(() => import("@/components/admin/IGreenExtensionCard").then(m => ({ default: m.IGreenExtensionCard })));
+const BonusTiersAdminCard = lazy(() => import("@/components/admin/BonusTiersAdminCard").then(m => ({ default: m.BonusTiersAdminCard })));
 const LinksTab = lazy(() => import("@/components/admin/LinksTab").then(m => ({ default: m.LinksTab })));
 
 const NotificationCenter = lazy(() => import("@/components/admin/NotificationCenter").then(m => ({ default: m.NotificationCenter })));
@@ -413,6 +414,7 @@ const AdminContent = () => {
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
             <Suspense fallback={null}>
               {userId && <IGreenExtensionCard userId={userId} />}
+              <BonusTiersAdminCard />
             </Suspense>
           </div>
         </SheetContent>

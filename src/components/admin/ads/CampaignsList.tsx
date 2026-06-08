@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock } from "lucide-react";
+import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { CampaignHealthCheck } from "./CampaignHealthCheck";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -20,6 +20,7 @@ interface Campaign {
   created_at: string; rejection_reason: string | null;
   ended_at: string | null;
 }
+interface Creative { kind: "video" | "image" | "none"; url: string | null }
 interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }
 
 function healthOf(m: { spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }): { level: "green" | "yellow" | "red" | "idle"; label: string } {
@@ -83,6 +84,7 @@ function explainRejection(raw: string | null | undefined): { title: string; sugg
 export function CampaignsList({ consultantId, refreshKey }: { consultantId: string; refreshKey: number }) {
   const [items, setItems] = useState<Campaign[]>([]);
   const [metrics, setMetrics] = useState<Record<string, Metric>>({});
+  const [creatives, setCreatives] = useState<Record<string, Creative>>({});
   const [waLeads, setWaLeads] = useState<Record<string, number>>({});
   const [waNumber, setWaNumber] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -150,6 +152,49 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           if (r.source_campaign_id) waCounts[r.source_campaign_id] = (waCounts[r.source_campaign_id] || 0) + 1;
         });
         setWaLeads(waCounts);
+
+        // ─── Criativos por campanha (preview de mídia) ───
+        // Tenta: ad_template_usages → ad_templates (video_thumb_url, video_url, photos[0])
+        try {
+          const { data: usages } = await (supabase as any)
+            .from("ad_template_usages")
+            .select("campaign_id, template_id")
+            .in("campaign_id", list.map(c => c.id));
+          const tplIds = Array.from(new Set(((usages as any[]) || []).map(u => u.template_id))).filter(Boolean);
+          const tplById: Record<string, any> = {};
+          if (tplIds.length > 0) {
+            const { data: tpls } = await (supabase as any)
+              .from("ad_templates")
+              .select("id, photos, video_url, video_thumb_url, creative_mode")
+              .in("id", tplIds);
+            (tpls || []).forEach((t: any) => { tplById[t.id] = t; });
+          }
+          const cr: Record<string, Creative> = {};
+          ((usages as any[]) || []).forEach((u) => {
+            const t = tplById[u.template_id];
+            if (!t) return;
+            if (t.creative_mode === "video" || t.video_url) {
+              cr[u.campaign_id] = { kind: "video", url: t.video_thumb_url || (Array.isArray(t.photos) && t.photos[0]?.url) || null };
+            } else if (Array.isArray(t.photos) && t.photos[0]?.url) {
+              cr[u.campaign_id] = { kind: "image", url: t.photos[0].url };
+            }
+          });
+          // Fallback: primeira imagem da biblioteca do consultor
+          const missing = list.filter(c => !cr[c.id]).map(c => c.id);
+          if (missing.length > 0) {
+            const { data: imgs } = await (supabase as any)
+              .from("ad_image_library")
+              .select("public_url")
+              .eq("consultant_id", consultantId)
+              .order("created_at", { ascending: false })
+              .limit(1);
+            const fallbackUrl = (imgs && imgs[0]?.public_url) || null;
+            missing.forEach((cid) => {
+              cr[cid] = fallbackUrl ? { kind: "image", url: fallbackUrl } : { kind: "none", url: null };
+            });
+          }
+          setCreatives(cr);
+        } catch { /* preview é best-effort */ }
       }
       setLoading(false);
     })();
@@ -231,9 +276,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         return (
           <Card key={c.id} className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="font-bold text-foreground truncate">{c.name}</h4>
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <CreativeThumb creative={creatives[c.id]} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-bold text-foreground truncate">{c.name}</h4>
                   <Badge className={STATUS_COLOR[c.status] || "bg-secondary"}>{STATUS_LABEL[c.status] || c.status}</Badge>
                   {(() => {
                     const h = healthOf(m);
@@ -292,6 +339,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     </Button>
                   </div>
                 )}
+                </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {(c.status === "active" || c.status === "paused") && c.fb_campaign_id && (
@@ -395,6 +443,28 @@ function Stat({ icon, label, value, highlight, tooltip }: { icon: React.ReactNod
     <div className={`rounded-lg p-2 ${highlight ? "bg-primary/10 border border-primary/20" : "bg-secondary/40"}`} title={tooltip}>
       <div className="flex items-center gap-1 text-muted-foreground">{icon}{label}</div>
       <div className={`font-bold mt-0.5 ${highlight ? "text-primary" : "text-foreground"}`}>{value}</div>
+    </div>
+  );
+}
+
+function CreativeThumb({ creative }: { creative?: Creative }) {
+  const c = creative || { kind: "none", url: null };
+  if (c.kind === "none" || !c.url) {
+    return (
+      <div className="w-16 h-16 shrink-0 rounded-lg border border-dashed border-border bg-secondary/40 flex flex-col items-center justify-center text-[9px] text-muted-foreground gap-0.5">
+        <ImageIcon className="w-4 h-4" />
+        Sem mídia
+      </div>
+    );
+  }
+  return (
+    <div className="relative w-16 h-16 shrink-0 rounded-lg overflow-hidden border border-border bg-black/40">
+      <img src={c.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+      {c.kind === "video" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/35">
+          <PlayCircle className="w-7 h-7 text-white drop-shadow" />
+        </div>
+      )}
     </div>
   );
 }

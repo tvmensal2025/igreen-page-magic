@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import { CreateCampaignWizard } from "./CreateCampaignWizard";
-import { ExpressCampaignDialog } from "./ExpressCampaignDialog";
 import { CampaignsList } from "./CampaignsList";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";
 import { CtwaConnectGuide } from "./CtwaConnectGuide";
-import { ReplicateUberlandiaCard } from "./ReplicateUberlandiaCard";
 import { SyncMetricsButton } from "./SyncMetricsButton";
 import { DragResizer } from "@/components/layout/DragResizer";
 
@@ -47,7 +45,6 @@ type View = "dashboard" | "gallery" | "campaigns" | "performance" | "intel" | "c
 export function AdsCentralTab({ consultantId }: Props) {
   const { toast } = useToast();
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [expressOpen, setExpressOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [view, setView] = useState<View>("dashboard");
   const [periodDays, setPeriodDays] = useState<number>(30);
@@ -99,15 +96,8 @@ export function AdsCentralTab({ consultantId }: Props) {
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           <SyncMetricsButton consultantId={consultantId} onSynced={() => setRefreshKey((k) => k + 1)} />
           <WalletChip consultantId={consultantId} />
-          <button
-            type="button"
-            onClick={() => setWizardOpen(true)}
-            className="ads-chip hidden sm:inline-flex"
-          >
-            <Plus className="w-3.5 h-3.5" /> Avançado
-          </button>
-          <button type="button" onClick={() => setExpressOpen(true)} className="ads-cta-gold">
-            <Sparkles className="w-3.5 h-3.5" /> Criar campanha
+          <button type="button" onClick={() => setWizardOpen(true)} className="ads-cta-gold">
+            <Plus className="w-3.5 h-3.5" /> Criar campanha
           </button>
         </div>
       </header>
@@ -158,19 +148,10 @@ export function AdsCentralTab({ consultantId }: Props) {
 
             {/* Bento — KPIs hero */}
             <div className="ads-bento">
-              <AdsTile colSpan={8} delay={0} className="!p-0 overflow-hidden">
+              <AdsTile colSpan={12} delay={0} className="!p-0 overflow-hidden">
                 <div className="p-4">
                   <AdMetricsCards consultantId={adAccountId} periodDays={periodDays} />
                 </div>
-              </AdsTile>
-              <AdsTile colSpan={4} delay={60}>
-                <ReplicateUberlandiaCard
-                  consultantId={consultantId}
-                  onPublished={() => {
-                    setRefreshKey((k) => k + 1);
-                    setView("campaigns");
-                  }}
-                />
               </AdsTile>
             </div>
 
@@ -262,16 +243,6 @@ export function AdsCentralTab({ consultantId }: Props) {
         onClose={() => setWizardOpen(false)}
         consultantId={consultantId}
         onCreated={() => setRefreshKey((k) => k + 1)}
-      />
-      <ExpressCampaignDialog
-        open={expressOpen}
-        onClose={() => setExpressOpen(false)}
-        consultantId={consultantId}
-        onCreated={() => {
-          setRefreshKey((k) => k + 1);
-          setView("campaigns");
-        }}
-        onOpenAdvanced={() => setWizardOpen(true)}
       />
     </div>
   );

@@ -11,6 +11,7 @@ import { DISTRIBUIDORAS_PRESETS } from "@/data/distribuidoraPresets";
 import { AdTemplate } from "@/services/adTemplates";
 import { supabase } from "@/integrations/supabase/client";
 import { useInstancePhone } from "@/hooks/useInstancePhone";
+import { useAdBonusTiers } from "@/hooks/useAdBonusTiers";
 
 interface Props {
   open: boolean;
@@ -23,14 +24,14 @@ interface Props {
 const PRESET_CACHE_VERSION = "v1";
 const cacheKey = (id: string) => `ads-preset-cities-${PRESET_CACHE_VERSION}-${id}`;
 
-const TIER_LABEL: Record<string, string> = {
-  alto: "🟢 Bônus até 100%",
-  medio: "🟡 Bônus até 50%",
-  sem_bonus: "⚪ Sem bônus extra",
-};
-
 export function UseTemplateDialog({ open, onClose, template, consultantId, onPublished }: Props) {
   const { toast } = useToast();
+  const { tiers: bonusTiers } = useAdBonusTiers();
+  const TIER_LABEL: Record<string, string> = {
+    alto: `🟢 Bônus até ${bonusTiers.alto.percent}%`,
+    medio: `🟡 Bônus até ${bonusTiers.medio.percent}%`,
+    sem_bonus: "⚪ Sem bônus extra",
+  };
   const [step, setStep] = useState<1 | 2>(1);
   const [presetId, setPresetId] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string>("__all__");

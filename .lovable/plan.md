@@ -1,111 +1,58 @@
-# Ajustes Extensão iGreen + Sincronização XLSX
+# Anúncios — ajustes para começar a publicar
 
-## Diagnóstico (o que está errado hoje)
+## 1. Remover o atalho grande "Replicar campanha Uberlândia"
 
-Conferi 1.060 clientes sincronizados via extensão e a planilha enviada:
+- `AdsCentralTab.tsx`: tirar o `ReplicateUberlandiaCard` do bento do dashboard e deixar o KPI hero (`AdMetricsCards`) ocupar a linha inteira (`colSpan=12`).
+- Apagar o arquivo `src/components/admin/ads/ReplicateUberlandiaCard.tsx` (não é mais usado em lugar nenhum depois desse passo).
 
-| Sintoma reportado | Causa real |
-|---|---|
-| Top Licenciado vazio / cadastros não aparecem | `igreen-ingest-xlsx` **não lê** as colunas `Licenciado` e `Código Licenciado` do XLSX → `registered_by_name`/`registered_by_igreen_id` ficam `NULL` em 100% dos registros. O `useAnalytics` agrupa Top Licenciado por `registered_by_name`, por isso aparece zerado. |
-| "Vejo cliente validado que não foi" | O status é derivado **só** de `Andamento`. As colunas `Data Validado` / `Data Ativo` / `Data Cadastro` são ignoradas. Quando `Andamento` vem vazio (acontece nos primeiros itens da planilha), cai em `pending` mas a UI mostra como "Validado" em outros pontos porque não há fallback nas datas. |
-| Telefone faltando | 880/1060 clientes ficaram com `phone_whatsapp = sem_celular_<código>`. A planilha **tem** `Celular` preenchido em todas as linhas — esses 880 vieram do sync antigo via API (`sync-igreen-customers`), antes da extensão. O ingest novo está correto, mas precisa **re-popular telefone quando o registro já existe sem celular real**. |
-| Devolutiva crua ("caminhoarquivodoc1:…") | Ingest grava o texto bruto da planilha. Precisa de parser que limpa os prefixos `caminhoarquivo:`, `caminhoarquivodoc1:`, `caminhocomprovante:` e devolve só a razão legível. |
-| Mapa de Rede sem GP/GI/Graduação/Bonificável | Código procura "GP Qualificados" / "GL Qualificados", mas a planilha usa **"GP Qualificável"**, **"GI Qualificável"** (com acento e singular). Também ignora `Bonificável`, `Green Points 2026`, `GP junho`, `GI junho`, `Clientes Ativos`, `Licenciados Diretos`, `Licenciados Diretos Ativos`, `Data Nascimento`, `Data Ativo`, `PRO`, `Graduação Expansão`. |
-| CRM não recebe cliente | Os clientes `igreen_sync` são bloqueados no Kanban CRM por trigger (correto por design). Eles deveriam aparecer no **Pós-Venda Kanban** em `pos_venda_stage='espera'`, mas o card nunca renderizou esse stage. Precisa garantir que a coluna "Em espera (export)" exista e mostre. |
-| Card da extensão no Dashboard | Hoje o `IGreenExtensionCard` está dentro do `DashboardTab.tsx`. Deve ser movido para o Sheet de **Configurações** (engrenagem) — junto do `DadosTab`. |
-| "Revogar" token não exclui | Hoje só marca `revoked_at`. Token continua no banco, aparece como "Revogado" na lista. Pedido: **DELETE permanente**. |
+## 2. Um único botão "Criar campanha" (modo avançado sempre)
 
----
+- No header do `AdsCentralTab.tsx`, remover o botão "Avançado" e manter só o CTA dourado **"Criar campanha"**, que abre direto o `CreateCampaignWizard` (modo completo).
+- Apagar o `ExpressCampaignDialog` da rota do header (mantém o arquivo no repo por enquanto pra não quebrar nada que ainda importe; é só deixar de abrir).
+- No wizard, remover o link "Modo avançado (controle total)" — não faz mais sentido com um único caminho.
 
-## O que vou fazer
+## 3. Miniatura (vídeo/imagem) em TODA campanha listada
 
-### 1. Mover Extensão para a engrenagem
-- `src/pages/Admin.tsx` (Sheet de Configurações): renderizar `<IGreenExtensionCard userId={userId}/>` abaixo do `<DadosTab/>`.
-- `src/components/admin/DashboardTab.tsx`: remover o card (linhas 353-354).
+- Em `CampaignsList.tsx`, ao carregar campanhas, buscar também o criativo vinculado (preferência: `ad_template_usages.template_id` → `ad_templates.video_thumb_url` / `photos[0].url`; fallback: primeiro item de `facebook_creative_packs` ou `ad_image_library` do consultor associado à campanha).
+- Renderizar um thumbnail 64×64 (quadrado) à esquerda de cada card de campanha:
+  - Se houver `video_url` ou `video_thumb_url` → mostra a thumb com um ícone de "play" sobreposto.
+  - Se houver foto → mostra a foto.
+  - Sem mídia → placeholder cinza com ícone de imagem e texto "Sem criativo".
+- Mesmo tratamento na visão compacta da lista (mobile).
 
-### 2. Excluir token permanentemente
-- `src/components/admin/IGreenExtensionCard.tsx`: trocar o handler `revoke` por `delete`:
-  ```ts
-  await supabase.from("igreen_extension_tokens").delete().eq("id", id);
-  ```
-- Ícone de lixeira passa a remover de vez. Adicionar `confirm()` antes.
-- Remover toda referência a `revoked_at` na renderização (lista agora só mostra ativo/expirado).
+## 4. Bônus editável pelo admin (não fixar 100%)
 
-### 3. Corrigir mapeamento Clientes (`igreen-ingest-xlsx/index.ts`)
-Em `buildCustomerRecord`:
-- **Licenciado**: ler `Licenciado` → `registered_by_name`; `Código Licenciado` → `registered_by_igreen_id` (int).
-- **Datas**: ler `Data Cadastro`, `Data Ativo`, `Data Validado` → `data_cadastro_igreen`, `data_ativo_igreen`, `data_validado_igreen` (parse `dd/mm/yyyy`).
-- **Status melhorado**: se `Data Validado` ou `Data Ativo` preenchidas → `approved`; senão usar o `mapStatus(Andamento)`.
-- **Devolutiva limpa**: regex `s.replace(/caminho[a-z0-9]*:\s*/gi, "").replace(/,\s+/g, " | ").trim()`.
-- **Demais campos**: `Data Nascimento` → `data_nascimento`; `Nível` → `nivel_licenciado`; `Cashback`, `Status Financeiro`, `Assinatura Cliente`, `Assinatura iGreen`, `Link Assinatura`, `Observação` → colunas correspondentes (criar via migration se não existirem; ver §5).
+Hoje os rótulos dizem "Bônus até 100% / 50%", mas no campo a média real é 60%. O super-admin precisa editar.
 
-Na lógica de UPDATE (linha 277-290): se o registro existente tem `phone_whatsapp LIKE 'sem_celular_%'` e o XLSX trouxe celular válido, **substituir** o telefone (e remover o placeholder). Isso recupera os 880 telefones perdidos.
+- Migration nova: criar tabela `public.ad_bonus_tiers` com colunas `tier` (`alto`|`medio`|`sem_bonus`), `label`, `percent` (int), `updated_by`. Seed inicial: `alto=60`, `medio=30`, `sem_bonus=0`. Inclui GRANTs + RLS (leitura `authenticated`, escrita só `admin` via `has_role`).
+- Novo card em **Configurações do admin** ("Bônus por tier de distribuidora") para editar os 3 valores.
+- `CreateCampaignWizard.tsx` e `UseTemplateDialog.tsx`: ler `ad_bonus_tiers` no mount e substituir todo texto hardcoded "100% / 50%" pelo valor vindo do banco (ex: "🟢 Bônus até {alto}%", botão "Carregar TODAS {alto}%", toast também).
+- Esse número é só rótulo/UX — não muda a lógica do `loadAllOfTier`.
 
-### 4. Corrigir mapeamento Rede (`buildNetworkRecord`)
-Trocar os `pick(...)` por:
-- `gp_qualificados`: `"GP Qualificável"` / `"GP Qualificavel"`
-- `gl_qualificados` → renomear lógico para `gi_qualificados`: `"GI Qualificável"`
-- Adicionar: `gt_qualificavel`, `bonificavel`, `green_points_ano`, `gp_mes`, `gi_mes`, `green_points_mes`, `data_nascimento`, `data_ativo`, `graduacao_expansao`, `licenciados_diretos`, `licenciados_diretos_ativos`, `clientes_ativos`, `pro`, `green_telecom_mes`, `livre_mes`, `placas_mes`, `club_mes`, `expansao_mes`.
-- No mirror para `network_members`: passar `gp`, `gi`, `graduacao`, `clientes_ativos`, `data_ativo`, `data_nascimento`.
+## 5. Não carregar todas as cidades de uma vez (limite 5M)
 
-### 5. Migration — colunas que faltam
+- Remover os botões **"Carregar TODAS 100%"** e **"Carregar TODAS 50%"** do wizard.
+- Substituir por uma única ação **"Sugerir 8 cidades fortes deste tier"** que pega as N melhores (já temos `loadPresetCities` com `budgetLeft`); aplica preset por preset com cap=8 cidades/preset e cap global=50 cidades.
+- Mostrar contador "X / 50 cidades selecionadas" e badge amarelo quando passar de 30 ("alcance grande, CPL pode subir").
+- Tooltip explicando: "Carregar tudo cria audiência de milhões e diluiu o anúncio — selecione manualmente ou use os atalhos."
 
-```sql
--- customers
-ALTER TABLE public.customers
-  ADD COLUMN IF NOT EXISTS data_cadastro_igreen date,
-  ADD COLUMN IF NOT EXISTS data_ativo_igreen date,
-  ADD COLUMN IF NOT EXISTS data_validado_igreen date,
-  ADD COLUMN IF NOT EXISTS nivel_licenciado int,
-  ADD COLUMN IF NOT EXISTS cashback_igreen text,
-  ADD COLUMN IF NOT EXISTS status_financeiro text,
-  ADD COLUMN IF NOT EXISTS assinatura_cliente_status text,
-  ADD COLUMN IF NOT EXISTS assinatura_igreen_status text,
-  ADD COLUMN IF NOT EXISTS link_assinatura text,
-  ADD COLUMN IF NOT EXISTS observacao_igreen text;
+## 6. Visual mais profissional (ambos os modos)
 
--- network_members
-ALTER TABLE public.network_members
-  ADD COLUMN IF NOT EXISTS gt_qualificavel numeric,
-  ADD COLUMN IF NOT EXISTS bonificavel numeric,
-  ADD COLUMN IF NOT EXISTS green_points_ano numeric,
-  ADD COLUMN IF NOT EXISTS gp_mes numeric,
-  ADD COLUMN IF NOT EXISTS gi_mes numeric,
-  ADD COLUMN IF NOT EXISTS green_points_mes numeric,
-  ADD COLUMN IF NOT EXISTS graduacao_expansao text,
-  ADD COLUMN IF NOT EXISTS licenciados_diretos int,
-  ADD COLUMN IF NOT EXISTS licenciados_diretos_ativos int,
-  ADD COLUMN IF NOT EXISTS clientes_ativos int,
-  ADD COLUMN IF NOT EXISTS pro text,
-  ADD COLUMN IF NOT EXISTS green_telecom_mes numeric,
-  ADD COLUMN IF NOT EXISTS livre_mes numeric,
-  ADD COLUMN IF NOT EXISTS placas_mes numeric,
-  ADD COLUMN IF NOT EXISTS club_mes numeric,
-  ADD COLUMN IF NOT EXISTS expansao_mes numeric,
-  ADD COLUMN IF NOT EXISTS data_ativo date,
-  ADD COLUMN IF NOT EXISTS data_nascimento date;
-```
+Polimento focado, sem mudar layout estrutural:
 
-### 6. Backfill dos 1.060 já sincronizados
-Após corrigir o ingest, peço para você re-sincronizar pela extensão. O ingest fará UPDATE (já trata duplicata por phone) e vai popular Licenciado/datas/telefone retroativamente. Sem migration de dados separada.
+- **Cards de campanha** (`CampaignsList.tsx`): bordas `border-[hsl(var(--ads-border))]`, gradiente sutil do tema dourado/verde no topo da campanha ativa, status como `Badge` com dot animado quando `active`, KPIs (gasto/leads/CPL) em grid de 3 com tipografia consistente (`font-heading` no número, `text-muted-foreground` no rótulo).
+- **Wizard** (`CreateCampaignWizard.tsx`):
+  - Tabs "Cidades inteiras" / "Endereço + raio" viram pílulas grandes com ícone à esquerda e descrição embaixo ("Cidades inteiras — alcance maior" / "Endereço + raio — ultra-local, menos desperdício").
+  - Seção de distribuidoras: cada tier vira um bloco com cor de borda (verde / âmbar / cinza), o percentual vindo do banco em destaque grande no canto.
+  - Step indicator no topo (`1 Mídia · 2 Público · 3 Orçamento · 4 Revisão`) com a etapa atual em dourado.
 
-### 7. CRM Pós-Venda — coluna "Em espera"
-- `src/components/whatsapp/PosVendaKanban.tsx`: confirmar que existe a coluna `espera` no array de stages. Se não, adicionar como primeira coluna. Cards vêm com `pos_venda_pending_stage` (aprovado/devolutiva/reprovado) já populado para o consultor mover.
+## Resumo técnico
 
-### 8. Não mexer
-- Lógica do Kanban CRM (continua bloqueando `igreen_sync` por trigger — design correto).
-- RLS / policies da `igreen_extension_tokens`.
-- Bucket / extensão Chrome em si (apenas o backend de ingest).
+- Arquivos editados: `AdsCentralTab.tsx`, `CampaignsList.tsx`, `CreateCampaignWizard.tsx`, `UseTemplateDialog.tsx`, novo `BonusTiersAdminCard.tsx`, settings tab do `Admin.tsx` (registrar o card).
+- Arquivo removido: `ReplicateUberlandiaCard.tsx`.
+- 1 migration: tabela `ad_bonus_tiers` + GRANT + RLS + seed.
+- Sem mudança em edge functions.
 
----
+## Pergunta antes de implementar
 
-## Arquivos tocados
-- `supabase/migrations/<novo>.sql` — colunas extras (§5)
-- `supabase/functions/igreen-ingest-xlsx/index.ts` — mapeamento completo + recuperação de telefone (§3, §4)
-- `src/components/admin/IGreenExtensionCard.tsx` — DELETE em vez de revoke (§2)
-- `src/pages/Admin.tsx` — card na engrenagem (§1)
-- `src/components/admin/DashboardTab.tsx` — remover card (§1)
-- `src/components/whatsapp/PosVendaKanban.tsx` — coluna "Em espera" (§7)
-
-## Validação
-Após implementar, peço você clicar **Sincronizar agora** na extensão. Depois eu consulto o banco e mostro: % com licenciado preenchido, % com telefone real, top licenciados, devolutivas formatadas, e GP/GI populados na Rede.
+- Confirma os valores iniciais **alto = 60%**, **médio = 30%**, **sem bônus = 0%**? Se preferir outros, me diz que já entra no seed. deixe editavel
