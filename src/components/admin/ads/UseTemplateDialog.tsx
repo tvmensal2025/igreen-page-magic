@@ -26,6 +26,12 @@ const cacheKey = (id: string) => `ads-preset-cities-${PRESET_CACHE_VERSION}-${id
 
 export function UseTemplateDialog({ open, onClose, template, consultantId, onPublished }: Props) {
   const { toast } = useToast();
+  const { tiers: bonusTiers } = useAdBonusTiers();
+  const TIER_LABEL: Record<string, string> = {
+    alto: `🟢 Bônus até ${bonusTiers.alto.percent}%`,
+    medio: `🟡 Bônus até ${bonusTiers.medio.percent}%`,
+    sem_bonus: "⚪ Sem bônus extra",
+  };
   const [step, setStep] = useState<1 | 2>(1);
   const [presetId, setPresetId] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string>("__all__");
