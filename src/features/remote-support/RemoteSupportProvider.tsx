@@ -19,7 +19,7 @@ export function RemoteSupportProvider() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  const { session, code, codeExpiresAt, sharing, request, end, startScreenShare } = useRequesterSession(userId);
+  const { session, code, codeExpiresAt, sharing, paused, togglePause, request, end, startScreenShare } = useRequesterSession(userId);
   const [refreshKey, setRefreshKey] = useState(0);
 
   if (!userId) return null;
@@ -32,6 +32,8 @@ export function RemoteSupportProvider() {
           code={code}
           codeExpiresAt={codeExpiresAt}
           sharing={sharing}
+          paused={paused}
+          onTogglePause={togglePause}
           onStartShare={startScreenShare}
           onEnd={end}
         />

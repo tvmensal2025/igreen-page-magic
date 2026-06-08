@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { SupportSession } from "./types";
 import { requestSupport, endSession, rotateCode, logAction } from "./api";
 import { createRequesterPeer } from "./screenShare";
-import { executeCommand } from "./actionHandler";
+import { executeCommand, setActivePeerForQuality, setRemoteControlPaused } from "./actionHandler";
 import type { RemoteCommand } from "./types";
 import { toast } from "sonner";
 
@@ -16,7 +16,17 @@ export function useRequesterSession(userId: string | null | undefined) {
   const [code, setCode] = useState<string | null>(null);
   const [codeExpiresAt, setCodeExpiresAt] = useState<number | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [paused, setPausedState] = useState(false);
   const peerRef = useRef<Awaited<ReturnType<typeof createRequesterPeer>> | null>(null);
+
+  const togglePause = useCallback(() => {
+    setPausedState(p => {
+      const next = !p;
+      setRemoteControlPaused(next);
+      if (session) logAction(session.id, "requester", next ? "control_paused" : "control_resumed");
+      return next;
+    });
+  }, [session]);
 
   // Load latest active/pending session on mount
   useEffect(() => {
@@ -130,6 +140,7 @@ export function useRequesterSession(userId: string | null | undefined) {
         },
       );
       peerRef.current = peer;
+      setActivePeerForQuality(peer.pc);
       await logAction(session.id, "requester", "screen_started");
       toast.success("Compartilhando tela com o suporte");
     } catch (e: any) {
@@ -140,5 +151,5 @@ export function useRequesterSession(userId: string | null | undefined) {
     }
   }, [session, sharing]);
 
-  return { session, code, codeExpiresAt, sharing, request, end, startScreenShare };
+  return { session, code, codeExpiresAt, sharing, paused, togglePause, request, end, startScreenShare };
 }

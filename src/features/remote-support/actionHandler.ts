@@ -1,7 +1,26 @@
 import type { RemoteCommand, CommandResult } from "./types";
 import { logAction } from "./api";
+import { applyVideoQuality, type QualityLevel } from "./screenShare";
 
 const PROTECTED_SELECTOR = "[data-remote-support-banner]";
+
+// ===== Estado compartilhado (pausa + peer ref para qualidade) =====
+let _paused = false;
+let _peerForQuality: RTCPeerConnection | null = null;
+const _pauseListeners = new Set<(p: boolean) => void>();
+
+export function setRemoteControlPaused(p: boolean) {
+  _paused = p;
+  _pauseListeners.forEach(fn => fn(p));
+}
+export function isRemoteControlPaused() { return _paused; }
+export function onRemoteControlPauseChange(fn: (p: boolean) => void) {
+  _pauseListeners.add(fn);
+  return () => _pauseListeners.delete(fn);
+}
+export function setActivePeerForQuality(pc: RTCPeerConnection | null) { _peerForQuality = pc; }
+
+
 
 function isProtected(el: Element | null): boolean {
   if (!el) return false;
@@ -90,6 +109,12 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
     // log apenas comandos relevantes (evita spam de mouseMove)
     if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel") {
       logAction(sessionId, "operator", `cmd:${cmd.kind}`, cmd.selector || cmd.url || null, cmd as never).catch(() => {});
+    }
+
+    // Comandos sempre permitidos mesmo em pausa
+    const ALWAYS_ALLOWED: RemoteCommand["kind"][] = ["ping", "qualityChange"];
+    if (_paused && !ALWAYS_ALLOWED.includes(cmd.kind)) {
+      return { id: cmd.id, ok: false, error: "paused_by_user" };
     }
 
     switch (cmd.kind) {
@@ -240,6 +265,12 @@ export async function executeCommand(sessionId: string, cmd: RemoteCommand): Pro
         const txt = cmd.value ?? "";
         for (const ch of txt) typeChar(ch);
         return { id: cmd.id, ok: true };
+      }
+
+      case "qualityChange": {
+        const level = (cmd.value as QualityLevel) || "auto";
+        if (_peerForQuality) await applyVideoQuality(_peerForQuality, level);
+        return { id: cmd.id, ok: true, data: { level } };
       }
 
       case "openTab":

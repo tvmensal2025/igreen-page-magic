@@ -18,7 +18,9 @@ export type RemoteCommandKind =
   | "openTab" | "closeTab" | "reload" | "back" | "forward" | "ping"
   // Controle direto por coordenadas (normalizadas 0..1 do viewport do consultor)
   | "mouseMove" | "mouseClick" | "mouseDblClick" | "mouseDown" | "mouseUp"
-  | "contextMenu" | "wheel" | "key" | "type";
+  | "contextMenu" | "wheel" | "key" | "type"
+  // Controle de sessão
+  | "qualityChange";
 
 export interface RemoteCommand {
   id: string;
