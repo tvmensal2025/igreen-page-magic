@@ -92,5 +92,26 @@ export function createWhatsAppSender(evolutionUrl: string, evolutionKey: string,
     }
   }
 
-  return { sendText, sendButtons, sendMedia };
+  // ─── Enviar áudio (voice note / PTT) ───────────────────────────────────
+  async function sendAudio(chatId: string, audioUrl: string): Promise<boolean> {
+    const number = chatId.replace("@s.whatsapp.net", "");
+    try {
+      const res = await fetchWithTimeout(`${base}/message/sendWhatsAppAudio/${instanceName}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: evolutionKey },
+        body: JSON.stringify({ number, audio: audioUrl, encoding: true }),
+        timeout: 60_000,
+      });
+      if (!res.ok) {
+        console.error("sendAudio Evolution falhou:", res.status, await res.text().catch(() => ""));
+        return false;
+      }
+      return true;
+    } catch (e: any) {
+      console.error("sendAudio Evolution erro:", e?.message);
+      return false;
+    }
+  }
+
+  return { sendText, sendButtons, sendMedia, sendAudio };
 }
