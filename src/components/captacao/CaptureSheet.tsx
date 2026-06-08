@@ -415,7 +415,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           </TabsContent>
         </Tabs>
 
-        <footer className="border-t border-border/60 bg-gradient-to-t from-card via-card/95 to-card/80 backdrop-blur sticky bottom-0 z-20 p-2.5 space-y-1.5 shadow-[0_-4px_20px_-8px_hsl(var(--primary)/0.15)]">
+        <footer className="border-t border-border/60 bg-card/95 backdrop-blur sticky bottom-0 z-20 p-1.5 space-y-1">
           <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
           {customer?.conversation_step && ["finalizando", "portal_submitting", "aguardando_otp", "validando_otp"].includes(customer.conversation_step) && (
             <p className="text-[10px] text-center text-primary font-semibold animate-pulse">
@@ -424,48 +424,49 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           )}
           <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
           {canSubmit && hasUnconfirmedOcr && !isRegistered && (
-            <p className="text-[10px] text-amber-600 dark:text-amber-300 leading-tight px-1">
-              ⚠️ {!billConfirmed && "Conta de luz"}{!billConfirmed && !docConfirmed && " e "}{!docConfirmed && "Documento"} sem confirmação visual — envio liberado mesmo assim.
+            <p className="text-[9px] text-amber-600 dark:text-amber-300 leading-tight px-1">
+              ⚠️ {!billConfirmed && "Conta"}{!billConfirmed && !docConfirmed && " e "}{!docConfirmed && "Doc"} sem confirmação — envio liberado.
             </p>
           )}
           {isRegistered ? (
-            <div className="rounded-xl border border-primary/40 bg-gradient-to-r from-primary/15 to-primary/8 px-3 py-2.5 text-center shadow-[0_0_28px_hsl(var(--primary)/0.25)]">
-              <p className="text-xs font-black text-primary tracking-wide">✅ LEAD CADASTRADO NA iGREEN</p>
+            <div className="rounded-lg border border-primary/40 bg-primary/10 px-2 py-1.5 text-center">
+              <p className="text-[11px] font-black text-primary tracking-wide">✅ CADASTRADO NA iGREEN</p>
               {(customer as any)?.igreen_code && (
-                <p className="text-[11px] text-primary/80 mt-0.5">Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
+                <p className="text-[10px] text-primary/80 mt-0.5">Cód. <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0 gap-1 font-semibold h-9 px-2.5 text-[10px] rounded-full border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
+                className="shrink-0 gap-1 font-semibold h-8 px-2 text-[10px] rounded-full border-primary/30 text-primary hover:bg-primary/10"
                 onClick={() => setSeqOpen(true)}
                 disabled={pendingSteps.length === 0 || needsName}
                 title={needsName ? "Peça o nome do lead primeiro" : pendingSteps.length === 0 ? "Tudo enviado" : `Disparar ${pendingSteps.length} passos pendentes`}
               >
-                <Zap className="w-3.5 h-3.5" /> Enviar tudo ({pendingSteps.length})
+                <Zap className="w-3 h-3" /> {pendingSteps.length}
               </Button>
               <Button
-                size="lg"
-                className={`flex-1 font-bold gap-1.5 h-9 text-xs rounded-full transition-all ${
+                size="sm"
+                className={`flex-1 font-bold gap-1 h-8 text-[11px] rounded-full transition-all ${
                   canSubmit
                     ? (hasUnconfirmedOcr
-                        ? "bg-gradient-to-r from-amber-500 to-primary text-white hover:shadow-lg hover:shadow-amber-500/30 shadow-md shadow-amber-500/20"
-                        : "bg-gradient-to-r from-primary to-primary/85 text-primary-foreground hover:shadow-lg hover:shadow-primary/40 shadow-md shadow-primary/30 animate-exec-energy")
+                        ? "bg-gradient-to-r from-amber-500 to-primary text-primary-foreground hover:shadow-md"
+                        : "bg-gradient-to-r from-primary to-primary/85 text-primary-foreground hover:shadow-md animate-exec-energy")
                     : "bg-muted text-muted-foreground opacity-70 cursor-not-allowed hover:bg-muted"
                 }`}
                 onClick={handleSubmit}
                 disabled={submitting || !canSubmit}
                 title={submitTooltip}
               >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trophy className="w-4 h-4" />}
-                {canSubmit ? (hasUnconfirmedOcr ? "CADASTRAR ⚠️" : "CADASTRAR 🚀") : `${filledCount}/${totalFields}`}
+                {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trophy className="w-3.5 h-3.5" />}
+                {canSubmit ? (hasUnconfirmedOcr ? "CADASTRAR ⚠️" : "CADASTRAR") : `${filledCount}/${totalFields}`}
               </Button>
             </div>
           )}
         </footer>
+
 
         <SendSequenceDialog
           open={seqOpen}
