@@ -1,4 +1,4 @@
-import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, ShieldCheck } from "lucide-react";
+import { GripVertical, User, Pencil, Trash2, MoreVertical, Footprints, ShieldCheck, Eye } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { KanbanSlaIndicator } from "./KanbanSlaIndicator";
 import type { Tables } from "@/integrations/supabase/types";
@@ -13,9 +13,10 @@ interface KanbanDealCardProps {
   onEdit: (deal: CrmDealRow) => void;
   onDelete: (id: string) => void;
   onReclassify?: (deal: CrmDealRow) => void;
+  onView?: (customerId: string) => void;
 }
 
-export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, onReclassify }: KanbanDealCardProps) {
+export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, onReclassify, onView }: KanbanDealCardProps) {
   const isTest = (deal as any).is_test_lead || (deal as any).is_sandbox;
   const isSynthetic = (deal as any).__synthetic;
   const lastAdvanced = (deal as any).last_step_advanced_at || deal.updated_at || deal.created_at;
@@ -95,32 +96,44 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
             <p className="text-[10px] text-muted-foreground/70 truncate mt-1 italic">{deal.notes}</p>
           )}
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {onView && deal.customer_id && (
             <button
-              className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              onClick={(e) => e.stopPropagation()}
+              className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-muted opacity-60 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+              title="Ver detalhes do cliente"
+              onClick={(e) => { e.stopPropagation(); onView(deal.customer_id!); }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
+              <Eye className="h-3.5 w-3.5" />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            {isTest && onReclassify && (
-              <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-primary focus:text-primary" onClick={(e) => { e.stopPropagation(); onReclassify(deal); }}>
-                <ShieldCheck className="h-3 w-3" /> Reclassificar como real
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {isTest && onReclassify && (
+                <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-primary focus:text-primary" onClick={(e) => { e.stopPropagation(); onReclassify(deal); }}>
+                  <ShieldCheck className="h-3 w-3" /> Reclassificar como real
+                </DropdownMenuItem>
+              )}
+              {!isSynthetic && (
+                <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onEdit(deal); }}>
+                  <Pencil className="h-3 w-3" /> Editar
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-destructive focus:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(deal.id); }}>
+                <Trash2 className="h-3 w-3" /> {isSynthetic ? "Ocultar" : "Excluir"}
               </DropdownMenuItem>
-            )}
-            {!isSynthetic && (
-              <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); onEdit(deal); }}>
-                <Pencil className="h-3 w-3" /> Editar
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem className="text-xs gap-2 cursor-pointer text-destructive focus:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(deal.id); }}>
-              <Trash2 className="h-3 w-3" /> {isSynthetic ? "Ocultar" : "Excluir"}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </div>
   );
