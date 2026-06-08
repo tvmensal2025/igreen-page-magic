@@ -25,11 +25,12 @@
         "https://igreen.cloud/*",
         "https://*.igreen.cloud/*",
         "https://*.lovable.app/*",
+        "https://*.lovable.dev/*",
         "http://localhost/*"
       ],
       "js": ["bridge.js"],
       "run_at": "document_start",
-      "all_frames": false
+      "all_frames": true
     }
   ],
   "icons": {
