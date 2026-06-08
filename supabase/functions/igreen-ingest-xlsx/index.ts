@@ -195,12 +195,36 @@ Deno.serve(async (req) => {
     const consultantId = tokenRow.consultant_id as string;
     const result: Record<string, unknown> = { ok: true };
 
+    // Helper: detecta a "cara" de uma planilha pelas colunas, para evitar
+    // que um arquivo de rede seja ingerido como clientes (ou vice-versa).
+    const detectKind = (rows: Record<string, unknown>[]): "clientes" | "rede" | "unknown" => {
+      if (!rows.length) return "unknown";
+      const cols = new Set(Object.keys(rows[0]).map((k) => k.toLowerCase().trim()));
+      const has = (...keys: string[]) => keys.some((k) => cols.has(k.toLowerCase()));
+      const clientesScore = (has("celular", "telefone", "whatsapp") ? 1 : 0)
+        + (has("andamento", "status") ? 1 : 0)
+        + (has("distribuidora") ? 1 : 0)
+        + (has("nome do cliente", "cliente") ? 1 : 0);
+      const redeScore = (has("patrocinador", "cod patrocinador", "patrocinador código") ? 2 : 0)
+        + (has("graduação", "graduacao", "cargo") ? 1 : 0)
+        + (has("nível", "nivel", "level") ? 1 : 0)
+        + (has("gp qualificados", "gl qualificados", "gp", "gl") ? 1 : 0);
+      if (redeScore > clientesScore) return "rede";
+      if (clientesScore > 0) return "clientes";
+      return "unknown";
+    };
+
     // --- CLIENTES ---
     const clientesB64 = typeof body?.clientes_b64 === "string" ? body.clientes_b64 : "";
     if (clientesB64) {
       let rows: Record<string, unknown>[] = [];
       try { rows = parseXlsx(clientesB64); }
       catch (e) { result.clientes_parse_error = e instanceof Error ? e.message : String(e); }
+      const detected = detectKind(rows);
+      if (detected === "rede") {
+        result.clientes = { received: rows.length, processed: 0, upserted: 0, errors: 0, skipped: rows.length, swapped: true, message: "arquivo trocado: enviado planilha de rede no campo clientes" };
+        rows = [];
+      }
       const seen = new Set<string>();
       const recs: Record<string, unknown>[] = [];
       let skipped = 0;
@@ -239,7 +263,9 @@ Deno.serve(async (req) => {
         if (error) { console.error("customers upsert", error); errors += batch.length; }
         else upserted += data?.length || 0;
       }
-      result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      if (!(result.clientes as { swapped?: boolean } | undefined)?.swapped) {
+        result.clientes = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      }
     }
 
     // --- REDE ---
@@ -249,6 +275,11 @@ Deno.serve(async (req) => {
       let rows: Record<string, unknown>[] = [];
       try { rows = parseXlsx(redeB64); }
       catch (e) { result.rede_parse_error = e instanceof Error ? e.message : String(e); }
+      const detected = detectKind(rows);
+      if (detected === "clientes") {
+        result.rede = { received: rows.length, processed: 0, upserted: 0, errors: 0, skipped: rows.length, swapped: true, message: "arquivo trocado: enviado planilha de clientes no campo rede" };
+        rows = [];
+      }
       const recs: Record<string, unknown>[] = [];
       let skipped = 0;
       const seen = new Set<string>();
@@ -270,7 +301,9 @@ Deno.serve(async (req) => {
         if (error) { console.error("network upsert", error); errors += batch.length; }
         else upserted += data?.length || 0;
       }
-      result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      if (!(result.rede as { swapped?: boolean } | undefined)?.swapped) {
+        result.rede = { received: rows.length, processed: recs.length, upserted, errors, skipped };
+      }
     }
 
     await supabase.from("settings").upsert(

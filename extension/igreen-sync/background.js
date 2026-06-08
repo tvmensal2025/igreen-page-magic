@@ -1,7 +1,7 @@
-// iGreen Sync — service worker (v1.1)
-// Estrategia: abre /mapa-clientes e /mapa-rede, injeta interceptor de fetch/XHR
-// no MAIN world e clica no botao "Exportar Excel". Captura o blob XLSX e envia
-// pra edge function igreen-ingest-xlsx em base64.
+// iGreen Sync — service worker (v1.2)
+// Estrategia: abre /mapa-clientes e /mapa-rede SEQUENCIALMENTE (uma aba por vez,
+// fecha antes de abrir a proxima), injeta interceptor de fetch/XHR no MAIN world
+// e clica em "Exportar Excel". Captura o blob XLSX e envia pra edge function.
 
 const INGEST_URL = "https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/igreen-ingest-xlsx";
 const IGREEN_ORIGIN = "https://escritorio.igreenenergy.com.br";
@@ -331,55 +331,71 @@ async function sendToCloud(token, payload) {
   return data;
 }
 
-// ===== Sync principal =====
+// ===== Sync principal — SEQUENCIAL (clientes -> envia -> fecha -> rede -> envia -> fecha) =====
+async function syncOnePage(token, page, mesRef) {
+  const url = `${IGREEN_ORIGIN}${page.path}`;
+  downloadsByTab.clear();
+  let tabId = null;
+  try {
+    tabId = await chrome.tabs.create({ url, active: false });
+    tabId = tabId.id;
+    await waitForTabComplete(tabId);
+    const cap = await captureFromPage(tabId, page.kind);
+    if (!cap.ok) throw new Error(cap.error);
+
+    const payload = { mes_ref: mesRef };
+    payload[`${page.kind}_b64`] = cap.b64;
+    const ingest = await sendToCloud(token, payload);
+    return { ok: true, size: cap.size, ingest: ingest[page.kind] || ingest, via: cap.via };
+  } finally {
+    if (tabId) { try { await chrome.tabs.remove(tabId); } catch {} }
+    // pequena pausa entre downloads para o Chrome nao agrupar como "varios downloads"
+    await sleep(1500);
+  }
+}
+
 async function runSync() {
   const { pairingToken } = await chrome.storage.local.get(["pairingToken"]);
   if (!pairingToken) throw new Error("Token de pareamento nao configurado");
 
   installDownloadsListener();
-  downloadsByTab.clear();
 
-  // confere login: tenta abrir home; se redirecionar para login, avisa
-  // (a captura ja vai falhar com mensagem clara se nao tiver logado)
-
-  const results = {};
+  const mesRef = new Date().toISOString().slice(0, 7);
+  const result = { ok: true };
   const errors = [];
+  let lastClientesSize = 0, lastRedeSize = 0;
 
-  for (const page of PAGES) {
-    const url = `${IGREEN_ORIGIN}${page.path}`;
-    try {
-      const tabId = await openOrFocusTab(url);
-      const cap = await captureFromPage(tabId, page.kind);
-      if (!cap.ok) {
-        errors.push(`${page.kind}: ${cap.error}`);
-        continue;
-      }
-      results[page.kind] = cap;
-    } catch (e) {
-      errors.push(`${page.kind}: ${e?.message || String(e)}`);
-    }
+  // 1) CLIENTES primeiro, do inicio ao fim
+  try {
+    const r = await syncOnePage(pairingToken, PAGES[0], mesRef);
+    result.clientes = r.ingest;
+    lastClientesSize = r.size;
+  } catch (e) {
+    errors.push(`clientes: ${e?.message || String(e)}`);
   }
 
-  if (!results.clientes && !results.rede) {
+  // 2) Depois REDE
+  try {
+    const r = await syncOnePage(pairingToken, PAGES[1], mesRef);
+    result.rede = r.ingest;
+    lastRedeSize = r.size;
+  } catch (e) {
+    errors.push(`rede: ${e?.message || String(e)}`);
+  }
+
+  if (!result.clientes && !result.rede) {
     throw new Error(
       `Nao consegui baixar nenhum Excel.\n${errors.join("\n")}\n\nVerifique se voce esta logado em ${IGREEN_ORIGIN}.`
     );
   }
 
-  const payload = {
-    mes_ref: new Date().toISOString().slice(0, 7),
-  };
-  if (results.clientes) payload.clientes_b64 = results.clientes.b64;
-  if (results.rede) payload.rede_b64 = results.rede.b64;
-
-  const ingest = await sendToCloud(pairingToken, payload);
-
   const status = {
     lastSyncAt: new Date().toISOString(),
-    lastResult: ingest,
+    lastResult: result,
     lastError: errors.length ? errors.join(" | ") : null,
-    lastClientesSize: results.clientes?.size || 0,
-    lastRedeSize: results.rede?.size || 0,
+    lastClientesSize,
+    lastRedeSize,
+    lastErrorAt: errors.length ? new Date().toISOString() : null,
   };
   await chrome.storage.local.set(status);
   return status;

@@ -1,99 +1,66 @@
-## Resposta direta
+# Ajustes na extensao iGreen Sync
 
-- **Sim, para sincronização automática pela extensão, o navegador do consultor precisa estar aberto** e com sessão ativa no portal `escritorio.igreenenergy.com.br`.
-- O **token da extensão não substitui o login da iGreen**. Ele só autoriza enviar dados para o iGreen Cloud/Supabase; ele não dá acesso ao portal da iGreen.
-- Para “configurar uma vez e rodar sempre sem navegador”, só existem duas alternativas confiáveis:
-  1. **API/token oficial da iGreen** para baixar clientes e rede sem depender do navegador.
-  2. **Worker com login do portal + 2FA/cookies**, mas isso é mais frágil, pode expirar, pode bloquear por segurança e exige guardar credenciais/sessão do consultor.
+## Problemas identificados
 
-## Por que deu erro agora
+1. **Bug critico de troca de arquivos**: No ultimo sync, "Clientes: 0 atualizados (de 919, erros 919)" e "Rede: 919 atualizados". O numero 919 e o total de clientes, nao de consultores (~59). Isso indica que o XLSX de clientes foi enviado como `rede` (ou o mesmo blob foi capturado nas duas abas porque sao abertas em paralelo e o interceptor pega o primeiro blob disponivel).
+2. Navegador pede permissao para baixar varios arquivos ao mesmo tempo (porque abre 2 abas e dispara 2 downloads quase simultaneos).
+3. Botao "Salvar token" e um passo extra desnecessario.
+4. Popup sem identidade visual (icone generico, sem mensagem).
 
-O erro mostra que a extensão **não conseguiu capturar nenhum arquivo Excel**:
+## Mudancas
 
-```text
-clientes: Timeout capturando XLSX de clientes. Clique: OK (0 de 0 registrosexportar excel)
-rede: Timeout capturando XLSX de rede. Clique: OK (50 de 59 registrosexportar excel (59))
-```
+### 1. `extension/igreen-sync/background.js` — sync sequencial
+- Trocar o `Promise.all([syncClientes, syncRede])` por execucao **sequencial**: primeiro abre `/mapa-clientes`, espera capturar+enviar+fechar a aba, **depois** abre `/mapa-rede`. Isso resolve a permissao de "multiplos downloads" e elimina a chance de cross-contamination do blob entre as abas.
+- Marcar cada blob capturado com a origem (`source: "clientes" | "rede"`) baseada no `tabId` que originou o download, e validar antes de enviar (ex.: rejeitar se o arquivo capturado em `/mapa-clientes` tiver `rede`/`indicacao` no nome).
+- Logar o nome do arquivo XLSX recebido para diagnostico futuro.
 
-Isso indica que a extensão provavelmente clicou no **elemento errado**: ela encontrou um texto grande da página que contém “Exportar Excel”, como:
+### 2. `supabase/functions/igreen-ingest-xlsx/index.ts` — validacao defensiva
+- Detectar quando o payload `clientes` na verdade contem colunas de rede (ex.: `Patrocinador`, `Status do Consultor`) e retornar erro claro em vez de gerar 919 erros silenciosos.
 
-```text
-0 de 0 registros exportar excel
-50 de 59 registros exportar excel (59)
-```
+### 3. `extension/igreen-sync/popup.html` + `popup.js` — UX
+- Remover botao "Salvar token". Token e salvo automaticamente no `input.blur` e tambem no clique de "Sincronizar agora" (se vazio, mostra aviso).
+- Adicionar header com icone G (ver item 4) + mensagem motivacional rotativa:
+  - "Cada sync acende um novo cliente solar."
+  - "Energia limpa comeca com dados limpos."
+  - "Voce esta a um clique de iluminar mais lares."
+  - "Sol no painel, dados na nuvem."
+- Texto sutil abaixo do botao principal.
 
-Ou seja: não parece ser problema de “1 .” na frente. O problema principal é que o seletor atual procura também `div` e `span`, então pode clicar no container/linha da tela em vez do botão real.
+### 4. Icone G — substituir `extension/igreen-sync/icon.png`
+- Gerar um PNG 128x128 com a letra **G** verde (paleta iGreen), fundo claro, estilo do favicon atual do site. Atualizar `manifest.json` se necessario (`48`/`128`).
+- Usar o mesmo G como header no popup (`<img src="icon.png" width="32">`).
 
-## Plano de correção
+### 5. Reempacotar
+- Bump version 1.1.1 -> **1.2.0**.
+- Regerar `public/igreen-sync-extension.zip`.
+- Atualizar texto do `IGreenExtensionCard.tsx` removendo a mencao a "Salvar token" e citando o icone novo.
 
-### 1. Corrigir o clique no botão Exportar Excel
-
-Vou ajustar a extensão para:
-
-- Procurar primeiro apenas elementos realmente clicáveis: `button`, `a`, `[role="button"]`.
-- Ignorar `div` e `span` como alvo direto.
-- Preferir botão com texto exato/próximo de `Exportar Excel`.
-- Se encontrar texto dentro de um ícone/span, clicar no `closest('button,a,[role="button"]')`.
-- Registrar no log qual elemento foi clicado: tag, texto, classe e se estava visível/habilitado.
-
-### 2. Esperar a página carregar os dados antes de exportar
-
-Hoje a extensão espera tempo fixo. Vou melhorar para:
-
-- Aguardar a página sair de estados como `0 de 0 registros`, loading/spinner ou tabela vazia.
-- Em `/mapa-rede`, aceitar quando aparecer algo como `50 de 59 registros` ou o botão `Exportar Excel (59)`.
-- Em `/mapa-clientes`, não clicar se ainda estiver `0 de 0 registros`, a não ser que a tela realmente esteja sem dados após timeout maior.
-
-### 3. Capturar melhor o download/Excel
-
-Vou reforçar os três caminhos de captura:
-
-- `fetch`/XHR com resposta tipo Excel.
-- `Blob` criado no navegador com `URL.createObjectURL`.
-- `chrome.downloads` quando o portal baixa arquivo direto.
-
-Também vou salvar no erro:
-
-- URLs chamadas que pareciam exportação.
-- MIME type recebido.
-- Tamanho do arquivo se algum blob aparecer.
-- Motivo exato se o download foi bloqueado/vazio.
-
-### 4. Melhorar mensagem e passo a passo da extensão
-
-Vou adicionar instruções claras no popup/admin:
-
-1. Instalar extensão nova.
-2. Salvar token do iGreen Cloud.
-3. Abrir `https://escritorio.igreenenergy.com.br/` e fazer login.
-4. Abrir uma vez `/mapa-clientes` e `/mapa-rede` para confirmar que os botões aparecem.
-5. Clicar `Sincronizar agora`.
-6. Se ativar `Sincronizar automaticamente (a cada 6h)`, manter o navegador aberto ou deixar o Chrome rodando em segundo plano; se a sessão expirar, precisa logar de novo.
-
-### 5. Deixar claro o modo automático possível
-
-Vou alterar a UI para explicar:
-
-- **Automático a cada 6h** = roda pela extensão no navegador do consultor.
-- Funciona enquanto Chrome/Edge/Brave estiver aberto e logado na iGreen.
-- Se o portal encerrar a sessão, a extensão vai avisar para fazer login novamente.
-- Não existe sincronização 100% cloud usando apenas o token da extensão, porque o token não tem permissão de acessar a iGreen.
-
-### 6. Reempacotar a extensão
-
-Depois das alterações:
-
-- Atualizar versão da extensão.
-- Gerar novo `public/igreen-sync-extension.zip`.
-- Atualizar o cartão de instalação no admin para orientar reinstalação.
-
-## Resultado esperado
-
-Depois da correção, a extensão deve clicar no botão certo, capturar os dois Excel e mostrar algo como:
+## Detalhes tecnicos
 
 ```text
-Clientes: 919 atualizados
-Rede: 59 atualizados
+SYNC_NOW
+  └─ openTab(/mapa-clientes)
+       └─ waitForDataReady → clickExport → captureXLSX(tabId)
+       └─ POST ingest { kind: "clientes", file }
+       └─ closeTab
+  └─ openTab(/mapa-rede)        ← so comeca depois do clientes terminar
+       └─ idem
+       └─ POST ingest { kind: "rede", file }
+       └─ closeTab
+  └─ persistir resultado por tipo
 ```
 
-Se ainda falhar, o erro virá com diagnóstico real: botão não encontrado, sessão expirada, página vazia, download bloqueado ou arquivo vazio.
+Validacao no backend: se `kind=clientes` mas as colunas da planilha sao `["Codigo Consultor","Patrocinador",...]` → 400 com `"arquivo trocado: enviado planilha de rede como clientes"`.
+
+## Arquivos a alterar
+- `extension/igreen-sync/background.js`
+- `extension/igreen-sync/popup.html`
+- `extension/igreen-sync/popup.js`
+- `extension/igreen-sync/icon.png` (regerar)
+- `extension/igreen-sync/manifest.json` (version bump)
+- `supabase/functions/igreen-ingest-xlsx/index.ts`
+- `src/components/admin/IGreenExtensionCard.tsx`
+- `public/igreen-sync-extension.zip` (reempacotar)
+
+## Observacao sobre `.lovable/`
+O `.gitignore` do projeto exclui `.lovable/`, onde este plano e salvo. Se quiser que planos persistam entre snapshots, remova `.lovable/` do `.gitignore`.
