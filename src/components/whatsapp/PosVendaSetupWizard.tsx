@@ -9,12 +9,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Check, Sparkles, Upload, FileAudio, Image as ImageIcon, Video, Type,
-  Loader2, ChevronUp, ChevronDown, GripVertical,
+  Loader2, ChevronUp, ChevronDown, GripVertical, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { POS_VENDA_STAGES, type PosVendaStage } from "@/lib/posVenda/format";
 import { uploadMedia, getAcceptString } from "@/services/minioUpload";
 import { sha256File, findExistingByHash } from "@/lib/mediaHash";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+interface FullTemplate {
+  id: string;
+  name: string;
+  content: string | null;
+  media_type: string | null;
+  media_url: string | null;
+  image_url: string | null;
+  is_public: boolean;
+}
 
 interface Props {
   consultantId: string;
