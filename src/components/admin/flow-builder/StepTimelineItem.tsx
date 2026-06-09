@@ -13,11 +13,12 @@ import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import {
   Pencil, Trash2, Copy, AlertTriangle, ArrowRight, CornerDownRight,
   Mic, Image as ImageIcon, Video, MessageSquare, ScanLine, Sparkles, MousePointerClick, Hash,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, HelpCircle,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -107,6 +108,29 @@ export default function StepTimelineItem({
           <div className="flex items-center gap-1.5">
             <span className="text-sm">{typeMeta.emoji}</span>
             <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">{step.title}</h4>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => e.stopPropagation()}
+                  className="shrink-0 text-muted-foreground/50 hover:text-primary"
+                  aria-label="O que este passo faz?"
+                  title="O que este passo faz?"
+                >
+                  <HelpCircle className="h-3.5 w-3.5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="left" className="w-72 text-xs" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1.5 font-semibold mb-1">
+                  <span>{typeMeta.emoji}</span>
+                  <span>{typeMeta.label}</span>
+                </div>
+                <p className="text-muted-foreground leading-snug">{typeMeta.hint}</p>
+                <p className="mt-2 text-[10px] text-muted-foreground/70">
+                  Dica: clique no passo para abrir o editor e ajustar texto, mídias e regras.
+                </p>
+              </PopoverContent>
+            </Popover>
             {isStart && (
               <Badge className="h-4 shrink-0 bg-primary/15 px-1.5 text-[9px] text-primary hover:bg-primary/15">
                 Início

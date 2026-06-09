@@ -258,7 +258,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
         {/* Toolbar superior compacta */}
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5 text-xs">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-muted-foreground">Variante:</span>
+            <span className="text-muted-foreground">Fluxo:</span>
             {VARIANTS.map((v) => (
               <Button
                 key={v}
