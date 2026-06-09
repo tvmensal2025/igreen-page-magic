@@ -431,22 +431,40 @@ export async function createRequesterPeer(
   const ice = makeIceBuffer(pc);
 
   // --- Screen share ---
-  // Solicita a aba atual quando o browser suportar (Chrome ≥107).
-  // Isso melhora muito a precisão do mapeamento de coordenadas porque o vídeo
-  // passa a bater pixel-a-pixel com o viewport CSS da página.
-  // IMPORTANTE: getDisplayMedia DEVE ser chamado antes de criar o DataChannel
-  // para garantir que `stream` esteja disponível no dc.onopen closure.
-  const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: {
-      frameRate: 15,
-      preferCurrentTab: true,    // Chrome ≥107
-      displaySurface: "browser", // sugestão — usuário pode ignorar
-    } as MediaTrackConstraints,
-    audio: false,
-    // Inclui a própria aba no seletor e evita troca de superfície após o share
-    selfBrowserSurface: "include",
-    surfaceSwitching:   "exclude",
-  } as DisplayMediaStreamOptions);
+  // Compartilha automaticamente A ABA ATUAL, sem o consultor precisar escolher
+  // qual aba/janela/tela. Com `preferCurrentTab`, o Chrome (≥94) exibe um popup
+  // simples "Compartilhar esta guia?" com um único botão — bem menos confuso.
+  //
+  // IMPORTANTE: por segurança, o navegador SEMPRE exige esse clique de
+  // confirmação; não há como capturar a tela sem ele. Mas eliminamos a etapa
+  // de seleção, que era o que deixava o consultor perdido.
+  //
+  // Observação: `preferCurrentTab` é mutuamente exclusivo com `displaySurface`,
+  // `surfaceSwitching` e `selfBrowserSurface` — combiná-los faz o Chrome
+  // ignorar a preferência e voltar ao seletor completo. Por isso usamos só ele.
+  //
+  // getDisplayMedia DEVE ser chamado antes de criar o DataChannel para garantir
+  // que `stream` esteja disponível no dc.onopen closure.
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        frameRate: 15,
+        preferCurrentTab: true, // Chrome ≥94 — popup "Compartilhar esta guia?"
+      } as MediaTrackConstraints,
+      audio: false,
+      preferCurrentTab: true,
+    } as DisplayMediaStreamOptions);
+  } catch (e) {
+    // Fallback para navegadores que não suportam preferCurrentTab (Firefox,
+    // Safari): cai no seletor padrão sugerindo a aba do navegador.
+    const name = e instanceof Error ? e.name : "";
+    if (name === "NotAllowedError" || name === "AbortError") throw e; // usuário cancelou
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 15, displaySurface: "browser" } as MediaTrackConstraints,
+      audio: false,
+    } as DisplayMediaStreamOptions);
+  }
 
   // DataChannel criado pelo offerer (requester) — após obter o stream
   // para que `stream` esteja disponível na closure do dc.onopen.
