@@ -418,6 +418,38 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
                     <p className="text-xs text-muted-foreground mt-0.5">{stageMeta.description}</p>
                   </Card>
 
+                  {/* Carregar template completo */}
+                  <div>
+                    <h4 className="text-sm font-semibold flex items-center gap-2 mb-2">
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      Carregar template (opcional)
+                    </h4>
+                    <Select onValueChange={(v) => applyTemplate(activeStage, v)}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Escolher um template para preencher o estágio…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allTemplates.length === 0 && (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum template disponível.</div>
+                        )}
+                        {allTemplates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            <span className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase rounded bg-muted px-1 py-0.5">
+                                {t.media_type || "texto"}
+                              </span>
+                              <span>{t.name}</span>
+                              {t.is_public && <span className="text-[10px] text-muted-foreground">público</span>}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Aplica texto + mídia do template. Depois você pode trocar áudio, imagem ou vídeo livremente abaixo.
+                    </p>
+                  </div>
+
                   {/* Ordem de envio */}
                   <div>
                     <h4 className="text-sm font-semibold mb-2">Ordem de envio</h4>
