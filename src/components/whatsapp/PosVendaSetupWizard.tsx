@@ -9,12 +9,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Check, Sparkles, Upload, FileAudio, Image as ImageIcon, Video, Type,
-  Loader2, ChevronUp, ChevronDown, GripVertical,
+  Loader2, ChevronUp, ChevronDown, GripVertical, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { POS_VENDA_STAGES, type PosVendaStage } from "@/lib/posVenda/format";
 import { uploadMedia, getAcceptString } from "@/services/minioUpload";
 import { sha256File, findExistingByHash } from "@/lib/mediaHash";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+interface FullTemplate {
+  id: string;
+  name: string;
+  content: string | null;
+  media_type: string | null;
+  media_url: string | null;
+  image_url: string | null;
+  is_public: boolean;
+}
 
 interface Props {
   consultantId: string;
@@ -74,6 +85,8 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const [allTemplates, setAllTemplates] = useState<FullTemplate[]>([]);
+
   useEffect(() => {
     if (!open) return;
     (async () => {
@@ -99,8 +112,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
           .order("created_at", { ascending: false }),
         supabase
           .from("message_templates")
-          .select("id,name,media_type,media_url,image_url,is_public,consultant_id")
-          .in("media_type", ["audio", "image", "video"])
+          .select("id,name,content,media_type,media_url,image_url,is_public,consultant_id")
           .or(`is_public.eq.true,consultant_id.eq.${consultantId}`)
           .order("created_at", { ascending: false }),
       ]);
@@ -123,7 +135,14 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
       setConfigs(next);
       setPublicMedia((pubRes.data || []) as MediaItem[]);
       setMyMedia((mineRes.data || []) as MediaItem[]);
-      const tpls: MediaItem[] = ((tplRes.data || []) as any[])
+      const tplRows = (tplRes.data || []) as any[];
+      setAllTemplates(tplRows.map((t) => ({
+        id: t.id, name: t.name, content: t.content,
+        media_type: t.media_type, media_url: t.media_url, image_url: t.image_url,
+        is_public: !!t.is_public,
+      })));
+      const tpls: MediaItem[] = tplRows
+        .filter((t) => ["audio", "image", "video"].includes(t.media_type))
         .map((t): MediaItem => ({
           id: `tpl:${t.id}`,
           kind: t.media_type,
@@ -295,6 +314,49 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
     updateStage(stage, patch);
   }
 
+  async function applyTemplate(stage: PosVendaStage, tplId: string) {
+    const tpl = allTemplates.find((t) => t.id === tplId);
+    if (!tpl) return;
+    const patch: Partial<StageConfig> = {};
+    if (tpl.content) patch.text_content = tpl.content;
+    const url = tpl.media_type === "image" ? (tpl.image_url || tpl.media_url) : tpl.media_url;
+    if (url && tpl.media_type && ["audio", "image", "video"].includes(tpl.media_type)) {
+      // reuse or create ai_media_library entry
+      const { data: existing } = await supabase
+        .from("ai_media_library")
+        .select("id")
+        .eq("url", url)
+        .or(`consultant_id.eq.${consultantId},is_public.eq.true`)
+        .maybeSingle();
+      let mediaId = existing?.id as string | undefined;
+      if (!mediaId) {
+        const { data, error } = await supabase
+          .from("ai_media_library")
+          .insert({
+            consultant_id: consultantId,
+            kind: tpl.media_type,
+            label: tpl.name || "Do template",
+            url,
+            active: true,
+            is_public: false,
+          })
+          .select("id,kind,label,url,is_public")
+          .single();
+        if (!error && data) {
+          mediaId = data.id;
+          setMyMedia((p) => [data as MediaItem, ...p]);
+        }
+      }
+      if (mediaId) {
+        if (tpl.media_type === "audio") patch.audio_media_id = mediaId;
+        if (tpl.media_type === "image") patch.image_media_id = mediaId;
+        if (tpl.media_type === "video") patch.video_media_id = mediaId;
+      }
+    }
+    updateStage(stage, patch);
+    toast.success(`Template "${tpl.name}" aplicado — agora ajuste o que quiser.`);
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[94vh] overflow-hidden flex flex-col gap-0 p-0">
@@ -322,7 +384,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex-1 grid lg:grid-cols-[1fr,460px] min-h-0">
+          <div className="flex-1 grid lg:grid-cols-[1fr,360px] min-h-0">
             {/* COLUNA ESQUERDA: editor */}
             <div className="flex flex-col min-h-0 overflow-hidden border-r">
               <Tabs
@@ -355,6 +417,38 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
                     <h3 className="font-semibold text-sm">{stageMeta.label}</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">{stageMeta.description}</p>
                   </Card>
+
+                  {/* Carregar template completo */}
+                  <div>
+                    <h4 className="text-sm font-semibold flex items-center gap-2 mb-2">
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      Carregar template (opcional)
+                    </h4>
+                    <Select onValueChange={(v) => applyTemplate(activeStage, v)}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Escolher um template para preencher o estágio…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allTemplates.length === 0 && (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum template disponível.</div>
+                        )}
+                        {allTemplates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            <span className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase rounded bg-muted px-1 py-0.5">
+                                {t.media_type || "texto"}
+                              </span>
+                              <span>{t.name}</span>
+                              {t.is_public && <span className="text-[10px] text-muted-foreground">público</span>}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Aplica texto + mídia do template. Depois você pode trocar áudio, imagem ou vídeo livremente abaixo.
+                    </p>
+                  </div>
 
                   {/* Ordem de envio */}
                   <div>
@@ -642,7 +736,7 @@ function PhonePreview({
     resolve("video");
 
   return (
-    <div className="w-full max-w-[420px] aspect-[430/932] rounded-[3rem] border-[14px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col relative">
+    <div className="w-full max-w-[300px] aspect-[9/16] rounded-[2rem] border-[10px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col relative">
       {/* Dynamic Island */}
       <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 h-7 w-28 bg-black rounded-full" />
       {/* Status bar */}
