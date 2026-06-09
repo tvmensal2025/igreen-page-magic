@@ -815,16 +815,7 @@ export default function FluxoBuilder() {
         </div>
 
 
-        {/* Distribuição entre variantes (ativar/pausar/criar) */}
-        {userId && (
-          <VariantDistributionBar
-            consultantId={userId}
-            existingVariants={existingVariants}
-            editingVariant={editingVariant}
-            onSelectVariant={setEditingVariant}
-            onChanged={() => userId && reload(userId, editingVariant)}
-          />
-        )}
+
 
         {/* Modo "Seguir modelo público" — toggle exclusivo do consultor.
             Quando ligado: estrutura é a do template do super-admin (sempre
