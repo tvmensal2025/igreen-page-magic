@@ -1,14 +1,23 @@
-// WebRTC helper. Requester (consultor) é o offerer; operador apenas escuta e responde.
+// =============================================================================
+// Remote Support — WebRTC / Screen Share
+// =============================================================================
+// Requester (consultor) = offerer, envia vídeo + cria DataChannel.
+// Operator (super-admin) = answerer, recebe vídeo + controla via DataChannel.
 //
-// Auditoria 2 — robustez:
-//   - Fases explícitas via onStage (não só strings opacas).
-//   - Operador idempotente: ignora offer duplicada quando já conectado.
-//   - Requester nunca cria offer fora de signalingState=="stable".
-//   - Retry reenvia a localDescription existente (sem createOffer novo).
-//   - ICE buffering preservado.
-//   - TURN opcional via VITE_TURN_URL / VITE_TURN_USER / VITE_TURN_PASS.
+// Correções v3:
+//   - Requester envia viewportInfo logo após DataChannel abrir.
+//   - TURN servers opcionais via env.
+//   - ICE buffering robusto.
+//   - Retry de offer sem renegociar (só reenvia localDescription).
+//   - Operador idempotente em offers duplicadas.
+// =============================================================================
 
 import { supabase } from "@/integrations/supabase/client";
+import type { RequesterViewport } from "./types";
+
+// ---------------------------------------------------------------------------
+// Qualidade de vídeo
+// ---------------------------------------------------------------------------
 
 export type QualityLevel = "auto" | "high" | "medium" | "low";
 
@@ -22,36 +31,71 @@ export const QUALITY_PROFILES: Record<QualityLevel, QualityProfile> = {
   auto:   { frameRate: 15, scaleResolutionDownBy: 1,   maxBitrate: 1_500_000 },
   high:   { frameRate: 24, scaleResolutionDownBy: 1,   maxBitrate: 2_500_000 },
   medium: { frameRate: 15, scaleResolutionDownBy: 1.5, maxBitrate: 1_200_000 },
-  low:    { frameRate: 8,  scaleResolutionDownBy: 2,   maxBitrate: 500_000 },
+  low:    { frameRate: 8,  scaleResolutionDownBy: 2,   maxBitrate:   500_000 },
 };
 
-/** Aplica perfil de qualidade ao primeiro sender de vídeo da peer connection (lado do consultor). */
-export async function applyVideoQuality(pc: RTCPeerConnection, level: QualityLevel) {
+/**
+ * Aplica perfil de qualidade ao sender de vídeo (lado do consultor).
+ * Silenciosamente ignora erros — o browser pode não suportar todos os params.
+ */
+export async function applyVideoQuality(
+  pc: RTCPeerConnection,
+  level: QualityLevel,
+): Promise<void> {
   const sender = pc.getSenders().find(s => s.track?.kind === "video");
   if (!sender) return;
+
   const profile = QUALITY_PROFILES[level];
-  try { await sender.track?.applyConstraints({ frameRate: profile.frameRate } as MediaTrackConstraints); } catch {}
+
+  // Tenta aplicar constraint de frameRate na track
+  try {
+    await sender.track?.applyConstraints({ frameRate: profile.frameRate } as MediaTrackConstraints);
+  } catch { /* ignorado — track pode não aceitar */ }
+
+  // Aplica bitrate e resolução via RTCRtpEncodingParameters
   const params = sender.getParameters();
-  if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+  if (!params.encodings || params.encodings.length === 0) {
+    params.encodings = [{}];
+  }
   params.encodings[0].scaleResolutionDownBy = profile.scaleResolutionDownBy;
-  if (profile.maxBitrate) params.encodings[0].maxBitrate = profile.maxBitrate;
   params.encodings[0].maxFramerate = profile.frameRate;
-  try { await sender.setParameters(params); } catch (e) { console.warn("[rtc] setParameters", e); }
+  if (profile.maxBitrate) {
+    params.encodings[0].maxBitrate = profile.maxBitrate;
+  }
+
+  try {
+    await sender.setParameters(params);
+  } catch (e) {
+    console.warn("[rtc] setParameters failed (non-critical):", e);
+  }
 }
 
-/** FPS recebido (operador) a partir de getStats(). */
+/**
+ * Retorna o FPS recebido no lado do operador via getStats().
+ * Retorna null se não disponível.
+ */
 export async function getInboundVideoFps(pc: RTCPeerConnection): Promise<number | null> {
   try {
     const stats = await pc.getStats();
     let fps: number | null = null;
-    stats.forEach((r: any) => {
-      if (r.type === "inbound-rtp" && r.kind === "video" && typeof r.framesPerSecond === "number") {
-        fps = r.framesPerSecond;
+    stats.forEach((r: RTCStats & Record<string, unknown>) => {
+      if (
+        r.type === "inbound-rtp" &&
+        r["kind"] === "video" &&
+        typeof r["framesPerSecond"] === "number"
+      ) {
+        fps = r["framesPerSecond"] as number;
       }
     });
     return fps;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Estágios da conexão
+// ---------------------------------------------------------------------------
 
 export type RtcStage =
   | "idle"
@@ -68,42 +112,64 @@ export type RtcStage =
   | "failed"
   | "closed";
 
+// ---------------------------------------------------------------------------
+// ICE Servers
+// ---------------------------------------------------------------------------
+
 function buildIceServers(): RTCIceServer[] {
   const list: RTCIceServer[] = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
   ];
-  const turnUrl = (import.meta as any).env?.VITE_TURN_URL as string | undefined;
-  const turnUser = (import.meta as any).env?.VITE_TURN_USER as string | undefined;
-  const turnPass = (import.meta as any).env?.VITE_TURN_PASS as string | undefined;
+
+  const turnUrl  = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_TURN_URL;
+  const turnUser = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_TURN_USER;
+  const turnPass = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_TURN_PASS;
+
   if (turnUrl) {
     list.push({ urls: turnUrl, username: turnUser, credential: turnPass });
   }
+
   return list;
 }
 
-const RTC_CONFIG: RTCConfiguration = { iceServers: buildIceServers() };
+const RTC_CONFIG: RTCConfiguration = {
+  iceServers: buildIceServers(),
+  iceCandidatePoolSize: 10,
+};
+
+// ---------------------------------------------------------------------------
+// Canal de sinalização (Supabase Realtime Broadcast)
+// ---------------------------------------------------------------------------
 
 export type SignalEvent =
-  | { type: "offer"; sdp: RTCSessionDescriptionInit }
+  | { type: "offer";  sdp: RTCSessionDescriptionInit }
   | { type: "answer"; sdp: RTCSessionDescriptionInit }
-  | { type: "ice"; candidate: RTCIceCandidateInit }
+  | { type: "ice";    candidate: RTCIceCandidateInit }
   | { type: "ready" }
   | { type: "bye" };
 
 export function signalChannel(sessionId: string, role: "operator" | "requester") {
   const channelName = `support:${sessionId}:rtc`;
-  const channel = supabase.channel(channelName, { config: { broadcast: { self: false, ack: true } } });
+  const channel = supabase.channel(channelName, {
+    config: { broadcast: { self: false, ack: true } },
+  });
 
   const subscribed = new Promise<void>((resolve, reject) => {
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") resolve();
-      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") reject(new Error(status));
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        reject(new Error(`Signal channel ${status}`));
+      }
     });
   });
 
   const send = (ev: SignalEvent) =>
-    channel.send({ type: "broadcast", event: "signal", payload: { ...ev, from: role } });
+    channel.send({
+      type: "broadcast",
+      event: "signal",
+      payload: { ...ev, from: role },
+    });
 
   const onSignal = (handler: (ev: SignalEvent & { from: string }) => void) => {
     channel.on("broadcast", { event: "signal" }, ({ payload }) => {
@@ -113,152 +179,251 @@ export function signalChannel(sessionId: string, role: "operator" | "requester")
   };
 
   const close = () => supabase.removeChannel(channel);
+
   return { subscribed, send, onSignal, close };
 }
+
+// ---------------------------------------------------------------------------
+// ICE candidate buffer — evita addIceCandidate antes de setRemoteDescription
+// ---------------------------------------------------------------------------
 
 function makeIceBuffer(pc: RTCPeerConnection) {
   const queue: RTCIceCandidateInit[] = [];
   let remoteSet = false;
+
   return {
     push(c: RTCIceCandidateInit) {
-      if (remoteSet) pc.addIceCandidate(c).catch(e => console.warn("[rtc] addIce fail", e));
-      else queue.push(c);
+      if (remoteSet) {
+        pc.addIceCandidate(c).catch(e => console.warn("[rtc] addIceCandidate:", e));
+      } else {
+        queue.push(c);
+      }
     },
     async flush() {
       remoteSet = true;
-      while (queue.length) {
-        const c = queue.shift()!;
-        try { await pc.addIceCandidate(c); } catch (e) { console.warn("[rtc] addIce queued fail", e); }
+      const pending = queue.splice(0);
+      for (const c of pending) {
+        try { await pc.addIceCandidate(c); } catch (e) {
+          console.warn("[rtc] addIceCandidate (queued):", e);
+        }
       }
     },
   };
 }
 
-// Operator: subscreve, anuncia ready, responde offer (idempotente).
+// ---------------------------------------------------------------------------
+// Operator peer — answerer
+// ---------------------------------------------------------------------------
+
 export async function createOperatorPeer(
   sessionId: string,
-  onStream: (s: MediaStream) => void,
+  onStream: (stream: MediaStream) => void,
   onDataChannelOpen: (dc: RTCDataChannel) => void,
   onDataMessage: (msg: string) => void,
-  onStage?: (s: RtcStage, info?: string) => void,
+  onStage?: (stage: RtcStage, info?: string) => void,
 ) {
-  const pc = new RTCPeerConnection(RTC_CONFIG);
+  const pc  = new RTCPeerConnection(RTC_CONFIG);
   const sig = signalChannel(sessionId, "operator");
   const ice = makeIceBuffer(pc);
+
   let dc: RTCDataChannel | null = null;
   let answered = false;
 
+  // --- DataChannel ---
   pc.ondatachannel = (e) => {
     dc = e.channel;
     dc.onopen = () => {
       onStage?.("datachannel-open");
-      dc && onDataChannelOpen(dc);
+      if (dc) onDataChannelOpen(dc);
     };
-    dc.onmessage = (ev) => onDataMessage(typeof ev.data === "string" ? ev.data : "");
+    dc.onmessage = (ev) =>
+      onDataMessage(typeof ev.data === "string" ? ev.data : "");
   };
+
+  // --- Vídeo ---
   pc.ontrack = (e) => {
     onStage?.("stream-received");
     onStream(e.streams[0]);
   };
-  pc.onicecandidate = (e) => { if (e.candidate) sig.send({ type: "ice", candidate: e.candidate.toJSON() }); };
+
+  // --- ICE ---
+  pc.onicecandidate = (e) => {
+    if (e.candidate) sig.send({ type: "ice", candidate: e.candidate.toJSON() });
+  };
+
+  // --- Estado da conexão ---
   pc.onconnectionstatechange = () => {
     const s = pc.connectionState;
     if (s === "connected") onStage?.("connected");
-    else if (s === "failed") onStage?.("failed", "pc.connectionState=failed");
+    else if (s === "failed") onStage?.("failed", "connectionState=failed");
     else if (s === "closed") onStage?.("closed");
   };
+
   pc.oniceconnectionstatechange = () => {
     if (pc.iceConnectionState === "checking") onStage?.("ice-checking");
+    if (pc.iceConnectionState === "failed") {
+      // ICE restart automático
+      pc.restartIce();
+    }
   };
 
+  // --- Sinalização ---
   sig.onSignal(async (ev) => {
     try {
       if (ev.type === "offer") {
-        // idempotente: aceita offer enquanto não respondemos OU se for renegociação após stable
+        // Idempotente: aceita offer somente se ainda não respondemos
+        // OU se for uma renegociação após estado stable.
         if (answered && pc.signalingState !== "stable") return;
+
         onStage?.("offer-received");
         await pc.setRemoteDescription(ev.sdp);
         await ice.flush();
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         await sig.send({ type: "answer", sdp: answer });
         answered = true;
         onStage?.("answer-sent");
+
       } else if (ev.type === "ice") {
         ice.push(ev.candidate);
+
       } else if (ev.type === "bye") {
-        onStage?.("closed", "peer bye");
+        onStage?.("closed", "peer sent bye");
       }
-    } catch (e: any) {
-      console.warn("[rtc][operator] signal error", e);
-      onStage?.("failed", e?.message || String(e));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[rtc][operator] signal error:", msg);
+      onStage?.("failed", msg);
     }
   });
 
   await sig.subscribed;
   onStage?.("subscribed");
   onStage?.("waiting-share");
-  // Anuncia presença; requester usa para reenviar a offer já existente.
+
+  // Anuncia presença ao requester para que ele reenvie a offer se já existir
   await sig.send({ type: "ready" });
 
   return {
     pc,
     get dc() { return dc; },
     sig,
-    close: () => { try { sig.send({ type: "bye" }); } catch {} pc.close(); sig.close(); },
+    close: () => {
+      try { sig.send({ type: "bye" }); } catch { /* ignora */ }
+      pc.close();
+      sig.close();
+    },
   };
 }
 
-// Requester: getDisplayMedia, espera ready (ou já tem subscribed), envia offer.
+// ---------------------------------------------------------------------------
+// Requester peer — offerer + screen share
+// ---------------------------------------------------------------------------
+
+/**
+ * Captura informações do viewport do consultor para envio ao operador.
+ * Permite mapeamento preciso de coordenadas, inclusive em telas HiDPI.
+ */
+export function captureViewportInfo(
+  stream: MediaStream,
+): RequesterViewport {
+  const videoTrack = stream.getVideoTracks()[0];
+  let displaySurface: string | null = null;
+
+  try {
+    const settings = videoTrack?.getSettings() as MediaTrackSettings & { displaySurface?: string };
+    displaySurface = settings?.displaySurface ?? null;
+  } catch { /* getSettings pode não estar disponível */ }
+
+  return {
+    innerWidth:  window.innerWidth,
+    innerHeight: window.innerHeight,
+    dpr:         window.devicePixelRatio || 1,
+    displaySurface,
+  };
+}
+
 export async function createRequesterPeer(
   sessionId: string,
   onDataMessage: (msg: string, reply: (s: string) => void) => void,
   onClose: () => void,
-  onStage?: (s: RtcStage, info?: string) => void,
+  onStage?: (stage: RtcStage, info?: string) => void,
 ) {
-  const pc = new RTCPeerConnection(RTC_CONFIG);
+  const pc  = new RTCPeerConnection(RTC_CONFIG);
   const sig = signalChannel(sessionId, "requester");
   const ice = makeIceBuffer(pc);
 
-  const dc = pc.createDataChannel("cmd");
-  dc.onopen = () => onStage?.("datachannel-open");
-  dc.onmessage = (ev) => onDataMessage(
-    typeof ev.data === "string" ? ev.data : "",
-    (s) => dc.readyState === "open" && dc.send(s),
-  );
+  // --- Screen share ---
+  // Solicita a aba atual quando o browser suportar (Chrome ≥107).
+  // Isso melhora muito a precisão do mapeamento de coordenadas porque o vídeo
+  // passa a bater pixel-a-pixel com o viewport CSS da página.
+  // IMPORTANTE: getDisplayMedia DEVE ser chamado antes de criar o DataChannel
+  // para garantir que `stream` esteja disponível no dc.onopen closure.
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: {
+      frameRate: 15,
+      preferCurrentTab: true,    // Chrome ≥107
+      displaySurface: "browser", // sugestão — usuário pode ignorar
+    } as MediaTrackConstraints,
+    audio: false,
+    // Inclui a própria aba no seletor e evita troca de superfície após o share
+    selfBrowserSurface: "include",
+    surfaceSwitching:   "exclude",
+  } as DisplayMediaStreamOptions);
 
-  pc.onicecandidate = (e) => { if (e.candidate) sig.send({ type: "ice", candidate: e.candidate.toJSON() }); };
+  // DataChannel criado pelo offerer (requester) — após obter o stream
+  // para que `stream` esteja disponível na closure do dc.onopen.
+  const dc = pc.createDataChannel("cmd", { ordered: true });
+
+  dc.onopen = () => {
+    onStage?.("datachannel-open");
+    // Envia metadados do viewport logo após o canal abrir.
+    // O operador usa para mapear coordenadas com precisão (DPR, resolução).
+    try {
+      const viewport = captureViewportInfo(stream);
+      dc.send(JSON.stringify({
+        id: "viewport-info",
+        kind: "viewportInfo",
+        viewport,
+      }));
+    } catch (e) {
+      console.warn("[rtc][requester] failed to send viewportInfo:", e);
+    }
+  };
+
+  dc.onmessage = (ev) => {
+    const data = typeof ev.data === "string" ? ev.data : "";
+    onDataMessage(data, (s) => {
+      if (dc.readyState === "open") dc.send(s);
+    });
+  };
+
+  // --- ICE ---
+  pc.onicecandidate = (e) => {
+    if (e.candidate) sig.send({ type: "ice", candidate: e.candidate.toJSON() });
+  };
+
+  // --- Estado da conexão ---
   pc.onconnectionstatechange = () => {
     const s = pc.connectionState;
     if (s === "connected") onStage?.("connected");
-    if (["failed", "closed", "disconnected"].includes(s)) {
-      onStage?.(s === "failed" ? "failed" : "closed", `pc.connectionState=${s}`);
+    if (s === "failed" || s === "closed" || s === "disconnected") {
+      onStage?.(s === "failed" ? "failed" : "closed", `connectionState=${s}`);
       onClose();
     }
   };
+
   pc.oniceconnectionstatechange = () => {
     if (pc.iceConnectionState === "checking") onStage?.("ice-checking");
   };
 
-  const stream = await navigator.mediaDevices.getDisplayMedia({
-    // Pede a aba atual quando o navegador suportar (Chrome ≥107):
-    // melhora muito a precisão de clique porque o vídeo passa a bater
-    // pixel-a-pixel com o viewport da página.
-    video: {
-      frameRate: 15,
-      preferCurrentTab: true,
-      displaySurface: "browser",
-    } as any,
-    audio: false,
-    selfBrowserSurface: "include",
-    surfaceSwitching: "exclude",
-  } as any);
   stream.getTracks().forEach(t => {
     pc.addTrack(t, stream);
-    t.addEventListener("ended", onClose);
+    t.addEventListener("ended", onClose, { once: true });
   });
 
-  // Envia offer apenas se signalingState=="stable". Reenvio reaproveita localDescription.
+  // --- Offer ---
   const sendOffer = async () => {
     try {
       if (pc.signalingState === "stable") {
@@ -267,21 +432,23 @@ export async function createRequesterPeer(
         await sig.send({ type: "offer", sdp: offer });
         onStage?.("offer-sent");
       } else if (pc.localDescription) {
+        // Reenvia a SDP local já criada sem renegociar
         await sig.send({ type: "offer", sdp: pc.localDescription });
         onStage?.("offer-sent", "resent");
       }
-    } catch (e: any) {
-      console.warn("[rtc][requester] sendOffer fail", e);
-      onStage?.("failed", e?.message || String(e));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[rtc][requester] sendOffer failed:", msg);
+      onStage?.("failed", msg);
     }
   };
 
   sig.onSignal(async (ev) => {
     try {
       if (ev.type === "ready") {
-        await sendOffer();           // se já tem localDescription, só reenvia
+        await sendOffer();
       } else if (ev.type === "answer") {
-        if (pc.signalingState !== "have-local-offer") return; // ignora answer fora de fase
+        if (pc.signalingState !== "have-local-offer") return;
         await pc.setRemoteDescription(ev.sdp);
         await ice.flush();
         onStage?.("answer-received");
@@ -290,9 +457,10 @@ export async function createRequesterPeer(
       } else if (ev.type === "bye") {
         onClose();
       }
-    } catch (e: any) {
-      console.warn("[rtc][requester] signal error", e);
-      onStage?.("failed", e?.message || String(e));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[rtc][requester] signal error:", msg);
+      onStage?.("failed", msg);
     }
   });
 
@@ -300,24 +468,26 @@ export async function createRequesterPeer(
   onStage?.("subscribed");
   await sendOffer();
 
-  // Reenvio periódico até receber answer; só reenvia a SDP local (sem renegociar).
-  const retry = setInterval(async () => {
+  // Reenvio periódico da offer enquanto aguarda answer (sem renegociar)
+  const retryInterval = setInterval(async () => {
     if (pc.signalingState === "have-local-offer" && pc.localDescription) {
-      try { await sig.send({ type: "offer", sdp: pc.localDescription }); } catch {}
-    } else if (pc.signalingState === "stable" && pc.connectionState !== "connected") {
-      // nada — esperando ICE finalizar
+      try { await sig.send({ type: "offer", sdp: pc.localDescription }); } catch { /* ignora */ }
     } else {
-      clearInterval(retry);
+      clearInterval(retryInterval);
     }
-  }, 3000);
+  }, 3_000);
 
   return {
-    pc, sig, stream, dc,
+    pc,
+    sig,
+    stream,
+    dc,
     close: () => {
-      clearInterval(retry);
-      try { sig.send({ type: "bye" }); } catch {}
+      clearInterval(retryInterval);
+      try { sig.send({ type: "bye" }); } catch { /* ignora */ }
       stream.getTracks().forEach(t => t.stop());
-      pc.close(); sig.close();
+      pc.close();
+      sig.close();
     },
   };
 }

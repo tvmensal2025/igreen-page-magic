@@ -1,163 +1,270 @@
+// =============================================================================
+// Remote Support — useRequesterSession (lado do consultor)
+// =============================================================================
+// Gerencia sessão ativa, escuta mudanças via Realtime, cuida do screen share
+// e executa os comandos remotos recebidos pelo operador via DataChannel.
+// =============================================================================
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import type { SupportSession } from "./types";
+import type { SupportSession, RemoteCommand } from "./types";
 import { requestSupport, endSession, rotateCode, logAction } from "./api";
-import { createRequesterPeer } from "./screenShare";
+import { createRequesterPeer, captureViewportInfo } from "./screenShare";
 import { executeCommand, setActivePeerForQuality, setRemoteControlPaused } from "./actionHandler";
-import type { RemoteCommand } from "./types";
 import { toast } from "sonner";
 
-/**
- * Hook do consultor: gerencia a sessão de suporte ativa, escuta novas sessões iniciadas pelo
- * operador, recebe códigos de autorização e cuida do screen share.
- */
-export function useRequesterSession(userId: string | null | undefined) {
-  const [session, setSession] = useState<SupportSession | null>(null);
-  const [code, setCode] = useState<string | null>(null);
-  const [codeExpiresAt, setCodeExpiresAt] = useState<number | null>(null);
-  const [sharing, setSharing] = useState(false);
-  const [paused, setPausedState] = useState(false);
-  const [shareSurface, setShareSurface] = useState<string | null>(null);
-  const peerRef = useRef<Awaited<ReturnType<typeof createRequesterPeer>> | null>(null);
+// ---------------------------------------------------------------------------
+// Status de sessão que indicam encerramento
+// ---------------------------------------------------------------------------
+const TERMINAL_STATUSES = ["ended", "rejected", "expired"] as const;
 
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
+export function useRequesterSession(userId: string | null | undefined) {
+  const [session, setSession]           = useState<SupportSession | null>(null);
+  const [code, setCode]                 = useState<string | null>(null);
+  const [codeExpiresAt, setCodeExpiresAt] = useState<number | null>(null);
+  const [sharing, setSharing]           = useState(false);
+  const [paused, setPausedState]        = useState(false);
+  const [shareSurface, setShareSurface] = useState<string | null>(null);
+
+  const peerRef    = useRef<Awaited<ReturnType<typeof createRequesterPeer>> | null>(null);
+  const sessionRef = useRef<SupportSession | null>(null);
+
+  // Mantém ref sincronizada para usar em callbacks estáveis
+  useEffect(() => { sessionRef.current = session; }, [session]);
+
+  // -------------------------------------------------------------------------
+  // Pausa / retomada de controle
+  // -------------------------------------------------------------------------
   const togglePause = useCallback(() => {
-    setPausedState(p => {
-      const next = !p;
+    setPausedState(prev => {
+      const next = !prev;
       setRemoteControlPaused(next);
-      if (session) logAction(session.id, "requester", next ? "control_paused" : "control_resumed");
+      const s = sessionRef.current;
+      if (s) logAction(s.id, "requester", next ? "control_paused" : "control_resumed");
       return next;
     });
-  }, [session]);
+  }, []);
 
-  // Load latest active/pending session on mount
+  // -------------------------------------------------------------------------
+  // Carrega sessão ativa ao montar
+  // -------------------------------------------------------------------------
   useEffect(() => {
     if (!userId) return;
-    (async () => {
-      const { data } = await supabase
-        .from("remote_support_sessions" as any)
-        .select("*")
-        .eq("requester_id", userId)
-        .in("status", ["requested", "pending_code", "active"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (data) setSession(data as unknown as SupportSession);
-    })();
-  }, [userId]);
 
-  // Realtime: subscribe to changes on my sessions
-  useEffect(() => {
-    if (!userId) return;
-    const ch = supabase
-      .channel(`requester:${userId}:sessions`)
-      .on("postgres_changes", {
-        event: "*", schema: "public", table: "remote_support_sessions",
-        filter: `requester_id=eq.${userId}`,
-      }, (payload) => {
-        const next = (payload.new ?? payload.old) as SupportSession;
-        if (!next) return;
-        if (["ended", "rejected", "expired"].includes(next.status)) {
-          if (session?.id === next.id) {
-            setSession(null); setCode(null); setCodeExpiresAt(null);
-            peerRef.current?.close(); peerRef.current = null; setSharing(false);
-          }
-        } else {
-          setSession(next);
+    let cancelled = false;
+
+    supabase
+      .from("remote_support_sessions" as "remote_support_sessions")
+      .select("*")
+      .eq("requester_id", userId)
+      .in("status", ["requested", "pending_code", "active"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled && data) {
+          setSession(data as unknown as SupportSession);
         }
       })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [userId, session?.id]);
+      .catch(e => console.warn("[remote-support] load session:", e));
 
-  // Listen for code broadcast (when operator accepts)
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // -------------------------------------------------------------------------
+  // Realtime: mudanças na sessão
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!userId) return;
+
+    const ch = supabase
+      .channel(`requester:${userId}:sessions`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "remote_support_sessions",
+          filter: `requester_id=eq.${userId}`,
+        },
+        (payload) => {
+          const next = (payload.new ?? payload.old) as SupportSession | null;
+          if (!next) return;
+
+          const isTerminal = (TERMINAL_STATUSES as readonly string[]).includes(next.status);
+          if (isTerminal) {
+            // Só limpa se for a sessão atual
+            if (sessionRef.current?.id === next.id) {
+              setSession(null);
+              setCode(null);
+              setCodeExpiresAt(null);
+              peerRef.current?.close();
+              peerRef.current = null;
+              setSharing(false);
+              setPausedState(false);
+              setRemoteControlPaused(false);
+            }
+          } else {
+            setSession(next);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [userId]);
+
+  // -------------------------------------------------------------------------
+  // Broadcast: novo código quando operador aceita
+  // -------------------------------------------------------------------------
   useEffect(() => {
     if (!session?.id) return;
+
     const ch = supabase.channel(`support:${session.id}:code`);
-    ch.on("broadcast", { event: "new_code" }, ({ payload }) => {
-      setCode(payload.code);
-      setCodeExpiresAt(new Date(payload.rotates_at).getTime());
-    }).subscribe();
+    ch
+      .on("broadcast", { event: "new_code" }, ({ payload }) => {
+        if (!payload?.code) return;
+        setCode(payload.code as string);
+        setCodeExpiresAt(new Date(payload.rotates_at as string).getTime());
+      })
+      .subscribe();
+
     return () => { supabase.removeChannel(ch); };
   }, [session?.id]);
 
-  // Auto-rotate code every 60s while pending
+  // -------------------------------------------------------------------------
+  // Auto-rotação do código a cada ~60s enquanto pending
+  // -------------------------------------------------------------------------
   useEffect(() => {
     if (!session?.id || session.status !== "pending_code" || !codeExpiresAt) return;
-    const ms = Math.max(1000, codeExpiresAt - Date.now() - 1000);
+
+    // Agenda 1s antes de expirar para evitar janela sem código
+    const ms = Math.max(1_000, codeExpiresAt - Date.now() - 1_000);
     const t = setTimeout(async () => {
       try {
         const r = await rotateCode(session.id);
         setCode(r.code);
         setCodeExpiresAt(new Date(r.rotates_at).getTime());
-      } catch (e) { console.warn(e); }
+      } catch (e) {
+        console.warn("[remote-support] rotate code:", e);
+      }
     }, ms);
+
     return () => clearTimeout(t);
   }, [session?.id, session?.status, codeExpiresAt]);
+
+  // -------------------------------------------------------------------------
+  // Actions
+  // -------------------------------------------------------------------------
 
   const request = useCallback(async () => {
     try {
       const s = await requestSupport();
       setSession(s);
       toast.success("Pedido enviado ao suporte");
-    } catch (e: any) {
-      toast.error(e.message || "Falha ao pedir suporte");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Falha ao pedir suporte";
+      toast.error(msg);
     }
   }, []);
 
   const end = useCallback(async () => {
-    if (!session) return;
+    const s = sessionRef.current;
+    if (!s) return;
     try {
-      peerRef.current?.close(); peerRef.current = null; setSharing(false);
-      await endSession(session.id, "requester_ended");
-      setSession(null); setCode(null); setCodeExpiresAt(null);
-    } catch (e: any) {
-      toast.error(e.message || "Falha ao encerrar");
+      peerRef.current?.close();
+      peerRef.current = null;
+      setSharing(false);
+      setPausedState(false);
+      setRemoteControlPaused(false);
+      await endSession(s.id, "requester_ended");
+      setSession(null);
+      setCode(null);
+      setCodeExpiresAt(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Falha ao encerrar";
+      toast.error(msg);
     }
-  }, [session]);
+  }, []);
 
   const startScreenShare = useCallback(async () => {
-    if (!session || sharing) return;
+    const s = sessionRef.current;
+    if (!s || sharing) return;
+
     try {
       setSharing(true);
+
       const peer = await createRequesterPeer(
-        session.id,
+        s.id,
+        // Executor de comandos recebidos pelo DataChannel
         async (msg, reply) => {
           try {
             const cmd = JSON.parse(msg) as RemoteCommand;
-            const result = await executeCommand(session.id, cmd);
+
+            // viewportInfo: o operador processa a resposta, mas o consultor
+            // não precisa fazer nada além de ack.
+            const result = await executeCommand(s.id, cmd);
             reply(JSON.stringify(result));
           } catch (e) {
-            reply(JSON.stringify({ ok: false, error: String(e) }));
+            const error = e instanceof Error ? e.message : String(e);
+            reply(JSON.stringify({ id: "unknown", ok: false, error }));
           }
         },
+        // onClose
         () => {
-          peerRef.current?.close(); peerRef.current = null; setSharing(false);
-          logAction(session.id, "system", "screen_stopped");
+          peerRef.current?.close();
+          peerRef.current = null;
+          setSharing(false);
+          setPausedState(false);
+          setRemoteControlPaused(false);
+          logAction(s.id, "system", "screen_stopped").catch(() => {});
         },
-        (state, info) => {
-          console.log("[remote-support][rtc]", state, info || "");
-          if (state === "connected") logAction(session.id, "system", "rtc_connected");
-          if (state === "failed") logAction(session.id, "system", "rtc_failed", null, { info });
+        // onStage
+        (stage, info) => {
+          console.debug("[remote-support][rtc]", stage, info ?? "");
+          if (stage === "connected") logAction(s.id, "system", "rtc_connected").catch(() => {});
+          if (stage === "failed")    logAction(s.id, "system", "rtc_failed", null, { info }).catch(() => {});
         },
       );
+
       peerRef.current = peer;
       setActivePeerForQuality(peer.pc);
-      // Detecta o tipo de superfície compartilhada (browser/window/monitor).
-      // 'browser' = aba atual → cliques mapeiam pixel-a-pixel.
-      try {
-        const videoTrack = peer.stream.getVideoTracks()[0];
-        const settings: any = videoTrack?.getSettings?.() ?? {};
-        setShareSurface(settings.displaySurface ?? null);
-      } catch { setShareSurface(null); }
-      await logAction(session.id, "requester", "screen_started");
-      toast.success("Compartilhando tela com o suporte");
-    } catch (e: any) {
-      setSharing(false);
-      const isPerm = /Permission|denied|NotAllowed/i.test(e?.message || "");
-      if (isPerm) logAction(session.id, "system", "screen_permission_denied");
-      toast.error(e.message || "Falha ao compartilhar tela");
-    }
-  }, [session, sharing]);
 
-  return { session, code, codeExpiresAt, sharing, paused, shareSurface, togglePause, request, end, startScreenShare };
+      // Captura e expõe o tipo de superfície compartilhada
+      // 'browser' = aba atual → mapeamento pixel-a-pixel
+      const vp = captureViewportInfo(peer.stream);
+      setShareSurface(vp.displaySurface);
+
+      await logAction(s.id, "requester", "screen_started");
+      toast.success("Compartilhando tela com o suporte");
+
+    } catch (e) {
+      setSharing(false);
+      const msg = e instanceof Error ? e.message : "Falha ao compartilhar tela";
+      const isPerm = /Permission|denied|NotAllowed/i.test(msg);
+      if (isPerm) {
+        logAction(s.id, "system", "screen_permission_denied").catch(() => {});
+        toast.error("Permissão negada. Clique em 'Compartilhar tela' novamente e autorize.");
+      } else {
+        toast.error(msg);
+      }
+    }
+  }, [sharing]);
+
+  return {
+    session,
+    code,
+    codeExpiresAt,
+    sharing,
+    paused,
+    shareSurface,
+    togglePause,
+    request,
+    end,
+    startScreenShare,
+  };
 }
