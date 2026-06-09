@@ -322,7 +322,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex-1 grid lg:grid-cols-[1fr,360px] min-h-0">
+          <div className="flex-1 grid lg:grid-cols-[1fr,460px] min-h-0">
             {/* COLUNA ESQUERDA: editor */}
             <div className="flex flex-col min-h-0 overflow-hidden border-r">
               <Tabs
