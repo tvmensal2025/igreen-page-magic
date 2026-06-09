@@ -35,7 +35,7 @@ export default function WhatsAppPreview({ step, steps = [], consultantName }: Pr
   }, [step, steps]);
 
   return (
-    <div className="sticky top-4 mx-auto w-full max-w-[380px] overflow-hidden rounded-[2rem] border-8 border-zinc-900 bg-zinc-900 shadow-2xl">
+    <div className="mx-auto w-full max-w-[380px] overflow-hidden rounded-[2rem] border-8 border-zinc-900 bg-zinc-900 shadow-2xl">
       {/* Header WhatsApp */}
       <div className="flex items-center gap-3 bg-[#075E54] px-4 py-3 text-white">
         <div className="h-9 w-9 shrink-0 rounded-full bg-white/20 grid place-items-center text-sm font-semibold">

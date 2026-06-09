@@ -1131,11 +1131,11 @@ export default function FluxoBuilder() {
           </section>
         )}
 
-        {/* Coluna direita — preview WhatsApp + preferências de IA */}
+        {/* Coluna direita — preferências de IA (topo, sempre visível) + preview WhatsApp */}
         {!(viewMode === "diagrama" && panelHidden) && viewMode !== "planilha" && (
           <aside className="hidden space-y-3 lg:block">
-            <WhatsAppPreview step={selected} steps={steps} consultantName={consultantName} />
             {userId && <AiPreferencesCard consultantId={userId} />}
+            <WhatsAppPreview step={selected} steps={steps} consultantName={consultantName} />
           </aside>
         )}
       </main>
