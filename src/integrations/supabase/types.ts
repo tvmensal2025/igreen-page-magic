@@ -2498,6 +2498,7 @@ export type Database = {
           created_at: string
           id: string
           image_media_id: string | null
+          send_order: string[]
           stage: string
           text_content: string | null
           updated_at: string
@@ -2511,6 +2512,7 @@ export type Database = {
           created_at?: string
           id?: string
           image_media_id?: string | null
+          send_order?: string[]
           stage: string
           text_content?: string | null
           updated_at?: string
@@ -2524,6 +2526,7 @@ export type Database = {
           created_at?: string
           id?: string
           image_media_id?: string | null
+          send_order?: string[]
           stage?: string
           text_content?: string | null
           updated_at?: string
