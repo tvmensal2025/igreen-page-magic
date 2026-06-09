@@ -314,6 +314,49 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
     updateStage(stage, patch);
   }
 
+  async function applyTemplate(stage: PosVendaStage, tplId: string) {
+    const tpl = allTemplates.find((t) => t.id === tplId);
+    if (!tpl) return;
+    const patch: Partial<StageConfig> = {};
+    if (tpl.content) patch.text_content = tpl.content;
+    const url = tpl.media_type === "image" ? (tpl.image_url || tpl.media_url) : tpl.media_url;
+    if (url && tpl.media_type && ["audio", "image", "video"].includes(tpl.media_type)) {
+      // reuse or create ai_media_library entry
+      const { data: existing } = await supabase
+        .from("ai_media_library")
+        .select("id")
+        .eq("url", url)
+        .or(`consultant_id.eq.${consultantId},is_public.eq.true`)
+        .maybeSingle();
+      let mediaId = existing?.id as string | undefined;
+      if (!mediaId) {
+        const { data, error } = await supabase
+          .from("ai_media_library")
+          .insert({
+            consultant_id: consultantId,
+            kind: tpl.media_type,
+            label: tpl.name || "Do template",
+            url,
+            active: true,
+            is_public: false,
+          })
+          .select("id,kind,label,url,is_public")
+          .single();
+        if (!error && data) {
+          mediaId = data.id;
+          setMyMedia((p) => [data as MediaItem, ...p]);
+        }
+      }
+      if (mediaId) {
+        if (tpl.media_type === "audio") patch.audio_media_id = mediaId;
+        if (tpl.media_type === "image") patch.image_media_id = mediaId;
+        if (tpl.media_type === "video") patch.video_media_id = mediaId;
+      }
+    }
+    updateStage(stage, patch);
+    toast.success(`Template "${tpl.name}" aplicado — agora ajuste o que quiser.`);
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[94vh] overflow-hidden flex flex-col gap-0 p-0">
