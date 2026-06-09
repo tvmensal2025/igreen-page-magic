@@ -70,6 +70,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
   });
   const [publicMedia, setPublicMedia] = useState<MediaItem[]>([]);
   const [myMedia, setMyMedia] = useState<MediaItem[]>([]);
+  const [templateMedia, setTemplateMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -77,7 +78,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
     if (!open) return;
     (async () => {
       setLoading(true);
-      const [cfgRes, pubRes, mineRes] = await Promise.all([
+      const [cfgRes, pubRes, mineRes, tplRes] = await Promise.all([
         supabase
           .from("consultant_pos_venda_media" as any)
           .select("stage,text_content,audio_media_id,image_media_id,video_media_id,use_default,send_order")
@@ -95,6 +96,12 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
           .eq("consultant_id", consultantId)
           .eq("active", true)
           .not("url", "is", null)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("message_templates")
+          .select("id,name,media_type,media_url,image_url,is_public,consultant_id")
+          .in("media_type", ["audio", "image", "video"])
+          .or(`is_public.eq.true,consultant_id.eq.${consultantId}`)
           .order("created_at", { ascending: false }),
       ]);
 
@@ -116,10 +123,22 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
       setConfigs(next);
       setPublicMedia((pubRes.data || []) as MediaItem[]);
       setMyMedia((mineRes.data || []) as MediaItem[]);
+      const tpls: MediaItem[] = ((tplRes.data || []) as any[])
+        .map((t) => ({
+          id: `tpl:${t.id}`,
+          kind: t.media_type,
+          label: t.name,
+          url: t.media_type === "image" ? (t.image_url || t.media_url) : t.media_url,
+          is_public: t.is_public,
+          source: t.is_public ? "template_public" : "template_mine",
+        }))
+        .filter((t) => !!t.url);
+      setTemplateMedia(tpls);
       setLoading(false);
     })();
     // eslint-disable-next-line
   }, [open, consultantId]);
+
 
   const completedCount = useMemo(
     () =>
