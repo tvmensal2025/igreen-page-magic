@@ -66,6 +66,23 @@ export default function StepInspector({
   if (!step) return null;
   const buttons = getButtons(step);
 
+  const tabHelp = (text: string) => (
+    <Popover>
+      <PopoverTrigger asChild>
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex text-muted-foreground/60 hover:text-primary"
+          aria-label="Ajuda"
+        >
+          <HelpCircle className="h-3 w-3" />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" className="w-64 text-xs">{text}</PopoverContent>
+    </Popover>
+  );
+
   function setButtons(next: { id: string; title: string }[]) {
     const others = step!.captures.filter((c) => c.field !== "_buttons");
     const updated: Capture[] = next.length
