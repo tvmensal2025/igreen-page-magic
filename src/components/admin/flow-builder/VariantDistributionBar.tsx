@@ -95,6 +95,30 @@ export default function VariantDistributionBar({
     onSelectVariant(target);
   }
 
+  async function renameVariant(v: Variant) {
+    if (v === "D") {
+      toast.error("O fluxo D (padrão Camila) não pode ser renomeado.");
+      return;
+    }
+    const { data: row } = await supabase
+      .from("bot_flows")
+      .select("id, name")
+      .eq("consultant_id", consultantId)
+      .eq("variant", v)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!row?.id) { toast.error("Fluxo não encontrado."); return; }
+    const novo = window.prompt(`Novo nome para o fluxo ${v}:`, (row as any).name || `Fluxo ${v}`);
+    if (!novo || !novo.trim()) return;
+    const { error } = await supabase
+      .from("bot_flows")
+      .update({ name: novo.trim() })
+      .eq("id", (row as any).id);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`Fluxo ${v} renomeado.`);
+    await onChanged();
+  }
+
   async function deleteVariant(v: Variant) {
     // Bloqueia exclusão do último fluxo restante (precisa sobrar pelo menos 1).
     if (existingVariants.length <= 1) {
