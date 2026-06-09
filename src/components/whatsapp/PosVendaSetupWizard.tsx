@@ -124,15 +124,16 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
       setPublicMedia((pubRes.data || []) as MediaItem[]);
       setMyMedia((mineRes.data || []) as MediaItem[]);
       const tpls: MediaItem[] = ((tplRes.data || []) as any[])
-        .map((t) => ({
+        .map((t): MediaItem => ({
           id: `tpl:${t.id}`,
           kind: t.media_type,
           label: t.name,
           url: t.media_type === "image" ? (t.image_url || t.media_url) : t.media_url,
           is_public: t.is_public,
-          source: t.is_public ? "template_public" : "template_mine",
+          source: t.is_public ? "template_public" as const : "template_mine" as const,
         }))
         .filter((t) => !!t.url);
+
       setTemplateMedia(tpls);
       setLoading(false);
     })();
