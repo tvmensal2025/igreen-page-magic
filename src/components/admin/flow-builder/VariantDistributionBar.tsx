@@ -218,7 +218,7 @@ export default function VariantDistributionBar({
 
         <div className="ml-auto">
           <Badge variant="secondary" className="text-[10px]">
-            {activeVariants.length} fluxo{activeVariants.length === 1 ? "" : "s"} ativo{activeVariants.length === 1 ? "" : "s"} · round-robin 1 a 1
+            {activeVariants.length} fluxo{activeVariants.length === 1 ? "" : "s"} ativo{activeVariants.length === 1 ? "" : "s"} · revezando
           </Badge>
         </div>
       </div>
