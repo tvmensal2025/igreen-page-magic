@@ -208,6 +208,11 @@ export default function VariantDistributionBar({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {v !== "D" && (
+                        <DropdownMenuItem onClick={() => renameVariant(v)}>
+                          Renomear fluxo {v}
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         className="text-destructive"
                         onClick={() => deleteVariant(v)}
