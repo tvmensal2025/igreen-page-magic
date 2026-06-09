@@ -411,31 +411,35 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
 
                   <MediaPicker
                     kind="audio"
-                    consultantId={consultantId}
                     publicMedia={publicMedia}
                     myMedia={myMedia}
+                    templateMedia={templateMedia}
                     selectedId={stageCfg.audio_media_id}
-                    onSelect={(id) => updateStage(activeStage, { audio_media_id: id })}
+                    onPick={(item) => pickMedia(activeStage, "audio", item)}
+                    onClear={() => updateStage(activeStage, { audio_media_id: null })}
                     onUpload={(f) => handleUpload(f, "audio", activeStage)}
                   />
                   <MediaPicker
                     kind="image"
-                    consultantId={consultantId}
                     publicMedia={publicMedia}
                     myMedia={myMedia}
+                    templateMedia={templateMedia}
                     selectedId={stageCfg.image_media_id}
-                    onSelect={(id) => updateStage(activeStage, { image_media_id: id })}
+                    onPick={(item) => pickMedia(activeStage, "image", item)}
+                    onClear={() => updateStage(activeStage, { image_media_id: null })}
                     onUpload={(f) => handleUpload(f, "image", activeStage)}
                   />
                   <MediaPicker
                     kind="video"
-                    consultantId={consultantId}
                     publicMedia={publicMedia}
                     myMedia={myMedia}
+                    templateMedia={templateMedia}
                     selectedId={stageCfg.video_media_id}
-                    onSelect={(id) => updateStage(activeStage, { video_media_id: id })}
+                    onPick={(item) => pickMedia(activeStage, "video", item)}
+                    onClear={() => updateStage(activeStage, { video_media_id: null })}
                     onUpload={(f) => handleUpload(f, "video", activeStage)}
                   />
+
                 </TabsContent>
               </Tabs>
             </div>
