@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Bot, MessagesSquare, Library, Loader2, Brain, Mic, FileText, BookOpen, Workflow, HeartPulse } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,8 +11,9 @@ import { AIDecisionsPanel } from "./AIDecisionsPanel";
 import { SlotsPanel } from "./SlotsPanel";
 import { BotTelemetryStrip } from "./BotTelemetryStrip";
 import BotHealthDashboard from "@/components/admin/saude/BotHealthDashboard";
+const AdminKnowledge = lazy(() => import("@/pages/AdminKnowledge"));
 
-type SubTab = "atendimentos" | "agente" | "decisoes" | "desempenho";
+type SubTab = "atendimentos" | "agente" | "decisoes" | "desempenho" | "conhecimento";
 type AgenteSub = "audios" | "midias" | "roteiro";
 
 export function AIAgentTab({ userId }: { userId: string }) {
