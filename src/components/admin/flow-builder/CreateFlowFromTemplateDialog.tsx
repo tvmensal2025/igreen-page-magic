@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { ALL_VARIANTS } from "./flowTypes";
 
 interface Props {
   open: boolean;
@@ -148,8 +149,6 @@ export default function CreateFlowFromTemplateDialog({
   useEffect(() => {
     if (!open || !consultantId) return;
     setStep(1);
-    setFlowName(`Fluxo ${defaultVariant === "E" ? "A" : defaultVariant}`);
-    setVariant(defaultVariant === "E" ? "A" : (defaultVariant || "A"));
     setRenderStyle("buttons");
     setAiProvider("google");
     setAiProfile("balanced");
@@ -161,7 +160,15 @@ export default function CreateFlowFromTemplateDialog({
         .select("variant")
         .eq("consultant_id", consultantId)
         .eq("is_active", true);
-      setExistingVariants(((data as any[]) || []).map((r) => String(r.variant)));
+      const used = ((data as any[]) || []).map((r) => String(r.variant));
+      setExistingVariants(used);
+      // Próxima letra livre (A..Z), com fallback ao defaultVariant pedido.
+      const nextFree = ALL_VARIANTS.find((v) => !used.includes(v)) ?? "A";
+      const initial = defaultVariant && !used.includes(defaultVariant)
+        ? defaultVariant
+        : nextFree;
+      setVariant(initial);
+      setFlowName(`Fluxo ${initial}`);
       setLoadingVariants(false);
     })();
   }, [open, consultantId, defaultVariant]);
@@ -183,7 +190,7 @@ export default function CreateFlowFromTemplateDialog({
       w.push("Bloco 'Finalizar cadastro' será adicionado automaticamente — sem ele o lead não chega ao portal.");
     }
     if (renderStyle === "list-interactive" && variant !== "D") {
-      w.push("Lista interativa só funciona em fluxos via Whapi (variante D). Em A/B/C cai em texto numerado.");
+      w.push("Lista interativa só funciona em fluxos via Whapi (fluxo D). Em outros cai em texto numerado.");
     }
     if (aiProvider !== "none" && enabledBlockIds.includes("duvidas_ia") === false) {
       w.push("Você ativou IA mas não incluiu o bloco de dúvidas — a IA não vai ser usada.");
@@ -198,7 +205,11 @@ export default function CreateFlowFromTemplateDialog({
       return;
     }
     if (blockedVariant) {
-      toast.error(`Já existe fluxo ativo na variante ${variant}. Desative antes.`);
+      toast.error(`Já existe fluxo ativo na letra ${variant}. Desative antes.`);
+      return;
+    }
+    if (!ALL_VARIANTS.includes(variant as any)) {
+      toast.error("Identificador de fluxo inválido. Escolha uma letra de A a Z.");
       return;
     }
     setBusy(true);
@@ -223,7 +234,7 @@ export default function CreateFlowFromTemplateDialog({
       if (!out?.ok || !out.flow_id) {
         throw new Error("Edge Function não retornou flow_id");
       }
-      toast.success(`Fluxo criado! Variante ${variant} com ${enabledBlockIds.length} blocos.`);
+      toast.success(`Fluxo criado! Letra ${variant} com ${enabledBlockIds.length} blocos.`);
       if (out.warnings?.length) {
         out.warnings.forEach((w) => toast.warning(w));
       }
@@ -240,7 +251,7 @@ export default function CreateFlowFromTemplateDialog({
     } catch (e: any) {
       const msg = e?.message || String(e);
       if (msg.includes("flow_already_exists")) {
-        toast.error(`Já existe fluxo ativo na variante ${variant}. Desative ou exclua antes de criar um novo.`);
+        toast.error(`Já existe fluxo ativo na letra ${variant}. Desative ou exclua antes de criar um novo.`);
       } else {
         toast.error("Erro ao criar fluxo: " + msg);
       }
@@ -297,44 +308,45 @@ export default function CreateFlowFromTemplateDialog({
               </div>
 
               <div className="space-y-2">
-                <Label>Variante (A/B/C/D)</Label>
+                <Label>Identificação do fluxo</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Escolha uma letra só pra identificar este fluxo internamente. O cliente nunca vê.
+                  Crie quantos fluxos quiser — cada cliente novo entra em um deles, alternando.
+                </p>
                 <RadioGroup
                   value={variant}
-                  onValueChange={(v) => setVariant(v as any)}
-                  className="grid grid-cols-4 gap-2"
+                  onValueChange={(v) => setVariant(v)}
+                  className="grid grid-cols-6 gap-2 sm:grid-cols-8"
                   disabled={busy}
                 >
-                  {(["A", "B", "C", "D"] as const).map((v) => {
+                  {ALL_VARIANTS.map((v) => {
                     const taken = existingVariants.includes(v);
                     return (
                       <label
                         key={v}
-                        className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-lg border p-3 transition-colors ${
+                        className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-lg border p-2 transition-colors ${
                           variant === v
                             ? "border-primary bg-primary/5"
                             : "hover:border-muted-foreground/30"
-                        } ${taken ? "opacity-50" : ""}`}
+                        } ${taken ? "pointer-events-none opacity-40" : ""}`}
                       >
-                        <RadioGroupItem value={v} className="sr-only" />
-                        <span className="text-xl font-bold">{v}</span>
+                        <RadioGroupItem value={v} className="sr-only" disabled={taken} />
+                        <span className="text-base font-bold">{v}</span>
                         {taken && (
-                          <Badge variant="secondary" className="text-[9px]">
-                            Em uso
-                          </Badge>
+                          <span className="text-[8px] text-muted-foreground">em uso</span>
                         )}
                       </label>
                     );
                   })}
                 </RadioGroup>
                 <p className="text-[11px] text-muted-foreground">
-                  Variantes permitem A/B testing. Cada lead recebe uma variante.{" "}
-                  {loadingVariants ? "Verificando..." : `Ativas: ${existingVariants.join(", ") || "nenhuma"}.`}
+                  {loadingVariants ? "Verificando..." : `Já em uso: ${existingVariants.join(", ") || "nenhum"}.`}
                 </p>
                 {blockedVariant && (
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
-                      A variante <strong>{variant}</strong> já tem um fluxo ativo. Desative ou exclua antes.
+                      A letra <strong>{variant}</strong> já tem um fluxo ativo. Escolha outra.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -361,7 +373,7 @@ export default function CreateFlowFromTemplateDialog({
                     {
                       v: "list-interactive" as const,
                       label: "📋 Lista interativa (até 10)",
-                      sub: "Menu suspenso com várias opções. Só funciona via Whapi (variante D).",
+                      sub: "Menu suspenso com várias opções. Só funciona via Whapi (fluxo D).",
                     },
                     {
                       v: "text-numbered" as const,
@@ -512,7 +524,7 @@ export default function CreateFlowFromTemplateDialog({
               <Alert>
                 <CheckCircle2 className="h-4 w-4" />
                 <AlertDescription>
-                  Vai criar fluxo <strong>{flowName}</strong> na variante <strong>{variant}</strong> com{" "}
+                  Vai criar fluxo <strong>{flowName}</strong> identificado pela letra <strong>{variant}</strong> com{" "}
                   <strong>{totalBlocks}</strong> blocos. Estilo:{" "}
                   <strong>
                     {renderStyle === "buttons"
