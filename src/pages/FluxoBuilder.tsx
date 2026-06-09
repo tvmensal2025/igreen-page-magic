@@ -757,49 +757,50 @@ export default function FluxoBuilder() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
+      {/* Header — limpo e profissional */}
       <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
+        {/* Faixa 1: Distribuição entre variantes (ativar/pausar/criar) — sempre no topo */}
+        {userId && (
+          <div className="pt-3">
+            <VariantDistributionBar
+              consultantId={userId}
+              existingVariants={existingVariants}
+              editingVariant={editingVariant}
+              onSelectVariant={setEditingVariant}
+              onChanged={() => userId && reload(userId, editingVariant)}
+            />
+          </div>
+        )}
+
+        {/* Faixa 2: título + ações principais */}
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div className="flex-1">
-            <h1 className="text-base font-semibold">Editor de Fluxo</h1>
-            <p className="text-xs text-muted-foreground">
-              Monte como o bot conversa com seus leads — arraste, edite, veja o preview ao vivo.
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-semibold flex items-center gap-2">
+              Fluxo
+              {flowWarnings > 0 && (
+                <Badge
+                  variant={flowErrors > 0 ? "destructive" : "secondary"}
+                  className="gap-1"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {flowWarnings} {flowWarnings === 1 ? "alerta" : "alertas"}
+                </Badge>
+              )}
+            </h1>
+            <p className="text-xs text-muted-foreground truncate">
+              Arraste, edite e veja o preview ao vivo. Cada fluxo escolhe sua mistura (áudio, texto, vídeo).
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {flowWarnings > 0 && (
-              <Badge
-                variant={flowErrors > 0 ? "destructive" : "secondary"}
-                className="gap-1"
-              >
-                <AlertTriangle className="h-3 w-3" />
-                {flowWarnings} {flowWarnings === 1 ? "alerta" : "alertas"}
-              </Badge>
-            )}
             {validation.autoFixablePatches.length > 0 && (
               <Button variant="outline" size="sm" onClick={autoFixAll}>
                 <Wand2 className="mr-1 h-3 w-3" />
                 Auto-corrigir
               </Button>
             )}
-            {/*
-              task 10.2 — Toggle Lista/Diagrama no header (R1.1). A
-              persistência em `localStorage` é responsabilidade do
-              `setViewMode` (R1.4); o `<ViewToggle>` apenas dispara o
-              `onChange`.
-            */}
-            <ViewToggle
-              value={viewMode}
-              onChange={setViewMode}
-              diagramHint={isMedium}
-            />
-            <Button variant="outline" size="sm" onClick={() => navigate("/admin/conhecimento")}>
-              <BookOpen className="mr-1 h-3 w-3" />
-              Conhecimento
-            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -808,24 +809,11 @@ export default function FluxoBuilder() {
               title={steps.length === 0 ? "Adicione ao menos 1 passo para testar" : "Testar fluxo localmente"}
             >
               <Play className="mr-1 h-3 w-3" />
-              🎬 Testar fluxo
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setTemplatesOpen(true)} disabled={!flowId}>
-              <Sparkles className="mr-1 h-3 w-3" />
-              Templates
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setCreateFromTemplateOpen(true)}
-              disabled={!userId}
-              title="Criar um fluxo novo do zero usando blocos prontos (OCR de conta, documento, IA de dúvidas)"
-            >
-              <Plus className="mr-1 h-3 w-3" />
-              Novo fluxo
+              Testar fluxo
             </Button>
           </div>
         </div>
+
 
         {/* Distribuição entre variantes (ativar/pausar/criar) */}
         {userId && (
