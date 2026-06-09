@@ -112,8 +112,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
           .order("created_at", { ascending: false }),
         supabase
           .from("message_templates")
-          .select("id,name,media_type,media_url,image_url,is_public,consultant_id")
-          .in("media_type", ["audio", "image", "video"])
+          .select("id,name,content,media_type,media_url,image_url,is_public,consultant_id")
           .or(`is_public.eq.true,consultant_id.eq.${consultantId}`)
           .order("created_at", { ascending: false }),
       ]);
