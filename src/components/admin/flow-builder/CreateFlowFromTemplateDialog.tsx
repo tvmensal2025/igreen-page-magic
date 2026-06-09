@@ -32,7 +32,7 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   consultantId: string | null;
-  defaultVariant?: "A" | "B" | "C" | "D" | "E";
+  defaultVariant?: string;
   onCreated?: (flowId: string) => void;
 }
 
