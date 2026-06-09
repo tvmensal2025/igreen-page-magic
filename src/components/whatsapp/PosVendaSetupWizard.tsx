@@ -180,7 +180,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
         mediaId = existing.id;
         toast.success("Arquivo já existia — reutilizado.");
       } else {
-        const result = await uploadMedia(file, undefined, { scope: "library", kind, consultant_id: consultantId });
+        const result = await uploadMedia(file, undefined, { scope: "generic", kind, consultant_id: consultantId });
         const label = file.name.replace(/\.[^/.]+$/, "").slice(0, 80);
         const { data, error } = await supabase
           .from("ai_media_library")
