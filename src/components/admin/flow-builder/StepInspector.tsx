@@ -8,7 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, Trash2, ScanLine, Sparkles, Maximize2, Minimize2 } from "lucide-react";
+import { Plus, Trash2, ScanLine, Sparkles, Maximize2, Minimize2, HelpCircle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import StepMediaPanel from "@/components/admin/fluxo/StepMediaPanel";
 import StepSuggestions from "./StepSuggestions";
@@ -150,11 +151,20 @@ export default function StepInspector({
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="conteudo">Conteúdo</TabsTrigger>
-            <TabsTrigger value="regras">Regras &amp; Botões</TabsTrigger>
-            <TabsTrigger value="midias">Mídia</TabsTrigger>
-            <TabsTrigger value="avancado">Avançado</TabsTrigger>
+            <TabsTrigger value="conteudo">
+              <span className="flex items-center gap-1">Conteúdo {tabHelp("O texto que o bot envia. Use {{nome}} pra personalizar.")}</span>
+            </TabsTrigger>
+            <TabsTrigger value="regras">
+              <span className="flex items-center gap-1">Regras {tabHelp("Botões e palavras-chave que decidem o próximo passo do cliente.")}</span>
+            </TabsTrigger>
+            <TabsTrigger value="midias">
+              <span className="flex items-center gap-1">Mídia {tabHelp("Áudio, imagem ou vídeo que acompanha o texto. Escolha do seu acervo.")}</span>
+            </TabsTrigger>
+            <TabsTrigger value="avancado">
+              <span className="flex items-center gap-1">Avançado {tabHelp("Ajustes técnicos: chave do passo, fallback de IA, OCR. Só mexa se souber.")}</span>
+            </TabsTrigger>
           </TabsList>
+
 
           {/* CONTEÚDO */}
           <TabsContent value="conteudo" className="space-y-4 pt-4">
