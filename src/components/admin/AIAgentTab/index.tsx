@@ -135,6 +135,7 @@ export function AIAgentTab({ userId }: { userId: string }) {
     { id: "atendimentos", label: "Atendimentos", icon: MessagesSquare },
     { id: "agente", label: "Agente & Mídias", icon: Library },
     { id: "decisoes", label: "Decisões da IA", icon: Brain },
+    { id: "conhecimento", label: "Conhecimento", icon: BookOpen },
     { id: "desempenho", label: "Desempenho & Saúde", icon: HeartPulse },
   ];
 
