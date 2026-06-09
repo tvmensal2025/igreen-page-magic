@@ -69,23 +69,25 @@ export default function AdminKnowledge({ embedded = false }: { embedded?: boolea
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <BookOpen className="h-6 w-6 text-primary" />
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold truncate">Conhecimento do bot</h1>
-            <p className="text-xs text-muted-foreground">
-              Como a Camila responde quando o cliente pergunta algo fora do fluxo
-            </p>
+    <div className={embedded ? "" : "min-h-screen bg-background"}>
+      {!embedded && (
+        <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <BookOpen className="h-6 w-6 text-primary" />
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold truncate">Conhecimento do bot</h1>
+              <p className="text-xs text-muted-foreground">
+                Como a Camila responde quando o cliente pergunta algo fora do fluxo
+              </p>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      <main className={embedded ? "space-y-6" : "max-w-6xl mx-auto px-4 py-6 space-y-6"}>
         {/* Banner de cascata */}
         <Card className="p-4 border-primary/20 bg-primary/5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
