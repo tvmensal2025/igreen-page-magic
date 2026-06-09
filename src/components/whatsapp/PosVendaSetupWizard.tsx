@@ -85,6 +85,8 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const [allTemplates, setAllTemplates] = useState<FullTemplate[]>([]);
+
   useEffect(() => {
     if (!open) return;
     (async () => {
