@@ -245,6 +245,13 @@ export function AIAgentTab({ userId }: { userId: string }) {
           </div>
         )}
         {sub === "decisoes" && <AIDecisionsPanel userId={userId} />}
+        {sub === "conhecimento" && (
+          <div className="h-full overflow-y-auto pr-1">
+            <Suspense fallback={<div className="flex items-center justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+              <AdminKnowledge embedded />
+            </Suspense>
+          </div>
+        )}
         {sub === "desempenho" && (
           <div className="h-full overflow-y-auto pr-1">
             <BotHealthDashboard userId={userId} />
