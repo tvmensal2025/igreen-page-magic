@@ -447,7 +447,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
             {/* COLUNA DIREITA: preview celular */}
             <div className="hidden lg:flex flex-col items-center justify-start bg-gradient-to-b from-muted/40 to-muted/10 p-4 overflow-hidden">
               <p className="text-xs text-muted-foreground mb-2">Preview no WhatsApp</p>
-              <PhonePreview cfg={stageCfg} mediaById={mediaById} stageLabel={stageMeta.label} />
+              <PhonePreview cfg={stageCfg} mediaById={mediaById} defaultsByKind={defaultsByKind} stageLabel={stageMeta.label} />
             </div>
           </div>
         )}
