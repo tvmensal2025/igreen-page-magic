@@ -57,8 +57,8 @@ Deno.serve(async (req) => {
     }
 
     const config = body.config;
-    if (!["A", "B", "C", "D"].includes(config.variant)) {
-      return json({ error: "invalid_variant", detail: `Variant '${config.variant}' inválida` }, 400);
+    if (!/^[A-Z]$/.test(String(config.variant || ""))) {
+      return json({ error: "invalid_variant", detail: `Variant '${config.variant}' inválida (use A-Z)` }, 400);
     }
 
     // Verifica fluxo existente da mesma variante
