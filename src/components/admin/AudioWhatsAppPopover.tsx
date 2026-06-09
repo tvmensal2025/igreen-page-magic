@@ -38,7 +38,12 @@ export function AudioWhatsAppPopover({ audioUrl, label, trigger, size = "sm", cl
         body: { phone: norm, mediaUrl: audioUrl, mediatype: "audio", caption: label || "Áudio iGreen" },
       });
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      const d = data as any;
+      if (d?.error) {
+        const detail = d.detail ? ` — ${d.detail}` : "";
+        const hint = d.hint ? `\n${d.hint}` : "";
+        throw new Error(`${d.error}${detail}${hint}`);
+      }
       toast({ title: "Áudio enviado ✅", description: `Enviado pra ${norm}` });
       setOpen(false);
       setPhone("");

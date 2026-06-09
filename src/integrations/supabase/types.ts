@@ -3270,6 +3270,7 @@ export type Database = {
           portal2_otp_sent_at: string | null
           portal2_otp_validated_at: string | null
           portal2_status: string | null
+          pos_venda_approved_at: string | null
           pos_venda_invalid: boolean
           pos_venda_manual: boolean
           pos_venda_pending_stage: string | null
@@ -3467,6 +3468,7 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
+          pos_venda_approved_at?: string | null
           pos_venda_invalid?: boolean
           pos_venda_manual?: boolean
           pos_venda_pending_stage?: string | null
@@ -3664,6 +3666,7 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
+          pos_venda_approved_at?: string | null
           pos_venda_invalid?: boolean
           pos_venda_manual?: boolean
           pos_venda_pending_stage?: string | null
@@ -6567,6 +6570,10 @@ export type Database = {
         Args: { _id: string }
         Returns: undefined
       }
+      can_access_remote_support_topic: {
+        Args: { _topic: string }
+        Returns: boolean
+      }
       can_view_consultant: {
         Args: { _consultant: string; _user: string }
         Returns: boolean
@@ -6590,7 +6597,7 @@ export type Database = {
         Returns: number
       }
       compute_pos_venda_stage: {
-        Args: { _andamento: string; _status: string; _submitted_at: string }
+        Args: { _andamento: string; _approved_at: string; _status: string }
         Returns: string
       }
       confirm_media_send: {
@@ -6852,6 +6859,10 @@ export type Database = {
       release_customer_processing_lock: {
         Args: { _customer_id: string }
         Returns: undefined
+      }
+      remote_support_topic_session: {
+        Args: { _topic: string }
+        Returns: string
       }
       repair_bot_flow: { Args: { _flow_id: string }; Returns: Json }
       reserve_media_send: {

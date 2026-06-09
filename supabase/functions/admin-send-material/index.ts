@@ -102,13 +102,24 @@ Deno.serve(async (req) => {
     }
 
     const sender = createWhatsAppSender(evolutionUrl, evolutionKey, inst.instance_name);
-    const ok = mediatype === "audio"
+    const result = mediatype === "audio"
       ? await sender.sendAudio(phone, mediaUrl)
       : await sender.sendMedia(phone, mediaUrl, caption, mediatype as "video" | "image" | "document");
 
-    if (!ok) {
-      return new Response(JSON.stringify({ error: "Evolution recusou o envio" }), {
-        status: 502,
+    if (result !== true) {
+      const detail = typeof result === "object" ? result.detail : "";
+      const status = typeof result === "object" ? result.status : 0;
+      return new Response(JSON.stringify({
+        error: "Evolution recusou o envio",
+        detail: detail || "Sem detalhes do servidor Evolution",
+        upstream_status: status,
+        hint: status === 500
+          ? "A mídia pode estar inacessível, com tamanho/duração inválido, ou a instância desconectada. Verifique a URL e o status da instância."
+          : status === 400
+          ? "Payload rejeitado pela Evolution (formato/mimetype ou número inválido)."
+          : "Tente reconectar a instância e reenviar.",
+      }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

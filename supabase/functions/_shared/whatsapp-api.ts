@@ -66,7 +66,7 @@ export function createWhatsAppSender(evolutionUrl: string, evolutionKey: string,
     return false;
   }
 
-  async function sendMedia(chatId: string, mediaUrl: string, caption: string, mediatype: "video" | "image" | "document" = "video"): Promise<boolean> {
+  async function sendMedia(chatId: string, mediaUrl: string, caption: string, mediatype: "video" | "image" | "document" = "video"): Promise<boolean | { ok: false; status: number; detail: string }> {
     const number = chatId.replace("@s.whatsapp.net", "");
     try {
       const res = await fetchWithTimeout(`${base}/message/sendMedia/${instanceName}`, {
@@ -82,18 +82,19 @@ export function createWhatsAppSender(evolutionUrl: string, evolutionKey: string,
         timeout: 60_000,
       });
       if (!res.ok) {
-        console.error("sendMedia Evolution falhou:", res.status);
-        return false;
+        const detail = await res.text().catch(() => "");
+        console.error("sendMedia Evolution falhou:", res.status, detail);
+        return { ok: false, status: res.status, detail: detail.slice(0, 500) };
       }
       return true;
     } catch (e: any) {
       console.error("sendMedia Evolution erro:", e?.message);
-      return false;
+      return { ok: false, status: 0, detail: e?.message || "network error" };
     }
   }
 
   // ─── Enviar áudio (voice note / PTT) ───────────────────────────────────
-  async function sendAudio(chatId: string, audioUrl: string): Promise<boolean> {
+  async function sendAudio(chatId: string, audioUrl: string): Promise<boolean | { ok: false; status: number; detail: string }> {
     const number = chatId.replace("@s.whatsapp.net", "");
     try {
       const res = await fetchWithTimeout(`${base}/message/sendWhatsAppAudio/${instanceName}`, {
@@ -103,8 +104,9 @@ export function createWhatsAppSender(evolutionUrl: string, evolutionKey: string,
         timeout: 60_000,
       });
       if (!res.ok) {
-        console.error("sendAudio Evolution falhou:", res.status, await res.text().catch(() => ""));
-        return false;
+        const detail = await res.text().catch(() => "");
+        console.error("sendAudio Evolution falhou:", res.status, detail);
+        return { ok: false, status: res.status, detail: detail.slice(0, 500) };
       }
       return true;
     } catch (e: any) {
