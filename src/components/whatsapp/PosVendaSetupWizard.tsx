@@ -29,9 +29,11 @@ interface MediaItem {
   label: string | null;
   url: string | null;
   is_public: boolean | null;
+  source?: "library" | "template_public" | "template_mine";
 }
 
 type Slot = "text" | "audio" | "image" | "video";
+
 const DEFAULT_ORDER: Slot[] = ["text", "audio", "image", "video"];
 
 interface StageConfig {
@@ -68,6 +70,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
   });
   const [publicMedia, setPublicMedia] = useState<MediaItem[]>([]);
   const [myMedia, setMyMedia] = useState<MediaItem[]>([]);
+  const [templateMedia, setTemplateMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -75,7 +78,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
     if (!open) return;
     (async () => {
       setLoading(true);
-      const [cfgRes, pubRes, mineRes] = await Promise.all([
+      const [cfgRes, pubRes, mineRes, tplRes] = await Promise.all([
         supabase
           .from("consultant_pos_venda_media" as any)
           .select("stage,text_content,audio_media_id,image_media_id,video_media_id,use_default,send_order")
@@ -93,6 +96,12 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
           .eq("consultant_id", consultantId)
           .eq("active", true)
           .not("url", "is", null)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("message_templates")
+          .select("id,name,media_type,media_url,image_url,is_public,consultant_id")
+          .in("media_type", ["audio", "image", "video"])
+          .or(`is_public.eq.true,consultant_id.eq.${consultantId}`)
           .order("created_at", { ascending: false }),
       ]);
 
@@ -114,10 +123,23 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
       setConfigs(next);
       setPublicMedia((pubRes.data || []) as MediaItem[]);
       setMyMedia((mineRes.data || []) as MediaItem[]);
+      const tpls: MediaItem[] = ((tplRes.data || []) as any[])
+        .map((t): MediaItem => ({
+          id: `tpl:${t.id}`,
+          kind: t.media_type,
+          label: t.name,
+          url: t.media_type === "image" ? (t.image_url || t.media_url) : t.media_url,
+          is_public: t.is_public,
+          source: t.is_public ? "template_public" as const : "template_mine" as const,
+        }))
+        .filter((t) => !!t.url);
+
+      setTemplateMedia(tpls);
       setLoading(false);
     })();
     // eslint-disable-next-line
   }, [open, consultantId]);
+
 
   const completedCount = useMemo(
     () =>
@@ -221,13 +243,62 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
 
   const mediaById = useMemo(() => {
     const m = new Map<string, MediaItem>();
-    for (const x of [...publicMedia, ...myMedia]) m.set(x.id, x);
+    for (const x of [...publicMedia, ...myMedia, ...templateMedia]) m.set(x.id, x);
     return m;
-  }, [publicMedia, myMedia]);
+  }, [publicMedia, myMedia, templateMedia]);
+
+  // Quando o slot está vazio, usa o primeiro público do tipo como preview "default"
+  const defaultsByKind = useMemo(() => {
+    const map: Record<string, MediaItem | undefined> = {};
+    for (const x of publicMedia) if (!map[x.kind]) map[x.kind] = x;
+    return map;
+  }, [publicMedia]);
+
+  async function pickMedia(stage: PosVendaStage, kind: "audio" | "image" | "video", item: MediaItem) {
+    // Templates têm id "tpl:<uuid>" — não dá pra gravar direto como media_id.
+    // Inserimos/reutilizamos em ai_media_library para virar um id real.
+    let mediaId = item.id;
+    if (item.id.startsWith("tpl:") && item.url) {
+      const { data: existing } = await supabase
+        .from("ai_media_library")
+        .select("id")
+        .eq("url", item.url)
+        .or(`consultant_id.eq.${consultantId},is_public.eq.true`)
+        .maybeSingle();
+      if (existing?.id) {
+        mediaId = existing.id;
+      } else {
+        const { data, error } = await supabase
+          .from("ai_media_library")
+          .insert({
+            consultant_id: consultantId,
+            kind,
+            label: item.label || "Do template",
+            url: item.url,
+            active: true,
+            is_public: false,
+          })
+          .select("id,kind,label,url,is_public")
+          .single();
+        if (error) {
+          toast.error("Não consegui usar este template");
+          return;
+        }
+        mediaId = data.id;
+        setMyMedia((p) => [data as MediaItem, ...p]);
+      }
+    }
+    const patch: Partial<StageConfig> = {};
+    if (kind === "audio") patch.audio_media_id = mediaId;
+    if (kind === "image") patch.image_media_id = mediaId;
+    if (kind === "video") patch.video_media_id = mediaId;
+    updateStage(stage, patch);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col gap-0 p-0">
+      <DialogContent className="max-w-6xl max-h-[94vh] overflow-hidden flex flex-col gap-0 p-0">
+
         <DialogHeader className="px-6 pt-6 pb-3 border-b">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
@@ -251,7 +322,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex-1 grid lg:grid-cols-[1fr,360px] min-h-0">
+          <div className="flex-1 grid lg:grid-cols-[1fr,460px] min-h-0">
             {/* COLUNA ESQUERDA: editor */}
             <div className="flex flex-col min-h-0 overflow-hidden border-r">
               <Tabs
@@ -340,31 +411,35 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
 
                   <MediaPicker
                     kind="audio"
-                    consultantId={consultantId}
                     publicMedia={publicMedia}
                     myMedia={myMedia}
+                    templateMedia={templateMedia}
                     selectedId={stageCfg.audio_media_id}
-                    onSelect={(id) => updateStage(activeStage, { audio_media_id: id })}
+                    onPick={(item) => pickMedia(activeStage, "audio", item)}
+                    onClear={() => updateStage(activeStage, { audio_media_id: null })}
                     onUpload={(f) => handleUpload(f, "audio", activeStage)}
                   />
                   <MediaPicker
                     kind="image"
-                    consultantId={consultantId}
                     publicMedia={publicMedia}
                     myMedia={myMedia}
+                    templateMedia={templateMedia}
                     selectedId={stageCfg.image_media_id}
-                    onSelect={(id) => updateStage(activeStage, { image_media_id: id })}
+                    onPick={(item) => pickMedia(activeStage, "image", item)}
+                    onClear={() => updateStage(activeStage, { image_media_id: null })}
                     onUpload={(f) => handleUpload(f, "image", activeStage)}
                   />
                   <MediaPicker
                     kind="video"
-                    consultantId={consultantId}
                     publicMedia={publicMedia}
                     myMedia={myMedia}
+                    templateMedia={templateMedia}
                     selectedId={stageCfg.video_media_id}
-                    onSelect={(id) => updateStage(activeStage, { video_media_id: id })}
+                    onPick={(item) => pickMedia(activeStage, "video", item)}
+                    onClear={() => updateStage(activeStage, { video_media_id: null })}
                     onUpload={(f) => handleUpload(f, "video", activeStage)}
                   />
+
                 </TabsContent>
               </Tabs>
             </div>
@@ -372,7 +447,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
             {/* COLUNA DIREITA: preview celular */}
             <div className="hidden lg:flex flex-col items-center justify-start bg-gradient-to-b from-muted/40 to-muted/10 p-4 overflow-hidden">
               <p className="text-xs text-muted-foreground mb-2">Preview no WhatsApp</p>
-              <PhonePreview cfg={stageCfg} mediaById={mediaById} stageLabel={stageMeta.label} />
+              <PhonePreview cfg={stageCfg} mediaById={mediaById} defaultsByKind={defaultsByKind} stageLabel={stageMeta.label} />
             </div>
           </div>
         )}
@@ -400,28 +475,32 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
 
 function MediaPicker({
   kind,
-  consultantId,
   publicMedia,
   myMedia,
+  templateMedia,
   selectedId,
-  onSelect,
+  onPick,
+  onClear,
   onUpload,
 }: {
   kind: "audio" | "image" | "video";
-  consultantId: string;
   publicMedia: MediaItem[];
   myMedia: MediaItem[];
+  templateMedia: MediaItem[];
   selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  onPick: (item: MediaItem) => void;
+  onClear: () => void;
   onUpload: (file: File) => Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [tab, setTab] = useState<"templates" | "publicos" | "meus">("templates");
 
   const Icon = kind === "audio" ? FileAudio : kind === "image" ? ImageIcon : Video;
-  const pub = publicMedia.filter((m) => m.kind === kind).slice(0, 6);
-  const mine = myMedia.filter((m) => m.kind === kind).slice(0, 6);
+  const pub = publicMedia.filter((m) => m.kind === kind);
+  const mine = myMedia.filter((m) => m.kind === kind);
+  const tpls = templateMedia.filter((m) => m.kind === kind);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -440,6 +519,8 @@ function MediaPicker({
     }
   }
 
+  const current = tab === "templates" ? tpls : tab === "publicos" ? pub : mine;
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -448,34 +529,39 @@ function MediaPicker({
           {kind === "audio" ? "Áudio" : kind === "image" ? "Imagem" : "Vídeo"}
         </h4>
         {selectedId && (
-          <Button size="sm" variant="ghost" onClick={() => onSelect(null)}>
+          <Button size="sm" variant="ghost" onClick={onClear}>
             Remover
           </Button>
         )}
       </div>
 
-      {pub.length > 0 && (
-        <div>
-          <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
-            <Sparkles className="w-3 h-3" /> Sugestões nossas
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {pub.map((m) => (
-              <MediaCard key={m.id} m={m} selected={selectedId === m.id} onSelect={() => onSelect(m.id)} />
-            ))}
-          </div>
-        </div>
-      )}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+        <TabsList className="grid grid-cols-3 h-8 w-full">
+          <TabsTrigger value="templates" className="text-[11px]">Templates ({tpls.length})</TabsTrigger>
+          <TabsTrigger value="publicos" className="text-[11px]">Públicos ({pub.length})</TabsTrigger>
+          <TabsTrigger value="meus" className="text-[11px]">Meus ({mine.length})</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {mine.length > 0 && (
-        <div>
-          <p className="text-xs text-muted-foreground mb-1.5">Meus uploads</p>
-          <div className="grid grid-cols-2 gap-2">
-            {mine.map((m) => (
-              <MediaCard key={m.id} m={m} selected={selectedId === m.id} onSelect={() => onSelect(m.id)} />
-            ))}
-          </div>
+      {current.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+          {current.slice(0, 12).map((m) => (
+            <MediaCard
+              key={m.id}
+              m={m}
+              selected={selectedId === m.id}
+              onSelect={() => onPick(m)}
+            />
+          ))}
         </div>
+      ) : (
+        <p className="text-[11px] text-muted-foreground italic py-2 text-center">
+          {tab === "templates"
+            ? "Nenhum template com mídia desse tipo ainda."
+            : tab === "publicos"
+            ? "Nada na biblioteca pública."
+            : "Você ainda não enviou nada."}
+        </p>
       )}
 
       <input
@@ -502,60 +588,81 @@ function MediaPicker({
 
 function MediaCard({ m, selected, onSelect }: { m: MediaItem; selected: boolean; onSelect: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`text-left p-2 rounded-lg border transition-all hover:border-primary/50 ${
-        selected ? "border-primary bg-primary/5" : "border-border bg-card"
+    <div
+      className={`p-2 rounded-lg border transition-all ${
+        selected ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40"
       }`}
     >
-      <div className="flex items-center justify-between gap-1">
-        <p className="text-xs font-medium truncate flex-1">{m.label || "Sem nome"}</p>
-        {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-      </div>
+      <button type="button" onClick={onSelect} className="w-full text-left">
+        <div className="flex items-center justify-between gap-1">
+          <p className="text-xs font-medium truncate flex-1">{m.label || "Sem nome"}</p>
+          {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+        </div>
+      </button>
       {m.kind === "image" && m.url && (
-        <img src={m.url} alt="" className="w-full h-16 object-cover rounded mt-1" loading="lazy" />
+        <button type="button" onClick={onSelect} className="block w-full">
+          <img src={m.url} alt="" className="w-full h-20 object-cover rounded mt-1" loading="lazy" />
+        </button>
       )}
       {m.kind === "audio" && m.url && (
-        <audio src={m.url} controls className="w-full h-7 mt-1" preload="none" />
+        <audio src={m.url} controls className="w-full h-8 mt-1" preload="none" />
       )}
       {m.kind === "video" && m.url && (
-        <video src={m.url} className="w-full h-16 object-cover rounded mt-1" preload="metadata" muted />
+        <video src={m.url} controls className="w-full h-20 object-cover rounded mt-1" preload="metadata" />
       )}
-    </button>
+    </div>
   );
 }
 
-// ─────────── Preview do celular ───────────
+// ─────────── Preview do celular (iPhone 14 Pro Max) ───────────
 
 function PhonePreview({
   cfg,
   mediaById,
+  defaultsByKind,
   stageLabel,
 }: {
   cfg: StageConfig;
   mediaById: Map<string, MediaItem>;
+  defaultsByKind: Record<string, MediaItem | undefined>;
   stageLabel: string;
 }) {
+  function resolve(slot: Slot): MediaItem | undefined {
+    const id =
+      slot === "audio" ? cfg.audio_media_id : slot === "image" ? cfg.image_media_id : slot === "video" ? cfg.video_media_id : null;
+    if (id) return mediaById.get(id);
+    if (cfg.use_default) return defaultsByKind[slot];
+    return undefined;
+  }
+
+  const hasAny =
+    cfg.text_content ||
+    resolve("audio") ||
+    resolve("image") ||
+    resolve("video");
+
   return (
-    <div className="w-full max-w-[280px] aspect-[9/19] rounded-[2.5rem] border-[10px] border-zinc-800 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col">
-      {/* Notch */}
-      <div className="h-5 bg-zinc-900 flex items-center justify-center">
-        <div className="w-16 h-1 bg-zinc-700 rounded-full" />
+    <div className="w-full max-w-[420px] aspect-[430/932] rounded-[3rem] border-[14px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col relative">
+      {/* Dynamic Island */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 h-7 w-28 bg-black rounded-full" />
+      {/* Status bar */}
+      <div className="h-9 bg-zinc-900 flex items-center justify-between px-6 pt-1">
+        <span className="text-[10px] text-white font-medium">9:41</span>
+        <span className="text-[10px] text-white opacity-70">●●●● 5G</span>
       </div>
       {/* Header WhatsApp */}
       <div className="bg-emerald-700 text-white px-3 py-2 flex items-center gap-2">
-        <div className="w-7 h-7 rounded-full bg-emerald-900 flex items-center justify-center text-[10px] font-bold">
+        <div className="w-8 h-8 rounded-full bg-emerald-900 flex items-center justify-center text-[11px] font-bold">
           IG
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold truncate">iGreen — {stageLabel}</p>
-          <p className="text-[9px] text-emerald-100/80">online</p>
+          <p className="text-sm font-semibold truncate">iGreen — {stageLabel}</p>
+          <p className="text-[10px] text-emerald-100/80">online</p>
         </div>
       </div>
       {/* Mensagens */}
       <div
-        className="flex-1 overflow-y-auto p-2 space-y-1.5"
+        className="flex-1 overflow-y-auto p-3 space-y-2"
         style={{
           backgroundImage:
             "radial-gradient(circle at 20% 20%, rgba(16,185,129,0.06), transparent 40%), radial-gradient(circle at 80% 70%, rgba(16,185,129,0.04), transparent 40%)",
@@ -566,38 +673,39 @@ function PhonePreview({
           if (slot === "text") {
             const txt = cfg.text_content.trim();
             if (!txt) return null;
-            return <Bubble key={`t-${idx}`}><p className="text-[11px] whitespace-pre-wrap">{txt}</p></Bubble>;
+            return <Bubble key={`t-${idx}`}><p className="text-[12px] whitespace-pre-wrap">{txt}</p></Bubble>;
           }
-          const id =
-            slot === "audio" ? cfg.audio_media_id : slot === "image" ? cfg.image_media_id : cfg.video_media_id;
-          if (!id) return null;
-          const m = mediaById.get(id);
+          const m = resolve(slot);
           if (!m?.url) return null;
           if (slot === "audio") {
             return (
               <Bubble key={`a-${idx}`}>
-                <audio src={m.url} controls className="w-full h-7" preload="none" />
+                <audio src={m.url} controls className="w-full h-8" preload="metadata" />
               </Bubble>
             );
           }
           if (slot === "image") {
             return (
               <Bubble key={`i-${idx}`}>
-                <img src={m.url} alt="" className="rounded max-w-full max-h-32 object-cover" loading="lazy" />
+                <img src={m.url} alt="" className="rounded max-w-full max-h-48 object-cover" loading="lazy" />
               </Bubble>
             );
           }
           return (
             <Bubble key={`v-${idx}`}>
-              <video src={m.url} controls className="rounded max-w-full max-h-32" preload="metadata" />
+              <video src={m.url} controls className="rounded max-w-full max-h-48" preload="metadata" />
             </Bubble>
           );
         })}
-        {!cfg.text_content && !cfg.audio_media_id && !cfg.image_media_id && !cfg.video_media_id && (
-          <p className="text-[10px] text-zinc-500 text-center pt-4">
+        {!hasAny && (
+          <p className="text-[11px] text-zinc-500 text-center pt-4">
             Escolha mídias à esquerda para ver o preview
           </p>
         )}
+      </div>
+      {/* Home indicator */}
+      <div className="h-5 bg-zinc-900 flex items-center justify-center">
+        <div className="w-28 h-1 bg-white/60 rounded-full" />
       </div>
     </div>
   );
@@ -606,9 +714,10 @@ function PhonePreview({
 function Bubble({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] bg-emerald-600/90 text-white rounded-lg rounded-tr-sm px-2 py-1.5 shadow">
+      <div className="max-w-[88%] bg-emerald-600/90 text-white rounded-lg rounded-tr-sm px-2.5 py-2 shadow">
         {children}
       </div>
     </div>
   );
 }
+
