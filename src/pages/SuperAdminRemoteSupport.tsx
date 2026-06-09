@@ -379,6 +379,25 @@ export default function SuperAdminRemoteSupport() {
 }
 
 // =============================================================================
+// StatusPill — selo de status da sessão com cor/ícone
+// =============================================================================
+
+function StatusPill({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string; dot: string }> = {
+    active:        { label: "Ativa",            cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30", dot: "bg-emerald-500" },
+    pending_code:  { label: "Aguardando código", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30",     dot: "bg-amber-500" },
+    requested:     { label: "Solicitada",       cls: "bg-sky-500/15 text-sky-600 border-sky-500/30",            dot: "bg-sky-500" },
+  };
+  const s = map[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${s.cls}`}>
+      <span className={`size-1.5 rounded-full ${s.dot} ${status === "active" ? "animate-pulse" : ""}`} />
+      {s.label}
+    </span>
+  );
+}
+
+// =============================================================================
 // SessionWorkbench — player de vídeo + canal de comandos
 // =============================================================================
 
@@ -761,9 +780,15 @@ function SessionWorkbench({
       >
         {!isFullscreen && (
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              Suporte: {consultantName}
-              <Badge variant={status === "active" ? "default" : "secondary"}>{status}</Badge>
+            <DialogTitle className="flex items-center gap-3">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Eye className="size-5" />
+              </span>
+              <span className="flex flex-col">
+                <span className="text-base font-semibold leading-tight">Suporte remoto</span>
+                <span className="text-xs font-normal text-muted-foreground">{consultantName}</span>
+              </span>
+              <StatusPill status={status} />
             </DialogTitle>
           </DialogHeader>
         )}
@@ -867,26 +892,58 @@ function SessionWorkbench({
 
               {/* Sem vídeo */}
               {!hasStream && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-sm text-center p-4 gap-2">
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center p-6 gap-4">
                   {(["offer-received", "answer-sent", "ice-checking", "connected"] as RtcStage[]).includes(stage) ? (
-                    <><Loader2 className="animate-spin size-5" /> Conectando… ({stage})</>
+                    <>
+                      <div className="relative flex items-center justify-center">
+                        <span className="absolute size-16 rounded-full bg-primary/20 animate-ping" />
+                        <span className="relative flex size-16 items-center justify-center rounded-full bg-primary/15">
+                          <Loader2 className="animate-spin size-7 text-primary" />
+                        </span>
+                      </div>
+                      <div>
+                        <div className="text-base font-semibold">Conectando…</div>
+                        <div className="text-xs text-white/60 mt-0.5 font-mono">{stage}</div>
+                      </div>
+                    </>
                   ) : stage === "failed" ? (
-                    <span className="text-red-400">
-                      Falha na conexão. Peça ao consultor para clicar em "Compartilhar tela" novamente.
-                    </span>
+                    <>
+                      <span className="flex size-16 items-center justify-center rounded-full bg-red-500/15">
+                        <AlertTriangle className="size-7 text-red-400" />
+                      </span>
+                      <div className="max-w-sm">
+                        <div className="text-base font-semibold text-red-300">Falha na conexão</div>
+                        <div className="text-sm text-white/70 mt-1">
+                          Peça ao consultor para clicar em <b>Compartilhar tela</b> novamente.
+                        </div>
+                      </div>
+                    </>
                   ) : (
-                    <>Aguardando o consultor clicar em <b>"Compartilhar tela"</b> no banner vermelho.</>
+                    <>
+                      <span className="flex size-16 items-center justify-center rounded-full bg-white/10">
+                        <ScreenShare className="size-7 text-white/80" />
+                      </span>
+                      <div className="max-w-sm">
+                        <div className="text-base font-semibold">Aguardando o compartilhamento</div>
+                        <div className="text-sm text-white/70 mt-1">
+                          O consultor precisa clicar em <b>Compartilhar tela</b> no banner
+                          vermelho que aparece no topo da tela dele.
+                        </div>
+                      </div>
+                    </>
                   )}
 
                   {/* Orientação após 12s sem vídeo */}
                   {slowConnect && stage !== "failed" && (
-                    <div className="mt-3 max-w-md text-xs text-yellow-300 bg-yellow-900/40 border border-yellow-700/50 rounded p-2">
-                      <AlertTriangle className="size-4 inline mr-1 -mt-0.5" />
-                      Está demorando mais que o normal. Verifique se:
-                      <ul className="text-left mt-1 list-disc list-inside opacity-90">
-                        <li>O consultor já clicou em "Compartilhar tela"</li>
-                        <li>A rede do consultor não bloqueia WebRTC (firewall corporativo)</li>
-                        <li>O servidor TURN está configurado (necessário em redes restritas)</li>
+                    <div className="mt-1 max-w-md text-left text-xs text-amber-200 bg-amber-950/50 border border-amber-700/40 rounded-lg p-3">
+                      <div className="flex items-center gap-1.5 font-medium text-amber-100">
+                        <AlertTriangle className="size-4" />
+                        Está demorando mais que o normal
+                      </div>
+                      <ul className="mt-1.5 space-y-0.5 list-disc list-inside opacity-90">
+                        <li>O consultor já clicou em "Compartilhar tela"?</li>
+                        <li>A rede dele não bloqueia WebRTC (firewall corporativo)?</li>
+                        <li>O servidor TURN está configurado (redes restritas)?</li>
                       </ul>
                     </div>
                   )}
@@ -963,43 +1020,58 @@ function SidePanel({
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <Activity className="size-4" /> Status da conexão
+            <Activity className="size-4 text-primary" /> Status da conexão
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-xs space-y-1.5">
-          <div>Estágio: <Badge variant="outline">{stage}</Badge></div>
-          <div>
-            Latência:{" "}
-            <Badge className={`${rttColor} text-white`}>{rtt ?? "—"} ms</Badge>
+        <CardContent className="space-y-2.5">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg border bg-muted/40 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Latência</div>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <span className={`size-2 rounded-full ${rttColor}`} />
+                <span className="text-sm font-semibold">{rtt ?? "—"}<span className="text-xs font-normal text-muted-foreground"> ms</span></span>
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">FPS</div>
+              <div className="mt-0.5 text-sm font-semibold">{fps ?? "—"}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Qualidade</div>
+              <div className="mt-0.5 text-sm font-semibold capitalize">{quality}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/40 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Controle</div>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <span className={`size-2 rounded-full ${controlEnabled ? "bg-emerald-500" : "bg-zinc-400"}`} />
+                <span className="text-sm font-semibold">{controlEnabled ? "Ativo" : "Off"}</span>
+              </div>
+            </div>
           </div>
-          <div>FPS: <Badge variant="outline">{fps ?? "—"}</Badge></div>
-          <div>Qualidade: <Badge variant="outline">{quality}</Badge></div>
-          <div>
-            Controle:{" "}
-            <Badge className={controlEnabled ? "bg-green-600 text-white" : "bg-zinc-600 text-white"}>
-              {controlEnabled ? "ATIVO" : "Desativado"}
-            </Badge>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Estágio</span>
+            <Badge variant="outline" className="font-mono text-[10px]">{stage}</Badge>
           </div>
           {requesterVp && (
-            <>
-              <div>
-                Viewport consultor:{" "}
-                <span className="font-mono">{requesterVp.innerWidth}×{requesterVp.innerHeight}</span>
+            <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">
+              <div className="flex items-center justify-between">
+                <span>Viewport</span>
+                <span className="font-mono text-foreground">{requesterVp.innerWidth}×{requesterVp.innerHeight}</span>
               </div>
-              <div>
-                DPR consultor:{" "}
-                <span className="font-mono">{requesterVp.dpr}x</span>
+              <div className="flex items-center justify-between">
+                <span>DPR</span>
+                <span className="font-mono text-foreground">{requesterVp.dpr}x</span>
               </div>
-              <div>
-                Superfície:{" "}
+              <div className="flex items-center justify-between">
+                <span>Superfície</span>
                 <Badge
                   variant="outline"
                   className={requesterVp.displaySurface !== "browser" ? "border-yellow-500 text-yellow-600" : ""}
                 >
-                  {requesterVp.displaySurface ?? "desconhecida"}
+                  {requesterVp.displaySurface ?? "—"}
                 </Badge>
               </div>
-            </>
+            </div>
           )}
         </CardContent>
       </Card>
