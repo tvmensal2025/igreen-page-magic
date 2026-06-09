@@ -130,15 +130,15 @@ export default function VariantDistributionBar({
     <div className="mx-auto max-w-7xl px-4 pb-3">
       <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card/50 p-2">
         <div className="flex items-center gap-1.5 px-1 text-xs font-medium text-muted-foreground">
-          Distribuição de fluxos
+          Seus fluxos
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Info className="h-3 w-3 cursor-help" />
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                Clientes novos são distribuídos 1 a 1 (round-robin) entre os fluxos ativos.
-                Fluxos pausados continuam editáveis mas não recebem leads.
+                Cada cliente novo entra em um dos fluxos ativos, alternando entre eles.
+                Fluxos pausados continuam editáveis, mas não recebem clientes.
               </TooltipContent>
             </Tooltip>
 
