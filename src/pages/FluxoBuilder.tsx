@@ -199,10 +199,11 @@ export default function FluxoBuilder() {
     });
   }, []);
 
-  // task 10.2 — `viewMode` controla a alternância Lista ↔ Diagrama (R1.1).
-  // Valor inicial vem do `localStorage` (chave `flow-view-mode`) com
-  // fallbacks de R1.5 e R1.7 aplicados em `readInitialViewMode()`.
-  const [viewMode, setViewModeState] = useState<ViewMode>(readInitialViewMode);
+  // task 10.2 — `viewMode` controla Lista ↔ Diagrama ↔ Planilha (R1.1).
+  // 2026-06-09: a UI ficou clean — só Lista é exposta. O código de Diagrama
+  // e Planilha permanece guardado neste arquivo (renders condicionais) para
+  // reativação futura trocando o estado abaixo por `useState<ViewMode>(readInitialViewMode)`.
+  const [viewMode, setViewModeState] = useState<ViewMode>("lista");
   const [useV2, setUseV2State] = useState<boolean>(readUseV2);
   const setUseV2 = useCallback((next: boolean) => {
     setUseV2State(next);
