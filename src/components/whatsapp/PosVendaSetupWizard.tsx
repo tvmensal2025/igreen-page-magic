@@ -243,13 +243,62 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
 
   const mediaById = useMemo(() => {
     const m = new Map<string, MediaItem>();
-    for (const x of [...publicMedia, ...myMedia]) m.set(x.id, x);
+    for (const x of [...publicMedia, ...myMedia, ...templateMedia]) m.set(x.id, x);
     return m;
-  }, [publicMedia, myMedia]);
+  }, [publicMedia, myMedia, templateMedia]);
+
+  // Quando o slot está vazio, usa o primeiro público do tipo como preview "default"
+  const defaultsByKind = useMemo(() => {
+    const map: Record<string, MediaItem | undefined> = {};
+    for (const x of publicMedia) if (!map[x.kind]) map[x.kind] = x;
+    return map;
+  }, [publicMedia]);
+
+  async function pickMedia(stage: PosVendaStage, kind: "audio" | "image" | "video", item: MediaItem) {
+    // Templates têm id "tpl:<uuid>" — não dá pra gravar direto como media_id.
+    // Inserimos/reutilizamos em ai_media_library para virar um id real.
+    let mediaId = item.id;
+    if (item.id.startsWith("tpl:") && item.url) {
+      const { data: existing } = await supabase
+        .from("ai_media_library")
+        .select("id")
+        .eq("url", item.url)
+        .or(`consultant_id.eq.${consultantId},is_public.eq.true`)
+        .maybeSingle();
+      if (existing?.id) {
+        mediaId = existing.id;
+      } else {
+        const { data, error } = await supabase
+          .from("ai_media_library")
+          .insert({
+            consultant_id: consultantId,
+            kind,
+            label: item.label || "Do template",
+            url: item.url,
+            active: true,
+            is_public: false,
+          })
+          .select("id,kind,label,url,is_public")
+          .single();
+        if (error) {
+          toast.error("Não consegui usar este template");
+          return;
+        }
+        mediaId = data.id;
+        setMyMedia((p) => [data as MediaItem, ...p]);
+      }
+    }
+    const patch: Partial<StageConfig> = {};
+    if (kind === "audio") patch.audio_media_id = mediaId;
+    if (kind === "image") patch.image_media_id = mediaId;
+    if (kind === "video") patch.video_media_id = mediaId;
+    updateStage(stage, patch);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden flex flex-col gap-0 p-0">
+      <DialogContent className="max-w-6xl max-h-[94vh] overflow-hidden flex flex-col gap-0 p-0">
+
         <DialogHeader className="px-6 pt-6 pb-3 border-b">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
