@@ -736,7 +736,7 @@ function PhonePreview({
     resolve("video");
 
   return (
-    <div className="w-full max-w-[420px] aspect-[430/932] rounded-[3rem] border-[14px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col relative">
+    <div className="w-full max-w-[300px] aspect-[9/16] rounded-[2rem] border-[10px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col relative">
       {/* Dynamic Island */}
       <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 h-7 w-28 bg-black rounded-full" />
       {/* Status bar */}
