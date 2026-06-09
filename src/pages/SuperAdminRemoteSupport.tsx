@@ -69,6 +69,29 @@ function savePrefs(p: Prefs) {
 }
 
 // ---------------------------------------------------------------------------
+// Domínios permitidos para navegação remota (whitelist P9)
+// ---------------------------------------------------------------------------
+
+/** Domínios que o operador pode navegar no consultor via comando "navigate".
+ *  Aceita o próprio origin sempre. URLs externas só se o host estiver aqui.
+ *  Caso vazio, bloqueia todo acesso externo.
+ */
+const NAVIGATE_ALLOW_EXTERNAL: string[] = [
+  // Adicione domínios confiáveis conforme necessário, ex:
+  // "docs.igreen.com.br",
+];
+
+function isNavigateAllowed(url: string, currentOrigin: string): boolean {
+  try {
+    const u = new URL(url, currentOrigin);
+    if (u.origin === currentOrigin) return true;
+    return NAVIGATE_ALLOW_EXTERNAL.some(d => u.hostname === d || u.hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
 
@@ -82,6 +105,11 @@ export default function SuperAdminRemoteSupport() {
   const [consultants,   setConsultants]   = useState<ConsultantRow[]>([]);
   const [pickConsultant, setPickConsultant] = useState("");
   const [selectedSession, setSelectedSession] = useState<SupportSession | null>(null);
+  /** IDs de sessão com operação em andamento (accept/cancel/end) */
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+
+  const setBusy   = (id: string) => setBusyIds(prev => new Set(prev).add(id));
+  const clearBusy = (id: string) => setBusyIds(prev => { const s = new Set(prev); s.delete(id); return s; });
 
   // -------------------------------------------------------------------------
   // Carrega fila + ouve mudanças em tempo real
@@ -193,15 +221,26 @@ export default function SuperAdminRemoteSupport() {
                     </div>
                   </div>
                   {s.status === "requested" ? (
-                    <Button size="sm" onClick={async () => {
-                      try {
-                        await acceptSession(s.id);
-                        toast.success("Código enviado ao consultor");
-                      } catch (e) {
-                        toast.error(e instanceof Error ? e.message : "Erro ao aceitar");
+                    <Button
+                      size="sm"
+                      disabled={busyIds.has(s.id)}
+                      onClick={async () => {
+                        setBusy(s.id);
+                        try {
+                          await acceptSession(s.id);
+                          toast.success("Código enviado ao consultor");
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Erro ao aceitar");
+                        } finally {
+                          clearBusy(s.id);
+                        }
+                      }}
+                    >
+                      {busyIds.has(s.id)
+                        ? <Loader2 className="size-4 mr-1 animate-spin" />
+                        : <Check className="size-4 mr-1" />
                       }
-                    }}>
-                      <Check className="size-4 mr-1" /> Aceitar
+                      Aceitar
                     </Button>
                   ) : (
                     <Button size="sm" onClick={() => setSelectedSession(s)}>
@@ -209,11 +248,25 @@ export default function SuperAdminRemoteSupport() {
                     </Button>
                   )}
                   <Button
-                    size="sm" variant="ghost"
-                    onClick={() => endSession(s.id, "operator_cancelled")}
+                    size="sm"
+                    variant="ghost"
+                    disabled={busyIds.has(s.id)}
                     title="Cancelar pedido"
+                    onClick={async () => {
+                      setBusy(s.id);
+                      try {
+                        await endSession(s.id, "operator_cancelled");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Erro ao cancelar");
+                      } finally {
+                        clearBusy(s.id);
+                      }
+                    }}
                   >
-                    <X className="size-4" />
+                    {busyIds.has(s.id)
+                      ? <Loader2 className="size-3.5 animate-spin" />
+                      : <X className="size-4" />
+                    }
                   </Button>
                 </CardContent>
               </Card>
@@ -243,11 +296,25 @@ export default function SuperAdminRemoteSupport() {
                     <Eye className="size-4 mr-1" /> Abrir
                   </Button>
                   <Button
-                    size="sm" variant="destructive"
-                    onClick={() => endSession(s.id, "operator_ended")}
+                    size="sm"
+                    variant="destructive"
+                    disabled={busyIds.has(s.id)}
                     title="Encerrar sessão"
+                    onClick={async () => {
+                      setBusy(s.id);
+                      try {
+                        await endSession(s.id, "operator_ended");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Erro ao encerrar");
+                      } finally {
+                        clearBusy(s.id);
+                      }
+                    }}
                   >
-                    <Square className="size-4" />
+                    {busyIds.has(s.id)
+                      ? <Loader2 className="size-4 animate-spin" />
+                      : <Square className="size-4" />
+                    }
                   </Button>
                 </CardContent>
               </Card>
@@ -328,6 +395,8 @@ function SessionWorkbench({
   const peerRef    = useRef<Awaited<ReturnType<typeof createOperatorPeer>> | null>(null);
   const dcRef      = useRef<RTCDataChannel | null>(null);
   const pendingRef = useRef<Map<string, (r: CommandResult) => void>>(new Map());
+  /** Lock para evitar dois createOperatorPeer() simultâneos (race condition). */
+  const peerCreatingRef = useRef(false);
 
   const [logs,      setLogs]      = useState<{ id: string; text: string; ok?: boolean }[]>([]);
   const [stage,     setStage]     = useState<RtcStage>("idle");
@@ -405,11 +474,14 @@ function SessionWorkbench({
   // WebRTC — estabelece peer quando sessão fica ativa
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (status !== "active" || peerRef.current) return;
+    // Guard duplo: estado React (peerRef.current) + lock síncrono (peerCreatingRef)
+    // para evitar race condition quando status muda rapidamente.
+    if (status !== "active" || peerRef.current || peerCreatingRef.current) return;
 
     setStage("subscribed");
 
     let cancelled = false;
+    peerCreatingRef.current = true;
 
     (async () => {
       try {
@@ -478,10 +550,13 @@ function SessionWorkbench({
 
         if (!cancelled) {
           peerRef.current = peer;
+          peerCreatingRef.current = false;
         } else {
           peer.close();
+          peerCreatingRef.current = false;
         }
       } catch (e) {
+        peerCreatingRef.current = false;
         if (!cancelled) {
           toast.error(e instanceof Error ? e.message : "Falha ao conectar via WebRTC");
           setStage("failed");
@@ -491,6 +566,7 @@ function SessionWorkbench({
 
     return () => {
       cancelled = true;
+      peerCreatingRef.current = false;
       peerRef.current?.close();
       peerRef.current = null;
       dcRef.current = null;
@@ -920,12 +996,19 @@ function SidePanel({
             placeholder="https://…"
             value={navUrl}
             onChange={e => onNavUrlChange(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && navUrl && onSendCmd({ kind: "navigate", url: navUrl })}
+            onKeyDown={e => {
+              if (e.key !== "Enter" || !navUrl) return;
+              try { new URL(navUrl); onSendCmd({ kind: "navigate", url: navUrl }); }
+              catch { toast.error("URL inválida"); }
+            }}
           />
           <Button
             size="sm" className="w-full"
             disabled={!navUrl}
-            onClick={() => onSendCmd({ kind: "navigate", url: navUrl })}
+            onClick={() => {
+              try { new URL(navUrl); onSendCmd({ kind: "navigate", url: navUrl }); }
+              catch { toast.error("URL inválida"); }
+            }}
           >
             Ir
           </Button>
@@ -1109,19 +1192,49 @@ function PlayerToolbar({
 // =============================================================================
 
 function HistoryView({ consultants }: { consultants: ConsultantRow[] }) {
-  const [rows, setRows] = useState<SupportSession[]>([]);
+  const [rows,    setRows]    = useState<SupportSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     supabase
       .from("remote_support_sessions" as "remote_support_sessions")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(50)
-      .then(({ data }) => setRows((data ?? []) as unknown as SupportSession[]));
+      .then(({ data, error: err }) => {
+        if (err) throw err;
+        setRows((data ?? []) as unknown as SupportSession[]);
+      })
+      .catch(e => setError(e instanceof Error ? e.message : "Erro ao carregar histórico"))
+      .finally(() => setLoading(false));
   }, []);
 
   const name = (id: string | null) =>
     (id && consultants.find(c => c.id === id)?.name) ?? id?.slice(0, 8) ?? "—";
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="p-8 flex items-center justify-center gap-2 text-muted-foreground">
+          <Loader2 className="size-5 animate-spin" />
+          Carregando histórico…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-center text-destructive text-sm">
+          {error}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

@@ -300,11 +300,31 @@ export async function executeCommand(
       // --- Navegação ---
       case "navigate": {
         if (!cmd.url) throw new Error("url required");
-        const u = new URL(cmd.url, window.location.origin);
+
+        let u: URL;
+        try {
+          u = new URL(cmd.url, window.location.origin);
+        } catch {
+          throw new Error(`URL inválida: ${cmd.url}`);
+        }
+
+        // Bloqueio de esquemas perigosos (javascript:, data:, vbscript:, etc.)
+        const SAFE_SCHEMES = ["https:", "http:"];
+        if (!SAFE_SCHEMES.includes(u.protocol)) {
+          throw new Error(`Protocolo não permitido: ${u.protocol}`);
+        }
+
         if (u.origin === window.location.origin) {
+          // Navegação interna — SPA router ou reload de rota
           window.location.href = u.toString();
         } else {
-          window.open(u.toString(), "_blank", "noopener,noreferrer");
+          // Navegação externa: abre em nova aba com sandbox completo.
+          // O operador é responsável pela URL; o sistema não valida conteúdo,
+          // mas garante isolamento via noopener,noreferrer.
+          const tab = window.open(u.toString(), "_blank", "noopener,noreferrer");
+          if (!tab) {
+            throw new Error("Bloqueado pelo navegador (popup bloqueado). Oriente o consultor a permitir popups.");
+          }
         }
         return { id: cmd.id, ok: true };
       }
