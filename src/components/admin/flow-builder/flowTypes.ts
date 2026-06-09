@@ -4,8 +4,13 @@
 
 export type IconKey = "msg" | "video" | "sparkle" | "user" | "file";
 
-export type Variant = "A" | "B" | "C" | "D" | "E";
-export const ALL_VARIANTS: Variant[] = ["A", "B", "C", "D", "E"];
+// Variantes de fluxo — ilimitadas até Z. D continua reservado para o padrão Camila.
+export type Variant =
+  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
+  | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
+export const ALL_VARIANTS: Variant[] = (
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") as Variant[]
+);
 
 export type Transition = {
   trigger_intent: string;
@@ -126,13 +131,20 @@ export const STEP_TYPE_OPTIONS: { value: string; label: string; emoji: string; h
   { value: "finalizar_cadastro", emoji: "🎉", label: "Finalizar cadastro", hint: "Envia ao portal, trata OTP e parabeniza." },
 ];
 
-export const VARIANT_LABEL: Record<Variant, string> = {
+const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
   A: "Fluxo A (com áudio)",
   B: "Fluxo B (IA livre)",
   C: "Fluxo C (vídeo inicial)",
   D: "Fluxo D (padrão Camila)",
   E: "Fluxo E (personalizado)",
 };
+export const VARIANT_LABEL: Record<Variant, string> = ALL_VARIANTS.reduce(
+  (acc, v) => {
+    acc[v] = VARIANT_LABEL_OVERRIDES[v] ?? `Fluxo ${v}`;
+    return acc;
+  },
+  {} as Record<Variant, string>,
+);
 
 
 // Presets de botões prontos para arrastar/clicar

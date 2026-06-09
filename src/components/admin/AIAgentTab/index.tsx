@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Bot, MessagesSquare, Library, Loader2, Brain, Mic, FileText, BookOpen, Workflow, HeartPulse } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,8 +11,9 @@ import { AIDecisionsPanel } from "./AIDecisionsPanel";
 import { SlotsPanel } from "./SlotsPanel";
 import { BotTelemetryStrip } from "./BotTelemetryStrip";
 import BotHealthDashboard from "@/components/admin/saude/BotHealthDashboard";
+const AdminKnowledge = lazy(() => import("@/pages/AdminKnowledge"));
 
-type SubTab = "atendimentos" | "agente" | "decisoes" | "desempenho";
+type SubTab = "atendimentos" | "agente" | "decisoes" | "desempenho" | "conhecimento";
 type AgenteSub = "audios" | "midias" | "roteiro";
 
 export function AIAgentTab({ userId }: { userId: string }) {
@@ -134,6 +135,7 @@ export function AIAgentTab({ userId }: { userId: string }) {
     { id: "atendimentos", label: "Atendimentos", icon: MessagesSquare },
     { id: "agente", label: "Agente & Mídias", icon: Library },
     { id: "decisoes", label: "Decisões da IA", icon: Brain },
+    { id: "conhecimento", label: "Conhecimento", icon: BookOpen },
     { id: "desempenho", label: "Desempenho & Saúde", icon: HeartPulse },
   ];
 
@@ -243,6 +245,13 @@ export function AIAgentTab({ userId }: { userId: string }) {
           </div>
         )}
         {sub === "decisoes" && <AIDecisionsPanel userId={userId} />}
+        {sub === "conhecimento" && (
+          <div className="h-full overflow-y-auto pr-1">
+            <Suspense fallback={<div className="flex items-center justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+              <AdminKnowledge embedded />
+            </Suspense>
+          </div>
+        )}
         {sub === "desempenho" && (
           <div className="h-full overflow-y-auto pr-1">
             <BotHealthDashboard userId={userId} />

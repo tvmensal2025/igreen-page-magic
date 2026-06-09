@@ -32,7 +32,7 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   consultantId: string | null;
-  defaultVariant?: "A" | "B" | "C" | "D" | "E";
+  defaultVariant?: string;
   onCreated?: (flowId: string) => void;
 }
 
@@ -127,7 +127,7 @@ export default function CreateFlowFromTemplateDialog({
 
   // Step 1: identidade
   const [flowName, setFlowName] = useState("");
-  const [variant, setVariant] = useState<"A" | "B" | "C" | "D">(
+  const [variant, setVariant] = useState<string>(
     defaultVariant === "E" ? "A" : (defaultVariant || "A"),
   );
 
