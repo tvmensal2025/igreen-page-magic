@@ -779,40 +779,62 @@ export default function FluxoBuilder() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-semibold flex items-center gap-2">
-              Fluxo
-              {flowWarnings > 0 && (
-                <Badge
-                  variant={flowErrors > 0 ? "destructive" : "secondary"}
-                  className="gap-1"
-                >
-                  <AlertTriangle className="h-3 w-3" />
-                  {flowWarnings} {flowWarnings === 1 ? "alerta" : "alertas"}
-                </Badge>
-              )}
-            </h1>
+            <h1 className="text-base font-semibold">Fluxo</h1>
             <p className="text-xs text-muted-foreground truncate">
               Arraste, edite e veja o preview ao vivo. Cada fluxo escolhe sua mistura (áudio, texto, vídeo).
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {validation.autoFixablePatches.length > 0 && (
-              <Button variant="outline" size="sm" onClick={autoFixAll}>
-                <Wand2 className="mr-1 h-3 w-3" />
-                Auto-corrigir
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSimulatorOpen(true)}
-              disabled={steps.length === 0}
-              title={steps.length === 0 ? "Adicione ao menos 1 passo para testar" : "Testar fluxo localmente"}
-            >
-              <Play className="mr-1 h-3 w-3" />
-              Testar fluxo
-            </Button>
-          </div>
+          <TooltipProvider delayDuration={150}>
+            <div className="flex items-center gap-1">
+              {flowWarnings > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={flowErrors > 0 ? "destructive" : "secondary"}
+                      size="icon"
+                      className="h-8 w-8 relative"
+                      onClick={() => {
+                        const first = document.querySelector('[id^="step-card-"] svg.text-destructive');
+                        first?.closest('[id^="step-card-"]')?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      }}
+                    >
+                      <AlertTriangle className="h-4 w-4" />
+                      <span className="absolute -top-1 -right-1 h-4 min-w-[16px] rounded-full bg-background border text-[9px] font-semibold leading-4 px-1">
+                        {flowWarnings}
+                      </span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{flowWarnings} {flowWarnings === 1 ? "alerta" : "alertas"} no fluxo</TooltipContent>
+                </Tooltip>
+              )}
+              {validation.autoFixablePatches.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={autoFixAll}>
+                      <Wand2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Auto-corrigir problemas</TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setSimulatorOpen(true)}
+                    disabled={steps.length === 0}
+                  >
+                    <Play className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {steps.length === 0 ? "Adicione ao menos 1 passo para testar" : "Testar fluxo"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
         </div>
 
 
