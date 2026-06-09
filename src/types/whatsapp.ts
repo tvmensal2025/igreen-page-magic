@@ -5,7 +5,22 @@ export interface WhatsAppInstance {
   created_at: string;
 }
 
-export type TemplateMediaType = "text" | "image" | "audio" | "document";
+export type TemplateMediaType = "text" | "image" | "audio" | "video" | "document";
+
+/**
+ * Item de um template multi-arquivo (tabela template_items).
+ * Um template pode ter vários itens ordenados por `position`.
+ */
+export interface TemplateItem {
+  id?: string;
+  template_id?: string;
+  position: number;
+  message_type: TemplateMediaType;
+  message_text: string | null;
+  media_url: string | null;
+  image_url: string | null;
+  delay_seconds: number;
+}
 
 export interface MessageTemplate {
   id: string;
@@ -19,6 +34,9 @@ export interface MessageTemplate {
   origin_template_id?: string | null;
   shortcut?: string | null;
   is_quick_reply?: boolean;
+  is_public?: boolean;
+  /** Itens ordenados (multi-arquivo). Quando ausente, usa media_url/image_url (legado). */
+  items?: TemplateItem[];
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";

@@ -1,55 +1,35 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { buildCors } from "../_shared/cors.ts";
+import { rs, callerIp } from "../_shared/remote-support.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const cors = buildCors(req);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "missing auth" }, 401);
+    const ctx = await rs.context(req, cors, "remote-support-request");
+    if (ctx instanceof Response) return ctx;
+    const { admin, user, json } = ctx;
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { auth: { persistSession: false } },
-    );
-
-    // Identify caller
-    const userClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } },
-    );
-    const { data: { user }, error: uerr } = await userClient.auth.getUser();
-    if (uerr || !user) return json({ error: "invalid user" }, 401);
-
-    // Cancel previous pending sessions for this requester
-    await supabase
+    // Cancela pedidos pendentes anteriores deste consultor.
+    await admin
       .from("remote_support_sessions")
       .update({ status: "expired", ended_at: new Date().toISOString(), end_reason: "superseded" })
       .eq("requester_id", user.id)
       .in("status", ["requested", "pending_code"]);
 
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
-
-    const { data: session, error } = await supabase
+    const { data: session, error } = await admin
       .from("remote_support_sessions")
       .insert({
         requester_id: user.id,
         status: "requested",
         initiated_by: "requester",
-        ip_requester: ip,
+        ip_requester: callerIp(req),
       })
       .select()
       .single();
-
     if (error) throw error;
 
-    await supabase.from("remote_support_logs").insert({
+    await admin.from("remote_support_logs").insert({
       session_id: session.id,
       actor: "requester",
       action: "session_requested",
@@ -57,15 +37,11 @@ Deno.serve(async (req) => {
     });
 
     return json({ session });
-  } catch (e: any) {
+  } catch (e) {
     console.error("[remote-support-request]", e);
-    return json({ error: e.message || String(e) }, 500);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
   }
 });
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}

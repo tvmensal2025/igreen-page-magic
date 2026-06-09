@@ -10,10 +10,10 @@ const corsHeaders = {
 const MAX_SIZE = 100 * 1024 * 1024; // 100 MB
 
 const ALLOWED_TYPES: Record<string, string[]> = {
-  image: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+  image: ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"],
   // WhatsApp/Whapi rejeita .webm em mensagens de voz; grave/envie OGG/Opus, MP3, M4A ou WAV.
-  audio: ["audio/mpeg", "audio/ogg", "audio/mp4", "audio/wav"],
-  video: ["video/mp4", "video/webm"],
+  audio: ["audio/mpeg", "audio/ogg", "audio/mp4", "audio/wav", "audio/aac", "audio/x-m4a"],
+  video: ["video/mp4", "video/webm", "video/quicktime", "video/3gpp"],
   document: [
     "application/pdf",
     "application/msword",
@@ -33,12 +33,18 @@ function getExtension(mime: string): string {
     "image/png": "png",
     "image/webp": "webp",
     "image/gif": "gif",
+    "image/heic": "heic",
+    "image/heif": "heif",
     "audio/mpeg": "mp3",
     "audio/ogg": "ogg",
     "audio/mp4": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/aac": "aac",
     "audio/wav": "wav",
     "video/mp4": "mp4",
     "video/webm": "webm",
+    "video/quicktime": "mov",
+    "video/3gpp": "3gp",
     "application/pdf": "pdf",
     "application/msword": "doc",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -223,6 +229,22 @@ Deno.serve(async (req) => {
     // Aliases comuns: webm/opus do MediaRecorder vira ogg para o WhatsApp.
     if (normalizedType === "audio/webm" || normalizedType === "audio/x-opus+ogg") {
       normalizedType = "audio/ogg";
+    }
+    // Aliases de imagem: alguns navegadores/celulares mandam variações.
+    if (normalizedType === "image/jpg" || normalizedType === "image/pjpeg") {
+      normalizedType = "image/jpeg";
+    }
+    // Fallback: se o MIME veio vazio, infere pela extensão do nome do arquivo.
+    if (!normalizedType) {
+      const extLower = (file.name.split(".").pop() || "").toLowerCase();
+      const extToMime: Record<string, string> = {
+        jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
+        heic: "image/heic", heif: "image/heif",
+        mp3: "audio/mpeg", ogg: "audio/ogg", m4a: "audio/mp4", wav: "audio/wav", aac: "audio/aac",
+        mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", "3gp": "video/3gpp",
+        pdf: "application/pdf",
+      };
+      normalizedType = extToMime[extLower] || "";
     }
     if (!allowed.includes(normalizedType)) {
       return new Response(

@@ -34,7 +34,7 @@ import type {
 } from "@/features/remote-support/types";
 import { acceptSession, endSession, operatorRequest, verifyCode } from "@/features/remote-support/api";
 import {
-  createOperatorPeer, getInboundVideoFps,
+  createOperatorPeer, getInboundVideoFps, safeSend,
   type RtcStage, type QualityLevel,
 } from "@/features/remote-support/screenShare";
 
@@ -43,6 +43,14 @@ import {
 // ---------------------------------------------------------------------------
 
 interface ConsultantRow { id: string; name: string; license: string }
+
+/**
+ * Duração máxima de uma sessão ativa antes do encerramento automático.
+ * Espelha `SESSION_MAX_DURATION_MS` do helper das edge functions
+ * (`_shared/remote-support.ts`). Mantido como guarda de segurança no operador,
+ * que está sempre presente enquanto há sessões ativas.
+ */
+const SESSION_MAX_DURATION_MS = 2 * 60 * 60_000; // 2h
 
 // ---------------------------------------------------------------------------
 // Preferências persistidas
@@ -69,29 +77,6 @@ function savePrefs(p: Prefs) {
 }
 
 // ---------------------------------------------------------------------------
-// Domínios permitidos para navegação remota (whitelist P9)
-// ---------------------------------------------------------------------------
-
-/** Domínios que o operador pode navegar no consultor via comando "navigate".
- *  Aceita o próprio origin sempre. URLs externas só se o host estiver aqui.
- *  Caso vazio, bloqueia todo acesso externo.
- */
-const NAVIGATE_ALLOW_EXTERNAL: string[] = [
-  // Adicione domínios confiáveis conforme necessário, ex:
-  // "docs.igreen.com.br",
-];
-
-function isNavigateAllowed(url: string, currentOrigin: string): boolean {
-  try {
-    const u = new URL(url, currentOrigin);
-    if (u.origin === currentOrigin) return true;
-    return NAVIGATE_ALLOW_EXTERNAL.some(d => u.hostname === d || u.hostname.endsWith(`.${d}`));
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Página principal
 // ---------------------------------------------------------------------------
 
@@ -108,8 +93,8 @@ export default function SuperAdminRemoteSupport() {
   /** IDs de sessão com operação em andamento (accept/cancel/end) */
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
 
-  const setBusy   = (id: string) => setBusyIds(prev => new Set(prev).add(id));
-  const clearBusy = (id: string) => setBusyIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+  const setBusy   = useCallback((id: string) => setBusyIds(prev => new Set(prev).add(id)), []);
+  const clearBusy = useCallback((id: string) => setBusyIds(prev => { const s = new Set(prev); s.delete(id); return s; }), []);
 
   // -------------------------------------------------------------------------
   // Carrega fila + ouve mudanças em tempo real
@@ -145,6 +130,25 @@ export default function SuperAdminRemoteSupport() {
       .order("created_at", { ascending: false });
 
     const all = (data ?? []) as unknown as SupportSession[];
+
+    // Encerra automaticamente sessões ativas que excederam a duração máxima.
+    // Guarda de segurança contra sessões esquecidas em aberto.
+    const now = Date.now();
+    const expired = all.filter(
+      s => s.status === "active" && s.started_at &&
+        now - new Date(s.started_at).getTime() > SESSION_MAX_DURATION_MS,
+    );
+    if (expired.length > 0) {
+      await Promise.allSettled(
+        expired.map(s => endSession(s.id, "max_duration")),
+      );
+      const expiredIds = new Set(expired.map(s => s.id));
+      const live = all.filter(s => !expiredIds.has(s.id));
+      setPending(live.filter(s => s.status === "requested" || s.status === "pending_code"));
+      setActive(live.filter(s => s.status === "active"));
+      return;
+    }
+
     setPending(all.filter(s => s.status === "requested" || s.status === "pending_code"));
     setActive(all.filter(s => s.status === "active"));
   };
@@ -408,6 +412,8 @@ function SessionWorkbench({
   const [paused,     setPaused]     = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  /** true quando a conexão demora demais (mostra orientação ao operador) */
+  const [slowConnect, setSlowConnect] = useState(false);
 
   // Viewport do consultor — recebido via viewportInfo ao conectar
   const [requesterVp, setRequesterVp] = useState<RequesterViewport | null>(null);
@@ -429,7 +435,7 @@ function SessionWorkbench({
   }, []);
 
   // -------------------------------------------------------------------------
-  // Envio de comandos via DataChannel
+  // Envio de comandos via DataChannel (com backpressure)
   // -------------------------------------------------------------------------
   const sendCmd = useCallback((cmd: Omit<RemoteCommand, "id">) => {
     const dc = dcRef.current;
@@ -440,14 +446,18 @@ function SessionWorkbench({
       return undefined;
     }
 
-    const full: RemoteCommand = { ...cmd, id: crypto.randomUUID() };
+    // mouseMove e wheel são descartáveis sob congestionamento (backpressure):
+    // perder um frame de movimento é melhor que acumular latência.
+    const droppable = cmd.kind === "mouseMove" || cmd.kind === "wheel";
 
-    if (cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
+    const full: RemoteCommand = { ...cmd, id: crypto.randomUUID() };
+    const sent = safeSend(dc, JSON.stringify(full), { droppable });
+
+    if (sent && cmd.kind !== "mouseMove" && cmd.kind !== "wheel" && cmd.kind !== "ping") {
       pushLog(`→ ${full.kind} ${full.selector ?? full.url ?? full.value ?? ""}`);
     }
 
-    dc.send(JSON.stringify(full));
-    return full.id;
+    return sent ? full.id : undefined;
   }, [pushLog]);
 
   // -------------------------------------------------------------------------
@@ -611,6 +621,20 @@ function SessionWorkbench({
     }, 2_000);
     return () => clearInterval(t);
   }, [hasStream]);
+
+  // -------------------------------------------------------------------------
+  // Watchdog de conexão lenta — se a sessão está ativa mas o vídeo não chega
+  // em 12s, mostra orientação ao operador (provável falta de TURN ou consultor
+  // ainda não clicou em "Compartilhar tela").
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (status !== "active" || hasStream) {
+      setSlowConnect(false);
+      return;
+    }
+    const t = setTimeout(() => setSlowConnect(true), 12_000);
+    return () => clearTimeout(t);
+  }, [status, hasStream]);
 
   // -------------------------------------------------------------------------
   // Fullscreen API
@@ -852,6 +876,19 @@ function SessionWorkbench({
                     </span>
                   ) : (
                     <>Aguardando o consultor clicar em <b>"Compartilhar tela"</b> no banner vermelho.</>
+                  )}
+
+                  {/* Orientação após 12s sem vídeo */}
+                  {slowConnect && stage !== "failed" && (
+                    <div className="mt-3 max-w-md text-xs text-yellow-300 bg-yellow-900/40 border border-yellow-700/50 rounded p-2">
+                      <AlertTriangle className="size-4 inline mr-1 -mt-0.5" />
+                      Está demorando mais que o normal. Verifique se:
+                      <ul className="text-left mt-1 list-disc list-inside opacity-90">
+                        <li>O consultor já clicou em "Compartilhar tela"</li>
+                        <li>A rede do consultor não bloqueia WebRTC (firewall corporativo)</li>
+                        <li>O servidor TURN está configurado (necessário em redes restritas)</li>
+                      </ul>
+                    </div>
                   )}
                 </div>
               )}

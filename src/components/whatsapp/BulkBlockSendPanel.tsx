@@ -7,6 +7,7 @@ import { ContactImporter } from "./ContactImporter";
 import { BlockConfigurator } from "./BlockConfigurator";
 import { QuickTemplateForm } from "./QuickTemplateForm";
 import { sendWhatsAppMessage } from "@/services/messageSender";
+import { sendTemplate } from "@/services/templateSender";
 import { getConnectionState } from "@/services/evolutionApi";
 import { supabase } from "@/integrations/supabase/client";
 import type { MessageTemplate, BulkContact, BlockConfig, BlockProgress } from "@/types/whatsapp";
@@ -172,7 +173,7 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
   /** Show confirmation step before sending */
   const handlePreSend = useCallback(() => {
     if (validContacts.length === 0) return;
-    const hasMedia = !!(selectedTemplate?.media_url);
+    const hasMedia = !!(selectedTemplate?.media_url || (selectedTemplate?.items && selectedTemplate.items.length > 0));
     if (!message.trim() && !hasMedia) return;
 
     // Deduplicate
@@ -264,47 +265,29 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
         if (cancelledRef.current) break;
 
         const contact = block[i];
-        const tplMediaType = selectedTemplate?.media_type;
-        const tplMediaUrl = selectedTemplate?.media_url;
-        const tplImageUrl = selectedTemplate?.image_url;
-
-        const msg = message.includes("{{")
-          ? applyTemplate(
-              { id: "", consultant_id: "", name: "", content: message, media_type: "text", media_url: null, image_url: null, created_at: "" },
-              { name: contact.name, electricity_bill_value: contact.electricity_bill_value }
-            )
-          : message;
+        const renderText = (txt: string) =>
+          txt.includes("{{")
+            ? applyTemplate(
+                { id: "", consultant_id: "", name: "", content: txt, media_type: "text", media_url: null, image_url: null, created_at: "" },
+                { name: contact.name, electricity_bill_value: contact.electricity_bill_value }
+              )
+            : txt;
+        const hasTemplateItems = !!(selectedTemplate && ((selectedTemplate.items && selectedTemplate.items.length > 0) || selectedTemplate.media_url));
 
         try {
           let allOk = true;
 
-          if (tplMediaUrl && tplMediaType === "audio") {
-            const r = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: "audio", mediaUrl: tplMediaUrl });
+          if (selectedTemplate && hasTemplateItems) {
+            // Envia todos os itens do template em ordem (multi-arquivo).
+            allOk = await sendTemplate(selectedTemplate, { instanceName, phone: contact.phone, renderText });
+            if (message.trim()) {
+              await mediaJitter();
+              const r = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: "text", text: renderText(message) });
+              if (r.status === "failed") allOk = false;
+            }
+          } else if (message.trim()) {
+            const r = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: "text", text: renderText(message) });
             if (r.status === "failed") allOk = false;
-            if (tplImageUrl) {
-              await mediaJitter(); // ← Jitter between media types
-              const r2 = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: "image", mediaUrl: tplImageUrl });
-              if (r2.status === "failed") allOk = false;
-            }
-            if (msg.trim()) {
-              await mediaJitter(); // ← Jitter before text
-              const r3 = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: "text", text: msg });
-              if (r3.status === "failed") allOk = false;
-            }
-          } else {
-            if (tplImageUrl) {
-              const r = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: "image", mediaUrl: tplImageUrl });
-              if (r.status === "failed") allOk = false;
-            }
-            if (tplMediaUrl && (tplMediaType === "image" || tplMediaType === "document")) {
-              if (tplImageUrl) await mediaJitter(); // ← Jitter if image was sent before
-              const r = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: tplMediaType as "image" | "document", mediaUrl: tplMediaUrl, text: msg });
-              if (r.status === "failed") allOk = false;
-            } else if (msg.trim()) {
-              if (tplImageUrl) await mediaJitter(); // ← Jitter if image was sent before
-              const r = await sendWhatsAppMessage({ instanceName, phone: contact.phone, mediaCategory: "text", text: msg });
-              if (r.status === "failed") allOk = false;
-            }
           }
 
           if (allOk) {
@@ -461,7 +444,7 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
             {/* Send button */}
             <Button
               onClick={handlePreSend}
-              disabled={validContacts.length === 0 || (!message.trim() && !selectedTemplate?.media_url)}
+              disabled={validContacts.length === 0 || (!message.trim() && !selectedTemplate?.media_url && !(selectedTemplate?.items && selectedTemplate.items.length > 0))}
               className="w-full gap-2 rounded-xl h-12 font-bold text-base shadow-lg shadow-green-500/10 hover:shadow-green-500/20 transition-all"
               style={{ background: "var(--gradient-green)" }}
             >

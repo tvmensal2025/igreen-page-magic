@@ -232,7 +232,8 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
   const { currentPvKey, nextPvKey, nextDate } = useMemo(() => {
     if (!customer) return { currentPvKey: null, nextPvKey: null, nextDate: null };
     const stg = customer.pos_venda_stage;
-    const submitted = customer.portal_submitted_at;
+    // Marco da esteira 30/60/90/120 = data de aprovação (fallback histórico: envio ao portal).
+    const baseDate = customer.pos_venda_approved_at || customer.portal_submitted_at;
     let cur: string | null = null;
     if (stg === "reprovado") cur = "pv_reprovado";
     else if (stg) cur = `pv_${stg}`;
@@ -243,8 +244,8 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
     const idx = cur ? order.indexOf(cur) : 0;
     const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : null;
     let when: string | null = null;
-    if (next && PV_DAYS[next] && submitted) {
-      when = fmt(addDays(new Date(submitted), PV_DAYS[next]).toISOString(), true);
+    if (next && PV_DAYS[next] && baseDate) {
+      when = fmt(addDays(new Date(baseDate), PV_DAYS[next]).toISOString(), true);
     } else if (next === "pv_aprovado") {
       when = "Ao aprovar a venda";
     }
@@ -304,11 +305,12 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
         ts: new Date(l.sent_at).getTime(),
       });
     }
-    // future milestones for pos-venda
-    if (customer?.portal_submitted_at && customer?.pos_venda_stage !== "reprovado") {
+    // future milestones for pos-venda (marco = aprovação; fallback histórico: portal)
+    const pvBaseDate = customer?.pos_venda_approved_at || customer?.portal_submitted_at;
+    if (pvBaseDate && customer?.pos_venda_stage !== "reprovado") {
       for (const k of ["pv_d30", "pv_d60", "pv_d90", "pv_d120"]) {
         const days = PV_DAYS[k];
-        const when = addDays(new Date(customer.portal_submitted_at), days);
+        const when = addDays(new Date(pvBaseDate), days);
         const isFuture = when.getTime() > Date.now();
         const cur = currentPvKey === k;
         if (cur) continue;

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
 import { sendWhatsAppMessage } from "@/services/messageSender";
+import { sendTemplate } from "@/services/templateSender";
 import type { MessageTemplate } from "@/types/whatsapp";
 
 export type BulkSendResult = { total: number; sent: number; failed: number };
@@ -211,54 +212,39 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
 
   async function handleBulkSend() {
     if (selectedIds.size === 0) { setWarning("Selecione pelo menos um destinatário"); return; }
-    const hasMedia = !!(selectedTemplate?.media_url);
-    if (!message.trim() && !hasMedia) return;
+    const hasTemplateItems = !!(selectedTemplate && ((selectedTemplate.items && selectedTemplate.items.length > 0) || selectedTemplate.media_url));
+    if (!message.trim() && !hasTemplateItems) return;
     abortRef.current = false;
     setWarning(""); setIsSending(true); setResult(null);
     // LGPD: nunca envia para quem optou por sair (do_not_contact=true).
     const selected = customers.filter((c) => selectedIds.has(c.id) && !c.do_not_contact);
     let sent = 0, failed = 0;
-    const tplMediaType = selectedTemplate?.media_type;
-    const tplMediaUrl = selectedTemplate?.media_url;
-    const tplImageUrl = selectedTemplate?.image_url;
 
     for (let i = 0; i < selected.length; i++) {
       if (abortRef.current) break;
       setProgress({ total: selected.length, sent, failed });
       try {
         const phone = selected[i].phone_whatsapp;
-        const msg = message.includes("{{")
-          ? applyTemplate({ id: "", consultant_id: "", name: "", content: message, media_type: "text", media_url: null, image_url: null, created_at: "" }, selected[i])
-          : message;
+        const renderText = (txt: string) =>
+          txt.includes("{{")
+            ? applyTemplate({ id: "", consultant_id: "", name: "", content: txt, media_type: "text", media_url: null, image_url: null, created_at: "" }, selected[i])
+            : txt;
 
         let allOk = true;
 
-        if (tplMediaUrl && tplMediaType === "audio") {
-          const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "audio", mediaUrl: tplMediaUrl });
+        if (selectedTemplate && hasTemplateItems) {
+          // Envia todos os itens do template em ordem (multi-arquivo).
+          allOk = await sendTemplate(selectedTemplate, { instanceName, phone, renderText });
+          // Mensagem livre adicional digitada no campo (além do template).
+          if (message.trim()) {
+            const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "text", text: renderText(message) });
+            if (r.status === "failed") allOk = false;
+          }
+        } else if (message.trim()) {
+          const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "text", text: renderText(message) });
           if (r.status === "failed") allOk = false;
-          if (tplImageUrl) {
-            const r2 = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "image", mediaUrl: tplImageUrl });
-            if (r2.status === "failed") allOk = false;
-          }
-          if (msg.trim()) {
-            const r3 = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "text", text: msg });
-            if (r3.status === "failed") allOk = false;
-          }
-        } else {
-          if (tplImageUrl) {
-            const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "image", mediaUrl: tplImageUrl });
-            if (r.status === "failed") allOk = false;
-          }
-
-          if (tplMediaUrl && (tplMediaType === "image" || tplMediaType === "document")) {
-            const category = tplMediaType as "image" | "document";
-            const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: category, mediaUrl: tplMediaUrl, text: msg });
-            if (r.status === "failed") allOk = false;
-          } else if (msg.trim()) {
-            const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "text", text: msg });
-            if (r.status === "failed") allOk = false;
-          }
         }
+
         if (allOk) {
           sent++;
           setSentIds(prev => new Set(prev).add(selected[i].id));
@@ -644,7 +630,7 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
           </div>
         )}
 
-        <Button onClick={handleBulkSend} disabled={selectedIds.size === 0 || (!message.trim() && !selectedTemplate?.media_url) || isSending} className="gap-2 rounded-xl h-11 font-bold shadow-lg shadow-green-500/10 hover:shadow-green-500/20 transition-all" style={{ background: "var(--gradient-green)" }}>
+        <Button onClick={handleBulkSend} disabled={selectedIds.size === 0 || (!message.trim() && !selectedTemplate?.media_url && !(selectedTemplate?.items && selectedTemplate.items.length > 0)) || isSending} className="gap-2 rounded-xl h-11 font-bold shadow-lg shadow-green-500/10 hover:shadow-green-500/20 transition-all" style={{ background: "var(--gradient-green)" }}>
           {isSending ? <><Loader2 className="w-4 h-4 animate-spin" /> Enviando...</> : <><Send className="w-4 h-4" /> Enviar para {selectedValidCount} clientes</>}
         </Button>
       </div>

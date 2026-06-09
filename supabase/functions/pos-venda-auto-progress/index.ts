@@ -50,6 +50,7 @@ async function processCustomer(
   env: ChannelEnv,
   customer: any,
   targetStage: string, // ex: 'aprovado' | 'reprovado' | 'd30'..
+  defaults: Record<string, any>, // config-padrão global por estágio (fallback)
 ): Promise<{ moved: boolean; sent: boolean }> {
   const stageKey = STAGE_TO_KEY[targetStage];
   if (!stageKey) return { moved: false, sent: false };
@@ -85,16 +86,24 @@ async function processCustomer(
     .eq("stage_scope", "pos_venda")
     .maybeSingle();
 
-  if (!stageData) return { moved: true, sent: false };
+  // Conteúdo configurado pelo próprio consultor? (multi-msg OU legacy no kanban)
+  let msgCount = 0;
+  if (stageData) {
+    const { count } = await supabase
+      .from("stage_auto_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("stage_id", stageData.id);
+    msgCount = count || 0;
+  }
+  const hasLegacy = !!(stageData && (stageData.auto_message_text || stageData.auto_message_media_url || stageData.auto_message_image_url));
+  const consultantHasContent = msgCount > 0 || hasLegacy;
 
-  // Verifica se há conteúdo configurado (multi-msg OU legacy)
-  const { count: msgCount } = await supabase
-    .from("stage_auto_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("stage_id", stageData.id);
+  // Fallback global: se o consultor não configurou nada para este estágio,
+  // usa a config-padrão institucional (pos_venda_default_media).
+  const def = defaults[targetStage];
+  const useDefault = !consultantHasContent && def && def.is_active !== false;
 
-  const hasLegacy = !!(stageData.auto_message_text || stageData.auto_message_media_url || stageData.auto_message_image_url);
-  if (!msgCount && !hasLegacy) return { moved: true, sent: false };
+  if (!consultantHasContent && !useDefault) return { moved: true, sent: false };
 
   // Validações de envio
   const phoneRaw = customer.phone_whatsapp || "";
@@ -120,18 +129,46 @@ async function processCustomer(
 
   const jid = toJid(phone);
   const dealOrigin = targetStage === "reprovado" ? "reprovado" : "aprovado";
-  const preview = await sendStageAutoMessages(
-    supabase,
-    channel,
-    jid,
-    phone,
-    stageData,
-    ownerId,
-    customer.id,
-    customer.pos_venda_reason || null,
-    dealOrigin,
-    customer.name || "",
-  );
+
+  let preview: string;
+  if (consultantHasContent) {
+    // Caminho normal: usa a config do consultor (multi-msg ou legacy do kanban).
+    preview = await sendStageAutoMessages(
+      supabase,
+      channel,
+      jid,
+      phone,
+      stageData,
+      ownerId,
+      customer.id,
+      customer.pos_venda_reason || null,
+      dealOrigin,
+      customer.name || "",
+    );
+  } else {
+    // Fallback: config-padrão global. Monta um stageData sintético e reusa o
+    // mesmo sender (sem stage_auto_messages → cai no ramo legacy).
+    const syntheticStage = {
+      id: `default:${targetStage}`,
+      stage_key: stageKey,
+      auto_message_type: def.message_type || "text",
+      auto_message_text: def.message_text || null,
+      auto_message_media_url: def.media_url || null,
+      auto_message_image_url: def.image_url || null,
+    };
+    preview = await sendStageAutoMessages(
+      supabase,
+      channel,
+      jid,
+      phone,
+      syntheticStage,
+      ownerId,
+      customer.id,
+      customer.pos_venda_reason || null,
+      dealOrigin,
+      customer.name || "",
+    );
+  }
 
   await supabase.from("customer_auto_message_log").insert({
     customer_id: customer.id,
@@ -176,17 +213,24 @@ Deno.serve(async (req) => {
     let moved = 0;
     let sent = 0;
 
+    // Config-padrão global por estágio (fallback quando o consultor não configurou).
+    const { data: defaultRows } = await supabase
+      .from("pos_venda_default_media")
+      .select("stage, message_type, message_text, media_url, image_url, is_active");
+    const defaults: Record<string, any> = {};
+    for (const d of defaultRows || []) defaults[d.stage] = d;
+
     // 1. Clientes já marcados como APROVADOS (pelo popup ou drag manual) que
     //    ainda não receberam mensagem do estágio pv_aprovado → enviar.
     //    Antigos backfilled ficam em pos_venda_stage='espera' e não disparam.
     const { data: approvedCustomers } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, portal_submitted_at, status, andamento_igreen")
+      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_stage", "aprovado");
 
     for (const c of approvedCustomers || []) {
-      const r = await processCustomer(supabase, env, c, "aprovado");
+      const r = await processCustomer(supabase, env, c, "aprovado", defaults);
       if (r.moved) moved++;
       if (r.sent) sent++;
     }
@@ -194,32 +238,34 @@ Deno.serve(async (req) => {
     // 2. Clientes REPROVADOS
     const { data: rejectedCustomers } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, portal_submitted_at, status, andamento_igreen")
+      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_stage", "reprovado");
 
     for (const c of rejectedCustomers || []) {
-      const r = await processCustomer(supabase, env, c, "reprovado");
+      const r = await processCustomer(supabase, env, c, "reprovado", defaults);
       if (r.moved) moved++;
       if (r.sent) sent++;
     }
 
     // 3. Progressão aprovados → 30/60/90/120 dias (somente quem já passou por aprovado)
+    //    O marco temporal é a DATA DE APROVAÇÃO (pos_venda_approved_at), não o
+    //    envio ao portal.
     const { data: approvedTrack } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, portal_submitted_at, status, andamento_igreen")
+      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90"])
-      .not("portal_submitted_at", "is", null);
+      .not("pos_venda_approved_at", "is", null);
 
     for (const c of approvedTrack || []) {
-      const ref = c.portal_submitted_at ? new Date(c.portal_submitted_at).getTime() : now;
+      const ref = c.pos_venda_approved_at ? new Date(c.pos_venda_approved_at).getTime() : now;
       const days = Math.floor((now - ref) / (1000 * 60 * 60 * 24));
       const targetKey = findBucket(days);
       if (!targetKey) continue;
       const target = targetKey.replace("pv_", ""); // 'd30' etc.
       if (target === c.pos_venda_stage) continue;
-      const r = await processCustomer(supabase, env, c, target);
+      const r = await processCustomer(supabase, env, c, target, defaults);
       if (r.moved) moved++;
       if (r.sent) sent++;
     }

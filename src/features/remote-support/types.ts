@@ -49,8 +49,6 @@ export type RemoteCommandKind =
   | "click"
   | "fill"
   | "scrollTo"
-  | "openTab"
-  | "closeTab"
   | "reload"
   | "back"
   | "forward"
@@ -78,7 +76,6 @@ export interface RemoteCommand {
   selector?: string;
   url?: string;
   value?: string;
-  tabId?: number;
 
   /**
    * Coordenada normalizada (0..1) relativa ao viewport CSS do consultor.

@@ -30,6 +30,7 @@ interface PosVendaCustomer {
   phone_whatsapp: string;
   electricity_bill_value: number | null;
   portal_submitted_at: string | null;
+  pos_venda_approved_at: string | null;
   andamento_igreen: string | null;
   status: string;
   consultant_id: string;
@@ -59,7 +60,8 @@ function daysSince(iso: string | null): number | null {
 function computeStage(c: PosVendaCustomer): Stage {
   if (c.pos_venda_stage && c.pos_venda_stage !== ("em_analise" as Stage)) return c.pos_venda_stage;
   if (/reprov|cancel/i.test(c.andamento_igreen || "") || ["rejected","cancelled","canceled"].includes(c.status)) return "reprovado";
-  const d = daysSince(c.portal_submitted_at);
+  // Esteira temporal conta a partir da APROVAÇÃO, não do envio ao portal.
+  const d = daysSince(c.pos_venda_approved_at);
   if (d == null) return "espera";
   if (d >= 120) return "d120";
   if (d >= 90)  return "d90";
@@ -79,6 +81,12 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
   const [assignTo, setAssignTo] = useState<string>("");
   const [rejectDialog, setRejectDialog] = useState<PosVendaCustomer | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  // Agendamento de lembrete automático ao reprovar (reaproveita scheduled_messages).
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderDays, setReminderDays] = useState<string>("30");
+  const [reminderCustomDays, setReminderCustomDays] = useState<string>("");
+  const [reminderText, setReminderText] = useState("");
+  const [savingReject, setSavingReject] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
   const [viewCustomerId, setViewCustomerId] = useState<string | null>(null);
@@ -89,7 +97,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
     setLoading(true);
     let q = supabase
       .from("customers")
-      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
+      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,pos_venda_approved_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
       .eq("customer_origin", "igreen_sync")
       .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
 
@@ -160,6 +168,13 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
       pos_venda_manual: true,
       pos_venda_reason: target === "reprovado" ? (opts.reason ?? c.pos_venda_reason ?? null) : null,
     };
+    // Carimba a data de aprovação ao entrar em "aprovado" (marco da esteira
+    // 30/60/90/120). Em "reprovado" / "espera" o marco é zerado.
+    if (target === "aprovado") {
+      patch.pos_venda_approved_at = c.pos_venda_approved_at ?? new Date().toISOString();
+    } else if (target === "reprovado" || target === "espera") {
+      patch.pos_venda_approved_at = null;
+    }
     const { error } = await supabase.from("customers").update(patch).eq("id", c.id);
     if (error) { toast.error("Erro: " + error.message); return; }
     setCustomers((prev) => prev.map((x) => x.id === c.id ? { ...x, ...patch } : x));
@@ -169,11 +184,97 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
   async function resetAuto(c: PosVendaCustomer) {
     const { error } = await supabase
       .from("customers")
-      .update({ pos_venda_manual: false, pos_venda_stage: null, pos_venda_reason: null } as any)
+      .update({ pos_venda_manual: false, pos_venda_stage: null, pos_venda_reason: null, pos_venda_approved_at: null } as any)
       .eq("id", c.id);
     if (error) { toast.error("Erro: " + error.message); return; }
     toast.success("Voltou ao automático");
     load();
+  }
+
+  /**
+   * Abre o dialog de reprovação com estado limpo (motivo pré-preenchido com o
+   * existente, agendador zerado).
+   */
+  function openRejectDialog(c: PosVendaCustomer) {
+    setRejectDialog(c);
+    setRejectReason(c.pos_venda_reason || "");
+    setReminderEnabled(false);
+    setReminderDays("30");
+    setReminderCustomDays("");
+    setReminderText("");
+  }
+
+  /**
+   * Confirma a reprovação e, opcionalmente, agenda um lembrete automático.
+   * O lembrete reaproveita a infra existente (`scheduled_messages` +
+   * cron `send-scheduled-messages`), que já trata quiet-hours, anti-ban e retry.
+   */
+  async function confirmReject(c: PosVendaCustomer) {
+    setSavingReject(true);
+    try {
+      await moveTo(c, "reprovado", { reason: rejectReason || undefined });
+
+      if (reminderEnabled) {
+        const days = reminderDays === "custom"
+          ? parseInt(reminderCustomDays, 10)
+          : parseInt(reminderDays, 10);
+
+        if (!Number.isFinite(days) || days < 1 || days > 365) {
+          toast.error("Defina um prazo válido (1 a 365 dias) para o lembrete.");
+          setSavingReject(false);
+          return;
+        }
+        const text = reminderText.trim();
+        if (!text) {
+          toast.error("Escreva a mensagem do lembrete.");
+          setSavingReject(false);
+          return;
+        }
+
+        const phone = (c.phone_whatsapp || "").replace(/\D/g, "");
+        if (!phone) {
+          toast.error("Cliente sem telefone válido para agendar lembrete.");
+          setSavingReject(false);
+          return;
+        }
+
+        // Instância WhatsApp do consultor dono (necessária p/ scheduled_messages).
+        const ownerId = c.assigned_consultant_id || c.consultant_id;
+        const { data: inst } = await supabase
+          .from("whatsapp_instances")
+          .select("instance_name")
+          .eq("consultant_id", ownerId)
+          .maybeSingle();
+
+        if (!inst?.instance_name) {
+          toast.warning("Reprovado, mas não há instância WhatsApp do consultor para agendar o lembrete.");
+        } else {
+          const when = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+          const { error: schedErr } = await supabase.from("scheduled_messages").insert({
+            consultant_id: ownerId,
+            instance_name: inst.instance_name,
+            remote_jid: `${phone}@s.whatsapp.net`,
+            message_text: text,
+            scheduled_at: when.toISOString(),
+            source_step_id: null,
+          } as any);
+          if (schedErr) {
+            toast.error("Reprovado, mas falhou ao agendar lembrete: " + schedErr.message);
+          } else {
+            toast.success(`Lembrete agendado para daqui a ${days} dias.`);
+          }
+        }
+      }
+
+      setRejectDialog(null);
+      setRejectReason("");
+      setReminderEnabled(false);
+      setReminderDays("30");
+      setReminderCustomDays("");
+      setReminderText("");
+    } finally {
+      setSavingReject(false);
+    }
   }
 
   async function assignConsultant() {
@@ -246,7 +347,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                 if (!dragId) return;
                 const c = customers.find((x) => x.id === dragId);
                 if (!c) return;
-                if (stage.key === "reprovado") { setRejectDialog(c); setRejectReason(""); }
+                if (stage.key === "reprovado") { openRejectDialog(c); }
                 else moveTo(c, stage.key);
                 setDragId(null);
               }}
@@ -302,7 +403,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                                 <DropdownMenuItem onClick={() => moveTo(c, "aprovado")}>
                                   <CheckCircle2 className="w-3.5 h-3.5 mr-2" /> Marcar Aprovado
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setRejectDialog(c); setRejectReason(c.pos_venda_reason || ""); }}>
+                                <DropdownMenuItem onClick={() => { openRejectDialog(c); }}>
                                   <XCircle className="w-3.5 h-3.5 mr-2" /> Marcar Reprovado
                                 </DropdownMenuItem>
                                 {c.pos_venda_manual && (
@@ -387,7 +488,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
 
       {/* Reprovar */}
       <Dialog open={!!rejectDialog} onOpenChange={(o) => !o && setRejectDialog(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Marcar como Reprovado</DialogTitle>
             <DialogDescription>Motivo (opcional) ficará registrado no histórico do cliente.</DialogDescription>
@@ -397,16 +498,69 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
           />
+
+          {/* Agendamento de lembrete automático */}
+          <div className="rounded-lg border border-border/60 p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">Agendar lembrete automático</div>
+                <div className="text-xs text-muted-foreground">Envia uma mensagem ao cliente após o prazo escolhido.</div>
+              </div>
+              <Switch checked={reminderEnabled} onCheckedChange={setReminderEnabled} />
+            </div>
+
+            {reminderEnabled && (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Enviar em</label>
+                  <Select value={reminderDays} onValueChange={setReminderDays}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="30">30 dias</SelectItem>
+                      <SelectItem value="60">60 dias</SelectItem>
+                      <SelectItem value="90">90 dias</SelectItem>
+                      <SelectItem value="custom">Outro prazo…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {reminderDays === "custom" && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-muted-foreground">Quantos dias (1 a 365)</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={365}
+                      placeholder="Ex: 45"
+                      value={reminderCustomDays}
+                      onChange={(e) => setReminderCustomDays(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground">Mensagem do lembrete</label>
+                  <textarea
+                    placeholder="Olá! Passando para retomar seu cadastro na iGreen…"
+                    value={reminderText}
+                    onChange={(e) => setReminderText(e.target.value)}
+                    rows={3}
+                    className="w-full text-sm rounded-md border border-border/60 bg-secondary/30 p-2 resize-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectDialog(null)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setRejectDialog(null)} disabled={savingReject}>Cancelar</Button>
             <Button
               variant="destructive"
-              onClick={async () => {
-                if (rejectDialog) await moveTo(rejectDialog, "reprovado", { reason: rejectReason || undefined });
-                setRejectDialog(null); setRejectReason("");
-              }}
+              disabled={savingReject}
+              onClick={() => { if (rejectDialog) void confirmReject(rejectDialog); }}
             >
-              Confirmar reprovação
+              {savingReject ? "Salvando…" : "Confirmar reprovação"}
             </Button>
           </DialogFooter>
         </DialogContent>

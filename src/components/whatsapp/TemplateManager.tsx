@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Wand2, Mic2, Globe2, User, Plus } from "lucide-react";
-import type { MessageTemplate } from "@/types/whatsapp";
+import type { MessageTemplate, TemplateItem } from "@/types/whatsapp";
 import { TemplateCreateForm } from "./templates/TemplateCreateForm";
 import { TemplateListItem } from "./templates/TemplateListItem";
 import { TemplatePreviewDialog } from "./templates/TemplatePreviewDialog";
@@ -8,13 +8,16 @@ import { VoiceTemplatesPanel } from "./voice/VoiceTemplatesPanel";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 
 interface TemplateManagerProps {
   templates: MessageTemplate[];
   isLoading: boolean;
   consultantId: string;
-  onCreateTemplate: (name: string, content: string, mediaType?: string, mediaUrl?: string | null, imageUrl?: string | null) => Promise<void>;
-  onUpdateTemplate: (id: string, updates: { name?: string; image_url?: string | null; content?: string; media_url?: string | null; media_type?: string }) => Promise<void>;
+  onCreateTemplate: (name: string, content: string, mediaType?: string, mediaUrl?: string | null, imageUrl?: string | null, isPublic?: boolean, items?: TemplateItem[]) => Promise<void>;
+  onUpdateTemplate: (id: string, updates: { name?: string; image_url?: string | null; content?: string; media_url?: string | null; media_type?: string; is_quick_reply?: boolean; is_public?: boolean }, items?: TemplateItem[]) => Promise<void>;
   onDeleteTemplate: (id: string) => Promise<void>;
   onRefetch?: () => Promise<void> | void;
 }
@@ -141,38 +144,37 @@ export function TemplateManager({
               )}
 
               {scope === "meus" && (
-                <>
-                  {!showCreate ? (
-                    <Button
-                      type="button"
-                      onClick={() => setShowCreate(true)}
-                      className="w-full gap-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white border-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Criar meu template
-                    </Button>
-                  ) : (
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-medium text-emerald-300 flex items-center gap-2">
-                          <Plus className="w-4 h-4" /> Novo template pessoal
-                        </span>
-                        <Button size="sm" variant="ghost" onClick={() => setShowCreate(false)} className="h-7 text-xs">
-                          Cancelar
-                        </Button>
-                      </div>
-                      <TemplateCreateForm
-                        onCreateTemplate={async (...args) => {
-                          await onCreateTemplate(...args);
-                          setShowCreate(false);
-                        }}
-                      />
-                    </div>
-                  )}
-                </>
+                <Button
+                  type="button"
+                  onClick={() => setShowCreate(true)}
+                  className="w-full gap-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white border-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar meu template
+                </Button>
               )}
             </div>
             <TemplatePreviewDialog template={previewTemplate} onClose={() => setPreviewTemplate(null)} />
+
+            {/* Modal de criação — mesmo padrão do CRM (Dialog) */}
+            <Dialog open={showCreate} onOpenChange={setShowCreate}>
+              <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-emerald-400" /> Novo template
+                  </DialogTitle>
+                  <DialogDescription>
+                    Crie um modelo de mensagem com texto, áudio, imagem ou vídeo. Você escolhe se fica público ou privado.
+                  </DialogDescription>
+                </DialogHeader>
+                <TemplateCreateForm
+                  onCreateTemplate={async (...args) => {
+                    await onCreateTemplate(...args);
+                    setShowCreate(false);
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
           </div>
         </TabsContent>
 

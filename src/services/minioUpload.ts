@@ -3,6 +3,15 @@ import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("Media Upload");
 
+// Mesma fonte de verdade dos outros serviços (whapiApi/evolutionApi): usa a env
+// quando definida, senão o fallback hardcoded do projeto. Evita o bug de
+// `https://undefined.supabase.co` quando VITE_SUPABASE_PROJECT_ID não existe.
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo";
+
 export interface UploadResult {
   url: string;
   key: string;
@@ -51,16 +60,15 @@ export async function uploadMedia(
 
   const { data: { session } } = await supabase.auth.getSession();
 
-  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const url = `https://${projectId}.supabase.co/functions/v1/upload-media`;
+  const url = `${SUPABASE_URL}/functions/v1/upload-media`;
 
   onProgress?.(25);
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${session?.access_token || SUPABASE_PUBLISHABLE_KEY}`,
+      apikey: SUPABASE_PUBLISHABLE_KEY,
     },
     body: formData,
   });

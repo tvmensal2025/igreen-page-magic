@@ -138,6 +138,14 @@ const RTC_CONFIG: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
+/**
+ * Tempo de tolerância (ms) antes de encerrar quando a conexão entra em
+ * "disconnected". Redes Wi-Fi/4G oscilam por 2-5s com frequência; encerrar
+ * imediatamente forçaria reconexões desnecessárias. A spec do WebRTC trata
+ * "disconnected" como estado potencialmente transitório.
+ */
+const RECONNECT_GRACE_MS = 6_000;
+
 // ---------------------------------------------------------------------------
 // Canal de sinalização (Supabase Realtime Broadcast)
 // ---------------------------------------------------------------------------
@@ -152,7 +160,11 @@ export type SignalEvent =
 export function signalChannel(sessionId: string, role: "operator" | "requester") {
   const channelName = `support:${sessionId}:rtc`;
   const channel = supabase.channel(channelName, {
-    config: { broadcast: { self: false, ack: true } },
+    // Canal privado: a entrada é autorizada por RLS em `realtime.messages`,
+    // garantindo que apenas participantes da sessão (requester/operator/super
+    // admin) possam enviar/receber a sinalização WebRTC. Evita MITM/injeção
+    // de ICE por terceiros que descubram o sessionId.
+    config: { private: true, broadcast: { self: false, ack: true } },
   });
 
   const subscribed = new Promise<void>((resolve, reject) => {
@@ -184,7 +196,49 @@ export function signalChannel(sessionId: string, role: "operator" | "requester")
 }
 
 // ---------------------------------------------------------------------------
-// ICE candidate buffer — evita addIceCandidate antes de setRemoteDescription
+// DataChannel — envio seguro com backpressure
+// ---------------------------------------------------------------------------
+
+/**
+ * Limite de buffer do DataChannel acima do qual paramos de enfileirar
+ * mensagens não-críticas (mouseMove/wheel). Evita explosão de latência
+ * em redes lentas (4G, Wi-Fi fraco).
+ *
+ * 256 KB é o threshold recomendado pela spec do WebRTC para considerar
+ * o canal "congestionado".
+ */
+export const DC_BUFFER_THRESHOLD = 256 * 1024;
+
+/**
+ * Envia uma mensagem pelo DataChannel respeitando backpressure.
+ *
+ * - Mensagens críticas (clicks, teclas) sempre são enviadas.
+ * - Mensagens descartáveis (mouseMove, wheel) são puladas quando o buffer
+ *   está congestionado, evitando acúmulo de latência.
+ *
+ * @returns true se enviou, false se descartou por backpressure ou canal fechado.
+ */
+export function safeSend(
+  dc: RTCDataChannel | null,
+  message: string,
+  options?: { droppable?: boolean },
+): boolean {
+  if (!dc || dc.readyState !== "open") return false;
+
+  // Se está congestionado e a mensagem é descartável, pula
+  if (options?.droppable && dc.bufferedAmount > DC_BUFFER_THRESHOLD) {
+    return false;
+  }
+
+  try {
+    dc.send(message);
+    return true;
+  } catch (e) {
+    console.warn("[rtc] safeSend failed:", e);
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 
 function makeIceBuffer(pc: RTCPeerConnection) {
@@ -252,18 +306,40 @@ export async function createOperatorPeer(
   };
 
   // --- Estado da conexão ---
+  // Operador: trata "disconnected" como transitório (grace period) e tenta
+  // ICE restart em "failed" antes de reportar falha definitiva.
+  let opDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearOpDisconnectTimer = () => {
+    if (opDisconnectTimer !== null) { clearTimeout(opDisconnectTimer); opDisconnectTimer = null; }
+  };
+
   pc.onconnectionstatechange = () => {
     const s = pc.connectionState;
-    if (s === "connected") onStage?.("connected");
-    else if (s === "failed") onStage?.("failed", "connectionState=failed");
-    else if (s === "closed") onStage?.("closed");
+    if (s === "connected") {
+      clearOpDisconnectTimer();
+      onStage?.("connected");
+    } else if (s === "disconnected") {
+      onStage?.("ice-checking", "disconnected (aguardando reconexão)");
+      clearOpDisconnectTimer();
+      opDisconnectTimer = setTimeout(() => {
+        if (pc.connectionState === "disconnected") {
+          onStage?.("failed", "disconnected timeout");
+        }
+      }, RECONNECT_GRACE_MS);
+    } else if (s === "failed") {
+      clearOpDisconnectTimer();
+      onStage?.("failed", "connectionState=failed");
+    } else if (s === "closed") {
+      clearOpDisconnectTimer();
+      onStage?.("closed");
+    }
   };
 
   pc.oniceconnectionstatechange = () => {
     if (pc.iceConnectionState === "checking") onStage?.("ice-checking");
     if (pc.iceConnectionState === "failed") {
-      // ICE restart automático
-      pc.restartIce();
+      // ICE restart automático (spec W3C)
+      try { pc.restartIce(); } catch { /* ignora */ }
     }
   };
 
@@ -405,17 +481,48 @@ export async function createRequesterPeer(
   };
 
   // --- Estado da conexão ---
+  // Trata "disconnected" como TRANSITÓRIO (comum em Wi-Fi/4G que oscila):
+  // aguarda um grace period antes de encerrar. Só "failed"/"closed" encerram.
+  let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearDisconnectTimer = () => {
+    if (disconnectTimer !== null) { clearTimeout(disconnectTimer); disconnectTimer = null; }
+  };
+
   pc.onconnectionstatechange = () => {
     const s = pc.connectionState;
-    if (s === "connected") onStage?.("connected");
-    if (s === "failed" || s === "closed" || s === "disconnected") {
-      onStage?.(s === "failed" ? "failed" : "closed", `connectionState=${s}`);
+    if (s === "connected") {
+      clearDisconnectTimer();
+      onStage?.("connected");
+    } else if (s === "disconnected") {
+      // Oscilação de rede — aguarda RECONNECT_GRACE_MS antes de desistir.
+      onStage?.("ice-checking", "disconnected (aguardando reconexão)");
+      clearDisconnectTimer();
+      disconnectTimer = setTimeout(() => {
+        if (pc.connectionState === "disconnected") {
+          onStage?.("failed", "disconnected timeout");
+          onClose();
+        }
+      }, RECONNECT_GRACE_MS);
+    } else if (s === "failed") {
+      clearDisconnectTimer();
+      // Tenta ICE restart antes de desistir (spec W3C)
+      try { pc.restartIce(); } catch { /* ignora */ }
+      onStage?.("failed", "connectionState=failed");
+      onClose();
+    } else if (s === "closed") {
+      clearDisconnectTimer();
+      onStage?.("closed", "connectionState=closed");
       onClose();
     }
   };
 
   pc.oniceconnectionstatechange = () => {
     if (pc.iceConnectionState === "checking") onStage?.("ice-checking");
+    if (pc.iceConnectionState === "failed") {
+      // ICE restart automático (spec W3C: recomendado em failed)
+      try { pc.restartIce(); } catch { /* ignora */ }
+    }
   };
 
   stream.getTracks().forEach(t => {

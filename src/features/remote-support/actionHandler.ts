@@ -588,11 +588,6 @@ export async function executeCommand(
         return { id: cmd.id, ok: true, data: { level } };
       }
 
-      // --- Não implementado ---
-      case "openTab":
-      case "closeTab":
-        throw new Error("Requer extensão do browser v1.5+");
-
       default: {
         const exhaustive: never = cmd.kind;
         throw new Error(`Comando desconhecido: ${exhaustive}`);

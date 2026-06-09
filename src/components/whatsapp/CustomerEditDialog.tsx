@@ -15,7 +15,7 @@ import type { Customer } from "./customerUtils";
 
 function SectionLabel({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
   return (
-    <div className="flex items-center gap-2 col-span-2 mt-2 mb-1">
+    <div className="flex items-center gap-2 col-span-1 sm:col-span-2 mt-2 mb-1">
       <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center">
         <Icon className="h-3 w-3 text-primary" />
       </div>
@@ -30,6 +30,24 @@ interface CustomerEditDialogProps {
   onClose: () => void;
   onSaved: () => void;
 }
+
+/**
+ * Status possíveis de um cliente. Espelha os valores reais existentes na
+ * tabela `customers`. Mantém "Reprovado" (rejected) e "Devolutiva" explícitos
+ * para que o admin consiga corrigir um cliente que veio marcado como aprovado
+ * mas na verdade foi reprovado.
+ */
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "lead", label: "Lead" },
+  { value: "pending", label: "Pendente" },
+  { value: "contato_incompleto", label: "Contato incompleto" },
+  { value: "awaiting_otp", label: "Aguardando OTP" },
+  { value: "awaiting_signature", label: "Aguardando assinatura" },
+  { value: "approved", label: "✅ Aprovado" },
+  { value: "devolutiva", label: "⚠️ Devolutiva" },
+  { value: "rejected", label: "❌ Reprovado" },
+  { value: "automation_failed", label: "Falha na automação" },
+];
 
 export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditDialogProps) {
   const { toast } = useToast();
@@ -90,6 +108,21 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
       updateData.numero_instalacao = editForm.numero_instalacao || null;
       updateData.electricity_bill_value = editForm.electricity_bill_value ? parseFloat(editForm.electricity_bill_value) : null;
       updateData.status = editForm.status || "pending";
+      // Sincroniza o pós-venda quando o admin aprova/reprova pelo popup.
+      // - Aprovado: carimba a data de aprovação (marco da esteira 30/60/90/120),
+      //   se ainda não houver, e marca como classificação manual.
+      // - Reprovado: move o pós-venda para reprovado e zera o marco.
+      if (editForm.status === "approved") {
+        (updateData as any).pos_venda_stage = "aprovado";
+        (updateData as any).pos_venda_manual = true;
+        if (!(customer as any).pos_venda_approved_at) {
+          (updateData as any).pos_venda_approved_at = new Date().toISOString();
+        }
+      } else if (editForm.status === "rejected") {
+        (updateData as any).pos_venda_stage = "reprovado";
+        (updateData as any).pos_venda_manual = true;
+        (updateData as any).pos_venda_approved_at = null;
+      }
       (updateData as any).tipo_produto = editForm.tipo_produto || "energia";
       (updateData as any).customer_referred_by_name = editForm.customer_referred_by_name || null;
       (updateData as any).customer_referred_by_phone = editForm.customer_referred_by_phone || null;
@@ -108,11 +141,12 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
 
   return (
     <Dialog open={!!customer} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl w-[calc(100vw-1.5rem)] max-h-[90dvh] p-0 gap-0 flex flex-col overflow-hidden">
+        <DialogHeader className="px-5 py-4 border-b border-border shrink-0">
           <DialogTitle className="text-base font-bold">Editar Cliente</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 mt-2">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <SectionLabel icon={User} title="Dados Pessoais" />
           <div>
             <Label className="text-[11px] text-muted-foreground">Nome</Label>
@@ -137,10 +171,9 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
           <div>
             <Label className="text-[11px] text-muted-foreground">Status</Label>
             <select value={editForm.status || "pending"} onChange={(e) => updateEdit("status", e.target.value)} className="h-9 text-xs mt-1 w-full bg-secondary/30 border border-border/50 rounded-md px-2">
-              <option value="pending">Pendente</option>
-              <option value="approved">Aprovado</option>
-              <option value="rejected">Reprovado</option>
-              <option value="lead">Lead</option>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -206,7 +239,7 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
           </div>
 
           <SectionLabel icon={ShieldCheck} title="Status do Cadastro (Portal)" />
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <Label className="text-[11px] text-muted-foreground">Etapa atual</Label>
             <Input
               value={(customer as any)?.conversation_step || "—"}
@@ -230,7 +263,7 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
               className="h-9 text-xs mt-1 bg-secondary/20 border-border/40"
             />
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <Label className="text-[11px] text-muted-foreground">Link Validação Facial</Label>
             <Input
               value={(customer as any)?.link_facial || (customer as any)?.link_assinatura || "—"}
@@ -238,7 +271,7 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
               className="h-9 text-xs mt-1 bg-secondary/20 border-border/40"
             />
           </div>
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <Label className="text-[11px] text-muted-foreground">Facial confirmada em</Label>
             <Input
               value={(customer as any)?.facial_confirmed_at ? new Date((customer as any).facial_confirmed_at).toLocaleString("pt-BR") : "—"}
@@ -247,8 +280,9 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
             />
           </div>
         </div>
+        </div>
 
-        <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-border">
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-border shrink-0 bg-background">
           <Button variant="outline" size="sm" className="h-9 text-xs px-4 gap-1" onClick={onClose}>
             <X className="h-3 w-3" /> Cancelar
           </Button>

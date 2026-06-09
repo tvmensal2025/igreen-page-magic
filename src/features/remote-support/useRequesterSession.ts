@@ -179,7 +179,9 @@ export function useRequesterSession(userId: string | null | undefined) {
   useEffect(() => {
     if (!session?.id) return;
 
-    const ch = supabase.channel(`support:${session.id}:code`);
+    const ch = supabase.channel(`support:${session.id}:code`, {
+      config: { private: true },
+    });
     ch
       .on("broadcast", { event: "new_code" }, ({ payload }) => {
         if (!payload?.code) return;

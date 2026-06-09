@@ -393,7 +393,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                 templates={templates}
                 isLoading={templatesLoading}
                 consultantId={userId}
-                onCreateTemplate={(name, content, mediaType, mediaUrl, imageUrl) => createTemplate(name, content, mediaType, mediaUrl, imageUrl)}
+                onCreateTemplate={createTemplate}
                 onUpdateTemplate={updateTemplate}
                 onDeleteTemplate={deleteTemplate}
                 onRefetch={refetchTemplates}

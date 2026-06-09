@@ -4847,6 +4847,50 @@ export type Database = {
           },
         ]
       }
+      template_items: {
+        Row: {
+          created_at: string
+          delay_seconds: number
+          id: string
+          image_url: string | null
+          media_url: string | null
+          message_text: string | null
+          message_type: string
+          position: number
+          template_id: string
+        }
+        Insert: {
+          created_at?: string
+          delay_seconds?: number
+          id?: string
+          image_url?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          message_type?: string
+          position?: number
+          template_id: string
+        }
+        Update: {
+          created_at?: string
+          delay_seconds?: number
+          id?: string
+          image_url?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          message_type?: string
+          position?: number
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_items_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       network_members: {
         Row: {
           bonificavel: number | null
