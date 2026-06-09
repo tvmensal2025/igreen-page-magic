@@ -8,6 +8,7 @@ import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2,
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
