@@ -15,6 +15,14 @@
 //   });
 // =============================================================================
 
+// Origens de produção sempre liberadas, mesmo que `ALLOWED_ORIGINS` não esteja
+// definida no ambiente. Evita que o portal pare de funcionar caso a env não
+// tenha sido configurada (foi exatamente o que quebrou o suporte remoto).
+const PROD_ORIGINS = [
+  "https://igreen.cloud",
+  "https://www.igreen.cloud",
+];
+
 /** Origens liberadas em desenvolvimento quando `ALLOWED_ORIGINS` não está setada. */
 const DEV_FALLBACK_ORIGINS = [
   "http://localhost:5173",
@@ -27,7 +35,9 @@ const BASE_ALLOW_HEADERS = "authorization, x-client-info, apikey, content-type";
 function allowedOrigins(): string[] {
   const raw = Deno.env.get("ALLOWED_ORIGINS") ?? "";
   const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  return list.length > 0 ? list : DEV_FALLBACK_ORIGINS;
+  // Produção é sempre permitida; soma-se ao que vier da env (sem duplicar) e,
+  // em dev, também libera localhost.
+  return Array.from(new Set([...PROD_ORIGINS, ...list, ...DEV_FALLBACK_ORIGINS]));
 }
 
 /**
