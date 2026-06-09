@@ -127,7 +127,7 @@ export default function CreateFlowFromTemplateDialog({
 
   // Step 1: identidade
   const [flowName, setFlowName] = useState("");
-  const [variant, setVariant] = useState<"A" | "B" | "C" | "D">(
+  const [variant, setVariant] = useState<string>(
     defaultVariant === "E" ? "A" : (defaultVariant || "A"),
   );
 
