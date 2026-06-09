@@ -24,7 +24,7 @@ interface Props {
   step: Step | null;
   steps: Step[];
   consultantId: string;
-  variant: "A" | "B" | "C" | "D" | "E";
+  variant: Variant;
   flowId?: string | null;
   maxPosition?: number;
   /** Aba aberta ao montar o inspetor. Default "conteudo". */
