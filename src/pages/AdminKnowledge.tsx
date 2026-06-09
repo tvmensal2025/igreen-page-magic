@@ -10,7 +10,7 @@ import FaqSection from "@/components/admin/fluxo/FaqSection";
 import AdminFaq from "./AdminFaq";
 import EmbeddingsControl from "@/components/admin/knowledge/EmbeddingsControl";
 
-export default function AdminKnowledge() {
+export default function AdminKnowledge({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "ia" ? "ia" : "atalhos";
