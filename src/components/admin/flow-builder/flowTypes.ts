@@ -131,13 +131,20 @@ export const STEP_TYPE_OPTIONS: { value: string; label: string; emoji: string; h
   { value: "finalizar_cadastro", emoji: "🎉", label: "Finalizar cadastro", hint: "Envia ao portal, trata OTP e parabeniza." },
 ];
 
-export const VARIANT_LABEL: Record<Variant, string> = {
+const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
   A: "Fluxo A (com áudio)",
   B: "Fluxo B (IA livre)",
   C: "Fluxo C (vídeo inicial)",
   D: "Fluxo D (padrão Camila)",
   E: "Fluxo E (personalizado)",
 };
+export const VARIANT_LABEL: Record<Variant, string> = ALL_VARIANTS.reduce(
+  (acc, v) => {
+    acc[v] = VARIANT_LABEL_OVERRIDES[v] ?? `Fluxo ${v}`;
+    return acc;
+  },
+  {} as Record<Variant, string>,
+);
 
 
 // Presets de botões prontos para arrastar/clicar
