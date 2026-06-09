@@ -29,9 +29,11 @@ interface MediaItem {
   label: string | null;
   url: string | null;
   is_public: boolean | null;
+  source?: "library" | "template_public" | "template_mine";
 }
 
 type Slot = "text" | "audio" | "image" | "video";
+
 const DEFAULT_ORDER: Slot[] = ["text", "audio", "image", "video"];
 
 interface StageConfig {
