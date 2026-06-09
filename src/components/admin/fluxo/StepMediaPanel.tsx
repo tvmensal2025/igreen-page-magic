@@ -68,7 +68,7 @@ interface Props {
   defaultOrder?: ("audio" | "image" | "video" | "text")[];
   initialOrder?: ("audio" | "image" | "video" | "text")[];
   onOrderChange?: (order: ("audio" | "image" | "video" | "text")[]) => void;
-  variant?: "A" | "B" | "C" | "D" | "E";
+  variant?: string;
 }
 
 const DEFAULT_ORDER: ("audio" | "image" | "video" | "text")[] = ["audio", "image", "video", "text"];
