@@ -41,7 +41,7 @@ export function BotTelemetryStrip({ userId }: { userId: string }) {
   if (loading || (counts.requested + counts.confirmed + counts.rejected === 0)) return null;
 
   const items = [
-    { label: "Trocas pedidas", value: counts.requested, icon: ArrowRightLeft, color: "text-amber-500" },
+    { label: "Trocas pedidas", value: counts.requested, icon: ArrowRightLeft, color: "text-warning" },
     { label: "Confirmadas", value: counts.confirmed, icon: CheckCircle2, color: "text-primary" },
     { label: "Recusadas", value: counts.rejected, icon: XCircle, color: "text-muted-foreground" },
   ];

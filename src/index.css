@@ -17,128 +17,147 @@ html {
 @layer base {
   /* ═══════════════ LIGHT THEME ═══════════════ */
   :root, .light {
-    --background: 0 0% 97%;
-    --foreground: 220 15% 15%;
+    /* ═══ Paleta oficial iGreen (verde #00A859 / #007A3D) ═══ */
+    --background: 152 16% 97%;        /* cinza de fundo #F7F9F8 */
+    --foreground: 215 28% 17%;        /* texto principal #1F2937 */
 
-    --card: 0 0% 100%;
-    --card-foreground: 220 15% 15%;
+    --card: 0 0% 100%;                /* branco */
+    --card-foreground: 215 28% 17%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 15%;
+    --popover-foreground: 215 28% 17%;
 
-    --primary: 130 100% 32%;
+    --primary: 152 100% 33%;          /* verde iGreen #00A859 */
     --primary-foreground: 0 0% 100%;
+    --primary-text: 150 100% 24%;     /* verde escuro #007A3D — p/ texto verde sobre fundo claro (AA) */
 
-    --secondary: 220 10% 94%;
-    --secondary-foreground: 220 15% 15%;
+    --secondary: 152 14% 94%;
+    --secondary-foreground: 215 28% 17%;
 
-    --muted: 220 10% 92%;
-    --muted-foreground: 220 10% 45%;
+    --muted: 150 12% 93%;
+    --muted-foreground: 220 9% 46%;   /* texto secundário #6B7280 */
 
-    --accent: 30 100% 50%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 152 55% 94%;            /* verde claro de apoio #E8F8EF */
+    --accent-foreground: 150 100% 22%;/* verde escuro #007A3D */
 
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 72% 51%;         /* erro #DC2626 */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 90%;
-    --input: 220 15% 90%;
-    --ring: 130 100% 32%;
+    --border: 220 13% 91%;            /* cinza de borda #E5E7EB */
+    --input: 220 13% 91%;
+    --ring: 152 100% 33%;
+
+    /* Cores semânticas de estado */
+    --success: 152 100% 33%;          /* #00A859 */
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;            /* #F59E0B */
+    --warning-foreground: 0 0% 100%;
+    --info: 221 83% 53%;              /* #2563EB */
+    --info-foreground: 0 0% 100%;
 
     --radius: 0.75rem;
 
-    --gradient-green: linear-gradient(135deg, hsl(130, 100%, 32%), hsl(160, 90%, 36%));
-    --gradient-green-vibrant: linear-gradient(135deg, hsl(130, 100%, 36%), hsl(85, 80%, 50%));
-    --gradient-dark: linear-gradient(180deg, hsl(0, 0%, 97%), hsl(220, 10%, 94%));
-    --gradient-hero: linear-gradient(180deg, hsl(0, 0%, 97%) 0%, hsl(220, 15%, 95%) 50%, hsl(0, 0%, 97%) 100%);
-    --gradient-section-alt: linear-gradient(180deg, hsl(220, 10%, 96%), hsl(220, 10%, 93%));
-    --shadow-green: 0 0 30px hsl(130 100% 36% / 0.15);
-    --shadow-green-lg: 0 0 60px hsl(130 100% 36% / 0.12), 0 0 120px hsl(130 100% 36% / 0.05);
+    --gradient-green: linear-gradient(135deg, hsl(152, 100%, 33%), hsl(150, 100%, 28%));
+    --gradient-green-vibrant: linear-gradient(135deg, hsl(152, 100%, 36%), hsl(150, 100%, 30%));
+    --gradient-dark: linear-gradient(180deg, hsl(152, 16%, 97%), hsl(150, 14%, 94%));
+    --gradient-hero: linear-gradient(180deg, hsl(152, 16%, 97%) 0%, hsl(150, 14%, 95%) 50%, hsl(152, 16%, 97%) 100%);
+    --gradient-section-alt: linear-gradient(180deg, hsl(150, 14%, 96%), hsl(150, 14%, 93%));
+    --shadow-green: 0 0 30px hsl(152 100% 36% / 0.15);
+    --shadow-green-lg: 0 0 60px hsl(152 100% 36% / 0.12), 0 0 120px hsl(152 100% 36% / 0.05);
     --shadow-card: 0 1px 3px hsl(0 0% 0% / 0.06), 0 4px 12px hsl(0 0% 0% / 0.04);
-    --shadow-card-hover: 0 8px 30px hsl(0 0% 0% / 0.08), 0 0 20px hsl(130 100% 36% / 0.04);
+    --shadow-card-hover: 0 8px 30px hsl(0 0% 0% / 0.08), 0 0 20px hsl(152 100% 36% / 0.04);
 
     --glass-bg: 0 0% 100% / 0.7;
-    --glass-border: 220 15% 90%;
-    --chart-grid: hsl(220, 10%, 88%);
-    --chart-text: hsl(220, 10%, 45%);
+    --glass-border: 220 13% 91%;
+    --chart-grid: hsl(220, 13%, 88%);
+    --chart-text: hsl(220, 9%, 46%);
     --chart-tooltip-bg: hsl(0, 0%, 100%);
-    --chart-tooltip-border: hsl(220, 15%, 90%);
-    --chart-tooltip-text: hsl(220, 15%, 15%);
+    --chart-tooltip-border: hsl(220, 13%, 91%);
+    --chart-tooltip-text: hsl(215, 28%, 17%);
 
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Open Sans', sans-serif;
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 215 28% 17%;
+    --sidebar-primary: 150 100% 22%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 152 55% 94%;
+    --sidebar-accent-foreground: 150 100% 22%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-ring: 152 100% 33%;
   }
 
   /* ═══════════════ DARK THEME ═══════════════ */
   .dark {
-    --background: 120 10% 4%;
-    --foreground: 0 0% 95%;
+    /* ═══ Modo escuro oficial iGreen (preto #111111 / #1A1A1A) ═══ */
+    --background: 0 0% 7%;            /* #111111 */
+    --foreground: 0 0% 100%;          /* #FFFFFF */
 
-    --card: 120 8% 8%;
-    --card-foreground: 0 0% 95%;
+    --card: 0 0% 10%;                 /* #1A1A1A */
+    --card-foreground: 0 0% 100%;
 
-    --popover: 120 8% 8%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 100%;
 
-    --primary: 130 100% 36%;
+    --primary: 152 100% 33%;          /* verde iGreen #00A859 */
     --primary-foreground: 0 0% 100%;
+    --primary-text: 152 90% 60%;      /* verde claro p/ texto sobre fundo escuro (AA) */
 
-    --secondary: 120 8% 12%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 0 0% 13%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 120 5% 15%;
-    --muted-foreground: 120 5% 65%;
+    --muted: 0 0% 16%;                /* #2A2A2A */
+    --muted-foreground: 220 13% 84%;  /* texto secundário #D1D5DB */
 
-    --accent: 30 100% 50%;
+    --accent: 0 0% 16%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;         /* erro #DC2626 */
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 120 8% 18%;
-    --input: 120 8% 18%;
-    --ring: 130 100% 36%;
+    --border: 0 0% 16%;               /* #2A2A2A */
+    --input: 0 0% 16%;
+    --ring: 152 100% 33%;
+
+    --success: 152 100% 33%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
+    --info: 221 83% 53%;
+    --info-foreground: 0 0% 100%;
 
     --radius: 0.75rem;
 
-    --gradient-green: linear-gradient(135deg, hsl(130, 100%, 36%), hsl(160, 90%, 40%));
-    --gradient-green-vibrant: linear-gradient(135deg, hsl(130, 100%, 36%), hsl(85, 80%, 50%));
-    --gradient-dark: linear-gradient(180deg, hsl(120, 10%, 4%), hsl(120, 15%, 8%));
-    --gradient-hero: linear-gradient(180deg, hsl(120, 15%, 6%) 0%, hsl(130, 20%, 4%) 50%, hsl(120, 10%, 4%) 100%);
-    --gradient-section-alt: linear-gradient(180deg, hsl(120, 8%, 10%), hsl(120, 10%, 6%));
-    --shadow-green: 0 0 30px hsl(130 100% 36% / 0.3);
-    --shadow-green-lg: 0 0 60px hsl(130 100% 36% / 0.25), 0 0 120px hsl(130 100% 36% / 0.1);
+    --gradient-green: linear-gradient(135deg, hsl(152, 100%, 33%), hsl(150, 100%, 28%));
+    --gradient-green-vibrant: linear-gradient(135deg, hsl(152, 100%, 36%), hsl(150, 100%, 30%));
+    --gradient-dark: linear-gradient(180deg, hsl(0, 0%, 7%), hsl(0, 0%, 10%));
+    --gradient-hero: linear-gradient(180deg, hsl(0, 0%, 10%) 0%, hsl(0, 0%, 7%) 50%, hsl(0, 0%, 7%) 100%);
+    --gradient-section-alt: linear-gradient(180deg, hsl(0, 0%, 10%), hsl(0, 0%, 7%));
+    --shadow-green: 0 0 30px hsl(152 100% 36% / 0.3);
+    --shadow-green-lg: 0 0 60px hsl(152 100% 36% / 0.25), 0 0 120px hsl(152 100% 36% / 0.1);
     --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.3), 0 8px 24px hsl(0 0% 0% / 0.35);
-    --shadow-card-hover: 0 1px 2px hsl(0 0% 0% / 0.3), 0 16px 50px hsl(0 0% 0% / 0.5), 0 0 40px hsl(130 100% 36% / 0.1);
+    --shadow-card-hover: 0 1px 2px hsl(0 0% 0% / 0.3), 0 16px 50px hsl(0 0% 0% / 0.5), 0 0 40px hsl(152 100% 36% / 0.1);
 
-    --glass-bg: 120 8% 8% / 0.6;
-    --glass-border: 120 8% 18%;
-    --chart-grid: hsl(120, 8%, 18%);
-    --chart-text: hsl(120, 5%, 65%);
-    --chart-tooltip-bg: hsl(120, 8%, 8%);
-    --chart-tooltip-border: hsl(120, 8%, 18%);
-    --chart-tooltip-text: hsl(0, 0%, 95%);
+    --glass-bg: 0 0% 10% / 0.6;
+    --glass-border: 0 0% 16%;
+    --chart-grid: hsl(0, 0%, 16%);
+    --chart-text: hsl(220, 13%, 84%);
+    --chart-tooltip-bg: hsl(0, 0%, 10%);
+    --chart-tooltip-border: hsl(0, 0%, 16%);
+    --chart-tooltip-text: hsl(0, 0%, 100%);
 
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Open Sans', sans-serif;
 
-    --sidebar-background: 120 8% 6%;
+    --sidebar-background: 0 0% 7%;
     --sidebar-foreground: 0 0% 90%;
-    --sidebar-primary: 130 100% 36%;
+    --sidebar-primary: 152 100% 33%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 120 8% 12%;
+    --sidebar-accent: 0 0% 13%;
     --sidebar-accent-foreground: 0 0% 90%;
-    --sidebar-border: 120 8% 18%;
-    --sidebar-ring: 130 100% 36%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 152 100% 33%;
   }
 }
 
@@ -171,7 +190,7 @@ html {
   /* Eyebrow/kicker acima dos títulos — pequeno, espaçado, premium */
   .section-eyebrow {
     @apply inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em];
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-text));
     font-family: var(--font-heading);
   }
 
@@ -224,7 +243,7 @@ html {
 
   .btn-cta-lg:hover {
     transform: translateY(-2px);
-    box-shadow: 0 0 80px hsl(130 100% 36% / 0.4), 0 0 160px hsl(130 100% 36% / 0.15);
+    box-shadow: 0 0 80px hsl(152 100% 36% / 0.4), 0 0 160px hsl(152 100% 36% / 0.15);
   }
 
   .btn-whatsapp {
@@ -249,7 +268,7 @@ html {
   .green-divider-glow {
     @apply w-full h-1 relative;
     background: var(--gradient-green);
-    box-shadow: 0 0 20px hsl(130 100% 36% / 0.4), 0 0 40px hsl(130 100% 36% / 0.2);
+    box-shadow: 0 0 20px hsl(152 100% 36% / 0.4), 0 0 40px hsl(152 100% 36% / 0.2);
   }
 
   .benefit-item {
@@ -311,7 +330,7 @@ html {
   .badge-green {
     @apply inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-[0.14em];
     background: hsl(var(--primary) / 0.1);
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-text));
     border: 1px solid hsl(var(--primary) / 0.25);
     font-family: var(--font-heading);
   }
@@ -348,7 +367,7 @@ html {
   .glow-dot {
     @apply w-3 h-3 rounded-full;
     background: hsl(var(--primary));
-    box-shadow: 0 0 10px hsl(130 100% 36% / 0.6);
+    box-shadow: 0 0 10px hsl(152 100% 36% / 0.6);
   }
 
   /* Product number badge */
@@ -752,8 +771,8 @@ html {
   --ads-surface-2: 45 45% 98%;     /* warm white */
   --ads-border:    158 25% 82%;
   --ads-border-strong: 158 30% 65%;
-  --ads-emerald:   162 75% 28%;    /* deep emerald for accents on light */
-  --ads-emerald-2: 162 85% 18%;    /* darkest emerald for headings */
+  --ads-emerald:   152 100% 26%;    /* verde iGreen para destaques */
+  --ads-emerald-2: 150 100% 17%;    /* verde escuro p/ títulos */
   --ads-gold:      40  72% 42%;    /* rich gold, readable on white */
   --ads-gold-soft: 40  60% 55%;
   --ads-cream:     45  60% 92%;

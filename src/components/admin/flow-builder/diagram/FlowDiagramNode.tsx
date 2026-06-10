@@ -215,7 +215,7 @@ function FlowDiagramNodeImpl({ data, selected }: NodeProps<FlowDiagramNodeType>)
         // Realce de match na busca (R19) — anel âmbar mais forte e
         // box-shadow para destacar contra o fundo, visível em ambos os temas.
         searchState === "match" &&
-          "ring-2 ring-amber-500 shadow-[0_0_0_4px_hsl(38_92%_50%_/_0.15)]",
+          "ring-2 ring-warning shadow-[0_0_0_4px_hsl(38_92%_50%_/_0.15)]",
       )}
     >
       {/* Barra colorida lateral por step_type — reforço visual rápido do tipo. */}
@@ -293,7 +293,7 @@ function FlowDiagramNodeImpl({ data, selected }: NodeProps<FlowDiagramNodeType>)
               <TooltipTrigger asChild>
                 <Badge
                   variant="secondary"
-                  className="h-5 cursor-help gap-1 bg-purple-500/15 text-[10px] text-purple-600 dark:text-purple-300"
+                  className="h-5 cursor-help gap-1 bg-primary/15 text-[10px] text-primary dark:text-primary"
                   // `tabIndex` no Badge para tornar o tooltip acessível por foco.
                   tabIndex={0}
                   aria-label="Passo IA livre · Gemini"
@@ -323,7 +323,7 @@ function FlowDiagramNodeImpl({ data, selected }: NodeProps<FlowDiagramNodeType>)
               className={cn(
                 "h-5 gap-1 text-[10px]",
                 on
-                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                  ? "bg-primary/15 text-primary dark:text-primary"
                   : "bg-muted text-muted-foreground",
               )}
               aria-label={
@@ -384,8 +384,8 @@ function FlowDiagramNodeImpl({ data, selected }: NodeProps<FlowDiagramNodeType>)
                 metrics.abandonmentPct >= 50
                   ? "bg-destructive/10 text-destructive"
                   : metrics.abandonmentPct >= 25
-                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                    : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+                    ? "bg-warning/15 text-warning dark:text-warning"
+                    : "bg-primary/15 text-primary dark:text-primary",
               )}
               aria-label={`Taxa de abandono: ${metrics.abandonmentPct.toFixed(1)} por cento`}
               title="Taxa de abandono nos últimos 30 dias"
@@ -400,9 +400,9 @@ function FlowDiagramNodeImpl({ data, selected }: NodeProps<FlowDiagramNodeType>)
                 typeof metrics.avgConfidence !== "number"
                   ? "bg-muted text-muted-foreground"
                   : metrics.avgConfidence >= 0.8
-                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                    ? "bg-primary/15 text-primary dark:text-primary"
                     : metrics.avgConfidence >= 0.5
-                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                      ? "bg-warning/15 text-warning dark:text-warning"
                       : "bg-destructive/10 text-destructive",
               )}
               aria-label={
@@ -435,7 +435,7 @@ function FlowDiagramNodeImpl({ data, selected }: NodeProps<FlowDiagramNodeType>)
         <div className="relative mt-2 space-y-1 border-t border-border/60 pt-2">
           {/* Aviso quando há mais de 3 botões (R7.2). */}
           {buttonCount > 3 && (
-            <div className="flex items-start gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-700 dark:text-amber-400">
+            <div className="flex items-start gap-1 rounded-md bg-warning/10 px-2 py-1 text-[10px] text-warning dark:text-warning">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
               <span>
                 Mais de 3 botões — runtime usa apenas os 3 primeiros
@@ -501,7 +501,7 @@ function FlowDiagramNodeImpl({ data, selected }: NodeProps<FlowDiagramNodeType>)
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <AlertTriangle
-                          className="h-3 w-3 shrink-0 text-amber-600 dark:text-amber-400"
+                          className="h-3 w-3 shrink-0 text-warning dark:text-warning"
                           aria-label={`Botão "${b.title}" tem múltiplos destinos — runtime usa o primeiro`}
                           tabIndex={0}
                         />

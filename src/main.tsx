@@ -84,11 +84,18 @@ const inIframe = (() => {
   try { return window.self !== window.top; } catch { return true; }
 })();
 const host = typeof window !== "undefined" ? window.location.hostname : "";
+// Considera "preview/dev" (NÃO registra Service Worker) quando:
+// - host do Lovable/preview
+// - localhost / 127.0.0.1
+// - acesso direto por IP (ex.: VPS de desenvolvimento 72.60.159.48)
+// Isso evita que o SW cacheie builds antigos durante o desenvolvimento na VPS.
+const isRawIpHost = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":") /* IPv6 */;
 const isPreviewHost =
   host.includes("id-preview--") ||
   host.includes("lovableproject.com") ||
   host === "localhost" ||
-  host === "127.0.0.1";
+  host === "127.0.0.1" ||
+  isRawIpHost;
 
 if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
   // ─── Auto-reload quando um novo SW assume o controle ───────────────────

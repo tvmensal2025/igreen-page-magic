@@ -58,13 +58,13 @@ export function BotGlobalKillSwitch() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-bold text-sm">Bot Global</h3>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${off ? "bg-destructive text-destructive-foreground" : "bg-emerald-500/20 text-emerald-500"}`}>
+            <h3 className="font-bold text-sm">Assistente Global</h3>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${off ? "bg-destructive text-destructive-foreground" : "bg-primary/20 text-primary"}`}>
               {off ? "DESLIGADO" : "ATIVO"}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Kill switch de emergência. Desligar interrompe webhooks (Whapi/Evolution) e todos os crons (rescue, follow-up, watchdog, scheduled).
+            Botão de emergência. Desligar interrompe as integrações automáticas e todos os envios programados (resgate, retorno, monitoramento, agendados).
           </p>
         </div>
         <AlertDialog>

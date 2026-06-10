@@ -41,9 +41,9 @@ function formatReason(r: string): string {
     auto_loop_detected: "Loop detectado — lead repetiu o mesmo passo várias vezes",
     auto_orphan_step_detected: "Passo órfão — fluxo foi alterado e o lead ficou em um passo inexistente",
     custom_step_no_match_retries_exhausted: "IA não entendeu a resposta após 3 tentativas",
-    duvida_fora_faq: "Lead fez uma pergunta que não está na base de conhecimento",
+    duvida_fora_faq: "Cliente interessado fez uma pergunta que não está na base de conhecimento",
     cadastro_falhou: "Cadastro no portal falhou",
-    no_media_received: "Lead não enviou a foto/documento solicitado",
+    no_media_received: "Cliente interessado não enviou a foto/documento solicitado",
     step_misconfigured_or_lead_off_topic: "Passo mal configurado ou lead saiu do roteiro",
   };
   return map[r] || r.replace(/_/g, " ");
@@ -169,19 +169,19 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-3 sm:p-4">
           <div className="text-xs text-muted-foreground">Alertas abertos</div>
-          <div className={`text-2xl font-bold ${alerts.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+          <div className={`text-2xl font-bold ${alerts.length > 0 ? "text-warning" : "text-primary"}`}>
             {alerts.length}
           </div>
         </Card>
         <Card className="p-3 sm:p-4">
-          <div className="text-xs text-muted-foreground">Leads parados +24h</div>
-          <div className={`text-2xl font-bold ${stuck.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+          <div className="text-xs text-muted-foreground">Clientes interessados parados +24h</div>
+          <div className={`text-2xl font-bold ${stuck.length > 0 ? "text-warning" : "text-primary"}`}>
             {stuck.length}
           </div>
         </Card>
         <Card className="p-3 sm:p-4">
           <div className="text-xs text-muted-foreground">Crítico (auto-detectado)</div>
-          <div className={`text-2xl font-bold ${criticalAlerts.length > 0 ? "text-red-600" : "text-emerald-600"}`}>
+          <div className={`text-2xl font-bold ${criticalAlerts.length > 0 ? "text-destructive" : "text-primary"}`}>
             {criticalAlerts.length}
           </div>
         </Card>
@@ -190,12 +190,12 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
       {/* Alertas */}
       <Card className="p-4">
         <h2 className="font-semibold mb-3 flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertTriangle className="h-4 w-4 text-warning" />
           Leads que precisam de você ({alerts.length})
         </h2>
         {alerts.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Nenhum alerta aberto. 🎉
+            <CheckCircle2 className="h-4 w-4 text-primary" /> Nenhum alerta aberto. 🎉
           </div>
         ) : (
           <ul className="space-y-2">
@@ -235,11 +235,11 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
       {/* Leads parados */}
       <Card className="p-4">
         <h2 className="font-semibold mb-3 flex items-center gap-2">
-          <Clock className="h-4 w-4 text-amber-500" />
+          <Clock className="h-4 w-4 text-warning" />
           Parados há mais de 24h ({stuck.length})
         </h2>
         {stuck.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Nenhum lead estagnado.</div>
+          <div className="text-sm text-muted-foreground">Nenhum cliente interessado estagnado.</div>
         ) : (
           <ul className="space-y-1.5 max-h-96 overflow-auto text-sm">
             {stuck.map((s) => (
@@ -249,7 +249,7 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
                   {s.name || "(sem nome)"} · <span className="text-muted-foreground">{s.phone_whatsapp}</span>
                 </span>
                 <Badge variant="outline" className="text-[10px]">{s.conversation_step}</Badge>
-                <span className="text-xs text-amber-600 tabular-nums">{s.hours_stuck}h</span>
+                <span className="text-xs text-warning tabular-nums">{s.hours_stuck}h</span>
               </li>
             ))}
           </ul>
@@ -258,7 +258,7 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
 
       {/* Funil */}
       <Card className="p-4">
-        <h2 className="font-semibold mb-3">Onde seus leads estão agora</h2>
+        <h2 className="font-semibold mb-3">Onde seus clientes interessados estão agora</h2>
         {stepFunnel.length === 0 ? (
           <div className="text-sm text-muted-foreground">Sem dados.</div>
         ) : (
@@ -279,7 +279,7 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
           </div>
         )}
         <p className="text-[11px] text-muted-foreground mt-3">
-          Passos com muitos leads parados costumam indicar copy fraca ou regra confusa — revise no <Link to="/admin/fluxos" className="underline">editor de fluxo</Link>.
+          Passos com muitos clientes interessados parados costumam indicar copy fraca ou regra confusa — revise no <Link to="/admin/fluxos" className="underline">editor de fluxo</Link>.
         </p>
       </Card>
     </div>

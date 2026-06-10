@@ -104,8 +104,8 @@ export function TemplateInfoCard({
             </Badge>
             <Badge className={cn(
               "absolute top-2 right-2 text-[10px] font-bold",
-              t.status === "published" && "bg-emerald-600 hover:bg-emerald-600",
-              t.status === "draft" && "bg-amber-500 hover:bg-amber-500",
+              t.status === "published" && "bg-primary hover:bg-primary",
+              t.status === "draft" && "bg-warning/100 hover:bg-warning/100",
               t.status === "archived" && "bg-muted-foreground hover:bg-muted-foreground",
             )}>
               {t.status === "published" ? "Publicado" : t.status === "draft" ? "Rascunho" : "Arquivado"}
@@ -286,7 +286,7 @@ export function TemplateInfoCard({
               <span>{mode === "use" ? "Você ainda não publicou nenhuma campanha com este modelo." : "Nenhum consultor publicou esse modelo ainda."}</span>
             </div>
           ) : !metrics.has_data ? (
-            <div className="flex items-start gap-2 text-[11px] text-amber-600 dark:text-amber-400 py-1">
+            <div className="flex items-start gap-2 text-[11px] text-warning dark:text-warning py-1">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>Aguardando primeiros dados da Meta (até 24h após publicar).</span>
             </div>
@@ -305,7 +305,7 @@ export function TemplateInfoCard({
               </div>
               {metrics.frequency_avg > 0 && (
                 <div className="text-[10px] text-muted-foreground text-center">
-                  Frequência média: <strong className={cn(metrics.frequency_avg > 3 && "text-amber-600")}>{metrics.frequency_avg.toFixed(1)}x</strong>
+                  Frequência média: <strong className={cn(metrics.frequency_avg > 3 && "text-warning")}>{metrics.frequency_avg.toFixed(1)}x</strong>
                   {metrics.frequency_avg > 3 && " (criativo cansado)"}
                 </div>
               )}

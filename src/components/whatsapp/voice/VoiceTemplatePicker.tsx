@@ -106,7 +106,7 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
+          className="h-8 w-8 shrink-0 text-primary hover:text-primary hover:bg-primary/10"
           disabled={disabled}
           title="Enviar template de voz personalizado"
         >
@@ -120,13 +120,13 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
         className="w-80 p-0 overflow-hidden"
         sideOffset={8}
       >
-        <div className="p-3 border-b border-border bg-gradient-to-r from-emerald-500/10 to-transparent">
+        <div className="p-3 border-b border-border bg-gradient-to-r from-primary/10 to-transparent">
           <div className="flex items-center gap-2">
-            <Mic2 className="w-4 h-4 text-emerald-400" />
+            <Mic2 className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold text-foreground">Templates de Voz</span>
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Selecione um template para enviar com o nome do lead
+            Selecione um template para enviar com o nome do cliente interessado
           </p>
         </div>
 
@@ -148,14 +148,14 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
                   onClick={() => handleSelectTemplate(t.id)}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-accent/40 border-b border-border/50 last:border-0"
                 >
-                  <Mic2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <Mic2 className="w-4 h-4 text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate text-foreground">{t.name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="text-[10px] text-muted-foreground">{blockCount} bloco{blockCount !== 1 ? "s" : ""}</span>
-                      {hasName && <Badge variant="outline" className="text-[9px] h-4 px-1 text-emerald-500 border-emerald-500/30"><User className="w-2.5 h-2.5 mr-0.5" />nome</Badge>}
+                      {hasName && <Badge variant="outline" className="text-[9px] h-4 px-1 text-primary border-primary/30"><User className="w-2.5 h-2.5 mr-0.5" />nome</Badge>}
                       {varCount > 0 && <Badge variant="outline" className="text-[9px] h-4 px-1 text-primary border-primary/30"><Variable className="w-2.5 h-2.5 mr-0.5" />{varCount} var</Badge>}
-                      {!hasAllAudio && <Badge variant="outline" className="text-[9px] h-4 px-1 text-amber-500 border-amber-500/30"><AlertTriangle className="w-2.5 h-2.5 mr-0.5" />incompleto</Badge>}
+                      {!hasAllAudio && <Badge variant="outline" className="text-[9px] h-4 px-1 text-warning border-warning/30"><AlertTriangle className="w-2.5 h-2.5 mr-0.5" />incompleto</Badge>}
                       {t.shortcut && <span className="text-[10px] font-mono text-primary">{t.shortcut}</span>}
                     </div>
                   </div>
@@ -176,7 +176,7 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
             </button>
 
             <div className="flex items-center gap-2">
-              <Mic2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <Mic2 className="w-4 h-4 text-primary shrink-0" />
               <span className="text-sm font-semibold text-foreground truncate">{selected.name}</span>
             </div>
 
@@ -184,7 +184,7 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
             {hasNameSlot && (
               <div className="space-y-1">
                 <label className="text-[11px] text-muted-foreground flex items-center gap-1">
-                  <User className="w-3 h-3" /> Nome do lead
+                  <User className="w-3 h-3" /> Nome do cliente interessado
                 </label>
                 <Input
                   value={nameInput}
@@ -216,8 +216,8 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
 
             {/* Gravador inline quando nome não está na biblioteca */}
             {pendingRecord && (
-              <div className="rounded border border-amber-500/40 bg-amber-500/5 p-2 space-y-1.5">
-                <p className="text-[11px] text-amber-500 flex items-center gap-1">
+              <div className="rounded border border-warning/40 bg-warning/5 p-2 space-y-1.5">
+                <p className="text-[11px] text-warning flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
                   Grave <strong>"{pendingRecord.name}"</strong>
                   {pendingRecord.key !== "nome" && <> para <code>{`{{${pendingRecord.key}}}`}</code></>}:
@@ -239,7 +239,7 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
             <div className="flex gap-2">
               <Button
                 size="sm"
-                className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="flex-1 gap-1.5 bg-primary hover:bg-primary text-white"
                 onClick={handleSend}
                 disabled={sending || (hasNameSlot && !nameInput.trim())}
               >

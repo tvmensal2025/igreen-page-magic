@@ -91,7 +91,7 @@ export default function WinningConversationButton({ customerId, defaultSnippet, 
                 value={snippet}
                 onChange={e => setSnippet(e.target.value)}
                 rows={6}
-                placeholder={`Lead: tô achando caro\nBot: entendo, é por isso que…`}
+                placeholder={`Cliente interessado: tô achando caro\nAssistente: entendo, é por isso que…`}
                 className="font-mono text-xs"
               />
             </div>

@@ -16,7 +16,7 @@ export function CaptureScoreboard({ today, week, streak }: Props) {
         <span className="font-bold tabular-nums">{week}</span>
       </div>
       <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-secondary border border-border/40">
-        <TrendingUp className={`w-3.5 h-3.5 ${streak > 0 ? "text-amber-500" : "text-muted-foreground"}`} strokeWidth={1.5} />
+        <TrendingUp className={`w-3.5 h-3.5 ${streak > 0 ? "text-warning" : "text-muted-foreground"}`} strokeWidth={1.5} />
         <span className="text-muted-foreground text-[10px]">Sequência</span>
         <span className="font-bold tabular-nums">{streak}d</span>
       </div>

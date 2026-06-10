@@ -130,7 +130,7 @@ export function CustomerListItem({
         isExpanded
           ? "border-primary/30 bg-card shadow-lg shadow-primary/5"
           : hasDevolutiva
-          ? "border-red-500/25 bg-card hover:border-red-500/40"
+          ? "border-destructive/25 bg-card hover:border-destructive/40"
           : "border-border bg-card hover:border-primary/25 hover:shadow-md"
       }`}
     >
@@ -159,12 +159,12 @@ export function CustomerListItem({
               {status.label}
             </span>
             {c.tipo_produto === "telefonia" && (
-              <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-purple-500/15 text-purple-400 border-purple-500/25">
+              <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-primary/15 text-primary border-primary/25">
                 📱 Telecom
               </span>
             )}
             {hasDevolutiva && status.label !== "Devolutiva" && (
-              <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-red-500/15 text-red-400 border-red-500/25">
+              <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-destructive/15 text-destructive border-destructive/25">
                 ⚠️ Devolutiva
               </span>
             )}
@@ -216,10 +216,10 @@ export function CustomerListItem({
           {(c.devolutiva || c.observacao) && (
             <div className="space-y-2.5">
               {c.devolutiva && (
-                <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3">
+                <div className="rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <AlertTriangle className="h-4 w-4 text-red-400" />
-                    <span className="text-xs font-bold text-red-400 uppercase tracking-wide">Devolutiva</span>
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    <span className="text-xs font-bold text-destructive uppercase tracking-wide">Devolutiva</span>
                   </div>
                   <p className="text-sm text-foreground">{c.devolutiva}</p>
                 </div>
@@ -284,7 +284,7 @@ export function CustomerListItem({
           {/* Ações */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-border">
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" className="h-9 gap-2 rounded-lg bg-green-600 hover:bg-green-700 text-white" onClick={onOpenWhatsApp}>
+              <Button size="sm" className="h-9 gap-2 rounded-lg bg-primary hover:bg-primary text-white" onClick={onOpenWhatsApp}>
                 <MessageCircle className="w-4 h-4" /> Enviar WhatsApp
               </Button>
               <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg" onClick={onCopyMessage}>

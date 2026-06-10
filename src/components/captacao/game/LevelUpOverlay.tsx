@@ -29,16 +29,16 @@ export function LevelUpOverlay({ level, rankLabel, onClose }: Props) {
         {/* Gold top line that draws itself */}
         <div className="exec-line-draw mb-0 rounded-t-2xl" />
 
-        <div className="rounded-b-2xl rounded-tr-2xl border border-amber-400/30 bg-card px-10 py-8 text-center shadow-[0_0_80px_hsl(45_85%_52%/0.2)] overflow-hidden relative">
+        <div className="rounded-b-2xl rounded-tr-2xl border border-warning/30 bg-card px-10 py-8 text-center shadow-[0_0_80px_hsl(45_85%_52%/0.2)] overflow-hidden relative">
           {/* Gold sweep on enter */}
           <div className="absolute inset-0 exec-gold-sweep pointer-events-none" />
 
           {/* Icon */}
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-400/5 border border-amber-400/30 flex items-center justify-center mx-auto mb-5 animate-exec-rank">
-            <TrendingUp className="w-8 h-8 text-amber-400" strokeWidth={1.5} />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-warning/20 to-warning/5 border border-warning/30 flex items-center justify-center mx-auto mb-5 animate-exec-rank">
+            <TrendingUp className="w-8 h-8 text-warning" strokeWidth={1.5} />
           </div>
 
-          <p className="text-[10px] font-bold uppercase tracking-[0.35em] text-amber-400/70 mb-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.35em] text-warning/70 mb-2">
             Novo Nível Alcançado
           </p>
 

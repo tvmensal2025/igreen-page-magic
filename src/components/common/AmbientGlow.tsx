@@ -27,8 +27,8 @@ const AmbientGlow = ({ variant = "hero", className }: AmbientGlowProps) => {
         className={cn("pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-60", className)}
       >
         <div className="absolute -top-40 -left-40 h-[600px] w-[600px] rounded-full bg-primary/10 blur-[120px]" />
-        <div className="absolute top-1/3 -right-40 h-[700px] w-[700px] rounded-full bg-emerald-500/[0.06] blur-[140px]" />
-        <div className="absolute bottom-0 left-1/4 h-[500px] w-[500px] rounded-full bg-green-500/[0.05] blur-[120px]" />
+        <div className="absolute top-1/3 -right-40 h-[700px] w-[700px] rounded-full bg-primary/100/[0.06] blur-[140px]" />
+        <div className="absolute bottom-0 left-1/4 h-[500px] w-[500px] rounded-full bg-primary/100/[0.05] blur-[120px]" />
       </div>
     );
   }

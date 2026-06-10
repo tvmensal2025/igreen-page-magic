@@ -24,13 +24,13 @@ type Diag = {
 };
 
 const severityClass = (s?: string) =>
-  s === "high" ? "bg-red-500/15 text-red-500 border-red-500/30"
-  : s === "medium" ? "bg-amber-500/15 text-amber-500 border-amber-500/30"
-  : "bg-emerald-500/15 text-emerald-500 border-emerald-500/30";
+  s === "high" ? "bg-destructive/15 text-destructive border-destructive/30"
+  : s === "medium" ? "bg-warning/15 text-warning border-warning/30"
+  : "bg-primary/15 text-primary border-primary/30";
 
 const impactClass = (s?: string) =>
   s === "high" ? "bg-primary/15 text-primary border-primary/30"
-  : s === "medium" ? "bg-blue-500/15 text-blue-500 border-blue-500/30"
+  : s === "medium" ? "bg-info/15 text-info border-info/30"
   : "bg-muted text-muted-foreground";
 
 function actionLink(type?: string): string | null {
@@ -90,9 +90,9 @@ export default function BotHealthIntel({ consultantId }: { consultantId: string 
   const score = diag?.kpis?.health_score ?? null;
   const scoreColor =
     score == null ? "text-muted-foreground"
-    : score >= 75 ? "text-emerald-500"
-    : score >= 50 ? "text-amber-500"
-    : "text-red-500";
+    : score >= 75 ? "text-primary"
+    : score >= 50 ? "text-warning"
+    : "text-destructive";
   const ageH = diag ? Math.floor((Date.now() - new Date(diag.computed_at).getTime()) / 3600_000) : null;
   const stale = ageH != null && ageH >= 24;
 
@@ -147,7 +147,7 @@ export default function BotHealthIntel({ consultantId }: { consultantId: string 
           {diag.kpis && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-xs">
               {"leads_7d" in (diag.kpis || {}) && (
-                <Kpi label="Leads 7d" value={diag.kpis.leads_7d} />
+                <Kpi label="Clientes interessados 7d" value={diag.kpis.leads_7d} />
               )}
               {"conversations" in (diag.kpis || {}) && (
                 <Kpi label="Mensagens 7d" value={diag.kpis.conversations} />
@@ -207,8 +207,8 @@ export default function BotHealthIntel({ consultantId }: { consultantId: string 
             <TabsContent value="winners" className="mt-3 space-y-2">
               {(diag.winners || []).length === 0 ? <Empty /> :
                 diag.winners.map((w: any, i: number) => (
-                  <div key={i} className="border rounded-lg p-3 flex items-start gap-3 bg-emerald-500/5">
-                    <Trophy className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                  <div key={i} className="border rounded-lg p-3 flex items-start gap-3 bg-primary/5">
+                    <Trophy className="h-4 w-4 text-primary mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm">{w.title}</div>
                       <div className="text-xs text-muted-foreground">{w.detail}</div>
@@ -250,7 +250,7 @@ export default function BotHealthIntel({ consultantId }: { consultantId: string 
           </Tabs>
 
           {stale && (
-            <p className="text-[11px] text-amber-500 mt-3">Análise tem +24h — clique em "Atualizar análise" para refazer.</p>
+            <p className="text-[11px] text-warning mt-3">Análise tem +24h — clique em "Atualizar análise" para refazer.</p>
           )}
         </>
       )}
@@ -262,7 +262,7 @@ function Kpi({ label, value, warn }: { label: string; value: any; warn?: boolean
   return (
     <div className="rounded-lg border bg-background/60 p-2">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`text-base font-semibold ${warn ? "text-amber-500" : ""}`}>{value ?? "—"}</div>
+      <div className={`text-base font-semibold ${warn ? "text-warning" : ""}`}>{value ?? "—"}</div>
     </div>
   );
 }

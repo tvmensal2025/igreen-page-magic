@@ -93,8 +93,8 @@ export function TerminalTicker({ kpis }: Props) {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/40">
         <Cell label="Visitas" data={kpis?.views} accent="hsl(var(--primary))" />
-        <Cell label="Cliques CTA" data={kpis?.clicks} accent="hsl(var(--accent))" />
-        <Cell label="Novos Leads" data={kpis?.leads} accent="hsl(var(--primary))" />
+        <Cell label="Cliques nos botões" data={kpis?.clicks} accent="hsl(var(--warning))" />
+        <Cell label="Novos clientes interessados" data={kpis?.leads} accent="hsl(var(--info))" />
       </div>
     </section>
   );

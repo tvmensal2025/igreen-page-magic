@@ -30,13 +30,13 @@ export function PartnerLeadsBarChart({ analytics }: Props) {
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-primary" />
-          Leads por parceiro
+          Clientes interessados por parceiro
         </CardTitle>
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
           <p className="text-sm text-muted-foreground py-12 text-center">
-            Aguardando primeiros leads
+            Aguardando primeiros clientes interessados
           </p>
         ) : (
           <ResponsiveContainer width="100%" height={280}>

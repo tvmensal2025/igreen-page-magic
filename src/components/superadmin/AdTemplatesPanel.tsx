@@ -213,10 +213,10 @@ export function AdTemplatesPanel() {
         </div>
 
         {/* Segmentação */}
-        <div className="rounded-lg border-2 border-amber-500/40 bg-amber-500/5 p-4 space-y-3">
+        <div className="rounded-lg border-2 border-warning/40 bg-warning/5 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <div className="text-sm font-bold text-amber-700 dark:text-amber-400">🎯 Para quais distribuidoras este template serve?</div>
+              <div className="text-sm font-bold text-warning dark:text-warning">🎯 Para quais distribuidoras este template serve?</div>
               <div className="text-[11px] text-muted-foreground">Vazio = todas. Marque para que apareça só para consultores dessas distribuidoras.</div>
             </div>
             <div className="flex gap-1">
@@ -265,7 +265,7 @@ export function AdTemplatesPanel() {
           })}
 
           {availableCities.length > 0 && (
-            <div className="pt-2 border-t border-amber-500/20 space-y-1">
+            <div className="pt-2 border-t border-warning/20 space-y-1">
               <div className="flex items-center justify-between">
                 <div className="text-[11px] font-bold text-muted-foreground">Cidades específicas (opcional, vazio = todas)</div>
                 {(editing.target_cidades?.length ?? 0) > 0 && (
@@ -360,14 +360,14 @@ export function AdTemplatesPanel() {
                             hasError
                               ? <span className="text-[10px] flex items-center gap-1 text-destructive font-bold"><ShieldAlert className="w-3 h-3" /> Risco de corte</span>
                               : (val.issues?.length
-                                ? <span className="text-[10px] flex items-center gap-1 text-amber-600 font-bold"><AlertTriangle className="w-3 h-3" /> Atenção</span>
-                                : <span className="text-[10px] flex items-center gap-1 text-emerald-600 font-bold"><CheckCircle2 className="w-3 h-3" /> Aprovada</span>)
+                                ? <span className="text-[10px] flex items-center gap-1 text-warning font-bold"><AlertTriangle className="w-3 h-3" /> Atenção</span>
+                                : <span className="text-[10px] flex items-center gap-1 text-primary font-bold"><CheckCircle2 className="w-3 h-3" /> Aprovada</span>)
                           )}
                           {val?.score != null && <span className="text-[10px] text-muted-foreground">Score {val.score}/100</span>}
                         </div>
                         {val?.summary && <div className="text-[10px] text-muted-foreground line-clamp-2">{val.summary}</div>}
                         {val?.issues?.slice(0, 3).map((iss, idx) => (
-                          <div key={idx} className={`text-[10px] ${iss.severity === "error" ? "text-destructive" : "text-amber-600"}`}>
+                          <div key={idx} className={`text-[10px] ${iss.severity === "error" ? "text-destructive" : "text-warning"}`}>
                             • {iss.suggestion}
                           </div>
                         ))}
@@ -407,7 +407,7 @@ export function AdTemplatesPanel() {
           <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-3">
             <div className="text-xs font-bold text-primary">🧪 A/B test automático (opcional)</div>
             <p className="text-[11px] text-muted-foreground -mt-1">
-              Adicione variações alternativas — uma por linha. O Facebook rotaciona automaticamente e prioriza as que dão mais lead. Sem variações, usa só a copy padrão acima.
+              Adicione variações alternativas — uma por linha. O Facebook rotaciona automaticamente e prioriza as que dão mais cliente interessado. Sem variações, usa só a copy padrão acima.
             </p>
             <div>
               <label className="text-[11px] font-medium text-muted-foreground">Variações de headline (uma por linha, máx 4)</label>

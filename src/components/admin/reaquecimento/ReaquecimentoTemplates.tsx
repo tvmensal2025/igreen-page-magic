@@ -144,7 +144,7 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
               </SelectTrigger>
               <SelectContent>
                 {availableSteps.length === 0 ? (
-                  <SelectItem value="_none" disabled>Sem passos com leads parados</SelectItem>
+                  <SelectItem value="_none" disabled>Sem passos com clientes interessados parados</SelectItem>
                 ) : availableSteps.map((s) => (
                   <SelectItem key={s} value={s}>{s}</SelectItem>
                 ))}
@@ -184,7 +184,7 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
               <div>
                 <div className="flex items-center gap-2">
                   <span className="rounded bg-muted px-2 py-0.5 text-xs font-mono">{t.conversation_step}</span>
-                  {t.is_active && <span className="text-[10px] font-medium text-emerald-600">ATIVO</span>}
+                  {t.is_active && <span className="text-[10px] font-medium text-primary">ATIVO</span>}
                   {!t.is_active && <span className="text-[10px] font-medium text-muted-foreground">INATIVO</span>}
                 </div>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">

@@ -141,11 +141,11 @@ export function LearningHealthPanel({ consultantId }: Props) {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center gap-1 text-green-400">
+                <div className="flex items-center gap-1 text-primary">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span className="text-xs font-medium tabular-nums">{p.good_count}</span>
                 </div>
-                <div className="flex items-center gap-1 text-red-400">
+                <div className="flex items-center gap-1 text-destructive">
                   <XCircle className="w-3.5 h-3.5" />
                   <span className="text-xs font-medium tabular-nums">{p.bad_count}</span>
                 </div>
@@ -156,7 +156,7 @@ export function LearningHealthPanel({ consultantId }: Props) {
                 <div className="h-1.5 bg-secondary/50 rounded-full overflow-hidden">
                   {p.good_count + p.bad_count > 0 && (
                     <div
-                      className="h-full bg-green-500 rounded-full"
+                      className="h-full bg-primary/100 rounded-full"
                       style={{
                         width: `${Math.round(100 * p.good_count / (p.good_count + p.bad_count))}%`,
                       }}

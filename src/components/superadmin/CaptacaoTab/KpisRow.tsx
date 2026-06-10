@@ -13,21 +13,21 @@ export function KpisRow({ kpis }: Props) {
   const lpConv = Math.min(100, lpConvRaw);
 
   const cards = [
-    { icon: DollarSign, label: "Gasto Ads (30d)", value: brl(kpis?.spend_cents), color: "text-amber-400", ring: "border-amber-500/20" },
-    { icon: Users, label: "Leads Gerados", value: (kpis?.leads ?? 0).toLocaleString("pt-BR"), color: "text-blue-400", ring: "border-blue-500/20" },
-    { icon: Target, label: "CPL Real", value: brl(kpis?.cpl_cents), color: "text-violet-400", ring: "border-violet-500/20" },
+    { icon: DollarSign, label: "Gasto Ads (30d)", value: brl(kpis?.spend_cents), color: "text-warning", ring: "border-warning/20" },
+    { icon: Users, label: "Clientes interessados Gerados", value: (kpis?.leads ?? 0).toLocaleString("pt-BR"), color: "text-info", ring: "border-info/20" },
+    { icon: Target, label: "CPL Real", value: brl(kpis?.cpl_cents), color: "text-primary", ring: "border-primary/20" },
     { icon: Briefcase, label: "Negócios Abertos", value: (kpis?.deals_open_count ?? 0).toLocaleString("pt-BR"), color: "text-primary", ring: "border-primary/20" },
-    { icon: TrendingUp, label: "Negócios Fechados", value: (kpis?.deals_won_count ?? 0).toLocaleString("pt-BR"), color: "text-emerald-400", ring: "border-emerald-500/20" },
+    { icon: TrendingUp, label: "Negócios Fechados", value: (kpis?.deals_won_count ?? 0).toLocaleString("pt-BR"), color: "text-primary", ring: "border-primary/20" },
     {
       icon: Percent,
       label: "Visitas LP → Cadastro",
       value: `${lpConv}%`,
-      color: "text-cyan-400",
-      ring: "border-cyan-500/20",
-      tooltip: "Só conta leads que abriram a landing page. Leads vindos direto do WhatsApp (ad click-to-chat, indicação) não entram no denominador, então a taxa real costuma ser menor.",
+      color: "text-info",
+      ring: "border-info/20",
+      tooltip: "Só conta clientes interessados que abriram a landing page. Clientes interessados vindos direto do WhatsApp (ad click-to-chat, indicação) não entram no denominador, então a taxa real costuma ser menor.",
     },
-    { icon: Percent, label: "Lead → Aprovado", value: `${kpis?.conversion_lead_approved_pct ?? 0}%`, color: "text-pink-400", ring: "border-pink-500/20" },
-    { icon: AlertTriangle, label: "Handoffs (30d)", value: (kpis?.handoff_count_30d ?? 0).toLocaleString("pt-BR"), color: "text-red-400", ring: "border-red-500/20" },
+    { icon: Percent, label: "Cliente interessado → Aprovado", value: `${kpis?.conversion_lead_approved_pct ?? 0}%`, color: "text-primary", ring: "border-primary/20" },
+    { icon: AlertTriangle, label: "Handoffs (30d)", value: (kpis?.handoff_count_30d ?? 0).toLocaleString("pt-BR"), color: "text-destructive", ring: "border-destructive/20" },
   ];
 
   return (

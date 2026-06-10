@@ -89,7 +89,7 @@ function ExpandableNodeImpl({ data, selected }: NodeProps) {
           </span>
         )}
         {hasWarning && (
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="alerta" />
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" aria-label="alerta" />
         )}
         <button
           type="button"

@@ -39,7 +39,7 @@ export function SaveTemplateDialog({
           <div>
             <Label htmlFor="tpl-title">Nome do template *</Label>
             <Input id="tpl-title" value={title} onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex: CPFL — Lead frio cidade pequena" maxLength={120} />
+              placeholder="Ex: CPFL — Cliente interessado frio cidade pequena" maxLength={120} />
           </div>
           <div>
             <Label htmlFor="tpl-desc">Descrição (opcional)</Label>

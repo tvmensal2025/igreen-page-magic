@@ -202,7 +202,7 @@ export default function AdminMetaAds() {
           <div className="flex-1">
             <h1 className="text-base font-semibold">📊 Tracking Meta Ads</h1>
             <p className="text-xs text-muted-foreground">
-              Métricas por campanha: leads recebidos, conversões, CAC.
+              Métricas por campanha: clientes interessados recebidos, conversões, CAC.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={handleImport} disabled={importing}>
@@ -259,7 +259,7 @@ export default function AdminMetaAds() {
         {/* Totais */}
         <div className="grid gap-3 md:grid-cols-4">
           <Card className="p-3">
-            <p className="text-xs text-muted-foreground">Leads recebidos</p>
+            <p className="text-xs text-muted-foreground">Clientes interessados recebidos</p>
             <p className="text-2xl font-bold">{totals.totalLeads}</p>
           </Card>
           <Card className="p-3">
@@ -296,7 +296,7 @@ export default function AdminMetaAds() {
                   <tr>
                     <th className="px-3 py-2 text-left">Campanha</th>
                     <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-right">Leads</th>
+                    <th className="px-3 py-2 text-right">Clientes interessados</th>
                     <th className="px-3 py-2 text-right">Convertidos</th>
                     <th className="px-3 py-2 text-right">Conv %</th>
                     <th className="px-3 py-2 text-right">Custo</th>
@@ -319,7 +319,7 @@ export default function AdminMetaAds() {
                       <td className="px-3 py-2 text-right">{m.leads_received}</td>
                       <td className="px-3 py-2 text-right">{m.leads_converted}</td>
                       <td className="px-3 py-2 text-right">
-                        <span className={m.conversion_rate >= 5 ? "text-emerald-600" : ""}>
+                        <span className={m.conversion_rate >= 5 ? "text-primary" : ""}>
                           {m.conversion_rate.toFixed(2)}%
                         </span>
                       </td>

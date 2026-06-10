@@ -25,7 +25,7 @@ export function PartnerKpiRow({ analytics, activeCount }: Props) {
       />
       <StatCard
         icon={<TrendingUp />}
-        label="Leads (30 dias)"
+        label="Clientes interessados (30 dias)"
         value={leads30d}
         color="accent"
         subtitle={`${totalLeads} no total`}

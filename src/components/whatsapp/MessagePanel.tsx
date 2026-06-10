@@ -49,12 +49,12 @@ export function MessagePanel({ instanceName, customers, templates, applyTemplate
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-blue-950/10">
-      <div className="absolute -top-20 -right-20 w-40 h-40 bg-blue-500/3 rounded-full blur-3xl" />
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-info/10">
+      <div className="absolute -top-20 -right-20 w-40 h-40 bg-info/3 rounded-full blur-3xl" />
       <div className="relative p-5 sm:p-7">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 flex items-center justify-center border border-blue-500/20">
-            <MessageSquare className="w-5 h-5 text-blue-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-info/20 to-info/10 flex items-center justify-center border border-info/20">
+            <MessageSquare className="w-5 h-5 text-info" />
           </div>
           <div>
             <h3 className="font-heading font-bold text-foreground text-lg">Envio Individual</h3>
@@ -65,7 +65,7 @@ export function MessagePanel({ instanceName, customers, templates, applyTemplate
         {/* Search */}
         <div className="relative mb-4">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
-          <Input placeholder="Buscar por nome ou telefone..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 rounded-xl bg-secondary/50 border-border/50 focus:border-blue-500/40 focus:ring-blue-500/10 transition-all" />
+          <Input placeholder="Buscar por nome ou telefone..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 rounded-xl bg-secondary/50 border-border/50 focus:border-info/40 focus:ring-info/10 transition-all" />
         </div>
 
         {/* Customer list */}
@@ -74,7 +74,7 @@ export function MessagePanel({ instanceName, customers, templates, applyTemplate
             <p className="text-sm text-muted-foreground text-center py-6">Nenhum cliente encontrado</p>
           ) : filtered.map((customer) => (
             <button key={customer.id} type="button" onClick={() => handleSelectCustomer(customer)}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all hover:bg-secondary/40 ${selectedCustomer?.id === customer.id ? "bg-blue-500/8 border-l-2 border-l-blue-400" : ""}`}>
+              className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all hover:bg-secondary/40 ${selectedCustomer?.id === customer.id ? "bg-info/8 border-l-2 border-l-blue-400" : ""}`}>
               <div className="w-8 h-8 rounded-lg bg-secondary/80 flex items-center justify-center shrink-0">
                 <User className="w-4 h-4 text-muted-foreground" />
               </div>
@@ -90,8 +90,8 @@ export function MessagePanel({ instanceName, customers, templates, applyTemplate
         {selectedCustomer && (
           <div className="space-y-3 rounded-xl border border-border/40 bg-secondary/20 p-4">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center">
-                <User className="w-4 h-4 text-blue-400" />
+              <div className="w-8 h-8 rounded-lg bg-info/15 flex items-center justify-center">
+                <User className="w-4 h-4 text-info" />
               </div>
               <div>
                 <span className="text-sm font-bold text-foreground">{selectedCustomer.name}</span>
@@ -107,7 +107,7 @@ export function MessagePanel({ instanceName, customers, templates, applyTemplate
                 <SelectContent>{templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
               </Select>
             )}
-            <Textarea placeholder="Digite sua mensagem..." value={message} onChange={(e) => setMessage(e.target.value)} rows={4} className="rounded-xl bg-secondary/30 border-border/40 focus:border-blue-500/40 resize-none" />
+            <Textarea placeholder="Digite sua mensagem..." value={message} onChange={(e) => setMessage(e.target.value)} rows={4} className="rounded-xl bg-secondary/30 border-border/40 focus:border-info/40 resize-none" />
             <Button onClick={handleSend} disabled={!message.trim() || isSending} className="gap-2 rounded-xl h-11 font-bold shadow-lg shadow-green-500/10 hover:shadow-green-500/20 transition-all" style={{ background: "var(--gradient-green)" }}>
               <Send className="w-4 h-4" /> {isSending ? "Enviando..." : "Enviar Mensagem"}
             </Button>

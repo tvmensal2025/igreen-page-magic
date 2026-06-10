@@ -8,14 +8,25 @@ const KEY = "igreen_lgpd_consent_v1";
 
 export function CookieBanner() {
   const [show, setShow] = useState(false);
+  // Esconde o banner enquanto houver um modal/diálogo aberto, para não
+  // sobrepor o rodapé de modais (Radix trava o scroll do body com
+  // data-scroll-locked enquanto um Dialog está aberto).
+  const [modalOpen, setModalOpen] = useState(false);
   useEffect(() => {
     try { if (!localStorage.getItem(KEY)) setShow(true); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    const check = () => setModalOpen(document.body.hasAttribute("data-scroll-locked"));
+    check();
+    const obs = new MutationObserver(check);
+    obs.observe(document.body, { attributes: true, attributeFilter: ["data-scroll-locked", "style"] });
+    return () => obs.disconnect();
   }, []);
   const decide = (v: "accepted" | "rejected") => {
     try { localStorage.setItem(KEY, v); } catch { /* ignore */ }
     setShow(false);
   };
-  if (!show) return null;
+  if (!show || modalOpen) return null;
   return (
     <div className="fixed bottom-0 inset-x-0 z-[100] p-2 sm:p-4 pointer-events-none">
       <div className="pointer-events-auto max-w-3xl mx-auto rounded-xl sm:rounded-2xl border border-primary/30 bg-background/85 backdrop-blur-xl shadow-2xl shadow-primary/10 px-3 py-2 sm:p-5 flex flex-row items-center gap-2 sm:gap-3">

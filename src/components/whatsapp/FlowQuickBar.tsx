@@ -370,7 +370,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
                       onClick={() => { setOneByOneStepId(s.id); setOpen(false); }}>
                       <ListChecks className="w-3.5 h-3.5" />
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-500 hover:bg-amber-500/10"
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-warning hover:bg-warning/10"
                       title="Pré-visualizar e enviar este passo + todos os seguintes"
                       disabled={!!seq}
                       onClick={() => setConfirmFrom(i)}>
@@ -386,7 +386,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary"><Eye className="w-3 h-3" /> Completo</span>
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted"><ListChecks className="w-3 h-3" /> 1 a 1</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600"><FastForward className="w-3 h-3" /> Daqui</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-warning/10 text-warning"><FastForward className="w-3 h-3" /> Daqui</span>
             </div>
             <a href="/admin/fluxos" target="_blank" rel="noreferrer"
               className="text-[10px] text-primary hover:underline flex items-center gap-1">

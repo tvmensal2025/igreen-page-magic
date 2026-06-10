@@ -226,7 +226,7 @@ describe("banner needs_human (intervenção humana)", () => {
     expect(screen.getByRole("button", { name: /Reenviar ao portal/ })).toBeInTheDocument();
     // banner é vermelho (tom de erro)
     const banner = container.firstElementChild as HTMLElement;
-    expect(banner.className).toMatch(/red/);
+    expect(banner.className).toMatch(/destructive/);
   });
 });
 

@@ -118,7 +118,7 @@ export function AdManagersTab() {
           <h2 className="font-heading font-bold text-lg">Gestores de Conta de Anúncio</h2>
           <p className="text-sm text-muted-foreground max-w-2xl">
             Vincule um consultor "gestor" a outros consultores. O gestor verá o dashboard
-            (gasto Ads, leads, CPL, visitas LP) tanto da própria conta quanto dos vinculados,
+            (gasto Ads, clientes interessados, CPL, visitas LP) tanto da própria conta quanto dos vinculados,
             podendo alternar pelo seletor no topo do /admin.
           </p>
         </div>

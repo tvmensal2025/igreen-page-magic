@@ -380,13 +380,13 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
   const { unique: previewDeduped } = useMemo(() => deduplicateContacts(validContacts), [validContacts]);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-orange-950/10">
-      <div className="absolute -top-20 -right-20 w-40 h-40 bg-orange-500/3 rounded-full blur-3xl" />
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-warning/10">
+      <div className="absolute -top-20 -right-20 w-40 h-40 bg-warning/3 rounded-full blur-3xl" />
       <div className="relative p-5 sm:p-7 space-y-5">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-600/10 flex items-center justify-center border border-orange-500/20">
-            <Megaphone className="w-5 h-5 text-orange-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-warning/20 to-warning/10 flex items-center justify-center border border-warning/20">
+            <Megaphone className="w-5 h-5 text-warning" />
           </div>
           <div>
             <h3 className="font-heading font-bold text-foreground text-lg">Envio em Massa por Blocos</h3>
@@ -465,7 +465,7 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
                   <span className="font-bold text-foreground">
                     {previewDeduped.length}
                     {duplicatesRemoved > 0 && (
-                      <span className="text-yellow-400 text-xs ml-1">({duplicatesRemoved} duplicados removidos)</span>
+                      <span className="text-warning text-xs ml-1">({duplicatesRemoved} duplicados removidos)</span>
                     )}
                   </span>
                 </div>
@@ -488,9 +488,9 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
               </div>
 
               {dailySentCount + previewDeduped.length > DAILY_SAFE_LIMIT && (
-                <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-2.5 flex items-start gap-2">
-                  <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-red-300">
+                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-2.5 flex items-start gap-2">
+                  <ShieldAlert className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-destructive">
                     ⚠️ Este envio ultrapassará o limite seguro de {DAILY_SAFE_LIMIT} mensagens/dia.
                     O risco de bloqueio é alto. Considere reduzir o volume.
                   </p>
@@ -518,11 +518,11 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
           <div className="space-y-4">
             {/* Circuit breaker alert */}
             {circuitBroken && (
-              <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="rounded-xl bg-destructive/10 border border-destructive/30 p-3 flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-bold text-red-400">Circuit Breaker Ativado</p>
-                  <p className="text-xs text-red-300/80">{CIRCUIT_BREAKER_THRESHOLD} falhas consecutivas. Verifique a conexão do WhatsApp e clique em Retomar.</p>
+                  <p className="text-sm font-bold text-destructive">Circuit Breaker Ativado</p>
+                  <p className="text-xs text-destructive/80">{CIRCUIT_BREAKER_THRESHOLD} falhas consecutivas. Verifique a conexão do WhatsApp e clique em Retomar.</p>
                 </div>
               </div>
             )}
@@ -531,7 +531,7 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
             <div className="rounded-xl bg-secondary/20 border border-border/30 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+                  <Loader2 className="w-4 h-4 animate-spin text-warning" />
                   Bloco {progress.currentBlock + 1}/{progress.totalBlocks}
                 </div>
                 <span className="text-xs text-muted-foreground">
@@ -540,11 +540,11 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
               </div>
               <Progress value={overallPct} className="h-2.5" />
               <div className="flex gap-3 text-xs">
-                <span className="text-green-400 flex items-center gap-1">
+                <span className="text-primary flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" /> {progress.totalSent} enviadas
                 </span>
                 {progress.totalFailed > 0 && (
-                  <span className="text-red-400 flex items-center gap-1">
+                  <span className="text-destructive flex items-center gap-1">
                     <XCircle className="w-3 h-3" /> {progress.totalFailed} falhas
                   </span>
                 )}
@@ -571,26 +571,26 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
 
             {/* Countdown between messages */}
             {progress.messageCountdown > 0 && !progress.isWaitingBetweenBlocks && (
-              <div className="flex items-center gap-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 px-3 py-2">
-                <Shield className="w-4 h-4 text-blue-400 shrink-0" />
+              <div className="flex items-center gap-2.5 rounded-lg bg-info/10 border border-info/20 px-3 py-2">
+                <Shield className="w-4 h-4 text-info shrink-0" />
                 <div className="flex-1">
-                  <p className="text-xs text-blue-300 font-medium">Anti-spam ativo</p>
+                  <p className="text-xs text-info font-medium">Anti-spam ativo</p>
                 </div>
-                <div className="flex items-center gap-1.5 bg-blue-500/15 px-2.5 py-1 rounded-full">
-                  <Timer className="w-3.5 h-3.5 text-blue-400" />
-                  <span className="text-sm font-mono font-bold text-blue-300">{progress.messageCountdown}s</span>
+                <div className="flex items-center gap-1.5 bg-info/15 px-2.5 py-1 rounded-full">
+                  <Timer className="w-3.5 h-3.5 text-info" />
+                  <span className="text-sm font-mono font-bold text-info">{progress.messageCountdown}s</span>
                 </div>
               </div>
             )}
 
             {/* Countdown between blocks */}
             {progress.isWaitingBetweenBlocks && (
-              <div className="rounded-xl bg-orange-500/10 border border-orange-500/30 p-4 text-center space-y-2">
-                <p className="text-sm font-bold text-orange-300">⏳ Pausa entre blocos</p>
-                <p className="text-4xl font-mono font-bold text-orange-400">
+              <div className="rounded-xl bg-warning/10 border border-warning/30 p-4 text-center space-y-2">
+                <p className="text-sm font-bold text-warning">⏳ Pausa entre blocos</p>
+                <p className="text-4xl font-mono font-bold text-warning">
                   {formatCountdown(progress.blockCountdown)}
                 </p>
-                <p className="text-xs text-orange-300/70">
+                <p className="text-xs text-warning/70">
                   Próximo bloco: {progress.currentBlock + 2}/{progress.totalBlocks}
                 </p>
               </div>
@@ -602,8 +602,8 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
                 {blockResults.map(br => (
                   <div key={br.blockIndex} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded bg-secondary/30">
                     <span className="text-muted-foreground">Bloco {br.blockIndex + 1}:</span>
-                    <span className="text-green-400">{br.sent} ✓</span>
-                    {br.failed > 0 && <span className="text-red-400">{br.failed} ✗</span>}
+                    <span className="text-primary">{br.sent} ✓</span>
+                    {br.failed > 0 && <span className="text-destructive">{br.failed} ✗</span>}
                   </div>
                 ))}
               </div>
@@ -625,15 +625,15 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
         {finalResult && (
           <div className="space-y-4">
             <div className="rounded-xl border border-border/40 bg-secondary/20 p-5 text-center space-y-3">
-              <div className="w-12 h-12 mx-auto rounded-full bg-green-500/20 flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-green-400" />
+              <div className="w-12 h-12 mx-auto rounded-full bg-primary/20 flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6 text-primary" />
               </div>
               <p className="text-lg font-bold text-foreground">
                 {cancelledRef.current ? "Envio cancelado" : "Envio concluído!"}
               </p>
               <div className="flex justify-center gap-6 text-sm font-medium">
-                <span className="text-green-400">{finalResult.sent} enviadas</span>
-                {finalResult.failed > 0 && <span className="text-red-400">{finalResult.failed} falhas</span>}
+                <span className="text-primary">{finalResult.sent} enviadas</span>
+                {finalResult.failed > 0 && <span className="text-destructive">{finalResult.failed} falhas</span>}
               </div>
               {blockResults.length > 0 && (
                 <div className="text-left space-y-1 mt-3">
@@ -641,8 +641,8 @@ export function BulkBlockSendPanel({ instanceName, customers, templates, applyTe
                   {blockResults.map(br => (
                     <div key={br.blockIndex} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded bg-secondary/30">
                       <span className="text-muted-foreground font-medium">Bloco {br.blockIndex + 1}:</span>
-                      <span className="text-green-400">{br.sent} enviadas</span>
-                      {br.failed > 0 && <span className="text-red-400">{br.failed} falhas</span>}
+                      <span className="text-primary">{br.sent} enviadas</span>
+                      {br.failed > 0 && <span className="text-destructive">{br.failed} falhas</span>}
                     </div>
                   ))}
                 </div>

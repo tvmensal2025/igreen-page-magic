@@ -65,11 +65,11 @@ function QrTimer({ generatedAt, onExpired }: { generatedAt: number; onExpired: (
     <div className="flex items-center gap-2 mt-1">
       <div className="w-24 h-1.5 rounded-full bg-secondary overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-1000 ${isLow ? "bg-red-400" : "bg-green-400"}`}
+          className={`h-full rounded-full transition-all duration-1000 ${isLow ? "bg-destructive" : "bg-primary"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className={`text-[11px] font-mono ${isLow ? "text-red-400" : "text-muted-foreground"}`}>
+      <span className={`text-[11px] font-mono ${isLow ? "text-destructive" : "text-muted-foreground"}`}>
         {secondsLeft}s
       </span>
     </div>
@@ -78,12 +78,12 @@ function QrTimer({ generatedAt, onExpired }: { generatedAt: number; onExpired: (
 
 function HealthBadge({ health, timeouts }: { health: OperationalHealth; timeouts: number }) {
   const config: Record<OperationalHealth, { label: string; color: string; icon: React.ReactNode }> = {
-    healthy: { label: "Operacional", color: "bg-green-500/15 text-green-400 border-green-500/25", icon: <CheckCircle2 className="w-3 h-3" /> },
-    degraded: { label: "Instável", color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25", icon: <AlertTriangle className="w-3 h-3" /> },
-    recovering: { label: "Recuperando", color: "bg-blue-500/15 text-blue-400 border-blue-500/25", icon: <RefreshCw className="w-3 h-3 animate-spin" /> },
-    needs_qr: { label: "Aguardando QR", color: "bg-purple-500/15 text-purple-400 border-purple-500/25", icon: <QrCode className="w-3 h-3" /> },
-    reset_recommended: { label: "Reset recomendado", color: "bg-red-500/15 text-red-400 border-red-500/25", icon: <AlertTriangle className="w-3 h-3" /> },
-    resetting: { label: "Resetando...", color: "bg-orange-500/15 text-orange-400 border-orange-500/25", icon: <RotateCcw className="w-3 h-3 animate-spin" /> },
+    healthy: { label: "Operacional", color: "bg-primary/15 text-primary border-primary/25", icon: <CheckCircle2 className="w-3 h-3" /> },
+    degraded: { label: "Instável", color: "bg-warning/15 text-warning border-warning/25", icon: <AlertTriangle className="w-3 h-3" /> },
+    recovering: { label: "Recuperando", color: "bg-info/15 text-info border-info/25", icon: <RefreshCw className="w-3 h-3 animate-spin" /> },
+    needs_qr: { label: "Aguardando QR", color: "bg-primary/15 text-primary border-primary/25", icon: <QrCode className="w-3 h-3" /> },
+    reset_recommended: { label: "Reset recomendado", color: "bg-destructive/15 text-destructive border-destructive/25", icon: <AlertTriangle className="w-3 h-3" /> },
+    resetting: { label: "Resetando...", color: "bg-warning/15 text-warning border-warning/25", icon: <RotateCcw className="w-3 h-3 animate-spin" /> },
   };
 
   const c = config[health];
@@ -123,13 +123,13 @@ function DiagnosticPanel({ logs }: { logs: string[] }) {
           return (
             <div key={i} className="flex items-start gap-2">
               {isSuccess ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-green-400 mt-0.5 shrink-0" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
               ) : isError ? (
-                <XCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+                <XCircle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
               ) : isWarning || isTimer ? (
-                <Clock className="w-3.5 h-3.5 text-yellow-400 mt-0.5 shrink-0" />
+                <Clock className="w-3.5 h-3.5 text-warning mt-0.5 shrink-0" />
               ) : isQr ? (
-                <QrCode className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
+                <QrCode className="w-3.5 h-3.5 text-info mt-0.5 shrink-0" />
               ) : isRetry ? (
                 <RefreshCw className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0 animate-spin" />
               ) : isSearch || isStep ? (
@@ -210,14 +210,14 @@ export function ConnectionPanel({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-green-950/20">
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-primary/20">
       <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/5 rounded-full blur-3xl" />
       <div className="absolute -bottom-16 -left-16 w-32 h-32 bg-primary/5 rounded-full blur-3xl" />
 
       <div className="relative p-5 sm:p-7">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center border border-green-500/20">
-            <Zap className="w-5 h-5 text-green-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border border-primary/20">
+            <Zap className="w-5 h-5 text-primary" />
           </div>
           <div className="flex-1">
             <h3 className="font-heading font-bold text-foreground text-lg">Conexão WhatsApp</h3>
@@ -228,21 +228,21 @@ export function ConnectionPanel({
 
         {/* Whapi Super Admin — connected via Whapi Cloud, no QR needed */}
         {isWhapi && connectionStatus === "connected" && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-3 px-4 rounded-xl bg-green-500/5 border border-green-500/15">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-3 px-4 rounded-xl bg-primary/5 border border-primary/15">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center border border-green-500/20">
-                  <Wifi className="w-6 h-6 text-green-400" />
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border border-primary/20">
+                  <Wifi className="w-6 h-6 text-primary" />
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-green-500 border-2 border-card flex items-center justify-center">
+                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary/100 border-2 border-card flex items-center justify-center">
                   <span className="w-1.5 h-1.5 rounded-full bg-white" />
                 </div>
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-400 uppercase tracking-wider">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                    Conectado via Whapi
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                    Conectado
                   </span>
                 </div>
                 {phoneNumber && <p className="text-sm text-muted-foreground mt-1">{phoneNumber}</p>}
@@ -255,13 +255,13 @@ export function ConnectionPanel({
         {/* Loading / Auto-reconnecting */}
         {showLoadingState && (
           <div className="flex flex-col items-center justify-center py-10 gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500/15 to-green-600/5 flex items-center justify-center border border-green-500/10">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center border border-primary/10">
               {operationalHealth === "resetting" ? (
-                <RotateCcw className="w-8 h-8 text-orange-400 animate-spin" />
+                <RotateCcw className="w-8 h-8 text-warning animate-spin" />
               ) : isAutoReconnecting ? (
-                <RefreshCw className="w-8 h-8 text-green-400 animate-spin" />
+                <RefreshCw className="w-8 h-8 text-primary animate-spin" />
               ) : (
-                <Loader2 className="w-8 h-8 text-green-400 animate-spin" />
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
               )}
             </div>
             <p className="text-sm text-muted-foreground font-medium">
@@ -282,7 +282,7 @@ export function ConnectionPanel({
                   onClick={() => setShowResetConfirm(true)}
                   variant="outline"
                   size="sm"
-                  className="gap-2 text-xs text-orange-400 border-orange-500/20 hover:bg-orange-500/5 hover:border-orange-500/30 hover:text-orange-400"
+                  className="gap-2 text-xs text-warning border-warning/20 hover:bg-warning/5 hover:border-warning/30 hover:text-warning"
                 >
                   <RotateCcw className="w-3.5 h-3.5" /> Resetar Conexão
                 </Button>
@@ -291,7 +291,7 @@ export function ConnectionPanel({
                 onClick={() => setShowDisconnectConfirm(true)}
                 variant="ghost"
                 size="sm"
-                className="gap-2 text-xs text-red-400 hover:text-red-400 hover:bg-red-500/5"
+                className="gap-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/5"
               >
                 <WifiOff className="w-3.5 h-3.5" /> Cancelar
               </Button>
@@ -302,8 +302,8 @@ export function ConnectionPanel({
         {/* Error */}
         {showErrorState && (
           <div className="flex flex-col items-center justify-center py-8 gap-5">
-            <div className="w-full rounded-xl bg-red-500/5 border border-red-500/20 px-5 py-4 text-center backdrop-blur-sm">
-              <p className="text-sm text-red-400 font-medium">{error}</p>
+            <div className="w-full rounded-xl bg-destructive/5 border border-destructive/20 px-5 py-4 text-center backdrop-blur-sm">
+              <p className="text-sm text-destructive font-medium">{error}</p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center">
               <Button onClick={onConnect} variant="outline" className="gap-2 rounded-xl border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all" disabled={isLoading}>
@@ -313,7 +313,7 @@ export function ConnectionPanel({
                 <Button
                   onClick={() => setShowDisconnectConfirm(true)}
                   variant="outline"
-                  className="gap-2 rounded-xl text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400"
+                  className="gap-2 rounded-xl text-destructive border-destructive/20 hover:bg-destructive/5 hover:border-destructive/30 hover:text-destructive"
                 >
                   <WifiOff className="w-4 h-4" /> Desconectar / trocar chip
                 </Button>
@@ -322,7 +322,7 @@ export function ConnectionPanel({
                 <Button
                   onClick={() => setShowResetConfirm(true)}
                   variant="outline"
-                  className="gap-2 rounded-xl text-orange-400 border-orange-500/20 hover:bg-orange-500/5 hover:border-orange-500/30 hover:text-orange-400"
+                  className="gap-2 rounded-xl text-warning border-warning/20 hover:bg-warning/5 hover:border-warning/30 hover:text-warning"
                 >
                   <RotateCcw className="w-4 h-4" /> Resetar Conexão
                 </Button>
@@ -338,8 +338,8 @@ export function ConnectionPanel({
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-secondary to-secondary/50 flex items-center justify-center border border-border/50">
                 <WifiOff className="w-9 h-9 text-muted-foreground/60" />
               </div>
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-orange-500/20 border border-orange-500/30 flex items-center justify-center">
-                <span className="w-2 h-2 rounded-full bg-orange-400" />
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-warning/20 border border-warning/30 flex items-center justify-center">
+                <span className="w-2 h-2 rounded-full bg-warning" />
               </div>
             </div>
             <div className="text-center space-y-1.5">
@@ -359,14 +359,14 @@ export function ConnectionPanel({
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-secondary to-secondary/50 flex items-center justify-center border border-border/50">
                 <WifiOff className="w-9 h-9 text-muted-foreground/60" />
               </div>
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
-                <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-destructive/20 border border-destructive/30 flex items-center justify-center">
+                <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
               </div>
             </div>
             <div className="text-center space-y-1.5 max-w-md">
               {fatalLocked ? (
                 <>
-                  <p className="text-base font-heading font-bold text-red-400">Número em revisão manual</p>
+                  <p className="text-base font-heading font-bold text-destructive">Número em revisão manual</p>
                   <p className="text-sm text-muted-foreground">
                     Houve uma desconexão grave{fatalReason ? ` (código ${fatalReason})` : ""}. O WhatsApp pode ter restringido este chip.
                     <strong> Não reconecte aqui agora.</strong> Verifique o número no app oficial do WhatsApp no celular. Se quiser usar outro chip, use o botão abaixo.
@@ -388,7 +388,7 @@ export function ConnectionPanel({
               <Button
                 onClick={() => setShowDisconnectConfirm(true)}
                 variant="outline"
-                className="gap-2 rounded-xl px-6 h-11 text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400"
+                className="gap-2 rounded-xl px-6 h-11 text-destructive border-destructive/20 hover:bg-destructive/5 hover:border-destructive/30 hover:text-destructive"
               >
                 <WifiOff className="w-4 h-4" /> Desconectar / trocar chip
               </Button>
@@ -396,7 +396,7 @@ export function ConnectionPanel({
                 <Button
                   onClick={() => setShowResetConfirm(true)}
                   variant="outline"
-                  className="gap-2 rounded-xl px-6 h-11 text-orange-400 border-orange-500/20 hover:bg-orange-500/5 hover:border-orange-500/30 hover:text-orange-400"
+                  className="gap-2 rounded-xl px-6 h-11 text-warning border-warning/20 hover:bg-warning/5 hover:border-warning/30 hover:text-warning"
                 >
                   <RotateCcw className="w-4 h-4" /> Resetar
                 </Button>
@@ -408,8 +408,8 @@ export function ConnectionPanel({
         {/* Connecting — waiting for QR */}
         {showConnectingWithoutQr && (
           <div className="flex flex-col items-center justify-center py-10 gap-5 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500/15 to-green-600/5 flex items-center justify-center border border-green-500/10">
-              <Loader2 className="w-8 h-8 text-green-400 animate-spin" />
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 flex items-center justify-center border border-primary/10">
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
             </div>
             <div className="space-y-1.5 max-w-md">
               <p className="text-base font-heading font-bold text-foreground">Aguardando QR Code</p>
@@ -436,7 +436,7 @@ export function ConnectionPanel({
                   onClick={() => setShowResetConfirm(true)}
                   variant="outline"
                   size="sm"
-                  className="gap-2 rounded-xl text-orange-400 border-orange-500/20 hover:bg-orange-500/5 hover:border-orange-500/30 hover:text-orange-400"
+                  className="gap-2 rounded-xl text-warning border-warning/20 hover:bg-warning/5 hover:border-warning/30 hover:text-warning"
                 >
                   <RotateCcw className="w-4 h-4" /> Resetar
                 </Button>
@@ -445,7 +445,7 @@ export function ConnectionPanel({
                 onClick={() => setShowDisconnectConfirm(true)}
                 variant="ghost"
                 size="sm"
-                className="gap-2 rounded-xl text-red-400 hover:bg-red-500/5 hover:text-red-400 transition-all"
+                className="gap-2 rounded-xl text-destructive hover:bg-destructive/5 hover:text-destructive transition-all"
               >
                 <WifiOff className="w-4 h-4" /> Cancelar
               </Button>
@@ -456,14 +456,14 @@ export function ConnectionPanel({
         {/* Connecting — QR code */}
         {showConnectingWithQr && (
           <div className="flex flex-col items-center justify-center py-8 gap-5">
-            <div className={`relative rounded-2xl border-2 ${qrExpired ? "border-red-500/30 opacity-40" : "border-green-500/20"} bg-white p-4 shadow-xl shadow-green-500/5 transition-all`}>
+            <div className={`relative rounded-2xl border-2 ${qrExpired ? "border-destructive/30 opacity-40" : "border-primary/20"} bg-white p-4 shadow-xl shadow-green-500/5 transition-all`}>
               <img
                 src={qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`}
                 alt="QR Code WhatsApp"
                 className="w-56 h-56 sm:w-64 sm:h-64"
               />
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-green-500/15 border border-green-500/25 backdrop-blur-sm">
-                <span className="text-[10px] font-bold text-green-400 uppercase tracking-wider">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-primary/15 border border-primary/25 backdrop-blur-sm">
+                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
                   {qrExpired ? "Expirado" : "Escaneie"}
                 </span>
               </div>
@@ -474,7 +474,7 @@ export function ConnectionPanel({
             )}
 
             <div className="flex items-center gap-2.5">
-              <div className={`w-2 h-2 rounded-full ${qrExpired ? "bg-yellow-400" : "bg-green-400"} animate-pulse`} />
+              <div className={`w-2 h-2 rounded-full ${qrExpired ? "bg-warning" : "bg-primary"} animate-pulse`} />
               <p className="text-sm text-muted-foreground font-medium">
                 {qrExpired ? "QR expirado — clique em \"Gerar novo QR\" abaixo" : "Aguardando leitura do QR Code..."}
               </p>
@@ -497,7 +497,7 @@ export function ConnectionPanel({
               onClick={() => setShowDisconnectConfirm(true)}
               variant="ghost"
               size="sm"
-              className="gap-2 text-xs text-red-400 hover:text-red-400 hover:bg-red-500/5"
+              className="gap-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/5"
             >
               <WifiOff className="w-3.5 h-3.5" /> Cancelar conexão
             </Button>
@@ -510,20 +510,20 @@ export function ConnectionPanel({
 
         {/* Connected (Evolution only — Whapi has its own panel above) */}
         {showConnectedState && !isWhapi && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-3 px-4 rounded-xl bg-green-500/5 border border-green-500/15">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-3 px-4 rounded-xl bg-primary/5 border border-primary/15">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center border border-green-500/20">
-                  <Wifi className="w-6 h-6 text-green-400" />
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border border-primary/20">
+                  <Wifi className="w-6 h-6 text-primary" />
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-green-500 border-2 border-card flex items-center justify-center">
+                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary/100 border-2 border-card flex items-center justify-center">
                   <span className="w-1.5 h-1.5 rounded-full bg-white" />
                 </div>
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-400 uppercase tracking-wider">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                     Conectado
                   </span>
                 </div>
@@ -531,7 +531,7 @@ export function ConnectionPanel({
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={() => setShowDisconnectConfirm(true)} variant="outline" size="sm" className="gap-2 rounded-xl text-red-400 border-red-500/20 hover:bg-red-500/5 hover:border-red-500/30 hover:text-red-400 transition-all">
+              <Button onClick={() => setShowDisconnectConfirm(true)} variant="outline" size="sm" className="gap-2 rounded-xl text-destructive border-destructive/20 hover:bg-destructive/5 hover:border-destructive/30 hover:text-destructive transition-all">
                 <WifiOff className="w-4 h-4" /> Desconectar / trocar chip
               </Button>
             </div>
@@ -559,7 +559,7 @@ export function ConnectionPanel({
                 setShowDisconnectConfirm(false);
                 onDisconnect();
               }}
-              className="bg-red-500 hover:bg-red-600 text-white"
+              className="bg-destructive/100 hover:bg-destructive text-white"
             >
               Sim, desconectar
             </AlertDialogAction>
@@ -572,7 +572,7 @@ export function ConnectionPanel({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-orange-400" />
+              <Shield className="w-5 h-5 text-warning" />
               Resetar Conexão com Segurança?
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
@@ -598,7 +598,7 @@ export function ConnectionPanel({
                 setShowResetConfirm(false);
                 onSafeReset?.();
               }}
-              className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
+              className="bg-warning/100 hover:bg-warning text-white gap-2"
             >
               <RotateCcw className="w-4 h-4" />
               Sim, resetar conexão

@@ -137,15 +137,15 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
 
   if (!connection) {
     return (
-      <div className="rounded-2xl border border-green-500/30 bg-green-500/5 backdrop-blur-sm p-6 sm:p-8 space-y-3">
+      <div className="rounded-2xl border border-primary/30 bg-primary/5 backdrop-blur-sm p-6 sm:p-8 space-y-3">
         <div className="flex items-start gap-4">
-          <div className="rounded-xl bg-green-500/10 p-3">
-            <CheckCircle2 className="w-6 h-6 text-green-500" />
+          <div className="rounded-xl bg-primary/10 p-3">
+            <CheckCircle2 className="w-6 h-6 text-primary" />
           </div>
           <div className="flex-1">
             <h3 className="text-lg font-bold text-foreground">Pixel da plataforma ativo</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Você já está usando o Pixel oficial da iGreen (<code className="text-xs">igreen-app-oficial</code>). Todos os eventos (PageView, Lead, Cadastro) são rastreados automaticamente — não precisa conectar nada.
+              Você já está usando o Pixel oficial da iGreen (<code className="text-xs">igreen-app-oficial</code>). Todos os eventos (PageView, Cliente interessado, Cadastro) são rastreados automaticamente — não precisa conectar nada.
             </p>
             <p className="text-xs text-muted-foreground/70 mt-2">
               Quer rodar campanhas no seu próprio Business Manager? Conecte abaixo (opcional).
@@ -173,9 +173,9 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           {isExpired ? (
-            <div className="rounded-xl bg-red-500/10 p-3"><AlertCircle className="w-6 h-6 text-red-500" /></div>
+            <div className="rounded-xl bg-destructive/10 p-3"><AlertCircle className="w-6 h-6 text-destructive" /></div>
           ) : (
-            <div className="rounded-xl bg-green-500/10 p-3"><CheckCircle2 className="w-6 h-6 text-green-500" /></div>
+            <div className="rounded-xl bg-primary/10 p-3"><CheckCircle2 className="w-6 h-6 text-primary" /></div>
           )}
           <div>
             <h3 className="text-lg font-bold text-foreground">{isExpired ? "Reconexão necessária" : "Conectado ao Facebook"}</h3>
@@ -222,8 +222,8 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
         <Field label="Página" value={connection.page_name} />
         <Field label="Instagram" value={connection.ig_account_username ? `@${connection.ig_account_username}` : null} />
         <Field label="Pixel" value={connection.pixel_name || (connection.pixel_id ? "Pixel detectado" : null)} />
-        <Field label="WhatsApp dos leads" value={connection.whatsapp_destination_number ? formatWhats(connection.whatsapp_destination_number) : null} />
-        <Field label="Token expira em" value={daysLeft !== null ? `${daysLeft} dias` : null} />
+        <Field label="WhatsApp dos clientes interessados" value={connection.whatsapp_destination_number ? formatWhats(connection.whatsapp_destination_number) : null} />
+        <Field label="Conexão expira em" value={daysLeft !== null ? `${daysLeft} dias` : null} />
       </div>
 
       <SwitchConfirmDialog open={switchOpen} setOpen={setSwitchOpen} onConfirm={handleLogoutAndSwitch} />
@@ -238,7 +238,7 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
           ) : (
             <div className="space-y-4">
               {(assets.errors?.ad_accounts || assets.errors?.pages) && (
-                <div className="text-xs rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-amber-200 space-y-1">
+                <div className="text-xs rounded-md border border-warning/30 bg-warning/10 p-2 text-warning space-y-1">
                   {assets.errors?.ad_accounts && <div>⚠️ Contas: {assets.errors.ad_accounts}</div>}
                   {assets.errors?.pages && <div>⚠️ Páginas: {assets.errors.pages}</div>}
                 </div>
@@ -322,7 +322,7 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
 
               <div className="border-t border-border/50 pt-3 space-y-1.5">
                 <Label className="text-xs flex items-center gap-1.5">
-                  📱 WhatsApp Business que vai receber os leads *
+                  📱 WhatsApp Business que vai receber os clientes interessados *
                 </Label>
                 <Input
                   placeholder="5511971254913"

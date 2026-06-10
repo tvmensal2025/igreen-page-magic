@@ -350,7 +350,7 @@ export function AIKnowledgePanel() {
       {/* Tips */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2">
-          <Lightbulb className="w-4 h-4 text-yellow-500" />
+          <Lightbulb className="w-4 h-4 text-warning" />
           <p className="text-sm font-semibold text-foreground">Dicas para deixar a IA mais inteligente:</p>
         </div>
         <ul className="text-xs text-muted-foreground space-y-1.5 pl-6 list-disc">

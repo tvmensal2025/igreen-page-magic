@@ -56,7 +56,7 @@ const STEP_OPTIONS: { value: string; label: string }[] = [
   { value: "objecao_burocracia", label: "Objeção: burocracia" },
   { value: "fechamento", label: "Fechamento" },
   { value: "pedir_documento", label: "Pedir documento" },
-  { value: "followup", label: "Follow-up (lead sumiu)" },
+  { value: "followup", label: "Follow-up (cliente interessado sumiu)" },
   { value: "any", label: "Qualquer momento" },
 ];
 
@@ -92,13 +92,13 @@ function iconFor(kind: Kind) {
   const cls = "w-4 h-4";
   switch (kind) {
     case "audio":
-      return <FileAudio className={`${cls} text-blue-400`} />;
+      return <FileAudio className={`${cls} text-info`} />;
     case "video":
-      return <FileVideo className={`${cls} text-purple-400`} />;
+      return <FileVideo className={`${cls} text-primary`} />;
     case "image":
-      return <FileImage className={`${cls} text-amber-400`} />;
+      return <FileImage className={`${cls} text-warning`} />;
     case "text":
-      return <FileText className={`${cls} text-emerald-400`} />;
+      return <FileText className={`${cls} text-primary`} />;
     default:
       return <FileText className={`${cls} text-muted-foreground`} />;
   }
@@ -441,7 +441,7 @@ export function MediaColumn({ userId }: { userId: string }) {
           <div className="flex items-center gap-2 mt-0.5">
             <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden max-w-[140px]">
               <div
-                className={`h-full transition-all ${usagePct > 85 ? "bg-red-400" : "bg-primary"}`}
+                className={`h-full transition-all ${usagePct > 85 ? "bg-destructive" : "bg-primary"}`}
                 style={{ width: `${usagePct}%` }}
               />
             </div>
@@ -552,7 +552,7 @@ export function MediaColumn({ userId }: { userId: string }) {
                       <Play className="w-5 h-5 text-white fill-white" />
                     </div>
                     {m.is_primary_explainer && (
-                      <span className="absolute top-0.5 left-0.5 bg-amber-400 text-black rounded-full p-0.5">
+                      <span className="absolute top-0.5 left-0.5 bg-warning text-black rounded-full p-0.5">
                         <Star className="w-2.5 h-2.5 fill-current" />
                       </span>
                     )}
@@ -570,7 +570,7 @@ export function MediaColumn({ userId }: { userId: string }) {
                   )}
                   <p className="text-[10px] text-muted-foreground uppercase">
                     {m.kind} · prio {m.priority}
-                    {m.is_primary_explainer && <span className="ml-1 text-amber-400 normal-case">⭐ principal</span>}
+                    {m.is_primary_explainer && <span className="ml-1 text-warning normal-case">⭐ principal</span>}
                   </p>
                 </div>
                 {m.url && (
@@ -590,8 +590,8 @@ export function MediaColumn({ userId }: { userId: string }) {
                         onClick={() => togglePrimary(m)}
                         className={`p-1.5 rounded transition-colors shrink-0 ${
                           m.is_primary_explainer
-                            ? "text-amber-400 hover:text-amber-300"
-                            : "text-muted-foreground hover:text-amber-400"
+                            ? "text-warning hover:text-warning"
+                            : "text-muted-foreground hover:text-warning"
                         }`}
                         title={m.is_primary_explainer
                           ? `${m.kind === "video" ? "Vídeo" : m.kind === "audio" ? "Áudio" : "Imagem"} principal — clique para remover`
@@ -618,8 +618,8 @@ export function MediaColumn({ userId }: { userId: string }) {
                         onClick={() => togglePublic(m)}
                         className={`p-1.5 rounded transition-colors shrink-0 ${
                           m.is_public
-                            ? "text-emerald-400 hover:text-emerald-300"
-                            : "text-muted-foreground hover:text-emerald-400"
+                            ? "text-primary hover:text-primary"
+                            : "text-muted-foreground hover:text-primary"
                         }`}
                         title={m.is_public
                           ? "Pública — clique para tornar privada"

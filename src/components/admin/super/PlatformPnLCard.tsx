@@ -151,7 +151,7 @@ export function PlatformPnLCard() {
 function Stat({ label, value, icon: Icon, positive, negative, highlight }: {
   label: string; value: string; icon: any; positive?: boolean; negative?: boolean; highlight?: boolean;
 }) {
-  const color = positive ? "text-emerald-400" : negative ? "text-rose-400" : "text-foreground";
+  const color = positive ? "text-primary" : negative ? "text-destructive" : "text-foreground";
   return (
     <div className={`rounded-xl border p-4 backdrop-blur ${highlight ? "border-primary/40 bg-primary/5" : "border-border/40 bg-card/40"}`}>
       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">

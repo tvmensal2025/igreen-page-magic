@@ -137,7 +137,7 @@ export function SendSequenceDialog({
             {variant && <Badge variant="outline" className="text-[10px]">Fluxo {variant}</Badge>}
           </DialogTitle>
           <p className="text-[11px] text-muted-foreground truncate">
-            Para: <span className="font-semibold">{customerName || "Lead"}</span> · {idx}/{steps.length} enviados
+            Para: <span className="font-semibold">{customerName || "Cliente interessado"}</span> · {idx}/{steps.length} enviados
           </p>
         </DialogHeader>
 
@@ -159,10 +159,10 @@ export function SendSequenceDialog({
               </div>
 
               {phase === "waiting_inbound" && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 flex items-start gap-2">
-                  <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="rounded-md border border-warning/40 bg-warning/10 p-2.5 flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                   <div className="text-xs text-foreground">
-                    <p className="font-semibold">Aguardando resposta do lead…</p>
+                    <p className="font-semibold">Aguardando resposta do cliente interessado…</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
                       Assim que {customerName?.split(" ")[0] || "ele"} responder, libero o próximo passo automaticamente.
                     </p>
@@ -196,7 +196,7 @@ export function SendSequenceDialog({
                   Pedir nome
                 </Button>
               ) : phase === "waiting_inbound" ? (
-                <Button size="sm" variant="secondary" className="flex-1 h-9 gap-1.5" onClick={() => sendNext({ force: true })} title="Enviar mesmo sem o lead ter respondido">
+                <Button size="sm" variant="secondary" className="flex-1 h-9 gap-1.5" onClick={() => sendNext({ force: true })} title="Enviar mesmo sem o cliente interessado ter respondido">
                   <Send className="w-3.5 h-3.5" /> Forçar envio
                 </Button>
               ) : (

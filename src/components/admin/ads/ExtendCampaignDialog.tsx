@@ -85,7 +85,7 @@ export function ExtendCampaignDialog({ open, onOpenChange, campaign, onUpdated }
           <DialogDescription className="text-xs">
             <strong>{campaign.name}</strong>
             {wasExpired && (
-              <span className="block mt-1 text-amber-500">
+              <span className="block mt-1 text-warning">
                 Encerrou em {new Date(campaign.ended_at!).toLocaleDateString("pt-BR")} — adicione dias para reativar.
               </span>
             )}

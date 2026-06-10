@@ -91,22 +91,22 @@ export default function FlowEngineHealthCard({ consultantId }: { consultantId: s
         <Stat
           label="Conversão 24h"
           value={row.conversion_rate_24h_pct != null ? `${row.conversion_rate_24h_pct}%` : "—"}
-          icon={<CheckCircle2 className="w-3 h-3 text-green-600" />}
+          icon={<CheckCircle2 className="w-3 h-3 text-primary" />}
         />
         <Stat
           label="Convertidos hoje"
           value={row.converted_today}
-          icon={<CheckCircle2 className="w-3 h-3 text-green-600" />}
+          icon={<CheckCircle2 className="w-3 h-3 text-primary" />}
         />
         <Stat
           label="Pausados (humano)"
           value={row.paused_manual}
-          icon={<UserMinus className="w-3 h-3 text-blue-600" />}
+          icon={<UserMinus className="w-3 h-3 text-info" />}
         />
         <Stat
           label="Pausados (sistema)"
           value={row.paused_system}
-          icon={<AlertTriangle className="w-3 h-3 text-yellow-600" />}
+          icon={<AlertTriangle className="w-3 h-3 text-warning" />}
         />
         <Stat label="Perdidos hoje" value={row.lost_today} />
       </div>

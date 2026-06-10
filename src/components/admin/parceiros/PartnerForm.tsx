@@ -168,10 +168,10 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
         <div className="space-y-4 py-2">
           {isEdit && keywords.length === 0 && !qrPhrase.trim() && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <div>
-                Este parceiro <strong>não consegue atribuir leads</strong> — sem palavra-chave e sem frase de QR. Adicione pelo menos uma keyword abaixo para que o sistema reconheça quando um lead mencionar este parceiro no WhatsApp.
+                Este parceiro <strong>não consegue atribuir clientes interessados</strong> — sem palavra-chave e sem frase de QR. Adicione pelo menos uma keyword abaixo para que o sistema reconheça quando um cliente interessado mencionar este parceiro no WhatsApp.
               </div>
             </div>
           )}
@@ -228,7 +228,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 size="sm"
                 disabled={aiLoading}
                 className="gap-1 border-primary/40 text-primary hover:bg-primary/10"
-                title="Gerar exemplo de mensagem do lead com IA"
+                title="Gerar exemplo de mensagem do cliente interessado com IA"
               >
                 {aiLoading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -259,7 +259,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               <div className="mt-2 p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-wider font-semibold text-primary/80 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" /> Exemplo de mensagem do lead
+                    <Sparkles className="h-3 w-3" /> Exemplo de mensagem do cliente interessado
                   </span>
                   <Button
                     type="button"
@@ -280,7 +280,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   "{aiExample}"
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  Se o lead escrever assim no WhatsApp, este parceiro será atribuído automaticamente.
+                  Se o cliente interessado escrever assim no WhatsApp, este parceiro será atribuído automaticamente.
                 </p>
               </div>
             )}

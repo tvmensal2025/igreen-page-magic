@@ -186,13 +186,13 @@ export default function StepInspector({
           {/* CONTEÚDO */}
           <TabsContent value="conteudo" className="space-y-4 pt-4">
             {isAiAnswerStep(step) && (
-              <div className="space-y-2 rounded-lg border border-purple-500/40 bg-purple-500/10 p-3">
+              <div className="space-y-2 rounded-lg border border-primary/40 bg-primary/10 p-3">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-purple-500" />
+                  <Sparkles className="h-4 w-4 text-primary" />
                   <Label className="text-sm">Este passo usa IA livre (Gemini)</Label>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  O texto que você digitar abaixo é <strong>ignorado</strong>. O bot responde cada pergunta do lead com Gemini + a sua FAQ. Para o lead sair desse passo, ele precisa clicar em <strong>um dos botões</strong> (ex: "Quero simular", "Falar com humano"). Sem botões, vira loop infinito.
+                  O texto que você digitar abaixo é <strong>ignorado</strong>. O bot responde cada pergunta do cliente interessado com Gemini + a sua FAQ. Para o cliente interessado sair desse passo, ele precisa clicar em <strong>um dos botões</strong> (ex: "Quero simular", "Falar com humano"). Sem botões, vira loop infinito.
                 </p>
                 {(() => {
                   const btns = getButtons(step);
@@ -355,7 +355,7 @@ export default function StepInspector({
               };
 
               return (
-                <div className="space-y-1.5 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+                <div className="space-y-1.5 rounded-lg border border-info/30 bg-info/5 p-3">
                   <Label className="text-sm">Próximo passo (padrão)</Label>
                   <p className="text-xs text-muted-foreground">
                     Para onde o bot vai quando nenhum botão nem regra casa.
@@ -388,11 +388,11 @@ export default function StepInspector({
               if (!ocr) return null;
               const on = step.auto_detect_doc_type !== false;
               return (
-                <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <ScanLine className="h-4 w-4 text-emerald-500" />
-                      <Label className="text-sm">Leitura automática (OCR)</Label>
+                      <ScanLine className="h-4 w-4 text-primary" />
+                      <Label className="text-sm">Leitura automática</Label>
                     </div>
                     <Switch
                       checked={on}
@@ -408,7 +408,7 @@ export default function StepInspector({
                     {" "}Os dados ficam disponíveis no próximo passo como <code className="rounded bg-muted px-1">{"{{valor_conta}}"}</code>, <code className="rounded bg-muted px-1">{"{{nome}}"}</code>, <code className="rounded bg-muted px-1">{"{{cpf}}"}</code>.
                   </p>
                   {!on && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                    <p className="text-xs text-warning dark:text-warning">
                       ⚠ OCR desligado — o bot só vai salvar a foto, sem ler os dados.
                     </p>
                   )}
@@ -624,7 +624,7 @@ export default function StepInspector({
             <section className="space-y-3">
               <Label className="text-sm font-semibold">Regras por palavra-chave</Label>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-                Palavras que o lead digita pra pular pra outro passo. Ex: <em>"humano"</em> → handoff.
+                Palavras que o cliente interessado digita pra pular pra outro passo. Ex: <em>"humano"</em> → handoff.
               </div>
               {(() => {
                 const buttonKeys = new Set(buttons.flatMap((b) => [b.id, b.title, b.title.replace(/^\S+\s/, "").trim()]));

@@ -200,7 +200,7 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
       if (isLeadWithoutWhatsApp(row)) {
         toast({
           title: `↩️ Devolvido para: ${label}`,
-          description: "Lead sem WhatsApp — passo gravado, mas nada foi enviado.",
+          description: "Cliente interessado sem WhatsApp — passo gravado, mas nada foi enviado.",
         });
         load();
         return;
@@ -341,7 +341,7 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => setConfirmReset(r)}
-              className="text-rose-500 focus:text-rose-500"
+              className="text-destructive focus:text-destructive"
             >
               <RotateCcw className="w-4 h-4 mr-2" /> Reiniciar conversa do zero
             </DropdownMenuItem>
@@ -357,10 +357,10 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
     <div className="space-y-6">
       <Card className="p-4 border-destructive/40 bg-destructive/5 flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-[220px]">
-          <p className="font-semibold text-foreground text-sm">🛑 Parar IA de todos os meus leads</p>
+          <p className="font-semibold text-foreground text-sm">🛑 Parar IA de todos os meus clientes interessados</p>
           <p className="text-xs text-muted-foreground">
             Pausa a IA em TODAS as suas conversas ativas. Use quando quiser assumir tudo de uma vez.
-            {globalPausedCount > 0 && <> Atualmente <strong>{globalPausedCount}</strong> lead(s) com pausa global.</>}
+            {globalPausedCount > 0 && <> Atualmente <strong>{globalPausedCount}</strong> cliente interessado(s) com pausa global.</>}
           </p>
         </div>
         {globalPausedCount > 0 && (
@@ -399,7 +399,7 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Reiniciar conversa?</AlertDialogTitle>
             <AlertDialogDescription>
-              Isso apaga o histórico, memória e decisões da IA para <strong>{confirmReset?.name || confirmReset?.phone_whatsapp}</strong>. O lead volta para o início do fluxo. Esta ação não pode ser desfeita.
+              Isso apaga o histórico, memória e decisões da IA para <strong>{confirmReset?.name || confirmReset?.phone_whatsapp}</strong>. O cliente interessado volta para o início do fluxo. Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -416,7 +416,7 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Parar IA em todos os {active.length} lead(s) ativos?</AlertDialogTitle>
             <AlertDialogDescription>
-              A IA não vai responder a nenhuma das suas conversas até você clicar em <strong>Religar IA</strong> ou <strong>Devolver para…</strong> em cada lead.
+              A IA não vai responder a nenhuma das suas conversas até você clicar em <strong>Religar IA</strong> ou <strong>Devolver para…</strong> em cada cliente interessado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

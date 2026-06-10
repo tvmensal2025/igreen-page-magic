@@ -125,7 +125,7 @@ export function SlotCard({ userId, slot, defaultMedia, personalMedia, onChange }
         <div className="flex flex-col items-end gap-1 shrink-0">
           <Badge variant={hasPersonal ? "default" : "secondary"}>{variantLabel}</Badge>
           {slot.is_testing && (
-            <Badge variant="outline" className="border-amber-500/60 text-amber-500 text-[10px]">
+            <Badge variant="outline" className="border-warning/60 text-warning text-[10px]">
               🧪 Em teste — não envia
             </Badge>
           )}

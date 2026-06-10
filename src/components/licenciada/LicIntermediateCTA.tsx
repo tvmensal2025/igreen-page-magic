@@ -35,7 +35,7 @@ const LicIntermediateCTA = ({ whatsappUrl, consultantId, headline, subtext, emoj
           </a>
           
           <p className="text-xs text-muted-foreground mt-4 flex items-center justify-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="inline-block w-2 h-2 rounded-full bg-destructive/100 animate-pulse" />
             Apenas algumas vagas disponíveis na sua região
           </p>
         </div>

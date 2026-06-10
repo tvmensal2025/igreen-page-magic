@@ -180,7 +180,7 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <p className="text-sm font-semibold text-foreground truncate">{t.name}</p>
                       {t.media_type && t.media_type !== "text" && (
-                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600">{t.media_type}</span>
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/15 text-primary">{t.media_type}</span>
                       )}
                     </div>
                     <p className="text-[11px] text-muted-foreground line-clamp-2">{t.content || "(sem texto)"}</p>
@@ -206,7 +206,7 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
         ))}
         <button
           type="button" onClick={insertSpintax}
-          className="text-[11px] px-2 py-1 rounded-md bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30"
+          className="text-[11px] px-2 py-1 rounded-md bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30"
           title="Variações aleatórias para evitar bloqueio"
         >
           ✨ spintax
@@ -226,7 +226,7 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-foreground">Anexo (opcional)</span>
           {media && (
-            <button onClick={() => onMediaChange(null)} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+            <button onClick={() => onMediaChange(null)} className="text-xs text-destructive hover:text-destructive flex items-center gap-1">
               <X className="w-3 h-3" /> Remover
             </button>
           )}
@@ -235,28 +235,28 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
         {!media && !uploading && !recorder.isRecording && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Button variant="outline" className="h-16 flex-col gap-1 rounded-lg" onClick={() => { if (fileRef.current) { fileRef.current.accept = "image/*"; fileRef.current.click(); } }}>
-              <ImageIcon className="w-4 h-4 text-blue-400" />
+              <ImageIcon className="w-4 h-4 text-info" />
               <span className="text-[11px]">Imagem</span>
             </Button>
             <Button variant="outline" className="h-16 flex-col gap-1 rounded-lg" onClick={() => { if (fileRef.current) { fileRef.current.accept = "video/mp4,video/*"; fileRef.current.click(); } }}>
-              <Video className="w-4 h-4 text-purple-400" />
+              <Video className="w-4 h-4 text-primary" />
               <span className="text-[11px]">Vídeo</span>
             </Button>
             <Button variant="outline" className="h-16 flex-col gap-1 rounded-lg" onClick={recorder.startRecording}>
-              <Mic className="w-4 h-4 text-emerald-400" />
+              <Mic className="w-4 h-4 text-primary" />
               <span className="text-[11px]">Gravar áudio</span>
             </Button>
             <Button variant="outline" className="h-16 flex-col gap-1 rounded-lg" onClick={() => { if (fileRef.current) { fileRef.current.accept = ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,audio/*"; fileRef.current.click(); } }}>
-              <Upload className="w-4 h-4 text-amber-400" />
+              <Upload className="w-4 h-4 text-warning" />
               <span className="text-[11px]">Arquivo</span>
             </Button>
           </div>
         )}
 
         {recorder.isRecording && (
-          <div className="flex items-center justify-between rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2">
-            <div className="flex items-center gap-2 text-red-300 text-sm font-medium">
-              <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+          <div className="flex items-center justify-between rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2">
+            <div className="flex items-center gap-2 text-destructive text-sm font-medium">
+              <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
               Gravando {recorder.formatTime(recorder.recordingTime)}
             </div>
             <div className="flex gap-2">
@@ -267,7 +267,7 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
         )}
 
         {uploading && (
-          <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 px-3 py-2 flex items-center gap-2 text-blue-300 text-sm">
+          <div className="rounded-lg bg-info/10 border border-info/30 px-3 py-2 flex items-center gap-2 text-info text-sm">
             <Loader2 className="w-4 h-4 animate-spin" /> Enviando anexo... {pct}%
           </div>
         )}

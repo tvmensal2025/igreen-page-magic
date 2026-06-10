@@ -289,7 +289,7 @@ export default function SuperAdminRemoteSupport() {
             {active.map(s => (
               <Card key={s.id}>
                 <CardContent className="p-4 flex items-center gap-3">
-                  <Badge className="bg-green-600 text-white">ATIVA</Badge>
+                  <Badge className="bg-primary text-white">ATIVA</Badge>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{consultantName(s.requester_id)}</div>
                     <div className="text-xs text-muted-foreground">
@@ -384,9 +384,9 @@ export default function SuperAdminRemoteSupport() {
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string; dot: string }> = {
-    active:        { label: "Ativa",            cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30", dot: "bg-emerald-500" },
-    pending_code:  { label: "Aguardando código", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30",     dot: "bg-amber-500" },
-    requested:     { label: "Solicitada",       cls: "bg-sky-500/15 text-sky-600 border-sky-500/30",            dot: "bg-sky-500" },
+    active:        { label: "Ativa",            cls: "bg-primary/15 text-primary border-primary/30", dot: "bg-primary/100" },
+    pending_code:  { label: "Aguardando código", cls: "bg-warning/15 text-warning border-warning/30",     dot: "bg-warning/100" },
+    requested:     { label: "Solicitada",       cls: "bg-info/15 text-info border-info/30",            dot: "bg-info/100" },
   };
   const s = map[status] ?? { label: status, cls: "bg-muted text-muted-foreground border-border", dot: "bg-muted-foreground" };
   return (
@@ -762,9 +762,9 @@ function SessionWorkbench({
   // -------------------------------------------------------------------------
   const rttColor =
     rtt === null   ? "bg-zinc-600"   :
-    rtt < 100      ? "bg-green-600"  :
-    rtt < 300      ? "bg-yellow-500" :
-                     "bg-red-600";
+    rtt < 100      ? "bg-primary"  :
+    rtt < 300      ? "bg-warning/100" :
+                     "bg-destructive";
 
   // -------------------------------------------------------------------------
   // Render
@@ -908,11 +908,11 @@ function SessionWorkbench({
                     </>
                   ) : stage === "failed" ? (
                     <>
-                      <span className="flex size-16 items-center justify-center rounded-full bg-red-500/15">
-                        <AlertTriangle className="size-7 text-red-400" />
+                      <span className="flex size-16 items-center justify-center rounded-full bg-destructive/15">
+                        <AlertTriangle className="size-7 text-destructive" />
                       </span>
                       <div className="max-w-sm">
-                        <div className="text-base font-semibold text-red-300">Falha na conexão</div>
+                        <div className="text-base font-semibold text-destructive">Falha na conexão</div>
                         <div className="text-sm text-white/70 mt-1">
                           Peça ao consultor para clicar em <b>Compartilhar tela</b> novamente.
                         </div>
@@ -935,8 +935,8 @@ function SessionWorkbench({
 
                   {/* Orientação após 12s sem vídeo */}
                   {slowConnect && stage !== "failed" && (
-                    <div className="mt-1 max-w-md text-left text-xs text-amber-200 bg-amber-950/50 border border-amber-700/40 rounded-lg p-3">
-                      <div className="flex items-center gap-1.5 font-medium text-amber-100">
+                    <div className="mt-1 max-w-md text-left text-xs text-warning bg-warning/50 border border-warning/40 rounded-lg p-3">
+                      <div className="flex items-center gap-1.5 font-medium text-warning">
                         <AlertTriangle className="size-4" />
                         Está demorando mais que o normal
                       </div>
@@ -1043,7 +1043,7 @@ function SidePanel({
             <div className="rounded-lg border bg-muted/40 p-2">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Controle</div>
               <div className="mt-0.5 flex items-center gap-1.5">
-                <span className={`size-2 rounded-full ${controlEnabled ? "bg-emerald-500" : "bg-zinc-400"}`} />
+                <span className={`size-2 rounded-full ${controlEnabled ? "bg-primary/100" : "bg-zinc-400"}`} />
                 <span className="text-sm font-semibold">{controlEnabled ? "Ativo" : "Off"}</span>
               </div>
             </div>
@@ -1066,7 +1066,7 @@ function SidePanel({
                 <span>Superfície</span>
                 <Badge
                   variant="outline"
-                  className={requesterVp.displaySurface !== "browser" ? "border-yellow-500 text-yellow-600" : ""}
+                  className={requesterVp.displaySurface !== "browser" ? "border-warning/300 text-warning" : ""}
                 >
                   {requesterVp.displaySurface ?? "—"}
                 </Badge>
@@ -1078,8 +1078,8 @@ function SidePanel({
 
       {/* Aviso de superfície não-aba */}
       {requesterVp && requesterVp.displaySurface && requesterVp.displaySurface !== "browser" && (
-        <div className="flex items-start gap-2 text-[11px] text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2">
-          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-yellow-500" />
+        <div className="flex items-start gap-2 text-[11px] text-warning bg-warning/10 border border-warning/30 rounded p-2">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-warning" />
           <span>
             O consultor está compartilhando uma <b>{requesterVp.displaySurface === "monitor" ? "tela inteira" : "janela"}</b>{" "}
             em vez da aba do navegador. Os cliques podem não ser precisos.
@@ -1233,7 +1233,7 @@ function PlayerToolbar({
         title="Ctrl+Shift+C — ativar/desativar controle"
         className={`px-2 py-1 rounded flex items-center gap-1 transition-colors ${
           controlEnabled
-            ? "bg-green-600 hover:bg-green-500"
+            ? "bg-primary hover:bg-primary/100"
             : "bg-zinc-700 hover:bg-zinc-600"
         }`}
       >
@@ -1265,7 +1265,7 @@ function PlayerToolbar({
       </span>
 
       {paused && (
-        <span className="px-1.5 py-0.5 rounded bg-yellow-500 text-black font-semibold">
+        <span className="px-1.5 py-0.5 rounded bg-warning/100 text-black font-semibold">
           PAUSADO
         </span>
       )}
@@ -1276,7 +1276,7 @@ function PlayerToolbar({
         className="p-1.5 rounded hover:bg-white/10">
         <Camera className="size-3.5" />
       </button>
-      <button onClick={onCopyCode} title="Copiar ID da sessão"
+      <button onClick={onCopyCode} title="Copiar código da sessão"
         className="p-1.5 rounded hover:bg-white/10">
         <Copy className="size-3.5" />
       </button>
@@ -1289,7 +1289,7 @@ function PlayerToolbar({
         {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
       </button>
       <button onClick={onEnd} title="Ctrl+Shift+E — encerrar sessão"
-        className="p-1.5 rounded bg-red-600 hover:bg-red-500">
+        className="p-1.5 rounded bg-destructive hover:bg-destructive/100">
         <X className="size-3.5" />
       </button>
     </div>

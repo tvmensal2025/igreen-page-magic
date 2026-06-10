@@ -224,7 +224,7 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
                   Baixando mídia automaticamente…
                 </>
               ) : autoLoadFailed ? (
-                <span className="text-amber-500">⚠️ Não consegui baixar a mídia. Toque no player da mensagem na conversa e tente de novo.</span>
+                <span className="text-warning">⚠️ Não consegui baixar a mídia. Toque no player da mensagem na conversa e tente de novo.</span>
               ) : (
                 "Carregando mídia..."
               )}
@@ -285,7 +285,7 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
 
         <DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center">
           {disabledReason && (
-            <p className="text-[11px] text-amber-500 flex-1 text-left">⚠️ {disabledReason}</p>
+            <p className="text-[11px] text-warning flex-1 text-left">⚠️ {disabledReason}</p>
           )}
           <div className="flex gap-2 justify-end">
             <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>

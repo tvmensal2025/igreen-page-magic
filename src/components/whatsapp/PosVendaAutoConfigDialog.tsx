@@ -66,8 +66,8 @@ export default function PosVendaAutoConfigDialog({ consultantId }: { consultantI
         <DialogHeader>
           <DialogTitle>Mensagens automáticas do Pós-Venda</DialogTitle>
           <DialogDescription>
-            Configure o que o cliente recebe ao entrar em cada coluna. Os envios usam a instância
-            Evolution do consultor e, se indisponível, o Whapi compartilhado.
+            Configure o que o cliente recebe ao entrar em cada coluna. Os envios usam a conexão
+            de WhatsApp do consultor e, se indisponível, a conexão compartilhada.
           </DialogDescription>
         </DialogHeader>
 
@@ -91,7 +91,7 @@ export default function PosVendaAutoConfigDialog({ consultantId }: { consultantI
                   <p className="text-sm font-semibold truncate">{s.label}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     {s.auto_message_enabled ? (
-                      <Badge variant="secondary" className="text-[9px] bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                      <Badge variant="secondary" className="text-[9px] bg-primary/15 text-primary border-primary/30">
                         <MessageSquare className="w-2.5 h-2.5 mr-0.5" /> ativa
                       </Badge>
                     ) : (

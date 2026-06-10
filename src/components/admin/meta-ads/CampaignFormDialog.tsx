@@ -138,14 +138,14 @@ export function CampaignFormDialog({ open, onOpenChange, consultantId, campaign,
           </div>
 
           <div>
-            <Label className="text-xs">Meta Campaign ID (opcional)</Label>
+            <Label className="text-xs">Código da campanha do Meta (opcional)</Label>
             <Input
               value={form.fb_campaign_id || ""}
               onChange={(e) => setField("fb_campaign_id", e.target.value || null)}
               placeholder="123456789012"
             />
             <p className="mt-1 text-[10px] text-muted-foreground">
-              Cole o ID da campanha do Meta Ads Manager (opcional, pra match via ctwa_clid).
+              Cole o código da campanha do Gerenciador de Anúncios do Meta (opcional, ajuda a vincular os clientes interessados que vieram do anúncio).
             </p>
           </div>
 
@@ -159,7 +159,7 @@ export function CampaignFormDialog({ open, onOpenChange, consultantId, campaign,
               placeholder="Quero saber mais sobre a economia de até 20% na conta de luz."
             />
             <p className="mt-1 text-[10px] text-muted-foreground">
-              Esta é a frase que o lead manda ao clicar no anúncio. Usada pra atribuir lead à campanha.
+              Esta é a frase que o cliente interessado manda ao clicar no anúncio. Usada pra atribuir cliente interessado à campanha.
             </p>
           </div>
 

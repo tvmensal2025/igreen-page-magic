@@ -27,11 +27,13 @@ interface Pending {
 interface Props {
   consultantId: string;
   onResolved?: () => void;
+  /** Permite abrir o diálogo por um botão externo (ex.: "Validar clientes"). */
+  openSignal?: number;
 }
 
 type ActionKind = "approve" | "review" | "snooze" | "invalidate";
 
-export default function PendingApprovalDialog({ consultantId, onResolved }: Props) {
+export default function PendingApprovalDialog({ consultantId, onResolved, openSignal }: Props) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Pending[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,18 +41,24 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
   const [wizardOpen, setWizardOpen] = useState(false);
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
+  // Escopo: "mine" = meus clientes / "all" = toda a rede (validar de outros consultores)
+  const [scope, setScope] = useState<"mine" | "all">("mine");
 
   async function load() {
     setLoading(true);
     const nowIso = new Date().toISOString();
-    const { data, error } = await supabase
+    let query = supabase
       .from("customers")
       .select("id,name,phone_whatsapp,electricity_bill_value,andamento_igreen,pos_venda_pending_stage,consultant_id,assigned_consultant_id,pending_snoozed_until,pos_venda_invalid")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_invalid", false)
-      .not("pos_venda_pending_stage", "is", null)
-      .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`)
-      .or(`pending_snoozed_until.is.null,pending_snoozed_until.lt.${nowIso}`);
+      .not("pos_venda_pending_stage", "is", null);
+    // No escopo "meus", filtra pelos clientes do consultor; no escopo "all" traz toda a rede visível
+    if (scope === "mine") {
+      query = query.or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
+    }
+    query = query.or(`pending_snoozed_until.is.null,pending_snoozed_until.lt.${nowIso}`);
+    const { data, error } = await query;
     setLoading(false);
     if (error) { console.error(error); return; }
     const list = (data || []) as Pending[];
@@ -66,7 +74,13 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
     setHasConfig((count || 0) > 0);
   }
 
-  useEffect(() => { load(); checkConfig(); /* eslint-disable-next-line */ }, [consultantId]);
+  useEffect(() => { load(); checkConfig(); /* eslint-disable-next-line */ }, [consultantId, scope]);
+
+  // Abertura manual via botão externo ("Validar clientes")
+  useEffect(() => {
+    if (openSignal) { setOpen(true); load(); }
+    // eslint-disable-next-line
+  }, [openSignal]);
 
   useEffect(() => {
     const ch = supabase
@@ -124,7 +138,10 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
     setConfirmBulk(true);
   }
 
-  if (loading || items.length === 0) {
+  // Só esconde o diálogo automaticamente no carregamento inicial (sem itens e
+  // ainda fechado). Se o usuário abriu e está navegando entre escopos, mantém
+  // aberto para permitir validar clientes de outros consultores.
+  if (items.length === 0 && !open) {
     return (
       <PosVendaSetupWizard
         consultantId={consultantId}
@@ -136,34 +153,67 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
   }
 
   const sections: { key: string; label: string; icon: any; tone: string; accent: string }[] = [
-    { key: "aprovado", label: "Aprovados", icon: CheckCircle2, tone: "text-emerald-500", accent: "bg-emerald-500/10 border-emerald-500/20" },
-    { key: "reprovado", label: "Reprovados", icon: XCircle, tone: "text-rose-500", accent: "bg-rose-500/10 border-rose-500/20" },
-    { key: "devolutiva", label: "Devolutiva", icon: AlertTriangle, tone: "text-amber-500", accent: "bg-amber-500/10 border-amber-500/20" },
+    { key: "aprovado", label: "Aprovados", icon: CheckCircle2, tone: "text-primary", accent: "bg-primary/10 border-primary/20" },
+    { key: "reprovado", label: "Reprovados", icon: XCircle, tone: "text-destructive", accent: "bg-destructive/10 border-destructive/20" },
+    { key: "devolutiva", label: "Devolutiva", icon: AlertTriangle, tone: "text-warning", accent: "bg-warning/10 border-warning/20" },
   ];
 
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogContent className="max-w-2xl h-[85vh] max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <DialogTitle className="text-lg">Confirmar novos clientes</DialogTitle>
             <DialogDescription className="text-sm">
               Vindos do iGreen, aguardando sua revisão antes de entrar na autoprogressão (30 / 60 / 90 / 120 dias).
             </DialogDescription>
-            {hasConfig === false && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="self-start mt-2 gap-2"
-                onClick={() => setWizardOpen(true)}
-              >
-                <Settings2 className="w-3.5 h-3.5" />
-                Configurar mensagens primeiro
-              </Button>
-            )}
+
+            {/* Escopo: meus clientes ou toda a rede (validar de outros consultores) */}
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40">
+                <button
+                  type="button"
+                  onClick={() => setScope("mine")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    scope === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Meus clientes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScope("all")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    scope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Toda a rede
+                </button>
+              </div>
+              {hasConfig === false && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => setWizardOpen(true)}
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  Configurar mensagens primeiro
+                </Button>
+              )}
+            </div>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 px-6 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+            {loading ? (
+              <div className="text-center py-12 text-sm text-muted-foreground">Carregando…</div>
+            ) : items.length === 0 ? (
+              <div className="text-center py-12 text-sm text-muted-foreground">
+                {scope === "all"
+                  ? "Nenhum cliente aguardando confirmação na rede."
+                  : "Nenhum cliente aguardando sua confirmação."}
+              </div>
+            ) : (
             <div className="space-y-4">
               {sections.map((sec) => {
                 const list = grouped[sec.key] || [];
@@ -195,7 +245,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
                               <p className="text-sm font-medium truncate text-foreground">{c.name || "Sem nome"}</p>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {noPhone ? (
-                                  <Badge variant="outline" className="text-[10px] gap-1 border-amber-500/40 text-amber-500">
+                                  <Badge variant="outline" className="text-[10px] gap-1 border-warning/40 text-warning">
                                     <PhoneOff className="w-2.5 h-2.5" />
                                     Sem WhatsApp
                                   </Badge>
@@ -225,7 +275,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                className="h-8 w-8 text-rose-400 hover:text-rose-500 hover:bg-rose-500/10"
+                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                                 title="Marcar como inválido"
                                 onClick={() => setConfirmInvalidate(c)}
                               >
@@ -249,7 +299,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
                 );
               })}
             </div>
-          </ScrollArea>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -266,7 +317,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved }: Prop
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-rose-500 hover:bg-rose-600"
+              className="bg-destructive/100 hover:bg-destructive"
               onClick={() => {
                 if (confirmInvalidate) act(confirmInvalidate.id, "invalidate");
                 setConfirmInvalidate(null);

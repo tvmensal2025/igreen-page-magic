@@ -38,7 +38,7 @@ interface CustomerEditDialogProps {
  * mas na verdade foi reprovado.
  */
 const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: "lead", label: "Lead" },
+  { value: "lead", label: "Cliente interessado" },
   { value: "pending", label: "Pendente" },
   { value: "contato_incompleto", label: "Contato incompleto" },
   { value: "awaiting_otp", label: "Aguardando OTP" },
@@ -248,7 +248,7 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
             />
           </div>
           <div>
-            <Label className="text-[11px] text-muted-foreground">Código OTP</Label>
+            <Label className="text-[11px] text-muted-foreground">Código de confirmação</Label>
             <Input
               value={(customer as any)?.otp_code || "—"}
               readOnly
@@ -256,7 +256,7 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
             />
           </div>
           <div>
-            <Label className="text-[11px] text-muted-foreground">OTP recebido em</Label>
+            <Label className="text-[11px] text-muted-foreground">Código recebido em</Label>
             <Input
               value={(customer as any)?.otp_received_at ? new Date((customer as any).otp_received_at).toLocaleString("pt-BR") : "—"}
               readOnly

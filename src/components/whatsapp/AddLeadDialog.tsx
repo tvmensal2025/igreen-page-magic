@@ -129,12 +129,12 @@ export function AddLeadDialog({ consultantId, stages, onLeadAdded }: AddLeadDial
           rejected_at: stage === "reprovado" ? new Date().toISOString() : null,
         });
         if (error) throw error;
-        toast({ title: "Lead adicionado!" });
+        toast({ title: "Cliente interessado adicionado!" });
       }
       onLeadAdded();
       setOpen(false);
     } catch (err: unknown) {
-      toast({ title: "Erro ao adicionar lead", description: err instanceof Error ? err.message : "Falha", variant: "destructive" });
+      toast({ title: "Erro ao adicionar cliente interessado", description: err instanceof Error ? err.message : "Falha", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -145,12 +145,12 @@ export function AddLeadDialog({ consultantId, stages, onLeadAdded }: AddLeadDial
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5">
           <Plus className="h-3.5 w-3.5" />
-          Adicionar Lead
+          Adicionar Cliente interessado
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-sm">Adicionar Lead ao Kanban</DialogTitle>
+          <DialogTitle className="text-sm">Adicionar cliente interessado ao funil</DialogTitle>
         </DialogHeader>
 
         {/* Tab selector */}
@@ -259,7 +259,7 @@ export function AddLeadDialog({ consultantId, stages, onLeadAdded }: AddLeadDial
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Observações sobre o lead..."
+            placeholder="Observações sobre o cliente interessado..."
             className="min-h-[60px] text-xs mt-1 resize-none"
           />
         </div>

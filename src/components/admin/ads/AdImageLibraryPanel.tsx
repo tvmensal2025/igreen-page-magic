@@ -90,7 +90,7 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
               <div className="absolute top-1 left-1 flex gap-1">
                 <Badge variant="secondary" className="text-[9px] px-1 py-0">{FORMAT_LABEL[it.format].split(" ")[0]}</Badge>
                 {it.fb_image_hash && (
-                  <Badge className="text-[9px] px-1 py-0 bg-emerald-600 hover:bg-emerald-600 gap-0.5">
+                  <Badge className="text-[9px] px-1 py-0 bg-primary hover:bg-primary gap-0.5">
                     <Sparkles className="w-2.5 h-2.5" /> Meta
                   </Badge>
                 )}
@@ -104,7 +104,7 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
                 <span className="text-[10px] text-white/90">
                   {it.width}×{it.height}{it.usage_count > 0 ? ` · ${it.usage_count}×` : ""}
                 </span>
-                <Button type="button" size="icon" variant="ghost" className="h-6 w-6 text-white/80 hover:text-red-300"
+                <Button type="button" size="icon" variant="ghost" className="h-6 w-6 text-white/80 hover:text-destructive"
                   disabled={deletingId === it.id} onClick={(e) => { e.stopPropagation(); handleRemove(it); }}>
                   {deletingId === it.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                 </Button>

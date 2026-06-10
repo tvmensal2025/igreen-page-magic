@@ -114,13 +114,13 @@ export function ActiveSessionBanner({
               )}
 
               {paused && (
-                <span className="ml-2 px-2 py-0.5 rounded bg-yellow-400 text-black text-xs font-semibold">
+                <span className="ml-2 px-2 py-0.5 rounded bg-warning text-black text-xs font-semibold">
                   CONTROLE PAUSADO
                 </span>
               )}
 
               {sharing && shareSurface && shareSurface !== "browser" && (
-                <span className="ml-2 px-2 py-0.5 rounded bg-yellow-400 text-black text-xs font-semibold">
+                <span className="ml-2 px-2 py-0.5 rounded bg-warning text-black text-xs font-semibold">
                   {shareSurface === "monitor" ? "Tela inteira" : "Janela"} compartilhada —
                   cliques podem errar. Prefira compartilhar a aba.
                 </span>

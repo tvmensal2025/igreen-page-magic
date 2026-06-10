@@ -115,7 +115,7 @@ export default function AdminKnowledge({ embedded = false }: { embedded?: boolea
               </div>
               <div>
                 <p className="font-semibold">3. Handoff humano</p>
-                <p className="text-xs text-muted-foreground">Sem confiança ou tema sensível? Bot pausa e te avisa.</p>
+                <p className="text-xs text-muted-foreground">Sem confiança ou tema sensível? O assistente pausa e te avisa.</p>
               </div>
             </div>
           </div>

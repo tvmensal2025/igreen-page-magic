@@ -196,8 +196,8 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
       <div className="px-4 py-2.5 border-b border-border/40 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {quota?.allowed && !inRecovery && !fatalLocked
-            ? <ShieldCheck className="w-4 h-4 text-green-400" />
-            : <ShieldAlert className="w-4 h-4 text-yellow-400" />}
+            ? <ShieldCheck className="w-4 h-4 text-primary" />
+            : <ShieldAlert className="w-4 h-4 text-warning" />}
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Saúde do chip — anti-ban
           </span>
@@ -207,7 +207,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
             <Button
               size="sm" variant="ghost"
               onClick={pauseNow} disabled={actionLoading}
-              className="h-7 gap-1.5 text-[11px] text-orange-400 hover:text-orange-300 hover:bg-orange-500/5"
+              className="h-7 gap-1.5 text-[11px] text-warning hover:text-warning hover:bg-warning/5"
             >
               <PauseCircle className="w-3.5 h-3.5" /> Pausar envios por 24h
             </Button>
@@ -217,10 +217,10 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
 
       <div className="p-4 space-y-3">
         {fatalLocked && (
-          <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 space-y-2">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <AlertOctagon className="w-4 h-4 text-red-400" />
-              <span className="text-xs font-bold text-red-400 uppercase tracking-wider">
+              <AlertOctagon className="w-4 h-4 text-destructive" />
+              <span className="text-xs font-bold text-destructive uppercase tracking-wider">
                 Número em revisão manual
               </span>
             </div>
@@ -245,10 +245,10 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
         )}
 
         {inRecovery && !fatalLocked && (
-          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2">
+          <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <Flame className="w-4 h-4 text-yellow-400" />
-              <span className="text-xs font-bold text-yellow-400">MODO RECUPERAÇÃO ATIVO</span>
+              <Flame className="w-4 h-4 text-warning" />
+              <span className="text-xs font-bold text-warning">MODO RECUPERAÇÃO ATIVO</span>
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
               Todos os disparos automáticos estão bloqueados até <strong>{fmtDateTime(meta!.recovery_mode_until)}</strong>.
@@ -258,7 +258,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
             <Button
               size="sm" variant="outline"
               onClick={clearRecovery} disabled={actionLoading}
-              className="h-7 gap-1.5 text-[11px] border-green-500/30 text-green-400 hover:bg-green-500/10"
+              className="h-7 gap-1.5 text-[11px] border-primary/30 text-primary hover:bg-primary/10"
             >
               <PlayCircle className="w-3.5 h-3.5" /> Encerrar modo recuperação (destravar envios)
             </Button>
@@ -289,7 +289,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
         {quota && quota.cap && (
           <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden">
             <div
-              className={`h-full transition-all ${usedPct >= 90 ? "bg-red-400" : usedPct >= 70 ? "bg-yellow-400" : "bg-green-400"}`}
+              className={`h-full transition-all ${usedPct >= 90 ? "bg-destructive" : usedPct >= 70 ? "bg-warning" : "bg-primary"}`}
               style={{ width: `${usedPct}%` }}
             />
           </div>
@@ -297,7 +297,7 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
 
         {/* Status atual de envio */}
         {!inRecovery && !fatalLocked && (
-          <div className={`rounded-lg px-3 py-2 text-[11px] ${quota?.allowed ? "bg-green-500/5 border border-green-500/20 text-green-400" : "bg-yellow-500/5 border border-yellow-500/20 text-yellow-400"}`}>
+          <div className={`rounded-lg px-3 py-2 text-[11px] ${quota?.allowed ? "bg-primary/5 border border-primary/20 text-primary" : "bg-warning/5 border border-warning/20 text-warning"}`}>
             {quota?.allowed
               ? <>✓ Envios automáticos liberados ({quota.remaining} restantes hoje)</>
               : <>⏸ {reasonLabel(quota?.reason)}{quota?.next_allowed_at ? ` — libera em ${fmtDateTime(quota.next_allowed_at)}` : ""}</>}
@@ -309,17 +309,17 @@ export function InstanceHealth({ instanceName }: InstanceHealthProps) {
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Últimas 6h:</span>
             {reconnects > 0 && (
-              <Badge variant="outline" className="text-[10px] border-yellow-500/30 text-yellow-400 bg-yellow-500/5">
+              <Badge variant="outline" className="text-[10px] border-warning/30 text-warning bg-warning/5">
                 <AlertTriangle className="w-3 h-3 mr-1" /> {reconnects} reconexões
               </Badge>
             )}
             {failures > 0 && (
-              <Badge variant="outline" className="text-[10px] border-orange-500/30 text-orange-400 bg-orange-500/5">
+              <Badge variant="outline" className="text-[10px] border-warning/30 text-warning bg-warning/5">
                 {failures} falhas
               </Badge>
             )}
             {fatals > 0 && (
-              <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-400 bg-red-500/5">
+              <Badge variant="outline" className="text-[10px] border-destructive/30 text-destructive bg-destructive/5">
                 <Flame className="w-3 h-3 mr-1" /> {fatals} desconexões graves
               </Badge>
             )}

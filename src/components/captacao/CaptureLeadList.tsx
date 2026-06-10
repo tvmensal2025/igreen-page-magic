@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Search, UserPlus, Clock, RefreshCw } from "lucide-react";
+import { Search, UserPlus, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
@@ -14,6 +14,8 @@ interface LeadRow {
   capture_started_at: string | null;
   created_at: string;
   filled: number;
+  lastMsg?: string | null;
+  lastMsgAt?: string | null;
 }
 
 interface Props {
@@ -23,8 +25,28 @@ interface Props {
   gameOn?: boolean;
 }
 
-export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = false }: Props) {
+// Avatar com inicial e cor derivada do id (igual aos apps de mensagem)
+const AVATAR_TONES = [
+  "bg-primary/15 text-primary",
+  "bg-info/15 text-info",
+  "bg-warning/15 text-warning",
+  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+];
+function toneFor(id: string) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
+function initialsFrom(name: string | null, phone: string | null) {
+  const src = (name || "").trim();
+  if (src) {
+    const parts = src.split(/\s+/);
+    return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "?";
+  }
+  return (phone || "?").replace(/\D/g, "").slice(-2) || "?";
+}
 
+export function CaptureLeadList({ consultantId, selectedId, onSelect }: Props) {
   const prompt = usePrompt();
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [q, setQ] = useState("");
@@ -56,6 +78,30 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
     }));
     setLeads(rows);
     setLoading(false);
+
+    // Busca a última mensagem de cada lead (prévia na lista), em 1 query
+    const ids = rows.map((r) => r.id);
+    if (ids.length > 0) {
+      const { data: msgs } = await supabase
+        .from("conversations")
+        .select("customer_id, message_text, message_type, created_at")
+        .in("customer_id", ids)
+        .order("created_at", { ascending: false })
+        .limit(400);
+      if (msgs) {
+        const lastByCustomer = new Map<string, { text: string; at: string }>();
+        for (const m of msgs as any[]) {
+          if (!lastByCustomer.has(m.customer_id)) {
+            const t = m.message_text || `[${m.message_type || "mídia"}]`;
+            lastByCustomer.set(m.customer_id, { text: t, at: m.created_at });
+          }
+        }
+        setLeads((prev) => prev.map((r) => {
+          const last = lastByCustomer.get(r.id);
+          return last ? { ...r, lastMsg: last.text, lastMsgAt: last.at } : r;
+        }));
+      }
+    }
   };
 
   useEffect(() => { void load(); }, [consultantId]);
@@ -84,59 +130,70 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
     return `${Math.floor(mins / 1440)}d`;
   };
 
-  return (
-    <aside className="w-full md:w-auto md:shrink-0 flex flex-col flex-1 h-full border-b md:border-b-0 md:border-r border-border bg-card/40 backdrop-blur-sm min-h-0 overflow-hidden">
-      <div className="p-2 border-b border-border space-y-1.5 shrink-0">
-        <div className="flex items-center justify-between">
-          <h3 className={`text-sm font-semibold ${gameOn ? "exec-shimmer font-black uppercase tracking-wider" : ""}`}>
-            {gameOn ? "Leads" : "Em captação"}
-          </h3>
-          <span className={`text-xs tabular-nums font-bold ${gameOn ? "text-amber-400" : "text-muted-foreground"}`}>{leads.length}</span>
-        </div>
+  const fmtPhone = (p: string | null) => {
+    if (!p) return "—";
+    if (/sem_celular/i.test(p)) return "Sem telefone";
+    const d = p.replace(/\D/g, "");
+    return d.length >= 12 ? `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}` : p;
+  };
 
+  return (
+    <aside className="w-full md:w-auto md:shrink-0 flex flex-col flex-1 h-full border-b md:border-b-0 md:border-r border-border bg-card/40 min-h-0 overflow-hidden">
+      <div className="p-2.5 border-b border-border space-y-2 shrink-0">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Conversas</h3>
+          <span className="text-xs tabular-nums font-medium text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">{leads.length}</span>
+        </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar nome/telefone" className="h-8 pl-8 text-xs" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar nome ou telefone" className="h-9 pl-8 text-xs rounded-lg" />
         </div>
       </div>
+
       <div className="flex-1 overflow-y-auto">
         {loading && <p className="p-6 text-center text-xs text-muted-foreground">Carregando...</p>}
         {!loading && filtered.length === 0 && (
           <div className="p-6 text-center space-y-2">
             <UserPlus className="w-8 h-8 mx-auto text-muted-foreground/50" />
-            <p className="text-xs text-muted-foreground">Nenhum lead em captação.<br />Abra um lead pelo chat e clique em "Capturar dados".</p>
+            <p className="text-xs text-muted-foreground">Nenhum cliente em captação.<br />Abra um cliente no WhatsApp e clique em "Capturar dados".</p>
           </div>
         )}
-        <ul className="divide-y divide-border">
+        <ul className="divide-y divide-border/60">
           {filtered.map(l => {
             const active = l.id === selectedId;
             const pct = Math.round((l.filled / CAPTURE_FIELDS.length) * 100);
             const ready = l.filled >= CAPTURE_FIELDS.length;
-            const medal = l.filled >= 8 ? "💎" : l.filled >= 6 ? "🥇" : l.filled >= 4 ? "🥈" : l.filled >= 2 ? "🥉" : "🌱";
             return (
               <li key={l.id}>
                 <button
                   onClick={() => onSelect(l.id)}
-                  className={`w-full text-left px-2.5 py-2 hover:bg-secondary/60 transition-colors ${
-                    active ? "bg-primary/10 border-l-2 border-primary" : ""
-                  } ${ready ? "ring-1 ring-amber-400/50 bg-amber-400/5" : ""}`}
+                  className={`w-full text-left px-2.5 py-2.5 flex gap-2.5 transition-colors ${
+                    active ? "bg-primary/10 border-l-2 border-primary" : "border-l-2 border-transparent hover:bg-secondary/50"
+                  }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className={`leading-none ${gameOn ? "text-base" : "text-sm"}`} title="Nível">{medal}</span>
-                      <span className={`truncate ${gameOn ? "text-[15px] font-bold tracking-tight" : "text-sm font-medium"}`}>{l.name || "Sem nome"}</span>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0">
-                      <Clock className="w-3 h-3" />{fmtTime(l.created_at || l.capture_started_at)}
-                    </span>
+                  {/* Avatar */}
+                  <div className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${toneFor(l.id)}`}>
+                    {initialsFrom(l.name, l.phone_whatsapp)}
+                    {ready && (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-card" title="Cadastro completo" />
+                    )}
                   </div>
-                  <p className={`truncate ${gameOn ? "text-[11px] text-muted-foreground/80 font-mono" : "text-[11px] text-muted-foreground"}`}>{l.phone_whatsapp || "—"}</p>
-
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <div className="flex-1 h-1 rounded-full bg-secondary overflow-hidden">
-                      <div className={`h-full transition-all ${ready ? "bg-gradient-to-r from-amber-400 to-yellow-300" : "bg-gradient-to-r from-emerald-500 to-lime-400"}`} style={{ width: `${pct}%` }} />
+                  {/* Conteúdo */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-foreground sensitive-name">{l.name || "Sem nome"}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{fmtTime(l.lastMsgAt || l.created_at)}</span>
                     </div>
-                    <span className={`text-[10px] tabular-nums font-semibold ${ready ? "text-amber-500" : "text-primary"}`}>{l.filled}/{CAPTURE_FIELDS.length}</span>
+                    <p className="truncate text-[11px] text-muted-foreground mt-0.5 sensitive-phone">
+                      {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
+                    </p>
+                    {/* Progresso */}
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className={`text-[10px] tabular-nums font-medium shrink-0 ${ready ? "text-primary" : "text-muted-foreground"}`}>{l.filled}/{CAPTURE_FIELDS.length}</span>
+                    </div>
                   </div>
                 </button>
               </li>
@@ -144,11 +201,12 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
           })}
         </ul>
       </div>
-      <div className="p-1.5 border-t border-border flex items-center gap-1 shrink-0">
-        <Button size="sm" variant="default" className="flex-1 h-7 text-[11px] gap-1" onClick={async () => {
+
+      <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0">
+        <Button size="sm" variant="default" className="flex-1 h-8 text-[11px] gap-1.5 rounded-lg" onClick={async () => {
           const phone = await prompt({
             title: "Entrar em captação manual",
-            description: "Informe o telefone do lead (com DDD).",
+            description: "Informe o telefone do cliente interessado (com DDD).",
             placeholder: "Ex: 11971254913",
             confirmText: "Entrar",
           });
@@ -167,8 +225,8 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect, gameOn = f
             if (created?.id) onSelect(created.id);
           }
           void load();
-        }}><UserPlus className="w-3 h-3" /> Novo lead</Button>
-        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" title="Atualizar lista" onClick={() => void load()}>
+        }}><UserPlus className="w-3.5 h-3.5" /> Novo cliente</Button>
+        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" title="Atualizar lista" onClick={() => void load()}>
           <RefreshCw className="w-3.5 h-3.5" />
         </Button>
       </div>

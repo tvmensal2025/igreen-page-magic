@@ -64,14 +64,14 @@ function getInitials(name: string): string {
 }
 
 const AVATAR_COLORS = [
-  "bg-blue-500/20 text-blue-400",
-  "bg-emerald-500/20 text-emerald-400",
-  "bg-purple-500/20 text-purple-400",
-  "bg-orange-500/20 text-orange-400",
-  "bg-pink-500/20 text-pink-400",
-  "bg-cyan-500/20 text-cyan-400",
-  "bg-amber-500/20 text-amber-400",
-  "bg-rose-500/20 text-rose-400",
+  "bg-info/20 text-info",
+  "bg-primary/20 text-primary",
+  "bg-primary/20 text-primary",
+  "bg-warning/20 text-warning",
+  "bg-primary/20 text-primary",
+  "bg-info/20 text-info",
+  "bg-warning/20 text-warning",
+  "bg-destructive/20 text-destructive",
 ];
 
 function getAvatarColor(name: string): string {
@@ -104,10 +104,10 @@ function matchDevolutiva(devolutiva: string | null | undefined, categoryKey: str
 
 function statusBadge(status?: string) {
   switch (status) {
-    case "approved": return { label: "Aprovado", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" };
-    case "rejected": return { label: "Reprovado", cls: "bg-red-500/15 text-red-400 border-red-500/25" };
-    case "pending": return { label: "Pendente", cls: "bg-amber-500/15 text-amber-400 border-amber-500/25" };
-    case "active": return { label: "Ativo", cls: "bg-blue-500/15 text-blue-400 border-blue-500/25" };
+    case "approved": return { label: "Aprovado", cls: "bg-primary/15 text-primary border-primary/25" };
+    case "rejected": return { label: "Reprovado", cls: "bg-destructive/15 text-destructive border-destructive/25" };
+    case "pending": return { label: "Pendente", cls: "bg-warning/15 text-warning border-warning/25" };
+    case "active": return { label: "Ativo", cls: "bg-info/15 text-info border-info/25" };
     default: return null;
   }
 }
@@ -127,7 +127,7 @@ function ContactRow({ name, phone, valid, selected, onToggle, status, source }: 
         <p className="text-sm font-semibold text-foreground truncate leading-tight">{name}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
           <Phone className="w-3 h-3 text-muted-foreground/60" />
-          <span className={`text-xs ${valid ? "text-muted-foreground" : "text-red-400 line-through"}`}>
+          <span className={`text-xs ${valid ? "text-muted-foreground" : "text-destructive line-through"}`}>
             {formatPhone(phone)}
           </span>
         </div>
@@ -139,16 +139,16 @@ function ContactRow({ name, phone, valid, selected, onToggle, status, source }: 
       )}
       {source && (
         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
-          source === "database" ? "bg-blue-500/15 text-blue-400" :
-          source === "pasted" ? "bg-purple-500/15 text-purple-400" :
-          source === "group" ? "bg-cyan-500/15 text-cyan-400" :
-          source === "contact" ? "bg-orange-500/15 text-orange-400" :
-          "bg-green-500/15 text-green-400"
+          source === "database" ? "bg-info/15 text-info" :
+          source === "pasted" ? "bg-primary/15 text-primary" :
+          source === "group" ? "bg-info/15 text-info" :
+          source === "contact" ? "bg-warning/15 text-warning" :
+          "bg-primary/15 text-primary"
         }`}>
           {source === "database" ? "Base" : source === "pasted" ? "Colado" : source === "group" ? "Grupo" : source === "contact" ? "Celular" : "Importado"}
         </span>
       )}
-      {!valid && <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+      {!valid && <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />}
     </div>
   );
 }
@@ -554,7 +554,7 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
               type="button"
               onClick={() => setOnly48h(v => !v)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
-                only48h ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300" : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
+                only48h ? "bg-primary/20 border-primary/40 text-primary" : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
               }`}
             >
               <MessageSquare className="w-3 h-3" />
@@ -839,9 +839,9 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
 
         {/* ─── IMPORT TAB ─── */}
         <TabsContent value="import" className="space-y-3 mt-2">
-          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-2.5 space-y-2">
+          <div className="rounded-lg bg-primary/5 border border-primary/20 p-2.5 space-y-2">
             <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-primary" />
               Jeito mais fácil: usar o Google Planilhas
             </p>
             <ol className="text-[11px] text-muted-foreground space-y-0.5 pl-4 list-decimal">
@@ -899,8 +899,8 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
             </Button>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px]">
-            <span className="text-green-400">✓ {validContacts.length} válidos</span>
-            {invalidContacts > 0 && <span className="text-red-400">✗ {invalidContacts} inválidos</span>}
+            <span className="text-primary">✓ {validContacts.length} válidos</span>
+            {invalidContacts > 0 && <span className="text-destructive">✗ {invalidContacts} inválidos</span>}
             {contacts.filter(c => c.source === "database").length > 0 && (
               <span className="text-muted-foreground">Base: {contacts.filter(c => c.source === "database").length}</span>
             )}
@@ -922,9 +922,9 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
                   <p className="text-[11px] text-muted-foreground">{formatPhone(c.phone)}</p>
                 </div>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-                  c.source === "database" ? "bg-blue-500/15 text-blue-400" :
-                  c.source === "pasted" ? "bg-purple-500/15 text-purple-400" :
-                  "bg-green-500/15 text-green-400"
+                  c.source === "database" ? "bg-info/15 text-info" :
+                  c.source === "pasted" ? "bg-primary/15 text-primary" :
+                  "bg-primary/15 text-primary"
                 }`}>{c.source === "database" ? "Base" : c.source === "pasted" ? "Colado" : "Importado"}</span>
                 {!disabled && (
                   <button onClick={() => removeContact(c.id)} className="p-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-destructive">

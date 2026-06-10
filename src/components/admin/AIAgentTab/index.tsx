@@ -1,6 +1,5 @@
 import { useEffect, useState, lazy, Suspense } from "react";
-import { Bot, MessagesSquare, Library, Loader2, Brain, Mic, FileText, BookOpen, Workflow, HeartPulse } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Bot, MessagesSquare, Library, Loader2, Brain, Mic, FileText, BookOpen, HeartPulse } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
@@ -160,21 +159,14 @@ export function AIAgentTab({ userId }: { userId: string }) {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Atendimento humanizado 24/7. Desligar bloqueia a IA para leads atuais e futuros.
+            Atendimento humanizado 24/7. Desligar bloqueia a IA para clientes interessados atuais e futuros.
           </p>
         </div>
-        <Link
-          to="/admin/fluxos"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors"
-        >
-          <Workflow className="w-3.5 h-3.5" />
-          Construtor de Fluxos
-        </Link>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card">
           {savingEnabled || enabled === null ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
           ) : null}
-          <span className="text-xs font-medium text-foreground">IA ativa para meus leads</span>
+          <span className="text-xs font-medium text-foreground">IA ativa para meus clientes interessados</span>
           <Switch
             checked={!!enabled}
             disabled={enabled === null || savingEnabled}

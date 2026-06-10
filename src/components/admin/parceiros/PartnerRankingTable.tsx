@@ -91,7 +91,7 @@ export function PartnerRankingTable({
             <TableRow>
               <TableHead>Parceiro</TableHead>
               <TableHead className="hidden md:table-cell">Keywords</TableHead>
-              <TableHead className="text-right">Leads</TableHead>
+              <TableHead className="text-right">Clientes interessados</TableHead>
               <TableHead className="text-right hidden sm:table-cell">
                 Aprovados
               </TableHead>

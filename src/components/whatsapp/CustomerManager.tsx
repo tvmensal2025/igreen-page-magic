@@ -216,17 +216,17 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
 
   const filterButtons: { key: StatusFilter; label: string; count: number; color: string }[] = [
     { key: "all", label: "Todos", count: customers.length, color: "text-foreground" },
-    { key: "approved", label: "Aprovados", count: customers.filter((c) => c.status === "approved").length, color: "text-green-400" },
-    { key: "awaiting_signature", label: "Falta Assinatura", count: customers.filter((c) => c.status === "awaiting_signature").length, color: "text-orange-400" },
-    { key: "pending", label: "Pendentes", count: customers.filter((c) => c.status === "pending").length, color: "text-yellow-400" },
-    { key: "devolutiva", label: "Devolutiva", count: customers.filter((c) => c.status === "devolutiva" || isDevolutiva(c)).length, color: "text-red-400" },
-    { key: "rejected", label: "Reprovados", count: customers.filter((c) => c.status === "rejected").length, color: "text-red-300" },
-    { key: "lead", label: "Leads", count: customers.filter((c) => c.status === "lead").length, color: "text-blue-400" },
+    { key: "approved", label: "Aprovados", count: customers.filter((c) => c.status === "approved").length, color: "text-primary" },
+    { key: "awaiting_signature", label: "Falta Assinatura", count: customers.filter((c) => c.status === "awaiting_signature").length, color: "text-warning" },
+    { key: "pending", label: "Pendentes", count: customers.filter((c) => c.status === "pending").length, color: "text-warning" },
+    { key: "devolutiva", label: "Devolutiva", count: customers.filter((c) => c.status === "devolutiva" || isDevolutiva(c)).length, color: "text-destructive" },
+    { key: "rejected", label: "Reprovados", count: customers.filter((c) => c.status === "rejected").length, color: "text-destructive" },
+    { key: "lead", label: "Clientes interessados", count: customers.filter((c) => c.status === "lead").length, color: "text-info" },
   ];
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.03] via-transparent to-cyan-500/[0.02] pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.03] via-transparent to-info/[0.02] pointer-events-none" />
 
       <div className="relative">
         {/* Header */}

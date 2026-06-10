@@ -351,7 +351,7 @@ export function MediaLibraryPicker({
                         <Badge variant="outline" className="text-[8px] py-0 h-3.5">Biblioteca</Badge>
                       )}
                       {item.is_public && (
-                        <Badge variant="secondary" className="text-[8px] py-0 h-3.5 bg-amber-500/15 text-amber-500">Público</Badge>
+                        <Badge variant="secondary" className="text-[8px] py-0 h-3.5 bg-warning/15 text-warning">Público</Badge>
                       )}
                       {item.duration_sec && (
                         <span className="text-[9px] text-muted-foreground tabular-nums">

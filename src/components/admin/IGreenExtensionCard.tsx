@@ -65,19 +65,19 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
       setNewToken(token);
       load();
     } catch (e) {
-      toast({ title: "Erro ao gerar token", description: e instanceof Error ? e.message : "", variant: "destructive" });
+      toast({ title: "Erro ao gerar chave", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally { setGenerating(false); }
   };
 
   const removeToken = async (id: string, prefix: string) => {
-    if (!confirm(`Excluir o token ${prefix}…?\nEsta ação é permanente e a extensão pareada com este token deixará de funcionar imediatamente.`)) return;
+    if (!confirm(`Excluir a chave ${prefix}…?\nEsta ação é permanente e a extensão ligada a esta chave deixará de funcionar imediatamente.`)) return;
     const { error } = await supabase
       .from("igreen_extension_tokens")
       .delete()
       .eq("id", id);
     if (error) toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
     else {
-      toast({ title: "Token excluído", description: "Pareamento removido permanentemente." });
+      toast({ title: "Chave excluída", description: "Pareamento removido permanentemente." });
       load();
     }
   };
@@ -129,11 +129,11 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
 
       <div className="space-y-1">
         {loading && <p className="text-xs text-muted-foreground">Carregando...</p>}
-        {!loading && tokens.length === 0 && <p className="text-xs text-muted-foreground">Nenhum token gerado ainda.</p>}
+        {!loading && tokens.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma chave gerada ainda.</p>}
         {tokens.map((t) => {
           const expired = new Date(t.expires_at).getTime() < Date.now();
           const status = t.revoked_at ? "Revogado" : expired ? "Expirado" : "Ativo";
-          const statusColor = t.revoked_at || expired ? "text-muted-foreground" : "text-green-600";
+          const statusColor = t.revoked_at || expired ? "text-muted-foreground" : "text-primary";
           return (
             <div key={t.id} className="flex items-center justify-between text-xs border rounded p-2">
               <div>
@@ -144,7 +144,7 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
                   {!t.last_used_at && ` • Nunca usado`}
                 </div>
               </div>
-              <Button onClick={() => removeToken(t.id, t.token_prefix)} variant="ghost" size="sm" title="Excluir token permanentemente">
+              <Button onClick={() => removeToken(t.id, t.token_prefix)} variant="ghost" size="sm" title="Excluir chave permanentemente">
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>
@@ -156,9 +156,9 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
       <Dialog open={!!newToken} onOpenChange={(o) => !o && setNewToken(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Token gerado</DialogTitle>
+            <DialogTitle>Chave gerada</DialogTitle>
             <DialogDescription>
-              Copie agora — ele nao sera mostrado de novo. Cole na extensao em "Token de pareamento".
+              Copie agora — ele nao sera mostrado de novo. Cole na extensão no campo "Chave de integração".
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2">
@@ -181,8 +181,8 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
             <li>Abra <code>chrome://extensions</code> (Chrome, Edge, Brave ou Opera).</li>
             <li>Ative o <b>Modo desenvolvedor</b> (canto superior direito).</li>
             <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada. Se ja tinha uma versao antiga, clique em <b>Atualizar</b> no card da extensao (icone <b>G</b> verde).</li>
-            <li>No painel aqui, clique <b>Gerar token</b> e copie.</li>
-            <li>Clique no icone <b>G</b> verde da extensao e cole o token no campo — ele e salvo automaticamente.</li>
+            <li>No painel aqui, clique <b>Gerar chave</b> e copie.</li>
+            <li>Clique no icone <b>G</b> verde da extensao e cole a chave no campo — ele e salvo automaticamente.</li>
             <li>Em outra aba, faca login em <code>escritorio.igreenenergy.com.br</code> e abra <b>/mapa-clientes</b> e <b>/mapa-rede</b> uma vez para conferir que a tabela carrega e o botao <b>Exportar Excel</b> aparece.</li>
             <li>Volte na extensao e clique <b>Sincronizar agora</b>. A extensao baixa <b>primeiro o de Clientes</b> e depois o de Rede (um por vez, para evitar o aviso de varios downloads).</li>
           </ol>

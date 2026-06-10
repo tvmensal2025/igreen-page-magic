@@ -27,7 +27,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  // Estado sintético do "lead simulado" — acumula updates entre turnos no tester
+  // Estado sintético do "cliente interessado simulado" — acumula updates entre turnos no tester
   const [simState, setSimState] = useState<Record<string, any>>({});
 
   useEffect(() => {
@@ -134,11 +134,11 @@ export default function FluxoBEditor({ consultantId }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5" />Testar (lead simulado)</CardTitle>
+          <CardTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5" />Testar (cliente interessado simulado)</CardTitle>
           <p className="text-xs text-muted-foreground">Conversa com a IA usando o prompt salvo, SEM persistir nada nem enviar WhatsApp.</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-[11px] text-muted-foreground">Lead simulado · contexto vazio (sem nome, sem valor de conta). Use pra validar o tom e o roteiro da IA.</p>
+          <p className="text-[11px] text-muted-foreground">Cliente interessado simulado · contexto vazio (sem nome, sem valor de conta). Use pra validar o tom e o roteiro da IA.</p>
 
           <div className="border rounded-lg p-3 h-96 overflow-y-auto bg-muted/30 space-y-2">
             {chat.length === 0 && <p className="text-xs text-muted-foreground text-center py-12">Nenhuma mensagem ainda. Digite abaixo para começar.</p>}
@@ -184,7 +184,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTest(); } }}
-              placeholder="Digite como se fosse o lead..."
+              placeholder="Digite como se fosse o cliente interessado..."
               disabled={sending}
             />
             <Button onClick={sendTest} disabled={!input.trim() || sending}>

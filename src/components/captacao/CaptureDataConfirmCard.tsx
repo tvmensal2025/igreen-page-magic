@@ -55,8 +55,8 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
   const title = kind === "bill" ? "📄 Dados lidos da CONTA" : "🪪 Dados lidos do DOCUMENTO";
   const Icon = kind === "bill" ? FileText : IdCard;
   const tone = isConfirmed
-    ? "border-emerald-500/50 bg-emerald-500/5"
-    : kind === "bill" ? "border-amber-400/60 bg-amber-400/5" : "border-cyan-400/60 bg-cyan-400/5";
+    ? "border-primary/50 bg-primary/5"
+    : kind === "bill" ? "border-warning/60 bg-warning/5" : "border-info/60 bg-info/5";
 
   const saveEdit = async () => {
     if (!editing) return;
@@ -137,15 +137,15 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
   return (
     <div className={`rounded-md border ${tone} px-1.5 py-1 space-y-0.5 animate-in fade-in slide-in-from-top-1`}>
       <div className="flex items-center gap-1">
-        <Icon className="w-3 h-3 text-amber-500" />
+        <Icon className="w-3 h-3 text-warning" />
         <span className="text-[10px] font-bold uppercase tracking-wide truncate">{title}</span>
         {isConfirmed && (
-          <span className="ml-auto text-[9px] px-1.5 py-px rounded-full bg-emerald-500 text-white font-bold shadow-sm">
+          <span className="ml-auto text-[9px] px-1.5 py-px rounded-full bg-primary/100 text-white font-bold shadow-sm">
             Confirmado ✓
           </span>
         )}
         {!isConfirmed && awaiting && (
-          <span className="ml-auto text-[8px] px-1 py-px rounded-full bg-amber-400/20 text-amber-700 dark:text-amber-300 font-bold animate-pulse">
+          <span className="ml-auto text-[8px] px-1 py-px rounded-full bg-warning/20 text-warning dark:text-warning font-bold animate-pulse">
             aguardando
           </span>
         )}
@@ -169,7 +169,7 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
                     autoFocus
                     className="h-5 text-[10px] px-1 flex-1 min-w-0"
                   />
-                  <button onClick={() => void saveEdit()} className="text-emerald-500 shrink-0"><Check className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => void saveEdit()} className="text-primary shrink-0"><Check className="w-2.5 h-2.5" /></button>
                   <button onClick={() => setEditing(null)} className="text-muted-foreground shrink-0"><X className="w-2.5 h-2.5" /></button>
                 </>
               ) : (

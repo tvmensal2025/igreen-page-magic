@@ -20,7 +20,7 @@ export function CaptureHud({ tier, combo, xp, filled, total, progress, missionLa
   const [sfx, setSfx] = useState(isSfxEnabled());
   return (
     <div className={`px-2 py-1.5 border-b border-border space-y-1 relative ${
-      canSubmit ? "bg-gradient-to-br from-primary/6 via-transparent to-amber-400/6" : "bg-card/40"
+      canSubmit ? "bg-gradient-to-br from-primary/6 via-transparent to-warning/6" : "bg-card/40"
     }`}>
       {canSubmit && (
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />

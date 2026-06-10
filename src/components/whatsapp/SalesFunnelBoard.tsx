@@ -59,9 +59,9 @@ export function SalesFunnelBoard({ consultantId, onOpenChat }: SalesFunnelBoardP
     const ok = await movePhase(draggedId, phase);
     if (ok) {
       const phaseLabel = SALES_PHASES.find((p) => p.key === phase)?.label;
-      toast({ title: "✅ Lead movido", description: `${lead.name || lead.phone_whatsapp} → ${phaseLabel}` });
+      toast({ title: "✅ Cliente interessado movido", description: `${lead.name || lead.phone_whatsapp} → ${phaseLabel}` });
     } else {
-      toast({ title: "Erro ao mover lead", variant: "destructive" });
+      toast({ title: "Erro ao mover cliente interessado", variant: "destructive" });
     }
   };
 
@@ -133,7 +133,7 @@ export function SalesFunnelBoard({ consultantId, onOpenChat }: SalesFunnelBoardP
                 <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]">
                   {items.length === 0 ? (
                     <div className="text-center text-[11px] text-muted-foreground/60 py-8">
-                      Arraste leads para cá
+                      Arraste clientes interessados para cá
                     </div>
                   ) : (
                     items.map((lead) => (

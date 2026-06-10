@@ -93,7 +93,7 @@ export function CanvasToolbar({
         <Button
           size="sm"
           variant="ghost"
-          className="text-amber-600"
+          className="text-warning"
           onClick={onAutoFix}
           title="Corrigir alertas"
         >

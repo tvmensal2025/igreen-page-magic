@@ -34,7 +34,7 @@ export function VoiceNamesLibrary({ consultantId, clips, onUpsert, onDelete }: P
     <div className="space-y-4">
       <div>
         <p className="text-xs text-muted-foreground mb-2">
-          Grave o nome de cada lead. Quando enviar um template de voz, o sistema chama a pessoa pelo nome usando a sua gravação.
+          Grave o nome de cada cliente interessado. Quando enviar um template de voz, o sistema chama a pessoa pelo nome usando a sua gravação.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

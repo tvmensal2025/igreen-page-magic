@@ -16,9 +16,9 @@ interface Props {
 }
 
 const PRESET_META: { key: SpeedPreset; label: string; desc: string; icon: any; activeCls: string; iconCls: string }[] = [
-  { key: "safe",   label: "Seguro",  desc: "15 por bloco, 15min pausa, ~30s entre", icon: Shield, activeCls: "border-emerald-500/50 bg-emerald-500/10", iconCls: "text-emerald-400" },
-  { key: "normal", label: "Normal",  desc: "25 por bloco, 10min pausa, ~25s entre", icon: Zap,    activeCls: "border-blue-500/50 bg-blue-500/10",       iconCls: "text-blue-400" },
-  { key: "fast",   label: "Rápido",  desc: "40 por bloco, 5min pausa, ~15s entre",  icon: Rabbit, activeCls: "border-orange-500/50 bg-orange-500/10",   iconCls: "text-orange-400" },
+  { key: "safe",   label: "Seguro",  desc: "15 por bloco, 15min pausa, ~30s entre", icon: Shield, activeCls: "border-primary/50 bg-primary/10", iconCls: "text-primary" },
+  { key: "normal", label: "Normal",  desc: "25 por bloco, 10min pausa, ~25s entre", icon: Zap,    activeCls: "border-info/50 bg-info/10",       iconCls: "text-info" },
+  { key: "fast",   label: "Rápido",  desc: "40 por bloco, 5min pausa, ~15s entre",  icon: Rabbit, activeCls: "border-warning/50 bg-warning/10",   iconCls: "text-warning" },
 ];
 
 export function ScheduleStep({ config, onChange, totalContacts }: Props) {
@@ -168,10 +168,10 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
       </div>
 
       {/* ETA */}
-      <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 text-center">
-        <p className="text-[11px] text-emerald-300/80 uppercase tracking-wide">Tempo estimado</p>
-        <p className="text-2xl font-bold text-emerald-300">{eta}</p>
-        <p className="text-[11px] text-emerald-300/70">{totalContacts} contatos • {blocks} blocos</p>
+      <div className="rounded-xl bg-primary/10 border border-primary/30 p-3 text-center">
+        <p className="text-[11px] text-primary/80 uppercase tracking-wide">Tempo estimado</p>
+        <p className="text-2xl font-bold text-primary">{eta}</p>
+        <p className="text-[11px] text-primary/70">{totalContacts} contatos • {blocks} blocos</p>
       </div>
     </div>
   );

@@ -260,7 +260,7 @@ export function ResultsDashboard({
               <p className="text-muted-foreground">
                 Você teve <strong className="text-foreground">{totals.clicks} cliques</strong> no anúncio, mas nenhum contato no seu WhatsApp foi marcado como <code className="px-1 rounded bg-secondary text-foreground">lead_source = meta_ads</code> ainda.
                 Isso acontece quando o link do anúncio não passa o parâmetro de origem, ou os contatos entraram antes da atribuição automática.
-                Os números abaixo mostram <strong className="text-foreground">apenas leads/clientes confirmados de anúncio</strong>.
+                Os números abaixo mostram <strong className="text-foreground">apenas clientes interessados/clientes confirmados de anúncio</strong>.
               </p>
             </div>
           </div>
@@ -297,7 +297,7 @@ export function ResultsDashboard({
         <StatCard icon={<DollarSign className="w-4 h-4" />} label="Quanto gastou" metric="spend" value={`R$ ${(totals.spend / 100).toFixed(2)}`} accent />
         <StatCard icon={<Eye className="w-4 h-4" />} label="Pessoas que viram" metric="impressions" value={totals.impressions.toLocaleString("pt-BR")} />
         <StatCard icon={<Hand className="w-4 h-4" />} label="Tocaram no anúncio" metric="clicks" value={totals.clicks.toString()} sub={cpc > 0 ? `R$ ${cpc.toFixed(2)} por clique` : "—"} />
-        <StatCard icon={<Users className="w-4 h-4" />} label="Leads no WhatsApp" metric="leads" value={realLeads.toString()} sub={cpl > 0 ? `R$ ${cpl.toFixed(2)} cada` : "—"} />
+        <StatCard icon={<Users className="w-4 h-4" />} label="Clientes interessados no WhatsApp" metric="leads" value={realLeads.toString()} sub={cpl > 0 ? `R$ ${cpl.toFixed(2)} cada` : "—"} />
         <StatCard icon={<FileCheck2 className="w-4 h-4" />} label="Viraram cliente" metric="registrations" value={acquired.toString()} sub={realLeads > 0 ? `${convRate.toFixed(1)}% dos leads` : "—"} />
         <StatCard icon={<TrendingUp className="w-4 h-4" />} label="Lucro estimado/mês" value={`R$ ${roiMensal.toFixed(0)}`} accent={roiMensal >= 0} />
       </div>
@@ -328,7 +328,7 @@ export function ResultsDashboard({
         <Card className="p-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <MessageCircle className="w-4 h-4 text-primary" />
-            <span>Clique → Lead no WhatsApp</span>
+            <span>Clique → Cliente interessado no WhatsApp</span>
           </div>
           <div className="flex items-end justify-between mt-2">
             <div className="text-2xl font-bold text-foreground">
@@ -339,10 +339,10 @@ export function ResultsDashboard({
             </div>
           </div>
           <div className="text-[11px] text-muted-foreground mt-2">
-            {clickToLead === 0 && totals.clicks > 0 && <span className="text-warning">⚠ Ninguém que clicou virou lead. Verifique o link/WhatsApp.</span>}
+            {clickToLead === 0 && totals.clicks > 0 && <span className="text-warning">⚠ Ninguém que clicou virou cliente interessado. Verifique o link/WhatsApp.</span>}
             {clickToLead > 0 && clickToLead < 30 && "Muitos cliques se perdem antes de abrir conversa."}
             {clickToLead >= 30 && clickToLead < 60 && "Boa conversão de clique pra conversa."}
-            {clickToLead >= 60 && <span className="text-primary">✅ Excelente — quase todo clique vira lead.</span>}
+            {clickToLead >= 60 && <span className="text-primary">✅ Excelente — quase todo clique vira cliente interessado.</span>}
           </div>
         </Card>
       </div>
@@ -379,7 +379,7 @@ export function ResultsDashboard({
               <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Line type="monotone" dataKey="gasto" name="Gasto (R$)" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="leads" name="Leads" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="leads" name="Clientes interessados" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="cadastros" name="Cadastros" stroke="hsl(var(--accent-foreground))" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
@@ -398,7 +398,7 @@ export function ResultsDashboard({
                 <th className="py-2">Campanha</th>
                 <th>Distribuidora</th>
                 <th className="text-right">Gasto</th>
-                <th className="text-right">Leads</th>
+                <th className="text-right">Clientes interessados</th>
                 <th className="text-right">Cadastros</th>
                 <th className="text-right">CPL</th>
                 <th className="text-right">CPA</th>

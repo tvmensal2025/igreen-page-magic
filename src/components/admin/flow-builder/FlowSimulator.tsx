@@ -81,7 +81,7 @@ function StatusDot({ filled }: { filled: boolean }) {
   return (
     <span
       className={`inline-block h-2 w-2 rounded-full ${
-        filled ? "bg-emerald-500" : "bg-muted-foreground/30"
+        filled ? "bg-primary/100" : "bg-muted-foreground/30"
       }`}
     />
   );
@@ -285,17 +285,17 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
               </Badge>
             )}
             {diagnostic && !diagnostic.webhook_ok && (
-              <Badge variant="destructive" className="text-[9px]">⚠ webhook</Badge>
+              <Badge variant="destructive" className="text-[9px]">⚠ integração</Badge>
             )}
           </div>
           <div className="flex items-center gap-2">
             <Input
               value={otpRealPhone}
               onChange={(e) => setOtpRealPhone(e.target.value)}
-              placeholder="📲 OTP real (opcional)"
+              placeholder="📲 Código real (opcional)"
               disabled={busy}
               className="h-6 max-w-[170px] text-[10px]"
-              title="Se preencher (55+DDD+número), o passo OTP envia SMS pra esse telefone"
+              title="Se preencher (55+DDD+número), o passo de confirmação envia SMS para esse telefone"
             />
             <Button size="sm" variant="outline" onClick={() => handleReset(true)} disabled={busy} className="h-6 px-2 text-[10px]">
               <RotateCw className="mr-1 h-3 w-3" /> Zerar
@@ -334,7 +334,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
                 if (ev.kind === "lead") {
                   return (
                     <div key={ev.key} className="flex justify-end">
-                      <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-emerald-500/90 px-3 py-1.5 text-sm text-white shadow">
+                      <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-primary/90 px-3 py-1.5 text-sm text-white shadow">
                         {ev.attach?.kind === "image" ? (
                           <img src={ev.attach.url} className="max-h-40 rounded-lg" />
                         ) : ev.attach ? (
@@ -485,13 +485,13 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
           <aside className="flex flex-col gap-3 overflow-y-auto max-h-[600px] pr-1">
             {/* Card: OCR Conta de Luz */}
             <div className={`rounded-md border p-3 transition-all ${
-              billHasData ? "border-emerald-500/50 bg-emerald-500/5" : billCaptured ? "border-amber-500/50 bg-amber-500/5" : "border-border bg-muted/20"
+              billHasData ? "border-primary/50 bg-primary/5" : billCaptured ? "border-warning/50 bg-warning/5" : "border-border bg-muted/20"
             }`}>
               <div className="mb-2 flex items-center gap-2">
-                <FileImage className={`h-4 w-4 ${billHasData ? "text-emerald-500" : billCaptured ? "text-amber-500" : "text-muted-foreground"}`} />
-                <span className="text-xs font-semibold">Conta de luz (OCR)</span>
+                <FileImage className={`h-4 w-4 ${billHasData ? "text-primary" : billCaptured ? "text-warning" : "text-muted-foreground"}`} />
+                <span className="text-xs font-semibold">Conta de luz (leitura automática)</span>
                 {billHasData ? (
-                  <Badge variant="default" className="ml-auto bg-emerald-500 text-[9px]">
+                  <Badge variant="default" className="ml-auto bg-primary/100 text-[9px]">
                     <CheckCircle2 className="mr-0.5 h-2.5 w-2.5" /> Extraído
                   </Badge>
                 ) : billCaptured ? (
@@ -528,13 +528,13 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
 
             {/* Card: OCR Documento */}
             <div className={`rounded-md border p-3 transition-all ${
-              docHasData ? "border-emerald-500/50 bg-emerald-500/5" : docCaptured ? "border-amber-500/50 bg-amber-500/5" : "border-border bg-muted/20"
+              docHasData ? "border-primary/50 bg-primary/5" : docCaptured ? "border-warning/50 bg-warning/5" : "border-border bg-muted/20"
             }`}>
               <div className="mb-2 flex items-center gap-2">
-                <FileText className={`h-4 w-4 ${docHasData ? "text-emerald-500" : docCaptured ? "text-amber-500" : "text-muted-foreground"}`} />
-                <span className="text-xs font-semibold">Documento (OCR)</span>
+                <FileText className={`h-4 w-4 ${docHasData ? "text-primary" : docCaptured ? "text-warning" : "text-muted-foreground"}`} />
+                <span className="text-xs font-semibold">Documento (leitura automática)</span>
                 {docHasData ? (
-                  <Badge variant="default" className="ml-auto bg-emerald-500 text-[9px]">
+                  <Badge variant="default" className="ml-auto bg-primary/100 text-[9px]">
                     <CheckCircle2 className="mr-0.5 h-2.5 w-2.5" /> Extraído
                   </Badge>
                 ) : docCaptured ? (
@@ -598,7 +598,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
                 })}
                 <div className="flex items-start gap-2">
                   <StatusDot filled={!!state?.otp_code} />
-                  <dt className="w-24 shrink-0 text-muted-foreground">OTP:</dt>
+                  <dt className="w-24 shrink-0 text-muted-foreground">Código:</dt>
                   <dd className="flex-1 truncate font-mono text-[10px]">
                     {state?.otp_code || <span className="italic text-muted-foreground/60">—</span>}
                   </dd>
@@ -627,13 +627,13 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Step depois:</span>
-                    <span className={`truncate ${diagnostic.advanced ? "text-emerald-600" : ""}`}>
+                    <span className={`truncate ${diagnostic.advanced ? "text-primary" : ""}`}>
                       {diagnostic.step_after || "—"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Avançou:</span>
-                    <span className={diagnostic.advanced ? "text-emerald-600 font-semibold" : "text-amber-600"}>
+                    <span className={diagnostic.advanced ? "text-primary font-semibold" : "text-warning"}>
                       {diagnostic.advanced ? "✓ sim" : "× não"}
                     </span>
                   </div>

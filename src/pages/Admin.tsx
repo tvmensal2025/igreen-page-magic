@@ -222,11 +222,11 @@ const AdminContent = () => {
   // Labels e subtítulos por aba — alimenta o AppTopbar
   const TAB_META: Record<AdminTabId, { title: string; subtitle: string }> = {
     "dashboard": { title: "Dashboard", subtitle: "Resumo operacional do dia" },
-    "crm": { title: "CRM Leads", subtitle: "Funil de leads do WhatsApp até finalizar cadastro" },
-    "crm-clientes": { title: "CRM Clientes", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
+    "crm": { title: "Clientes interessados", subtitle: "Funil de clientes interessados do WhatsApp até finalizar cadastro" },
+    "crm-clientes": { title: "Clientes ativos", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
     "conversao": { title: "Conversão", subtitle: "Análise de funil e gargalos" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
-    "captacao": { title: "Captação", subtitle: "Novos leads e originação" },
+    "captacao": { title: "Captação", subtitle: "Novos clientes interessados e originação" },
     "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
     "rede": { title: "Rede", subtitle: "Sua estrutura e hierarquia" },
     "whatsapp": { title: "WhatsApp", subtitle: "Atendimento, automação e disparo" },

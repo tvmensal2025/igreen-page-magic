@@ -67,10 +67,10 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
-  stuck_finalizar: { label: "🛑 Travado em Finalizar", className: "bg-red-500/15 text-red-500 border-red-500/30" },
-  stuck_contact: { label: "📵 Falta contato", className: "bg-orange-500/15 text-orange-500 border-orange-500/30" },
-  email_pendente_revisao: { label: "✉️ Email pendente", className: "bg-amber-500/15 text-amber-500 border-amber-500/30" },
-  contato_incompleto: { label: "⚠️ Sem celular real", className: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
+  stuck_finalizar: { label: "🛑 Travado em Finalizar", className: "bg-destructive/15 text-destructive border-destructive/30" },
+  stuck_contact: { label: "📵 Falta contato", className: "bg-warning/15 text-warning border-warning/30" },
+  email_pendente_revisao: { label: "✉️ Email pendente", className: "bg-warning/15 text-warning border-warning/30" },
+  contato_incompleto: { label: "⚠️ Sem celular real", className: "bg-warning/15 text-warning border-warning/30" },
 };
 
 function formatIdle(iso: string | null): { text: string; severity: "low" | "medium" | "high" } {
@@ -190,11 +190,11 @@ export function StuckLeadsWidget() {
     <div className="premium-card p-5">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
-            <AlertTriangle className="w-4.5 h-4.5 text-amber-500" />
+          <div className="w-9 h-9 rounded-xl bg-warning/10 flex items-center justify-center">
+            <AlertTriangle className="w-4.5 h-4.5 text-warning" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-foreground">Leads Travados</h3>
+            <h3 className="text-sm font-semibold text-foreground">Clientes interessados Travados</h3>
             <p className="text-xs text-muted-foreground">Sem resposta há mais de 10 min</p>
           </div>
         </div>
@@ -212,7 +212,7 @@ export function StuckLeadsWidget() {
         <div className="text-center py-8 text-xs text-muted-foreground">Carregando...</div>
       ) : leads.length === 0 ? (
         <div className="text-center py-8 text-xs text-muted-foreground">
-          ✨ Nenhum lead travado. Tudo fluindo normalmente.
+          ✨ Nenhum cliente interessado travado. Tudo fluindo normalmente.
         </div>
       ) : (
         <>
@@ -249,7 +249,7 @@ export function StuckLeadsWidget() {
                 variant="outline"
                 onClick={() => setPendingAction("complete")}
                 disabled={executing}
-                className="h-8 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-500"
+                className="h-8 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
               >
                 <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
                 Marcar convertido
@@ -259,7 +259,7 @@ export function StuckLeadsWidget() {
                 variant="outline"
                 onClick={() => setPendingAction("abandoned")}
                 disabled={executing}
-                className="h-8 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-500"
+                className="h-8 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 <XCircle className="w-3.5 h-3.5 mr-1.5" />
                 Marcar abandonado
@@ -273,10 +273,10 @@ export function StuckLeadsWidget() {
             const stepLabel = STEP_LABELS[lead.conversation_step || ""] || lead.conversation_step || "—";
             const sevColor =
               idle.severity === "high"
-                ? "text-red-500 bg-red-500/10 border-red-500/20"
+                ? "text-destructive bg-destructive/10 border-destructive/20"
                 : idle.severity === "medium"
-                ? "text-amber-500 bg-amber-500/10 border-amber-500/20"
-                : "text-blue-500 bg-blue-500/10 border-blue-500/20";
+                ? "text-warning bg-warning/10 border-warning/20"
+                : "text-info bg-info/10 border-info/20";
             const isSelected = selectedIds.has(lead.id);
             return (
               <div

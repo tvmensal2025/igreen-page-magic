@@ -157,8 +157,8 @@ export function TemplatePickerPopover({ consultantId, onPick, trigger }: Props) 
                     onClick={() => pickVoiceTemplate(t)}
                     className="w-full text-left p-2 rounded-md hover:bg-accent transition-colors flex gap-2 items-start"
                   >
-                    <div className="mt-0.5 h-7 w-7 rounded bg-emerald-500/15 flex items-center justify-center shrink-0">
-                      <Mic2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <div className="mt-0.5 h-7 w-7 rounded bg-primary/15 flex items-center justify-center shrink-0">
+                      <Mic2 className="h-3.5 w-3.5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold truncate">{t.name}</p>

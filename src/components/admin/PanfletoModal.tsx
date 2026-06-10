@@ -305,7 +305,7 @@ export function PanfletoModal({
           {/* Preview */}
           <div className="flex flex-col items-center gap-3">
             <div
-              className="relative overflow-hidden rounded-xl border bg-emerald-900 shadow-sm"
+              className="relative overflow-hidden rounded-xl border bg-primary shadow-sm"
               style={{
                 width: PREVIEW_W,
                 height: PREVIEW_H,

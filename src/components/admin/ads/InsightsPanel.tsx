@@ -129,8 +129,8 @@ export function InsightsPanel({ consultantId }: Props) {
             </div>
           )}
           {freqAlert && freqAlert.max >= 3 && (
-            <div className={`p-3 rounded-lg border flex gap-2 items-start ${freqAlert.max >= 4 ? "bg-destructive/10 border-destructive/40" : "bg-amber-500/10 border-amber-500/40"}`}>
-              <AlertTriangle className={`w-4 h-4 mt-0.5 ${freqAlert.max >= 4 ? "text-destructive" : "text-amber-500"}`} />
+            <div className={`p-3 rounded-lg border flex gap-2 items-start ${freqAlert.max >= 4 ? "bg-destructive/10 border-destructive/40" : "bg-warning/10 border-warning/40"}`}>
+              <AlertTriangle className={`w-4 h-4 mt-0.5 ${freqAlert.max >= 4 ? "text-destructive" : "text-warning"}`} />
               <div className="text-xs">
                 <p className="font-semibold text-foreground">
                   {freqAlert.max >= 4 ? "Audiência saturada" : "Frequência alta"} — pico de {freqAlert.max.toFixed(1)}x, média {freqAlert.avg.toFixed(1)}x (7 dias)

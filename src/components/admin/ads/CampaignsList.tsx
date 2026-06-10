@@ -27,8 +27,8 @@ function healthOf(m: { spend_cents: number; leads: number; messaging_conversatio
   const spend = m.spend_cents / 100;
   if (spend < 5) return { level: "idle", label: "Aquecendo" };
   const actions = m.leads + m.messaging_conversations_started;
-  if (actions === 0 && spend >= 30) return { level: "red", label: "Sem leads — revisar" };
-  if (actions === 0) return { level: "yellow", label: "Sem leads ainda" };
+  if (actions === 0 && spend >= 30) return { level: "red", label: "Sem clientes interessados — revisar" };
+  if (actions === 0) return { level: "yellow", label: "Sem clientes interessados ainda" };
   const cpl = m.cost_per_lead_cents / 100;
   if (cpl > 0 && cpl <= 10) return { level: "green", label: `CPL R$${cpl.toFixed(2)}` };
   if (cpl > 0 && cpl <= 25) return { level: "yellow", label: `CPL R$${cpl.toFixed(2)}` };
@@ -36,11 +36,11 @@ function healthOf(m: { spend_cents: number; leads: number; messaging_conversatio
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  active: "bg-green-500/20 text-green-400",
-  paused: "bg-yellow-500/20 text-yellow-400",
-  draft: "bg-blue-500/20 text-blue-400",
-  pending_review: "bg-purple-500/20 text-purple-400",
-  rejected: "bg-red-500/20 text-red-400",
+  active: "bg-primary/20 text-primary",
+  paused: "bg-warning/20 text-warning",
+  draft: "bg-info/20 text-info",
+  pending_review: "bg-primary/20 text-primary",
+  rejected: "bg-destructive/20 text-destructive",
 };
 const STATUS_LABEL: Record<string, string> = {
   active: "Ativa", paused: "Pausada", draft: "Rascunho", pending_review: "Em revisão", rejected: "Rejeitada",
@@ -64,7 +64,7 @@ function explainRejection(raw: string | null | undefined): { title: string; sugg
     return { title: "Página sem WhatsApp Business", suggestion: "Vá no Meta Business Suite → Configurações → WhatsApp e vincule um número Business à Página. Depois reabra 'Selecionar assets' e republique." };
   }
   if (r.includes("token") && (r.includes("expired") || r.includes("expirou") || r.includes("invalid"))) {
-    return { kind: "session", title: "Token do Facebook expirou", suggestion: "Reconecte sua conta Facebook clicando no botão abaixo e republique a campanha." };
+    return { kind: "session", title: "Conexão com o Facebook expirou", suggestion: "Reconecte sua conta Facebook clicando no botão abaixo e republique a campanha." };
   }
   if (r.includes("ad_account") || r.includes("disabled") || r.includes("desativada")) {
     return { title: "Conta de anúncios desativada", suggestion: "Acesse business.facebook.com → Conta de Anúncios e resolva o aviso (geralmente cartão recusado ou política violada)." };
@@ -140,7 +140,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         Object.values(agg).forEach(m => { m.cost_per_lead_cents = m.leads > 0 ? Math.round(m.spend_cents / m.leads) : 0; });
         setMetrics(agg);
 
-        // ─── Leads reais do WhatsApp atribuídos por campanha ───────────
+        // ─── Clientes interessados reais do WhatsApp atribuídos por campanha ───────────
         // Conta customers com source_campaign_id = cada campanha (últimos 30 dias).
         const { data: waRows } = await (supabase as any)
           .from("customers")
@@ -284,7 +284,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                   <Badge className={STATUS_COLOR[c.status] || "bg-secondary"}>{STATUS_LABEL[c.status] || c.status}</Badge>
                   {(() => {
                     const h = healthOf(m);
-                    const cls = h.level === "green" ? "bg-emerald-500/20 text-emerald-400" : h.level === "yellow" ? "bg-amber-500/20 text-amber-400" : h.level === "red" ? "bg-destructive/20 text-destructive" : "bg-secondary text-muted-foreground";
+                    const cls = h.level === "green" ? "bg-primary/20 text-primary" : h.level === "yellow" ? "bg-warning/20 text-warning" : h.level === "red" ? "bg-destructive/20 text-destructive" : "bg-secondary text-muted-foreground";
                     const Icon = h.level === "red" ? AlertTriangle : Heart;
                     return <Badge className={`${cls} gap-1`}><Icon className="w-3 h-3" />{h.label}</Badge>;
                   })()}
@@ -329,8 +329,8 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                   );
                 })()}
                 {!c.rejection_reason && c.ended_at && new Date(c.ended_at).getTime() < Date.now() && c.fb_campaign_id && (
-                  <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs space-y-1.5">
-                    <div className="font-bold text-amber-500 flex items-center gap-1.5">
+                  <div className="mt-2 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs space-y-1.5">
+                    <div className="font-bold text-warning flex items-center gap-1.5">
                       <CalendarClock className="w-3.5 h-3.5" /> Campanha encerrou em {new Date(c.ended_at).toLocaleDateString("pt-BR")}
                     </div>
                     <div className="text-muted-foreground">Adicione mais dias e/ou ajuste o orçamento para continuar rodando.</div>
@@ -353,7 +353,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                   >
                     {toggling === c.id
                       ? <Loader2 className="w-4 h-4 animate-spin" />
-                      : c.status === "active" ? <Pause className="w-4 h-4 text-amber-400" /> : <Play className="w-4 h-4 text-emerald-400" />}
+                      : c.status === "active" ? <Pause className="w-4 h-4 text-warning" /> : <Play className="w-4 h-4 text-primary" />}
                   </Button>
                 )}
                 {c.fb_campaign_id && (
@@ -385,13 +385,13 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               <Stat icon={<TrendingUp className="w-3.5 h-3.5" />} label="Impressões" value={m.impressions.toLocaleString("pt-BR")} />
               <Stat icon={<Users className="w-3.5 h-3.5" />} label="Cliques" value={m.clicks.toLocaleString("pt-BR")} />
               <Stat icon={<MessageCircle className="w-3.5 h-3.5" />} label="Conversas" value={String(m.messaging_conversations_started)} />
-              <Stat icon={<Users className="w-3.5 h-3.5" />} label="Leads Meta" value={String(m.leads)} />
+              <Stat icon={<Users className="w-3.5 h-3.5" />} label="Clientes interessados Meta" value={String(m.leads)} />
               <Stat
-                icon={<MessageCircle className="w-3.5 h-3.5 text-green-500" />}
-                label="Leads WhatsApp"
+                icon={<MessageCircle className="w-3.5 h-3.5 text-primary" />}
+                label="Clientes interessados WhatsApp"
                 value={String(waCount)}
                 highlight={waCount > 0}
-                tooltip="Leads que mandaram mensagem no WhatsApp e foram atribuídos a esta campanha (via mensagem pré-preenchida ou CTWA)"
+                tooltip="Clientes interessados que mandaram mensagem no WhatsApp e foram atribuídos a esta campanha (via mensagem pré-preenchida ou CTWA)"
               />
               <Stat icon={<DollarSign className="w-3.5 h-3.5" />} label={m.leads > 0 ? "CPL" : "Gasto"} value={m.leads > 0 ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}` : `R$ ${(m.spend_cents / 100).toFixed(2)}`} highlight />
             </div>

@@ -158,7 +158,7 @@ function MessageItem({
           <p className="text-sm font-semibold text-foreground">Mensagem {index + 1} <span className="text-muted-foreground font-normal">de {total}</span></p>
           <div className="flex items-center gap-1.5 mt-0.5">
             {isVoiceTemplate && (
-              <Badge variant="outline" className="text-[9px] bg-emerald-500/10 border-emerald-500/30 text-emerald-400">
+              <Badge variant="outline" className="text-[9px] bg-primary/10 border-primary/30 text-primary">
                 <Mic2 className="h-2.5 w-2.5 mr-0.5" /> Voz: {msg.voice_template_name}
               </Badge>
             )}
@@ -213,11 +213,11 @@ function MessageItem({
           <p className="text-[11px] font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">Conteúdo</p>
 
           {isVoiceTemplate ? (
-            <div className="flex items-center gap-2 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
-              <Mic2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-2 p-3 rounded-lg border border-primary/30 bg-primary/5">
+              <Mic2 className="h-4 w-4 text-primary shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold">{msg.voice_template_name}</p>
-                <p className="text-[10px] text-muted-foreground">Áudio será costurado com o nome do lead no envio</p>
+                <p className="text-[10px] text-muted-foreground">Áudio será costurado com o nome do cliente interessado no envio</p>
               </div>
               <Button variant="ghost" size="sm" className="h-7 text-[10px]" onClick={() => onChange({ ...msg, voice_template_id: null, voice_template_name: null })}>
                 Remover
@@ -347,7 +347,7 @@ function MessageItem({
 
             {showDealOrigin && (
               <div>
-                <p className="text-[10px] text-muted-foreground mb-1">🔄 Origem (só dispara para leads desta origem)</p>
+                <p className="text-[10px] text-muted-foreground mb-1">🔄 Origem (só dispara para clientes interessados desta origem)</p>
                 <Select value={msg.deal_origin || "all"} onValueChange={(v) => onChange({ ...msg, deal_origin: v === "all" ? "" : v })}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -529,7 +529,7 @@ export function StageAutoMessageConfig({
                 <Badge variant="secondary" className="text-[10px]">{stageLabel}</Badge>
               </DialogTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Configure mensagens enviadas em sequência quando um lead entrar nesta coluna.
+                Configure mensagens enviadas em sequência quando um cliente interessado entrar nesta coluna.
               </p>
             </div>
           </div>

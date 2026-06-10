@@ -39,8 +39,8 @@ export function ResolverStrictModeToggle() {
       toast({
         title: next ? "Resolver strict mode ATIVO" : "Resolver strict mode DESLIGADO",
         description: next
-          ? "Leads com step custom sem mapeamento não serão mais resetados para aguardando_conta."
-          : "Comportamento padrão: leads sem mapeamento voltam para aguardando_conta.",
+          ? "Clientes interessados com step custom sem mapeamento não serão mais resetados para aguardando_conta."
+          : "Comportamento padrão: clientes interessados sem mapeamento voltam para aguardando_conta.",
       });
     } catch (e: any) {
       toast({ title: "Erro", description: e?.message || String(e), variant: "destructive" });
@@ -66,12 +66,12 @@ export function ResolverStrictModeToggle() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-sm">Resolver Strict Mode</h3>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${enabled ? "bg-emerald-500/20 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${enabled ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
               {enabled ? "ATIVO" : "DESLIGADO"}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Quando ativo, leads com step custom sem mapeamento legacy NÃO voltam para "aguardando_conta" — mantém o step e loga warn. Ligar só após validar com 1 consultor piloto.
+            Quando ativo, clientes interessados com step custom sem mapeamento legacy NÃO voltam para "aguardando_conta" — mantém o step e loga warn. Ligar só após validar com 1 consultor piloto.
           </p>
         </div>
         <Button size="sm" variant={enabled ? "destructive" : "default"} disabled={saving} onClick={() => void toggle()} className="shrink-0">

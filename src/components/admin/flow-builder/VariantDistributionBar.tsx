@@ -185,7 +185,7 @@ export default function VariantDistributionBar({
                   onClick={() => onSelectVariant(v)}
                   className="flex items-center gap-1.5 text-xs"
                 >
-                  <span className={`h-2 w-2 rounded-full ${isActive ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+                  <span className={`h-2 w-2 rounded-full ${isActive ? "bg-primary/100" : "bg-muted-foreground/40"}`} />
                   <span className="font-semibold">{v}</span>
                   <span className="hidden text-muted-foreground sm:inline">
                     {VARIANT_LABEL[v].replace(/^[A-E]\s*/, "")}

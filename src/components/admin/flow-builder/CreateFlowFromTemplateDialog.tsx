@@ -84,7 +84,7 @@ const BLOCKS: BlockOption[] = [
   {
     id: "duvidas_ia",
     label: "Bloco de dúvidas com IA",
-    description: "Lead pode tirar dúvidas livremente. IA responde com base no conhecimento da iGreen.",
+    description: "Cliente interessado pode tirar dúvidas livremente. IA responde com base no conhecimento da iGreen.",
     emoji: "🤖",
     defaultEnabled: true,
     recommended: true,
@@ -92,7 +92,7 @@ const BLOCKS: BlockOption[] = [
   {
     id: "finalizar_cadastro",
     label: "Finalizar cadastro (portal)",
-    description: "Envia tudo ao portal da iGreen. Lead recebe SMS/OTP. Selfie via link.",
+    description: "Envia tudo ao portal da iGreen. Cliente interessado recebe SMS/OTP. Selfie via link.",
     emoji: "🎯",
     defaultEnabled: true,
   },

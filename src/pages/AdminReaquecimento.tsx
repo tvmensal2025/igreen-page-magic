@@ -64,11 +64,11 @@ export default function AdminReaquecimento() {
 
   function handleSendBatch() {
     if (selectedIds.size < 2) {
-      toast.error("Selecione pelo menos 2 leads para enviar em lote");
+      toast.error("Selecione pelo menos 2 clientes interessados para enviar em lote");
       return;
     }
     if (selectedIds.size > 500) {
-      toast.error("Selecione no máximo 500 leads por lote");
+      toast.error("Selecione no máximo 500 clientes interessados por lote");
       return;
     }
     setSendDialogMode("batch");
@@ -92,14 +92,14 @@ export default function AdminReaquecimento() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-base font-semibold">🔥 Reaquecimento de Leads</h1>
+            <h1 className="text-base font-semibold">🔥 Reaquecimento de Clientes interessados</h1>
             <p className="text-xs text-muted-foreground">
-              Leads parados há mais de 24 horas — reative com mensagem personalizada.
+              Clientes interessados parados há mais de 24 horas — reative com mensagem personalizada.
             </p>
           </div>
           <Badge variant="secondary" className="gap-1">
             <Users className="h-3 w-3" />
-            {totalStuck} {totalStuck === 1 ? "lead parado" : "leads parados"}
+            {totalStuck} {totalStuck === 1 ? "lead parado" : "clientes interessados parados"}
           </Badge>
           {userId && (
             <Button variant="outline" size="sm" onClick={() => loadGrouped(userId)}>
@@ -113,7 +113,7 @@ export default function AdminReaquecimento() {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <Tabs defaultValue="leads" className="w-full">
           <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="leads">Leads parados</TabsTrigger>
+            <TabsTrigger value="leads">Clientes interessados parados</TabsTrigger>
             <TabsTrigger value="templates">Templates</TabsTrigger>
           </TabsList>
 
@@ -153,7 +153,7 @@ export default function AdminReaquecimento() {
               <Card className="p-12 text-center">
                 <AlertCircle className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  Nenhum lead parado há mais de 24 horas. Bom trabalho! 🎉
+                  Nenhum cliente interessado parado há mais de 24 horas. Bom trabalho! 🎉
                 </p>
               </Card>
             ) : (

@@ -7,14 +7,14 @@ export function PlayerHud({ progress }: { progress: GameProgress }) {
 
   return (
     <div className="relative rounded-lg border border-border/60 bg-card/80 backdrop-blur-md px-2.5 py-1.5 overflow-hidden exec-ambient">
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-warning/40 to-transparent" />
 
       <div className="relative flex items-center gap-3 flex-wrap">
         <div className="relative shrink-0">
           <div className={`w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center ${isOnFire ? "animate-exec-rank" : ""}`}>
             <TrendingUp className="w-4 h-4 text-primary" strokeWidth={1.5} />
           </div>
-          <span className="absolute -bottom-1 -right-1 bg-amber-400 text-amber-950 text-[9px] font-black rounded w-5 h-4 flex items-center justify-center border border-card tabular-nums">
+          <span className="absolute -bottom-1 -right-1 bg-warning text-warning text-[9px] font-black rounded w-5 h-4 flex items-center justify-center border border-card tabular-nums">
             {level}
           </span>
         </div>
@@ -27,7 +27,7 @@ export function PlayerHud({ progress }: { progress: GameProgress }) {
           </div>
           <div className="relative h-1.5 rounded-full bg-secondary overflow-hidden border border-border/40">
             <div
-              className={`absolute inset-y-0 left-0 bg-gradient-to-r from-primary to-emerald-400 transition-all duration-700 ease-out rounded-full ${progressPct > 0 ? "exec-bar-active" : ""}`}
+              className={`absolute inset-y-0 left-0 bg-gradient-to-r from-primary to-primary transition-all duration-700 ease-out rounded-full ${progressPct > 0 ? "exec-bar-active" : ""}`}
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -39,7 +39,7 @@ export function PlayerHud({ progress }: { progress: GameProgress }) {
             <span className="text-[10px] font-bold tabular-nums">{todayCount}</span>
             <span className="text-[8px] uppercase opacity-60">hoje</span>
           </div>
-          <div className={`flex items-center gap-1 px-2 py-1 rounded-md border text-amber-500 ${isOnFire ? "bg-amber-400/15 border-amber-400/30 animate-exec-energy" : "bg-secondary border-border/40"}`}>
+          <div className={`flex items-center gap-1 px-2 py-1 rounded-md border text-warning ${isOnFire ? "bg-warning/15 border-warning/30 animate-exec-energy" : "bg-secondary border-border/40"}`}>
             <BarChart2 className="w-3 h-3" strokeWidth={1.5} />
             <span className="text-[10px] font-bold tabular-nums">{streak}</span>
             <span className="text-[8px] uppercase opacity-60">dias</span>

@@ -34,8 +34,8 @@ export function AdQualityPanel({ headline, primary, description, cityCount, dist
   }, [headline, primary, description, cityCount, distribuidora, primaryImage?.url, primaryVideo?.w, primaryVideo?.h, primaryVideo?.duration]);
 
   if (!result) return null;
-  const colorBg = result.level === "green" ? "bg-emerald-500/10 border-emerald-500/30" : result.level === "yellow" ? "bg-amber-500/10 border-amber-500/30" : "bg-destructive/10 border-destructive/30";
-  const colorText = result.level === "green" ? "text-emerald-400" : result.level === "yellow" ? "text-amber-400" : "text-destructive";
+  const colorBg = result.level === "green" ? "bg-primary/10 border-primary/30" : result.level === "yellow" ? "bg-warning/10 border-warning/30" : "bg-destructive/10 border-destructive/30";
+  const colorText = result.level === "green" ? "text-primary" : result.level === "yellow" ? "text-warning" : "text-destructive";
 
   return (
     <Card className={`p-3 space-y-2 border ${colorBg}`}>
@@ -60,7 +60,7 @@ export function AdQualityPanel({ headline, primary, description, cityCount, dist
       {result.copy.hits.length > 0 && (
         <div className="border-t border-border/40 pt-2 space-y-1">
           {result.copy.hits.map((h, i) => (
-            <div key={i} className={`text-[11px] flex items-start gap-1.5 ${h.severity === "block" ? "text-destructive" : "text-amber-400"}`}>
+            <div key={i} className={`text-[11px] flex items-start gap-1.5 ${h.severity === "block" ? "text-destructive" : "text-warning"}`}>
               <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
               <span>{h.message}{h.suggestion && <span className="text-muted-foreground"> — {h.suggestion}</span>}</span>
             </div>
@@ -80,7 +80,7 @@ function Section({ title, score, checks }: { title: string; score: number; check
       <ul className="space-y-0.5 mt-1">
         {checks.map((c, i) => (
           <li key={i} className="text-[11px] flex items-start gap-1.5">
-            {c.ok ? <Check className="w-3 h-3 text-emerald-400 mt-0.5 shrink-0" /> : <X className="w-3 h-3 text-destructive mt-0.5 shrink-0" />}
+            {c.ok ? <Check className="w-3 h-3 text-primary mt-0.5 shrink-0" /> : <X className="w-3 h-3 text-destructive mt-0.5 shrink-0" />}
             <span className={c.ok ? "text-foreground/80" : "text-muted-foreground"}>
               {c.label}{c.detail && <span className="text-muted-foreground/70"> · {c.detail}</span>}
             </span>

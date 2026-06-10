@@ -49,16 +49,16 @@ export function XpFloaterProvider({ children }: { children: ReactNode }) {
         {items.map((item, idx) => (
           <div
             key={item.id}
-            className="absolute right-4 bottom-24 flex items-center gap-1 font-black text-emerald-400 drop-shadow-[0_0_10px_hsl(142_76%_45%/0.7)] animate-game-float-up"
+            className="absolute right-4 bottom-24 flex items-center gap-1 font-black text-primary drop-shadow-[0_0_10px_hsl(142_76%_45%/0.7)] animate-game-float-up"
             style={{
               transform: `translateY(${idx * -34}px)`,
               fontSize: "1.5rem",
             }}
           >
             <span>+{item.amount}</span>
-            <span className="text-amber-300 text-xs uppercase tracking-wider">XP</span>
+            <span className="text-warning text-xs uppercase tracking-wider">XP</span>
             {item.bonus && (
-              <span className="ml-1 px-1.5 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[10px] uppercase font-black">
+              <span className="ml-1 px-1.5 py-0.5 rounded-md bg-warning text-warning text-[10px] uppercase font-black">
                 {item.bonus}
               </span>
             )}

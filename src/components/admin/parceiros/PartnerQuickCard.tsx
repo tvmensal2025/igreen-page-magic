@@ -25,19 +25,19 @@ function getHealth(p: ReferralPartner, a?: PartnerAnalytics): Health {
 
 const HEALTH_META: Record<Health, { dot: string; label: string; cls: string }> = {
   ok: {
-    dot: "bg-emerald-500",
+    dot: "bg-primary/100",
     label: "Atribuindo",
-    cls: "border-emerald-500/30 bg-emerald-500/5",
+    cls: "border-primary/30 bg-primary/5",
   },
   configured_no_leads: {
-    dot: "bg-amber-500",
-    label: "Sem leads 30d",
-    cls: "border-amber-500/30 bg-amber-500/5",
+    dot: "bg-warning/100",
+    label: "Sem clientes interessados 30d",
+    cls: "border-warning/30 bg-warning/5",
   },
   not_configured: {
-    dot: "bg-red-500",
+    dot: "bg-destructive/100",
     label: "Sem keyword",
-    cls: "border-red-500/40 bg-red-500/5",
+    cls: "border-destructive/40 bg-destructive/5",
   },
 };
 
@@ -81,7 +81,7 @@ export function PartnerQuickCard({ partner, analytics, onEdit, onQrCode, onAfter
       <div className="flex items-center gap-3 mb-2">
         <div>
           <div className="text-lg font-semibold leading-none">{leads30}</div>
-          <div className="text-[9px] uppercase text-muted-foreground mt-1">Leads 30d</div>
+          <div className="text-[9px] uppercase text-muted-foreground mt-1">Clientes interessados 30d</div>
         </div>
         <div className="border-l border-border/40 pl-3">
           <div className="text-lg font-semibold leading-none">{leadsTotal}</div>
@@ -102,9 +102,9 @@ export function PartnerQuickCard({ partner, analytics, onEdit, onQrCode, onAfter
       </div>
 
       {health === "not_configured" && (
-        <div className="flex items-center gap-1.5 text-[10px] text-red-400 mb-2">
+        <div className="flex items-center gap-1.5 text-[10px] text-destructive mb-2">
           <AlertTriangle className="h-3 w-3" />
-          Sem keyword nem QR — não consegue atribuir leads
+          Sem keyword nem QR — não consegue atribuir clientes interessados
         </div>
       )}
 
@@ -116,7 +116,7 @@ export function PartnerQuickCard({ partner, analytics, onEdit, onQrCode, onAfter
           <QrCode className="h-3 w-3 mr-1" /> QR
         </Button>
         <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px] flex-1" onClick={handleView}>
-          <Eye className="h-3 w-3 mr-1" /> Leads
+          <Eye className="h-3 w-3 mr-1" /> Clientes interessados
         </Button>
       </div>
     </Card>

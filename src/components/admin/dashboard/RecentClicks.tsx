@@ -23,37 +23,34 @@ function fmt(ts: string) {
 
 export function RecentClicks({ clicks = [] }: Props) {
   return (
-    <section className="border border-[#1a2e1a] bg-[#0a0f0a] overflow-hidden h-full flex flex-col">
-      <header className="flex items-center justify-between px-4 py-2.5 border-b border-[#1a2e1a]">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[10px] text-zinc-500 tracking-widest">FEED_03</span>
-          <h3 className="font-mono text-xs font-bold tracking-wider text-zinc-200">ÚLTIMOS CLIQUES</h3>
-        </div>
-        <span className="font-mono text-[10px] text-zinc-500">{clicks.length} eventos</span>
+    <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden h-full flex flex-col">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground">Últimos cliques</h3>
+        <span className="text-xs text-muted-foreground">{clicks.length} eventos</span>
       </header>
       {clicks.length === 0 ? (
-        <div className="p-8 text-center font-mono text-xs text-zinc-600 flex-1 flex items-center justify-center">
-          — sem cliques recentes —
+        <div className="p-8 text-center text-sm text-muted-foreground flex-1 flex items-center justify-center">
+          Nenhum clique recente
         </div>
       ) : (
         <ol className="flex-1 max-h-[440px] overflow-y-auto">
           {clicks.map((c, i) => {
             const accent = c.target.includes("whatsapp")
-              ? "#22c55e"
+              ? "hsl(var(--primary))"
               : c.target.includes("cadastro")
-              ? "#fbbf24"
-              : "#737373";
+              ? "hsl(var(--warning))"
+              : "hsl(var(--muted-foreground))";
             return (
               <li
                 key={i}
-                className="grid grid-cols-[auto_1fr_auto] gap-3 px-4 py-2 border-b border-[#1a2e1a]/60 hover:bg-black/40 font-mono text-[11px]"
+                className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5 border-b border-border/60 hover:bg-muted/50 text-xs"
               >
-                <span className="text-zinc-600 tabular-nums w-10">{fmt(c.created_at).padStart(4, " ")}</span>
+                <span className="text-muted-foreground tabular-nums w-10">{fmt(c.created_at)}</span>
                 <div className="min-w-0 flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: accent }} />
-                  <span className="text-zinc-200 truncate">{friendlyClickLabel(c.target)}</span>
+                  <span className="text-foreground truncate">{friendlyClickLabel(c.target)}</span>
                 </div>
-                <span className="text-zinc-600 uppercase text-[9px] tracking-widest">
+                <span className="text-muted-foreground uppercase text-[10px] tracking-wide">
                   {c.device} · {c.source}
                 </span>
               </li>

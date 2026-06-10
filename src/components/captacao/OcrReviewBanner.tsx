@@ -68,7 +68,7 @@ function OcrReviewCardWrapper({
   queueLength: number;
 }) {
   const { customer } = useCaptureSession(customerId);
-  if (!customer) return <div className="p-12 text-center text-sm text-muted-foreground">Carregando dados do OCR…</div>;
+  if (!customer) return <div className="p-12 text-center text-sm text-muted-foreground">Carregando dados da leitura automática…</div>;
   const kind = (customer as any).ocr_review_pending as "bill" | "doc" | null;
   if (!kind) {
     // Já foi tratado por outro caminho — fecha modal automaticamente.
@@ -78,7 +78,7 @@ function OcrReviewCardWrapper({
   return (
     <div className="p-2">
       {queueLength > 1 && (
-        <div className="mb-2 px-3 py-1 rounded bg-amber-500/15 border border-amber-400/40 text-amber-700 dark:text-amber-300 text-xs font-bold text-center">
+        <div className="mb-2 px-3 py-1 rounded bg-warning/15 border border-warning/40 text-warning dark:text-warning text-xs font-bold text-center">
           ⚠️ {queueLength} leads aguardando revisão. Decida este para liberar o próximo.
         </div>
       )}

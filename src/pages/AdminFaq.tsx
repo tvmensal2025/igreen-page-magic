@@ -369,7 +369,7 @@ export default function AdminFaq({ embedded = false }: { embedded?: boolean } = 
             <div className="text-sm space-y-1">
               <p className="font-semibold">Editar o FAQ <span className="underline">não bagunça</span> o fluxo do bot.</p>
               <p className="text-muted-foreground">
-                Quando o lead pergunta algo durante o cadastro, o bot primeiro tenta as perguntas do fluxo. Se não bater,
+                Quando o cliente interessado pergunta algo durante o cadastro, o bot primeiro tenta as perguntas do fluxo. Se não bater,
                 a IA usa este FAQ pra responder <strong>sem mudar de passo</strong> e termina convidando a continuar o cadastro.
                 Se não tiver confiança ou for assunto sensível (cancelamento, reclamação, humano), ela pausa e te notifica.
               </p>
@@ -398,7 +398,7 @@ export default function AdminFaq({ embedded = false }: { embedded?: boolean } = 
                 <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="lead">Lead</SelectItem>
+                  <SelectItem value="lead">Cliente interessado</SelectItem>
                   <SelectItem value="cliente">Cliente</SelectItem>
                   <SelectItem value="ambos">Ambos</SelectItem>
                 </SelectContent>
@@ -549,7 +549,7 @@ export default function AdminFaq({ embedded = false }: { embedded?: boolean } = 
                   <Select value={edit.persona || "ambos"} onValueChange={(v) => setEdit({ ...edit, persona: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="lead">Lead (ainda não é cliente)</SelectItem>
+                      <SelectItem value="lead">Cliente interessado (ainda não é cliente)</SelectItem>
                       <SelectItem value="cliente">Cliente (já contratou)</SelectItem>
                       <SelectItem value="ambos">Ambos</SelectItem>
                     </SelectContent>
@@ -617,7 +617,7 @@ export default function AdminFaq({ embedded = false }: { embedded?: boolean } = 
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               A IA vai ler as seções ativas (e o texto extra abaixo, se houver), deduplicar, consolidar temas, sugerir títulos,
-              palavras-chave e ordenar pela jornada do lead. Você revisa antes de aplicar.
+              palavras-chave e ordenar pela jornada do cliente interessado. Você revisa antes de aplicar.
             </p>
             <div>
               <Label>Texto extra (opcional) — colar conteúdo bruto pra IA absorver</Label>

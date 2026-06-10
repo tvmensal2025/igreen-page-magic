@@ -29,7 +29,7 @@ const PROFILES: Array<{
     models: "Gemini 3.1 Pro / GPT-5.5",
     sub: "Respostas mais inteligentes. Custo maior, latência ~2-3s.",
     icon: Target,
-    color: "text-purple-500",
+    color: "text-primary",
   },
   {
     v: "balanced",
@@ -37,7 +37,7 @@ const PROFILES: Array<{
     models: "Gemini 3.5 Flash / GPT-5",
     sub: "Padrão recomendado. Latência ~1-2s.",
     icon: Sparkles,
-    color: "text-blue-500",
+    color: "text-info",
   },
   {
     v: "fast",
@@ -45,7 +45,7 @@ const PROFILES: Array<{
     models: "Gemini 2.5 Flash-Lite",
     sub: "Latência <1s. Para volume alto e dúvidas simples.",
     icon: Zap,
-    color: "text-amber-500",
+    color: "text-warning",
   },
 ];
 

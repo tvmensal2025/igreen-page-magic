@@ -276,12 +276,12 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
   const pct = progress && progress.total > 0 ? ((progress.sent + progress.failed) / progress.total) * 100 : 0;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-orange-950/10">
-      <div className="absolute -top-20 -right-20 w-40 h-40 bg-orange-500/3 rounded-full blur-3xl" />
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-warning/10">
+      <div className="absolute -top-20 -right-20 w-40 h-40 bg-warning/3 rounded-full blur-3xl" />
       <div className="relative p-5 sm:p-7">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-600/10 flex items-center justify-center border border-orange-500/20">
-            <Megaphone className="w-5 h-5 text-orange-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-warning/20 to-warning/10 flex items-center justify-center border border-warning/20">
+            <Megaphone className="w-5 h-5 text-warning" />
           </div>
           <div className="flex-1">
             <h3 className="font-heading font-bold text-foreground text-lg flex items-center gap-2">
@@ -289,7 +289,7 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
               <HelpHint
                 title="Envio em Massa"
                 summary="Envia a mesma mensagem para vários contatos com delay seguro"
-                details="Selecione público (Leads WhatsApp ou Clientes iGreen — nunca mistura os dois), aplique filtros de status/licenciada, escreva ou escolha um template e dispare. O envio respeita delay entre mensagens (1,5s–2,5s) e ordem áudio → imagem → texto para parecer humano."
+                details="Selecione público (Clientes interessados WhatsApp ou Clientes iGreen — nunca mistura os dois), aplique filtros de status/licenciada, escreva ou escolha um template e dispare. O envio respeita delay entre mensagens (1,5s–2,5s) e ordem áudio → imagem → texto para parecer humano."
                 example="Quer avisar todos os leads em 'Aguardando conta' sobre um novo prazo? Filtre por esse status e envie um lembrete único."
               />
             </h3>
@@ -297,14 +297,14 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
           </div>
         </div>
 
-        {/* Origem do público — NUNCA mistura Leads WhatsApp com Clientes iGreen */}
+        {/* Origem do público — NUNCA mistura Clientes interessados WhatsApp com Clientes iGreen */}
         <div className="flex flex-wrap gap-2 mb-3 p-2 rounded-xl border border-border/50 bg-secondary/20">
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground/80 mr-1">
             <Users className="w-3.5 h-3.5" /> Público:
           </div>
           {[
             { key: "igreen_sync", label: "Clientes iGreen (carteira)" },
-            { key: "whatsapp_lead", label: "Leads WhatsApp (anúncio)" },
+            { key: "whatsapp_lead", label: "Clientes interessados WhatsApp (anúncio)" },
           ].map((o) => (
             <button
               key={o.key}
@@ -366,7 +366,7 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
           <div className="mb-3">
             <Select value={devolutivaFilter} onValueChange={setDevolutivaFilter} disabled={isSending}>
               <SelectTrigger className="rounded-xl bg-secondary/50 border-border/50">
-                <AlertTriangle className="w-3.5 h-3.5 text-orange-400 mr-2" />
+                <AlertTriangle className="w-3.5 h-3.5 text-warning mr-2" />
                 <SelectValue placeholder="Filtrar por devolutiva..." />
               </SelectTrigger>
               <SelectContent>
@@ -489,18 +489,18 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
         {/* Valid/invalid counter */}
         <div className="flex flex-wrap items-center gap-2 mb-3 px-1">
           <span className="text-[11px] text-muted-foreground">{filteredCustomers.length} filtrados:</span>
-          <span className="text-[11px] text-green-400 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+          <span className="text-[11px] text-primary flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
             {validCount} válidos
           </span>
           {invalidCount > 0 && (
-            <span className="text-[11px] text-red-400 flex items-center gap-1">
+            <span className="text-[11px] text-destructive flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
               {invalidCount} sem número válido
             </span>
           )}
           {selectedInvalidCount > 0 && (
-            <span className="text-[11px] text-yellow-400 flex items-center gap-1">
+            <span className="text-[11px] text-warning flex items-center gap-1">
               ⚠ {selectedInvalidCount} inválido(s) selecionado(s)
             </span>
           )}
@@ -515,14 +515,14 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
           ) : filteredCustomers.map((c) => {
             const phoneValid = isValidPhone(c.phone_whatsapp);
             return (
-              <div key={c.id} className={`w-full flex items-center gap-3 px-4 py-2.5 transition-all hover:bg-secondary/40 ${selectedIds.has(c.id) ? "bg-orange-500/5" : ""} ${!phoneValid ? "opacity-50" : ""} ${isSending ? "pointer-events-none opacity-50" : ""}`}>
+              <div key={c.id} className={`w-full flex items-center gap-3 px-4 py-2.5 transition-all hover:bg-secondary/40 ${selectedIds.has(c.id) ? "bg-warning/5" : ""} ${!phoneValid ? "opacity-50" : ""} ${isSending ? "pointer-events-none opacity-50" : ""}`}>
                 <Checkbox checked={selectedIds.has(c.id)} onCheckedChange={() => toggleCustomer(c.id)} disabled={isSending} />
                 <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setViewingCustomer(c)}>
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm text-foreground truncate hover:underline">{c.name}</p>
-                    {sentIds.has(c.id) && <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0" />}
+                    {sentIds.has(c.id) && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
                     {!phoneValid && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-medium shrink-0">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-destructive/15 text-destructive font-medium shrink-0">
                         Nº inválido
                       </span>
                     )}
@@ -530,10 +530,10 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
                   <p className="text-xs text-muted-foreground/70">{c.phone_whatsapp}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {c.status === "approved" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-medium">Aprovado</span>}
-                  {c.status === "rejected" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-medium">Reprovado</span>}
-                  {c.status === "pending" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-medium">Pendente</span>}
-                  {c.devolutiva && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-medium">Dev.</span>}
+                  {c.status === "approved" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-medium">Aprovado</span>}
+                  {c.status === "rejected" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/15 text-destructive font-medium">Reprovado</span>}
+                  {c.status === "pending" && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning font-medium">Pendente</span>}
+                  {c.devolutiva && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning font-medium">Dev.</span>}
                   <button onClick={() => setViewingCustomer(c)} className="p-1 rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors">
                     <Eye className="w-3.5 h-3.5" />
                   </button>
@@ -544,8 +544,8 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
         </div>
 
         {warning && (
-          <div className="rounded-xl bg-red-500/5 border border-red-500/20 px-4 py-2.5 mb-3">
-            <p className="text-sm text-red-400 font-medium">{warning}</p>
+          <div className="rounded-xl bg-destructive/5 border border-destructive/20 px-4 py-2.5 mb-3">
+            <p className="text-sm text-destructive font-medium">{warning}</p>
           </div>
         )}
 
@@ -567,7 +567,7 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
         {previewMessage && selectedIds.size > 0 && !isSending && (
           <div className="mb-4 rounded-xl border border-border/40 overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-2 bg-secondary/30 border-b border-border/30">
-              <MessageSquare className="w-3.5 h-3.5 text-green-400" />
+              <MessageSquare className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-medium text-muted-foreground">Preview da mensagem</span>
             </div>
             <div className="p-3 bg-[#0b141a]">
@@ -582,8 +582,8 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
         {/* Time estimate */}
         {selectedValidCount > 1 && !isSending && (
           <div className="flex items-center gap-2 mb-3 px-1">
-            <Clock className="w-3.5 h-3.5 text-blue-400" />
-            <span className="text-xs text-blue-300">
+            <Clock className="w-3.5 h-3.5 text-info" />
+            <span className="text-xs text-info">
               Tempo estimado: <span className="font-bold">~{formatDuration(timeEstimate)}</span> para {selectedValidCount} contatos
             </span>
           </div>
@@ -592,7 +592,7 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
         {isSending && progress && (
           <div className="mb-4 space-y-3 rounded-xl bg-secondary/20 border border-border/30 p-4">
             <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+              <Loader2 className="w-4 h-4 animate-spin text-warning" />
               <span className="font-medium flex-1">Enviando... {progress.sent + progress.failed}/{progress.total}</span>
               <Button
                 size="sm"
@@ -605,15 +605,15 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
             </div>
             <Progress value={pct} className="h-2" />
             {countdown > 0 && (
-              <div className="flex items-center gap-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 px-3 py-2">
-                <Shield className="w-4 h-4 text-blue-400 shrink-0" />
+              <div className="flex items-center gap-2.5 rounded-lg bg-info/10 border border-info/20 px-3 py-2">
+                <Shield className="w-4 h-4 text-info shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-blue-300 font-medium">Proteção anti-bloqueio ativa</p>
-                  <p className="text-[11px] text-blue-400/70">Aguardando intervalo de segurança...</p>
+                  <p className="text-xs text-info font-medium">Proteção anti-bloqueio ativa</p>
+                  <p className="text-[11px] text-info/70">Aguardando intervalo de segurança...</p>
                 </div>
-                <div className="flex items-center gap-1.5 bg-blue-500/15 px-2.5 py-1 rounded-full">
-                  <Timer className="w-3.5 h-3.5 text-blue-400" />
-                  <span className="text-sm font-mono font-bold text-blue-300">{countdown}s</span>
+                <div className="flex items-center gap-1.5 bg-info/15 px-2.5 py-1 rounded-full">
+                  <Timer className="w-3.5 h-3.5 text-info" />
+                  <span className="text-sm font-mono font-bold text-info">{countdown}s</span>
                 </div>
               </div>
             )}
@@ -624,8 +624,8 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
           <div className="rounded-xl border border-border/40 bg-secondary/20 px-4 py-3.5 mb-4">
             <p className="text-sm text-foreground font-bold mb-2">Envio concluído</p>
             <div className="flex gap-4 text-xs font-medium">
-              <span className="text-green-400 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400" />{result.sent} enviadas</span>
-              {result.failed > 0 && <span className="text-red-400 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" />{result.failed} falhas</span>}
+              <span className="text-primary flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary" />{result.sent} enviadas</span>
+              {result.failed > 0 && <span className="text-destructive flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-destructive" />{result.failed} falhas</span>}
             </div>
           </div>
         )}
@@ -685,9 +685,9 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
 
               <div className="flex items-center gap-2">
                 <span className="font-medium text-foreground">Status:</span>
-                {viewingCustomer.status === "approved" && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-medium">Aprovado</span>}
-                {viewingCustomer.status === "rejected" && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 font-medium">Reprovado</span>}
-                {viewingCustomer.status === "pending" && <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-medium">Pendente</span>}
+                {viewingCustomer.status === "approved" && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary font-medium">Aprovado</span>}
+                {viewingCustomer.status === "rejected" && <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/15 text-destructive font-medium">Reprovado</span>}
+                {viewingCustomer.status === "pending" && <span className="text-xs px-2 py-0.5 rounded-full bg-warning/15 text-warning font-medium">Pendente</span>}
               </div>
 
               {viewingCustomer.andamento_igreen && (
@@ -695,8 +695,8 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
               )}
 
               {viewingCustomer.devolutiva && (
-                <div className="rounded-lg bg-orange-500/10 border border-orange-500/20 p-3">
-                  <p className="text-xs font-medium text-orange-400 mb-1">Devolutiva</p>
+                <div className="rounded-lg bg-warning/10 border border-warning/20 p-3">
+                  <p className="text-xs font-medium text-warning mb-1">Devolutiva</p>
                   <p className="text-xs text-muted-foreground whitespace-pre-wrap">{viewingCustomer.devolutiva}</p>
                 </div>
               )}

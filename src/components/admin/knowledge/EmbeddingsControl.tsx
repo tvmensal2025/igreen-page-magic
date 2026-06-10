@@ -78,9 +78,9 @@ export default function EmbeddingsControl() {
         <div className="flex-1 min-w-[220px]">
           <div className="flex items-center gap-2">
             {allGood ? (
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <CheckCircle2 className="h-4 w-4 text-primary" />
             ) : stats && stats.semEmbedding > 0 ? (
-              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertCircle className="h-4 w-4 text-warning" />
             ) : (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             )}
@@ -94,7 +94,7 @@ export default function EmbeddingsControl() {
           <p className="text-xs text-muted-foreground mt-1">
             A Vendedora v1 usa esses embeddings para buscar a resposta certa na sua base. Seções novas são indexadas automaticamente.
             {stats && stats.semEmbedding > 0 && (
-              <> <strong className="text-amber-700">{stats.semEmbedding} pendente(s).</strong></>
+              <> <strong className="text-warning">{stats.semEmbedding} pendente(s).</strong></>
             )}
           </p>
           {stats?.ultimaAtualizacao && (

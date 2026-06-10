@@ -128,7 +128,7 @@ export default function SaudeProducao() {
     const notifOk = snapshots.filter((s) => s.notification_phone_ok).length;
     return [
       { label: "Pixel configurado", ok: pixelOk, total, ready: pixelOk === total },
-      { label: "CAPI token válido", ok: capiOk, total, ready: capiOk === total },
+      { label: "Integração de anúncios ativa", ok: capiOk, total, ready: capiOk === total },
       { label: "Instância WhatsApp conectada", ok: connected, total, ready: connected === total },
       { label: "Fluxos por variante ativos", ok: flowsOk, total, ready: flowsOk === total },
       { label: "Notification phone configurado", ok: notifOk, total, ready: notifOk === total },
@@ -143,7 +143,7 @@ export default function SaudeProducao() {
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Saúde de Produção</h1>
-          <p className="text-sm text-muted-foreground">Visão em tempo real do funil, origens, infraestrutura e leads travados.</p>
+          <p className="text-sm text-muted-foreground">Visão em tempo real do funil, origens, infraestrutura e clientes interessados travados.</p>
         </div>
         <Button onClick={loadAll} disabled={refreshing} variant="outline" className="gap-2">
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Atualizar
@@ -157,9 +157,9 @@ export default function SaudeProducao() {
         <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-primary" /> Checklist Go-Live</h2>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {checklist.map((c) => (
-            <div key={c.label} className={`p-3 rounded-lg border ${c.ready ? "border-green-500/30 bg-green-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+            <div key={c.label} className={`p-3 rounded-lg border ${c.ready ? "border-primary/30 bg-primary/5" : "border-warning/30 bg-warning/5"}`}>
               <div className="flex items-center gap-2">
-                {c.ready ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <AlertTriangle className="h-4 w-4 text-amber-500" />}
+                {c.ready ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <AlertTriangle className="h-4 w-4 text-warning" />}
                 <span className="text-xs font-medium">{c.label}</span>
               </div>
               <div className="text-lg font-bold mt-1">{c.ok}/{c.total}</div>
@@ -183,7 +183,7 @@ export default function SaudeProducao() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-muted-foreground">
-                <tr><th className="text-left p-2">Var</th><th className="p-2">Leads</th><th className="p-2">Conta</th><th className="p-2">OCR</th><th className="p-2">Pitch</th><th className="p-2">Club</th><th className="p-2">Aprovado</th></tr>
+                <tr><th className="text-left p-2">Variação</th><th className="p-2">Clientes interessados</th><th className="p-2">Conta</th><th className="p-2">Leitura</th><th className="p-2">Apresentação</th><th className="p-2">Club</th><th className="p-2">Aprovado</th></tr>
               </thead>
               <tbody>
                 {funnel.map((r) => (
@@ -194,7 +194,7 @@ export default function SaudeProducao() {
                     <td className="text-center p-2">{r.ocr}</td>
                     <td className="text-center p-2">{r.pitch}</td>
                     <td className="text-center p-2">{r.club}</td>
-                    <td className="text-center p-2 font-semibold text-green-500">{r.aprovado}</td>
+                    <td className="text-center p-2 font-semibold text-primary">{r.aprovado}</td>
                   </tr>
                 ))}
               </tbody>
@@ -204,8 +204,8 @@ export default function SaudeProducao() {
 
         {/* Origens */}
         <Card className="p-4 md:p-6">
-          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><Megaphone className="h-5 w-5 text-primary" /> Origem dos leads 24h</h2>
-          {origins.length === 0 ? <p className="text-sm text-muted-foreground">Sem leads nas últimas 24h.</p> : (
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><Megaphone className="h-5 w-5 text-primary" /> Origem dos clientes interessados 24h</h2>
+          {origins.length === 0 ? <p className="text-sm text-muted-foreground">Sem clientes interessados nas últimas 24h.</p> : (
             <div className="space-y-2">
               {origins.map((o) => (
                 <div key={o.source} className="flex items-center justify-between p-2 rounded bg-secondary/30">
@@ -223,7 +223,7 @@ export default function SaudeProducao() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-muted-foreground">
-                <tr><th className="text-left p-2">Consultor</th><th className="p-2">Instância</th><th className="p-2">Pixel</th><th className="p-2">CAPI</th><th className="p-2">Fluxos</th><th className="p-2">Variantes</th><th className="p-2">Notif</th><th className="p-2">Leads 24h</th></tr>
+                <tr><th className="text-left p-2">Consultor</th><th className="p-2">Instância</th><th className="p-2">Pixel</th><th className="p-2">CAPI</th><th className="p-2">Fluxos</th><th className="p-2">Variantes</th><th className="p-2">Notif</th><th className="p-2">Clientes interessados 24h</th></tr>
               </thead>
               <tbody>
                 {snapshots.map((s) => {
@@ -231,10 +231,10 @@ export default function SaudeProducao() {
                   return (
                     <tr key={s.id} className="border-t border-border/30">
                       <td className="p-2 font-medium">{c?.name || s.consultant_id.slice(0, 8)}</td>
-                      <td className="text-center p-2">{s.instance_status === "connected" ? <CheckCircle2 className="h-4 w-4 text-green-500 inline" /> : <span title={s.instance_status}><XCircle className="h-4 w-4 text-destructive inline" /></span>}</td>
+                      <td className="text-center p-2">{s.instance_status === "connected" ? <CheckCircle2 className="h-4 w-4 text-primary inline" /> : <span title={s.instance_status}><XCircle className="h-4 w-4 text-destructive inline" /></span>}</td>
                       <td className="text-center p-2">{s.pixel_ok ? "✅" : "—"}</td>
                       <td className="text-center p-2">{s.capi_ok ? "✅" : "—"}</td>
-                      <td className="text-center p-2">{s.flows_ok ? "✅" : <span className="text-amber-500 text-xs">faltam {s.flows_missing.join(",")}</span>}</td>
+                      <td className="text-center p-2">{s.flows_ok ? "✅" : <span className="text-warning text-xs">faltam {s.flows_missing.join(",")}</span>}</td>
                       <td className="text-center p-2 text-xs">{(s.active_variants || []).join("/")}</td>
                       <td className="text-center p-2">{s.notification_phone_ok ? "✅" : "—"}</td>
                       <td className="text-center p-2 font-semibold">{s.leads_24h}</td>
@@ -247,12 +247,12 @@ export default function SaudeProducao() {
         </Card>
 
         {/* Travados */}
-        <Card className="p-4 md:p-6 lg:col-span-2 border-amber-500/20">
-          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><Users className="h-5 w-5 text-amber-500" /> Leads travados (&gt;2h em capture_*)</h2>
-          {stuck.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum lead travado 🎉</p> : (
+        <Card className="p-4 md:p-6 lg:col-span-2 border-warning/20">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><Users className="h-5 w-5 text-warning" /> Clientes interessados travados (&gt;2h em capture_*)</h2>
+          {stuck.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum cliente interessado travado 🎉</p> : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {stuck.map((l) => (
-                <div key={l.id} className="flex items-center justify-between p-2 rounded bg-amber-500/5 border border-amber-500/20">
+                <div key={l.id} className="flex items-center justify-between p-2 rounded bg-warning/5 border border-warning/20">
                   <div className="text-sm">
                     <span className="font-medium">{l.name || l.phone_whatsapp}</span>
                     <span className="text-xs text-muted-foreground ml-2">{l.conversation_step} · Var {l.flow_variant || "?"}</span>

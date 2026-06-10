@@ -20,12 +20,12 @@ interface StatusResp {
 }
 
 const STYLES: Record<Delivery, { bg: string; icon: any; label: string }> = {
-  delivering:    { bg: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400", icon: CheckCircle2, label: "Funcionando" },
-  warming:       { bg: "bg-amber-500/15 border-amber-500/30 text-amber-400",       icon: Clock,        label: "Aquecendo" },
+  delivering:    { bg: "bg-primary/15 border-primary/30 text-primary", icon: CheckCircle2, label: "Funcionando" },
+  warming:       { bg: "bg-warning/15 border-warning/30 text-warning",       icon: Clock,        label: "Aquecendo" },
   no_delivery:   { bg: "bg-destructive/15 border-destructive/30 text-destructive", icon: AlertTriangle,label: "Sem entregar" },
   paused:        { bg: "bg-secondary border-border text-muted-foreground",         icon: PauseCircle,  label: "Pausada" },
   rejected:      { bg: "bg-destructive/15 border-destructive/30 text-destructive", icon: XCircle,      label: "Reprovada" },
-  review:        { bg: "bg-blue-500/15 border-blue-500/30 text-blue-400",          icon: Clock,        label: "Em revisão" },
+  review:        { bg: "bg-info/15 border-info/30 text-info",          icon: Clock,        label: "Em revisão" },
   not_published: { bg: "bg-secondary border-border text-muted-foreground",         icon: Clock,        label: "Não publicada" },
 };
 

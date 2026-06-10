@@ -61,12 +61,12 @@ export function TemplateManager({
         </TabsList>
 
         <TabsContent value="text">
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-purple-950/10">
-            <div className="absolute -top-20 -right-20 w-40 h-40 bg-purple-500/3 rounded-full blur-3xl" />
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-primary/10">
+            <div className="absolute -top-20 -right-20 w-40 h-40 bg-primary/3 rounded-full blur-3xl" />
             <div className="relative p-5 sm:p-7">
               <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 flex items-center justify-center border border-purple-500/20">
-                  <Wand2 className="w-5 h-5 text-purple-400" />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border border-primary/20">
+                  <Wand2 className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-heading font-bold text-foreground text-lg">Templates</h3>
@@ -83,7 +83,7 @@ export function TemplateManager({
                   onClick={() => { setScope("publicos"); setShowCreate(false); }}
                   className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     scope === "publicos"
-                      ? "bg-purple-500/15 text-purple-300 border border-purple-500/30 shadow-sm"
+                      ? "bg-primary/15 text-primary border border-primary/30 shadow-sm"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                   }`}
                 >
@@ -96,7 +96,7 @@ export function TemplateManager({
                   onClick={() => setScope("meus")}
                   className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     scope === "meus"
-                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm"
+                      ? "bg-primary/15 text-primary border border-primary/30 shadow-sm"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                   }`}
                 >
@@ -123,7 +123,7 @@ export function TemplateManager({
                   </p>
                   {scope === "meus" && (
                     <p className="text-xs text-muted-foreground/70">
-                      Clique em <span className="font-medium text-emerald-400">+ Criar meu template</span> abaixo para começar.
+                      Clique em <span className="font-medium text-primary">+ Criar meu template</span> abaixo para começar.
                     </p>
                   )}
                 </div>
@@ -147,7 +147,7 @@ export function TemplateManager({
                 <Button
                   type="button"
                   onClick={() => setShowCreate(true)}
-                  className="w-full gap-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white border-0"
+                  className="w-full gap-2 bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary text-white border-0"
                 >
                   <Plus className="w-4 h-4" />
                   Criar meu template
@@ -161,7 +161,7 @@ export function TemplateManager({
               <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-emerald-400" /> Novo template
+                    <Plus className="w-4 h-4 text-primary" /> Novo template
                   </DialogTitle>
                   <DialogDescription>
                     Crie um modelo de mensagem com texto, áudio, imagem ou vídeo. Você escolhe se fica público ou privado.

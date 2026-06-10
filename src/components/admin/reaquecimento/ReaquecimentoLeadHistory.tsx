@@ -67,7 +67,7 @@ export function ReaquecimentoLeadHistory({ customerId }: Props) {
   if (messages.length === 0) {
     return (
       <p className="py-2 text-center text-xs text-muted-foreground">
-        Sem mensagens registradas para este lead.
+        Sem mensagens registradas para este cliente interessado.
       </p>
     );
   }
@@ -84,7 +84,7 @@ export function ReaquecimentoLeadHistory({ customerId }: Props) {
             key={m.id}
             className={cn(
               "rounded-md p-2 text-[11px]",
-              isInbound ? "bg-blue-500/10 mr-8" : "bg-emerald-500/10 ml-8 text-right",
+              isInbound ? "bg-info/10 mr-8" : "bg-primary/10 ml-8 text-right",
             )}
           >
             <div className="mb-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">

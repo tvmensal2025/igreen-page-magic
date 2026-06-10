@@ -158,7 +158,7 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
           )}
 
           {!loading && skippedAudios > 0 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-200">
+            <div className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[10px] text-warning">
               ℹ️ Variante B: {skippedAudios} áudio ignorado.
             </div>
           )}
@@ -174,9 +174,9 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
             return (
               <div key={m.id} className="rounded-md bg-card border border-border p-2 space-y-1.5">
                 <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase font-semibold">
-                  {kind === "audio" && <Mic className="w-2.5 h-2.5 text-emerald-500" />}
-                  {kind === "image" && <ImageIcon className="w-2.5 h-2.5 text-amber-500" />}
-                  {kind === "video" && <Video className="w-2.5 h-2.5 text-cyan-500" />}
+                  {kind === "audio" && <Mic className="w-2.5 h-2.5 text-primary" />}
+                  {kind === "image" && <ImageIcon className="w-2.5 h-2.5 text-warning" />}
+                  {kind === "video" && <Video className="w-2.5 h-2.5 text-info" />}
                   {kind === "text" && <FileText className="w-2.5 h-2.5" />}
                   {kind}
                 </div>

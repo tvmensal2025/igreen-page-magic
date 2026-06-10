@@ -49,8 +49,8 @@ interface Props {
 
 const SEVERITY_STYLES: Record<ReviewIssue["severity"], { label: string; cls: string }> = {
   critical: { label: "Crítico", cls: "bg-destructive text-destructive-foreground" },
-  warning: { label: "Atenção", cls: "bg-orange-500 text-white" },
-  info: { label: "Sugestão", cls: "bg-blue-500 text-white" },
+  warning: { label: "Atenção", cls: "bg-warning/100 text-white" },
+  info: { label: "Sugestão", cls: "bg-info/100 text-white" },
 };
 
 export default function FlowReviewPanel({
@@ -156,7 +156,7 @@ export default function FlowReviewPanel({
         <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-purple-600" />
+              <Sparkles className="h-4 w-4 text-primary" />
               Revisão IA do Fluxo (GPT-5.5)
             </SheetTitle>
             <SheetDescription>
@@ -167,7 +167,7 @@ export default function FlowReviewPanel({
           <ScrollArea className="flex-1 -mx-6 px-6 mt-3">
             {loading && (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
-                <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <div className="text-sm">GPT-5.5 analisando o fluxo… pode levar 30-60s</div>
               </div>
             )}
@@ -189,7 +189,7 @@ export default function FlowReviewPanel({
                 </div>
 
                 {result.issues.length === 0 && (
-                  <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 text-sm">
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
                     ✅ Nenhum problema relevante encontrado.
                   </div>
                 )}
@@ -208,7 +208,7 @@ export default function FlowReviewPanel({
                   return (
                     <div
                       key={idx}
-                      className={`rounded-lg border p-3 ${isApplied ? "border-green-500/40 bg-green-500/5" : ""}`}
+                      className={`rounded-lg border p-3 ${isApplied ? "border-primary/40 bg-primary/5" : ""}`}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <Badge className={sev.cls + " text-[10px]"}>{sev.label}</Badge>
@@ -225,7 +225,7 @@ export default function FlowReviewPanel({
                           <span className="text-xs font-medium text-muted-foreground">Global</span>
                         )}
                         {isApplied && (
-                          <Badge variant="secondary" className="ml-auto text-[10px] bg-green-500/20 text-green-700">
+                          <Badge variant="secondary" className="ml-auto text-[10px] bg-primary/20 text-primary">
                             <Check className="h-3 w-3 mr-1" /> Aplicado
                           </Badge>
                         )}
@@ -284,7 +284,7 @@ export default function FlowReviewPanel({
                             size="sm"
                             onClick={() => setConfirmIdx(idx)}
                             disabled={saving}
-                            className="bg-green-600 hover:bg-green-700"
+                            className="bg-primary hover:bg-primary"
                           >
                             <Check className="h-3 w-3 mr-1" />
                             Aprovar e salvar

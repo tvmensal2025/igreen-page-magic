@@ -112,7 +112,7 @@ export default function WhatsAppPreview({ step, steps = [], consultantName }: Pr
       {transitions.length > 0 && (
         <div className="border-t bg-zinc-800 px-3 py-2">
           <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-            Quando o lead responder…
+            Quando o cliente interessado responder…
           </p>
           <div className="space-y-1">
             {transitions.map((t, i) => (
@@ -123,7 +123,7 @@ export default function WhatsAppPreview({ step, steps = [], consultantName }: Pr
                 <ArrowRight className="h-3 w-3 shrink-0 text-zinc-500" />
                 <span className={cn(
                   "truncate",
-                  t.dest.missing ? "text-red-400" : "text-emerald-400",
+                  t.dest.missing ? "text-destructive" : "text-primary",
                 )}>
                   {t.dest.label}
                 </span>

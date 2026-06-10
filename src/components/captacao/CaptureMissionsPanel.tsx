@@ -31,7 +31,7 @@ export function CaptureMissionsPanel({ consultantId, streak, bumpVersion = 0 }: 
   useEffect(() => { setData(loadStored(consultantId)); }, [consultantId, bumpVersion]);
 
   const missions: Mission[] = [
-    { id: "leads", label: "Capturar 3 leads", emoji: "🎯", target: 3, current: data.leads },
+    { id: "leads", label: "Capturar 3 clientes interessados", emoji: "🎯", target: 3, current: data.leads },
     { id: "streak", label: "Streak 5 dias", emoji: "🔥", target: 5, current: streak },
     { id: "ai", label: "Aceitar 5 IA", emoji: "🤖", target: 5, current: data.aiAccepts },
   ];
@@ -45,14 +45,14 @@ export function CaptureMissionsPanel({ consultantId, streak, bumpVersion = 0 }: 
           <div
             key={m.id}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px] ${
-              done ? "border-amber-400/60 bg-amber-400/10 text-amber-500" : "border-border bg-card/60"
+              done ? "border-warning/60 bg-warning/10 text-warning" : "border-border bg-card/60"
             }`}
             title={`${m.label} — ${m.current}/${m.target}`}
           >
             <span>{m.emoji}</span>
             <span className="font-semibold tabular-nums">{Math.min(m.current, m.target)}/{m.target}</span>
             <div className="w-10 h-1 rounded-full bg-secondary overflow-hidden">
-              <div className={`h-full ${done ? "bg-amber-400" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+              <div className={`h-full ${done ? "bg-warning" : "bg-primary"}`} style={{ width: `${pct}%` }} />
             </div>
             {done && <Award className="w-3 h-3" />}
           </div>

@@ -210,12 +210,12 @@ function formatPhone(phone: string | null) {
 
 /* ── Color System ── */
 const NIVEL_PALETTE = [
-  { bg: "from-emerald-400 to-green-600", glow: "shadow-emerald-500/40", ring: "ring-emerald-400/50", text: "text-emerald-400", bar: "bg-emerald-500" },
-  { bg: "from-blue-400 to-indigo-600", glow: "shadow-blue-500/40", ring: "ring-blue-400/50", text: "text-blue-400", bar: "bg-blue-500" },
-  { bg: "from-violet-400 to-purple-600", glow: "shadow-violet-500/40", ring: "ring-violet-400/50", text: "text-violet-400", bar: "bg-violet-500" },
-  { bg: "from-amber-400 to-orange-600", glow: "shadow-amber-500/40", ring: "ring-amber-400/50", text: "text-amber-400", bar: "bg-amber-500" },
-  { bg: "from-rose-400 to-pink-600", glow: "shadow-rose-500/40", ring: "ring-rose-400/50", text: "text-rose-400", bar: "bg-rose-500" },
-  { bg: "from-cyan-400 to-teal-600", glow: "shadow-cyan-500/40", ring: "ring-cyan-400/50", text: "text-cyan-400", bar: "bg-cyan-500" },
+  { bg: "from-primary to-primary", glow: "shadow-emerald-500/40", ring: "ring-primary/50", text: "text-primary", bar: "bg-primary/100" },
+  { bg: "from-info to-info", glow: "shadow-blue-500/40", ring: "ring-info/50", text: "text-info", bar: "bg-info/100" },
+  { bg: "from-primary to-primary", glow: "shadow-violet-500/40", ring: "ring-primary/50", text: "text-primary", bar: "bg-primary/100" },
+  { bg: "from-warning to-warning", glow: "shadow-amber-500/40", ring: "ring-warning/50", text: "text-warning", bar: "bg-warning/100" },
+  { bg: "from-destructive to-primary", glow: "shadow-rose-500/40", ring: "ring-destructive/50", text: "text-destructive", bar: "bg-destructive/100" },
+  { bg: "from-info to-primary", glow: "shadow-cyan-500/40", ring: "ring-info/50", text: "text-info", bar: "bg-info/100" },
 ];
 
 function getPalette(nivel: number) {
@@ -246,15 +246,15 @@ function NodeCard({ member, hasChildren, childCount, isExpanded, onToggle, onOpe
           ${isVirtual
             ? "w-[100px] border-dashed border-gray-500/40 bg-gray-500/5 hover:bg-gray-500/10"
             : isRoot
-              ? `w-[120px] border-emerald-500/30 bg-gradient-to-b from-emerald-500/10 to-emerald-900/5 hover:border-emerald-400/60 hover:shadow-lg ${p.glow}`
-              : `w-[100px] border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/[0.15] hover:shadow-lg hover:shadow-black/20${isOrphan ? " ring-1 ring-amber-500/20" : ""}`
+              ? `w-[120px] border-primary/30 bg-gradient-to-b from-primary/10 to-primary/5 hover:border-primary/60 hover:shadow-lg ${p.glow}`
+              : `w-[100px] border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/[0.15] hover:shadow-lg hover:shadow-black/20${isOrphan ? " ring-1 ring-warning/20" : ""}`
           }
           backdrop-blur-sm p-2`}
         onClick={isVirtual ? undefined : onOpenDetails}
       >
         {/* Orphan badge */}
         {isVirtual && (
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-[7px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold whitespace-nowrap">
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-[7px] px-1.5 py-0.5 rounded-full bg-warning/20 text-warning font-bold whitespace-nowrap">
             Externo
           </div>
         )}
@@ -274,11 +274,11 @@ function NodeCard({ member, hasChildren, childCount, isExpanded, onToggle, onOpe
         
         {/* Stats pills */}
         <div className="flex items-center justify-center gap-1 mt-1">
-          <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${member.clientes_ativos > 0 ? "bg-emerald-500/15 text-emerald-400" : "bg-white/5 text-muted-foreground"} font-medium`}>
+          <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${member.clientes_ativos > 0 ? "bg-primary/15 text-primary" : "bg-white/5 text-muted-foreground"} font-medium`}>
             {member.clientes_ativos} cli
           </span>
           {member.qtde_diretos > 0 && (
-            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-medium">
+            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-info/15 text-info font-medium">
               {member.qtde_diretos} dir
             </span>
           )}
@@ -288,9 +288,9 @@ function NodeCard({ member, hasChildren, childCount, isExpanded, onToggle, onOpe
         {member.phone && (
           <button
             onClick={e => { e.stopPropagation(); openWhatsApp(member.phone); }}
-            className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-green-500 text-white
+            className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-primary/100 text-white
               flex items-center justify-center shadow-lg shadow-green-500/30 opacity-0 group-hover:opacity-100 
-              transition-all duration-200 hover:bg-green-400 hover:scale-110 z-10"
+              transition-all duration-200 hover:bg-primary hover:scale-110 z-10"
             title="WhatsApp"
           >
             <MessageCircle className="w-3 h-3" />
@@ -357,12 +357,12 @@ function DetailModal({ member, onClose }: { member: NetworkMember; onClose: () =
                 </span>
               )}
               {member.graduacao_expansao && (
-                <span className="text-[11px] px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 font-medium border border-emerald-500/20">
+                <span className="text-[11px] px-3 py-1 rounded-full bg-primary/10 text-primary font-medium border border-primary/20">
                   {member.graduacao_expansao}
                 </span>
               )}
               {member.pro && (
-                <span className="text-[11px] px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 font-medium border border-amber-500/20">
+                <span className="text-[11px] px-3 py-1 rounded-full bg-warning/10 text-warning font-medium border border-warning/20">
                   ⚡ PRO
                 </span>
               )}
@@ -371,20 +371,20 @@ function DetailModal({ member, onClose }: { member: NetworkMember; onClose: () =
 
           {/* Stats Grid */}
           <div className="grid grid-cols-3 gap-2 mb-4">
-            <MetricCard label="GP" value={Number(member.gp).toLocaleString("pt-BR")} icon={<TrendingUp className="w-3.5 h-3.5" />} color="text-blue-400" />
-            <MetricCard label="GI" value={Number(member.gi).toLocaleString("pt-BR")} icon={<Zap className="w-3.5 h-3.5" />} color="text-violet-400" />
-            <MetricCard label="Pontos" value={Number(member.total_pontos).toLocaleString("pt-BR")} icon={<CheckCircle2 className="w-3.5 h-3.5" />} color="text-emerald-400" />
+            <MetricCard label="GP" value={Number(member.gp).toLocaleString("pt-BR")} icon={<TrendingUp className="w-3.5 h-3.5" />} color="text-info" />
+            <MetricCard label="GI" value={Number(member.gi).toLocaleString("pt-BR")} icon={<Zap className="w-3.5 h-3.5" />} color="text-primary" />
+            <MetricCard label="Pontos" value={Number(member.total_pontos).toLocaleString("pt-BR")} icon={<CheckCircle2 className="w-3.5 h-3.5" />} color="text-primary" />
           </div>
 
           {/* Network Stats */}
           <div className="grid grid-cols-3 gap-2 mb-4">
-            <MetricCard label="Clientes" value={String(member.clientes_ativos)} highlight color="text-green-400" />
-            <MetricCard label="Diretos" value={String(member.qtde_diretos)} color="text-blue-400" />
-            <MetricCard label="Dir. Mês" value={String(member.diretos_mes)} color="text-amber-400" />
+            <MetricCard label="Clientes" value={String(member.clientes_ativos)} highlight color="text-primary" />
+            <MetricCard label="Diretos" value={String(member.qtde_diretos)} color="text-info" />
+            <MetricCard label="Dir. Mês" value={String(member.diretos_mes)} color="text-warning" />
           </div>
 
           <div className="grid grid-cols-2 gap-2 mb-5">
-            <MetricCard label="Início Rápido" value={member.inicio_rapido || "—"} color="text-cyan-400" />
+            <MetricCard label="Início Rápido" value={member.inicio_rapido || "—"} color="text-info" />
             <MetricCard label="Patrocinador" value={member.sponsor_id ? String(member.sponsor_id) : "—"} color="text-muted-foreground" />
           </div>
 
@@ -392,19 +392,19 @@ function DetailModal({ member, onClose }: { member: NetworkMember; onClose: () =
           <div className="space-y-2 mb-5">
             {member.cidade && (
               <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-                <MapPin className="w-4 h-4 text-rose-400/70" />
+                <MapPin className="w-4 h-4 text-destructive/70" />
                 <span>{member.cidade}{member.uf ? ` / ${member.uf}` : ""}</span>
               </div>
             )}
             {member.data_ativo && (
               <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-                <Calendar className="w-4 h-4 text-blue-400/70" />
+                <Calendar className="w-4 h-4 text-info/70" />
                 <span>Ativo desde {member.data_ativo}</span>
               </div>
             )}
             {phone && (
               <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-                <Phone className="w-4 h-4 text-emerald-400/70" />
+                <Phone className="w-4 h-4 text-primary/70" />
                 <span>{phone}</span>
               </div>
             )}
@@ -413,7 +413,7 @@ function DetailModal({ member, onClose }: { member: NetworkMember; onClose: () =
           {/* Actions */}
           {member.phone && (
             <Button
-              className="w-full gap-2 rounded-xl bg-green-500 hover:bg-green-400 text-white h-10 font-semibold shadow-lg shadow-green-500/25"
+              className="w-full gap-2 rounded-xl bg-primary/100 hover:bg-primary text-white h-10 font-semibold shadow-lg shadow-green-500/25"
               onClick={() => openWhatsApp(member.phone)}
             >
               <MessageCircle className="w-4 h-4" /> Abrir WhatsApp
@@ -440,11 +440,11 @@ function MetricCard({ label, value, icon, highlight, color = "text-foreground" }
   return (
     <div className={`rounded-xl p-2.5 text-center border transition-colors
       ${highlight 
-        ? "bg-green-500/10 border-green-500/20" 
+        ? "bg-primary/10 border-primary/20" 
         : "bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06]"
       }`}>
       {icon && <div className={`flex justify-center mb-1 ${color} opacity-60`}>{icon}</div>}
-      <span className={`text-base font-bold block ${highlight ? "text-green-400" : color}`}>{value}</span>
+      <span className={`text-base font-bold block ${highlight ? "text-primary" : color}`}>{value}</span>
       <span className="text-[10px] text-muted-foreground block mt-0.5">{label}</span>
     </div>
   );
@@ -679,10 +679,10 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <GlassCard icon={Users} label="Licenciados" value={networkCount} gradient="from-blue-500 to-indigo-600" />
-        <GlassCard icon={UserCheck} label="Clientes Ativos" value={totalClientes} gradient="from-emerald-500 to-green-600" />
-        <GlassCard icon={TrendingUp} label="GP" value={rootMember ? Number(rootMember.gp).toLocaleString("pt-BR") : "0"} gradient="from-violet-500 to-purple-600" />
-        <GlassCard icon={CheckCircle2} label="GI" value={rootMember ? Number(rootMember.gi).toLocaleString("pt-BR") : "0"} gradient="from-amber-500 to-orange-600" />
+        <GlassCard icon={Users} label="Licenciados" value={networkCount} gradient="from-info to-info" />
+        <GlassCard icon={UserCheck} label="Clientes Ativos" value={totalClientes} gradient="from-primary to-primary" />
+        <GlassCard icon={TrendingUp} label="GP" value={rootMember ? Number(rootMember.gp).toLocaleString("pt-BR") : "0"} gradient="from-primary to-primary" />
+        <GlassCard icon={CheckCircle2} label="GI" value={rootMember ? Number(rootMember.gi).toLocaleString("pt-BR") : "0"} gradient="from-warning to-warning" />
       </div>
 
       {/* Content */}
@@ -690,7 +690,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
         {/* Toolbar */}
         <div className="p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-emerald-600 flex items-center justify-center shadow-lg shadow-primary/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary flex items-center justify-center shadow-lg shadow-primary/20">
               <Network className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -737,8 +737,8 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
             )}
 
             <Button onClick={handleSync} size="sm" disabled={syncing}
-              className="gap-1.5 rounded-xl font-semibold h-9 px-4 text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 
-                hover:bg-emerald-500/20 hover:border-emerald-500/30 transition-all duration-200 shadow-sm"
+              className="gap-1.5 rounded-xl font-semibold h-9 px-4 text-xs bg-primary/10 text-primary border border-primary/20 
+                hover:bg-primary/20 hover:border-primary/30 transition-all duration-200 shadow-sm"
               variant="outline">
               {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               {syncing ? "Sincronizando..." : "Sincronizar"}
@@ -833,7 +833,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
                       <td className="text-center px-3 py-3 text-xs text-muted-foreground hidden lg:table-cell">{m.uf || "—"}</td>
                       <td className="text-center px-3 py-3">
                         <span className={`inline-flex items-center justify-center min-w-[28px] h-6 rounded-full text-xs font-bold
-                          ${m.clientes_ativos > 0 ? "bg-green-500/15 text-green-400" : "bg-white/5 text-muted-foreground"}`}>
+                          ${m.clientes_ativos > 0 ? "bg-primary/15 text-primary" : "bg-white/5 text-muted-foreground"}`}>
                           {m.clientes_ativos}
                         </span>
                       </td>
@@ -842,8 +842,8 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
                       <td className="text-center px-3 py-3">
                         {m.phone && (
                           <button onClick={e => { e.stopPropagation(); openWhatsApp(m.phone); }}
-                            className="p-1.5 rounded-lg hover:bg-green-500/15 opacity-0 group-hover:opacity-100 transition-all" title="WhatsApp">
-                            <MessageCircle className="w-4 h-4 text-green-400" />
+                            className="p-1.5 rounded-lg hover:bg-primary/15 opacity-0 group-hover:opacity-100 transition-all" title="WhatsApp">
+                            <MessageCircle className="w-4 h-4 text-primary" />
                           </button>
                         )}
                       </td>

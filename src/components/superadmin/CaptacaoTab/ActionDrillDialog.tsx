@@ -68,7 +68,7 @@ export function ActionDrillDialog({ open, onOpenChange, action }: Props) {
       if (type === "replicate_creative") {
         const { data } = await supabase
           .from("ad_creative_performance")
-          .select("headline, framework, angle, creative_format, score, leads, spend_cents")
+          .select("headline, framework, angle, creative_format, score, clientes interessados, spend_cents")
           .eq("is_winner", true)
           .order("score", { ascending: false })
           .limit(10);
@@ -77,7 +77,7 @@ export function ActionDrillDialog({ open, onOpenChange, action }: Props) {
       if (type === "adjust_targeting") {
         const { data } = await supabase
           .from("ad_creative_performance")
-          .select("headline, leads, clicks, impressions, spend_cents, score")
+          .select("headline, clientes interessados, clicks, impressions, spend_cents, score")
           .order("spend_cents", { ascending: false })
           .limit(15);
         return data || [];
@@ -165,7 +165,7 @@ function RenderRows({ type, rows, waLink, brl }: { type: string; rows: any[]; wa
             <div className="font-bold">Variante {r.variant}</div>
             <div>{r.total} leads</div>
             <div>{r.approved} aprov.</div>
-            <div className={r.rate < 5 ? "text-red-400 font-bold" : r.rate > 15 ? "text-emerald-400 font-bold" : ""}>{r.rate}%</div>
+            <div className={r.rate < 5 ? "text-destructive font-bold" : r.rate > 15 ? "text-primary font-bold" : ""}>{r.rate}%</div>
           </div>
         ))}
         <p className="text-[11px] text-muted-foreground italic pt-2">
@@ -180,7 +180,7 @@ function RenderRows({ type, rows, waLink, brl }: { type: string; rows: any[]; wa
       <div className="space-y-2">
         <p className="text-xs text-muted-foreground mb-2">Top criativos vencedores — replique headline/ângulo</p>
         {rows.map((r, i) => (
-          <div key={i} className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <div key={i} className="rounded-lg border border-primary/30 bg-primary/5 p-3">
             <p className="text-xs font-bold text-foreground">{r.headline || "(sem headline)"}</p>
             <div className="flex flex-wrap gap-1 mt-1.5">
               {r.framework && <Badge variant="outline" className="text-[10px]">{r.framework}</Badge>}

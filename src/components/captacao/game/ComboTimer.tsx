@@ -30,23 +30,23 @@ export function ComboTimer({ level, secondsLeft, progressPct, bonusXp, compact }
 
   const containerClass = {
     base:       "border-primary/30 from-primary/10 to-primary/3",
-    specialist: "border-amber-400/40 from-amber-400/12 to-amber-500/3",
-    senior:     "border-amber-400/60 from-amber-400/18 to-amber-500/5 animate-exec-energy",
-    elite:      "border-primary/60 from-primary/20 to-emerald-500/8 animate-exec-energy",
+    specialist: "border-warning/40 from-warning/12 to-warning/3",
+    senior:     "border-warning/60 from-warning/18 to-warning/5 animate-exec-energy",
+    elite:      "border-primary/60 from-primary/20 to-primary/8 animate-exec-energy",
   }[tier];
 
   const accentClass = {
     base:       "text-primary",
-    specialist: "text-amber-400",
-    senior:     "text-amber-400",
+    specialist: "text-warning",
+    senior:     "text-warning",
     elite:      "text-primary",
   }[tier];
 
   const barClass = {
     base:       "bg-primary",
-    specialist: "bg-gradient-to-r from-amber-500 to-yellow-400",
-    senior:     "bg-gradient-to-r from-amber-400 to-amber-500",
-    elite:      "bg-gradient-to-r from-primary to-emerald-400",
+    specialist: "bg-gradient-to-r from-warning to-warning",
+    senior:     "bg-gradient-to-r from-warning to-warning",
+    elite:      "bg-gradient-to-r from-primary to-primary",
   }[tier];
 
   if (compact) {
@@ -62,7 +62,7 @@ export function ComboTimer({ level, secondsLeft, progressPct, bonusXp, compact }
   return (
     <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-br ${containerClass} p-2.5`}>
       {/* Top accent line */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-warning/40 to-transparent" />
 
       <div className="flex items-center gap-2">
         <div className={`w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center shrink-0`}>

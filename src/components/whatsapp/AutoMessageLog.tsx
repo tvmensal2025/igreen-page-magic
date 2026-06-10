@@ -79,7 +79,7 @@ export function AutoMessageLog({ consultantId }: AutoMessageLogProps) {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-3">
-        <AlertTriangle className="h-8 w-8 text-yellow-500/50" />
+        <AlertTriangle className="h-8 w-8 text-warning/50" />
         <p className="text-sm text-muted-foreground">Erro ao carregar histórico</p>
         <Button variant="outline" size="sm" onClick={fetchLogs} className="gap-2">
           <RefreshCw className="h-3 w-3" /> Tentar novamente
@@ -104,9 +104,9 @@ export function AutoMessageLog({ consultantId }: AutoMessageLogProps) {
   }
 
   const statusIcon = (status: string) => {
-    if (status === "sent") return <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />;
-    if (status === "partial") return <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />;
-    return <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />;
+    if (status === "sent") return <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />;
+    if (status === "partial") return <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />;
+    return <XCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />;
   };
 
   return (

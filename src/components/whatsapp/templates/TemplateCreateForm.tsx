@@ -60,8 +60,8 @@ export function TemplateCreateForm({ onCreateTemplate }: Props) {
 
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-muted-foreground flex items-center gap-1"><MessageSquare className="w-3 h-3" /> Placeholders:</span>
-        <code className="rounded-md bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-xs text-purple-400 font-mono">{"{{nome}}"}</code>
-        <code className="rounded-md bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-xs text-purple-400 font-mono">{"{{valor_conta}}"}</code>
+        <code className="rounded-md bg-primary/10 border border-primary/20 px-2 py-0.5 text-xs text-primary font-mono">{"{{nome}}"}</code>
+        <code className="rounded-md bg-primary/10 border border-primary/20 px-2 py-0.5 text-xs text-primary font-mono">{"{{valor_conta}}"}</code>
       </div>
 
       {/* Visibilidade */}
@@ -71,7 +71,7 @@ export function TemplateCreateForm({ onCreateTemplate }: Props) {
           <Lock className="w-3.5 h-3.5" /> Privado (só eu)
         </button>
         <button type="button" onClick={() => setIsPublic(true)} disabled={isSaving}
-          className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all ${isPublic ? "bg-green-500/15 text-green-400 shadow-sm" : "text-muted-foreground hover:bg-secondary/30"}`}>
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all ${isPublic ? "bg-primary/15 text-primary shadow-sm" : "text-muted-foreground hover:bg-secondary/30"}`}>
           <Globe2 className="w-3.5 h-3.5" /> Público (todos)
         </button>
       </div>

@@ -8,7 +8,8 @@ import { ChatSidebar } from "./ChatSidebar";
 import { ChatView } from "./ChatView";
 import { DragResizer } from "@/components/layout/DragResizer";
 
-import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History } from "lucide-react";
+import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow } from "lucide-react";
+import { Link } from "react-router-dom";
 
 // Heavy panels — load only when their sub-tab is opened
 const BulkProPanel = lazy(() => import("./bulk-pro/BulkProPanel").then(m => ({ default: m.BulkProPanel })));
@@ -240,6 +241,14 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
             </button>
           );
         })}
+        {/* Construtor de Fluxos — abre a página dedicada (rota /admin/fluxos) */}
+        <Link
+          to="/admin/fluxos"
+          className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 text-muted-foreground hover:text-foreground hover:bg-muted/40"
+        >
+          <Workflow className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Construtor de Fluxos</span>
+        </Link>
       </div>
 
       {/* Content area */}
@@ -258,8 +267,8 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
           (isWhapi || (hasInstance && isConnected)) ? (
             <div className="flex flex-col h-full min-h-0">
               {!isConnected && (
-                <div className={`px-3 py-1 border-b text-[11px] flex items-center gap-2 shrink-0 ${fatalLocked ? "bg-red-500/10 border-red-500/20 text-red-200" : "bg-amber-500/10 border-amber-500/20 text-amber-200"}`}>
-                  <div className={`h-1.5 w-1.5 rounded-full animate-pulse shrink-0 ${fatalLocked ? "bg-red-400" : "bg-amber-400"}`} />
+                <div className={`px-3 py-1 border-b text-[11px] flex items-center gap-2 shrink-0 ${fatalLocked ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-warning/10 border-warning/20 text-warning"}`}>
+                  <div className={`h-1.5 w-1.5 rounded-full animate-pulse shrink-0 ${fatalLocked ? "bg-destructive" : "bg-warning"}`} />
                   <span className="truncate">
                     {fatalLocked
                       ? "Número em revisão manual — não reconecte aqui. Use 'Desconectar / trocar chip'."
@@ -271,7 +280,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                     <button
                       onClick={() => createAndConnect()}
                       disabled={isLoading}
-                      className="ml-auto text-amber-100 hover:underline font-medium shrink-0"
+                      className="ml-auto text-warning hover:underline font-medium shrink-0"
                     >
                       {isLoading ? "..." : "Reconectar"}
                     </button>

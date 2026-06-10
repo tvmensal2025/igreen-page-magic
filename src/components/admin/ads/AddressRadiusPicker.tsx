@@ -171,8 +171,8 @@ export function AddressRadiusPicker({ value, onChange }: Props) {
       </div>
 
       {pending && (
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-2">
-          <div className="text-xs text-emerald-200 truncate">
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/10 p-2">
+          <div className="text-xs text-primary truncate">
             <strong>Confirmar:</strong> {pending.address_string} ({radius} km)
           </div>
           <div className="flex gap-1.5 shrink-0">

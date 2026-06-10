@@ -154,7 +154,7 @@ export function VoiceTemplateEditor({
             <div key={b.id} className="flex-1 min-w-[200px] max-w-[280px] border border-border rounded-lg p-2 bg-background/50 space-y-2">
               <div className="flex items-center justify-between">
                 <Badge variant={b.kind === "fixed_audio" ? "secondary" : "default"} className="text-[10px]">
-                  {b.kind === "name_slot" ? <><User className="w-3 h-3 mr-1" /> Nome do lead</>
+                  {b.kind === "name_slot" ? <><User className="w-3 h-3 mr-1" /> Nome do cliente interessado</>
                     : b.kind === "variable_slot" ? <><Variable className="w-3 h-3 mr-1" /> Palavra-chave</>
                     : <><Mic className="w-3 h-3 mr-1" /> Áudio fixo</>}
                 </Badge>
@@ -170,7 +170,7 @@ export function VoiceTemplateEditor({
                   {b.audio_url ? (
                     <audio src={b.audio_url} controls className="w-full h-8" />
                   ) : (
-                    <p className="text-[10px] text-amber-500">Sem áudio gravado</p>
+                    <p className="text-[10px] text-warning">Sem áudio gravado</p>
                   )}
                   <VoiceClipRecorder
                     consultantId={consultantId}
@@ -182,7 +182,7 @@ export function VoiceTemplateEditor({
               ) : b.kind === "name_slot" ? (
                 <div className="text-[11px] text-muted-foreground flex flex-col gap-1">
                   <span className="flex items-center gap-1"><KeyRound className="w-3 h-3 text-primary" /> Palavra-chave: <code className="text-primary">{`{{nome}}`}</code></span>
-                  <span>Substituído pelo nome gravado do lead.</span>
+                  <span>Substituído pelo nome gravado do cliente interessado.</span>
                 </div>
               ) : (
                 <div className="text-[11px] text-muted-foreground flex flex-col gap-1">
@@ -195,7 +195,7 @@ export function VoiceTemplateEditor({
                         className="h-7 text-xs"
                         placeholder="cidade"
                       />
-                      <Button size="icon" variant="ghost" className="h-6 w-6 text-emerald-500" onClick={handleSaveKey}><Check className="w-3 h-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-primary" onClick={handleSaveKey}><Check className="w-3 h-3" /></Button>
                       <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingKey(null)}><X className="w-3 h-3" /></Button>
                     </div>
                   ) : (
@@ -232,7 +232,7 @@ export function VoiceTemplateEditor({
                 className="h-7 text-xs w-28"
               />
               <span className="text-[11px] text-muted-foreground">{"}}"}</span>
-              <Button size="icon" variant="ghost" className="h-6 w-6 text-emerald-500" onClick={handleAddVariable}><Check className="w-3 h-3" /></Button>
+              <Button size="icon" variant="ghost" className="h-6 w-6 text-primary" onClick={handleAddVariable}><Check className="w-3 h-3" /></Button>
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setAddingVar(false); setNewVarKey(""); }}><X className="w-3 h-3" /></Button>
             </div>
           ) : (
@@ -251,7 +251,7 @@ export function VoiceTemplateEditor({
             <Input
               value={previewName}
               onChange={(e) => setPreviewName(e.target.value)}
-              placeholder="Nome do lead (ex: Ana)"
+              placeholder="Nome do cliente interessado (ex: Ana)"
               className="flex-1 min-w-[160px]"
             />
           )}
@@ -275,8 +275,8 @@ export function VoiceTemplateEditor({
         {previewUrl && <audio src={previewUrl} controls className="w-full h-9" />}
 
         {pendingRecord && (
-          <div className="border border-amber-500/40 rounded p-2 bg-amber-500/5 space-y-2">
-            <p className="text-xs text-amber-500">
+          <div className="border border-warning/40 rounded p-2 bg-warning/5 space-y-2">
+            <p className="text-xs text-warning">
               Grave <strong>"{pendingRecord.name}"</strong> {pendingRecord.key !== "nome" && <>para <code>{`{{${pendingRecord.key}}}`}</code></>} agora:
             </p>
             <VoiceClipRecorder

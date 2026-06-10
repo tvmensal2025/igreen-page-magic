@@ -11,9 +11,9 @@ interface Customer {
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   approved: { label: "Aprovado", cls: "bg-primary/15 text-primary" },
   active: { label: "Ativo", cls: "bg-primary/15 text-primary" },
-  pending: { label: "Pendente", cls: "bg-amber-500/15 text-amber-400" },
+  pending: { label: "Pendente", cls: "bg-warning/15 text-warning" },
   rejected: { label: "Reprovado", cls: "bg-destructive/15 text-destructive" },
-  devolutiva: { label: "Devolutiva", cls: "bg-orange-500/15 text-orange-400" },
+  devolutiva: { label: "Devolutiva", cls: "bg-warning/15 text-warning" },
 };
 
 function brl(v?: number | null) {

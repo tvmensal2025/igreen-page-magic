@@ -70,7 +70,7 @@ export function AIControlPanel() {
 
       <div className="flex items-start justify-between gap-4 p-3 rounded-lg bg-secondary/30 border border-border/40">
         <div className="space-y-1">
-          <Label className="text-sm font-medium">Modo Estrito (Kill Switch)</Label>
+          <Label className="text-sm font-medium">Modo Estrito (desligamento de emergência)</Label>
           <p className="text-xs text-muted-foreground max-w-md">
             Quando ativo, a IA fica restrita ao script: nenhuma geração livre, só passos definidos no fluxo.
             Use em caso de respostas erradas/alucinação em massa.

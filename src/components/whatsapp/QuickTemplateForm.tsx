@@ -117,7 +117,7 @@ export function QuickTemplateForm({
       {previewMessage && contacts.length > 0 && (
         <div className="rounded-lg border border-border/40 overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/30 border-b border-border/30">
-            <Eye className="w-3.5 h-3.5 text-green-400" />
+            <Eye className="w-3.5 h-3.5 text-primary" />
             <span className="text-[11px] font-medium text-muted-foreground">Preview (1º contato: {contacts[0].name})</span>
           </div>
           <div className="p-3 bg-[#0b141a]">

@@ -194,17 +194,17 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
   const photoLabel = kind === "bill" ? "📄 Conta de luz enviada" : "🪪 Documento (frente)";
 
   return (
-    <div className="rounded-2xl border-2 border-amber-400/70 bg-gradient-to-br from-amber-500/10 via-card to-card shadow-[0_0_40px_-8px_hsl(45_95%_55%/0.4)] overflow-hidden animate-in fade-in slide-in-from-top-2 zoom-in-95">
+    <div className="rounded-2xl border-2 border-warning/70 bg-gradient-to-br from-warning/10 via-card to-card shadow-[0_0_40px_-8px_hsl(45_95%_55%/0.4)] overflow-hidden animate-in fade-in slide-in-from-top-2 zoom-in-95">
       {/* Header com countdown */}
-      <div className="px-4 py-2.5 border-b border-amber-400/30 bg-gradient-to-r from-amber-400/10 to-transparent flex items-center gap-2">
-        <div className="w-9 h-9 rounded-lg bg-amber-400/20 border border-amber-400/40 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4 text-amber-500" />
+      <div className="px-4 py-2.5 border-b border-warning/30 bg-gradient-to-r from-warning/10 to-transparent flex items-center gap-2">
+        <div className="w-9 h-9 rounded-lg bg-warning/20 border border-warning/40 flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4 text-warning" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-foreground">{title}</p>
-          <p className="text-[10px] text-muted-foreground">{customer.name || customer.phone_whatsapp || "Lead"}</p>
+          <p className="text-[10px] text-muted-foreground">{customer.name || customer.phone_whatsapp || "Cliente interessado"}</p>
         </div>
-        <Badge variant="outline" className="border-amber-400/50 text-amber-500 gap-1 text-[10px] tabular-nums">
+        <Badge variant="outline" className="border-warning/50 text-warning gap-1 text-[10px] tabular-nums">
           <Clock className="w-3 h-3" />
           {String(remainingMin).padStart(2, "0")}:{String(remainingSec).padStart(2, "0")}
         </Badge>
@@ -213,7 +213,7 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
       {/* Countdown bar */}
       <div className="h-1 bg-secondary overflow-hidden">
         <div
-          className={`h-full transition-[width] ease-linear ${remainingMs < 60_000 ? "bg-rose-500" : "bg-amber-400"}`}
+          className={`h-full transition-[width] ease-linear ${remainingMs < 60_000 ? "bg-destructive/100" : "bg-warning"}`}
           style={{ width: `${timeoutPct}%`, transitionDuration: "1000ms" }}
         />
       </div>
@@ -262,7 +262,7 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
                         autoFocus
                         className="h-6 text-[11px] px-1.5 flex-1"
                       />
-                      <button onClick={() => void saveEdit()} className="text-emerald-500 shrink-0 p-0.5"><Check className="w-3 h-3" /></button>
+                      <button onClick={() => void saveEdit()} className="text-primary shrink-0 p-0.5"><Check className="w-3 h-3" /></button>
                       <button onClick={() => setEditing(null)} className="text-muted-foreground shrink-0 p-0.5"><X className="w-3 h-3" /></button>
                     </>
                   ) : (
@@ -290,7 +290,7 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
       <div className="grid grid-cols-2 gap-2 p-3 pt-0">
         <Button
           size="lg"
-          className="h-12 gap-2 font-bold bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-95 shadow-lg shadow-emerald-500/30"
+          className="h-12 gap-2 font-bold bg-gradient-to-r from-primary to-primary text-white hover:opacity-95 shadow-lg shadow-emerald-500/30"
           onClick={() => void confirmSelf()}
           disabled={busy !== ""}
           title="Eu mesmo confirmo os dados e o bot avança automaticamente"
@@ -301,7 +301,7 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
         <Button
           size="lg"
           variant="outline"
-          className="h-12 gap-2 font-bold border-2 border-amber-400/60 hover:bg-amber-400/10"
+          className="h-12 gap-2 font-bold border-2 border-warning/60 hover:bg-warning/10"
           onClick={() => void askClient()}
           disabled={busy !== ""}
           title="Manda os dados no WhatsApp pro cliente confirmar (SIM/NÃO/EDITAR)"

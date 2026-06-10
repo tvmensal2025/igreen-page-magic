@@ -27,7 +27,7 @@ export function PartnerOriginDonut({ analytics }: Props) {
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <PieIcon className="h-4 w-4 text-accent" />
-          Origem dos leads
+          Origem dos clientes interessados
         </CardTitle>
       </CardHeader>
       <CardContent>

@@ -193,7 +193,7 @@ export function AdsCentralTab({ consultantId }: Props) {
               <FunnelStrip funnel={(analytics as any)?.funnel} />
             </AdsTile>
 
-            <AdsTile delay={340} label="Fontes de lead" icon={<Brain className="w-3 h-3" />}>
+            <AdsTile delay={340} label="Fontes de cliente interessado" icon={<Brain className="w-3 h-3" />}>
               <LeadSourceCard consultantId={adAccountId} periodDays={periodDays} />
             </AdsTile>
           </div>

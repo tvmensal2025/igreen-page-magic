@@ -34,7 +34,7 @@ export function KanbanSlaIndicator({
     level === "critical"
       ? "text-destructive bg-destructive/10 border-destructive/30"
       : level === "warn"
-      ? "text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/30"
+      ? "text-warning dark:text-warning bg-warning/10 border-warning/30"
       : "text-muted-foreground bg-muted/50 border-border";
 
   const Icon = level === "critical" ? AlertTriangle : Clock;

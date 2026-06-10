@@ -80,7 +80,7 @@ export default function InlineAiButton({
           size={size}
           variant="ghost"
           className={cn(
-            "h-7 w-7 shrink-0 text-purple-500 hover:bg-purple-500/10 hover:text-purple-600",
+            "h-7 w-7 shrink-0 text-primary hover:bg-primary/10 hover:text-primary",
             size === "sm" && "w-auto px-2 text-xs",
             className,
           )}

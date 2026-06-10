@@ -25,9 +25,9 @@ interface Grouped {
 }
 
 const VARIANT_COLORS: Record<string, string> = {
-  A: "bg-blue-500/15 text-blue-300 border-blue-500/30",
-  B: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  C: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  A: "bg-info/15 text-info border-info/30",
+  B: "bg-primary/15 text-primary border-primary/30",
+  C: "bg-warning/15 text-warning border-warning/30",
   default: "bg-muted text-muted-foreground border-border",
 };
 
@@ -38,11 +38,11 @@ function pct(n: number, d: number) {
 
 function heatColor(rate: number) {
   // rate is advance_rate 0-100
-  if (rate >= 70) return "bg-emerald-500/40 text-emerald-100";
-  if (rate >= 50) return "bg-emerald-500/25 text-emerald-200";
-  if (rate >= 30) return "bg-amber-500/25 text-amber-200";
-  if (rate >= 15) return "bg-orange-500/25 text-orange-200";
-  return "bg-red-500/30 text-red-200";
+  if (rate >= 70) return "bg-primary/40 text-primary";
+  if (rate >= 50) return "bg-primary/25 text-primary";
+  if (rate >= 30) return "bg-warning/25 text-warning";
+  if (rate >= 15) return "bg-warning/25 text-warning";
+  return "bg-destructive/30 text-destructive";
 }
 
 export function ABResultsPanel() {
@@ -218,7 +218,7 @@ export function ABResultsPanel() {
                         {pct(v.advanced, v.sent)}%
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        {isBest ? <span className="text-emerald-400">★</span> : <span className="text-muted-foreground/40">·</span>}
+                        {isBest ? <span className="text-primary">★</span> : <span className="text-muted-foreground/40">·</span>}
                       </td>
                     </tr>
                   );

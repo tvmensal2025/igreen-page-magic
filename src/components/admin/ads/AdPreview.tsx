@@ -72,7 +72,7 @@ function FeedPreview({
     <div className="bg-white text-neutral-900 rounded-lg overflow-hidden shadow-lg max-w-[340px] mx-auto font-sans">
       {/* header */}
       <div className="flex items-center gap-2 p-2.5">
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-500 to-emerald-700 flex items-center justify-center text-white font-bold text-sm">iG</div>
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-primary flex items-center justify-center text-white font-bold text-sm">iG</div>
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-semibold leading-tight truncate">{pageName || "iGreen Energy"}</div>
           <div className="text-[11px] text-neutral-500 leading-tight">Patrocinado · 🌐</div>
@@ -125,7 +125,7 @@ function StoryPreview({ imageUrl, pageName, primaryText }: { imageUrl: string | 
       <div className="absolute inset-x-0 top-0 p-2.5 bg-gradient-to-b from-black/60 to-transparent">
         <div className="h-0.5 bg-white/60 rounded-full mb-2" />
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-green-500 to-emerald-700 flex items-center justify-center text-white font-bold text-[11px]">iG</div>
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary flex items-center justify-center text-white font-bold text-[11px]">iG</div>
           <div className="text-[11px] font-semibold">{pageName || "iGreen Energy"}</div>
           <div className="text-[10px] text-white/70">· Patrocinado</div>
         </div>

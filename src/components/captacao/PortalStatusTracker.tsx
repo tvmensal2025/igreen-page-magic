@@ -149,15 +149,15 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   // Banner de erro do portal tem prioridade máxima (cobre duplicate phone/cpf, etc.)
   const showError = hasPortalError && !isDone;
 
-  let icon = <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />;
+  let icon = <Loader2 className="w-4 h-4 animate-spin text-warning" />;
   let title = "Abrindo portal no navegador da VPS…";
-  let tone = "border-yellow-500/40 bg-yellow-500/10 text-yellow-100";
-  if (showError) { icon = <XCircle className="w-4 h-4 text-red-300" />; title = needsHuman ? "Cadastro precisa de ação manual" : "Cadastro recusado pelo portal iGreen"; tone = "border-red-500/50 bg-red-500/15 text-stone-600"; }
-  else if (isOtp) { icon = <KeyRound className="w-4 h-4 text-orange-300" />; title = "Código enviado ao WhatsApp do cliente — aguardando digitar"; tone = "border-orange-500/40 bg-orange-500/10 text-orange-100"; }
-  else if (isValidating) { icon = <Loader2 className="w-4 h-4 animate-spin text-blue-300" />; title = "Validando código no portal…"; tone = "border-blue-500/40 bg-blue-500/10 text-blue-100"; }
-  else if (isSign) { icon = <ScanFace className="w-4 h-4 text-purple-300" />; title = "Link de selfie enviado ao cliente"; tone = "border-purple-500/40 bg-purple-500/10 text-purple-100"; }
-  else if (isDone) { icon = <CheckCircle2 className="w-4 h-4 text-emerald-300" />; title = "Cadastro concluído ✅"; tone = "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"; }
-  else if (isOffline) { icon = <AlertTriangle className="w-4 h-4 text-red-300" />; title = "Portal momentaneamente offline"; tone = "border-red-500/40 bg-red-500/10 text-stone-600"; }
+  let tone = "border-warning/40 bg-warning/10 text-warning";
+  if (showError) { icon = <XCircle className="w-4 h-4 text-destructive" />; title = needsHuman ? "Cadastro precisa de ação manual" : "Cadastro recusado pelo portal iGreen"; tone = "border-destructive/50 bg-destructive/15 text-stone-600"; }
+  else if (isOtp) { icon = <KeyRound className="w-4 h-4 text-warning" />; title = "Código enviado ao WhatsApp do cliente — aguardando digitar"; tone = "border-warning/40 bg-warning/10 text-warning"; }
+  else if (isValidating) { icon = <Loader2 className="w-4 h-4 animate-spin text-info" />; title = "Validando código no portal…"; tone = "border-info/40 bg-info/10 text-info"; }
+  else if (isSign) { icon = <ScanFace className="w-4 h-4 text-primary" />; title = "Link de selfie enviado ao cliente"; tone = "border-primary/40 bg-primary/10 text-primary"; }
+  else if (isDone) { icon = <CheckCircle2 className="w-4 h-4 text-primary" />; title = "Cadastro concluído ✅"; tone = "border-primary/40 bg-primary/10 text-primary"; }
+  else if (isOffline) { icon = <AlertTriangle className="w-4 h-4 text-destructive" />; title = "Portal momentaneamente offline"; tone = "border-destructive/40 bg-destructive/10 text-stone-600"; }
 
   const retry = async () => {
     if (retrying) return;
@@ -188,9 +188,9 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   const extractionMode = row?.portal2_extraction_mode;
   const extractionBadge =
     extractionMode === "auto"
-      ? { label: "✅ Extração automática (IA do portal)", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200" }
+      ? { label: "✅ Extração automática (IA do portal)", cls: "border-primary/40 bg-primary/10 text-primary" }
       : extractionMode === "manual"
-        ? { label: "✋ Preenchimento manual", cls: "border-amber-500/40 bg-amber-500/10 text-amber-200" }
+        ? { label: "✋ Preenchimento manual", cls: "border-warning/40 bg-warning/10 text-warning" }
         : { label: "⏳ Extração não determinada", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-900" };
 
   // ── Badge IA_Gemini (Req 5.4/5.5) ──
@@ -200,7 +200,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
           typeof row?.ocr_confianca === "number"
             ? `🤖 IA analisou (confiança ${row.ocr_confianca}%)`
             : "🤖 IA analisou (confiança indisponível)",
-        cls: "border-sky-500/40 bg-sky-500/10 text-sky-200",
+        cls: "border-info/40 bg-info/10 text-info",
       }
     : { label: "🤖 IA não analisou", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-950" };
 
@@ -217,19 +217,19 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   // ── Estado de sucesso: card grande e celebrativo ──
   if (isDone) {
     return (
-      <div className="mx-3 mt-2 rounded-lg border-2 border-emerald-400/60 bg-gradient-to-br from-emerald-500/25 via-emerald-500/15 to-lime-500/20 px-4 py-3 shadow-[0_0_36px_hsl(142_70%_45%/0.45)]">
+      <div className="mx-3 mt-2 rounded-lg border-2 border-primary/60 bg-gradient-to-br from-primary/25 via-primary/15 to-primary/20 px-4 py-3 shadow-[0_0_36px_hsl(142_70%_45%/0.45)]">
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-6 h-6 text-emerald-300 animate-pulse" />
+          <CheckCircle2 className="w-6 h-6 text-primary animate-pulse" />
           <div className="flex-1">
-            <p className="text-sm font-black text-emerald-100 tracking-wide leading-tight">🎉 Cadastro aprovado pela iGreen!</p>
-            <p className="text-[11px] text-emerald-200/90 leading-tight">Lead já está ativo no portal oficial.</p>
+            <p className="text-sm font-black text-primary tracking-wide leading-tight">🎉 Cadastro aprovado pela iGreen!</p>
+            <p className="text-[11px] text-primary/90 leading-tight">Cliente interessado já está ativo no portal oficial.</p>
           </div>
         </div>
         {row?.igreen_code && (
-          <div className="mt-2 flex items-center gap-2 rounded bg-emerald-950/40 px-2 py-1.5">
-            <span className="text-[10px] text-emerald-200/80 uppercase tracking-wider font-semibold">Código iGreen</span>
-            <code className="font-mono text-sm font-black text-emerald-100 flex-1">{row.igreen_code}</code>
-            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] border-emerald-400/40 text-emerald-100 hover:bg-emerald-500/20" onClick={() => copy(row.igreen_code!, "Código")}>
+          <div className="mt-2 flex items-center gap-2 rounded bg-primary/40 px-2 py-1.5">
+            <span className="text-[10px] text-primary/80 uppercase tracking-wider font-semibold">Código iGreen</span>
+            <code className="font-mono text-sm font-black text-primary flex-1">{row.igreen_code}</code>
+            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] border-primary/40 text-primary hover:bg-primary/20" onClick={() => copy(row.igreen_code!, "Código")}>
               <Copy className="w-3 h-3 mr-1" /> Copiar
             </Button>
           </div>

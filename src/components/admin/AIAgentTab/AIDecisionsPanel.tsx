@@ -21,12 +21,12 @@ interface Decision {
 }
 
 const TOOL_LABELS: Record<string, { label: string; color: string; icon: any }> = {
-  send_text: { label: "Resposta", color: "text-blue-400 bg-blue-500/10", icon: MessageSquare },
-  send_media: { label: "Mídia", color: "text-purple-400 bg-purple-500/10", icon: ArrowRight },
-  request_handoff: { label: "Chamou humano", color: "text-orange-400 bg-orange-500/10", icon: AlertCircle },
-  schedule_followup: { label: "Follow-up", color: "text-yellow-400 bg-yellow-500/10", icon: Clock },
-  advance_to_closing: { label: "Avançou p/ fechar", color: "text-emerald-400 bg-emerald-500/10", icon: CheckCircle2 },
-  mark_lost: { label: "Marcou perdido", color: "text-red-400 bg-red-500/10", icon: AlertCircle },
+  send_text: { label: "Resposta", color: "text-info bg-info/10", icon: MessageSquare },
+  send_media: { label: "Mídia", color: "text-primary bg-primary/10", icon: ArrowRight },
+  request_handoff: { label: "Chamou humano", color: "text-warning bg-warning/10", icon: AlertCircle },
+  schedule_followup: { label: "Follow-up", color: "text-warning bg-warning/10", icon: Clock },
+  advance_to_closing: { label: "Avançou p/ fechar", color: "text-primary bg-primary/10", icon: CheckCircle2 },
+  mark_lost: { label: "Marcou perdido", color: "text-destructive bg-destructive/10", icon: AlertCircle },
 };
 
 export function AIDecisionsPanel({ userId }: { userId: string }) {
@@ -66,10 +66,10 @@ export function AIDecisionsPanel({ userId }: { userId: string }) {
           .from("customers")
           .select("id, name, phone_whatsapp")
           .in("id", ids as string[]);
-        for (const c of cs || []) names[c.id] = c.name || c.phone_whatsapp || "Lead";
+        for (const c of cs || []) names[c.id] = c.name || c.phone_whatsapp || "Cliente interessado";
       }
       if (!cancelled) {
-        setDecisions(rows.map((r) => ({ ...r, customer_name: names[r.customer_id || ""] || "Lead" })));
+        setDecisions(rows.map((r) => ({ ...r, customer_name: names[r.customer_id || ""] || "Cliente interessado" })));
         setLoading(false);
       }
     })();
@@ -118,7 +118,7 @@ export function AIDecisionsPanel({ userId }: { userId: string }) {
                 </div>
                 {d.user_input && (
                   <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                    <span className="text-foreground/60">Lead:</span> "{d.user_input}"
+                    <span className="text-foreground/60">Cliente interessado:</span> "{d.user_input}"
                   </p>
                 )}
                 {d.reasoning && (
@@ -141,14 +141,14 @@ export function AIDecisionsPanel({ userId }: { userId: string }) {
                   <div className="ml-auto flex items-center gap-1">
                     <button
                       onClick={() => rate(d, "up")}
-                      className={`p-1 rounded hover:bg-emerald-500/10 transition-colors ${d.feedback?.rating === "up" ? "text-emerald-400" : "text-muted-foreground hover:text-emerald-400"}`}
+                      className={`p-1 rounded hover:bg-primary/10 transition-colors ${d.feedback?.rating === "up" ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
                       title="Foi perfeito — IA usa como exemplo"
                     >
                       <ThumbsUp className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => rate(d, "down")}
-                      className={`p-1 rounded hover:bg-red-500/10 transition-colors ${d.feedback?.rating === "down" ? "text-red-400" : "text-muted-foreground hover:text-red-400"}`}
+                      className={`p-1 rounded hover:bg-destructive/10 transition-colors ${d.feedback?.rating === "down" ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
                       title="Não era hora — IA evita esse padrão"
                     >
                       <ThumbsDown className="w-3.5 h-3.5" />

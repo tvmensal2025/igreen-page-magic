@@ -28,10 +28,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const BADGE_COLORS: Record<string, string> = {
-  approved: "bg-green-500/20 text-green-600 dark:text-green-400", pending: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400",
-  rejected: "bg-red-500/15 text-red-600 dark:bg-red-800/30 dark:text-red-300", devolutiva: "bg-orange-500/20 text-orange-600 dark:text-orange-400",
-  lead: "bg-blue-500/20 text-blue-600 dark:text-blue-400", data_complete: "bg-teal-500/20 text-teal-600 dark:text-teal-400",
-  registered_igreen: "bg-purple-500/20 text-purple-600 dark:text-purple-400", contract_sent: "bg-orange-500/20 text-orange-600 dark:text-orange-400",
+  approved: "bg-primary/20 text-primary dark:text-primary", pending: "bg-warning/20 text-warning dark:text-warning",
+  rejected: "bg-destructive/15 text-destructive dark:bg-destructive/30 dark:text-destructive", devolutiva: "bg-warning/20 text-warning dark:text-warning",
+  lead: "bg-info/20 text-info dark:text-info", data_complete: "bg-primary/20 text-primary dark:text-primary",
+  registered_igreen: "bg-primary/20 text-primary dark:text-primary", contract_sent: "bg-warning/20 text-warning dark:text-warning",
 };
 
 export function CustomerCharts({ filteredMetrics, topLicenciados }: CustomerChartsProps) {
@@ -102,7 +102,7 @@ export function CustomerCharts({ filteredMetrics, topLicenciados }: CustomerChar
             </div>
             <div className="flex flex-wrap gap-2 mt-3 justify-center">
               {filteredMetrics.customersByStatus.map((s) => (
-                <span key={s.status} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${BADGE_COLORS[s.status] || "bg-purple-500/20 text-purple-600 dark:text-purple-400"}`}>
+                <span key={s.status} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${BADGE_COLORS[s.status] || "bg-primary/20 text-primary dark:text-primary"}`}>
                   {s.label}: {s.count}
                 </span>
               ))}

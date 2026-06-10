@@ -329,7 +329,7 @@ function SuperAdminSlotsModal({ onClose }: { onClose: () => void }) {
                   value={s.description || ""} rows={1}
                   onChange={(e) => setSlots((p) => p.map((x) => x.slot_key === s.slot_key ? { ...x, description: e.target.value } : x))}
                   className="w-full px-2 py-1 text-sm rounded border border-border bg-background" />
-                <textarea placeholder="Trigger hint (vai pro prompt da IA)"
+                <textarea placeholder="Dica de quando preencher (orienta o assistente)"
                   value={s.trigger_hint || ""} rows={2}
                   onChange={(e) => setSlots((p) => p.map((x) => x.slot_key === s.slot_key ? { ...x, trigger_hint: e.target.value } : x))}
                   className="w-full px-2 py-1 text-sm rounded border border-border bg-background" />

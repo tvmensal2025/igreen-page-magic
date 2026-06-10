@@ -10,7 +10,7 @@ export function XpFloater({ events }: Props) {
           key={e.id}
           className={`px-3 py-1.5 rounded-lg font-bold text-xs shadow-lg backdrop-blur-sm border animate-exec-float ${
             e.source === "level"
-              ? "bg-amber-400/95 text-amber-950 border-amber-300/60 shadow-[0_0_20px_hsl(45_85%_52%/0.4)]"
+              ? "bg-warning/95 text-warning border-warning/60 shadow-[0_0_20px_hsl(45_85%_52%/0.4)]"
               : e.source === "submit"
               ? "bg-primary/95 text-primary-foreground border-primary/40 shadow-[0_0_16px_hsl(var(--primary)/0.4)]"
               : "bg-card/95 text-foreground border-border/60"

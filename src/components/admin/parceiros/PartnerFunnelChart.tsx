@@ -22,7 +22,7 @@ export function PartnerFunnelChart({ analytics }: Props) {
     .slice(0, 6)
     .map((p) => ({
       nome: p.partner_nome,
-      Lead: p.funnel.lead,
+      Interessados: p.funnel.lead,
       Conta: p.funnel.conta,
       Aprovado: p.funnel.aprovado,
     }));
@@ -71,7 +71,8 @@ export function PartnerFunnelChart({ analytics }: Props) {
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar
-                dataKey="Lead"
+                dataKey="Interessados"
+                name="Clientes interessados"
                 fill="hsl(var(--muted-foreground) / 0.5)"
                 radius={[4, 4, 0, 0]}
               />

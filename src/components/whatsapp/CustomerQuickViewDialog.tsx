@@ -98,8 +98,8 @@ function MessagePreview({
         </div>
       )}
       {type === "audio" && mediaUrl && (
-        <div className="bg-emerald-950/40 rounded-md p-2 flex items-center gap-2">
-          <Headphones className="h-4 w-4 text-emerald-400 shrink-0" />
+        <div className="bg-primary/40 rounded-md p-2 flex items-center gap-2">
+          <Headphones className="h-4 w-4 text-primary shrink-0" />
           <audio controls src={mediaUrl} className="w-full h-8" preload="metadata" />
         </div>
       )}
@@ -148,7 +148,7 @@ function StageBlock({
         </p>
       )}
       {!enabled && (
-        <div className="flex items-center gap-1.5 text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+        <div className="flex items-center gap-1.5 text-[10px] text-warning bg-warning/10 border border-warning/30 rounded px-2 py-1">
           <AlertTriangle className="h-3 w-3" /> Autoprogressão desativada para esta etapa
         </div>
       )}
@@ -261,7 +261,7 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
   const currentStage = currentPvKey ? stageByKey.get(currentPvKey) : null;
   const nextStage = nextPvKey ? stageByKey.get(nextPvKey) : null;
 
-  // current deal stage (for leads)
+  // current deal stage (for clientes interessados)
   const dealStage = deal?.stage ? stages.find((s) => s.stage_key === deal.stage && s.stage_scope !== "pos_venda") : null;
 
   const lastSentByStage = useMemo(() => {
@@ -276,28 +276,28 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
     const push = (e: any) => out.push(e);
     if (customer?.data_cadastro || customer?.created_at) {
       const iso = customer.data_cadastro || customer.created_at;
-      push({ color: "bg-sky-500 border-sky-500", icon: UserPlus, title: "Cadastrado", date: fmt(iso, true), ts: new Date(iso).getTime() });
+      push({ color: "bg-info/100 border-info/300", icon: UserPlus, title: "Cadastrado", date: fmt(iso, true), ts: new Date(iso).getTime() });
     }
     if (deal?.created_at && !customer) {
-      push({ color: "bg-sky-500 border-sky-500", icon: UserPlus, title: "Lead criado", date: fmt(deal.created_at, true), ts: new Date(deal.created_at).getTime() });
+      push({ color: "bg-info/100 border-info/300", icon: UserPlus, title: "Cliente interessado criado", date: fmt(deal.created_at, true), ts: new Date(deal.created_at).getTime() });
     }
     if (customer?.portal_submitted_at) {
-      push({ color: "bg-amber-500 border-amber-500", icon: Clock, title: "Entrou em análise (portal)", date: fmt(customer.portal_submitted_at, true), ts: new Date(customer.portal_submitted_at).getTime() });
+      push({ color: "bg-warning/100 border-warning/300", icon: Clock, title: "Entrou em análise (portal)", date: fmt(customer.portal_submitted_at, true), ts: new Date(customer.portal_submitted_at).getTime() });
     }
     if (customer?.data_ativo) {
-      push({ color: "bg-emerald-500 border-emerald-500", icon: CheckCircle2, title: "Aprovado", date: fmt(customer.data_ativo, true), ts: new Date(customer.data_ativo).getTime() });
+      push({ color: "bg-primary/100 border-primary/300", icon: CheckCircle2, title: "Aprovado", date: fmt(customer.data_ativo, true), ts: new Date(customer.data_ativo).getTime() });
     }
     if (deal?.approved_at && !customer?.data_ativo) {
-      push({ color: "bg-emerald-500 border-emerald-500", icon: CheckCircle2, title: "Lead aprovado", date: fmt(deal.approved_at, true), ts: new Date(deal.approved_at).getTime() });
+      push({ color: "bg-primary/100 border-primary/300", icon: CheckCircle2, title: "Cliente interessado aprovado", date: fmt(deal.approved_at, true), ts: new Date(deal.approved_at).getTime() });
     }
     if (deal?.rejected_at || customer?.pos_venda_stage === "reprovado") {
       const iso = deal?.rejected_at || customer?.updated_at;
-      push({ color: "bg-rose-500 border-rose-500", icon: XCircle, title: "Reprovado", date: fmt(iso, true), sub: deal?.rejection_reason || customer?.pos_venda_reason, ts: new Date(iso || Date.now()).getTime() });
+      push({ color: "bg-destructive/100 border-destructive/300", icon: XCircle, title: "Reprovado", date: fmt(iso, true), sub: deal?.rejection_reason || customer?.pos_venda_reason, ts: new Date(iso || Date.now()).getTime() });
     }
     // sent auto messages
     for (const l of sentLogs) {
       push({
-        color: "bg-violet-500 border-violet-500",
+        color: "bg-primary/100 border-primary/300",
         icon: Send,
         title: `Mensagem automática enviada (${PV_LABEL[l.stage_key] || l.stage_key})`,
         date: fmt(l.sent_at, true),
@@ -315,7 +315,7 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
         const cur = currentPvKey === k;
         if (cur) continue;
         push({
-          color: isFuture ? "bg-muted/40 border-border" : "bg-cyan-500 border-cyan-500",
+          color: isFuture ? "bg-muted/40 border-border" : "bg-info/100 border-info/300",
           icon: Calendar,
           title: `${PV_LABEL[k]} ${isFuture ? "(previsto)" : ""}`,
           date: `${fmt(when.toISOString())} · ${relDays(when.toISOString())}`,
@@ -363,7 +363,7 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
                 <StageBlock
                   title={`Etapa atual: ${currentStage.label}`}
                   badge={currentPvKey && lastSentByStage.has(currentPvKey)
-                    ? <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-400 border-emerald-500/30">enviada {fmt(lastSentByStage.get(currentPvKey).sent_at)}</Badge>
+                    ? <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/30">enviada {fmt(lastSentByStage.get(currentPvKey).sent_at)}</Badge>
                     : <Badge variant="outline" className="text-[9px]">pendente</Badge>}
                   stage={currentStage}
                   displayName={displayName}
@@ -372,7 +372,7 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
               {nextStage ? (
                 <StageBlock
                   title={`Próxima etapa: ${nextStage.label}`}
-                  badge={<Badge variant="outline" className="text-[9px] bg-cyan-500/10 text-cyan-300 border-cyan-500/30">a enviar</Badge>}
+                  badge={<Badge variant="outline" className="text-[9px] bg-info/10 text-info border-info/30">a enviar</Badge>}
                   stage={nextStage}
                   displayName={displayName}
                   scheduledAt={nextDate}
@@ -423,7 +423,7 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
               <Row icon={Calendar} label="Portal enviado em" value={fmt(customer?.portal_submitted_at, true)} />
               <Row icon={LinkIcon} label="Link assinatura" value={customer?.link_assinatura} />
               <Row icon={FileText} label="Etapa do bot" value={customer?.conversation_step || deal?.stage} />
-              <Row icon={FileText} label="Observações do lead" value={deal?.notes} />
+              <Row icon={FileText} label="Observações do cliente interessado" value={deal?.notes} />
             </TabsContent>
           </Tabs>
         )}

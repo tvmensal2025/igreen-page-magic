@@ -332,7 +332,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         <div className="flex-1">
           <h2 className="text-base font-semibold">Atalhos rápidos</h2>
           <p className="text-xs text-muted-foreground">
-            A Camila escolhe automaticamente o atalho que casar com a fala do lead, responde, e <strong>volta ao passo atual</strong> do fluxo.
+            A Camila escolhe automaticamente o atalho que casar com a fala do cliente interessado, responde, e <strong>volta ao passo atual</strong> do fluxo.
             Tem áudio? Ela manda áudio. Não achou aqui? Tenta a Base da IA.
           </p>
         </div>
@@ -501,10 +501,10 @@ function QACard(props: {
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {isOk ? (
-            <CheckCircle2 className="w-4 h-4 text-green-500" aria-label="Pronto" />
+            <CheckCircle2 className="w-4 h-4 text-primary" aria-label="Pronto" />
           ) : (
             <span title={issues.join(" • ")}>
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <AlertTriangle className="w-4 h-4 text-warning" />
             </span>
           )}
           {props.onMoveUp && <Button size="icon" variant="ghost" onClick={props.onMoveUp}><ChevronUp className="w-4 h-4" /></Button>}
@@ -516,7 +516,7 @@ function QACard(props: {
               title={qa.is_public ? "Tornar privado" : "Tornar público (todos os consultores veem)"}
               onClick={() => props.onUpdate({ is_public: !qa.is_public })}
             >
-              {qa.is_public ? <Globe2 className="w-4 h-4 text-emerald-500" /> : <Lock className="w-4 h-4 text-muted-foreground" />}
+              {qa.is_public ? <Globe2 className="w-4 h-4 text-primary" /> : <Lock className="w-4 h-4 text-muted-foreground" />}
             </Button>
           )}
           {qa.is_public && !isSuperAdmin && (
@@ -530,9 +530,9 @@ function QACard(props: {
 
       {/* Avisos */}
       {issues.length > 0 && (
-        <div className="rounded border border-amber-500/30 bg-amber-500/5 p-2 text-xs space-y-0.5">
+        <div className="rounded border border-warning/30 bg-warning/5 p-2 text-xs space-y-0.5">
           {issues.map((i, idx) => (
-            <p key={idx} className="text-amber-600 dark:text-amber-400 flex items-start gap-1">
+            <p key={idx} className="text-warning dark:text-warning flex items-start gap-1">
               <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" /> {i}
             </p>
           ))}

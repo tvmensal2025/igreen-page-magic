@@ -27,7 +27,7 @@ export function QuestsBar({ progress }: { progress: GameProgress }) {
               key={g.id}
               className={`relative overflow-hidden rounded-md border px-2 py-1 ${
                 done
-                  ? "border-amber-400/40 bg-gradient-to-br from-amber-400/8 to-transparent"
+                  ? "border-warning/40 bg-gradient-to-br from-warning/8 to-transparent"
                   : "border-border/60 bg-background/40"
               }`}
             >
@@ -37,7 +37,7 @@ export function QuestsBar({ progress }: { progress: GameProgress }) {
                   {g.label}
                 </span>
                 {done ? (
-                  <CheckCircle2 className="w-3 h-3 text-amber-400 shrink-0" />
+                  <CheckCircle2 className="w-3 h-3 text-warning shrink-0" />
                 ) : (
                   <span className="text-[9px] font-mono text-muted-foreground tabular-nums shrink-0">
                     {Math.min(g.current, g.target)}/{g.target}
@@ -47,7 +47,7 @@ export function QuestsBar({ progress }: { progress: GameProgress }) {
               <div className="relative h-1 rounded-full bg-secondary overflow-hidden">
                 <div
                   className={`h-full transition-all duration-700 rounded-full ${
-                    done ? "bg-gradient-to-r from-amber-500 to-yellow-400 exec-bar-active" : "bg-primary"
+                    done ? "bg-gradient-to-r from-warning to-warning exec-bar-active" : "bg-primary"
                   }`}
                   style={{ width: `${pct}%` }}
                 />

@@ -123,7 +123,7 @@ export function InstallPwaButton() {
             <li className="flex items-start gap-3">
               <span className="shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">1</span>
               <span className="pt-0.5">
-                Toque no botão <Share className="inline w-4 h-4 mx-1 text-blue-500" /> <strong>Compartilhar</strong> (parte de baixo do Safari).
+                Toque no botão <Share className="inline w-4 h-4 mx-1 text-info" /> <strong>Compartilhar</strong> (parte de baixo do Safari).
               </span>
             </li>
             <li className="flex items-start gap-3">

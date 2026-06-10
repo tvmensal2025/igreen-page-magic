@@ -108,29 +108,6 @@ export default function StepTimelineItem({
           <div className="flex items-center gap-1.5">
             <span className="text-sm">{typeMeta.emoji}</span>
             <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">{step.title}</h4>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  onClick={(e) => e.stopPropagation()}
-                  className="shrink-0 text-muted-foreground/50 hover:text-primary"
-                  aria-label="O que este passo faz?"
-                  title="O que este passo faz?"
-                >
-                  <HelpCircle className="h-3.5 w-3.5" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="left" className="w-72 text-xs" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-1.5 font-semibold mb-1">
-                  <span>{typeMeta.emoji}</span>
-                  <span>{typeMeta.label}</span>
-                </div>
-                <p className="text-muted-foreground leading-snug">{typeMeta.hint}</p>
-                <p className="mt-2 text-[10px] text-muted-foreground/70">
-                  Dica: clique no passo para abrir o editor e ajustar texto, mídias e regras.
-                </p>
-              </PopoverContent>
-            </Popover>
             {isStart && (
               <Badge className="h-4 shrink-0 bg-primary/15 px-1.5 text-[9px] text-primary hover:bg-primary/15">
                 Início
@@ -157,10 +134,10 @@ export default function StepTimelineItem({
           {/* Linha 3: badges compactos */}
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
             {isAiAnswerStep(step) && (
-              <MiniBadge icon={Sparkles} label="IA" className="bg-purple-500/15 text-purple-600 dark:text-purple-300" />
+              <MiniBadge icon={Sparkles} label="IA" className="bg-primary/15 text-primary dark:text-primary" />
             )}
             {!isAiAnswerStep(step) && isOcrStep(step) && (
-              <MiniBadge icon={ScanLine} label="OCR" className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
+              <MiniBadge icon={ScanLine} label="OCR" className="bg-primary/15 text-primary dark:text-primary" />
             )}
             {mediaCount && mediaCount.audio > 0 && <MiniBadge icon={Mic} label={String(mediaCount.audio)} />}
             {mediaCount && mediaCount.image > 0 && <MiniBadge icon={ImageIcon} label={String(mediaCount.image)} />}
@@ -170,34 +147,60 @@ export default function StepTimelineItem({
 
           {/* Ações (visíveis no hover) */}
           <TooltipProvider delayDuration={300}>
-            <div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button size="icon" variant="ghost" className="h-6 w-6"
-                    onClick={(e) => { e.stopPropagation(); onEdit(); }}>
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">Editar</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button size="icon" variant="ghost" className="h-6 w-6"
-                    onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">Duplicar</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive"
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left">Remover</TooltipContent>
-              </Tooltip>
+            <div className="absolute right-1.5 top-1.5 flex flex-col items-end gap-0.5">
+              <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button size="icon" variant="ghost" className="h-6 w-6"
+                      onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Editar</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button size="icon" variant="ghost" className="h-6 w-6"
+                      onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Duplicar</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive"
+                      onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Remover</TooltipContent>
+                </Tooltip>
+              </div>
+              {/* Ajuda "?" — fica embaixo do botão de deletar */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="mr-0.5 shrink-0 text-muted-foreground/50 hover:text-primary"
+                    aria-label="O que este passo faz?"
+                    title="O que este passo faz?"
+                  >
+                    <HelpCircle className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="left" className="w-72 text-xs" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5 font-semibold mb-1">
+                    <span>{typeMeta.emoji}</span>
+                    <span>{typeMeta.label}</span>
+                  </div>
+                  <p className="text-muted-foreground leading-snug">{typeMeta.hint}</p>
+                  <p className="mt-2 text-[10px] text-muted-foreground/70">
+                    Dica: clique no passo para abrir o editor e ajustar texto, mídias e regras.
+                  </p>
+                </PopoverContent>
+              </Popover>
             </div>
           </TooltipProvider>
         </div>
@@ -287,8 +290,8 @@ function ExitsBlock({
 }
 
 const EXIT_KIND_META: Record<ExitKind, { icon: LucideIcon; tone: string; srLabel: string }> = {
-  button: { icon: MousePointerClick, tone: "text-blue-600 dark:text-blue-300", srLabel: "Botão" },
-  keyword: { icon: Hash, tone: "text-amber-600 dark:text-amber-400", srLabel: "Palavra-chave" },
+  button: { icon: MousePointerClick, tone: "text-info dark:text-info", srLabel: "Botão" },
+  keyword: { icon: Hash, tone: "text-warning dark:text-warning", srLabel: "Palavra-chave" },
   default: { icon: CornerDownRight, tone: "text-muted-foreground", srLabel: "Padrão" },
 };
 

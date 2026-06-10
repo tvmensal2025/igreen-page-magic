@@ -85,11 +85,11 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
   const statusConfig = (status: string) => {
     switch (status) {
       case "pending":
-        return { icon: <Clock className="w-3 h-3" />, label: "Pendente", cls: "bg-amber-500/15 text-amber-400 border-amber-500/25" };
+        return { icon: <Clock className="w-3 h-3" />, label: "Pendente", cls: "bg-warning/15 text-warning border-warning/25" };
       case "sent":
-        return { icon: <CheckCircle2 className="w-3 h-3" />, label: "Enviada", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" };
+        return { icon: <CheckCircle2 className="w-3 h-3" />, label: "Enviada", cls: "bg-primary/15 text-primary border-primary/25" };
       case "failed":
-        return { icon: <XCircle className="w-3 h-3" />, label: "Falhou", cls: "bg-red-500/15 text-red-400 border-red-500/25" };
+        return { icon: <XCircle className="w-3 h-3" />, label: "Falhou", cls: "bg-destructive/15 text-destructive border-destructive/25" };
       default:
         return { icon: <AlertCircle className="w-3 h-3" />, label: status, cls: "bg-secondary text-muted-foreground border-border" };
     }
@@ -107,15 +107,15 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
   const isFormValid = phone.trim() && text.trim() && scheduledAt;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-blue-950/10">
-      <div className="absolute -top-20 -right-20 w-40 h-40 bg-blue-500/3 rounded-full blur-3xl" />
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-info/10">
+      <div className="absolute -top-20 -right-20 w-40 h-40 bg-info/3 rounded-full blur-3xl" />
 
       <div className="relative p-5 sm:p-7">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-600/10 flex items-center justify-center border border-blue-500/20">
-              <CalendarClock className="w-5 h-5 text-blue-400" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-info/20 to-info/10 flex items-center justify-center border border-info/20">
+              <CalendarClock className="w-5 h-5 text-info" />
             </div>
             <div>
               <h3 className="font-heading font-bold text-foreground text-lg">Agendamentos</h3>
@@ -135,31 +135,31 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
         {/* Stats */}
         {messages.length > 0 && (
           <div className="grid grid-cols-3 gap-3 mb-5">
-            <div className="rounded-xl border border-amber-500/15 bg-amber-500/5 p-3 text-center">
-              <p className="text-xl font-bold text-amber-400">{pendingCount}</p>
-              <p className="text-[10px] text-amber-400/70 font-medium">Pendentes</p>
+            <div className="rounded-xl border border-warning/15 bg-warning/5 p-3 text-center">
+              <p className="text-xl font-bold text-warning">{pendingCount}</p>
+              <p className="text-[10px] text-warning/70 font-medium">Pendentes</p>
             </div>
-            <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-3 text-center">
-              <p className="text-xl font-bold text-emerald-400">{sentCount}</p>
-              <p className="text-[10px] text-emerald-400/70 font-medium">Enviadas</p>
+            <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-center">
+              <p className="text-xl font-bold text-primary">{sentCount}</p>
+              <p className="text-[10px] text-primary/70 font-medium">Enviadas</p>
             </div>
-            <div className="rounded-xl border border-red-500/15 bg-red-500/5 p-3 text-center">
-              <p className="text-xl font-bold text-red-400">{failedCount}</p>
-              <p className="text-[10px] text-red-400/70 font-medium">Falharam</p>
+            <div className="rounded-xl border border-destructive/15 bg-destructive/5 p-3 text-center">
+              <p className="text-xl font-bold text-destructive">{failedCount}</p>
+              <p className="text-[10px] text-destructive/70 font-medium">Falharam</p>
             </div>
           </div>
         )}
 
         {/* Create form */}
         {showForm && (
-          <div className="mb-5 rounded-xl border border-blue-500/15 bg-gradient-to-br from-blue-500/5 to-transparent p-5 space-y-4 animate-in slide-in-from-top-2 duration-300">
+          <div className="mb-5 rounded-xl border border-info/15 bg-gradient-to-br from-info/5 to-transparent p-5 space-y-4 animate-in slide-in-from-top-2 duration-300">
             <p className="text-sm font-bold text-foreground flex items-center gap-2">
-              <Send className="w-4 h-4 text-blue-400" /> Nova Mensagem Agendada
+              <Send className="w-4 h-4 text-info" /> Nova Mensagem Agendada
             </p>
 
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-blue-400" /> Telefone
+                <Phone className="w-3.5 h-3.5 text-info" /> Telefone
               </Label>
               <Input
                 placeholder="5511999999999"
@@ -173,7 +173,7 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
 
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <MessageSquare className="w-3.5 h-3.5 text-blue-400" /> Mensagem
+                <MessageSquare className="w-3.5 h-3.5 text-info" /> Mensagem
               </Label>
               <Textarea
                 placeholder="Digite a mensagem que será enviada..."
@@ -187,7 +187,7 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
 
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-blue-400" /> Data e Hora
+                <Calendar className="w-3.5 h-3.5 text-info" /> Data e Hora
               </Label>
               <Input
                 type="datetime-local"
@@ -228,8 +228,8 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
         {/* Messages list */}
         {messages.length === 0 ? (
           <div className="text-center py-10">
-            <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/15 flex items-center justify-center mx-auto mb-3">
-              <CalendarClock className="w-7 h-7 text-blue-400/50" />
+            <div className="w-14 h-14 rounded-2xl bg-info/10 border border-info/15 flex items-center justify-center mx-auto mb-3">
+              <CalendarClock className="w-7 h-7 text-info/50" />
             </div>
             <p className="text-sm text-muted-foreground font-medium">Nenhuma mensagem agendada</p>
             <p className="text-xs text-muted-foreground/60 mt-1">Clique em "Agendar" para programar seu primeiro envio</p>
@@ -245,10 +245,10 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
                     key={msg.id}
                     className={`group rounded-xl border px-4 py-3 transition-all ${
                       isPending
-                        ? "border-border/40 bg-secondary/20 hover:border-blue-500/20"
+                        ? "border-border/40 bg-secondary/20 hover:border-info/20"
                         : msg.status === "sent"
-                        ? "border-emerald-500/10 bg-emerald-500/5"
-                        : "border-red-500/10 bg-red-500/5"
+                        ? "border-primary/10 bg-primary/5"
+                        : "border-destructive/10 bg-destructive/5"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -266,15 +266,15 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
                           {msg.message_text}
                         </p>
                         <div className="flex items-center gap-1.5">
-                          <Calendar className="w-3 h-3 text-blue-400/60" />
+                          <Calendar className="w-3 h-3 text-info/60" />
                           <span className="text-[11px] text-muted-foreground/70 font-medium">
                             {formatScheduleDate(msg.scheduled_at)}
                           </span>
                           {msg.sent_at && (
                             <>
                               <span className="text-muted-foreground/30 mx-1">•</span>
-                              <CheckCircle2 className="w-3 h-3 text-emerald-400/60" />
-                              <span className="text-[11px] text-emerald-400/60 font-medium">
+                              <CheckCircle2 className="w-3 h-3 text-primary/60" />
+                              <span className="text-[11px] text-primary/60 font-medium">
                                 Enviada {formatScheduleDate(msg.sent_at)}
                               </span>
                             </>
@@ -285,7 +285,7 @@ export function SchedulePanel({ consultantId, instanceName }: SchedulePanelProps
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="shrink-0 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 h-8 w-8 opacity-0 group-hover:opacity-100 transition-all"
+                          className="shrink-0 text-destructive/60 hover:text-destructive hover:bg-destructive/10 h-8 w-8 opacity-0 group-hover:opacity-100 transition-all"
                           onClick={() => handleDelete(msg.id)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />

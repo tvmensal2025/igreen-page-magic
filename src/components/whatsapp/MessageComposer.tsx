@@ -126,7 +126,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
 
       {file.pendingImageUrl && (
         <div className="flex items-center gap-2 mb-2 px-1 py-1.5 rounded-lg bg-secondary/30 border border-border/30">
-          <Image className="w-4 h-4 text-blue-400 shrink-0" />
+          <Image className="w-4 h-4 text-info shrink-0" />
           <span className="text-xs text-foreground truncate flex-1">📷 Imagem será enviada antes</span>
           <img src={file.pendingImageUrl} alt="preview" className="h-8 w-8 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => file.setPendingImageUrl(null)}><X className="w-3 h-3" /></Button>
@@ -135,7 +135,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
 
       {file.attachedFile && (
         <div className="flex items-center gap-2 mb-2 px-1 py-1.5 rounded-lg bg-secondary/30 border border-border/30">
-          {file.attachedFile.type === "audio" ? <Mic className="w-4 h-4 text-green-400 shrink-0" /> : file.attachedFile.type === "image" ? <Image className="w-4 h-4 text-blue-400 shrink-0" /> : file.attachedFile.type === "video" ? <Video className="w-4 h-4 text-purple-400 shrink-0" /> : <File className="w-4 h-4 text-red-400 shrink-0" />}
+          {file.attachedFile.type === "audio" ? <Mic className="w-4 h-4 text-primary shrink-0" /> : file.attachedFile.type === "image" ? <Image className="w-4 h-4 text-info shrink-0" /> : file.attachedFile.type === "video" ? <Video className="w-4 h-4 text-primary shrink-0" /> : <File className="w-4 h-4 text-destructive shrink-0" />}
           <span className="text-xs text-foreground truncate flex-1">{file.attachedFile.name}</span>
           <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={file.clearAttachment}><X className="w-3 h-3" /></Button>
         </div>

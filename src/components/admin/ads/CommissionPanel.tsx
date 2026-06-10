@@ -174,28 +174,28 @@ export function CommissionPanel({ consultantId }: Props) {
       {/* Resumo consolidado */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard
-          icon={<Users className="w-4 h-4 text-emerald-500" />}
+          icon={<Users className="w-4 h-4 text-primary" />}
           label="Convertidos"
           value={String(totalConverted)}
-          sub="leads marcados"
+          sub="clientes interessados marcados"
           color="emerald"
         />
         <SummaryCard
-          icon={<DollarSign className="w-4 h-4 text-sky-500" />}
+          icon={<DollarSign className="w-4 h-4 text-info" />}
           label="Soma das faturas"
           value={fmt(totalBill)}
           sub="base de cálculo"
           color="sky"
         />
         <SummaryCard
-          icon={<TrendingUp className="w-4 h-4 text-violet-500" />}
+          icon={<TrendingUp className="w-4 h-4 text-primary" />}
           label="Comissão 1ª venda"
           value={fmt(totalFirstSale)}
           sub="% configurado × fatura"
           color="violet"
         />
         <SummaryCard
-          icon={<Sparkles className="w-4 h-4 text-amber-500" />}
+          icon={<Sparkles className="w-4 h-4 text-warning" />}
           label="Recorrente/mês"
           value={fmt(totalRecurring)}
           sub="4% × soma faturas"
@@ -208,7 +208,7 @@ export function CommissionPanel({ consultantId }: Props) {
         <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
         <span>
           <strong className="text-foreground">Como funciona:</strong> configure o % de comissão de cada campanha.
-          Quando você marcar um lead como convertido (na aba Leads), o sistema soma o valor da fatura dele e calcula:
+          Quando você marcar um cliente interessado como convertido (na aba Clientes interessados), o sistema soma o valor da fatura dele e calcula:
           <strong className="text-foreground"> comissão de 1ª venda</strong> (% × fatura) +
           <strong className="text-foreground"> recorrente mensal</strong> (4% × fatura, todo mês enquanto o cliente estiver ativo).
           Exemplo: fatura R$ 200, campanha 50% → R$ 100 na 1ª venda + R$ 8/mês recorrente.
@@ -218,7 +218,7 @@ export function CommissionPanel({ consultantId }: Props) {
       {/* Tabela por campanha */}
       {rows.length === 0 ? (
         <div className="text-center py-10 text-muted-foreground text-sm">
-          Nenhuma campanha ainda. Crie uma campanha e marque leads como convertidos para ver as comissões.
+          Nenhuma campanha ainda. Crie uma campanha e marque clientes interessados como convertidos para ver as comissões.
         </div>
       ) : (
         <div className="space-y-3">
@@ -235,7 +235,7 @@ export function CommissionPanel({ consultantId }: Props) {
                       </Badge>
                     )}
                     {row.converted_count > 0 && (
-                      <Badge className="text-[10px] h-5 px-2 bg-emerald-500/15 text-emerald-500 border-emerald-500/20">
+                      <Badge className="text-[10px] h-5 px-2 bg-primary/15 text-primary border-primary/20">
                         ✓ {row.converted_count} convertido{row.converted_count !== 1 ? "s" : ""}
                       </Badge>
                     )}
@@ -248,20 +248,20 @@ export function CommissionPanel({ consultantId }: Props) {
                         <p className="text-muted-foreground">Soma faturas</p>
                         <p className="font-bold text-foreground">{fmt(row.total_bill_value)}</p>
                       </div>
-                      <div className="rounded-lg bg-violet-500/10 border border-violet-500/20 px-2.5 py-2">
+                      <div className="rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-2">
                         <p className="text-muted-foreground">1ª venda ({row.commission_rate ?? "—"}%)</p>
-                        <p className="font-bold text-violet-400">
+                        <p className="font-bold text-primary">
                           {row.commission_rate ? fmt(row.first_sale_commission) : "Configure o %"}
                         </p>
                       </div>
-                      <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-2.5 py-2">
+                      <div className="rounded-lg bg-warning/10 border border-warning/20 px-2.5 py-2">
                         <p className="text-muted-foreground">Recorrente/mês (4%)</p>
-                        <p className="font-bold text-amber-400">{fmt(row.monthly_recurring)}</p>
+                        <p className="font-bold text-warning">{fmt(row.monthly_recurring)}</p>
                       </div>
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Nenhum lead convertido ainda nesta campanha.
+                      Nenhum cliente interessado convertido ainda nesta campanha.
                     </p>
                   )}
                 </div>
@@ -314,10 +314,10 @@ function SummaryCard({
   color: "emerald" | "sky" | "violet" | "amber";
 }) {
   const bg: Record<string, string> = {
-    emerald: "from-emerald-500/10 to-emerald-600/5",
-    sky: "from-sky-500/10 to-sky-600/5",
-    violet: "from-violet-500/10 to-violet-600/5",
-    amber: "from-amber-500/10 to-amber-600/5",
+    emerald: "from-primary/10 to-primary/5",
+    sky: "from-info/10 to-info/5",
+    violet: "from-primary/10 to-primary/5",
+    amber: "from-warning/10 to-warning/5",
   };
   return (
     <div className="premium-card !p-4">

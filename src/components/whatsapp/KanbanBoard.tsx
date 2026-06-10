@@ -61,7 +61,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
   const sendAutoMessages = async (stage: KanbanStageRow, deal: CrmDealRow, rejectionReason?: string) => {
     if (!stage.auto_message_enabled) { toast({ title: "⚠️ Msg automática desativada para esta coluna", description: stage.label }); return; }
     if (!instanceName) { toast({ title: "⚠️ WhatsApp não conectado", variant: "destructive" }); return; }
-    if (!deal.remote_jid) { toast({ title: "⚠️ Lead sem número de WhatsApp", variant: "destructive" }); return; }
+    if (!deal.remote_jid) { toast({ title: "⚠️ Cliente interessado sem número de WhatsApp", variant: "destructive" }); return; }
 
     let customerName = "";
     if (deal.customer_id) {
@@ -168,12 +168,12 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-foreground">CRM Kanban</h3>
+          <h3 className="text-sm font-semibold text-foreground">Funil de clientes</h3>
           <HelpHint
-            title="CRM Kanban"
-            summary="Arraste leads entre estágios para acompanhar o funil"
+            title="Funil de clientes"
+            summary="Arraste clientes interessados entre estágios para acompanhar o funil"
             details="Cada coluna representa uma etapa padronizada do funil (Novo lead → Aguardando conta → Cadastro enviado → etc). A auto-progressão move o lead automaticamente quando o bot detecta evento-chave (ex: OCR da conta concluído). Você pode arrastar manualmente também."
-            example="Lead respondeu mas parou no 'Aguardando conta' por 3 dias? Mova manualmente para 'Sem resposta' e dispare uma mensagem de retomada."
+            example="Cliente respondeu mas parou no 'Aguardando conta' por 3 dias? Mova manualmente para 'Sem resposta' e dispare uma mensagem de retomada."
           />
           <Badge variant="secondary" className="text-[9px] gap-1"><Zap className="h-2.5 w-2.5" />Auto-progressão ativa</Badge>
           <HelpHint
@@ -185,7 +185,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar lead..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-7 text-xs pl-8 w-[180px]" />
+            <Input placeholder="Buscar cliente interessado..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-7 text-xs pl-8 w-[180px]" />
           </div>
           <Select value={stepFilter} onValueChange={setStepFilter}>
             <SelectTrigger className="h-7 text-xs w-[200px]"><SelectValue placeholder="Parou no passo" /></SelectTrigger>
@@ -197,7 +197,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
               ))}
             </SelectContent>
           </Select>
-          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none" title="Mostrar leads marcados como teste/sandbox (cards cinza)">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none" title="Mostrar clientes interessados marcados como teste/sandbox (cards cinza)">
             <Switch checked={showTests} onCheckedChange={setShowTests} className="h-4 w-7 data-[state=checked]:bg-primary" />
             Mostrar testes
           </label>
@@ -207,8 +207,8 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5"><Settings2 className="h-3.5 w-3.5" />Configurar Colunas</Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
-              <DialogHeader><DialogTitle className="text-sm">Configurar Colunas do Kanban</DialogTitle></DialogHeader>
-              <p className="text-[11px] text-muted-foreground -mt-1">O funil termina em <strong>Finalizando cadastro</strong>. Depois que a extensão iGreen sincronizar, o lead vira cliente e segue no <strong>CRM Pós-Venda</strong> (Aprovado/Reprovado/30-60-90-120 dias).</p>
+              <DialogHeader><DialogTitle className="text-sm">Configurar colunas do funil</DialogTitle></DialogHeader>
+              <p className="text-[11px] text-muted-foreground -mt-1">O funil termina em <strong>Finalizando cadastro</strong>. Depois que a extensão iGreen sincronizar, o cliente interessado vira cliente e segue no <strong>CRM Pós-Venda</strong> (Aprovado/Reprovado/30-60-90-120 dias).</p>
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                 {stages.map((stage) => (
                   <div
@@ -282,7 +282,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
           stageKey={pendingDrop.stageKey}
           stageId={pendingDrop.stageId}
           consultantId={consultantId}
-          dealName={deals.find((d) => d.id === pendingDrop.dealId)?.remote_jid?.split("@")[0] || "Lead"}
+          dealName={deals.find((d) => d.id === pendingDrop.dealId)?.remote_jid?.split("@")[0] || "Cliente interessado"}
           dealOrigin={(deals.find((d) => d.id === pendingDrop.dealId) as any)?.deal_origin}
         />
       )}
@@ -290,7 +290,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       {/* Edit deal dialog */}
       <Dialog open={!!editingDeal} onOpenChange={(o) => !o && setEditingDeal(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle className="text-sm flex items-center gap-2"><Pencil className="h-4 w-4" /> Editar Deal</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-sm flex items-center gap-2"><Pencil className="h-4 w-4" /> Editar negociação</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-foreground">Telefone</label>
@@ -298,7 +298,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
             </div>
             <div className="space-y-1">
               <label className="text-[11px] font-medium text-foreground">Observações</label>
-              <Textarea value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notas sobre o lead..." className="text-xs min-h-[80px] resize-none" />
+              <Textarea value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notas sobre o cliente interessado..." className="text-xs min-h-[80px] resize-none" />
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setEditingDeal(null)}>Cancelar</Button>
@@ -311,7 +311,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       {/* Delete deal confirmation */}
       <Dialog open={!!deletingDealId} onOpenChange={(o) => !o && setDeletingDealId(null)}>
         <DialogContent className="max-w-xs">
-          <DialogHeader><DialogTitle className="text-sm flex items-center gap-2 text-destructive"><Trash2 className="h-4 w-4" /> Excluir Deal</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-sm flex items-center gap-2 text-destructive"><Trash2 className="h-4 w-4" /> Excluir negociação</DialogTitle></DialogHeader>
           <p className="text-xs text-muted-foreground">Tem certeza que deseja excluir este deal? Essa ação não pode ser desfeita.</p>
           <div className="flex gap-2 justify-end">
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setDeletingDealId(null)}>Cancelar</Button>

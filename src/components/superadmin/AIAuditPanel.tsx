@@ -94,9 +94,9 @@ export function AIAuditPanel() {
   const confBadge = (c: number | null) => {
     if (c === null) return <Badge variant="outline">—</Badge>;
     const n = Number(c);
-    if (n >= 0.75) return <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40">{n.toFixed(2)}</Badge>;
-    if (n >= 0.5) return <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40">{n.toFixed(2)}</Badge>;
-    return <Badge className="bg-red-500/20 text-red-300 border-red-500/40">{n.toFixed(2)}</Badge>;
+    if (n >= 0.75) return <Badge className="bg-primary/20 text-primary border-primary/40">{n.toFixed(2)}</Badge>;
+    if (n >= 0.5) return <Badge className="bg-warning/20 text-warning border-warning/40">{n.toFixed(2)}</Badge>;
+    return <Badge className="bg-destructive/20 text-destructive border-destructive/40">{n.toFixed(2)}</Badge>;
   };
 
   return (
@@ -184,7 +184,7 @@ export function AIAuditPanel() {
                     <td className="p-2">{r.phase ?? "—"}</td>
                     <td className="p-2">
                       <span className="font-mono">{r.intent_detected ?? "—"}</span>
-                      {r.suppressed && <Badge className="ml-1 bg-red-500/20 text-red-300 border-red-500/40">sup</Badge>}
+                      {r.suppressed && <Badge className="ml-1 bg-destructive/20 text-destructive border-destructive/40">sup</Badge>}
                     </td>
                     <td className="p-2">{confBadge(r.confidence)}</td>
                     <td className="p-2 font-mono text-[10px]">
@@ -215,7 +215,7 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
     <div
       className={`p-3 rounded-lg border ${
         tone === "warn"
-          ? "border-amber-500/40 bg-amber-500/10"
+          ? "border-warning/40 bg-warning/10"
           : "border-border/40 bg-secondary/20"
       }`}
     >

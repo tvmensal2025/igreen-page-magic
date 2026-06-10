@@ -412,12 +412,12 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
         key={m.id}
         className={`rounded-md border p-2 flex flex-col gap-2 transition-all ${
           isPendingDelete
-            ? "border-rose-400/60 bg-rose-500/10 opacity-60 line-through"
+            ? "border-destructive/60 bg-destructive/10 opacity-60 line-through"
             : "border-border/60 bg-muted/20"
         }`}
       >
         {isPendingDelete && (
-          <div className="text-[10px] font-bold uppercase tracking-wider text-rose-500 no-underline">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-destructive no-underline">
             ⚠️ Marcada para remoção — clique em Salvar alterações para confirmar
           </div>
         )}
@@ -463,7 +463,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
               }
             >
               {pendingDeletes.has(m.id) ? (
-                <ArrowUp className="h-3.5 w-3.5 rotate-180 text-emerald-600" />
+                <ArrowUp className="h-3.5 w-3.5 rotate-180 text-primary" />
               ) : (
                 <Trash2 className="h-3.5 w-3.5 text-destructive" />
               )}
@@ -576,7 +576,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
         <h4 className="text-sm font-semibold">Mídias deste passo</h4>
         {hasPendingChanges && (
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="border-amber-400/60 text-amber-700 dark:text-amber-300 text-[10px]">
+            <Badge variant="outline" className="border-warning/60 text-warning dark:text-warning text-[10px]">
               {pendingDeletes.size} alteração(ões) pendente(s)
             </Badge>
             <Button
@@ -590,7 +590,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
             </Button>
             <Button
               size="sm"
-              className="h-7 text-xs gap-1 bg-emerald-500 hover:bg-emerald-600 text-white"
+              className="h-7 text-xs gap-1 bg-primary/100 hover:bg-primary text-white"
               onClick={saveAllChanges}
               disabled={savingDraft}
             >

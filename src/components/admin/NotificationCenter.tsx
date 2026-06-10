@@ -26,11 +26,11 @@ function timeAgo(timestamp: string): string {
 
 function typeColor(type: Notification["type"]): string {
   switch (type) {
-    case "new_lead": return "bg-green-500";
-    case "status_change": return "bg-blue-500";
-    case "devolutiva": return "bg-yellow-500";
-    case "new_customer": return "bg-purple-500";
-    case "deal_moved": return "bg-cyan-500";
+    case "new_lead": return "bg-primary/100";
+    case "status_change": return "bg-info/100";
+    case "devolutiva": return "bg-warning/100";
+    case "new_customer": return "bg-primary/100";
+    case "deal_moved": return "bg-info/100";
     case "page_view": return "bg-gray-500";
     default: return "bg-gray-500";
   }
@@ -67,7 +67,7 @@ export function NotificationCenter({
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white animate-pulse">
+          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive/100 px-1 text-[9px] font-bold text-white animate-pulse">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
@@ -82,7 +82,7 @@ export function NotificationCenter({
               <Bell className="h-4 w-4 text-primary" />
               <span className="text-sm font-semibold text-foreground">Notificações</span>
               {unreadCount > 0 && (
-                <Badge variant="secondary" className="text-[9px] bg-red-500/10 text-red-400 border-red-500/20">
+                <Badge variant="secondary" className="text-[9px] bg-destructive/10 text-destructive border-destructive/20">
                   {unreadCount} nova{unreadCount > 1 ? "s" : ""}
                 </Badge>
               )}

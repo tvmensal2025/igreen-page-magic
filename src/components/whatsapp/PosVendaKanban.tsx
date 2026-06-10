@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw, Eye,
+  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw, Eye, ClipboardCheck, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -43,13 +43,13 @@ interface PosVendaCustomer {
 }
 
 const STAGES: { key: Stage; label: string; badge: string; bar: string; dot: string }[] = [
-  { key: "espera",     label: "Aguardando Classificação", badge: "bg-amber-500/15 text-amber-300 border-amber-500/40",   bar: "bg-amber-500",   dot: "bg-amber-400" },
-  { key: "aprovado",   label: "Aprovado",   badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/50", bar: "bg-emerald-500", dot: "bg-emerald-400" },
-  { key: "reprovado",  label: "Reprovado",  badge: "bg-rose-500/20 text-rose-300 border-rose-500/50",      bar: "bg-rose-500",    dot: "bg-rose-400" },
-  { key: "d30",        label: "30 dias",    badge: "bg-lime-500/15 text-lime-300 border-lime-500/40",      bar: "bg-lime-500",    dot: "bg-lime-400" },
-  { key: "d60",        label: "60 dias",    badge: "bg-teal-500/15 text-teal-300 border-teal-500/40",      bar: "bg-teal-500",    dot: "bg-teal-400" },
-  { key: "d90",        label: "90 dias",    badge: "bg-cyan-500/15 text-cyan-300 border-cyan-500/40",      bar: "bg-cyan-500",    dot: "bg-cyan-400" },
-  { key: "d120",       label: "120 dias",   badge: "bg-indigo-500/15 text-indigo-300 border-indigo-500/40", bar: "bg-indigo-500",  dot: "bg-indigo-400" },
+  { key: "espera",     label: "Aguardando Classificação", badge: "bg-warning/15 text-warning border-warning/40",   bar: "bg-warning/100",   dot: "bg-warning" },
+  { key: "aprovado",   label: "Aprovado",   badge: "bg-primary/20 text-primary border-primary/50", bar: "bg-primary/100", dot: "bg-primary" },
+  { key: "reprovado",  label: "Reprovado",  badge: "bg-destructive/20 text-destructive border-destructive/50",      bar: "bg-destructive/100",    dot: "bg-destructive" },
+  { key: "d30",        label: "30 dias",    badge: "bg-primary/15 text-primary border-primary/40",      bar: "bg-primary/100",    dot: "bg-primary" },
+  { key: "d60",        label: "60 dias",    badge: "bg-primary/15 text-primary border-primary/40",      bar: "bg-primary/100",    dot: "bg-primary" },
+  { key: "d90",        label: "90 dias",    badge: "bg-info/15 text-info border-info/40",      bar: "bg-info/100",    dot: "bg-info" },
+  { key: "d120",       label: "120 dias",   badge: "bg-info/15 text-info border-info/40", bar: "bg-info/100",  dot: "bg-info" },
 ];
 
 function daysSince(iso: string | null): number | null {
@@ -90,6 +90,8 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
   const [dragId, setDragId] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
   const [viewCustomerId, setViewCustomerId] = useState<string | null>(null);
+  // Sinal para abrir o diálogo de validação de clientes manualmente
+  const [validateSignal, setValidateSignal] = useState(0);
   // "mine" = registered_by_igreen_id = meu | "assigned" | "all" | <igreen_id específico>
   const [ownerFilter, setOwnerFilter] = useState<string>("mine");
 
@@ -300,36 +302,45 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
 
   return (
     <div className="space-y-4">
-      <PendingApprovalDialog consultantId={consultantId} onResolved={load} />
+      <PendingApprovalDialog consultantId={consultantId} onResolved={load} openSignal={validateSignal} />
       <CustomerQuickViewDialog customerId={viewCustomerId} onClose={() => setViewCustomerId(null)} />
 
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <Input
-          placeholder="Buscar por nome ou telefone..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm rounded-xl"
-        />
-        <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-          <SelectTrigger className="w-[280px] rounded-xl">
-            <SelectValue placeholder="Filtrar por quem cadastrou" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="mine">Apenas cadastrados por mim {myIgreenId ? `(iGreen ${myIgreenId})` : ""}</SelectItem>
-            <SelectItem value="assigned">Atribuídos a mim</SelectItem>
-            <SelectItem value="all">Todos da minha rede</SelectItem>
-            {registrants.filter(r => r.id !== myIgreenId).map((r) => (
-              <SelectItem key={r.id} value={r.id}>
-                Cadastrado por: {r.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex gap-2">
+      <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Input
+            placeholder="Buscar por nome ou telefone..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="rounded-xl"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+            <SelectTrigger className="w-full sm:w-[260px] rounded-xl gap-2">
+              <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+              <SelectValue placeholder="Filtrar por quem cadastrou" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mine">Cadastrados por mim {myIgreenId ? `(iGreen ${myIgreenId})` : ""}</SelectItem>
+              <SelectItem value="assigned">Atribuídos a mim</SelectItem>
+              <SelectItem value="all">Toda a minha rede</SelectItem>
+              {registrants.filter(r => r.id !== myIgreenId).map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  Cadastrado por: {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl">
+            <ClipboardCheck className="w-4 h-4" />
+            Validar clientes
+          </Button>
           <PosVendaAutoConfigDialog consultantId={consultantId} />
           <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl">
             <RefreshCw className={`w-4 h-4 ${recomputing ? "animate-spin" : ""}`} />
-            Recalcular colunas (auto)
+            Recalcular colunas
           </Button>
         </div>
       </div>
@@ -438,13 +449,13 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                         )}
                         <div className="flex items-center gap-1 flex-wrap">
                           {c.pos_venda_manual && (
-                            <Badge variant="secondary" className="text-[9px] py-0 h-4 bg-amber-500/10 text-amber-600">manual</Badge>
+                            <Badge variant="secondary" className="text-[9px] py-0 h-4 bg-warning/10 text-warning">manual</Badge>
                           )}
                           {c.assigned_consultant_id && c.assigned_consultant_id !== c.consultant_id && (
-                            <Badge variant="secondary" className="text-[9px] py-0 h-4 bg-sky-500/10 text-sky-600">atribuído</Badge>
+                            <Badge variant="secondary" className="text-[9px] py-0 h-4 bg-info/10 text-info">atribuído</Badge>
                           )}
                           {!isOwner && c.assigned_consultant_id === consultantId && (
-                            <Badge variant="secondary" className="text-[9px] py-0 h-4 bg-violet-500/10 text-violet-600">recebido</Badge>
+                            <Badge variant="secondary" className="text-[9px] py-0 h-4 bg-primary/10 text-primary">recebido</Badge>
                           )}
                         </div>
                       </div>

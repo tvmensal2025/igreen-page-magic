@@ -4,18 +4,23 @@ interface Props {
   data?: Array<{ date: string; label: string; visitas: number; cliques: number; leads: number }>;
 }
 
-function TerminalTooltip({ active, payload, label }: any) {
+// Cores da paleta iGreen
+const COLOR_VISITAS = "hsl(152, 100%, 33%)"; // verde principal
+const COLOR_CLIQUES = "hsl(38, 92%, 50%)"; // alerta/amarelo
+const COLOR_LEADS = "hsl(221, 83%, 53%)"; // informativo/azul
+
+function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="border border-[#22c55e]/40 bg-black/95 backdrop-blur px-3 py-2 font-mono text-[11px] shadow-[0_0_30px_rgba(34,197,94,0.15)]">
-      <div className="text-zinc-500 mb-1 tracking-wider">{label}</div>
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
+      <div className="text-muted-foreground mb-1">{label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="flex items-center justify-between gap-4 tabular-nums">
-          <span className="flex items-center gap-2" style={{ color: p.color }}>
-            <span className="w-2 h-px" style={{ background: p.color }} />
+          <span className="flex items-center gap-2 text-foreground">
+            <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
             {p.name}
           </span>
-          <span className="font-bold" style={{ color: p.color }}>{p.value}</span>
+          <span className="font-semibold text-foreground">{p.value}</span>
         </div>
       ))}
     </div>
@@ -23,18 +28,20 @@ function TerminalTooltip({ active, payload, label }: any) {
 }
 
 export function MainChart({ data = [] }: Props) {
-
   return (
-    <section className="border border-[#1a2e1a] bg-[#0a0f0a] overflow-hidden">
-      <header className="flex items-center justify-between gap-4 px-4 py-2.5 border-b border-[#1a2e1a]">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-[10px] text-zinc-500 tracking-widest">CHART_01</span>
-          <h3 className="font-mono text-xs font-bold tracking-wider text-zinc-200">EVOLUÇÃO DIÁRIA</h3>
-        </div>
-        <div className="flex items-center gap-3 font-mono text-[10px] tracking-widest text-zinc-500">
-          <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 bg-[#22c55e]" />VISITAS</span>
-          <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 bg-[#fbbf24]" />CLIQUES</span>
-          <span className="hidden sm:inline-flex items-center gap-1.5"><span className="w-2 h-2 bg-[#38bdf8]" />LEADS</span>
+    <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <header className="flex items-center justify-between gap-4 px-4 py-3 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground">Evolução diária</h3>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ background: COLOR_VISITAS }} />Visitas
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ background: COLOR_CLIQUES }} />Cliques
+          </span>
+          <span className="hidden sm:inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ background: COLOR_LEADS }} />Clientes interessados
+          </span>
         </div>
       </header>
       <div className="p-2 pt-4">
@@ -42,41 +49,39 @@ export function MainChart({ data = [] }: Props) {
           <AreaChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="gV" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#22c55e" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
+                <stop offset="0%" stopColor={COLOR_VISITAS} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={COLOR_VISITAS} stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gC" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="#fbbf24" stopOpacity={0} />
+                <stop offset="0%" stopColor={COLOR_CLIQUES} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={COLOR_CLIQUES} stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gL" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="#38bdf8" stopOpacity={0} />
+                <stop offset="0%" stopColor={COLOR_LEADS} stopOpacity={0.25} />
+                <stop offset="100%" stopColor={COLOR_LEADS} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="#1a2e1a" strokeDasharray="2 4" vertical={false} />
+            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" vertical={false} />
             <XAxis
               dataKey="label"
-              stroke="#3f3f46"
-              fontSize={10}
-              tick={{ fill: "#737373", fontFamily: "JetBrains Mono" }}
-              axisLine={{ stroke: "#1a2e1a" }}
+              fontSize={11}
+              tick={{ fill: "hsl(var(--muted-foreground))" }}
+              axisLine={{ stroke: "hsl(var(--border))" }}
               tickLine={false}
               interval="preserveStartEnd"
               minTickGap={24}
             />
             <YAxis
-              stroke="#3f3f46"
-              fontSize={10}
-              tick={{ fill: "#737373", fontFamily: "JetBrains Mono" }}
+              fontSize={11}
+              tick={{ fill: "hsl(var(--muted-foreground))" }}
               axisLine={false}
               tickLine={false}
               width={32}
             />
-            <Tooltip content={<TerminalTooltip />} cursor={{ stroke: "#22c55e", strokeDasharray: "2 4", strokeWidth: 1 }} />
-            <Area type="monotone" dataKey="visitas" name="Visitas" stroke="#22c55e" strokeWidth={1.5} fill="url(#gV)" />
-            <Area type="monotone" dataKey="cliques" name="Cliques" stroke="#fbbf24" strokeWidth={1.5} fill="url(#gC)" />
-            <Area type="monotone" dataKey="leads" name="Leads" stroke="#38bdf8" strokeWidth={1.5} fill="url(#gL)" />
+            <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--primary))", strokeDasharray: "2 4", strokeWidth: 1 }} />
+            <Area type="monotone" dataKey="visitas" name="Visitas" stroke={COLOR_VISITAS} strokeWidth={2} fill="url(#gV)" />
+            <Area type="monotone" dataKey="cliques" name="Cliques" stroke={COLOR_CLIQUES} strokeWidth={2} fill="url(#gC)" />
+            <Area type="monotone" dataKey="leads" name="Clientes interessados" stroke={COLOR_LEADS} strokeWidth={2} fill="url(#gL)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>

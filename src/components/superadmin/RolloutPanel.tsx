@@ -49,11 +49,55 @@ interface Alert {
   created_at: string;
 }
 
+// Prontidão de avanço do Cérebro IA por estágio (somente leitura).
+// Vem da view cerebro_prontidao_avanco, que cruza a taxa de coincidência
+// com os limites configurados em rollout_config.
+interface Prontidao {
+  estagio: string;
+  total_turnos: number;
+  taxa_coincidencia_pct: number | null;
+  limite_coincidencia_pct: number;
+  turnos_minimos: number;
+  turnos_faltantes: number;
+  apto_avancar: boolean;
+  motivo: string;
+}
+
+// Monitoramento do canário do Cérebro IA por consultor (somente leitura).
+// Vem da view cerebro_monitor_canario: junta coincidência + conversão + volume.
+interface MonitorCanario {
+  estagio: string;
+  consultant_id: string;
+  consultant_name: string;
+  coincidencia_turnos: number;
+  coincidencia_pct: number | null;
+  limite_coincidencia_pct: number;
+  clientes_total: number;
+  convertidos_total: number;
+  convertidos_7d: number;
+  taxa_conversao_pct: number | null;
+  turnos_24h: number;
+  delegados_total: number;
+  coincidencia_abaixo_limite: boolean;
+}
+
+// Sinal (somente leitura) de queda de coincidência abaixo do limite.
+// Vem da view cerebro_sinal_alerta_coincidencia.
+interface SinalAlerta {
+  estagio: string;
+  total_turnos: number;
+  taxa_coincidencia_pct: number | null;
+  limite_coincidencia_pct: number;
+  turnos_minimos: number;
+  alerta_queda_coincidencia: boolean;
+  mensagem: string;
+}
+
 const FLAG_STYLE: Record<Flag, string> = {
   off: "bg-muted text-muted-foreground",
   dark: "bg-slate-500/15 text-slate-400",
-  canary: "bg-amber-500/15 text-amber-400",
-  on: "bg-emerald-500/15 text-emerald-400",
+  canary: "bg-warning/15 text-warning",
+  on: "bg-primary/15 text-primary",
 };
 
 export function RolloutPanel() {
@@ -65,17 +109,26 @@ export function RolloutPanel() {
   const [rows, setRows] = useState<Row[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [prontidao, setProntidao] = useState<Prontidao[]>([]);
+  const [monitor, setMonitor] = useState<MonitorCanario[]>([]);
+  const [sinais, setSinais] = useState<SinalAlerta[]>([]);
 
   const load = async () => {
     setLoading(true);
-    const [c, h, cs, a, al] = await Promise.all([
+    const [c, h, cs, a, al, pr, mc, sa] = await Promise.all([
       supabase.from("rollout_config").select("*").eq("id", true).maybeSingle(),
       supabase.from("v_flow_engine_health").select("consultant_id, turns_24h, paused_total, delegated_total"),
       supabase.from("consultants").select("id, name, flow_engine_v3").eq("approved", true).order("name"),
       supabase.from("rollout_audit").select("*").order("created_at", { ascending: false }).limit(30),
       supabase.from("rollout_alerts").select("*").eq("acknowledged", false).order("created_at", { ascending: false }).limit(20),
+      supabase.from("cerebro_prontidao_avanco").select("*"),
+      supabase.from("cerebro_monitor_canario").select("*"),
+      supabase.from("cerebro_sinal_alerta_coincidencia").select("*"),
     ]);
     setCfg(c.data as Cfg | null);
+    setProntidao((pr.data ?? []) as Prontidao[]);
+    setMonitor((mc.data ?? []) as MonitorCanario[]);
+    setSinais((sa.data ?? []) as SinalAlerta[]);
     const hMap = new Map((h.data ?? []).map((r: any) => [r.consultant_id, r]));
     setRows(
       (cs.data ?? []).map((c: any) => ({
@@ -111,7 +164,7 @@ export function RolloutPanel() {
   };
 
   const forceRollback = async () => {
-    const ok = await confirm({ title: "Voltar TODOS os consultores para 'off'?", description: "Isso desliga o Flow Engine V3 globalmente.", confirmText: "Confirmar rollback", tone: "danger" });
+    const ok = await confirm({ title: "Voltar TODOS os consultores para desligado?", description: "Isso desliga a automação de atendimento para todos.", confirmText: "Confirmar", tone: "danger" });
     if (!ok) return;
     const { error } = await supabase.from("consultants").update({ flow_engine_v3: "off", flow_reliability_v2: "off" }).eq("approved", true);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
@@ -141,7 +194,7 @@ export function RolloutPanel() {
       <Card className="p-5 space-y-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-lg font-bold">Autopilot Flow Engine V3</h2>
+            <h2 className="text-lg font-bold">Automação de atendimento</h2>
             <p className="text-sm text-muted-foreground">
               Avalia gates a cada 6h e avança/recua flags por consultor automaticamente.
             </p>
@@ -174,13 +227,13 @@ export function RolloutPanel() {
 
       {/* Alertas abertos */}
       {alerts.length > 0 && (
-        <Card className="p-5 space-y-3 border-amber-500/30">
-          <h3 className="font-semibold flex items-center gap-2 text-amber-500">
+        <Card className="p-5 space-y-3 border-warning/30">
+          <h3 className="font-semibold flex items-center gap-2 text-warning">
             <AlertTriangle className="w-4 h-4" /> Alertas abertos ({alerts.length})
           </h3>
           <div className="space-y-2">
             {alerts.map((a) => (
-              <div key={a.id} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+              <div key={a.id} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-warning/5 border border-warning/20">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">{a.title}</p>
                   <p className="text-xs text-muted-foreground whitespace-pre-wrap">{a.body}</p>
@@ -194,6 +247,141 @@ export function RolloutPanel() {
           </div>
         </Card>
       )}
+
+      {/* Sinal de queda de coincidência do Cérebro (somente leitura) */}
+      {sinais.some((s) => s.alerta_queda_coincidencia) && (
+        <Card className="p-5 space-y-3 border-warning/30">
+          <h3 className="font-semibold flex items-center gap-2 text-warning">
+            <AlertTriangle className="w-4 h-4" /> Cérebro IA — queda de coincidência
+          </h3>
+          <div className="space-y-2">
+            {sinais
+              .filter((s) => s.alerta_queda_coincidencia)
+              .map((s) => (
+                <div key={s.estagio} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-warning/5 border border-warning/20">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">
+                      Estágio {s.estagio}: {s.taxa_coincidencia_pct ?? "—"}% (limite {s.limite_coincidencia_pct}%)
+                    </p>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">{s.mensagem}</p>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Prontidão de avanço do Cérebro IA (somente leitura) */}
+      <Card className="p-5 space-y-3">
+        <div>
+          <h3 className="font-semibold">Cérebro IA — prontidão de avanço</h3>
+          <p className="text-sm text-muted-foreground">
+            Taxa de coincidência das decisões do Cérebro por estágio. Um estágio fica apto a
+            avançar quando a taxa atinge o limite e há turnos suficientes observados.
+          </p>
+        </div>
+        {prontidao.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Ainda não há decisões do Cérebro registradas para medir a coincidência.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-muted-foreground border-b border-border/50">
+                <tr>
+                  <th className="text-left py-2 px-2">Estágio</th>
+                  <th className="text-right py-2 px-2">Coincidência</th>
+                  <th className="text-right py-2 px-2">Limite</th>
+                  <th className="text-right py-2 px-2">Turnos</th>
+                  <th className="text-right py-2 px-2">Mínimo</th>
+                  <th className="text-left py-2 px-2">Situação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prontidao.map((p) => (
+                  <tr key={p.estagio} className="border-b border-border/30">
+                    <td className="py-2 px-2">
+                      <Badge className={`${FLAG_STYLE[(p.estagio as Flag)] ?? "bg-muted text-muted-foreground"} border-0`}>
+                        {p.estagio}
+                      </Badge>
+                    </td>
+                    <td className="text-right py-2 px-2 tabular-nums">
+                      {p.taxa_coincidencia_pct != null ? `${p.taxa_coincidencia_pct}%` : "—"}
+                    </td>
+                    <td className="text-right py-2 px-2 tabular-nums">{p.limite_coincidencia_pct}%</td>
+                    <td className="text-right py-2 px-2 tabular-nums">{p.total_turnos}</td>
+                    <td className="text-right py-2 px-2 tabular-nums">{p.turnos_minimos}</td>
+                    <td className="py-2 px-2">
+                      {p.apto_avancar ? (
+                        <span className="inline-flex items-center gap-1 text-primary">
+                          <CheckCircle2 className="w-4 h-4" /> Apto a avançar
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground" title={p.motivo}>Ainda não</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Monitoramento do canário do Cérebro IA (somente leitura) */}
+      <Card className="p-5 space-y-3">
+        <div>
+          <h3 className="font-semibold">Cérebro IA — monitoramento do canário</h3>
+          <p className="text-sm text-muted-foreground">
+            Por consultor em rollout (dark/canary/on): coincidência das decisões, conversão
+            de cadastros e volume de atendimento. Quem está fora do rollout segue na vendedora.
+          </p>
+        </div>
+        {monitor.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nenhum consultor em rollout do Cérebro ainda.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-muted-foreground border-b border-border/50">
+                <tr>
+                  <th className="text-left py-2 px-2">Consultor</th>
+                  <th className="text-left py-2 px-2">Estágio</th>
+                  <th className="text-right py-2 px-2">Coincidência</th>
+                  <th className="text-right py-2 px-2">Conversão</th>
+                  <th className="text-right py-2 px-2">Convertidos (7d)</th>
+                  <th className="text-right py-2 px-2">Turnos 24h</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monitor.map((m) => (
+                  <tr key={m.consultant_id} className="border-b border-border/30">
+                    <td className="py-2 px-2">{m.consultant_name}</td>
+                    <td className="py-2 px-2">
+                      <Badge className={`${FLAG_STYLE[(m.estagio as Flag)] ?? "bg-muted text-muted-foreground"} border-0`}>
+                        {m.estagio}
+                      </Badge>
+                    </td>
+                    <td className="text-right py-2 px-2 tabular-nums">
+                      {m.coincidencia_pct != null ? (
+                        <span className={m.coincidencia_abaixo_limite ? "text-warning" : undefined}>
+                          {m.coincidencia_pct}%
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="text-right py-2 px-2 tabular-nums">
+                      {m.taxa_conversao_pct != null ? `${m.taxa_conversao_pct}%` : "—"}
+                    </td>
+                    <td className="text-right py-2 px-2 tabular-nums">{m.convertidos_7d}</td>
+                    <td className="text-right py-2 px-2 tabular-nums">{m.turnos_24h}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* Consultores */}
       <Card className="p-5">

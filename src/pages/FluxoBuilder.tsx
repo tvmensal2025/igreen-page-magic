@@ -848,14 +848,14 @@ export default function FluxoBuilder() {
           <div
             className={`border-t px-4 py-3 ${
               isReadOnly
-                ? "bg-amber-50 dark:bg-amber-950/30"
+                ? "bg-warning/10 dark:bg-warning/30"
                 : "bg-muted/30"
             }`}
           >
             <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
                 {isReadOnly ? (
-                  <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <Lock className="h-4 w-4 text-warning dark:text-warning" />
                 ) : (
                   <Unlock className="h-4 w-4 text-muted-foreground" />
                 )}

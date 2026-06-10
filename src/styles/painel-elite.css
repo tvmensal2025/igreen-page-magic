@@ -13,22 +13,22 @@
   --pe-border-strong: #b9c2bc;
   --pe-border-focus: #059669;
 
-  --pe-emerald: #064e3b;
-  --pe-emerald-strong: #033025;
-  --pe-emerald-soft: #047857;
-  --pe-emerald-50: rgba(6, 78, 59, 0.05);
-  --pe-emerald-10: rgba(6, 78, 59, 0.10);
-  --pe-emerald-20: rgba(6, 78, 59, 0.20);
+  --pe-emerald: #007A3D;
+  --pe-emerald-strong: #005c2e;
+  --pe-emerald-soft: #00A859;
+  --pe-emerald-50: rgba(0, 168, 89, 0.05);
+  --pe-emerald-10: rgba(0, 168, 89, 0.10);
+  --pe-emerald-20: rgba(0, 168, 89, 0.20);
 
-  --pe-accent: #059669;
+  --pe-accent: #00A859;
   --pe-accent-soft: #34d399;
-  --pe-accent-deep: #047857;
-  --pe-accent-glow: rgba(5, 150, 105, 0.10);
+  --pe-accent-deep: #007A3D;
+  --pe-accent-glow: rgba(0, 168, 89, 0.10);
   --pe-accent-warm: #c9a84c;
-  --pe-success: #047857;
-  --pe-warning: #b45309;
-  --pe-danger: #b91c1c;
-  --pe-info: #0369a1;
+  --pe-success: #00A859;
+  --pe-warning: #F59E0B;
+  --pe-danger: #DC2626;
+  --pe-info: #2563EB;
 
   /* texto — alto contraste WCAG AA */
   --pe-text: #0a1f1a;
@@ -44,33 +44,33 @@
   --pe-shadow-hover: 0 4px 12px rgba(11, 31, 26, 0.06);
 
   /* ───── Override shadcn tokens DENTRO do painel (independe de .dark global) ───── */
-  --background: 150 14% 97%;
-  --foreground: 160 35% 8%;
+  --background: 150 16% 97%;
+  --foreground: 215 28% 17%;
   --card: 0 0% 100%;
-  --card-foreground: 160 35% 8%;
+  --card-foreground: 215 28% 17%;
   --popover: 0 0% 100%;
-  --popover-foreground: 160 35% 8%;
-  --primary: 160 84% 24%;
+  --popover-foreground: 215 28% 17%;
+  --primary: 152 100% 33%;
   --primary-foreground: 0 0% 100%;
   --secondary: 150 14% 94%;
-  --secondary-foreground: 160 35% 12%;
+  --secondary-foreground: 215 28% 17%;
   --muted: 150 12% 93%;
-  --muted-foreground: 160 10% 35%;
-  --accent: 152 76% 24%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 72% 42%;
+  --muted-foreground: 220 9% 40%;
+  --accent: 152 55% 94%;
+  --accent-foreground: 150 100% 22%;
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
   --border: 150 10% 86%;
   --input: 150 10% 86%;
-  --ring: 160 84% 28%;
-  --sidebar-background: 158 60% 8%;
-  --sidebar-foreground: 150 25% 92%;
-  --sidebar-primary: 160 84% 36%;
+  --ring: 152 100% 33%;
+  --sidebar-background: 0 0% 7%;
+  --sidebar-foreground: 0 0% 90%;
+  --sidebar-primary: 152 100% 36%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 158 50% 14%;
+  --sidebar-accent: 0 0% 13%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-border: 158 40% 18%;
-  --sidebar-ring: 160 84% 36%;
+  --sidebar-border: 0 0% 16%;
+  --sidebar-ring: 152 100% 36%;
 
   font-family: 'Figtree', system-ui, -apple-system, sans-serif;
   background: var(--pe-bg);

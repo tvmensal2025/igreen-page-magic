@@ -260,17 +260,17 @@ export function CustomerImportExport({ customers, filtered, consultantId, onCust
             <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${importProgress.total > 0 ? (importProgress.current / importProgress.total) * 100 : 0}%` }} />
           </div>
           <div className="flex gap-4 mt-1.5 text-[10px] text-muted-foreground">
-            <span className="text-green-400">{importProgress.newCount} novos</span>
-            {importProgress.errorCount > 0 && <span className="text-red-400">{importProgress.errorCount} erros</span>}
+            <span className="text-primary">{importProgress.newCount} novos</span>
+            {importProgress.errorCount > 0 && <span className="text-destructive">{importProgress.errorCount} erros</span>}
           </div>
         </div>
       )}
 
       {showImportResult && !importing && (
-        <div className="absolute left-0 right-0 px-5 py-3 border-b border-border/50 bg-green-500/5" style={{ top: "var(--import-result-top, 0)" }}>
+        <div className="absolute left-0 right-0 px-5 py-3 border-b border-border/50 bg-primary/5" style={{ top: "var(--import-result-top, 0)" }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-400" />
+              <CheckCircle2 className="w-4 h-4 text-primary" />
               <span className="text-xs font-medium text-foreground">
                 Importação concluída: {importProgress.newCount} novos, {importProgress.updatedCount} atualizados
                 {importProgress.errorCount > 0 && `, ${importProgress.errorCount} erros`}
@@ -295,7 +295,7 @@ export function CustomerImportExport({ customers, filtered, consultantId, onCust
             </DialogHeader>
             <div className="flex gap-4 mt-3 text-xs">
               <span className="text-muted-foreground">Total na planilha: <strong className="text-foreground">{parsedCustomers.length}</strong></span>
-              <span className="text-green-400">Novos: <strong>{newCount}</strong></span>
+              <span className="text-primary">Novos: <strong>{newCount}</strong></span>
               <span className="text-muted-foreground">Já cadastrados: <strong>{existingCount}</strong> (ignorados)</span>
               <span className="text-primary">Selecionados: <strong>{selectedCount}</strong></span>
             </div>
@@ -320,8 +320,8 @@ export function CustomerImportExport({ customers, filtered, consultantId, onCust
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-foreground truncate">{p.name || "Sem nome"}</p>
                         <Badge variant="outline" className={`text-[9px] px-1.5 py-0 h-4 ${statusBadge.className}`}>{statusBadge.label}</Badge>
-                        {!p.isNew && <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 bg-yellow-500/10 text-yellow-400 border-yellow-500/20">Atualizar</Badge>}
-                        {p.isNew && <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 bg-green-500/10 text-green-400 border-green-500/20">Novo</Badge>}
+                        {!p.isNew && <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 bg-warning/10 text-warning border-warning/20">Atualizar</Badge>}
+                        {p.isNew && <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 bg-primary/10 text-primary border-primary/20">Novo</Badge>}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5">
                         <span className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -342,7 +342,7 @@ export function CustomerImportExport({ customers, filtered, consultantId, onCust
 
           <div className="px-6 py-4 border-t border-border flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              <strong className="text-green-400">Novos</strong> serão criados, <strong className="text-yellow-400">existentes</strong> serão atualizados com dados do Excel.
+              <strong className="text-primary">Novos</strong> serão criados, <strong className="text-warning">existentes</strong> serão atualizados com dados do Excel.
             </p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" className="h-9 text-xs px-4" onClick={() => setShowPreview(false)}>Cancelar</Button>

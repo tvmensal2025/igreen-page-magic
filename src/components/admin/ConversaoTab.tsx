@@ -19,12 +19,12 @@ import { toast } from "sonner";
 type Temp = "hot" | "warm" | "cold" | "dead" | "objection" | "rescue";
 
 const TEMP_META: Record<Temp, { label: string; icon: any; cls: string; bar: string; ring: string }> = {
-  hot:       { label: "Quente",  icon: Flame,         cls: "bg-red-500/15 text-red-400 border-red-500/30",       bar: "bg-red-500",    ring: "ring-red-500/40" },
-  warm:      { label: "Morno",   icon: Cloud,         cls: "bg-amber-500/15 text-amber-400 border-amber-500/30", bar: "bg-amber-500",  ring: "ring-amber-500/40" },
-  cold:      { label: "Frio",    icon: Snowflake,     cls: "bg-blue-500/15 text-blue-400 border-blue-500/30",    bar: "bg-blue-500",   ring: "ring-blue-500/40" },
+  hot:       { label: "Quente",  icon: Flame,         cls: "bg-destructive/15 text-destructive border-destructive/30",       bar: "bg-destructive/100",    ring: "ring-destructive/40" },
+  warm:      { label: "Morno",   icon: Cloud,         cls: "bg-warning/15 text-warning border-warning/30", bar: "bg-warning/100",  ring: "ring-warning/40" },
+  cold:      { label: "Frio",    icon: Snowflake,     cls: "bg-info/15 text-info border-info/30",    bar: "bg-info/100",   ring: "ring-info/40" },
   dead:      { label: "Morto",   icon: Skull,         cls: "bg-muted text-muted-foreground border-border",       bar: "bg-muted-foreground", ring: "ring-border" },
-  objection: { label: "Objeção", icon: AlertTriangle, cls: "bg-orange-500/15 text-orange-400 border-orange-500/30", bar: "bg-orange-500", ring: "ring-orange-500/40" },
-  rescue:    { label: "Resgate", icon: LifeBuoy,      cls: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",    bar: "bg-cyan-500",   ring: "ring-cyan-500/40" },
+  objection: { label: "Objeção", icon: AlertTriangle, cls: "bg-warning/15 text-warning border-warning/30", bar: "bg-warning/100", ring: "ring-warning/40" },
+  rescue:    { label: "Resgate", icon: LifeBuoy,      cls: "bg-info/15 text-info border-info/30",    bar: "bg-info/100",   ring: "ring-info/40" },
 };
 
 interface InsightRow {
@@ -139,7 +139,7 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
       .limit(1000);
 
     if (error) {
-      toast.error("Falha ao carregar leads", { description: error.message });
+      toast.error("Falha ao carregar clientes interessados", { description: error.message });
       setLoading(false);
       return;
     }
@@ -214,7 +214,7 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
         body: { customer_id: customerId },
       });
       if (error) throw error;
-      toast.success("Lead reclassificado", { description: data?.results?.[0]?.temperature ?? "ok" });
+      toast.success("Cliente interessado reclassificado", { description: data?.results?.[0]?.temperature ?? "ok" });
       await fetchRows();
     } catch (e: any) {
       toast.error("Falha ao classificar", { description: e.message });
@@ -306,14 +306,14 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
 
       {/* Hero — não classificados */}
       {unclassified > 0 && (
-        <Card className="p-5 border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent">
+        <Card className="p-5 border-warning/30 bg-gradient-to-br from-warning/10 via-warning/5 to-transparent">
           <div className="flex items-center gap-4 flex-wrap">
-            <div className="h-12 w-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-              <Sparkles className="h-6 w-6 text-amber-400" />
+            <div className="h-12 w-12 rounded-xl bg-warning/20 border border-warning/30 flex items-center justify-center">
+              <Sparkles className="h-6 w-6 text-warning" />
             </div>
             <div className="flex-1 min-w-[200px]">
               <div className="text-2xl font-semibold text-foreground">
-                {unclassified} {unclassified === 1 ? "lead aguardando" : "leads aguardando"} classificação
+                {unclassified} {unclassified === 1 ? "lead aguardando" : "clientes interessados aguardando"} classificação
               </div>
               <div className="text-xs mt-0.5 text-muted-foreground">
                 A IA vai analisar a conversa, definir temperatura e sugerir a próxima mensagem.
@@ -446,7 +446,7 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
             <div className="h-14 w-14 rounded-2xl bg-muted/40 border border-border/40 flex items-center justify-center mx-auto mb-3">
               <Sparkles className="h-6 w-6 text-muted-foreground" />
             </div>
-            <div className="text-sm text-muted-foreground">Nenhum lead com esses filtros.</div>
+            <div className="text-sm text-muted-foreground">Nenhum cliente interessado com esses filtros.</div>
             {unclassified > 0 && (
               <Button size="sm" className="mt-4 gap-1.5" onClick={classifyAllUnclassified} disabled={bulkClassifying}>
                 <Zap className="h-3.5 w-3.5" /> Classificar {unclassified} agora
@@ -457,7 +457,7 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
           <table className="w-full text-xs">
             <thead className="bg-muted/30 border-b border-border/40">
               <tr className="text-left text-[10px] uppercase text-muted-foreground">
-                <th className="px-4 py-2.5">Lead</th>
+                <th className="px-4 py-2.5">Cliente interessado</th>
                 <th className="px-3 py-2.5">Origem</th>
                 <th className="px-3 py-2.5">Temp</th>
                 <th className="px-3 py-2.5 w-40">Chance</th>
@@ -476,7 +476,7 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
                   <tr
                     key={r.customer_id}
                     className={`border-b border-border/30 hover:bg-muted/30 cursor-pointer transition-colors ${
-                      !isClassified ? "bg-amber-500/[0.04]" : ""
+                      !isClassified ? "bg-warning/100/[0.04]" : ""
                     }`}
                     onClick={() => setSelected(r)}
                   >
@@ -565,7 +565,7 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
             <>
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
-                  {selected.customer?.name || "Lead"}
+                  {selected.customer?.name || "Cliente interessado"}
                   {selected.classified_at && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded border ${TEMP_META[selected.temperature].cls}`}>
                       {TEMP_META[selected.temperature].label}
@@ -582,7 +582,7 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
               <div className="mt-5 space-y-4 text-sm">
                 {!selected.classified_at ? (
                   <div className="p-4 rounded-lg border border-dashed border-border bg-muted/20 text-center text-muted-foreground text-xs">
-                    Lead ainda não classificado.
+                    Cliente interessado ainda não classificado.
                     <Button size="sm" className="mt-3 w-full" onClick={() => classifyOne(selected.customer_id)} disabled={classifying === selected.customer_id}>
                       {classifying === selected.customer_id ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
                       Analisar agora
@@ -597,21 +597,21 @@ export function ConversaoTab({ consultantId }: ConversaoTabProps) {
                       </div>
                     )}
                     {selected.main_doubt && (
-                      <div className="border-l-2 border-blue-500/40 pl-3">
+                      <div className="border-l-2 border-info/40 pl-3">
                         <div className="text-[10px] uppercase text-muted-foreground mb-1">Dúvida principal</div>
                         <p className="text-foreground">{selected.main_doubt}</p>
                       </div>
                     )}
                     {selected.main_objection && (
-                      <div className="border-l-2 border-orange-500/40 pl-3">
+                      <div className="border-l-2 border-warning/40 pl-3">
                         <div className="text-[10px] uppercase text-muted-foreground mb-1">Objeção</div>
-                        <p className="text-orange-300">{selected.main_objection}</p>
+                        <p className="text-warning">{selected.main_objection}</p>
                       </div>
                     )}
                     {selected.loss_reason && (
-                      <div className="border-l-2 border-red-500/40 pl-3">
+                      <div className="border-l-2 border-destructive/40 pl-3">
                         <div className="text-[10px] uppercase text-muted-foreground mb-1">Por que está parando</div>
-                        <p className="text-red-300/90">{selected.loss_reason}</p>
+                        <p className="text-destructive/90">{selected.loss_reason}</p>
                       </div>
                     )}
                     <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">

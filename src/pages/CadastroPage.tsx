@@ -229,7 +229,7 @@ const CadastroPage = () => {
             <SolarPanelSVG className="absolute -top-8 -right-8 w-56 h-56 text-white opacity-[0.04] rotate-12 animate-[float_8s_ease-in-out_infinite]" />
             <SolarPanelSVG className="absolute -bottom-12 -left-12 w-72 h-72 text-white opacity-[0.03] -rotate-12 animate-[float_10s_ease-in-out_infinite_1s]" />
             <SolarPanelSVG className="absolute top-20 -left-6 w-36 h-36 text-white opacity-[0.03] rotate-45 animate-[float_12s_ease-in-out_infinite_2s]" />
-            <SunRaysSVG className="absolute -top-16 left-1/2 -translate-x-1/2 w-[600px] h-[600px] text-emerald-400 opacity-[0.08]" />
+            <SunRaysSVG className="absolute -top-16 left-1/2 -translate-x-1/2 w-[600px] h-[600px] text-primary opacity-[0.08]" />
             
             {/* Glow orbs */}
             <div className="absolute top-20 right-[10%] w-80 h-80 rounded-full opacity-20"
@@ -243,12 +243,12 @@ const CadastroPage = () => {
           <div className="container mx-auto px-4 py-16 md:py-24 relative z-10">
             {/* Badge */}
             <div className="flex justify-center mb-6">
-              <div className="inline-flex items-center gap-2 bg-emerald-500/20 backdrop-blur-md px-5 py-2.5 rounded-full border border-emerald-400/30">
+              <div className="inline-flex items-center gap-2 bg-primary/20 backdrop-blur-md px-5 py-2.5 rounded-full border border-primary/30">
                 <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
                 </span>
-                <span className="text-emerald-100 text-sm font-semibold tracking-wide">ECONOMIA GARANTIDA</span>
+                <span className="text-primary text-sm font-semibold tracking-wide">ECONOMIA GARANTIDA</span>
               </div>
             </div>
 
@@ -282,7 +282,7 @@ const CadastroPage = () => {
                 }}
               >
                 {/* Glow border */}
-                <div className="absolute -inset-[2px] rounded-3xl bg-gradient-to-br from-emerald-400/40 via-transparent to-yellow-400/30 -z-10 blur-sm" />
+                <div className="absolute -inset-[2px] rounded-3xl bg-gradient-to-br from-primary/40 via-transparent to-warning/30 -z-10 blur-sm" />
 
                 <div className="flex flex-col items-center">
                   <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-1 font-heading">
@@ -293,7 +293,7 @@ const CadastroPage = () => {
                   </p>
 
                   {/* QR Code */}
-                  <div className="relative bg-white p-3 rounded-2xl shadow-inner mb-5 border-4 border-emerald-100">
+                  <div className="relative bg-white p-3 rounded-2xl shadow-inner mb-5 border-4 border-primary/30">
                     <QRCodeSVG
                       value={whatsappBotUrl}
                       size={typeof window !== 'undefined' && window.innerWidth < 768 ? 200 : 240}
@@ -360,8 +360,8 @@ const CadastroPage = () => {
                 { icon: CheckCircle2, num: "3", title: "Pronto!", desc: "Cadastro em 3 minutos" },
               ].map((step) => (
                 <div key={step.num} className="flex flex-col items-center text-center bg-white/5 backdrop-blur-sm rounded-2xl p-5 border border-white/10">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mb-3 border border-emerald-400/30">
-                    <step.icon className="w-6 h-6 text-emerald-400" />
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mb-3 border border-primary/30">
+                    <step.icon className="w-6 h-6 text-primary" />
                   </div>
                   <h3 className="text-white font-bold text-sm mb-1">{step.title}</h3>
                   <p className="text-white/60 text-xs">{step.desc}</p>
@@ -465,7 +465,7 @@ const CadastroPage = () => {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                className="inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-8 rounded-xl transition-colors shadow-lg"
+                className="inline-flex items-center justify-center gap-2 bg-primary/100 hover:bg-primary text-white font-bold py-4 px-8 rounded-xl transition-colors shadow-lg"
               >
                 <Camera className="w-5 h-5" />
                 Voltar ao QR Code

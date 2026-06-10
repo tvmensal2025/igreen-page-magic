@@ -35,7 +35,7 @@ export function AchievementsRail({ progress }: { progress: GameProgress }) {
       {/* Progress line */}
       <div className="relative h-1 rounded-full bg-secondary mb-3 overflow-hidden">
         <div
-          className="absolute inset-y-0 left-0 bg-gradient-to-r from-primary to-amber-400 rounded-full transition-all duration-700 exec-bar-active"
+          className="absolute inset-y-0 left-0 bg-gradient-to-r from-primary to-warning rounded-full transition-all duration-700 exec-bar-active"
           style={{ width: `${Math.round((unlockedCount / milestones.length) * 100)}%` }}
         />
       </div>
@@ -47,18 +47,18 @@ export function AchievementsRail({ progress }: { progress: GameProgress }) {
             title={`${m.label} — ${m.hint}`}
             className={`relative aspect-square rounded-lg border flex flex-col items-center justify-center p-1.5 transition-all ${
               m.unlocked
-                ? "border-amber-400/40 bg-gradient-to-br from-amber-400/10 to-amber-500/3 shadow-[0_0_10px_hsl(45_85%_52%/0.15)] animate-exec-card"
+                ? "border-warning/40 bg-gradient-to-br from-warning/10 to-warning/3 shadow-[0_0_10px_hsl(45_85%_52%/0.15)] animate-exec-card"
                 : "border-border/40 bg-secondary/30 opacity-50"
             }`}
             style={m.unlocked ? { animationDelay: `${i * 0.05}s` } : undefined}
           >
             {m.unlocked ? (
-              <CheckCircle2 className="w-5 h-5 text-amber-400 mb-0.5" />
+              <CheckCircle2 className="w-5 h-5 text-warning mb-0.5" />
             ) : (
               <Lock className="w-4 h-4 text-muted-foreground/40 mb-0.5" />
             )}
             <span className={`text-[8px] font-semibold text-center leading-tight ${
-              m.unlocked ? "text-amber-500/90" : "text-muted-foreground/50"
+              m.unlocked ? "text-warning/90" : "text-muted-foreground/50"
             }`}>
               {m.label}
             </span>

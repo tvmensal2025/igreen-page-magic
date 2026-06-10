@@ -50,9 +50,9 @@ function getRiskLevel(totalContacts: number, intervalMinutes: number, dailySent:
 }
 
 const RISK_CONFIG: Record<RiskLevel, { label: string; color: string; bg: string; border: string; icon: typeof ShieldCheck; emoji: string }> = {
-  safe: { label: "Seguro", color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", icon: ShieldCheck, emoji: "🟢" },
-  moderate: { label: "Moderado", color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/20", icon: AlertTriangle, emoji: "🟡" },
-  risky: { label: "Arriscado", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/20", icon: ShieldAlert, emoji: "🔴" },
+  safe: { label: "Seguro", color: "text-primary", bg: "bg-primary/10", border: "border-primary/20", icon: ShieldCheck, emoji: "🟢" },
+  moderate: { label: "Moderado", color: "text-warning", bg: "bg-warning/10", border: "border-warning/20", icon: AlertTriangle, emoji: "🟡" },
+  risky: { label: "Arriscado", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20", icon: ShieldAlert, emoji: "🔴" },
 };
 
 export function BlockConfigurator({ config, onConfigChange, totalContacts, disabled, dailySentCount = 0 }: BlockConfiguratorProps) {
@@ -132,17 +132,17 @@ export function BlockConfigurator({ config, onConfigChange, totalContacts, disab
             {riskCfg.emoji} Nível de risco: {riskCfg.label}
           </div>
           {risk === "risky" && (
-            <p className="text-[11px] text-red-300/80">
+            <p className="text-[11px] text-destructive/80">
               ⚠️ Alto risco de bloqueio. Recomendamos no máximo {DAILY_SAFE_LIMIT} envios/dia com intervalo ≥10min.
             </p>
           )}
           {risk === "moderate" && (
-            <p className="text-[11px] text-yellow-300/80">
+            <p className="text-[11px] text-warning/80">
               Atenção: aumente o intervalo entre blocos para maior segurança.
             </p>
           )}
           {risk === "safe" && (
-            <p className="text-[11px] text-green-300/80">
+            <p className="text-[11px] text-primary/80">
               Configuração segura. Bom volume com intervalos adequados.
             </p>
           )}

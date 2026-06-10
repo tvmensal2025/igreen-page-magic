@@ -101,7 +101,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <ChartCard title="Gasto x Leads por dia" subtitle="Investimento em ads vs leads WhatsApp gerados">
+      <ChartCard title="Gasto x Clientes interessados por dia" subtitle="Investimento em ads vs clientes interessados WhatsApp gerados">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dailyChart} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
@@ -113,17 +113,17 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
               formatter={(value: number, name: string) =>
                 name === "gasto"
                   ? [value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), "Gasto"]
-                  : [value, "Leads"]
+                  : [value, "Clientes interessados"]
               }
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Line yAxisId="left" type="monotone" dataKey="gasto" stroke="hsl(142 71% 45%)" strokeWidth={2} dot={false} name="Gasto (R$)" />
-            <Line yAxisId="right" type="monotone" dataKey="leads" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Leads" />
+            <Line yAxisId="right" type="monotone" dataKey="leads" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Clientes interessados" />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="CPL diário" subtitle="Custo por lead WhatsApp ao longo do tempo">
+      <ChartCard title="CPL diário" subtitle="Custo por cliente interessado WhatsApp ao longo do tempo">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={dailyChart} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
             <defs>
@@ -148,7 +148,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
       </ChartCard>
 
       {showByConsultant && (
-        <ChartCard title="Leads por consultor" subtitle="Distribuição entre contas gerenciadas">
+        <ChartCard title="Clientes interessados por consultor" subtitle="Distribuição entre contas gerenciadas">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={byConsultant} layout="vertical" margin={{ top: 5, right: 16, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
@@ -171,13 +171,13 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
       )}
 
       <ChartCard
-        title="Leads por estágio do CRM"
-        subtitle="Onde estão os leads gerados no período"
+        title="Clientes interessados por estágio do funil"
+        subtitle="Onde estão os clientes interessados gerados no período"
         className={showByConsultant ? "" : "lg:col-span-2"}
       >
         {(byStage?.length ?? 0) === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-            Sem leads no período.
+            Sem clientes interessados no período.
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">

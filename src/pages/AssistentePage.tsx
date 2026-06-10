@@ -200,20 +200,20 @@ export default function AssistentePage() {
   return (
     <div className="h-[100dvh] bg-gradient-to-b from-[#060a07] via-[#0a1210] to-[#060a07] flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="shrink-0 border-b border-emerald-500/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-4 py-3 flex items-center gap-3">
+      <header className="shrink-0 border-b border-primary/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-4 py-3 flex items-center gap-3">
         <div className="relative">
           <img
             src={igreenLogo}
             alt="iGreen Energy"
-            className="h-10 w-10 object-contain rounded-xl bg-emerald-500/10 p-1 ring-1 ring-emerald-500/20"
+            className="h-10 w-10 object-contain rounded-xl bg-primary/10 p-1 ring-1 ring-primary/20"
           />
-          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0a1210] animate-pulse" />
+          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-primary border-2 border-[#0a1210] animate-pulse" />
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-white font-bold text-sm leading-tight tracking-tight">
             Assistente iGreen
           </h1>
-          <span className="text-emerald-400/60 text-[11px] font-medium">
+          <span className="text-primary/60 text-[11px] font-medium">
             Gemini 2.5 Flash · Online
           </span>
         </div>
@@ -244,11 +244,11 @@ export default function AssistentePage() {
                 <img
                   src={igreenLogo}
                   alt=""
-                  className="h-8 w-8 rounded-xl object-contain shrink-0 bg-emerald-500/10 p-1 ring-1 ring-emerald-500/15"
+                  className="h-8 w-8 rounded-xl object-contain shrink-0 bg-primary/10 p-1 ring-1 ring-primary/15"
                 />
               ) : (
-                <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 flex items-center justify-center shrink-0 ring-1 ring-emerald-500/15">
-                  <User className="h-4 w-4 text-emerald-400/60" />
+                <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center shrink-0 ring-1 ring-primary/15">
+                  <User className="h-4 w-4 text-primary/60" />
                 </div>
               )}
 
@@ -257,7 +257,7 @@ export default function AssistentePage() {
                 <div
                   className={`rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed ${
                     msg.role === "user"
-                      ? "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-br-md shadow-lg shadow-emerald-500/15"
+                      ? "bg-gradient-to-br from-primary to-primary text-white rounded-br-md shadow-lg shadow-emerald-500/15"
                       : "bg-white/[0.04] text-white/90 rounded-bl-md border border-white/[0.06] backdrop-blur-sm"
                   }`}
                 >
@@ -265,7 +265,7 @@ export default function AssistentePage() {
                     <ReactMarkdown
                       components={{
                         a: ({ href, children }) => (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline underline-offset-2 decoration-emerald-400/30 hover:decoration-emerald-400">
+                          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 decoration-primary/30 hover:decoration-primary">
                             {children}
                           </a>
                         ),
@@ -290,9 +290,9 @@ export default function AssistentePage() {
                           }
                         }}
                         className="px-3.5 py-2 rounded-xl text-[12px] font-semibold
-                          bg-gradient-to-r from-emerald-500/15 to-emerald-600/10
-                          border border-emerald-500/25 hover:border-emerald-500/50
-                          text-emerald-400 hover:text-emerald-300
+                          bg-gradient-to-r from-primary/15 to-primary/10
+                          border border-primary/25 hover:border-primary/50
+                          text-primary hover:text-primary
                           transition-all duration-200 active:scale-[0.97]
                           shadow-sm shadow-emerald-500/5"
                       >
@@ -329,14 +329,14 @@ export default function AssistentePage() {
               <img
                 src={igreenLogo}
                 alt=""
-                className="h-8 w-8 rounded-xl object-contain shrink-0 bg-emerald-500/10 p-1 ring-1 ring-emerald-500/15"
+                className="h-8 w-8 rounded-xl object-contain shrink-0 bg-primary/10 p-1 ring-1 ring-primary/15"
               />
               <div className="bg-white/[0.04] rounded-2xl rounded-bl-md px-4 py-3 border border-white/[0.06]">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-bounce" style={{ animationDelay: "300ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
                   <span className="text-[11px] text-white/30">Pensando...</span>
                 </div>
@@ -354,12 +354,12 @@ export default function AssistentePage() {
                     key={i}
                     onClick={() => sendMessage(s.text)}
                     className="text-left text-[12px] px-3 py-3 rounded-xl flex items-start gap-2.5
-                      bg-white/[0.03] hover:bg-emerald-500/10
-                      border border-white/[0.05] hover:border-emerald-500/20
+                      bg-white/[0.03] hover:bg-primary/10
+                      border border-white/[0.05] hover:border-primary/20
                       text-white/50 hover:text-white/85
                       transition-all duration-200 active:scale-[0.97] group"
                   >
-                    <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0 text-emerald-500/40 group-hover:text-emerald-400 transition-colors" />
+                    <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary/40 group-hover:text-primary transition-colors" />
                     <span>{s.text}</span>
                   </button>
                 );
@@ -370,7 +370,7 @@ export default function AssistentePage() {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-emerald-500/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-3 py-3 safe-area-pb">
+      <div className="shrink-0 border-t border-primary/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-3 py-3 safe-area-pb">
         <div className="max-w-2xl mx-auto flex gap-2">
           <input
             ref={inputRef}
@@ -380,11 +380,11 @@ export default function AssistentePage() {
             placeholder="Pergunte sobre a iGreen..."
             disabled={loading}
             className="flex-1 h-12 px-5 text-sm bg-white/[0.04] border border-white/[0.08] rounded-2xl
-              focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/30
+              focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30
               text-white placeholder:text-white/25 disabled:opacity-40 transition-all"
           />
           <Button
-            className="h-12 w-12 p-0 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-30 disabled:shadow-none"
+            className="h-12 w-12 p-0 rounded-2xl bg-gradient-to-br from-primary to-primary hover:from-primary hover:to-primary text-white shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-30 disabled:shadow-none"
             onClick={() => sendMessage(input)}
             disabled={!input.trim() || loading}
           >

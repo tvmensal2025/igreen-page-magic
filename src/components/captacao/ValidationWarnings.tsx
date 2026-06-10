@@ -18,10 +18,10 @@ interface Props {
 export function ValidationWarnings({ validation, onApplySuggestion }: Props) {
   if (!validation || validation.invalid.length === 0) return null;
   return (
-    <div className="mx-2 mb-1.5 rounded-md border border-amber-500/50 px-2 py-1.5 text-[11px] space-y-1 text-green-900 bg-red-200">
+    <div className="mx-2 mb-1.5 rounded-md border border-warning/50 px-2 py-1.5 text-[11px] space-y-1 text-primary bg-destructive/10">
       {validation.invalid.map((i, idx) => (
         <div key={idx} className="flex items-start gap-1.5">
-          <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0 text-amber-300" />
+          <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0 text-warning" />
           <div className="flex-1 leading-snug">
             <strong className="block">{i.label}</strong>
             <span className="opacity-90">{i.reason}</span>
@@ -30,7 +30,7 @@ export function ValidationWarnings({ validation, onApplySuggestion }: Props) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-6 px-2 text-[10px] gap-1 border-amber-400/60 bg-amber-400/10 hover:bg-amber-400/20"
+                  className="h-6 px-2 text-[10px] gap-1 border-warning/60 bg-warning/10 hover:bg-warning/20"
                   onClick={() => onApplySuggestion(
                     i.field === "consumo_vs_valor" ? "media_consumo" : String(i.field),
                     i.suggestion,

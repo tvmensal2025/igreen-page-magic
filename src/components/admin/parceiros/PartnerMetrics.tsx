@@ -13,12 +13,12 @@ export function PartnerMetrics({ metrics }: PartnerMetricsProps) {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Leads por Parceiro
+            Clientes interessados por Parceiro
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Nenhum lead atribuído a parceiros ainda.
+            Nenhum cliente interessado atribuído a parceiros ainda.
           </p>
         </CardContent>
       </Card>
@@ -30,7 +30,7 @@ export function PartnerMetrics({ metrics }: PartnerMetricsProps) {
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <Users className="h-4 w-4" />
-          Leads por Parceiro
+          Clientes interessados por Parceiro
         </CardTitle>
       </CardHeader>
       <CardContent>

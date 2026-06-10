@@ -431,8 +431,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
     <div
       className={
         expanded
-          ? "fixed inset-2 sm:inset-4 z-[60] overflow-hidden rounded-3xl border border-emerald-900/20 bg-[#f5f0e0] shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
-          : "relative overflow-hidden rounded-3xl border border-emerald-900/15 bg-[#f5f0e0] shadow-lg"
+          ? "fixed inset-2 sm:inset-4 z-[60] overflow-hidden rounded-3xl border border-primary/20 bg-[#f5f0e0] shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+          : "relative overflow-hidden rounded-3xl border border-primary/15 bg-[#f5f0e0] shadow-lg"
       }
       style={{ fontFamily: "'Figtree', system-ui, sans-serif" }}
     >
@@ -448,13 +448,13 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                 <h3 className="text-lg sm:text-xl font-bold tracking-tight" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
                   <span className="text-[#c9a84c]">Disparo</span> PRO
                 </h3>
-                <p className="text-[11px] text-emerald-100/70 hidden sm:block">Mensagens em massa com mídia, agendamento e anti-bloqueio</p>
+                <p className="text-[11px] text-primary/70 hidden sm:block">Mensagens em massa com mídia, agendamento e anti-bloqueio</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               {(running || done) && (
                 <div className="text-right pr-2 border-r border-white/15 mr-1">
-                  <p className="text-[10px] text-emerald-100/60 uppercase tracking-wide">Progresso</p>
+                  <p className="text-[10px] text-primary/60 uppercase tracking-wide">Progresso</p>
                   <p className="text-sm font-bold">{stats.sent + stats.failed}/{stats.total}</p>
                 </div>
               )}
@@ -491,7 +491,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                       active
                         ? "bg-[#c9a84c] text-[#064e3b] ring-4 ring-[#c9a84c]/25"
                         : past
-                        ? "bg-emerald-500/40 text-white"
+                        ? "bg-primary/40 text-white"
                         : "bg-white/15 text-white/60"
                     }`}
                   >
@@ -527,9 +527,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                   <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Duplicados</p>
                   <p className="text-2xl font-bold text-[#a8862f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{dupCount}</p>
                 </div>
-                <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-center">
+                <div className="rounded-xl bg-destructive/10 border border-destructive/30 p-3 text-center">
                   <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Inválidos</p>
-                  <p className="text-2xl font-bold text-red-600" style={{ fontFamily: "'Outfit', sans-serif" }}>{contacts.length - validContacts.length}</p>
+                  <p className="text-2xl font-bold text-destructive" style={{ fontFamily: "'Outfit', sans-serif" }}>{contacts.length - validContacts.length}</p>
                 </div>
               </div>
 
@@ -543,10 +543,10 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                     {history.map(h => {
                       const total = h.total || 1;
                       const pct = Math.round(((h.sent + h.failed) / total) * 100);
-                      const statusColor = h.status === "done" ? "text-emerald-400"
-                        : h.status === "running" ? "text-blue-400"
-                        : h.status === "scheduled" ? "text-amber-400"
-                        : h.status === "canceled" ? "text-red-400" : "text-muted-foreground";
+                      const statusColor = h.status === "done" ? "text-primary"
+                        : h.status === "running" ? "text-info"
+                        : h.status === "scheduled" ? "text-warning"
+                        : h.status === "canceled" ? "text-destructive" : "text-muted-foreground";
                       return (
                         <div key={h.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-background/40 border border-border/30 text-xs">
                           <div className="flex-1 min-w-0">
@@ -564,7 +564,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                           {(h.status === "running" || h.status === "scheduled") && (
                             <button
                               onClick={() => handleResume(h.id)}
-                              className="text-emerald-400 hover:text-emerald-300 p-1"
+                              className="text-primary hover:text-primary p-1"
                               title="Retomar fila pendente"
                             >
                               <PlayCircle className="w-4 h-4" />
@@ -577,7 +577,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                               await deleteCampaign(h.id);
                               setHistory(prev => prev.filter(x => x.id !== h.id));
                             }}
-                            className="text-red-400 hover:text-red-300 p-1"
+                            className="text-destructive hover:text-destructive p-1"
                             title="Apagar"
                           >
                             <X className="w-3 h-3" />
@@ -646,9 +646,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
           {step === 4 && (
             <div className="space-y-4">
               {waitingSchedule && (
-                <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 p-3 text-center">
-                  <p className="text-sm font-bold text-blue-300">⏰ Aguardando horário agendado</p>
-                  <p className="text-xs text-blue-300/80">Início: {new Date(waitingSchedule).toLocaleString("pt-BR")}</p>
+                <div className="rounded-xl bg-info/10 border border-info/30 p-3 text-center">
+                  <p className="text-sm font-bold text-info">⏰ Aguardando horário agendado</p>
+                  <p className="text-xs text-info/80">Início: {new Date(waitingSchedule).toLocaleString("pt-BR")}</p>
                 </div>
               )}
 
@@ -656,8 +656,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
               <div className="grid grid-cols-4 gap-2">
                 {[
                   { label: "Total", val: stats.total, cls: "text-foreground" },
-                  { label: "Enviadas", val: stats.sent, cls: "text-emerald-400" },
-                  { label: "Falhas", val: stats.failed, cls: "text-red-400" },
+                  { label: "Enviadas", val: stats.sent, cls: "text-primary" },
+                  { label: "Falhas", val: stats.failed, cls: "text-destructive" },
                   { label: "Fila", val: stats.queued, cls: "text-muted-foreground" },
                 ].map(s => (
                   <div key={s.label} className="rounded-lg bg-secondary/20 border border-border/40 p-2 text-center">
@@ -701,13 +701,13 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                   <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 last:border-0 text-xs">
                     <span className="w-5 flex-shrink-0">
                       {t.status === "queued" && <span className="w-2 h-2 rounded-full bg-muted-foreground/40 inline-block" />}
-                      {t.status === "sending" && <Loader2 className="w-3 h-3 animate-spin text-blue-400" />}
-                      {t.status === "sent" && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                      {t.status === "failed" && <XCircle className="w-3 h-3 text-red-400" />}
+                      {t.status === "sending" && <Loader2 className="w-3 h-3 animate-spin text-info" />}
+                      {t.status === "sent" && <CheckCircle2 className="w-3 h-3 text-primary" />}
+                      {t.status === "failed" && <XCircle className="w-3 h-3 text-destructive" />}
                     </span>
                     <span className="flex-1 truncate text-foreground">{t.name}</span>
                     <span className="text-muted-foreground font-mono">{t.phone}</span>
-                    {t.error && <span className="text-red-400 text-[10px] truncate max-w-[120px]" title={t.error}>{t.error}</span>}
+                    {t.error && <span className="text-destructive text-[10px] truncate max-w-[120px]" title={t.error}>{t.error}</span>}
                   </div>
                 ))}
                 {filteredTargets.length === 0 && (
@@ -768,9 +768,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
 
         {/* Warning low */}
         {step === 1 && deduped.length > 200 && (
-          <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-2.5 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-yellow-300">
+          <div className="rounded-lg bg-warning/10 border border-warning/30 p-2.5 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+            <p className="text-[11px] text-warning">
               Mais de 200 contatos em um envio aumenta o risco de bloqueio. Considere dividir em dias.
             </p>
           </div>

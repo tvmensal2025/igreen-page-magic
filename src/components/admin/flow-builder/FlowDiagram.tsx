@@ -2082,17 +2082,17 @@ function FlowDiagramCanvas({
             <div
               role="status"
               aria-live="polite"
-              className="flex max-w-2xl items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-50/95 p-3 shadow-md backdrop-blur dark:border-amber-400/40 dark:bg-amber-950/80"
+              className="flex max-w-2xl items-start gap-3 rounded-lg border border-warning/50 bg-warning/95 p-3 shadow-md backdrop-blur dark:border-warning/40 dark:bg-warning/80"
             >
               <AlertTriangle
-                className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400"
+                className="mt-0.5 h-5 w-5 shrink-0 text-warning dark:text-warning"
                 aria-hidden="true"
               />
-              <div className="flex-1 text-sm text-amber-900 dark:text-amber-100">
+              <div className="flex-1 text-sm text-warning dark:text-warning">
                 <p className="font-medium">
                   Fluxo grande: {steps.length} passos
                 </p>
-                <p className="mt-0.5 text-amber-800/90 dark:text-amber-200/90">
+                <p className="mt-0.5 text-warning/90 dark:text-warning/90">
                   Considere segmentar este fluxo em variantes ou subfluxos
                   para facilitar a manutenção. Todas as interações continuam
                   disponíveis.
@@ -2104,7 +2104,7 @@ function FlowDiagramCanvas({
                 size="icon"
                 onClick={dismissBanner}
                 aria-label="Dispensar aviso de fluxo grande"
-                className="h-7 w-7 shrink-0 text-amber-900 hover:bg-amber-100 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                className="h-7 w-7 shrink-0 text-warning hover:bg-warning/10 dark:text-warning dark:hover:bg-warning/50"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </Button>

@@ -190,7 +190,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
       await bump();
 
       if (res.already) {
-        toast({ title: "Lead já está em processamento no portal.", duration: 3000 });
+        toast({ title: "Cliente interessado já está em processamento no portal.", duration: 3000 });
       } else if (res.mode === "queued_offline") {
         toast({ title: "Portal com falha", description: "O erro vai aparecer no painel para reenviar.", variant: "destructive", duration: 5000 });
       } else {
@@ -335,7 +335,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold leading-tight truncate text-foreground">
-                {customerName || phoneNumber || "Lead"}
+                {customerName || phoneNumber || "Cliente interessado"}
               </p>
               {phoneNumber && <p className="text-[9px] text-muted-foreground truncate font-mono leading-tight">{phoneNumber}</p>}
             </div>
@@ -346,7 +346,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
                 className="gap-1 font-semibold shrink-0 h-6 px-2 text-[9px] rounded-full"
                 onClick={handleAskName}
                 disabled={askingName}
-                title="Lead sem nome — peça agora"
+                title="Cliente interessado sem nome — peça agora"
               >
                 {askingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
                 Nome
@@ -424,7 +424,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           )}
           <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
           {canSubmit && hasUnconfirmedOcr && !isRegistered && (
-            <p className="text-[9px] text-amber-600 dark:text-amber-300 leading-tight px-1">
+            <p className="text-[9px] text-warning dark:text-warning leading-tight px-1">
               ⚠️ {!billConfirmed && "Conta"}{!billConfirmed && !docConfirmed && " e "}{!docConfirmed && "Doc"} sem confirmação — envio liberado.
             </p>
           )}
@@ -452,7 +452,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
                 className={`flex-1 font-bold gap-1 h-8 text-[11px] rounded-full transition-all ${
                   canSubmit
                     ? (hasUnconfirmedOcr
-                        ? "bg-gradient-to-r from-amber-500 to-primary text-primary-foreground hover:shadow-md"
+                        ? "bg-gradient-to-r from-warning to-primary text-primary-foreground hover:shadow-md"
                         : "bg-gradient-to-r from-primary to-primary/85 text-primary-foreground hover:shadow-md animate-exec-energy")
                     : "bg-muted text-muted-foreground opacity-70 cursor-not-allowed hover:bg-muted"
                 }`}
@@ -560,7 +560,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
             </div>
             <div className="flex-1 min-w-0">
               <p className={`font-bold truncate ${expanded ? "text-sm" : "text-[11px] leading-tight"}`}>
-                {customerName || phoneNumber || "Lead"}
+                {customerName || phoneNumber || "Cliente interessado"}
               </p>
               {phoneNumber && expanded && <p className="text-[10px] text-muted-foreground truncate">{phoneNumber}</p>}
             </div>
@@ -571,7 +571,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
                 className={`gap-1 font-bold animate-pulse shrink-0 ${expanded ? "h-9 px-3 text-xs" : "h-7 px-2 text-[10px]"}`}
                 onClick={handleAskName}
                 disabled={askingName}
-                title="Lead sem nome — peça agora"
+                title="Cliente interessado sem nome — peça agora"
               >
                 {askingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
                 Nome
@@ -664,15 +664,15 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           )}
           <ValidationWarnings validation={validation} onApplySuggestion={applySuggestion} />
           {canSubmit && hasUnconfirmedOcr && !isRegistered && expanded && (
-            <p className="text-[10px] text-amber-300 leading-tight px-1">
+            <p className="text-[10px] text-warning leading-tight px-1">
               ⚠️ {!billConfirmed && "Conta"}{!billConfirmed && !docConfirmed && " e "}{!docConfirmed && "Doc"} sem confirmação visual — envio liberado mesmo assim.
             </p>
           )}
           {isRegistered ? (
-            <div className={`rounded-md border border-emerald-500/50 bg-gradient-to-r from-emerald-500/20 to-lime-500/15 text-center shadow-[0_0_28px_hsl(142_70%_45%/0.35)] ${expanded ? "px-3 py-2" : "px-2 py-1"}`}>
-              <p className={`font-black text-emerald-200 tracking-wide ${expanded ? "text-sm" : "text-[10px]"}`}>✅ LEAD CADASTRADO NA iGREEN</p>
+            <div className={`rounded-md border border-primary/50 bg-gradient-to-r from-primary/20 to-primary/15 text-center shadow-[0_0_28px_hsl(142_70%_45%/0.35)] ${expanded ? "px-3 py-2" : "px-2 py-1"}`}>
+              <p className={`font-black text-primary tracking-wide ${expanded ? "text-sm" : "text-[10px]"}`}>✅ CLIENTE CADASTRADO NA iGREEN</p>
               {(customer as any)?.igreen_code && (
-                <p className={`text-emerald-100 ${expanded ? "text-xs mt-0.5" : "text-[9px]"}`}>Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
+                <p className={`text-primary ${expanded ? "text-xs mt-0.5" : "text-[9px]"}`}>Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
               )}
             </div>
           ) : (
@@ -692,8 +692,8 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
                 className={`flex-1 font-bold gap-1 ${expanded ? "h-12 text-base" : "h-7 text-[10px]"} ${
                   canSubmit
                     ? (hasUnconfirmedOcr
-                        ? "bg-gradient-to-r from-amber-500 to-emerald-500 text-white hover:opacity-95 shadow-lg shadow-amber-500/30"
-                        : "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:opacity-95 animate-exec-energy shadow-lg shadow-emerald-500/30")
+                        ? "bg-gradient-to-r from-warning to-primary text-white hover:opacity-95 shadow-lg shadow-amber-500/30"
+                        : "bg-gradient-to-r from-primary to-primary text-white hover:opacity-95 animate-exec-energy shadow-lg shadow-emerald-500/30")
                     : "bg-muted text-muted-foreground opacity-60 cursor-not-allowed hover:bg-muted"
                 }`}
                 onClick={handleSubmit}
@@ -749,7 +749,7 @@ function FinalizeNoticeDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Avisar o cliente no WhatsApp?</AlertDialogTitle>
           <AlertDialogDescription>
-            O bot está desligado para este lead. Você pode cadastrar no portal sem enviar nada ao cliente, ou enviar a mensagem agora.
+            O bot está desligado para este cliente interessado. Você pode cadastrar no portal sem enviar nada ao cliente, ou enviar a mensagem agora.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="gap-2">

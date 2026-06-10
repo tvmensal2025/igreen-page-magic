@@ -102,7 +102,7 @@ export function PartnerDashboard({
             <Handshake className="h-4 w-4" />
             Parceiros ({partners.length})
             {unhealthy > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-red-500 text-[10px] font-semibold text-white flex items-center justify-center">
+              <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-destructive/100 text-[10px] font-semibold text-white flex items-center justify-center">
                 {unhealthy}
               </span>
             )}
@@ -121,15 +121,15 @@ export function PartnerDashboard({
               <Handshake className="h-5 w-5" /> Meus Parceiros
             </DialogTitle>
             <DialogDescription>
-              Clique no card para editar. O selo colorido mostra a saúde da atribuição de leads.
+              Clique no card para editar. O selo colorido mostra a saúde da atribuição de clientes interessados.
             </DialogDescription>
           </DialogHeader>
 
           {unhealthy > 0 && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs">
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <div>
-                <strong>{unhealthy}</strong> parceiro(s) precisam de atenção. Os marcados em vermelho não têm keyword nem frase de QR — então o sistema não consegue atribuir nenhum lead a eles.
+                <strong>{unhealthy}</strong> parceiro(s) precisam de atenção. Os marcados em vermelho não têm keyword nem frase de QR — então o sistema não consegue atribuir nenhum cliente interessado a eles.
               </div>
             </div>
           )}

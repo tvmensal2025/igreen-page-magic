@@ -141,7 +141,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
             }} placeholder="Seu nome" className="bg-secondary border-border" required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="license" className="text-sm text-muted-foreground">Licença (slug)</Label>
+            <Label htmlFor="license" className="text-sm text-muted-foreground">Endereço da licença</Label>
             <Input id="license" value={form.license} readOnly className="bg-secondary/50 border-border text-muted-foreground cursor-not-allowed" />
             <p className="text-xs text-muted-foreground">Gerado automaticamente a partir do nome</p>
           </div>
@@ -178,7 +178,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
                 className="bg-secondary border-border rounded-l-none"
               />
             </div>
-            <p className="text-xs text-muted-foreground">Receberá 🎉 novos leads e 🆘 pedidos de atendimento humano. Pode ser o mesmo número.</p>
+            <p className="text-xs text-muted-foreground">Receberá 🎉 novos clientes interessados e 🆘 pedidos de atendimento humano. Pode ser o mesmo número.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="igreen_id" className="text-sm text-muted-foreground">ID iGreen</Label>
@@ -262,7 +262,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
                 <span className="font-semibold text-sm text-foreground">Autoconexão (novo)</span>
               </div>
               <span className="text-xs text-muted-foreground pl-6">
-                Wizard de 5 passos com OCR de documento e conta. Cadastro via API direta — mais rápido (~3-5s).
+                Cadastro em 5 passos com leitura automática de documento e conta. Mais rápido (~3-5s).
               </span>
             </label>
           </div>
@@ -286,7 +286,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           <Bot className="w-5 h-5 text-primary" /> Sua IA
         </h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Escolha o nome da sua atendente virtual. Esse nome aparece nas conversas com seus leads.
+          Escolha o nome da sua atendente virtual. Esse nome aparece nas conversas com seus clientes interessados.
         </p>
         <div className="space-y-2 max-w-md">
           <Label htmlFor="persona_name" className="text-sm text-muted-foreground">Nome da IA</Label>

@@ -32,7 +32,7 @@ const toneIcon: Record<Tone, { Icon: typeof AlertTriangle; bg: string; fg: strin
   default: { Icon: HelpCircle, bg: "bg-primary/10", fg: "text-primary" },
   danger: { Icon: Trash2, bg: "bg-destructive/10", fg: "text-destructive" },
   success: { Icon: Sparkles, bg: "bg-primary/10", fg: "text-primary" },
-  info: { Icon: AlertTriangle, bg: "bg-amber-500/10", fg: "text-amber-500" },
+  info: { Icon: AlertTriangle, bg: "bg-warning/10", fg: "text-warning" },
 };
 
 export function ConfirmDialogProvider({ children }: { children: ReactNode }) {

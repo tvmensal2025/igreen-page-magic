@@ -114,7 +114,7 @@ export default function AIBrainPanel({ consultantId }: { consultantId: string })
               <div key={day} className="flex items-center gap-2 text-xs">
                 <span className="w-16 text-muted-foreground tabular-nums">{day.slice(5)}</span>
                 <div className="flex-1 h-4 bg-muted rounded overflow-hidden">
-                  <div className="h-full bg-emerald-500/60" style={{ width: `${(usd / maxDay) * 100}%` }} />
+                  <div className="h-full bg-primary/60" style={{ width: `${(usd / maxDay) * 100}%` }} />
                 </div>
                 <span className="w-16 text-right tabular-nums">{fmtUsd(usd)}</span>
               </div>
@@ -137,7 +137,7 @@ export default function AIBrainPanel({ consultantId }: { consultantId: string })
               const low = conf < 0.6;
               const isOpen = expanded === d.id;
               return (
-                <li key={d.id} className={`border rounded-lg text-xs ${low ? "border-amber-500/40 bg-amber-500/5" : "bg-muted/30"}`}>
+                <li key={d.id} className={`border rounded-lg text-xs ${low ? "border-warning/40 bg-warning/5" : "bg-muted/30"}`}>
                   <button
                     type="button"
                     onClick={() => setExpanded(isOpen ? null : d.id)}
@@ -147,7 +147,7 @@ export default function AIBrainPanel({ consultantId }: { consultantId: string })
                     {d.tool_called && <Badge variant="secondary" className="text-[10px]">{d.tool_called}</Badge>}
                     <span className="text-muted-foreground tabular-nums">{fmtDate(d.created_at)}</span>
                     <span className="font-mono text-[10px] text-muted-foreground">{(d.model ?? "—").replace(/^.*\//, "")}</span>
-                    <span className={`tabular-nums ${low ? "text-amber-600" : "text-emerald-600"}`}>
+                    <span className={`tabular-nums ${low ? "text-warning" : "text-primary"}`}>
                       {(conf * 100).toFixed(0)}%
                     </span>
                     {d.latency_ms != null && (
@@ -166,7 +166,7 @@ export default function AIBrainPanel({ consultantId }: { consultantId: string })
                         <div><span className="text-muted-foreground">Raciocínio:</span> {d.reasoning}</div>
                       )}
                       {d.user_input && (
-                        <div><span className="text-muted-foreground">Lead:</span> "{d.user_input}"</div>
+                        <div><span className="text-muted-foreground">Cliente interessado:</span> "{d.user_input}"</div>
                       )}
                       {(() => {
                         const outText = aiOutputText(d.ai_output);

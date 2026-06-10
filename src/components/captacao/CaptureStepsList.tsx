@@ -257,7 +257,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
                   isError
                     ? "border-destructive/60 bg-destructive/10"
                     : isCurrent
-                    ? "border-amber-400/60 bg-amber-400/10 ring-1 ring-amber-400/40 shadow-sm"
+                    ? "border-warning/60 bg-warning/10 ring-1 ring-warning/40 shadow-sm"
                     : anySent
                     ? "border-primary/25 bg-primary/[0.04]"
                     : "border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] hover:shadow-sm"
@@ -269,7 +269,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
                       anySent
                         ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-sm shadow-primary/30"
                         : isCurrent
-                        ? "bg-amber-400 text-black shadow-sm shadow-amber-400/40"
+                        ? "bg-warning text-black shadow-sm shadow-amber-400/40"
                         : "bg-muted text-muted-foreground group-hover:bg-primary/15 group-hover:text-primary"
                     }`}
                   >
@@ -284,14 +284,14 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
                     {g.title || g.step_key || `Passo ${num}`}
                   </p>
                   {isCurrent && (
-                    <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded-full bg-amber-400 text-black shrink-0">
+                    <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded-full bg-warning text-black shrink-0">
                       atual
                     </span>
                   )}
                   <div className="flex items-center gap-0.5 shrink-0 opacity-70">
-                    {media.includes("audio") && <Mic className="w-2.5 h-2.5 text-emerald-500" />}
-                    {media.includes("image") && <ImageIcon className="w-2.5 h-2.5 text-amber-500" />}
-                    {media.includes("video") && <Video className="w-2.5 h-2.5 text-cyan-500" />}
+                    {media.includes("audio") && <Mic className="w-2.5 h-2.5 text-primary" />}
+                    {media.includes("image") && <ImageIcon className="w-2.5 h-2.5 text-warning" />}
+                    {media.includes("video") && <Video className="w-2.5 h-2.5 text-info" />}
                   </div>
                 </div>
                 <button

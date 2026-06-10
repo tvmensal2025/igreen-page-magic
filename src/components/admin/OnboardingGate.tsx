@@ -85,7 +85,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="ob-phone" className="text-sm text-muted-foreground">WhatsApp principal (recebe os leads dos anúncios)</Label>
+              <Label htmlFor="ob-phone" className="text-sm text-muted-foreground">WhatsApp principal (recebe os clientes interessados dos anúncios)</Label>
               <div className="flex">
                 <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground text-sm">+55</span>
                 <Input
@@ -103,7 +103,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="ob-notif" className="text-sm text-muted-foreground">WhatsApp para alertas (novos leads + atendimento)</Label>
+              <Label htmlFor="ob-notif" className="text-sm text-muted-foreground">WhatsApp para alertas (novos clientes interessados + atendimento)</Label>
               <div className="flex">
                 <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground text-sm">+55</span>
                 <Input

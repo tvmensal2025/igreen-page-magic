@@ -93,7 +93,7 @@ export function FaqComparativoPanel() {
         <div className="flex items-center gap-2">
           <GitCompareArrows className="w-5 h-5 text-primary" />
           <h3 className="text-base font-semibold">
-            FAQ Comparativo · Evolution × Whapi
+            Comparativo de atendimento · Conexão principal × alternativa
           </h3>
           <Badge variant="outline" className="text-[10px]">
             Fase 1 · auditoria
@@ -125,8 +125,8 @@ export function FaqComparativoPanel() {
       ) : (
         <>
           <div className="grid md:grid-cols-2 gap-4">
-            <ChannelCard title="Evolution" stats={evo} accent="emerald" />
-            <ChannelCard title="Whapi (superadmin)" stats={whp} accent="blue" />
+            <ChannelCard title="Conexão principal" stats={evo} accent="emerald" />
+            <ChannelCard title="Conexão alternativa" stats={whp} accent="blue" />
           </div>
 
           {legacy > 0 && (
@@ -152,7 +152,7 @@ function ChannelCard({
   accent: "emerald" | "blue";
 }) {
   const s = stats || { total: 0, avgConf: 0, lowConfPct: 0, handoffPct: 0, topLow: [] };
-  const tone = accent === "emerald" ? "text-emerald-400" : "text-blue-400";
+  const tone = accent === "emerald" ? "text-primary" : "text-info";
   return (
     <div className="border border-border/40 rounded-lg p-4 bg-secondary/10">
       <div className="flex items-center justify-between mb-3">
@@ -183,9 +183,9 @@ function ChannelCard({
             {s.topLow.map((t, i) => (
               <li
                 key={i}
-                className="flex items-start gap-2 border-l-2 border-amber-500/40 pl-2"
+                className="flex items-start gap-2 border-l-2 border-warning/40 pl-2"
               >
-                <span className="font-mono text-amber-400 shrink-0">
+                <span className="font-mono text-warning shrink-0">
                   {t.conf.toFixed(2)}
                 </span>
                 <span className="truncate" title={t.input}>
@@ -213,7 +213,7 @@ function Mini({
     <div
       className={`p-2 rounded border ${
         warn
-          ? "border-amber-500/40 bg-amber-500/10"
+          ? "border-warning/40 bg-warning/10"
           : "border-border/40 bg-background/40"
       }`}
     >
@@ -244,16 +244,16 @@ function Verdict({
   const evoBetter = evo.avgConf >= whp.avgConf;
   if (diff < 0.05) {
     return (
-      <p className="text-xs text-emerald-400">
-        ✅ Qualidade equivalente entre os canais. Não vale gastar tokens
-        extras com o orchestrator no Evolution agora.
+      <p className="text-xs text-primary">
+        ✅ Qualidade equivalente entre os canais. Não vale o esforço
+        extra de processamento na conexão principal agora.
       </p>
     );
   }
   return (
-    <p className="text-xs text-amber-400">
+    <p className="text-xs text-warning">
       ⚠️ Diferença de {(diff * 100).toFixed(0)} pp entre os canais.{" "}
-      {evoBetter ? "Evolution" : "Whapi"} está melhor. Vale investigar antes
+      {evoBetter ? "Conexão principal" : "Conexão alternativa"} está melhor. Vale investigar antes
       de equiparar.
     </p>
   );

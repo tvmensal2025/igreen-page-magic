@@ -27,11 +27,11 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
   }
 
   const cards = [
-    { icon: DollarSign, label: "Gasto Ads", value: fmtBRL(data?.spendCents ?? 0), tone: "text-emerald-400" },
-    { icon: Users, label: "Leads de anúncio", value: fmtNum(data?.leads ?? 0), tone: "text-primary" },
-    { icon: Target, label: "CPL", value: data?.cplCents != null ? fmtBRL(data.cplCents) : "—", tone: "text-amber-400" },
-    { icon: Eye, label: "Impressões", value: fmtNum(data?.impressions ?? 0), tone: "text-sky-400" },
-    { icon: MousePointerClick, label: "Cliques", value: fmtNum(data?.clicks ?? 0), tone: "text-fuchsia-400" },
+    { icon: DollarSign, label: "Gasto Ads", value: fmtBRL(data?.spendCents ?? 0), tone: "text-primary" },
+    { icon: Users, label: "Clientes interessados de anúncio", value: fmtNum(data?.leads ?? 0), tone: "text-primary" },
+    { icon: Target, label: "CPL", value: data?.cplCents != null ? fmtBRL(data.cplCents) : "—", tone: "text-warning" },
+    { icon: Eye, label: "Impressões", value: fmtNum(data?.impressions ?? 0), tone: "text-info" },
+    { icon: MousePointerClick, label: "Cliques", value: fmtNum(data?.clicks ?? 0), tone: "text-primary" },
     { icon: TrendingUp, label: "CTR", value: data?.ctr != null ? `${(data.ctr * 100).toFixed(2)}%` : "—", tone: "text-primary" },
   ];
 

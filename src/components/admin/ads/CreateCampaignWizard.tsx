@@ -771,7 +771,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
         ) : (
           <div className="space-y-5">
             {visibleIssues.length > 0 && (
-              <div className="text-xs rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-200 p-3">
+              <div className="text-xs rounded-lg border border-warning/30 bg-warning/10 text-warning p-3">
                 ⚠️ {visibleIssues.join(" ")}
               </div>
             )}
@@ -808,12 +808,12 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
 
                   <Label className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-primary" /> Distribuidoras alvo (multi-seleção)</Label>
-                  <p className="text-xs text-muted-foreground mb-2">Clique pra carregar/remover as cidades da distribuidora. Pode escolher várias — quanto mais cidades, mais barato fica o lead.</p>
+                  <p className="text-xs text-muted-foreground mb-2">Clique pra carregar/remover as cidades da distribuidora. Pode escolher várias — quanto mais cidades, mais barato fica o cliente interessado.</p>
 
                   <div className="space-y-2">
                     {/* TIER ALTO */}
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] uppercase tracking-wider font-bold text-green-900">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-primary">
                         🟢 Bônus até {bonusTiers.alto.percent}%
                       </div>
                     </div>
@@ -834,7 +834,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
                     {/* TIER MEDIO */}
                     <div className="flex items-center justify-between gap-2 pt-1">
-                      <div className="text-[10px] uppercase tracking-wider font-bold text-amber-900">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-warning">
                         🟡 Bônus até {bonusTiers.medio.percent}%
                       </div>
                     </div>
@@ -920,8 +920,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         <span className="text-muted-foreground">Alcance estimado:</span>
                         <strong className="text-foreground">{liveReach.lower.toLocaleString("pt-BR")}–{liveReach.upper.toLocaleString("pt-BR")}</strong>
                         <span className="text-muted-foreground">pessoas</span>
-                        {liveReach.lower < 50000 && <span className="ml-2 text-red-500">⚠ pequeno — adicione mais cidades</span>}
-                        {liveReach.upper > 5_000_000 && <span className="ml-2 text-red-500">⚠ muito amplo — divida em 2 campanhas</span>}
+                        {liveReach.lower < 50000 && <span className="ml-2 text-destructive">⚠ pequeno — adicione mais cidades</span>}
+                        {liveReach.upper > 5_000_000 && <span className="ml-2 text-destructive">⚠ muito amplo — divida em 2 campanhas</span>}
                       </>
                     ) : (
                       <span className="text-muted-foreground">Calculando alcance...</span>
@@ -931,8 +931,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
                 {/* Auto-split: quando muito amplo, ajuda a dividir em 2 campanhas */}
                 {liveReach && liveReach.upper > 5_000_000 && cities.length > 20 && (
-                  <div className="text-xs rounded-lg border border-amber-500/40 p-3 space-y-2 bg-red-400">
-                    <div className="font-bold text-green-900">Está muito amplo — o algoritmo do Facebook gasta mal acima de 5M.</div>
+                  <div className="text-xs rounded-lg border border-warning/40 p-3 space-y-2 bg-destructive">
+                    <div className="font-bold text-primary">Está muito amplo — o algoritmo do Facebook gasta mal acima de 5M.</div>
                     <div className="text-gray-900">Recomendo dividir em 2 campanhas: mantém metade aqui e cria outra depois com a outra metade.</div>
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" size="sm" variant="outline" className="h-7 text-[11px]"
@@ -976,7 +976,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                 <div className="border-t border-border/50 pt-3" />
 
                 <Label>Cidades onde quer anunciar ({cities.length}/200)</Label>
-                <p className="text-[11px] text-muted-foreground -mt-1">Quanto mais cidades, mais barato fica o lead (mais inventário pro algoritmo otimizar).</p>
+                <p className="text-[11px] text-muted-foreground -mt-1">Quanto mais cidades, mais barato fica o cliente interessado (mais inventário pro algoritmo otimizar).</p>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input className="pl-9" placeholder="Ex: São Paulo, Belo Horizonte..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -1022,8 +1022,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                       const names = offenders.slice(0, 5).map((c) => c.name).join(", ");
                       const extra = offenders.length > 5 ? ` +${offenders.length - 5}` : "";
                       return (
-                        <div className="text-xs rounded-lg border border-amber-500/40 p-3 flex items-start justify-between gap-2 bg-red-400">
-                          <div className="text-green-900">
+                        <div className="text-xs rounded-lg border border-warning/40 p-3 flex items-start justify-between gap-2 bg-destructive">
+                          <div className="text-primary">
                             <div className="font-bold">⚠ {offenders.length} cidade(s) fora da área da distribuidora</div>
                             <div className="text-gray-900 mt-0.5">
                               {names}{extra} — fora de {Array.from(allowedUFs).join("/")}. Lead daqui não pode ser ativado pela iGreen.
@@ -1158,12 +1158,12 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                             </div>
                           )}
                           {!videoCaptionsLoading && videoCaptionsSrt && (
-                            <div className="text-emerald-600 dark:text-emerald-400">
+                            <div className="text-primary dark:text-primary">
                               ✓ Legenda pronta — vai junto com o vídeo no Reels/Feed/Stories.
                             </div>
                           )}
                           {!videoCaptionsLoading && videoCaptionsError && (
-                            <div className="text-amber-600 dark:text-amber-400">
+                            <div className="text-warning dark:text-warning">
                               ⚠ {videoCaptionsError} (vídeo sobe sem legenda)
                             </div>
                           )}
@@ -1248,7 +1248,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         {adFiles.map((a, i) => {
                           const ok = isFileValid(a);
                           return (
-                            <div key={i} className={`relative group rounded-lg overflow-hidden border-2 ${ok ? "border-primary/50" : "border-amber-500/60"} bg-muted`}>
+                            <div key={i} className={`relative group rounded-lg overflow-hidden border-2 ${ok ? "border-primary/50" : "border-warning/60"} bg-muted`}>
                               <div className={FORMAT_SPEC[format].ratio === 0.5625 ? "aspect-[9/16]" : FORMAT_SPEC[format].ratio === 0.8 ? "aspect-[4/5]" : "aspect-square"}>
                                 <img src={a.url} alt="" className="w-full h-full object-cover" />
                               </div>
@@ -1256,9 +1256,9 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                                 <span>{a.w}×{a.h}</span>
                                 {ok ? <span className="text-primary">✓</span> : (
                                   <div className="flex gap-1.5">
-                                    <button type="button" onClick={() => handleCrop(i)} className="text-amber-300 underline">Cortar</button>
+                                    <button type="button" onClick={() => handleCrop(i)} className="text-warning underline">Cortar</button>
                                     <button type="button" onClick={() => handleAiResize(i)} disabled={aiResizingIdx === i}
-                                      className="text-emerald-300 underline flex items-center gap-0.5">
+                                      className="text-primary underline flex items-center gap-0.5">
                                       {aiResizingIdx === i ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />}
                                       IA
                                     </button>
@@ -1288,7 +1288,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                   </TabsContent>
                 </Tabs>
                 {pickedLibrary.length > 0 && (
-                  <div className="text-[11px] text-emerald-400">
+                  <div className="text-[11px] text-primary">
                     📁 {pickedLibrary.length} imagem(ns) da biblioteca selecionada(s) — sem novo upload.
                   </div>
                 )}
@@ -1317,7 +1317,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                               <span className="truncate">{h.text}</span>
                               <span className="flex items-center gap-1 shrink-0">
                                 <span className="text-[9px] uppercase text-muted-foreground">{h.framework}</span>
-                                <span className={`text-[10px] font-bold ${h.score >= 85 ? "text-emerald-400" : h.score >= 70 ? "text-amber-400" : "text-muted-foreground"}`}>{h.score}</span>
+                                <span className={`text-[10px] font-bold ${h.score >= 85 ? "text-primary" : h.score >= 70 ? "text-warning" : "text-muted-foreground"}`}>{h.score}</span>
                               </span>
                             </button>
                           ))}
@@ -1333,7 +1333,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                             <button key={i} onClick={() => setPrimaryText(t.text)} className={`text-xs text-left px-2.5 py-1.5 rounded-lg border transition ${primaryText === t.text ? "border-primary bg-primary/10" : "border-border bg-secondary hover:bg-primary/10"}`}>
                               <div className="flex items-center justify-between gap-2 mb-0.5">
                                 <span className="text-[9px] uppercase text-muted-foreground">{t.framework}</span>
-                                <span className={`text-[10px] font-bold ${t.score >= 85 ? "text-emerald-400" : t.score >= 70 ? "text-amber-400" : "text-muted-foreground"}`}>{t.score}/100</span>
+                                <span className={`text-[10px] font-bold ${t.score >= 85 ? "text-primary" : t.score >= 70 ? "text-warning" : "text-muted-foreground"}`}>{t.score}/100</span>
                               </div>
                               <div className="line-clamp-2">{t.text}</div>
                             </button>
@@ -1345,10 +1345,10 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                       <Label className="flex justify-between"><span>Descrição curta</span><span className={`text-[10px] ${description.length > COPY_LIMITS.description ? "text-destructive" : "text-muted-foreground"}`}>{description.length}/{COPY_LIMITS.description}</span></Label>
                       <Input maxLength={COPY_LIMITS.description} value={description} onChange={e => setDescription(e.target.value)} placeholder="Sem obra. Sem taxa." />
                     </div>
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2">
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
                       <Label className="flex justify-between items-center">
                         <span className="flex items-center gap-1.5">
-                          <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                          <Smartphone className="w-3.5 h-3.5 text-primary" />
                           Primeira mensagem no WhatsApp
                         </span>
                         <span className={`text-[10px] ${initialMessage.length > INITIAL_MSG_LIMIT ? "text-destructive" : "text-muted-foreground"}`}>
@@ -1356,7 +1356,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         </span>
                       </Label>
                       <p className="text-[11px] text-muted-foreground leading-snug">
-                        É o que vai aparecer escrito quando o lead clicar no anúncio. Escreva curto, em 1ª pessoa, como se fosse o cliente falando.
+                        É o que vai aparecer escrito quando o cliente interessado clicar no anúncio. Escreva curto, em 1ª pessoa, como se fosse o cliente falando.
                       </p>
                       <Textarea
                         rows={2}
@@ -1367,8 +1367,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         className="bg-background/50"
                       />
                       <div className="flex items-start gap-2 mt-1">
-                        <div className="shrink-0 w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px] font-bold text-emerald-300">EU</div>
-                        <div className="bg-emerald-500 text-white text-xs px-3 py-2 rounded-2xl rounded-tl-sm max-w-[85%] shadow">
+                        <div className="shrink-0 w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">EU</div>
+                        <div className="bg-primary/100 text-white text-xs px-3 py-2 rounded-2xl rounded-tl-sm max-w-[85%] shadow">
                           {initialMessage || <span className="opacity-60 italic">sua mensagem aparece aqui</span>}
                         </div>
                       </div>
@@ -1422,8 +1422,8 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
 
                 {/* Aviso sobre a Página da plataforma — toda a rede compartilha 1 Page hoje. */}
                 {connection?.page_name && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
-                    <div className="font-semibold text-amber-700 dark:text-amber-400 mb-0.5">
+                  <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs">
+                    <div className="font-semibold text-warning dark:text-warning mb-0.5">
                       Página que vai aparecer no anúncio: <strong>{connection.page_name}</strong>
                     </div>
                     <div className="text-muted-foreground leading-snug">
@@ -1557,22 +1557,22 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                           </div>
                         </div>
                       ))}
-                      <div className="text-[11px] text-amber-400 pt-1">⚠ Audience Network e Messenger não suportam destino WhatsApp.</div>
+                      <div className="text-[11px] text-warning pt-1">⚠ Audience Network e Messenger não suportam destino WhatsApp.</div>
                     </div>
                   )}
                 </Card>
 
                 {preflightLoading && (
-                  <Card className="p-3 text-xs flex items-center gap-2 text-muted-foreground"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Validando com Facebook (token, conta, alcance)...</Card>
+                  <Card className="p-3 text-xs flex items-center gap-2 text-muted-foreground"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Validando com o Facebook (conexão, conta, alcance)...</Card>
                 )}
                 {preflight && (
-                  <Card className={`p-3 text-xs space-y-2 border ${preflight.ok ? "bg-emerald-500/10 border-emerald-500/30" : "bg-destructive/10 border-destructive/30"}`}>
-                    <div className={`font-bold flex items-center gap-2 ${preflight.ok ? "text-emerald-400" : "text-destructive"}`}>
+                  <Card className={`p-3 text-xs space-y-2 border ${preflight.ok ? "bg-primary/10 border-primary/30" : "bg-destructive/10 border-destructive/30"}`}>
+                    <div className={`font-bold flex items-center gap-2 ${preflight.ok ? "text-primary" : "text-destructive"}`}>
                       {preflight.ok ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
                       {preflight.ok ? "Pré-voo aprovado" : "Pré-voo bloqueado"}
                     </div>
                     {preflight.blockers.map((b, i) => <div key={i} className="text-destructive">• {b}</div>)}
-                    {preflight.warnings.map((w, i) => <div key={i} className="text-amber-400">⚠ {w}</div>)}
+                    {preflight.warnings.map((w, i) => <div key={i} className="text-warning">⚠ {w}</div>)}
                     {preflight.reach && (
                       <div className="text-muted-foreground border-t border-border/40 pt-2">
                         📡 Alcance estimado: <strong className="text-foreground">{preflight.reach.lower.toLocaleString("pt-BR")}–{preflight.reach.upper.toLocaleString("pt-BR")}</strong> pessoas elegíveis

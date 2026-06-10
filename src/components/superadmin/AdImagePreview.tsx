@@ -13,7 +13,7 @@ export function AdImagePreview({ url, format, size = 90 }: { url: string; format
       <img src={url} alt="" className="w-full h-full object-cover" />
       {/* safe-area overlay */}
       <div
-        className="absolute inset-x-0 border-y border-dashed border-emerald-400/70 pointer-events-none"
+        className="absolute inset-x-0 border-y border-dashed border-primary/70 pointer-events-none"
         style={{ top: r.safe.top, bottom: r.safe.bottom }}
       />
       <span className="absolute bottom-0.5 left-0.5 bg-background/90 text-[8px] px-1 rounded">{r.label}</span>

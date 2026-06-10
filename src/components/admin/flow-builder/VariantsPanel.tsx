@@ -189,7 +189,7 @@ export default function VariantsPanel() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <CardTitle>Variantes (A/B/N por fluxo)</CardTitle>
-              <p className="text-xs text-muted-foreground">Cada fluxo (A/B/C/D) pode ter N variantes. O sorteio é ponderado e a decisão fica fixa por lead (uma vez sorteado, não troca).</p>
+              <p className="text-xs text-muted-foreground">Cada fluxo (A/B/C/D) pode ter N variantes. O sorteio é ponderado e a decisão fica fixa por cliente interessado (uma vez sorteado, não troca).</p>
             </div>
             <div className="flex gap-1">
               {PERIOD_OPTIONS.map(p => (
@@ -215,7 +215,7 @@ export default function VariantsPanel() {
                   <th className="py-2 pr-2">Variante</th>
                   <th className="py-2 px-2">Peso</th>
                   <th className="py-2 px-2">Ativa</th>
-                  <th className="py-2 px-2">Leads</th>
+                  <th className="py-2 px-2">Clientes interessados</th>
                   <th className="py-2 px-2">→ conta</th>
                   <th className="py-2 px-2">→ doc</th>
                   <th className="py-2 px-2">→ fim</th>
@@ -258,8 +258,8 @@ export default function VariantsPanel() {
                       <td className="py-2 px-2 font-medium">{m?.leads ?? 0}</td>
                       <td className="py-2 px-2 text-xs">{pct(m?.conta ?? 0, m?.leads ?? 0)}</td>
                       <td className="py-2 px-2 text-xs">{pct(m?.doc ?? 0, m?.leads ?? 0)}</td>
-                      <td className="py-2 px-2 text-xs font-semibold text-green-700">{pct(m?.finalizando ?? 0, m?.leads ?? 0)}</td>
-                      <td className="py-2 px-2 text-xs text-amber-700">{pct(m?.pausados ?? 0, m?.leads ?? 0)}</td>
+                      <td className="py-2 px-2 text-xs font-semibold text-primary">{pct(m?.finalizando ?? 0, m?.leads ?? 0)}</td>
+                      <td className="py-2 px-2 text-xs text-warning">{pct(m?.pausados ?? 0, m?.leads ?? 0)}</td>
                       <td className="py-2 px-2 text-xs">{m?.turnos ?? 0}</td>
                       <td className="py-2 px-2 text-xs">{m?.latency_avg ? `${m.latency_avg}ms` : "—"}</td>
                       <td className="py-2 pl-2 text-right whitespace-nowrap">

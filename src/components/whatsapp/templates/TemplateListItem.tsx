@@ -87,9 +87,9 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
 
   if (editing) {
     return (
-      <div className="rounded-xl border-2 border-purple-500/40 bg-purple-500/5 px-4 py-4 space-y-3">
+      <div className="rounded-xl border-2 border-primary/40 bg-primary/5 px-4 py-4 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-bold text-purple-400 flex items-center gap-1.5"><Pencil className="w-3.5 h-3.5" /> Editando template</p>
+          <p className="text-xs font-bold text-primary flex items-center gap-1.5"><Pencil className="w-3.5 h-3.5" /> Editando template</p>
           <Button variant="ghost" size="icon" onClick={cancelEditing} className="h-7 w-7 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></Button>
         </div>
         <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Nome" className="rounded-xl bg-secondary/50 border-border/50" />
@@ -108,14 +108,14 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
   }
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl border border-border/40 bg-secondary/20 px-4 py-3 group hover:border-purple-500/20 transition-all">
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-border/40 bg-secondary/20 px-4 py-3 group hover:border-primary/20 transition-all">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {mediaIcon((t.media_type as TemplateMediaType) || "text")}
           <p className="text-sm font-bold text-foreground truncate">{t.name}</p>
           {mediaBadge((t.media_type as TemplateMediaType) || "text")}
           {t.items && t.items.length > 1 && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border bg-purple-500/15 text-purple-400 border-purple-500/20">
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border bg-primary/15 text-primary border-primary/20">
               {t.items.length} arquivos
             </span>
           )}
@@ -132,7 +132,7 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
               <audio controls src={t.media_url} className="w-full h-8 max-w-[240px]" />
             )}
             {t.media_type === "document" && (
-              <a href={t.media_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-400 hover:underline flex items-center gap-1">
+              <a href={t.media_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-info hover:underline flex items-center gap-1">
                 <File className="w-3 h-3" /> Abrir documento
               </a>
             )}
@@ -140,7 +140,7 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
         )}
         {t.image_url && (
           <div className="mt-2 flex items-center gap-2">
-            <Image className="w-3 h-3 text-blue-400 shrink-0" />
+            <Image className="w-3 h-3 text-info shrink-0" />
             <img src={t.image_url} alt="Imagem anexa" className="rounded-md max-h-16 object-contain border border-border/20" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           </div>
         )}
@@ -158,22 +158,22 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
                 toast.error("Não consegui atualizar");
               }
             }}
-            className={`h-8 w-8 transition-all ${t.is_quick_reply === false ? "text-muted-foreground/40 opacity-0 group-hover:opacity-100" : "text-amber-400"}`}
+            className={`h-8 w-8 transition-all ${t.is_quick_reply === false ? "text-muted-foreground/40 opacity-0 group-hover:opacity-100" : "text-warning"}`}
             title={t.is_quick_reply === false ? "Mostrar nas respostas rápidas" : "Aparece nas respostas rápidas (clique para esconder)"}
           >
-            <Star className={`w-3.5 h-3.5 ${t.is_quick_reply === false ? "" : "fill-amber-400"}`} />
+            <Star className={`w-3.5 h-3.5 ${t.is_quick_reply === false ? "" : "fill-warning"}`} />
           </Button>
         )}
         {canEditDirect && (
           <Button variant="ghost" size="icon" onClick={startEditing}
-            className="text-muted-foreground hover:text-purple-400 h-8 w-8 opacity-0 group-hover:opacity-100 transition-all"
+            className="text-muted-foreground hover:text-primary h-8 w-8 opacity-0 group-hover:opacity-100 transition-all"
             title={isSuperAdmin && !isOwner ? "Editar original (Super Admin)" : "Editar"}>
             <Pencil className="w-3.5 h-3.5" />
           </Button>
         )}
         {canFork && (
           <Button variant="ghost" size="icon" onClick={handlePersonalize} disabled={forking}
-            className="text-muted-foreground hover:text-emerald-400 h-8 w-8 opacity-0 group-hover:opacity-100 transition-all"
+            className="text-muted-foreground hover:text-primary h-8 w-8 opacity-0 group-hover:opacity-100 transition-all"
             title="Personalizar (cria sua cópia, original fica intacto)">
             {forking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
           </Button>
@@ -194,7 +194,7 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
               toast.success(next ? "🌎 Template público" : "🔒 Template privado");
               await onForked?.();
             }}
-            className={`h-8 w-8 transition-all ${(t as any).is_public ? "text-emerald-400" : "text-muted-foreground opacity-0 group-hover:opacity-100"}`}
+            className={`h-8 w-8 transition-all ${(t as any).is_public ? "text-primary" : "text-muted-foreground opacity-0 group-hover:opacity-100"}`}
           >
             {(t as any).is_public ? <Globe2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
           </Button>
@@ -202,7 +202,7 @@ export function TemplateListItem({ template: t, consultantId, onUpdateTemplate, 
         {canDelete && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="shrink-0 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 h-8 w-8 opacity-0 group-hover:opacity-100 transition-all">
+              <Button variant="ghost" size="icon" className="shrink-0 text-destructive/60 hover:text-destructive hover:bg-destructive/10 h-8 w-8 opacity-0 group-hover:opacity-100 transition-all">
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
             </AlertDialogTrigger>

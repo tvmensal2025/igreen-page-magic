@@ -46,22 +46,24 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
   return (
     <div
       style={{ width: "var(--kanban-col-w, 248px)" }}
-      className="shrink-0 h-full min-h-0 flex flex-col bg-muted/30 rounded-lg border border-border/40 backdrop-blur-sm overflow-hidden transition-colors hover:border-border/60"
+      className="shrink-0 h-full min-h-0 flex flex-col bg-card/40 rounded-xl border border-border/50 shadow-sm overflow-hidden transition-colors hover:border-border/60"
       onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/30", "bg-primary/[0.03]"); }}
       onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary/30", "bg-primary/[0.03]"); }}
       onDrop={(e) => { e.currentTarget.classList.remove("border-primary/30", "bg-primary/[0.03]"); onDrop(stage.stage_key); }}
     >
+      {/* Barra colorida no topo (padrão Clientes ativos) */}
+      <div className={`h-1 w-full ${stage.color}`} />
       {/* Column Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/30">
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className={`text-[10px] font-medium ${stage.color} border-0`}>
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/40">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant="secondary" className={`text-[10px] font-semibold ${stage.color} border truncate max-w-[140px]`}>
             {stage.label}
           </Badge>
           {stage.auto_message_enabled && stage.auto_message_text && (
-            <Zap className="h-3 w-3 text-primary/60" />
+            <Zap className="h-3 w-3 text-primary/60 shrink-0" />
           )}
         </div>
-        <span className="text-[11px] font-semibold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">
+        <span className="text-[12px] font-bold text-foreground bg-muted/60 px-2 py-0.5 rounded-full min-w-[24px] text-center shrink-0">
           {stageDeals.length}
         </span>
       </div>

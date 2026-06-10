@@ -9,8 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { invalidateBonusTiers, type BonusTier } from "@/hooks/useAdBonusTiers";
 
 const TIER_META: { tier: BonusTier; title: string; hint: string; accent: string }[] = [
-  { tier: "alto", title: "🟢 Bônus alto", hint: "Distribuidoras em que o consultor consegue o maior bônus.", accent: "border-emerald-500/40" },
-  { tier: "medio", title: "🟡 Bônus médio", hint: "Distribuidoras com bônus parcial.", accent: "border-amber-500/40" },
+  { tier: "alto", title: "🟢 Bônus alto", hint: "Distribuidoras em que o consultor consegue o maior bônus.", accent: "border-primary/40" },
+  { tier: "medio", title: "🟡 Bônus médio", hint: "Distribuidoras com bônus parcial.", accent: "border-warning/40" },
   { tier: "sem_bonus", title: "⚪ Sem bônus", hint: "Distribuidoras sem bônus adicional.", accent: "border-muted" },
 ];
 
@@ -78,7 +78,7 @@ export function BonusTiersAdminCard() {
       <div className="grid sm:grid-cols-3 gap-3">
         {TIER_META.map((m) => (
           <div key={m.tier} className={`rounded-lg border ${m.accent} bg-card/50 p-3 space-y-2`}>
-            <div className="text-xs font-bold text-green-900">{m.title}</div>
+            <div className="text-xs font-bold text-primary">{m.title}</div>
             <p className="text-[11px] text-muted-foreground">{m.hint}</p>
             <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Percentual exibido</Label>
             <div className="flex items-center gap-1">

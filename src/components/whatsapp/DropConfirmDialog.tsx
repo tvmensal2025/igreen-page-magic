@@ -74,9 +74,9 @@ function MediaPreview({ msg }: { msg: AutoMessagePreview }) {
 
       {/* Audio player */}
       {isAudio && (
-        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-gradient-to-r from-orange-500/10 to-orange-500/5 border border-orange-500/20">
-          <div className="flex items-center justify-center h-8 w-8 rounded-full bg-orange-500/20 shrink-0">
-            <Mic className="h-4 w-4 text-orange-400" />
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-gradient-to-r from-warning/10 to-warning/5 border border-warning/20">
+          <div className="flex items-center justify-center h-8 w-8 rounded-full bg-warning/20 shrink-0">
+            <Mic className="h-4 w-4 text-warning" />
           </div>
           <div className="flex-1 min-w-0">
             <audio
@@ -138,19 +138,19 @@ function MessageTypeLabel({ type }: { type: string }) {
   switch (type) {
     case "audio":
       return (
-        <Badge variant="secondary" className="text-[9px] gap-1 bg-orange-500/10 text-orange-400 border-orange-500/20">
+        <Badge variant="secondary" className="text-[9px] gap-1 bg-warning/10 text-warning border-warning/20">
           <Mic className="h-2.5 w-2.5" /> Áudio
         </Badge>
       );
     case "image":
       return (
-        <Badge variant="secondary" className="text-[9px] gap-1 bg-blue-500/10 text-blue-400 border-blue-500/20">
+        <Badge variant="secondary" className="text-[9px] gap-1 bg-info/10 text-info border-info/20">
           <Image className="h-2.5 w-2.5" /> Imagem
         </Badge>
       );
     case "video":
       return (
-        <Badge variant="secondary" className="text-[9px] gap-1 bg-purple-500/10 text-purple-400 border-purple-500/20">
+        <Badge variant="secondary" className="text-[9px] gap-1 bg-primary/10 text-primary border-primary/20">
           <Video className="h-2.5 w-2.5" /> Vídeo
         </Badge>
       );
@@ -223,7 +223,7 @@ export function DropConfirmDialog({
         </DialogHeader>
 
         <p className="text-[11px] text-muted-foreground">
-          Lead: <span className="font-medium text-foreground">{dealName}</span>
+          Cliente interessado: <span className="font-medium text-foreground">{dealName}</span>
         </p>
 
         {/* Rejection reason selector */}
@@ -269,7 +269,7 @@ export function DropConfirmDialog({
                     </span>
                     <MessageTypeLabel type={msg.message_type} />
                     {msg.image_url && msg.message_type !== "image" && (
-                      <Badge variant="secondary" className="text-[9px] gap-1 bg-blue-500/10 text-blue-400 border-blue-500/20">
+                      <Badge variant="secondary" className="text-[9px] gap-1 bg-info/10 text-info border-info/20">
                         <Image className="h-2.5 w-2.5" /> + Imagem
                       </Badge>
                     )}

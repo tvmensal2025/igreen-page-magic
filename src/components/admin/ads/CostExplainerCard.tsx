@@ -15,7 +15,7 @@ interface Props {
 }
 
 /**
- * Card educativo que responde a pergunta: "Lead vs Click vs Cliente?"
+ * Card educativo que responde a pergunta: "Cliente interessado vs Click vs Cliente?"
  * Mostra os 3 estágios com o custo de cada um, usando os números reais do consultor.
  */
 export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props) {
@@ -101,7 +101,7 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
           cost={cpc}
           costLabel="Custo por clique"
           explanation="Pessoa que tocou no seu anúncio no Facebook/Instagram. Ainda não falou com você."
-          accent="bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-300"
+          accent="bg-info/10 border-info/30 text-info dark:text-info"
         />
 
         <div className="flex sm:flex-col items-center justify-center text-muted-foreground py-1 sm:py-0">
@@ -114,7 +114,7 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
           count={leads}
           cost={cpl}
           costLabel="Custo por LEAD (CPL)"
-          explanation="Pessoa que iniciou a conversa no seu WhatsApp. Vira um card 'Novo Lead' no seu CRM."
+          explanation="Pessoa que iniciou a conversa no seu WhatsApp. Vira um card 'Novo Cliente interessado' no seu CRM."
           accent="bg-primary/15 border-primary/40 text-primary"
         />
 
@@ -128,16 +128,16 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
           count={approved}
           cost={cpa}
           costLabel="Custo por CLIENTE (CPA)"
-          explanation="Lead que foi até o fim do funil e chegou no estágio 'Aprovado'. Aqui sim é cliente iGreen."
-          accent="bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-300"
+          explanation="Cliente interessado que foi até o fim do funil e chegou no estágio 'Aprovado'. Aqui sim é cliente iGreen."
+          accent="bg-primary/15 border-primary/40 text-primary dark:text-primary"
         />
       </div>
 
       <div className="mt-5 pt-4 border-t border-border/40 text-[11px] sm:text-xs text-muted-foreground leading-relaxed">
         <strong className="text-foreground">Como ler:</strong> os 7 contatos que você
-        mencionou entram como <strong className="text-primary">LEAD</strong> (etapa 2).
-        Só viram <strong className="text-emerald-500">cliente</strong> quando chegam em{" "}
-        <em>Aprovado</em> no Kanban. O <strong>CPL</strong> mostra o custo de cada
+        mencionou entram como <strong className="text-primary">CLIENTE INTERESSADO</strong> (etapa 2).
+        Só viram <strong className="text-primary">cliente</strong> quando chegam em{" "}
+        <em>Aprovado</em> no funil. O <strong>CPL</strong> mostra o custo de cada
         conversa; o <strong>CPA</strong>, o custo real de cada cliente fechado.
       </div>
     </Card>

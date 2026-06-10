@@ -20,11 +20,11 @@ interface CronStatus {
 }
 
 function statusColor(s: CronStatus): string {
-  if (!s.lastRun) return "bg-red-500/20 text-red-400 border-red-500/40";
+  if (!s.lastRun) return "bg-destructive/20 text-destructive border-destructive/40";
   const ageH = (Date.now() - s.lastRun.getTime()) / 3_600_000;
-  if (ageH <= s.okWithinHours) return "bg-green-500/20 text-green-400 border-green-500/40";
-  if (ageH <= s.okWithinHours * 2) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/40";
-  return "bg-red-500/20 text-red-400 border-red-500/40";
+  if (ageH <= s.okWithinHours) return "bg-primary/20 text-primary border-primary/40";
+  if (ageH <= s.okWithinHours * 2) return "bg-warning/20 text-warning border-warning/40";
+  return "bg-destructive/20 text-destructive border-destructive/40";
 }
 
 export function AILearningHealthPanel() {
@@ -125,7 +125,7 @@ export function AILearningHealthPanel() {
       <div className="grid lg:grid-cols-2 gap-3">
         <Card className="p-4 bg-card/50 backdrop-blur border-border/60">
           <h3 className="font-bold text-sm text-foreground mb-3 flex items-center gap-2">
-            <Brain className="w-4 h-4 text-green-400" /> Top 5 padrões VENCEDORES (rede)
+            <Brain className="w-4 h-4 text-primary" /> Top 5 padrões VENCEDORES (rede)
           </h3>
           {winning.length === 0 ? (
             <p className="text-xs text-muted-foreground">Coletando — learner ainda não rodou pós-deploy.</p>
@@ -142,7 +142,7 @@ export function AILearningHealthPanel() {
         </Card>
         <Card className="p-4 bg-card/50 backdrop-blur border-border/60">
           <h3 className="font-bold text-sm text-foreground mb-3 flex items-center gap-2">
-            <Brain className="w-4 h-4 text-red-400" /> Top 5 padrões a EVITAR (rede)
+            <Brain className="w-4 h-4 text-destructive" /> Top 5 padrões a EVITAR (rede)
           </h3>
           {losing.length === 0 ? (
             <p className="text-xs text-muted-foreground">Coletando.</p>

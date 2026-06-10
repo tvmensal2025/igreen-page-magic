@@ -45,7 +45,7 @@ export function HeroKpis({ kpis, walletSnapshot }: Props) {
   const items = [
     { key: "views" as const, label: "Visitas", icon: Eye, accent: "hsl(142 76% 48%)", data: kpis?.views },
     { key: "clicks" as const, label: "Cliques CTA", icon: MousePointerClick, accent: "hsl(38 92% 55%)", data: kpis?.clicks },
-    { key: "leads" as const, label: "Novos Leads", icon: Users, accent: "hsl(200 100% 60%)", data: kpis?.leads },
+    { key: "leads" as const, label: "Novos Clientes interessados", icon: Users, accent: "hsl(200 100% 60%)", data: kpis?.leads },
     {
       key: "approved" as const,
       label: "Carteira Ativa",

@@ -141,11 +141,11 @@ function ItemCard({
                 disabled={disabled}
                 onClick={() => onChange({ ...item, message_type: t.value, media_url: t.value === "text" ? null : item.media_url })}
                 className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all ${
-                  active ? "border-purple-500/50 bg-purple-500/10" : "border-border/40 bg-secondary/10 hover:bg-secondary/20"
+                  active ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/10 hover:bg-secondary/20"
                 }`}
               >
-                <Icon className={`w-4 h-4 ${active ? "text-purple-400" : "text-muted-foreground"}`} />
-                <span className={`text-[10px] font-bold ${active ? "text-purple-400" : "text-muted-foreground"}`}>{t.label}</span>
+                <Icon className={`w-4 h-4 ${active ? "text-primary" : "text-muted-foreground"}`} />
+                <span className={`text-[10px] font-bold ${active ? "text-primary" : "text-muted-foreground"}`}>{t.label}</span>
               </button>
             );
           })}
@@ -158,18 +158,18 @@ function ItemCard({
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void doUpload(f); }} />
             <div className="flex gap-1.5">
               <Button type="button" variant="outline" className="flex-1 h-10 gap-2 border-dashed border-2" disabled={disabled || uploading} onClick={() => fileRef.current?.click()}>
-                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : item.media_url ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : <Upload className="w-4 h-4" />}
+                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : item.media_url ? <CheckCircle2 className="w-4 h-4 text-primary" /> : <Upload className="w-4 h-4" />}
                 <span className="text-xs truncate">{uploading ? "Enviando..." : item.media_url ? "Arquivo enviado" : "Enviar arquivo"}</span>
               </Button>
               {item.message_type === "audio" && (
                 isRecording ? (
-                  <Button type="button" variant="outline" className="h-10 gap-1.5 border-red-500/40" onClick={stopRecording}>
-                    <Square className="w-3.5 h-3.5 fill-current text-red-400" />
-                    <span className="text-xs text-red-400 tabular-nums">{formatRecordingTime(recTime)}</span>
+                  <Button type="button" variant="outline" className="h-10 gap-1.5 border-destructive/40" onClick={stopRecording}>
+                    <Square className="w-3.5 h-3.5 fill-current text-destructive" />
+                    <span className="text-xs text-destructive tabular-nums">{formatRecordingTime(recTime)}</span>
                   </Button>
                 ) : (
-                  <Button type="button" variant="outline" className="h-10 gap-1.5 border-orange-500/30" disabled={disabled} onClick={startRecording}>
-                    <Mic className="w-4 h-4 text-orange-400" />
+                  <Button type="button" variant="outline" className="h-10 gap-1.5 border-warning/30" disabled={disabled} onClick={startRecording}>
+                    <Mic className="w-4 h-4 text-warning" />
                   </Button>
                 )
               )}
@@ -182,7 +182,7 @@ function ItemCard({
                 {item.message_type === "video" && <video src={item.media_url} controls className="rounded max-h-32 w-full object-contain bg-black" />}
                 {item.message_type === "audio" && <audio src={item.media_url} controls className="w-full h-8" />}
                 {item.message_type === "document" && (
-                  <a href={item.media_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline flex items-center gap-1">
+                  <a href={item.media_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info hover:underline flex items-center gap-1">
                     <File className="w-3.5 h-3.5" /> Abrir documento
                   </a>
                 )}

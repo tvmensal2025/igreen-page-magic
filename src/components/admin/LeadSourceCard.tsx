@@ -88,7 +88,7 @@ export function LeadSourceCard({ consultantId, periodDays }: LeadSourceCardProps
       <div className="flex items-start justify-between mb-1 gap-2 flex-wrap">
         <div>
           <h3 className="font-heading font-bold text-foreground flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-primary" /> Origem dos Leads (WhatsApp)
+            <Megaphone className="w-4 h-4 text-primary" /> Origem dos Clientes interessados (WhatsApp)
           </h3>
           <p className="text-xs text-muted-foreground">Últimos {periodDays} dias — atribuição automática por mensagem pré-preenchida do anúncio ou CTWA</p>
         </div>
@@ -107,9 +107,9 @@ export function LeadSourceCard({ consultantId, periodDays }: LeadSourceCardProps
       ) : total === 0 ? (
         <div className="text-center py-6">
           <Users className="w-8 h-8 text-muted-foreground/50 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">Sem leads novos no período</p>
+          <p className="text-sm text-muted-foreground">Sem clientes interessados novos no período</p>
           <p className="text-[11px] text-muted-foreground/70 mt-1">
-            Quando você subir anúncios Click-to-WhatsApp, os leads aparecerão aqui automaticamente.
+            Quando você subir anúncios Click-to-WhatsApp, os clientes interessados aparecerão aqui automaticamente.
           </p>
         </div>
       ) : (
@@ -142,7 +142,7 @@ export function LeadSourceCard({ consultantId, periodDays }: LeadSourceCardProps
             <div className="mt-4 pt-3 border-t border-border/50">
               <p className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-primary" />
-                Leads por campanha identificada
+                Clientes interessados por campanha identificada
               </p>
               <div className="space-y-2">
                 {campaigns.map((c) => {
@@ -170,7 +170,7 @@ export function LeadSourceCard({ consultantId, periodDays }: LeadSourceCardProps
             <div className="mt-4 pt-3 border-t border-border/50 flex items-start gap-2 text-xs text-muted-foreground">
               <TrendingUp className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
               <span>
-                Dica: configure a <strong className="text-foreground">mensagem pré-preenchida</strong> do seu anúncio Click-to-WhatsApp com um texto único por campanha. O sistema identifica automaticamente de qual campanha veio cada lead.
+                Dica: configure a <strong className="text-foreground">mensagem pré-preenchida</strong> do seu anúncio Click-to-WhatsApp com um texto único por campanha. O sistema identifica automaticamente de qual campanha veio cada cliente interessado.
               </span>
             </div>
           )}

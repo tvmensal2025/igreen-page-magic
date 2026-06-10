@@ -110,10 +110,10 @@ export function LearnedPatternsPanel() {
                         {r.consultant_id.slice(0, 8)}…
                       </td>
                       <td className="px-2 py-1.5 text-right">
-                        <span className="text-emerald-400 tabular-nums">{good}</span>
+                        <span className="text-primary tabular-nums">{good}</span>
                       </td>
                       <td className="px-2 py-1.5 text-right">
-                        <span className="text-red-400 tabular-nums">{bad}</span>
+                        <span className="text-destructive tabular-nums">{bad}</span>
                       </td>
                       <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{r.sample_count}</td>
                       <td className="px-2 py-1.5 text-right text-muted-foreground">
@@ -125,7 +125,7 @@ export function LearnedPatternsPanel() {
                         <td colSpan={6} className="px-3 py-2">
                           <div className="grid gap-2 md:grid-cols-2">
                             <div>
-                              <div className="mb-1 flex items-center gap-1 text-[10px] text-emerald-400">
+                              <div className="mb-1 flex items-center gap-1 text-[10px] text-primary">
                                 <ThumbsUp className="size-3" /> Bons exemplos
                               </div>
                               {good === 0 ? (
@@ -133,7 +133,7 @@ export function LearnedPatternsPanel() {
                               ) : (
                                 <ul className="space-y-1">
                                   {r.good_examples!.map((ex, i) => (
-                                    <li key={i} className="rounded border border-emerald-500/20 bg-emerald-500/5 p-1.5 text-[10px]">
+                                    <li key={i} className="rounded border border-primary/20 bg-primary/5 p-1.5 text-[10px]">
                                       <div className="text-muted-foreground">in: {ex.input}</div>
                                       <div>out: {ex.output}</div>
                                     </li>
@@ -142,7 +142,7 @@ export function LearnedPatternsPanel() {
                               )}
                             </div>
                             <div>
-                              <div className="mb-1 flex items-center gap-1 text-[10px] text-red-400">
+                              <div className="mb-1 flex items-center gap-1 text-[10px] text-destructive">
                                 <ThumbsDown className="size-3" /> Maus exemplos
                               </div>
                               {bad === 0 ? (
@@ -150,7 +150,7 @@ export function LearnedPatternsPanel() {
                               ) : (
                                 <ul className="space-y-1">
                                   {r.bad_examples!.map((ex, i) => (
-                                    <li key={i} className="rounded border border-red-500/20 bg-red-500/5 p-1.5 text-[10px]">
+                                    <li key={i} className="rounded border border-destructive/20 bg-destructive/5 p-1.5 text-[10px]">
                                       <div className="text-muted-foreground">in: {ex.input}</div>
                                       <div>out: {ex.output}</div>
                                     </li>

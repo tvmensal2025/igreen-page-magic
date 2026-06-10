@@ -250,7 +250,7 @@ const SuperAdmin = () => {
     { id: "captacao" as const, label: "Captação", icon: Target },
     { id: "gestores_ads" as const, label: "Gestores Ads", icon: UserCheck },
     { id: "saude_rede" as const, label: "Saúde da Rede", icon: Activity },
-    { id: "crm" as const, label: "CRM Analytics", icon: BarChart3 },
+    { id: "crm" as const, label: "Análise de clientes", icon: BarChart3 },
     { id: "funil" as const, label: "Funil do Bot", icon: Activity },
     { id: "worker" as const, label: "Worker Phases", icon: Activity },
     { id: "auditoria" as const, label: "Auditoria", icon: Shield },
@@ -266,18 +266,18 @@ const SuperAdmin = () => {
     if (!lastAct) return { text: "Sem atividade", color: "text-muted-foreground", dot: "bg-muted-foreground/50", ring: "" };
     const d = new Date(lastAct);
     const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-    if (days === 0) return { text: "Hoje", color: "text-emerald-500", dot: "bg-emerald-500", ring: "ring-2 ring-emerald-500/30" };
-    if (days === 1) return { text: "Ontem", color: "text-emerald-400", dot: "bg-emerald-400", ring: "" };
-    if (days <= 7) return { text: `${days}d atrás`, color: "text-amber-400", dot: "bg-amber-400", ring: "" };
-    return { text: `${days}d atrás`, color: "text-red-400", dot: "bg-red-400", ring: "" };
+    if (days === 0) return { text: "Hoje", color: "text-primary", dot: "bg-primary/100", ring: "ring-2 ring-primary/30" };
+    if (days === 1) return { text: "Ontem", color: "text-primary", dot: "bg-primary", ring: "" };
+    if (days <= 7) return { text: `${days}d atrás`, color: "text-warning", dot: "bg-warning", ring: "" };
+    return { text: `${days}d atrás`, color: "text-destructive", dot: "bg-destructive", ring: "" };
   };
 
   const statCards = [
-    { label: "Consultores", value: consultants.length, icon: Users, gradient: "from-violet-500/10 to-violet-600/5", iconColor: "text-violet-500", border: "border-violet-500/10" },
-    { label: "Aprovados", value: approvedCount, icon: CheckCircle, gradient: "from-emerald-500/10 to-emerald-600/5", iconColor: "text-emerald-500", border: "border-emerald-500/10" },
-    { label: "Pendentes", value: pendingCount, icon: XCircle, gradient: "from-amber-500/10 to-amber-600/5", iconColor: "text-amber-500", border: "border-amber-500/10" },
-    { label: "Clientes Total", value: totalCustomers.toLocaleString(), icon: TrendingUp, gradient: "from-blue-500/10 to-blue-600/5", iconColor: "text-blue-500", border: "border-blue-500/10" },
-    { label: "WhatsApp Ativo", value: connectedWA, icon: Phone, gradient: "from-green-500/10 to-green-600/5", iconColor: "text-green-500", border: "border-green-500/10" },
+    { label: "Consultores", value: consultants.length, icon: Users, gradient: "from-primary/10 to-primary/5", iconColor: "text-primary", border: "border-primary/10" },
+    { label: "Aprovados", value: approvedCount, icon: CheckCircle, gradient: "from-primary/10 to-primary/5", iconColor: "text-primary", border: "border-primary/10" },
+    { label: "Pendentes", value: pendingCount, icon: XCircle, gradient: "from-warning/10 to-warning/5", iconColor: "text-warning", border: "border-warning/10" },
+    { label: "Clientes Total", value: totalCustomers.toLocaleString(), icon: TrendingUp, gradient: "from-info/10 to-info/5", iconColor: "text-info", border: "border-info/10" },
+    { label: "WhatsApp Ativo", value: connectedWA, icon: Phone, gradient: "from-primary/10 to-primary/5", iconColor: "text-primary", border: "border-primary/10" },
   ];
 
   return (
@@ -285,7 +285,7 @@ const SuperAdmin = () => {
       {/* Ambient background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[40%] -right-[20%] w-[60%] h-[60%] rounded-full bg-primary/[0.02] blur-3xl" />
-        <div className="absolute -bottom-[30%] -left-[15%] w-[50%] h-[50%] rounded-full bg-violet-500/[0.02] blur-3xl" />
+        <div className="absolute -bottom-[30%] -left-[15%] w-[50%] h-[50%] rounded-full bg-primary/100/[0.02] blur-3xl" />
       </div>
 
       {/* Header */}
@@ -422,12 +422,12 @@ const SuperAdmin = () => {
                           {/* Top: Avatar + Name + Actions */}
                           <div className="flex items-start justify-between gap-4 mb-5">
                             <div className="flex items-center gap-3.5 min-w-0">
-                              <div className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${c.approved ? "from-emerald-500/20 to-emerald-600/10" : "from-amber-500/20 to-amber-600/10"} flex items-center justify-center shrink-0 ${activity.ring}`}>
-                                <span className={`text-sm font-bold ${c.approved ? "text-emerald-500" : "text-amber-500"}`}>
+                              <div className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${c.approved ? "from-primary/20 to-primary/10" : "from-warning/20 to-warning/10"} flex items-center justify-center shrink-0 ${activity.ring}`}>
+                                <span className={`text-sm font-bold ${c.approved ? "text-primary" : "text-warning"}`}>
                                   {c.name.charAt(0).toUpperCase()}
                                 </span>
                                 {wa?.hasInstance && (
-                                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-card flex items-center justify-center">
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary/100 border-2 border-card flex items-center justify-center">
                                     <Wifi className="w-2 h-2 text-white" />
                                   </div>
                                 )}
@@ -437,8 +437,8 @@ const SuperAdmin = () => {
                                   <h3 className="font-semibold text-foreground truncate">{c.name}</h3>
                                   <Badge className={`text-[10px] px-2 py-0 h-5 font-medium border ${
                                     c.approved
-                                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                      : "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                      ? "bg-primary/10 text-primary border-primary/20"
+                                      : "bg-warning/10 text-warning border-warning/20"
                                   }`}>
                                     {c.approved ? "Aprovado" : "Pendente"}
                                   </Badge>
@@ -482,17 +482,17 @@ const SuperAdmin = () => {
 
                           {/* Metrics Grid */}
                           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                            <MetricPill icon={<Users className="w-3.5 h-3.5" />} iconColor="text-blue-500" bgColor="bg-blue-500/8" value={c.total_customers || 0} label="Clientes" badge={c.customers_7d ? `+${c.customers_7d}` : undefined} badgeColor="text-emerald-500" />
-                            <MetricPill icon={<TrendingUp className="w-3.5 h-3.5" />} iconColor="text-violet-500" bgColor="bg-violet-500/8" value={c.total_deals || 0} label="Deals CRM" />
-                            <MetricPill icon={<Eye className="w-3.5 h-3.5" />} iconColor="text-amber-500" bgColor="bg-amber-500/8" value={c.views_7d || 0} label="Views 7d" />
+                            <MetricPill icon={<Users className="w-3.5 h-3.5" />} iconColor="text-info" bgColor="bg-info/8" value={c.total_customers || 0} label="Clientes" badge={c.customers_7d ? `+${c.customers_7d}` : undefined} badgeColor="text-primary" />
+                            <MetricPill icon={<TrendingUp className="w-3.5 h-3.5" />} iconColor="text-primary" bgColor="bg-primary/8" value={c.total_deals || 0} label="Negócios" />
+                            <MetricPill icon={<Eye className="w-3.5 h-3.5" />} iconColor="text-warning" bgColor="bg-warning/8" value={c.views_7d || 0} label="Views 7d" />
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 ${wa?.hasInstance ? "bg-green-500/8" : "bg-muted/40"} transition-colors cursor-default`}>
-                                  {wa?.hasInstance ? <Wifi className="w-3.5 h-3.5 text-green-500 shrink-0" /> : <WifiOff className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                                <div className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 ${wa?.hasInstance ? "bg-primary/8" : "bg-muted/40"} transition-colors cursor-default`}>
+                                  {wa?.hasInstance ? <Wifi className="w-3.5 h-3.5 text-primary shrink-0" /> : <WifiOff className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                                   <div>
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-sm font-semibold text-foreground leading-none">{totalMsgs}</span>
-                                      {(wa?.scheduledFailed || 0) > 0 && <AlertTriangle className="w-3 h-3 text-red-400" />}
+                                      {(wa?.scheduledFailed || 0) > 0 && <AlertTriangle className="w-3 h-3 text-destructive" />}
                                     </div>
                                     <p className="text-[10px] text-muted-foreground mt-0.5">{wa?.hasInstance ? "WhatsApp" : "Sem conexão"}</p>
                                   </div>
@@ -502,10 +502,10 @@ const SuperAdmin = () => {
                                 <p className="font-semibold">{wa?.hasInstance ? "✅ Conectado" : "❌ Desconectado"}</p>
                                 {wa?.instanceName && <p className="text-muted-foreground">{wa.instanceName}</p>}
                                 <div className="flex items-center gap-3">
-                                  <span className="flex items-center gap-1 text-green-400"><Send className="w-3 h-3" />{wa?.totalMsgsSent || 0}</span>
-                                  <span className="flex items-center gap-1 text-blue-400"><MessageSquare className="w-3 h-3" />{wa?.totalMsgsReceived || 0}</span>
+                                  <span className="flex items-center gap-1 text-primary"><Send className="w-3 h-3" />{wa?.totalMsgsSent || 0}</span>
+                                  <span className="flex items-center gap-1 text-info"><MessageSquare className="w-3 h-3" />{wa?.totalMsgsReceived || 0}</span>
                                 </div>
-                                {(wa?.scheduledFailed || 0) > 0 && <p className="text-red-400">⚠️ {wa?.scheduledFailed} falha(s)</p>}
+                                {(wa?.scheduledFailed || 0) > 0 && <p className="text-destructive">⚠️ {wa?.scheduledFailed} falha(s)</p>}
                               </TooltipContent>
                             </Tooltip>
                             <div className="flex items-center gap-2.5 rounded-xl bg-muted/30 px-3 py-2.5">

@@ -21,9 +21,9 @@ interface Diag {
 }
 
 const severityColor: Record<string, string> = {
-  high: "text-red-400 border-red-500/30 bg-red-500/10",
-  medium: "text-amber-400 border-amber-500/30 bg-amber-500/10",
-  low: "text-blue-400 border-blue-500/30 bg-blue-500/10",
+  high: "text-destructive border-destructive/30 bg-destructive/10",
+  medium: "text-warning border-warning/30 bg-warning/10",
+  low: "text-info border-info/30 bg-info/10",
 };
 
 export function IntelDiagnostic() {
@@ -105,7 +105,7 @@ export function IntelDiagnostic() {
             {/* Gargalos */}
             <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur p-4">
               <h3 className="text-sm font-bold text-foreground flex items-center gap-2 mb-3">
-                <TrendingDown className="w-4 h-4 text-red-400" />
+                <TrendingDown className="w-4 h-4 text-destructive" />
                 Onde está perdendo
               </h3>
               {diag.bottlenecks?.length ? (
@@ -128,13 +128,13 @@ export function IntelDiagnostic() {
             {/* Vencedores */}
             <div className="rounded-xl border border-border/50 bg-card/50 backdrop-blur p-4">
               <h3 className="text-sm font-bold text-foreground flex items-center gap-2 mb-3">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <TrendingUp className="w-4 h-4 text-primary" />
                 O que está funcionando
               </h3>
               {diag.winners?.length ? (
                 <ul className="space-y-2">
                   {diag.winners.map((w: any, i: number) => (
-                    <li key={i} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
+                    <li key={i} className="rounded-lg border border-primary/30 bg-primary/10 p-3">
                       <p className="text-xs font-bold text-foreground">{w.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">{w.detail}</p>
                     </li>

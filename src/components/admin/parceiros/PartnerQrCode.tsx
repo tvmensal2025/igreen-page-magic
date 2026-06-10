@@ -413,7 +413,7 @@ export function PartnerQrCode({
               ref={previewRef}
               role="application"
               aria-label="Editor do flyer. Arraste o QR ou a faixa de rodapé. Use os controles para ajuste fino."
-              className="relative overflow-hidden rounded-xl border bg-emerald-900 shadow-sm"
+              className="relative overflow-hidden rounded-xl border bg-primary shadow-sm"
               style={{
                 width: PREVIEW_W,
                 height: PREVIEW_H,
@@ -451,7 +451,7 @@ export function PartnerQrCode({
               {effShowFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className={`absolute left-0 right-0 select-none touch-none bg-emerald-900/95 flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
+                  className={`absolute left-0 right-0 select-none touch-none bg-primary/95 flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
                   style={{
                     top: `calc(${effFooterY}% - ${footerHPreview / 2}px)`,
                     minHeight: footerHPreview,
@@ -499,7 +499,7 @@ export function PartnerQrCode({
                   className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 hover:bg-muted border border-border rounded-md px-2 py-1.5 mt-1 transition-colors w-full text-left"
                   title={locked ? "Clique para destravar e ajustar manualmente" : "Clique para travar novamente"}
                 >
-                  {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5 text-emerald-500" />}
+                  {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5 text-primary" />}
                   {locked
                     ? "Layout travado — clique para destravar e ajustar"
                     : "Layout destravado — clique para travar de novo"}

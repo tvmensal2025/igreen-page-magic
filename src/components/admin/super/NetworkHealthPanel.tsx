@@ -113,10 +113,10 @@ export function NetworkHealthPanel() {
       {/* Resumo */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Users className="w-3.5 h-3.5" />Consultores</div><div className="text-2xl font-semibold mt-1">{summary.total}</div></Card>
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Megaphone className="w-3.5 h-3.5" />Publicando agora</div><div className="text-2xl font-semibold mt-1 text-emerald-500">{summary.publishing}</div></Card>
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Target className="w-3.5 h-3.5" />Leads 7d</div><div className="text-2xl font-semibold mt-1">{summary.totalLeads}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Megaphone className="w-3.5 h-3.5" />Publicando agora</div><div className="text-2xl font-semibold mt-1 text-primary">{summary.publishing}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><Target className="w-3.5 h-3.5" />Clientes interessados 7d</div><div className="text-2xl font-semibold mt-1">{summary.totalLeads}</div></Card>
         <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><TrendingDown className="w-3.5 h-3.5" />CPL médio</div><div className="text-2xl font-semibold mt-1">{cplGlobal > 0 ? fmtBRL(cplGlobal) : "—"}</div></Card>
-        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><AlertTriangle className="w-3.5 h-3.5" />Em risco</div><div className="text-2xl font-semibold mt-1 text-amber-500">{summary.burning + summary.lowBalance}</div></Card>
+        <Card className="p-4"><div className="flex items-center gap-2 text-muted-foreground text-xs"><AlertTriangle className="w-3.5 h-3.5" />Em risco</div><div className="text-2xl font-semibold mt-1 text-warning">{summary.burning + summary.lowBalance}</div></Card>
       </div>
 
       {/* Tabela */}
@@ -129,7 +129,7 @@ export function NetworkHealthPanel() {
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium text-right">Saldo</th>
                 <th className="px-4 py-3 font-medium text-right">Gasto 7d</th>
-                <th className="px-4 py-3 font-medium text-right">Leads</th>
+                <th className="px-4 py-3 font-medium text-right">Clientes interessados</th>
                 <th className="px-4 py-3 font-medium text-right">CPL</th>
                 <th className="px-4 py-3 font-medium text-right">Camp. ativas</th>
               </tr>
@@ -139,11 +139,11 @@ export function NetworkHealthPanel() {
                 <tr key={r.consultant_id} className="border-t border-border/50 hover:bg-muted/20">
                   <td className="px-4 py-3"><div className="font-medium">{r.name}</div><div className="text-xs text-muted-foreground">Lic. {r.license}</div></td>
                   <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                  <td className={`px-4 py-3 text-right font-mono ${r.balance_cents < 5000 ? "text-amber-500" : ""}`}>{fmtBRL(r.balance_cents)}</td>
+                  <td className={`px-4 py-3 text-right font-mono ${r.balance_cents < 5000 ? "text-warning" : ""}`}>{fmtBRL(r.balance_cents)}</td>
                   <td className="px-4 py-3 text-right font-mono">{fmtBRL(r.spend_7d_cents)}</td>
                   <td className="px-4 py-3 text-right font-mono">{r.leads_7d}</td>
                   <td className="px-4 py-3 text-right font-mono">{r.cpl_cents > 0 ? fmtBRL(r.cpl_cents) : "—"}</td>
-                  <td className="px-4 py-3 text-right">{r.active_campaigns > 0 ? <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500">{r.active_campaigns}</Badge> : <span className="text-muted-foreground">0</span>}</td>
+                  <td className="px-4 py-3 text-right">{r.active_campaigns > 0 ? <Badge variant="secondary" className="bg-primary/10 text-primary">{r.active_campaigns}</Badge> : <span className="text-muted-foreground">0</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -156,11 +156,11 @@ export function NetworkHealthPanel() {
 
 function StatusBadge({ status }: { status: Row["status"] }) {
   const map = {
-    ok: { label: "OK", cls: "bg-emerald-500/10 text-emerald-500", icon: <TrendingUp className="w-3 h-3" /> },
+    ok: { label: "OK", cls: "bg-primary/10 text-primary", icon: <TrendingUp className="w-3 h-3" /> },
     no_campaign: { label: "Sem campanha", cls: "bg-muted text-muted-foreground", icon: <Megaphone className="w-3 h-3" /> },
-    low_balance: { label: "Saldo baixo", cls: "bg-amber-500/10 text-amber-500", icon: <Wallet className="w-3 h-3" /> },
-    burning: { label: "Queimando verba", cls: "bg-red-500/15 text-red-500", icon: <AlertTriangle className="w-3 h-3" /> },
-    no_leads: { label: "Sem leads", cls: "bg-orange-500/10 text-orange-500", icon: <TrendingDown className="w-3 h-3" /> },
+    low_balance: { label: "Saldo baixo", cls: "bg-warning/10 text-warning", icon: <Wallet className="w-3 h-3" /> },
+    burning: { label: "Queimando verba", cls: "bg-destructive/15 text-destructive", icon: <AlertTriangle className="w-3 h-3" /> },
+    no_leads: { label: "Sem clientes interessados", cls: "bg-warning/10 text-warning", icon: <TrendingDown className="w-3 h-3" /> },
   } as const;
   const it = map[status];
   return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${it.cls}`}>{it.icon}{it.label}</span>;

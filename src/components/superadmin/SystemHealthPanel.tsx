@@ -111,9 +111,9 @@ export function SystemHealthPanel() {
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold">Saúde do sistema</h3>
           {ok && !evolutionDown && !globalPaused ? (
-            <Badge className="bg-green-500/20 text-green-400 border-green-500/40">🟢 Operacional</Badge>
+            <Badge className="bg-primary/20 text-primary border-primary/40">🟢 Operacional</Badge>
           ) : (
-            <Badge className="bg-red-500/20 text-red-400 border-red-500/40">🔴 Atenção</Badge>
+            <Badge className="bg-destructive/20 text-destructive border-destructive/40">🔴 Atenção</Badge>
           )}
         </div>
         <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
@@ -136,9 +136,9 @@ export function SystemHealthPanel() {
       </div>
 
       {globalPaused && (
-        <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-warning/10 border border-warning/30">
           <div className="flex items-center gap-2 text-sm">
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            <AlertTriangle className="w-4 h-4 text-warning" />
             <span><strong>{data.pausedGlobal}</strong> conversas estão com bot DESLIGADO (pausa manual global).</span>
           </div>
           <Button size="sm" onClick={unpauseGlobal} disabled={unpausing} className="gap-1">
@@ -149,9 +149,9 @@ export function SystemHealthPanel() {
       )}
 
       {evolutionDown && (
-        <div className="p-3 mt-2 rounded-lg bg-red-500/10 border border-red-500/30 text-sm space-y-2">
-          <div className="flex items-center gap-2 font-medium text-red-300">
-            <WifiOff className="w-4 h-4 text-red-400" />
+        <div className="p-3 mt-2 rounded-lg bg-destructive/10 border border-destructive/30 text-sm space-y-2">
+          <div className="flex items-center gap-2 font-medium text-destructive">
+            <WifiOff className="w-4 h-4 text-destructive" />
             <span>
               {data.instancesNeedReconnect} instância(s) Evolution caída(s) — reabrir QR no painel Evolution:
             </span>
@@ -164,12 +164,12 @@ export function SystemHealthPanel() {
               return (
                 <li
                   key={inst.id}
-                  className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2 rounded-md bg-red-500/5 border border-red-500/20"
+                  className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2 rounded-md bg-destructive/5 border border-destructive/20"
                 >
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
                     <span className="font-semibold text-foreground">{inst.consultantName}</span>
                     {inst.license && (
-                      <Badge variant="outline" className="h-4 px-1.5 text-[10px] border-red-400/40 text-red-300">
+                      <Badge variant="outline" className="h-4 px-1.5 text-[10px] border-destructive/40 text-destructive">
                         {inst.license}
                       </Badge>
                     )}
@@ -179,7 +179,7 @@ export function SystemHealthPanel() {
                       {inst.instanceName}
                     </code>
                     <span className="text-muted-foreground/70">·</span>
-                    <span className="text-amber-300/90">{timeAgo(inst.lastSeen)}</span>
+                    <span className="text-warning/90">{timeAgo(inst.lastSeen)}</span>
                   </div>
                   <Button
                     size="sm"
@@ -223,14 +223,14 @@ function Metric({
 }) {
   return (
     <div
-      className={`p-3 rounded-lg border ${good ? "bg-green-500/5 border-green-500/20" : "bg-red-500/5 border-red-500/20"}`}
+      className={`p-3 rounded-lg border ${good ? "bg-primary/5 border-primary/20" : "bg-destructive/5 border-destructive/20"}`}
       title={tooltip}
     >
       <div className="flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-wider">
         {icon}
         {label}
       </div>
-      <div className={`text-2xl font-bold mt-1 ${good ? "text-green-400" : "text-red-400"}`}>{value}</div>
+      <div className={`text-2xl font-bold mt-1 ${good ? "text-primary" : "text-destructive"}`}>{value}</div>
     </div>
   );
 }

@@ -231,7 +231,7 @@ export function AIChatPanel({ open, onClose }: AIChatPanelProps) {
                       {action.icon === "licenciado" ? (
                         <UserPlus className="h-4 w-4 text-primary shrink-0" />
                       ) : (
-                        <Zap className="h-4 w-4 text-yellow-500 shrink-0" />
+                        <Zap className="h-4 w-4 text-warning shrink-0" />
                       )}
                       {action.label}
                     </button>

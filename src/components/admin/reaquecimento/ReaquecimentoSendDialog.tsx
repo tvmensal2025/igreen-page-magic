@@ -167,7 +167,7 @@ export function ReaquecimentoSendDialog({
         {mode === "single" && (
           <>
             {hasNoTemplate && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+              <div className="flex items-start gap-2 rounded-md bg-warning/10 p-3 text-xs text-warning dark:text-warning">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
                   Não existe template ativo para o passo <code>{conversationStep}</code>.
@@ -186,7 +186,7 @@ export function ReaquecimentoSendDialog({
                 rows={5}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Digite a mensagem que será enviada ao lead…"
+                placeholder="Digite a mensagem que será enviada ao cliente interessado…"
               />
             </div>
 

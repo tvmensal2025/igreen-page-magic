@@ -30,12 +30,12 @@ interface CustomerInfo {
 }
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: typeof CheckCircle2; label: string }> = {
-  started:     { color: "text-blue-400",    bg: "bg-blue-500/10",    icon: Activity,        label: "Iniciado" },
-  ok:          { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2,    label: "OK" },
-  warn:        { color: "text-amber-400",   bg: "bg-amber-500/10",   icon: AlertTriangle,   label: "Aviso" },
-  failed:      { color: "text-red-400",     bg: "bg-red-500/10",     icon: XCircle,         label: "Falhou" },
-  aborted:     { color: "text-red-500",     bg: "bg-red-500/15",     icon: XCircle,         label: "Abortado" },
-  "soft-skip": { color: "text-violet-400",  bg: "bg-violet-500/10",  icon: ChevronRight,    label: "Pulado" },
+  started:     { color: "text-info",    bg: "bg-info/10",    icon: Activity,        label: "Iniciado" },
+  ok:          { color: "text-primary", bg: "bg-primary/10", icon: CheckCircle2,    label: "OK" },
+  warn:        { color: "text-warning",   bg: "bg-warning/10",   icon: AlertTriangle,   label: "Aviso" },
+  failed:      { color: "text-destructive",     bg: "bg-destructive/10",     icon: XCircle,         label: "Falhou" },
+  aborted:     { color: "text-destructive",     bg: "bg-destructive/15",     icon: XCircle,         label: "Abortado" },
+  "soft-skip": { color: "text-primary",  bg: "bg-primary/10",  icon: ChevronRight,    label: "Pulado" },
 };
 
 const formatDuration = (ms: number | null) => {
@@ -154,11 +154,11 @@ export const WorkerPhaseTimeline = () => {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 flex items-center justify-center">
-            <Activity className="w-5 h-5 text-blue-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-info/20 to-info/10 flex items-center justify-center">
+            <Activity className="w-5 h-5 text-info" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-foreground">Worker — Fases de Automação</h2>
+            <h2 className="text-lg font-bold text-foreground">Automação — Fases</h2>
             <p className="text-xs text-muted-foreground">
               Timeline em tempo real do worker do portal iGreen
               {workerVersion && <Badge className="ml-2 bg-primary/10 text-primary border-primary/20 text-[10px]">{workerVersion}</Badge>}
@@ -173,10 +173,10 @@ export const WorkerPhaseTimeline = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Total de eventos" value={stats.total} icon={Activity} color="text-blue-400" bg="from-blue-500/10 to-blue-600/5" />
-        <StatCard label="Sucessos" value={stats.ok} icon={CheckCircle2} color="text-emerald-400" bg="from-emerald-500/10 to-emerald-600/5" />
-        <StatCard label="Avisos / Skips" value={stats.warn} icon={AlertTriangle} color="text-amber-400" bg="from-amber-500/10 to-amber-600/5" />
-        <StatCard label="Falhas / Abortos" value={stats.failed} icon={XCircle} color="text-red-400" bg="from-red-500/10 to-red-600/5" />
+        <StatCard label="Total de eventos" value={stats.total} icon={Activity} color="text-info" bg="from-info/10 to-info/5" />
+        <StatCard label="Sucessos" value={stats.ok} icon={CheckCircle2} color="text-primary" bg="from-primary/10 to-primary/5" />
+        <StatCard label="Avisos / Skips" value={stats.warn} icon={AlertTriangle} color="text-warning" bg="from-warning/10 to-warning/5" />
+        <StatCard label="Falhas / Abortos" value={stats.failed} icon={XCircle} color="text-destructive" bg="from-destructive/10 to-destructive/5" />
       </div>
 
       {/* Filters */}
@@ -218,7 +218,7 @@ export const WorkerPhaseTimeline = () => {
           <Activity className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
           <p className="text-muted-foreground font-medium">Nenhum log de fase encontrado</p>
           <p className="text-xs text-muted-foreground/60 mt-1">
-            Logs aparecerão aqui assim que o worker (v10+) processar leads.
+            Logs aparecerão aqui assim que o worker (v10+) processar clientes interessados.
           </p>
         </div>
       ) : (
@@ -254,7 +254,7 @@ export const WorkerPhaseTimeline = () => {
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {items.length} evento(s) · Última atividade: {formatTime(items[0].created_at)}
                       {failedPhases.length > 0 && (
-                        <span className="text-red-400 ml-2">· ⚠️ {failedPhases.length} falha(s)</span>
+                        <span className="text-destructive ml-2">· ⚠️ {failedPhases.length} falha(s)</span>
                       )}
                     </p>
                   </div>

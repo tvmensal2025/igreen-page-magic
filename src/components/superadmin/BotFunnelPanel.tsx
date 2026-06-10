@@ -50,7 +50,7 @@ export function BotFunnelPanel() {
     <Card className="overflow-hidden">
       <div className="border-b border-border bg-muted/30 px-4 py-3 flex items-center gap-2">
         <BarChart3 className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold">Funil do Bot</h3>
+        <h3 className="font-semibold">Funil do assistente</h3>
         <select
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}

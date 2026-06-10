@@ -57,9 +57,9 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
         <div className="relative mt-8 md:mt-14 max-w-4xl mx-auto">
           <div className="mockup-window">
             <div className="mockup-bar">
-              <span className="mockup-dot bg-red-400/70" />
-              <span className="mockup-dot bg-yellow-400/70" />
-              <span className="mockup-dot bg-green-400/70" />
+              <span className="mockup-dot bg-destructive/70" />
+              <span className="mockup-dot bg-warning/70" />
+              <span className="mockup-dot bg-primary/70" />
               <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
             </div>
             <video playsInline autoPlay muted loop preload="metadata" className="w-full aspect-video block">

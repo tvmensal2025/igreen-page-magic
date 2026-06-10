@@ -36,13 +36,24 @@ function fmtTime(iso: string) {
   } catch { return ""; }
 }
 
+// Rótulo de data para o separador (Hoje / Ontem / dd/mm)
+function dayLabel(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (same(d, today)) return "Hoje";
+  if (same(d, yesterday)) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 function sortRows(rows: ConvRow[], limit: number) {
   return [...rows]
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     .slice(-limit);
 }
 
-export function CaptureConversationFeed({ customerId, limit = 12, gameOn = false }: Props) {
+export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false }: Props) {
   const [rows, setRows] = useState<ConvRow[]>([]);
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -142,14 +153,14 @@ export function CaptureConversationFeed({ customerId, limit = 12, gameOn = false
 
   return (
     <div className={`rounded-lg overflow-hidden flex flex-col min-h-0 flex-1 ${gameOn ? "border exec-border-gold bg-card/40" : "border border-border bg-card/30"}`}>
-      <div className={`px-2.5 py-1.5 border-b flex items-center justify-between shrink-0 ${gameOn ? "border-amber-400/25 bg-gradient-to-r from-amber-400/10 via-card/40 to-transparent" : "border-border/60 bg-muted/30"}`}>
-        <span className={`flex items-center gap-1.5 ${gameOn ? "text-[12px] font-black uppercase tracking-widest text-amber-300" : "text-[10px] font-bold uppercase tracking-wide text-muted-foreground"}`}>
-          {gameOn && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 exec-live-dot" aria-hidden />}
-          <MessageCircle className={`${gameOn ? "w-3.5 h-3.5 text-amber-400" : "w-3 h-3 text-primary"}`} />
+      <div className={`px-2.5 py-1.5 border-b flex items-center justify-between shrink-0 ${gameOn ? "border-warning/25 bg-gradient-to-r from-warning/10 via-card/40 to-transparent" : "border-border/60 bg-muted/30"}`}>
+        <span className={`flex items-center gap-1.5 ${gameOn ? "text-[12px] font-black uppercase tracking-widest text-warning" : "text-[10px] font-bold uppercase tracking-wide text-muted-foreground"}`}>
+          {gameOn && <span className="inline-block w-1.5 h-1.5 rounded-full bg-destructive/100 exec-live-dot" aria-hidden />}
+          <MessageCircle className={`${gameOn ? "w-3.5 h-3.5 text-warning" : "w-3 h-3 text-primary"}`} />
           {gameOn ? "Conversa ao vivo" : "Conversa ao vivo"}
-          {gameOn && <span className="ml-1 px-1.5 py-0 rounded text-[9px] font-black bg-red-500/20 text-red-300 border border-red-500/40 tracking-wider">AO VIVO</span>}
+          {gameOn && <span className="ml-1 px-1.5 py-0 rounded text-[9px] font-black bg-destructive/20 text-destructive border border-destructive/40 tracking-wider">AO VIVO</span>}
         </span>
-        <span className={`tabular-nums ${gameOn ? "text-[10px] font-bold text-amber-300/80" : "text-[9px] text-muted-foreground"}`}>{rows.length}</span>
+        <span className={`tabular-nums ${gameOn ? "text-[10px] font-bold text-warning/80" : "text-[9px] text-muted-foreground"}`}>{rows.length}</span>
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-[140px] overflow-y-auto p-2.5 space-y-2 bg-[#0b141a]/40">
@@ -160,31 +171,46 @@ export function CaptureConversationFeed({ customerId, limit = 12, gameOn = false
           </div>
         )}
         {!loading && rows.length === 0 && (
-          <p className="text-[10px] italic text-muted-foreground text-center py-4">
-            Nenhuma mensagem ainda. Envie um passo para começar.
-          </p>
+          <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-center gap-2 px-4">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <MessageCircle className="w-6 h-6 text-primary/60" />
+            </div>
+            <p className="text-sm font-medium text-white/80">Nenhuma mensagem ainda</p>
+            <p className="text-xs text-white/50 max-w-[220px]">
+              Envie um passo do roteiro ou escreva uma mensagem abaixo para começar a conversa.
+            </p>
+          </div>
         )}
-        {rows.map((r) => {
+        {rows.map((r, idx) => {
           const out = r.message_direction === "outbound";
           const text = r.message_text || `[${r.message_type || "mídia"}]`;
+          const showDay = idx === 0 || dayLabel(r.created_at) !== dayLabel(rows[idx - 1].created_at);
           return (
-            <div key={r.id} className={`flex ${out ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${
-                  out
-                    ? "bg-[#005c4b] text-white rounded-tr-sm"
-                    : "bg-[#202c33] text-white rounded-tl-sm"
-                }`}
-              >
-                <div className="flex items-center gap-1 text-[10px] opacity-70 mb-1">
-                  {iconFor(r.message_type)}
-                  <span className="uppercase font-semibold">{out ? "Você" : "Lead"}</span>
-                  <span>·</span>
-                  <span className="tabular-nums">{fmtTime(r.created_at)}</span>
-                  {r.slot_key && <span className="ml-1 opacity-60">· {r.slot_key}</span>}
+            <div key={r.id}>
+              {showDay && (
+                <div className="flex items-center justify-center my-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-black/30 text-white/70 text-[10px] font-medium">
+                    {dayLabel(r.created_at)}
+                  </span>
                 </div>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{text}</p>
-
+              )}
+              <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
+                <div
+                  className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${
+                    out
+                      ? "bg-[#005c4b] text-white rounded-tr-sm"
+                      : "bg-[#202c33] text-white rounded-tl-sm"
+                  }`}
+                >
+                  <div className="flex items-center gap-1 text-[10px] opacity-70 mb-1">
+                    {iconFor(r.message_type)}
+                    <span className="uppercase font-semibold">{out ? "Você" : "Cliente"}</span>
+                    <span>·</span>
+                    <span className="tabular-nums">{fmtTime(r.created_at)}</span>
+                    {r.slot_key && <span className="ml-1 opacity-60">· {r.slot_key}</span>}
+                  </div>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{text}</p>
+                </div>
               </div>
             </div>
           );

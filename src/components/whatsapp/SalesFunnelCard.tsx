@@ -52,7 +52,7 @@ export function SalesFunnelCard({ lead, onDragStart, onClick }: SalesFunnelCardP
       {/* Conta de luz */}
       {billValue > 0 && (
         <div className="flex items-center gap-1.5 mb-1.5 text-xs">
-          <Zap className="w-3 h-3 text-amber-400" />
+          <Zap className="w-3 h-3 text-warning" />
           <span className="text-foreground font-medium">
             R$ {billValue.toFixed(0)}
           </span>
@@ -88,7 +88,7 @@ export function SalesFunnelCard({ lead, onDragStart, onClick }: SalesFunnelCardP
             </Badge>
           )}
           {lead.bot_paused && (
-            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-amber-500/40 text-amber-400">
+            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-warning/40 text-warning">
               <Pause className="w-2.5 h-2.5 mr-0.5" />pausado
             </Badge>
           )}

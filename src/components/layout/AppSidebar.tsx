@@ -50,11 +50,11 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Visão Geral",
     items: [
-      { id: "dashboard", label: "Dashboard", icon: BarChart3 },
-      { id: "crm", label: "CRM Leads", icon: LayoutGrid },
-      { id: "crm-clientes", label: "CRM Clientes", icon: UserCheck },
+      { id: "dashboard", label: "Painel", icon: BarChart3 },
+      { id: "crm", label: "Clientes interessados", icon: LayoutGrid },
+      { id: "crm-clientes", label: "Clientes ativos", icon: UserCheck },
       { id: "conversao", label: "Conversão", icon: Flame },
-      { id: "clientes", label: "Clientes", icon: Database },
+      { id: "clientes", label: "Base de clientes", icon: Database },
     ],
   },
   {
@@ -69,10 +69,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Recursos",
     items: [
-      { id: "central-anuncios", label: "Central de Anúncios", icon: Megaphone },
+      { id: "central-anuncios", label: "Central de anúncios", icon: Megaphone },
       { id: "links", label: "Links", icon: LinkIcon },
       { id: "materiais", label: "Materiais", icon: FolderDown },
-      { id: "audio-studio", label: "Estúdio de Áudio", icon: Mic },
+      { id: "audio-studio", label: "Estúdio de áudio", icon: Mic },
     ],
   },
 ];
@@ -157,7 +157,7 @@ export function AppSidebar({
             <>
               <div className="min-w-0 flex-1">
                 <p className="pe-heading text-base font-bold tracking-tight leading-tight truncate text-slate-50">{consultantName}</p>
-                <p className="text-[9px] mt-1 uppercase tracking-[0.22em] truncate text-lime-200">{consultantLevel}</p>
+                <p className="text-[9px] mt-1 uppercase tracking-[0.22em] truncate text-primary">{consultantLevel}</p>
               </div>
               {onLogout && (
                 <button

@@ -201,7 +201,7 @@ export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sent
           <span className="tabular-nums font-bold text-primary">{sentSteps.size}/{display.length}</span>
         </div>
         <div className="h-0.5 rounded-full bg-secondary overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-500"
+          <div className="h-full bg-gradient-to-r from-primary to-primary transition-all duration-500"
                style={{ width: `${Math.round((sentSteps.size / Math.max(display.length, 1)) * 100)}%` }} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(84px,1fr))] 2xl:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1 capture-card-flip">
@@ -215,7 +215,7 @@ export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sent
                 key={s.id}
                 className={`group relative rounded-md border p-1 flex flex-col h-full min-h-[72px] transition-all duration-300 ${
                   sent
-                    ? "border-primary/60 bg-gradient-to-br from-primary/15 to-emerald-500/5 shadow-[0_0_10px_hsl(var(--primary)/0.18)] animate-exec-card"
+                    ? "border-primary/60 bg-gradient-to-br from-primary/15 to-primary/5 shadow-[0_0_10px_hsl(var(--primary)/0.18)] animate-exec-card"
                     : isNext
                         ? "border-primary bg-card hover:border-primary/80 hover:shadow-lg hover:-translate-y-0.5 ring-1 ring-primary/30"
                         : "border-border bg-card hover:border-primary/40"
@@ -224,9 +224,9 @@ export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sent
                 <div className="flex items-center gap-1 mb-1">
                   <span className={`text-[9px] font-black tabular-nums px-1 py-px rounded ${sent ? "bg-primary text-primary-foreground" : "bg-secondary text-primary"}`}>P{s.position}</span>
                   <div className="flex items-center gap-0.5 ml-auto">
-                    <Mic className={`w-2.5 h-2.5 ${s.has_audio ? "text-emerald-400" : "text-muted-foreground/25"}`} />
-                    <ImageIcon className={`w-2.5 h-2.5 ${s.has_image ? "text-amber-400" : "text-muted-foreground/25"}`} />
-                    <Video className={`w-2.5 h-2.5 ${s.has_video ? "text-cyan-400" : "text-muted-foreground/25"}`} />
+                    <Mic className={`w-2.5 h-2.5 ${s.has_audio ? "text-primary" : "text-muted-foreground/25"}`} />
+                    <ImageIcon className={`w-2.5 h-2.5 ${s.has_image ? "text-warning" : "text-muted-foreground/25"}`} />
+                    <Video className={`w-2.5 h-2.5 ${s.has_video ? "text-info" : "text-muted-foreground/25"}`} />
                     {sent && <Check className="w-3 h-3 text-primary drop-shadow-[0_0_4px_hsl(var(--primary))] ml-0.5" />}
                   </div>
                 </div>

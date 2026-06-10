@@ -842,7 +842,7 @@ export function AudioStudio({ userId }: { userId: string }) {
             {isSuperAdmin && (
               <button
                 onClick={() => setLibTab("all")}
-                className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "all" ? "bg-primary text-primary-foreground" : "bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400"}`}
+                className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "all" ? "bg-primary text-primary-foreground" : "bg-warning/15 border border-warning/30 text-warning dark:text-warning"}`}
                 title="Visível apenas para super admin"
               >
                 <Globe2 className="w-3.5 h-3.5" /> Todos

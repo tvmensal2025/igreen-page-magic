@@ -37,7 +37,7 @@ export function AddImageToTemplate({ templateId, onUpdateTemplate }: Props) {
         size="sm"
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
-        className="h-6 text-[10px] gap-1 border-dashed border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+        className="h-6 text-[10px] gap-1 border-dashed border-info/30 text-info hover:bg-info/10"
       >
         {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Image className="w-3 h-3" />}
         {uploading ? "Enviando..." : "Adicionar imagem"}

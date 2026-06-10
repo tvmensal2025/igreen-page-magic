@@ -212,7 +212,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
               <div className="leading-snug">
                 Anúncio em nome de <strong className="text-foreground">{consultantName || "você"}</strong>
                 {connectedPhone && (
-                  <> · leads chegam no WhatsApp <strong className="text-foreground">{formatPhone(connectedPhone)}</strong></>
+                  <> · clientes interessados chegam no WhatsApp <strong className="text-foreground">{formatPhone(connectedPhone)}</strong></>
                 )}
                 <div className="text-muted-foreground mt-0.5">Tudo automático — não precisa preencher nome nem telefone.</div>
               </div>
@@ -236,7 +236,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
               <div className="flex flex-wrap gap-1.5">
                 <button type="button" onClick={() => setSelectedCity("__all__")}
                   title="Avançado: orçamento será diluído entre muitas cidades. CPL costuma ficar mais alto."
-                  className={`text-xs px-3 py-1.5 rounded-full border transition ${selectedCity === "__all__" ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/60" : "bg-card hover:bg-amber-500/10 border-border"}`}>
+                  className={`text-xs px-3 py-1.5 rounded-full border transition ${selectedCity === "__all__" ? "bg-warning/20 text-warning dark:text-warning border-warning/60" : "bg-card hover:bg-warning/10 border-border"}`}>
                   ⚠ Todas ({presetCities.length}) — avançado
                 </button>
                 {presetCities.map((c) => (
@@ -251,10 +251,10 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
               </div>
             </div>
 
-            <div className="text-xs flex gap-2 rounded border border-amber-500/40 p-3 bg-red-400">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+            <div className="text-xs flex gap-2 rounded border border-warning/40 p-3 bg-destructive">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
               <div className="space-y-0.5">
-                <div className="font-semibold text-green-900">Use WhatsApp Business</div>
+                <div className="font-semibold text-primary">Use WhatsApp Business</div>
                 <div className="text-gray-900">
                   O Facebook só entrega anúncios de mensagem para números cadastrados como <strong>WhatsApp Business</strong>. Se ainda usa o WhatsApp comum, baixe o app <em>WhatsApp Business</em> e migre o número antes de publicar — caso contrário a campanha será reprovada.
                 </div>
@@ -265,7 +265,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
               <div>📍 <strong>{preset?.nome}</strong> — {selectedCity === "__all__" ? `${presetCities.length} cidades` : selectedCity}</div>
               <div>💰 <strong>R$ {(template.suggested_daily_budget_cents / 100).toFixed(0)}/dia</strong>, sem prazo final</div>
               <div>👥 Idade {template.age_min}-{template.age_max}, LAL da plataforma + exclusão de clientes ativos</div>
-              <div>📱 Leads chegam direto no seu WhatsApp configurado</div>
+              <div>📱 Clientes interessados chegam direto no seu WhatsApp configurado</div>
             </div>
 
             {stepLog && (

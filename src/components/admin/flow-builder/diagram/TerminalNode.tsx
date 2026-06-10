@@ -40,21 +40,21 @@ function TerminalNodeImpl({ data, selected }: NodeProps<TerminalDiagramNode>) {
   const KIND_COLORS: Record<string, { container: string; iconText: string; label: string }> = {
     cadastro: {
       container:
-        "border-emerald-500/50 bg-emerald-500/10 dark:border-emerald-400/40 dark:bg-emerald-950/40",
-      iconText: "text-emerald-700 dark:text-emerald-400",
-      label: "text-emerald-900 dark:text-emerald-200",
+        "border-primary/50 bg-primary/10 dark:border-primary/40 dark:bg-primary/40",
+      iconText: "text-primary dark:text-primary",
+      label: "text-primary dark:text-primary",
     },
     humano: {
       container:
-        "border-sky-500/50 bg-sky-500/10 dark:border-sky-400/40 dark:bg-sky-950/40",
-      iconText: "text-sky-700 dark:text-sky-300",
-      label: "text-sky-900 dark:text-sky-200",
+        "border-info/50 bg-info/10 dark:border-info/40 dark:bg-info/40",
+      iconText: "text-info dark:text-info",
+      label: "text-info dark:text-info",
     },
     repeat: {
       container:
-        "border-amber-500/50 bg-amber-500/10 dark:border-amber-400/40 dark:bg-amber-950/40",
-      iconText: "text-amber-700 dark:text-amber-400",
-      label: "text-amber-900 dark:text-amber-200",
+        "border-warning/50 bg-warning/10 dark:border-warning/40 dark:bg-warning/40",
+      iconText: "text-warning dark:text-warning",
+      label: "text-warning dark:text-warning",
     },
   };
   const palette = KIND_COLORS[kind] ?? {

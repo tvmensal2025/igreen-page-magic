@@ -83,7 +83,7 @@ export function MaterialCard({ item, consultantId }: Props) {
             {downloading ? "Baixando..." : "Baixar"}
           </Button>
           <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={handleCopy}>
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
           </Button>
         </div>
         <SendViaWhatsAppPopover item={item} consultantId={consultantId} />

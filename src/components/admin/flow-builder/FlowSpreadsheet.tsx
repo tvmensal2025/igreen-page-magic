@@ -217,7 +217,7 @@ export default function FlowSpreadsheet({
             size="sm"
             onClick={onReviewAll}
             disabled={!flowId || !steps.length || reviewing}
-            className="bg-purple-600 hover:bg-purple-700"
+            className="bg-primary hover:bg-primary"
             title="GPT-5.5 analisa o fluxo todo e propõe melhorias"
           >
             {reviewing ? (

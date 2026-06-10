@@ -4,11 +4,11 @@ interface Props { progress: number; filled: number; total: number; tier?: LevelT
 
 const TIER_GRADIENT: Record<number, string> = {
   0: "from-slate-500 to-slate-400",
-  1: "from-amber-700 to-amber-500",
+  1: "from-warning to-warning",
   2: "from-zinc-400 to-zinc-200",
-  3: "from-amber-500 to-yellow-400",
-  4: "from-cyan-500 to-cyan-300",
-  5: "from-emerald-500 to-green-400",
+  3: "from-warning to-warning",
+  4: "from-info to-info",
+  5: "from-primary to-primary",
 };
 
 export function CaptureProgressBar({ progress, filled, total, tier }: Props) {

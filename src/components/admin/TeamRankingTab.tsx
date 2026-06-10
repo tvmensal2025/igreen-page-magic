@@ -140,7 +140,7 @@ export function TeamRankingTab({ teamIds, leaderId }: Props) {
               <th className="text-right px-4 py-2">kW médio</th>
               <th className="text-right px-4 py-2">Conta média</th>
               <th className="text-right px-4 py-2">Conv%</th>
-              <th className="text-right px-4 py-2">Leads 30d</th>
+              <th className="text-right px-4 py-2">Clientes interessados 30d</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/40">

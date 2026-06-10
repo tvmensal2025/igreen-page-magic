@@ -26,9 +26,9 @@ interface Props {
 }
 
 function severityColor(rate: number, confidence: number | null): string {
-  if (rate >= 60 || (confidence !== null && confidence < 0.4)) return "text-red-400 bg-red-500/10 border-red-500/30";
-  if (rate >= 35 || (confidence !== null && confidence < 0.6)) return "text-orange-400 bg-orange-500/10 border-orange-500/30";
-  return "text-green-400 bg-green-500/10 border-green-500/30";
+  if (rate >= 60 || (confidence !== null && confidence < 0.4)) return "text-destructive bg-destructive/10 border-destructive/30";
+  if (rate >= 35 || (confidence !== null && confidence < 0.6)) return "text-warning bg-warning/10 border-warning/30";
+  return "text-primary bg-primary/10 border-primary/30";
 }
 
 function formatDuration(ms: number | null): string {
@@ -99,7 +99,7 @@ export function FlowFunnelPanel({ consultantId }: Props) {
           <p className="text-xs text-muted-foreground mt-0.5">
             Últimos 30 dias · {totalEntries.toLocaleString("pt-BR")} entradas totais
             {criticalSteps.length > 0 && (
-              <span className="ml-2 text-red-400 font-medium">
+              <span className="ml-2 text-destructive font-medium">
                 ⚠️ {criticalSteps.length} passo{criticalSteps.length > 1 ? "s" : ""} crítico{criticalSteps.length > 1 ? "s" : ""}
               </span>
             )}
@@ -127,7 +127,7 @@ export function FlowFunnelPanel({ consultantId }: Props) {
         <div className="py-6 text-center space-y-1">
           <GitBranch className="w-8 h-8 text-muted-foreground/40 mx-auto" />
           <p className="text-sm text-muted-foreground">Sem dados de transição ainda.</p>
-          <p className="text-xs text-muted-foreground">Os dados aparecem após leads passarem pelo fluxo.</p>
+          <p className="text-xs text-muted-foreground">Os dados aparecem após clientes interessados passarem pelo fluxo.</p>
         </div>
       ) : (
         <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
@@ -146,7 +146,7 @@ export function FlowFunnelPanel({ consultantId }: Props) {
                         {s.step_key}
                       </code>
                       {s.abandonment_rate_pct >= 60 && (
-                        <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                        <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
                       )}
                     </div>
                   </div>
@@ -162,8 +162,8 @@ export function FlowFunnelPanel({ consultantId }: Props) {
                 <div className="h-1.5 bg-secondary/50 rounded-full mb-2 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
-                      s.abandonment_rate_pct >= 60 ? "bg-red-500" :
-                      s.abandonment_rate_pct >= 35 ? "bg-orange-500" : "bg-green-500"
+                      s.abandonment_rate_pct >= 60 ? "bg-destructive/100" :
+                      s.abandonment_rate_pct >= 35 ? "bg-warning/100" : "bg-primary/100"
                     }`}
                     style={{ width: `${barWidth}%` }}
                   />
@@ -184,9 +184,9 @@ export function FlowFunnelPanel({ consultantId }: Props) {
                     <Badge
                       variant="outline"
                       className={`text-[10px] h-4 px-1.5 ${
-                        s.avg_confidence < 0.5 ? "border-red-500/40 text-red-400" :
-                        s.avg_confidence < 0.7 ? "border-orange-500/40 text-orange-400" :
-                        "border-green-500/40 text-green-400"
+                        s.avg_confidence < 0.5 ? "border-destructive/40 text-destructive" :
+                        s.avg_confidence < 0.7 ? "border-warning/40 text-warning" :
+                        "border-primary/40 text-primary"
                       }`}
                     >
                       IA: {(s.avg_confidence * 100).toFixed(0)}% confiança
@@ -200,7 +200,7 @@ export function FlowFunnelPanel({ consultantId }: Props) {
                     💡 {s.avg_confidence !== null && s.avg_confidence < 0.5
                       ? "IA com baixa confiança neste passo — revise o texto do step ou adicione mais exemplos de FAQ."
                       : s.avg_duration_ms && s.avg_duration_ms > 3_600_000
-                        ? "Leads ficam mais de 1h aqui — considere enviar um lembrete automático."
+                        ? "Clientes interessados ficam mais de 1h aqui — considere enviar um lembrete automático."
                         : "Alto abandono — revise a mensagem deste passo ou adicione mídia de apoio."}
                   </p>
                 )}

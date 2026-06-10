@@ -28,12 +28,12 @@ const FUNNEL_STAGE_KEYS = [
 
 const STAGE_COLORS: Record<string, string> = {
   novo_lead: "from-slate-500 to-slate-400",
-  qualificando: "from-indigo-500 to-indigo-400",
-  valor_conta: "from-teal-500 to-teal-400",
-  conta_enviada: "from-cyan-500 to-cyan-400",
-  doc_enviado: "from-blue-500 to-blue-400",
-  finalizando: "from-pink-500 to-pink-400",
-  aprovado: "from-emerald-500 to-emerald-400",
+  qualificando: "from-info to-info",
+  valor_conta: "from-primary to-primary",
+  conta_enviada: "from-info to-info",
+  doc_enviado: "from-info to-info",
+  finalizando: "from-primary to-primary",
+  aprovado: "from-primary to-primary",
 };
 
 /**
@@ -122,7 +122,7 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
 
       {totalLeads === 0 ? (
         <div className="text-center py-10 text-sm text-muted-foreground">
-          Nenhum lead no período. Quando os contatos começarem a entrar pelo WhatsApp,
+          Nenhum cliente interessado no período. Quando os contatos começarem a entrar pelo WhatsApp,
           o funil aparece aqui automaticamente.
         </div>
       ) : (
@@ -170,7 +170,7 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
       )}
 
       <div className="mt-4 pt-4 border-t border-border/40 text-[11px] text-muted-foreground">
-        <strong className="text-foreground">CPL</strong> = custo de cada lead que entrou
+        <strong className="text-foreground">CPL</strong> = custo de cada cliente interessado que entrou
         no WhatsApp · <strong className="text-foreground">CPA</strong> = custo real de
         cada cliente aprovado. Quanto mais cedo no funil, mais barato; quanto mais perto
         de "Aprovado", mais caro (porque menos pessoas chegam lá).
@@ -181,7 +181,7 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
 
 function defaultLabel(key: string): string {
   const map: Record<string, string> = {
-    novo_lead: "Novo Lead",
+    novo_lead: "Novo Cliente interessado",
     qualificando: "Qualificando",
     valor_conta: "Valor da Conta",
     conta_enviada: "Conta Enviada",

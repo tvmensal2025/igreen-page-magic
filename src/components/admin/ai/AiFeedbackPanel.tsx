@@ -56,12 +56,12 @@ const INTENT_LABELS: Record<string, string> = {
 };
 
 const PHASE_COLORS: Record<string, string> = {
-  abertura: "bg-blue-500/20 text-blue-400",
-  descoberta: "bg-purple-500/20 text-purple-400",
-  pitch: "bg-yellow-500/20 text-yellow-400",
-  objecao: "bg-orange-500/20 text-orange-400",
-  fechamento: "bg-green-500/20 text-green-400",
-  perdido: "bg-red-500/20 text-red-400",
+  abertura: "bg-info/20 text-info",
+  descoberta: "bg-primary/20 text-primary",
+  pitch: "bg-warning/20 text-warning",
+  objecao: "bg-warning/20 text-warning",
+  fechamento: "bg-primary/20 text-primary",
+  perdido: "bg-destructive/20 text-destructive",
 };
 
 export function AiFeedbackPanel({ consultantId }: Props) {
@@ -169,9 +169,9 @@ export function AiFeedbackPanel({ consultantId }: Props) {
           <Card className="p-3 bg-card/50 border-border/60">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Aprovações / Reprovações</p>
             <p className="text-xl font-bold text-foreground tabular-nums mt-0.5">
-              <span className="text-green-400">{stats.thumbs_up}</span>
+              <span className="text-primary">{stats.thumbs_up}</span>
               <span className="text-muted-foreground mx-1">/</span>
-              <span className="text-red-400">{stats.thumbs_down}</span>
+              <span className="text-destructive">{stats.thumbs_down}</span>
             </p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
               {stats.auto_handoff_downs} reprovações automáticas (handoff)
@@ -179,7 +179,7 @@ export function AiFeedbackPanel({ consultantId }: Props) {
           </Card>
           <Card className="p-3 bg-card/50 border-border/60">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Taxa de handoff</p>
-            <p className={`text-xl font-bold tabular-nums mt-0.5 ${(stats.handoff_rate_pct ?? 0) > 20 ? "text-orange-400" : "text-foreground"}`}>
+            <p className={`text-xl font-bold tabular-nums mt-0.5 ${(stats.handoff_rate_pct ?? 0) > 20 ? "text-warning" : "text-foreground"}`}>
               {stats.handoff_rate_pct ?? 0}%
             </p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -209,7 +209,7 @@ export function AiFeedbackPanel({ consultantId }: Props) {
             <p className="text-xs text-muted-foreground mt-0.5">
               Seu feedback treina a IA para responder melhor nas próximas conversas.
               {pendingCount > 0 && (
-                <span className="ml-1 text-orange-400 font-medium">{pendingCount} aguardando avaliação.</span>
+                <span className="ml-1 text-warning font-medium">{pendingCount} aguardando avaliação.</span>
               )}
             </p>
           </div>
@@ -289,8 +289,8 @@ function DecisionCard({
     <div className={`rounded-lg border p-3 transition-colors ${
       hasRating
         ? isUp
-          ? "border-green-500/30 bg-green-500/5"
-          : "border-red-500/30 bg-red-500/5"
+          ? "border-primary/30 bg-primary/5"
+          : "border-destructive/30 bg-destructive/5"
         : "border-border/50 bg-secondary/20"
     }`}>
       <div className="flex items-start gap-3">
@@ -298,7 +298,7 @@ function DecisionCard({
           {/* Lead disse */}
           {d.user_input && (
             <div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Lead disse</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Cliente interessado disse</p>
               <p className="text-xs text-foreground/80 italic">"{d.user_input.slice(0, 200)}"</p>
             </div>
           )}
@@ -347,7 +347,7 @@ function DecisionCard({
           <Button
             size="icon"
             variant={isUp ? "default" : "outline"}
-            className={`h-8 w-8 ${isUp ? "bg-green-600 hover:bg-green-700 border-green-600" : "hover:border-green-500/60 hover:text-green-400"}`}
+            className={`h-8 w-8 ${isUp ? "bg-primary hover:bg-primary border-primary" : "hover:border-primary/60 hover:text-primary"}`}
             disabled={voting || isAuto}
             onClick={() => onVote("up")}
             title="Boa resposta — usar como exemplo"
@@ -357,7 +357,7 @@ function DecisionCard({
           <Button
             size="icon"
             variant={isDown ? "default" : "outline"}
-            className={`h-8 w-8 ${isDown ? "bg-red-600 hover:bg-red-700 border-red-600" : "hover:border-red-500/60 hover:text-red-400"}`}
+            className={`h-8 w-8 ${isDown ? "bg-destructive hover:bg-destructive border-destructive" : "hover:border-destructive/60 hover:text-destructive"}`}
             disabled={voting || isAuto}
             onClick={() => onVote("down")}
             title="Resposta ruim — evitar no futuro"

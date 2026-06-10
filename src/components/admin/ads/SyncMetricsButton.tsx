@@ -102,9 +102,9 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
         {result && !loading && (
           <Button size={size} variant="ghost" onClick={() => setReportOpen(true)} className="gap-1.5 text-xs">
             {result.errors.length > 0 ? (
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+              <AlertTriangle className="w-3.5 h-3.5 text-warning" />
             ) : (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
             )}
             Ver último sync
           </Button>
@@ -126,9 +126,9 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
           {result && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2">
+                <div className="rounded-lg bg-primary/10 border border-primary/30 p-2">
                   <div className="text-xs text-muted-foreground">Sincronizadas</div>
-                  <div className="text-lg font-bold text-emerald-500">{result.synced}</div>
+                  <div className="text-lg font-bold text-primary">{result.synced}</div>
                 </div>
                 <div className="rounded-lg bg-secondary p-2">
                   <div className="text-xs text-muted-foreground">Total</div>
@@ -143,8 +143,8 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
               </div>
 
               {result.auto_paused > 0 && (
-                <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2 text-xs">
-                  <strong className="text-amber-500">⚠ {result.auto_paused} campanha(s) auto-pausada(s)</strong>
+                <div className="rounded-lg bg-warning/10 border border-warning/30 p-2 text-xs">
+                  <strong className="text-warning">⚠ {result.auto_paused} campanha(s) auto-pausada(s)</strong>
                   <p className="text-muted-foreground mt-0.5">
                     Por saldo baixo, criativo cansado, ou CPL elevado. Veja a lista de campanhas para detalhes.
                   </p>
@@ -166,7 +166,7 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
               )}
 
               {result.errors.length === 0 && result.synced > 0 && (
-                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2 text-xs text-emerald-500 flex items-center gap-2">
+                <div className="rounded-lg bg-primary/10 border border-primary/30 p-2 text-xs text-primary flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
                   Todas as campanhas sincronizadas com sucesso.
                 </div>

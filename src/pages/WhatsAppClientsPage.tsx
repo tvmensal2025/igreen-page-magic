@@ -53,20 +53,20 @@ type OriginTab = "whatsapp_lead" | "igreen_sync";
 
 
 const statusConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  pending: { label: "Pendente", color: "text-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  portal_submitting: { label: "Enviando", color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-  awaiting_otp: { label: "Aguardando OTP", color: "text-violet-500", bg: "bg-violet-500/10", border: "border-violet-500/20" },
-  validating_otp: { label: "Validando OTP", color: "text-violet-500", bg: "bg-violet-500/10", border: "border-violet-500/20" },
-  awaiting_signature: { label: "Aguardando Assinatura", color: "text-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/20" },
-  complete: { label: "Completo", color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  approved: { label: "Aprovado", color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  registered_igreen: { label: "Cadastrado iGreen", color: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/20" },
-  worker_offline: { label: "Worker Offline", color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/20" },
-  automation_failed: { label: "Falha", color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/20" },
-  lead: { label: "Lead", color: "text-sky-500", bg: "bg-sky-500/10", border: "border-sky-500/20" },
-  data_complete: { label: "Dados Completos", color: "text-teal-500", bg: "bg-teal-500/10", border: "border-teal-500/20" },
-  devolutiva: { label: "Devolutiva", color: "text-rose-500", bg: "bg-rose-500/10", border: "border-rose-500/20" },
-  rejected: { label: "Reprovado", color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/20" },
+  pending: { label: "Pendente", color: "text-warning", bg: "bg-warning/10", border: "border-warning/20" },
+  portal_submitting: { label: "Enviando", color: "text-info", bg: "bg-info/10", border: "border-info/20" },
+  awaiting_otp: { label: "Aguardando OTP", color: "text-primary", bg: "bg-primary/10", border: "border-primary/20" },
+  validating_otp: { label: "Validando OTP", color: "text-primary", bg: "bg-primary/10", border: "border-primary/20" },
+  awaiting_signature: { label: "Aguardando Assinatura", color: "text-warning", bg: "bg-warning/10", border: "border-warning/20" },
+  complete: { label: "Completo", color: "text-primary", bg: "bg-primary/10", border: "border-primary/20" },
+  approved: { label: "Aprovado", color: "text-primary", bg: "bg-primary/10", border: "border-primary/20" },
+  registered_igreen: { label: "Cadastrado iGreen", color: "text-primary", bg: "bg-primary/10", border: "border-primary/20" },
+  worker_offline: { label: "Worker Offline", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20" },
+  automation_failed: { label: "Falha", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20" },
+  lead: { label: "Cliente interessado", color: "text-info", bg: "bg-info/10", border: "border-info/20" },
+  data_complete: { label: "Dados Completos", color: "text-primary", bg: "bg-primary/10", border: "border-primary/20" },
+  devolutiva: { label: "Devolutiva", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20" },
+  rejected: { label: "Reprovado", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20" },
 };
 
 const stepLabels: Record<string, string> = {
@@ -128,7 +128,7 @@ export default function WhatsAppClientsPage() {
       toast.error("Erro ao atualizar: " + error.message);
     } else {
       setCustomers((prev) => prev.map((x) => x.id === c.id ? { ...x, ...patch } : x));
-      toast.success(nowConverted ? "✅ Lead marcado como convertido!" : "Lead desmarcado");
+      toast.success(nowConverted ? "✅ Cliente interessado marcado como convertido!" : "Cliente interessado desmarcado");
     }
     setConvertingId(null);
   }
@@ -227,16 +227,16 @@ export default function WhatsAppClientsPage() {
 
   const stats = isLeadsTab
     ? [
-        { label: "Total leads", value: leadsWhatsapp.length, icon: Users, gradient: "from-violet-500/10 to-violet-600/5", iconColor: "text-violet-500" },
-        { label: "Em conversa", value: leadsWhatsapp.filter(c => c.status === "pending" && c.conversation_step && c.conversation_step !== "welcome").length, icon: MessageCircle, gradient: "from-sky-500/10 to-sky-600/5", iconColor: "text-sky-500" },
-        { label: "Convertidos", value: convertedLeads.length, icon: BadgeDollarSign, gradient: "from-emerald-500/10 to-emerald-600/5", iconColor: "text-emerald-500" },
-        { label: "Falhas / Pausados", value: leadsWhatsapp.filter(c => c.status === "automation_failed" || c.status === "worker_offline").length, icon: AlertTriangle, gradient: "from-red-500/10 to-red-600/5", iconColor: "text-red-500" },
+        { label: "Total clientes interessados", value: leadsWhatsapp.length, icon: Users, gradient: "from-primary/10 to-primary/5", iconColor: "text-primary" },
+        { label: "Em conversa", value: leadsWhatsapp.filter(c => c.status === "pending" && c.conversation_step && c.conversation_step !== "welcome").length, icon: MessageCircle, gradient: "from-info/10 to-info/5", iconColor: "text-info" },
+        { label: "Convertidos", value: convertedLeads.length, icon: BadgeDollarSign, gradient: "from-primary/10 to-primary/5", iconColor: "text-primary" },
+        { label: "Falhas / Pausados", value: leadsWhatsapp.filter(c => c.status === "automation_failed" || c.status === "worker_offline").length, icon: AlertTriangle, gradient: "from-destructive/10 to-destructive/5", iconColor: "text-destructive" },
       ]
     : [
-        { label: "Total carteira", value: clientesIgreen.length, icon: Briefcase, gradient: "from-emerald-500/10 to-emerald-600/5", iconColor: "text-emerald-500" },
-        { label: "Ativos", value: clientesIgreen.filter(c => /ativo/i.test(c.andamento_igreen || "") || c.status === "active").length, icon: CheckCircle, gradient: "from-green-500/10 to-green-600/5", iconColor: "text-green-500" },
-        { label: "Devolutiva", value: clientesIgreen.filter(c => !!c.devolutiva || /devolutiva/i.test(c.andamento_igreen || "")).length, icon: AlertTriangle, gradient: "from-rose-500/10 to-rose-600/5", iconColor: "text-rose-500" },
-        { label: "Em análise / Outros", value: clientesIgreen.filter(c => !c.devolutiva && !/ativo|devolutiva/i.test(c.andamento_igreen || "")).length, icon: Clock, gradient: "from-amber-500/10 to-amber-600/5", iconColor: "text-amber-500" },
+        { label: "Total carteira", value: clientesIgreen.length, icon: Briefcase, gradient: "from-primary/10 to-primary/5", iconColor: "text-primary" },
+        { label: "Ativos", value: clientesIgreen.filter(c => /ativo/i.test(c.andamento_igreen || "") || c.status === "active").length, icon: CheckCircle, gradient: "from-primary/10 to-primary/5", iconColor: "text-primary" },
+        { label: "Devolutiva", value: clientesIgreen.filter(c => !!c.devolutiva || /devolutiva/i.test(c.andamento_igreen || "")).length, icon: AlertTriangle, gradient: "from-destructive/10 to-destructive/5", iconColor: "text-destructive" },
+        { label: "Em análise / Outros", value: clientesIgreen.filter(c => !c.devolutiva && !/ativo|devolutiva/i.test(c.andamento_igreen || "")).length, icon: Clock, gradient: "from-warning/10 to-warning/5", iconColor: "text-warning" },
       ];
 
   if (loading) {
@@ -256,7 +256,7 @@ export default function WhatsAppClientsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold font-heading text-foreground">
-            {isLeadsTab ? "Leads WhatsApp" : "Clientes iGreen"}
+            {isLeadsTab ? "Clientes interessados WhatsApp" : "Clientes iGreen"}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {isLeadsTab
@@ -275,7 +275,7 @@ export default function WhatsAppClientsPage() {
         <TabsList className="grid grid-cols-2 w-full sm:w-auto sm:inline-grid h-11 rounded-xl">
           <TabsTrigger value="whatsapp_lead" className="gap-2 rounded-lg">
             <MessageCircle className="w-4 h-4" />
-            Leads WhatsApp
+            Clientes interessados WhatsApp
             <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{leadsWhatsapp.length}</Badge>
           </TabsTrigger>
           <TabsTrigger value="igreen_sync" className="gap-2 rounded-lg">
@@ -362,9 +362,9 @@ export default function WhatsAppClientsPage() {
 
       {/* Banner de comissão acumulada — só aparece quando há convertidos */}
       {isLeadsTab && convertedLeads.length > 0 && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <BadgeDollarSign className="w-4 h-4 text-emerald-500" />
+            <BadgeDollarSign className="w-4 h-4 text-primary" />
             <span className="font-semibold text-foreground text-sm">Resumo de Comissões — {convertedLeads.length} lead{convertedLeads.length !== 1 ? "s" : ""} convertido{convertedLeads.length !== 1 ? "s" : ""}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
@@ -372,14 +372,14 @@ export default function WhatsAppClientsPage() {
               <p className="text-muted-foreground">Soma das faturas</p>
               <p className="font-bold text-foreground text-base">{totalBillConverted.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
             </div>
-            <div className="rounded-lg bg-violet-500/10 border border-violet-500/20 px-3 py-2.5">
+            <div className="rounded-lg bg-primary/10 border border-primary/20 px-3 py-2.5">
               <p className="text-muted-foreground">Comissão 1ª venda</p>
-              <p className="font-bold text-violet-400 text-base">{totalFirstSale.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+              <p className="font-bold text-primary text-base">{totalFirstSale.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
               <p className="text-muted-foreground/70 text-[10px]">% configurado × fatura</p>
             </div>
-            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2.5">
+            <div className="rounded-lg bg-warning/10 border border-warning/20 px-3 py-2.5">
               <p className="text-muted-foreground">Recorrente/mês (4%)</p>
-              <p className="font-bold text-amber-400 text-base">{totalRecurring.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+              <p className="font-bold text-warning text-base">{totalRecurring.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
               <p className="text-muted-foreground/70 text-[10px]">todo mês enquanto ativo</p>
             </div>
           </div>
@@ -422,7 +422,7 @@ export default function WhatsAppClientsPage() {
                         </Badge>
                       )}
                       {c.is_converted && (
-                        <Badge className="text-[10px] px-2 py-0 h-5 bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                        <Badge className="text-[10px] px-2 py-0 h-5 bg-primary/15 text-primary border border-primary/30">
                           ✓ Convertido
                         </Badge>
                       )}
@@ -472,7 +472,7 @@ export default function WhatsAppClientsPage() {
                           <Button
                             size="sm"
                             variant={c.is_converted ? "outline" : "default"}
-                            className={`gap-1.5 h-8 text-xs ${c.is_converted ? "border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10" : ""}`}
+                            className={`gap-1.5 h-8 text-xs ${c.is_converted ? "border-primary/40 text-primary hover:bg-primary/10" : ""}`}
                             onClick={(e) => { e.stopPropagation(); toggleConverted(c); }}
                             disabled={convertingId === c.id}
                           >
@@ -505,15 +505,15 @@ export default function WhatsAppClientsPage() {
                           {/* Preview do valor de comissão */}
                           {c.is_converted && c.electricity_bill_value && c.commission_rate && (
                             <div className="flex items-center gap-3 text-xs flex-wrap">
-                              <span className="rounded-lg bg-violet-500/10 border border-violet-500/20 px-2.5 py-1.5">
+                              <span className="rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5">
                                 <span className="text-muted-foreground">1ª venda: </span>
-                                <span className="font-bold text-violet-400">
+                                <span className="font-bold text-primary">
                                   {(c.electricity_bill_value * c.commission_rate / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                                 </span>
                               </span>
-                              <span className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5">
+                              <span className="rounded-lg bg-warning/10 border border-warning/20 px-2.5 py-1.5">
                                 <span className="text-muted-foreground">Recorrente/mês: </span>
-                                <span className="font-bold text-amber-400">
+                                <span className="font-bold text-warning">
                                   {(c.electricity_bill_value * RECURRING_RATE).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                                 </span>
                               </span>

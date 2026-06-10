@@ -90,7 +90,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   const toggleCapture = useCallback(() => {
     if (!customerId) {
-      toast({ title: "Aguarde", description: "Estamos preparando o lead...", variant: "destructive" });
+      toast({ title: "Aguarde", description: "Estamos preparando o cliente interessado...", variant: "destructive" });
       return;
     }
     setCaptureOpen(true);
@@ -120,7 +120,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         title: "Conversa zerada",
         description: globalAiEnabled
           ? "Histórico oculto no painel e dados do lead resetados. O bot vai começar do zero."
-          : "Lead zerado. O bot vai responder só para este número (IA global continua desligada).",
+          : "Cliente interessado zerado. O bot vai responder só para este número (IA global continua desligada).",
       });
     } else {
       toast({ title: "Erro ao zerar", description: (r as { error: string }).error, variant: "destructive" });
@@ -162,7 +162,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           .eq("id", customerId);
         if (error) throw error;
         setBotPaused(true);
-        toast({ title: "🤖 Bot desligado neste lead", description: "A IA não vai responder mais este número." });
+        toast({ title: "🤖 Bot desligado neste cliente interessado", description: "A IA não vai responder mais este número." });
       } else {
         // Ligar: tira pause. Se global está off, força para este lead.
         const patch: Record<string, unknown> = { bot_paused: false, assigned_human_id: null };
@@ -174,7 +174,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         setBotPaused(false);
         if (!globalAiEnabled) setBotForceEnabled(true);
         toast({
-          title: "🤖 Bot ligado neste lead",
+          title: "🤖 Bot ligado neste cliente interessado",
           description: globalAiEnabled
             ? "A IA volta a responder este número."
             : "Bot ativo só para este número (IA global continua desligada).",
@@ -205,7 +205,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     if (r === "new") {
       toast({
         title: "🤖 Bot pausado — você assumiu",
-        description: "A IA não vai responder neste lead enquanto você estiver na conversa.",
+        description: "A IA não vai responder neste cliente interessado enquanto você estiver na conversa.",
         action: (
           <ToastAction altText="Desfazer" onClick={async () => {
             const ok = await undoTakeoverByPhone(phone);
@@ -234,16 +234,16 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           .from("crm_deals")
           .update({ stage: stageKey, updated_at: new Date().toISOString() })
           .eq("id", existing.id);
-        toast({ title: "CRM atualizado", description: `Movido para ${kanbanStages.find(s => s.stage_key === stageKey)?.label || stageKey}` });
+        toast({ title: "Cliente atualizado", description: `Movido para ${kanbanStages.find(s => s.stage_key === stageKey)?.label || stageKey}` });
       } else {
         await supabase
           .from("crm_deals")
           .insert({ consultant_id: consultantId, remote_jid: chat.remoteJid, stage: stageKey });
-        toast({ title: "Adicionado ao CRM", description: `Enviado para ${kanbanStages.find(s => s.stage_key === stageKey)?.label || stageKey}` });
+        toast({ title: "Adicionado aos clientes", description: `Enviado para ${kanbanStages.find(s => s.stage_key === stageKey)?.label || stageKey}` });
       }
     } catch (err) {
       logger.error("Erro ao enviar ao CRM:", err);
-      toast({ title: "Erro ao enviar ao CRM", variant: "destructive" });
+      toast({ title: "Não foi possível adicionar aos clientes", variant: "destructive" });
     } finally {
       setSendingToCrm(false);
     }
@@ -532,7 +532,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Zerar conversa deste lead?</AlertDialogTitle>
+              <AlertDialogTitle>Zerar conversa deste cliente interessado?</AlertDialogTitle>
               <AlertDialogDescription>
                 Vai apagar o histórico de mensagens do bot, decisões da IA, áudios disparados e
                 resetar a etapa do funil. O cliente continua cadastrado, mas o bot vai começar do zero

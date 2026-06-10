@@ -35,31 +35,31 @@ const features = [
   {
     icon: MessageSquare,
     title: "WhatsApp Integrado",
-    desc: "Envie e receba mensagens direto do CRM, com templates prontos, respostas rápidas e gravação de áudio. Tudo em uma única tela. ",
+    desc: "Envie e receba mensagens direto do CRM, com modelos prontos, respostas rápidas e gravação de áudio. Tudo em uma única tela. ",
   },
   {
     icon: LayoutDashboard,
-    title: "Kanban de Vendas",
-    desc: "Pipeline visual com drag-and-drop para acompanhar cada etapa do primeiro contato até o o cliente pagar o boleto da igreen.",
+    title: "Funil de Vendas",
+    desc: "Quadro visual onde você arrasta cada cliente entre as etapas, do primeiro contato até o pagamento do boleto da iGreen.",
   },
   {
     icon: Users,
     title: "Gestão de Clientes",
-    desc: "Sincronizado com seus clientes da igreen.\n\nCadastro completo, importação em massa via planilha, histórico de conversas e segmentação por tags.",
+    desc: "Sincronizado com seus clientes da igreen.\n\nCadastro completo, importação em massa via planilha, histórico de conversas e organização por categorias.",
   },
   {
     icon: Clock,
     title: "Mensagens Agendadas",
-    desc: "Programe follow-ups automáticos e sequências de mensagens para nunca perder o timing , eu uso muito para o usuário que tem empréstimo, assim agendo uma msg automaticá.",
+    desc: "Programe retornos automáticos e sequências de mensagens para nunca perder o momento certo. Eu uso muito para o cliente que tem empréstimo: agendo uma mensagem automática.",
   },
   {
     icon: Send,
     title: "Mensagens em Massa",
-    desc: "Envio em lote com templates personalizados, incluindo imagens e áudios para toda a sua base de contatos.",
+    desc: "Envio em lote com modelos personalizados, incluindo imagens e áudios para toda a sua base de contatos.",
   },
   {
     icon: BarChart3,
-    title: "Dashboard de Métricas",
+    title: "Painel de Métricas",
     desc: "Gráficos de performance, taxa de resposta, conversão por etapa e ranking de consultores em tempo real.",
   },
 ];
@@ -226,7 +226,7 @@ const CRMLandingPage = () => {
             </h1>
 
             <p className="mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              WhatsApp integrado, Kanban de vendas, mensagens automáticas e dashboard de métricas — tudo em um só lugar, sem custo extra para o licenciado iGreen.
+              WhatsApp integrado, funil de vendas, mensagens automáticas e painel de métricas — tudo em um só lugar, sem custo extra para o licenciado iGreen.
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
@@ -240,7 +240,7 @@ const CRMLandingPage = () => {
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
               <span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-primary" /> Sem cartão de crédito</span>
-              <span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-primary" /> Setup em minutos</span>
+              <span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-primary" /> Pronto em minutos</span>
               <span className="flex items-center gap-2"><CheckCircle2 size={15} className="text-primary" /> Suporte incluso</span>
             </div>
           </div>
@@ -265,9 +265,9 @@ const CRMLandingPage = () => {
 
             <div className="mockup-window">
               <div className="mockup-bar">
-                <span className="mockup-dot bg-red-400/70" />
-                <span className="mockup-dot bg-yellow-400/70" />
-                <span className="mockup-dot bg-green-400/70" />
+                <span className="mockup-dot bg-destructive/70" />
+                <span className="mockup-dot bg-warning/70" />
+                <span className="mockup-dot bg-primary/70" />
                 <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
               </div>
               <video
@@ -340,13 +340,13 @@ const CRMLandingPage = () => {
             <div className="text-center mb-12 md:mb-16">
               <div className="section-eyebrow mb-4">
                 <span className="glow-dot" />
-                Templates prontos
+                Modelos prontos
               </div>
               <h2 className="section-heading">
                 Áudios profissionais <span className="text-gradient-green">inclusos</span>
               </h2>
               <p className="text-muted-foreground mt-4 max-w-2xl mx-auto text-base md:text-lg">
-                Utilize templates de áudio prontos para cada etapa do funil. Envie com um clique direto pelo CRM.
+                Utilize modelos de áudio prontos para cada etapa do funil. Envie com um clique direto pelo CRM.
               </p>
             </div>
 
@@ -438,7 +438,7 @@ const CRMLandingPage = () => {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 mt-8 text-sm text-muted-foreground">
             <span className="flex items-center gap-2"><CheckCircle2 size={16} className="text-primary" /> Sem cartão de crédito</span>
-            <span className="flex items-center gap-2"><CheckCircle2 size={16} className="text-primary" /> Setup em minutos</span>
+            <span className="flex items-center gap-2"><CheckCircle2 size={16} className="text-primary" /> Pronto em minutos</span>
             <span className="flex items-center gap-2"><CheckCircle2 size={16} className="text-primary" /> Suporte incluso</span>
           </div>
         </div>
