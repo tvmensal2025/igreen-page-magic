@@ -85,6 +85,22 @@ async function sendRawToAlertNumber(consultantId: string, text: string): Promise
     console.warn("[notify-raw] consultor sem phone:", consultantId);
     return false;
   }
+  return sendRawToNumber(consultantId, targetPhone, text);
+}
+
+// ─── Envia texto bruto para um número arbitrário usando a instância do consultor ──
+// Mesma estratégia do sendRawToAlertNumber (Whapi primeiro, Evolution fallback),
+// mas o destino é um telefone explícito (ex.: número de aviso de um parceiro).
+async function sendRawToNumber(
+  consultantId: string,
+  targetPhone: string,
+  text: string,
+): Promise<boolean> {
+  const admin = adminClient();
+  if (!targetPhone) {
+    console.warn("[notify-raw] número de destino vazio");
+    return false;
+  }
   const digits = String(targetPhone).replace(/\D/g, "");
   const number = digits.startsWith("55") ? digits : `55${digits}`;
   const to = `${number}@s.whatsapp.net`;
@@ -172,7 +188,7 @@ function shouldSend(key: string, ttlMs = 60_000): boolean {
 // o consultor recebia "NOVO LEAD CHEGOU" a cada mensagem do mesmo lead.
 async function shouldSendPersisted(
   customerId: string | undefined,
-  column: "last_new_lead_notified_at" | "last_handoff_notified_at",
+  column: "last_new_lead_notified_at" | "last_handoff_notified_at" | "last_partner_notified_at",
   windowMs: number,
 ): Promise<boolean> {
   if (!customerId) return true; // sem id, deixa o cache em memória decidir
@@ -255,4 +271,60 @@ export async function notifyHandoff(
     `⚠️ A IA pausou porque ${reasonLabel}.\n` +
     `Assuma a conversa no CRM.`;
   return sendRawToAlertNumber(consultantId, text);
+}
+
+// ─── Aviso ao PARCEIRO indicador / consultor parceiro ──────────────────────
+// Quando um lead é atribuído a um parceiro (referral_partner_id) e esse
+// parceiro tem notification_phone configurado, avisa o número dele que um
+// cliente entrou em contato. É um aviso EXTRA — o consultor dono continua
+// recebendo o seu via notifyNewLead. Usa a instância do consultor dono para
+// enviar (Whapi/Evolution), igual aos outros alertas.
+//
+// Dedup persistente reaproveitado: 24h por lead (mesma janela do novo lead),
+// porém com chave própria (last_partner_notified_at) para não colidir com o
+// aviso do dono.
+export async function notifyPartnerNewLead(
+  ownerConsultantId: string,
+  partnerId: string,
+  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
+): Promise<boolean> {
+  try {
+    if (lead?.is_sandbox) return false;
+    if (!partnerId) return false;
+
+    const admin = adminClient();
+    const { data: partner } = await admin
+      .from("referral_partners")
+      .select("nome, notification_phone, is_active")
+      .eq("id", partnerId)
+      .maybeSingle();
+
+    const phone = (partner as any)?.notification_phone;
+    if (!phone || (partner as any)?.is_active === false) {
+      // Parceiro sem número de aviso configurado → silencioso (comportamento padrão).
+      return false;
+    }
+
+    // Cache rápido em memória (evita dupla chamada no mesmo isolate).
+    const memKey = `partnerlead:${partnerId}:${lead.id || lead.phone_whatsapp || ""}`;
+    if (!shouldSend(memKey, 60_000)) return false;
+    // Persistente: 24h por lead, chave dedicada do parceiro.
+    if (!(await shouldSendPersisted(lead.id, "last_partner_notified_at", 24 * 60 * 60_000))) {
+      console.log(`[notify-partner-lead] skip dedup-db lead=${lead.id}`);
+      return false;
+    }
+
+    const text =
+      `🤝 *NOVO CLIENTE PELA SUA INDICAÇÃO!*\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `👤 *Nome:* ${lead.name?.trim() || "(sem nome ainda)"}\n` +
+      `📱 *WhatsApp:* ${formatPhoneBR(lead.phone_whatsapp)}\n` +
+      `🕐 *Entrou em:* ${nowBRT()}\n\n` +
+      `O atendimento já começou. 🚀`;
+
+    return sendRawToNumber(ownerConsultantId, phone, text);
+  } catch (e) {
+    console.warn("[notify-partner-lead] erro:", (e as Error).message);
+    return false;
+  }
 }

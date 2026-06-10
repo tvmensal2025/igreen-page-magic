@@ -811,7 +811,7 @@ async function fetchDadosFromSupabase(customerId) {
       document_back_base64, document_back_url,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
-      referral_partners:referral_partner_id(cli)
+      referral_partners:referral_partner_id(cli, partner_igreen_id)
     `)
     .eq('id', customerId)
     .maybeSingle();
@@ -819,8 +819,19 @@ async function fetchDadosFromSupabase(customerId) {
   if (!c) return null;
   const consultant = c.consultants;
   const partner = c.referral_partners;
-  const igreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
+  // idconsultor efetivo: se o lead foi atribuído a um CONSULTOR PARCEIRO
+  // (referral_partners.partner_igreen_id preenchido), o cadastro inteiro —
+  // incluindo a sessão do Portal 2, OCR e link de validação — usa o id dele.
+  // Senão, usa o id do consultor dono (comportamento atual).
+  const donoIgreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
+  const partnerIgreenId = partner?.partner_igreen_id ? Number(partner.partner_igreen_id) : null;
+  const igreenId = (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+    ? partnerIgreenId
+    : donoIgreenId;
   if (!igreenId) return null;
+  if (partnerIgreenId && partnerIgreenId > 0) {
+    console.log(`  🤝 [consultor-parceiro] customer=${customerId} idconsultor=${igreenId} (parceiro), dono=${donoIgreenId}`);
+  }
 
   // ── Resolve anexos do customer (conta + doc frente + doc verso) ──────────
   // Prioriza base64 inline / data URL; senão baixa do MinIO/Supabase via URL.

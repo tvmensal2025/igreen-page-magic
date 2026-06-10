@@ -5,8 +5,10 @@ export interface ReferralPartner {
   id: string;
   nome: string;
   keywords: string[];
-  cli: string;
+  cli: string | null;
   qr_phrase: string | null;
+  partner_igreen_id: string | null;
+  notification_phone: string | null;
   is_active: boolean;
   created_at: string;
 }

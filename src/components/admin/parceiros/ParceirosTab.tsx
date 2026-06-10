@@ -29,9 +29,11 @@ export function ParceirosTab({
 
   const handleSave = (data: {
     nome: string;
-    cli: string;
+    cli: string | null;
     keywords: string[];
     qr_phrase: string | null;
+    partner_igreen_id: string | null;
+    notification_phone: string | null;
   }) => {
     if (editingPartner) {
       update.mutate(

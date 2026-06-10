@@ -22,9 +22,11 @@ interface PartnerFormProps {
   onClose: () => void;
   onSave: (data: {
     nome: string;
-    cli: string;
+    cli: string | null;
     keywords: string[];
     qr_phrase: string | null;
+    partner_igreen_id: string | null;
+    notification_phone: string | null;
   }) => void;
   onDelete?: (id: string) => void;
 }
@@ -35,6 +37,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
   const [qrPhrase, setQrPhrase] = useState("");
+  const [partnerIgreenId, setPartnerIgreenId] = useState("");
+  const [notificationPhone, setNotificationPhone] = useState("");
   const [errors, setErrors] = useState<{ nome?: string; cli?: string }>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExample, setAiExample] = useState<string | null>(null);
@@ -42,18 +46,25 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const { toast } = useToast();
 
   const isEdit = !!partner;
+  // Consultor parceiro = tem ID iGreen próprio. Nesse modo o CLI é opcional
+  // (o cadastro vai no nome dele; cli só entra se ele também indicar alguém).
+  const isConsultorParceiro = partnerIgreenId.trim().length > 0;
 
   useEffect(() => {
     if (partner) {
       setNome(partner.nome);
-      setCli(partner.cli);
+      setCli(partner.cli || "");
       setKeywords(partner.keywords || []);
       setQrPhrase(partner.qr_phrase || "");
+      setPartnerIgreenId(partner.partner_igreen_id || "");
+      setNotificationPhone(partner.notification_phone || "");
     } else {
       setNome("");
       setCli("");
       setKeywords([]);
       setQrPhrase("");
+      setPartnerIgreenId("");
+      setNotificationPhone("");
     }
     setErrors({});
     setAiExample(null);
@@ -113,7 +124,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const handleSubmit = () => {
     const newErrors: { nome?: string; cli?: string } = {};
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório";
-    if (!cli.trim()) newErrors.cli = "CLI é obrigatório";
+    // CLI só é obrigatório para parceiro indicador comum. Consultor parceiro
+    // (com ID iGreen próprio) pode não ter cli.
+    if (!isConsultorParceiro && !cli.trim()) newErrors.cli = "CLI é obrigatório";
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -122,9 +135,11 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
     onSave({
       nome: nome.trim(),
-      cli: cli.trim(),
+      cli: cli.trim() || null,
       keywords,
       qr_phrase: qrPhrase.trim() || null,
+      partner_igreen_id: partnerIgreenId.trim() || null,
+      notification_phone: notificationPhone.trim() || null,
     });
     onClose();
   };
@@ -193,7 +208,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="partner-cli">CLI (ID iGreen) *</Label>
+            <Label htmlFor="partner-cli">
+              CLI (ID iGreen) {isConsultorParceiro ? "(opcional)" : "*"}
+            </Label>
             <Input
               id="partner-cli"
               value={cli}
@@ -206,6 +223,38 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
             {errors.cli && (
               <p className="text-sm text-destructive">{errors.cli}</p>
             )}
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <Label htmlFor="partner-igreen-id">
+              ID iGreen do consultor parceiro (opcional)
+            </Label>
+            <Input
+              id="partner-igreen-id"
+              value={partnerIgreenId}
+              onChange={(e) => setPartnerIgreenId(e.target.value)}
+              placeholder="Ex: 123456"
+            />
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Preencha <strong>só</strong> quando o cadastro deve ir no nome de
+              outro consultor (consultor parceiro). Nesse caso o cliente é
+              cadastrado com o ID dele. Deixe vazio para parceiro indicador
+              comum (usa o seu cadastro).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="partner-notify">Número para aviso (WhatsApp)</Label>
+            <Input
+              id="partner-notify"
+              value={notificationPhone}
+              onChange={(e) => setNotificationPhone(e.target.value)}
+              placeholder="Ex: 11999998888"
+            />
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Quando um cliente chegar por este parceiro, este número também
+              recebe um aviso no WhatsApp. Deixe vazio para não avisar.
+            </p>
           </div>
 
           <div className="space-y-2">

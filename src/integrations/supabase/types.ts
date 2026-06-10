@@ -3206,6 +3206,7 @@ export type Database = {
           last_inbound_media_mime: string | null
           last_inbound_media_url: string | null
           last_new_lead_notified_at: string | null
+          last_partner_notified_at: string | null
           last_rescue_at: string | null
           last_rule_fire_at: string | null
           last_rule_id: string | null
@@ -3404,6 +3405,7 @@ export type Database = {
           last_inbound_media_mime?: string | null
           last_inbound_media_url?: string | null
           last_new_lead_notified_at?: string | null
+          last_partner_notified_at?: string | null
           last_rescue_at?: string | null
           last_rule_fire_at?: string | null
           last_rule_id?: string | null
@@ -3602,6 +3604,7 @@ export type Database = {
           last_inbound_media_mime?: string | null
           last_inbound_media_url?: string | null
           last_new_lead_notified_at?: string | null
+          last_partner_notified_at?: string | null
           last_rescue_at?: string | null
           last_rule_fire_at?: string | null
           last_rule_id?: string | null
@@ -5495,35 +5498,41 @@ export type Database = {
       }
       referral_partners: {
         Row: {
-          cli: string
+          cli: string | null
           consultant_id: string
           created_at: string
           id: string
           is_active: boolean
           keywords: string[]
           nome: string
+          notification_phone: string | null
+          partner_igreen_id: string | null
           qr_phrase: string | null
           updated_at: string
         }
         Insert: {
-          cli: string
+          cli?: string | null
           consultant_id: string
           created_at?: string
           id?: string
           is_active?: boolean
           keywords?: string[]
           nome: string
+          notification_phone?: string | null
+          partner_igreen_id?: string | null
           qr_phrase?: string | null
           updated_at?: string
         }
         Update: {
-          cli?: string
+          cli?: string | null
           consultant_id?: string
           created_at?: string
           id?: string
           is_active?: boolean
           keywords?: string[]
           nome?: string
+          notification_phone?: string | null
+          partner_igreen_id?: string | null
           qr_phrase?: string | null
           updated_at?: string
         }

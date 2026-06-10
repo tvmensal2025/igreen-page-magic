@@ -28,7 +28,7 @@ import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
-import { notifyNewLead } from "../_shared/notify-consultant.ts";
+import { notifyNewLead, notifyPartnerNewLead } from "../_shared/notify-consultant.ts";
 import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
@@ -912,6 +912,13 @@ Deno.serve(async (req) => {
               }).eq("id", customer.id);
               (customer as any).referral_partner_id = match.partnerId;
               console.log(`[keyword-match] customer=${customer.id} partner=${match.partnerId} keyword="${match.keyword}"`);
+              // Aviso EXTRA ao parceiro (se tiver notification_phone). Não bloqueia o fluxo.
+              notifyPartnerNewLead(instanceData.consultant_id, match.partnerId, {
+                id: customer.id,
+                name: (customer as any).name,
+                phone_whatsapp: (customer as any).phone_whatsapp,
+                is_sandbox: (customer as any).is_sandbox,
+              }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
             }
           }
         }

@@ -151,7 +151,7 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
       distribuidora, debitos_aberto, possui_procurador,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
-      referral_partners:referral_partner_id(cli)
+      referral_partners:referral_partner_id(cli, partner_igreen_id)
     `)
     .eq("id", customerId)
     .maybeSingle();
@@ -160,10 +160,30 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
 
   const consultant = c.consultants as any;
   const partner = c.referral_partners as any;
-  const igreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
+
+  // ─── Resolução de idconsultor + indcli (junção dono / parceiro) ───
+  // Regra única que cobre os 4 casos:
+  //   1) lead direto do dono (sem parceiro)        => idconsultor=dono, indcli=0
+  //   2) dono + parceiro indicador (tem cli)        => idconsultor=dono, indcli=cli
+  //   3) consultor parceiro só dele (tem id próprio)=> idconsultor=parceiro, indcli=0
+  //   4) consultor parceiro + indicação (id + cli)  => idconsultor=parceiro, indcli=cli
+  // partner.partner_igreen_id NULL => caminho atual (idconsultor = dono).
+  const donoIgreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
+  const partnerIgreenId = partner?.partner_igreen_id
+    ? Number(partner.partner_igreen_id)
+    : null;
+  // Quem é o dono do cadastro: o consultor parceiro (se tiver id próprio) ou o dono.
+  const igreenId = Number.isFinite(partnerIgreenId as number) && (partnerIgreenId as number) > 0
+    ? (partnerIgreenId as number)
+    : donoIgreenId;
   if (!igreenId) {
     console.warn(`[portal-worker] customer=${customerId} sem igreen_id do consultor`);
     return null;
+  }
+  // indcli: cli do parceiro indicador (vale para os dois tipos de dono).
+  const indcli = partner?.cli ? Number(partner.cli) : 0;
+  if (partnerIgreenId) {
+    console.log(`[portal-worker] customer=${customerId} cadastro via consultor parceiro id=${igreenId} indcli=${indcli}`);
   }
 
   const consumoAtual = Number(c.media_consumo || 0);
@@ -187,7 +207,7 @@ async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
     customer_id: customerId,
     dados: {
       idconsultor: igreenId,
-      indcli: partner?.cli ? Number(partner.cli) : 0,
+      indcli,
       cpf: c.cpf || "",
       nome: c.doc_holder_name || c.name || "",
       dataNascimento: c.data_nascimento || "",
