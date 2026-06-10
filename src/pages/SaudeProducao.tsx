@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Activity, AlertTriangle, CheckCircle2, RefreshCw, XCircle, Users, Megaphone, Zap } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { HardResetPhoneCard } from "@/components/admin/HardResetPhoneCard";
 
 type Snapshot = {
   id: string;
@@ -149,8 +148,6 @@ export default function SaudeProducao() {
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Atualizar
         </Button>
       </header>
-
-      <HardResetPhoneCard className="mb-6" />
 
       {/* Checklist go-live */}
       <Card className="p-4 md:p-6 mb-6 border-primary/20">

@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import { useManagedConsultants } from "@/hooks/useManagedConsultants";
 import { AdMetricsCards } from "../dashboard/AdMetricsCards";
-import { HardResetPhoneCard } from "@/components/admin/HardResetPhoneCard";
 import { AdMetricsCharts } from "../dashboard/AdMetricsCharts";
 import { AdAccountSwitcher } from "../dashboard/AdAccountSwitcher";
 import { MainChart } from "../dashboard/MainChart";
@@ -103,8 +102,6 @@ export function AdsCentralTab({ consultantId }: Props) {
       </header>
 
       <div className="p-4 md:p-5 space-y-4">
-        <HardResetPhoneCard userId={consultantId} />
-
         <CtwaConnectGuide consultantId={consultantId} />
 
         {/* Nav pill */}

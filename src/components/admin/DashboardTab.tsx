@@ -10,16 +10,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
-import { useUserRole } from "@/hooks/useUserRole";
-import { adminHardResetPhone, adminHardResetPhoneTraceCounts } from "@/services/resetConversation";
 import { requestSync as requestExtSync, type SyncResult } from "@/lib/igreenExtensionBridge";
 import { StatCard } from "./StatCard";
-import { HardResetPhoneCard } from "./HardResetPhoneCard";
 import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
 import { GeographyCard } from "./GeographyCard";
 import { RetentionCard } from "./RetentionCard";
 import { TeamRankingTab } from "./TeamRankingTab";
+import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
 
 
 // Formata moeda BRL de forma compacta em telas pequenas (R$ 50,4 mil / R$ 1,2 mi)
@@ -58,9 +56,6 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [resettingPerf, setResettingPerf] = useState(false);
-  const { isAdmin } = useUserRole(userId);
-  const [resetPhone, setResetPhone] = useState("");
-  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("sync_cooldown_until");
@@ -212,56 +207,6 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
     }
   };
 
-  const handleHardResetPhone = async () => {
-    const phone = resetPhone.trim();
-    if (!phone) {
-      toast({ title: "Informe um telefone", variant: "destructive" });
-      return;
-    }
-    const ok = await confirm({
-      title: `Apagar todos os rastros do telefone ${phone}?`,
-      description: "Isto apaga customers, mensagens, fluxo, IA, CRM, logs e eventos relacionados. NÃO pode ser desfeito.",
-      confirmText: "Apagar tudo",
-      tone: "danger",
-    });
-    if (!ok) return;
-    setResetting(true);
-    try {
-      const res = await adminHardResetPhone(phone);
-      if (res.ok !== true) {
-        toast({ title: "Erro no reset", description: res.error, variant: "destructive" });
-        return;
-      }
-      const totals = Object.entries(res.deleted)
-        .filter(([, n]) => typeof n === "number" && n > 0)
-        .map(([k, n]) => `${k}: ${n}`)
-        .join(" · ");
-      const trace = await adminHardResetPhoneTraceCounts(phone);
-      if (trace.ok && trace.totalRemaining > 0) {
-        const remaining = Object.entries(trace.counts)
-          .filter(([, n]) => Number(n) > 0)
-          .map(([k, n]) => `${k}: ${n}`)
-          .join(" · ");
-        toast({
-          title: "Reset incompleto",
-          description: `Ainda restam ${trace.totalRemaining} rastros: ${remaining}`,
-          variant: "destructive",
-        });
-        queryClient.invalidateQueries();
-        return;
-      }
-      toast({
-        title: "✅ Telefone zerado confirmado",
-        description: `${trace.ok ? trace.phoneNormalized : res.phoneNormalized} — ${totals || "nada a apagar"}`,
-      });
-      queryClient.invalidateQueries();
-    } catch (err: unknown) {
-      toast({ title: "Erro no reset", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
-    } finally {
-      setResetting(false);
-    }
-  };
-
   return (
     <div ref={dashboardRef} className="space-y-6">
 
@@ -294,12 +239,11 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
             {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}
             <span className="hidden sm:inline">{exporting ? "Gerando..." : "PDF"}</span>
           </Button>
+          {/* Manutenção — reset do número de teste (apenas super admin) */}
+          <PhoneResetButton userId={userId} />
         </div>
       </div>
 
-
-      {/* MANUTENÇÃO — Hard reset por telefone (admin only, temporário) */}
-      <HardResetPhoneCard userId={userId} />
 
 
       {/* Toggle Líder */}

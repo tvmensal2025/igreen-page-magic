@@ -38,6 +38,7 @@ const AILearningHealthPanel = lazy(() => import("@/components/admin/super/AILear
 const CaptacaoTab = lazy(() => import("@/components/superadmin/CaptacaoTab").then(m => ({ default: m.CaptacaoTab })));
 const AdManagersTab = lazy(() => import("@/components/superadmin/AdManagersTab").then(m => ({ default: m.AdManagersTab })));
 const RolloutPanel = lazy(() => import("@/components/superadmin/RolloutPanel").then(m => ({ default: m.RolloutPanel })));
+const FlowTemplateApprovalPanel = lazy(() => import("@/components/superadmin/FlowTemplateApprovalPanel"));
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { logAdminAction } from "@/hooks/useAdminAudit";
 
@@ -72,7 +73,7 @@ const SuperAdmin = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "financeiro" | "templates_ads" | "saude_rede" | "rollout">("consultores");
+  const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "financeiro" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout">("consultores");
   const [searchTerm, setSearchTerm] = useState("");
   const accessDeniedToastShownRef = useRef(false);
   const { isAdmin, loading: roleLoading } = useUserRole(userId);
@@ -258,6 +259,7 @@ const SuperAdmin = () => {
     { id: "ia_aprendendo" as const, label: "IA Aprendendo", icon: Sparkles },
     { id: "plataforma_fb" as const, label: "Plataforma FB", icon: Megaphone },
     { id: "templates_ads" as const, label: "Templates de Anúncio", icon: Sparkles },
+    { id: "templates_fluxo" as const, label: "Templates de Fluxo", icon: Sparkles },
     { id: "financeiro" as const, label: "Financeiro / P&L", icon: BarChart3 },
     { id: "rollout" as const, label: "Rollout V3", icon: Activity },
   ];
@@ -549,6 +551,7 @@ const SuperAdmin = () => {
         )}
         {activeTab === "plataforma_fb" && <PlatformFacebookCard />}
        {activeTab === "templates_ads" && <AdTemplatesPanel />}
+        {activeTab === "templates_fluxo" && <FlowTemplateApprovalPanel />}
         {activeTab === "financeiro" && <PlatformPnLCard />}
         {activeTab === "saude_rede" && <NetworkHealthPanel />}
         {activeTab === "ia_aprendendo" && <AILearningHealthPanel />}

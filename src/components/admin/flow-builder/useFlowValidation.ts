@@ -18,7 +18,12 @@ export type FlowWarning = {
     | "ocr_without_confirm"
     | "ai_no_buttons"
     | "ai_no_humano_exit"
-    | "conversion_step_no_cta";
+    | "conversion_step_no_cta"
+    | "goto_no_wait"
+    | "var_before_capture"
+    | "media_missing"
+    | "flow_no_ending"
+    | "too_many_buttons";
   message: string;
 
 
@@ -29,6 +34,23 @@ export type FlowWarning = {
 const KNOWN_VARS = new Set([
   "nome", "valor_conta", "economia_range", "telefone", "cpf", "representante", "email",
 ]);
+
+/** Rótulo amigável (pt-BR) de cada variável, para mensagens sem jargão. */
+function labelVar(v: string): string {
+  const map: Record<string, string> = {
+    valor_conta: "valor da conta de luz",
+    economia_range: "economia estimada",
+    telefone: "telefone",
+    cpf: "CPF",
+    email: "e-mail",
+    nome: "nome",
+    representante: "representante",
+  };
+  return map[v] ?? v;
+}
+
+/** Contadores de mídia por slot (vindos do construtor). */
+export type MediaCountsMap = Record<string, { audio: number; image: number; video: number }>;
 
 export type FlowValidation = {
   warnings: FlowWarning[];
@@ -79,7 +101,7 @@ function detectCycles(steps: Step[]): Array<{ fromId: string; toId: string }> {
   return cycles;
 }
 
-export function useFlowValidation(steps: Step[]): FlowValidation {
+export function useFlowValidation(steps: Step[], mediaCounts?: MediaCountsMap): FlowValidation {
   return useMemo(() => {
     const warnings: FlowWarning[] = [];
     const reachable = new Set<string>();
@@ -302,7 +324,133 @@ export function useFlowValidation(steps: Step[]): FlowValidation {
       }
     }
 
+    // Passo com fallback "goto" sem timeout que É uma pergunta (tem botões
+    // ou o tipo é de captura, ou o texto termina em "?") → aviso de que vai
+    // avançar sem esperar o cliente.
+    for (const s of steps) {
+      if (!s.is_active) continue;
+      const fb = (s as any).fallback as { mode?: string; timeout_sec?: number | null } | null;
+      if (!fb || fb.mode !== "goto") continue;
+      if (fb.timeout_sec && fb.timeout_sec > 0) continue;
+      // É uma pergunta? (botões, tipo captura, ou texto com ?)
+      const hasButtons = getButtons(s).length > 0;
+      const isCapture = (s.step_type ?? "").startsWith("capture_") || s.step_type === "confirm_phone";
+      const endsWithQuestion = /\?\s*$/.test(s.message_text ?? "");
+      if (hasButtons || isCapture || endsWithQuestion) {
+        warnings.push({
+          id: `${s.id}:goto_no_wait`,
+          stepId: s.id,
+          level: "warn",
+          kind: "goto_no_wait",
+          message:
+            "Este passo faz uma pergunta, mas está configurado para avançar sem esperar a resposta do cliente. Abra o passo, vá em Regras e troque para \"Esperar e repetir a mensagem\".",
+        });
+      }
+    }
 
+    // Variável usada ANTES de ser capturada (ex.: passo de simulação usa
+    // {{valor_conta}} mas vem antes do passo que pergunta o valor). Resultado:
+    // a mensagem sai com o campo vazio ("Na sua conta de , você economiza ...").
+    // Mapa: qual variável cada tipo de passo PRODUZ.
+    const VAR_PRODUCERS: Record<string, string[]> = {
+      capture_conta: ["valor_conta", "economia_range"],
+      capture_documento: ["nome", "cpf"],
+      capture_email: ["email"],
+      confirm_phone: ["telefone"],
+    };
+    const orderedForVars = [...steps].filter((s) => s.is_active).sort((a, b) => a.position - b.position);
+    const producedSoFar = new Set<string>();
+    for (const s of orderedForVars) {
+      // 1) Checa o texto do passo: usa variável ainda não produzida?
+      const usedVars = (s.message_text?.match(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g) ?? [])
+        .map((m) => m.replace(/[{}\s]/g, "").toLowerCase())
+        .filter((v) => KNOWN_VARS.has(v));
+      for (const v of usedVars) {
+        // 'nome' costuma vir do WhatsApp; não alarmamos por ele.
+        if (v === "nome" || v === "representante") continue;
+        if (!producedSoFar.has(v)) {
+          warnings.push({
+            id: `${s.id}:var_before_capture:${v}`,
+            stepId: s.id,
+            level: "warn",
+            kind: "var_before_capture",
+            message:
+              `Este passo usa a informação "${labelVar(v)}", mas ela ainda não foi pedida ao cliente até aqui. A mensagem pode sair com um espaço em branco. Mova este passo para depois de pedir essa informação.`,
+          });
+        }
+      }
+      // 2) Marca o que ESTE passo produz.
+      for (const v of (VAR_PRODUCERS[s.step_type ?? ""] ?? [])) producedSoFar.add(v);
+    }
+
+    // Fluxo sem fim: nenhum passo leva a "finalizar cadastro" nem a "humano".
+    // O cliente conversa mas nunca fecha nem é transferido.
+    if (steps.filter((s) => s.is_active).length >= 2) {
+      const hasEnding = steps.some(
+        (s) =>
+          s.is_active &&
+          (s.step_type === "finalizar_cadastro" ||
+            s.transitions.some((t) => t.goto_special === "humano") ||
+            (s.fallback?.mode === "handoff")),
+      );
+      if (!hasEnding) {
+        // aponta no primeiro passo (início) para o aviso ter um lar.
+        const first = orderedForVars[0];
+        if (first) {
+          warnings.push({
+            id: `${first.id}:flow_no_ending`,
+            stepId: first.id,
+            level: "warn",
+            kind: "flow_no_ending",
+            message:
+              "Este fluxo não tem um final claro: nenhum passo finaliza o cadastro nem transfere para um atendente. O cliente pode ficar preso na conversa. Adicione um passo \"Finalizar cadastro\" ou uma saída para \"falar com humano\".",
+          });
+        }
+      }
+    }
+
+    // Botões demais: mais de 3 opções. No WhatsApp via Evolution vira lista
+    // numerada; acima de ~5 fica confuso e o cliente erra o número.
+    for (const s of steps) {
+      if (!s.is_active) continue;
+      const btns = getButtons(s);
+      if (btns.length > 5) {
+        warnings.push({
+          id: `${s.id}:too_many_buttons`,
+          stepId: s.id,
+          level: "warn",
+          kind: "too_many_buttons",
+          message:
+            `Este passo tem ${btns.length} opções. Muitas opções confundem o cliente (e no WhatsApp viram uma lista numerada longa). Tente reduzir para até 3 ou 4 opções principais.`,
+        });
+      }
+    }
+
+    // Mídia faltando: passo que tem um slot de mídia configurado, mas sem
+    // arquivo de fato (contadores vindos do FluxoBuilder). Só roda quando os
+    // contadores são fornecidos.
+    if (mediaCounts) {
+      for (const s of steps) {
+        if (!s.is_active || !s.slot_key) continue;
+        const c = mediaCounts[s.slot_key];
+        const total = c ? (c.audio + c.image + c.video) : 0;
+        // Heurística: o passo "espera" mídia se a mensagem referencia áudio/
+        // vídeo OU o slot_key sugere mídia. Sem arquivo => aviso.
+        const expectsMedia = /áudio|audio|vídeo|video|🎥|🔊/i.test(
+          `${s.title ?? ""} ${s.message_text ?? ""}`,
+        ) || /audio|video|explica|como_funciona/i.test(s.slot_key);
+        if (expectsMedia && total === 0) {
+          warnings.push({
+            id: `${s.id}:media_missing`,
+            stepId: s.id,
+            level: "warn",
+            kind: "media_missing",
+            message:
+              "Este passo parece enviar um áudio ou vídeo, mas nenhum arquivo foi anexado. O cliente não vai receber a mídia. Abra o passo, vá em Mídias e adicione o arquivo.",
+          });
+        }
+      }
+    }
 
 
     const byStep: Record<string, FlowWarning[]> = {};
@@ -327,5 +475,5 @@ export function useFlowValidation(steps: Step[]): FlowValidation {
       errors: warnings.filter((w) => w.level === "error").length,
       autoFixablePatches,
     };
-  }, [steps]);
+  }, [steps, mediaCounts]);
 }

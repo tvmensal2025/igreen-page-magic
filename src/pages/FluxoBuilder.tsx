@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play, Lock, Unlock } from "lucide-react";
+import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play, Lock, Unlock, LayoutTemplate, Send } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Switch } from "@/components/ui/switch";
@@ -27,6 +27,9 @@ import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
 import FluxoBEditor from "@/components/admin/flow-builder/FluxoBEditor";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
+import PublishTemplateDialog from "@/components/admin/flow-builder/PublishTemplateDialog";
+import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalleryDialog";
+import FlowHealthDialog from "@/components/admin/flow-builder/FlowHealthDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
   Step, Variant, ALL_VARIANTS, VARIANT_LABEL,
@@ -34,6 +37,8 @@ import {
 } from "@/components/admin/flow-builder/flowTypes";
 import ViewToggle, { type ViewMode } from "@/components/admin/flow-builder/ViewToggle";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
+import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
+import { AppTopbar } from "@/components/layout/AppTopbar";
 
 // task 10.2 — lazy-load do canvas para que o bundle do Modo_Diagrama (e suas
 // dependências `@xyflow/react`, `dagre`, `html-to-image`) só seja baixado
@@ -121,6 +126,32 @@ export default function FluxoBuilder() {
   const confirm = useConfirm();
   const [userId, setUserId] = useState<string | null>(null);
   const [consultantName, setConsultantName] = useState<string>("");
+  // Casca do painel (mesma do /admin): barra lateral + topo. Mantém o
+  // construtor de fluxo dentro da plataforma, sem a sensação de "sair" dela.
+  const [consultantPhoto, setConsultantPhoto] = useState<string>("");
+  const [consultantLevel, setConsultantLevel] = useState<string>("iGreen Energy");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("pe:sidebar-collapsed") === "1";
+  });
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((v) => {
+      const next = !v;
+      try { window.localStorage.setItem("pe:sidebar-collapsed", next ? "1" : "0"); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+  const collapseSidebar = useCallback(() => {
+    setSidebarCollapsed(true);
+    try { window.localStorage.setItem("pe:sidebar-collapsed", "1"); } catch { /* noop */ }
+  }, []);
+  // Navega de volta ao painel na aba escolhida. O construtor de fluxo é uma
+  // rota própria (/admin/fluxos), então clicar num item da sidebar leva ao
+  // /admin?tab=... (mesmo esquema que o Admin lê na inicialização).
+  const handleSidebarNavigate = useCallback((tab: AdminTabId) => {
+    navigate(`/admin?tab=${tab}`);
+  }, [navigate]);
   const [flowId, setFlowId] = useState<string | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,6 +183,11 @@ export default function FluxoBuilder() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
+  // Galeria de modelos da comunidade + publicar o próprio fluxo.
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
+  // Popup de revisão guiada (saúde do fluxo) antes de publicar.
+  const [healthOpen, setHealthOpen] = useState(false);
 
   // Revisão IA da planilha (GPT-5.5)
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -201,9 +237,11 @@ export default function FluxoBuilder() {
   }, []);
 
   // task 10.2 — `viewMode` controla Lista ↔ Diagrama ↔ Planilha (R1.1).
-  // 2026-06-09: a UI ficou clean — só Lista é exposta. O código de Diagrama
-  // e Planilha permanece guardado neste arquivo (renders condicionais) para
-  // reativação futura trocando o estado abaixo por `useState<ViewMode>(readInitialViewMode)`.
+  // 2026-06-10: por decisão de produto, só o Modo_Lista é exposto. Diagrama e
+  // Planilha foram considerados ruído para o uso real e ficam guardados (os
+  // renders condicionais permanecem no arquivo, mas inalcançáveis). Para
+  // reativar, troque o estado abaixo por `useState<ViewMode>(readInitialViewMode)`
+  // e reexponha o `<ViewToggle>` no header.
   const [viewMode, setViewModeState] = useState<ViewMode>("lista");
   const [useV2, setUseV2State] = useState<boolean>(readUseV2);
   const setUseV2 = useCallback((next: boolean) => {
@@ -265,13 +303,15 @@ export default function FluxoBuilder() {
     const prevMediaCounts = mediaCounts;
     try {
       const [{ data: cons }, { data: flows }, { data: allFlows }, { data: superAdminRes }] = await Promise.all([
-        supabase.from("consultants").select("conversational_flow_enabled, name").eq("id", uid).maybeSingle(),
+        supabase.from("consultants").select("conversational_flow_enabled, name, photo_url, igreen_id").eq("id", uid).maybeSingle(),
         (supabase as any).from("bot_flows").select("id, sync_mode").eq("consultant_id", uid).eq("is_active", true).eq("variant", variant).order("created_at").limit(1),
         supabase.from("bot_flows").select("variant").eq("consultant_id", uid).eq("is_active", true),
         supabase.rpc("is_super_admin", { _user_id: uid }),
       ]);
 
       setConsultantName((cons as any)?.name ?? "");
+      setConsultantPhoto((cons as any)?.photo_url ?? "");
+      setConsultantLevel((cons as any)?.igreen_id ? `ID ${(cons as any).igreen_id}` : "iGreen Energy");
       setIsSuperAdmin(Boolean(superAdminRes));
 
       const ex = new Set<Variant>();
@@ -561,7 +601,7 @@ export default function FluxoBuilder() {
     return active.reduce((a, b) => (a.position <= b.position ? a : b)).id;
   }, [steps]);
 
-  const validation = useFlowValidation(steps);
+  const validation = useFlowValidation(steps, mediaCounts);
   const flowWarnings = validation.total;
   const flowErrors = validation.errors;
   const maxPosition = useMemo(
@@ -751,14 +791,56 @@ export default function FluxoBuilder() {
 
   if (loading && !steps.length) {
     return (
-      <div className="grid min-h-screen place-items-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="painel-elite h-[100dvh] flex overflow-hidden">
+        <AppSidebar
+          activeTab={"whatsapp" as AdminTabId}
+          onTabChange={handleSidebarNavigate}
+          consultantName={consultantName || "Consultor"}
+          consultantLevel={consultantLevel}
+          consultantPhoto={consultantPhoto || undefined}
+          open={sidebarOpen}
+          onOpenChange={setSidebarOpen}
+          collapsed={sidebarCollapsed}
+          onCollapse={collapseSidebar}
+        />
+        <div className="flex-1 flex flex-col min-w-0">
+          <AppTopbar
+            title="Construtor de Fluxos"
+            subtitle="Monte o atendimento do WhatsApp"
+            onToggleSidebar={toggleSidebarCollapsed}
+            sidebarCollapsed={sidebarCollapsed}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+          <div className="grid flex-1 place-items-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="painel-elite h-[100dvh] flex overflow-hidden">
+      <AppSidebar
+        activeTab={"whatsapp" as AdminTabId}
+        onTabChange={handleSidebarNavigate}
+        consultantName={consultantName || "Consultor"}
+        consultantLevel={consultantLevel}
+        consultantPhoto={consultantPhoto || undefined}
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        collapsed={sidebarCollapsed}
+        onCollapse={collapseSidebar}
+      />
+      <div className="flex-1 flex flex-col min-w-0">
+        <AppTopbar
+          title="Construtor de Fluxos"
+          subtitle="Monte o atendimento do WhatsApp · preview ao vivo"
+          onToggleSidebar={toggleSidebarCollapsed}
+          sidebarCollapsed={sidebarCollapsed}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+        <div className="flex-1 min-h-0 overflow-y-auto bg-background">
       {/* Header — limpo e profissional */}
       <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
         {/* Faixa 1: Distribuição entre variantes (ativar/pausar/criar) — sempre no topo */}
@@ -774,19 +856,56 @@ export default function FluxoBuilder() {
           </div>
         )}
 
-        {/* Faixa 2: título + ações principais */}
+        {/* Faixa 2: contexto do fluxo + ações principais. O título e a
+            navegação já vivem na topbar da plataforma — aqui fica só o
+            contexto (qual fluxo, quantos passos) e as ações. */}
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-semibold">Fluxo</h1>
+            <h2 className="text-sm font-semibold truncate">
+              Fluxo {editingVariant}
+              <span className="ml-1 font-normal text-muted-foreground">
+                — {VARIANT_LABEL[editingVariant].replace(/^Fluxo\s+[A-E]\s*/, "")}
+              </span>
+            </h2>
             <p className="text-xs text-muted-foreground truncate">
-              Arraste, edite e veja o preview ao vivo. Cada fluxo escolhe sua mistura (áudio, texto, vídeo).
+              {steps.length} {steps.length === 1 ? "passo" : "passos"} · arraste para reordenar e veja o preview ao vivo
             </p>
           </div>
           <TooltipProvider delayDuration={150}>
             <div className="flex items-center gap-1">
+              {/* Galeria de modelos da comunidade */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setGalleryOpen(true)}
+                  >
+                    <LayoutTemplate className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Galeria de modelos</TooltipContent>
+              </Tooltip>
+              {/* Publicar este fluxo na galeria (entra para aprovação) */}
+              {editingVariant !== "B" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setHealthOpen(true)}
+                      disabled={!flowId || steps.length === 0}
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {steps.length === 0 ? "Adicione passos antes de publicar" : "Publicar na galeria"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {flowWarnings > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -920,17 +1039,29 @@ export default function FluxoBuilder() {
           className={viewMode === "lista" ? "space-y-3" : "hidden"}
           aria-hidden={viewMode !== "lista"}
         >
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-muted-foreground">
-              Editando <span className="font-semibold text-foreground">Fluxo {editingVariant}</span> — {VARIANT_LABEL[editingVariant].replace(/^Fluxo\s+[A-E]\s*/, "")} · {steps.length} {steps.length === 1 ? "passo" : "passos"}
-            </h2>
-          </div>
-
           {steps.length === 0 ? (
-            <div className="rounded-xl border border-dashed bg-muted/20 p-10 text-center">
-              <p className="text-sm text-muted-foreground">
-                Nenhum passo ainda. Adicione o primeiro abaixo.
+            <div className="rounded-2xl border border-dashed bg-gradient-to-b from-muted/30 to-transparent p-10 text-center">
+              <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+                <GitBranch className="h-7 w-7" />
+              </div>
+              <h3 className="text-base font-semibold">Comece a montar seu atendimento</h3>
+              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                Um fluxo é a sequência de mensagens que o bot envia ao cliente no
+                WhatsApp. Escolha um modelo pronto para começar rápido ou crie do
+                zero, passo a passo.
               </p>
+              {!isReadOnly && (
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                  <Button onClick={() => setCreateFromTemplateOpen(true)}>
+                    <Sparkles className="mr-1.5 h-4 w-4" />
+                    Começar de um modelo
+                  </Button>
+                  <Button variant="outline" onClick={() => { void addStep(); }}>
+                    <Plus className="mr-1.5 h-4 w-4" />
+                    Criar do zero
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -1201,6 +1332,36 @@ export default function FluxoBuilder() {
         consultantId={userId}
         consultantName={consultantName}
       />
+
+      {/* Galeria de modelos da comunidade (aprovados) */}
+      <TemplateGalleryDialog
+        open={galleryOpen}
+        onOpenChange={setGalleryOpen}
+        consultantId={userId}
+        existingVariants={existingVariants}
+        onUsed={() => userId && reload(userId, editingVariant)}
+      />
+
+      {/* Revisão guiada (saúde do fluxo) antes de publicar */}
+      <FlowHealthDialog
+        open={healthOpen}
+        onOpenChange={setHealthOpen}
+        validation={validation}
+        steps={steps}
+        actionLabel="Publicar na galeria"
+        onConfirm={() => setPublishOpen(true)}
+        onJumpToStep={(id) => { setSelectedId(id); setInspectorTab("regras"); setInspectorId(id); }}
+      />
+
+      {/* Publicar o fluxo atual na galeria (entra para aprovação) */}
+      <PublishTemplateDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        flowId={flowId}
+        defaultName={`Fluxo ${editingVariant}`}
+      />
+        </div>
+      </div>
     </div>
   );
 }

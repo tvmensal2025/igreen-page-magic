@@ -70,7 +70,7 @@ export default function StepTimelineItem({
       {/* ── Trilho + bolinha ── */}
       <div className="relative flex w-7 shrink-0 flex-col items-center">
         {/* Trilho vertical (contínuo) */}
-        {!isLast && <div className="absolute left-1/2 top-7 h-[calc(100%+0.75rem)] w-px -translate-x-1/2 bg-border" />}
+        {!isLast && <div className="absolute left-1/2 top-7 h-[calc(100%+1rem)] w-px -translate-x-1/2 bg-border" />}
 
         {/* Bolinha numerada — também é o drag handle */}
         <button
@@ -94,11 +94,11 @@ export default function StepTimelineItem({
       </div>
 
       {/* ── Card ── */}
-      <div className="min-w-0 flex-1 pb-3">
+      <div className="min-w-0 flex-1 pb-4">
         <div
           onClick={onSelect}
           className={cn(
-            "group relative cursor-pointer rounded-lg border bg-card p-2.5 transition-all hover:border-primary/40",
+            "group relative cursor-pointer rounded-xl border bg-card p-3.5 shadow-sm transition-all hover:border-primary/40 hover:shadow-md",
             selected && "border-primary bg-primary/5 ring-2 ring-primary/20",
             !step.is_active && "opacity-60",
             pulse && "animate-pulse ring-2 ring-primary",
@@ -106,7 +106,7 @@ export default function StepTimelineItem({
         >
           {/* Linha 1: título + tipo + status */}
           <div className="flex items-center gap-1.5">
-            <span className="text-sm">{typeMeta.emoji}</span>
+            <span className="text-base">{typeMeta.emoji}</span>
             <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">{step.title}</h4>
             {isStart && (
               <Badge className="h-4 shrink-0 bg-primary/15 px-1.5 text-[9px] text-primary hover:bg-primary/15">
@@ -125,14 +125,14 @@ export default function StepTimelineItem({
 
           {/* Linha 2: preview da mensagem */}
           {previewText && (
-            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
               {previewText}
               {(step.message_text?.length ?? 0) > 90 && "…"}
             </p>
           )}
 
           {/* Linha 3: badges compactos */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          <div className="mt-2 flex flex-wrap items-center gap-1">
             {isAiAnswerStep(step) && (
               <MiniBadge icon={Sparkles} label="IA" className="bg-primary/15 text-primary dark:text-primary" />
             )}
@@ -340,10 +340,10 @@ function ExitRow({ exit, onJumpTo }: { exit: StepExit; onJumpTo?: (stepId: strin
 function MiniBadge({ icon: Icon, label, className }: { icon: LucideIcon; label: string; className?: string }) {
   return (
     <span className={cn(
-      "inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground",
+      "inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground",
       className,
     )}>
-      <Icon className="h-2.5 w-2.5" />
+      <Icon className="h-3 w-3" />
       {label}
     </span>
   );

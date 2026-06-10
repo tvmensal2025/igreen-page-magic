@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Plus, Trash2, ScanLine, Sparkles, Maximize2, Minimize2, HelpCircle } from "lucide-react";
+import { Plus, Trash2, ScanLine, Sparkles, Maximize2, Minimize2, HelpCircle, AlertTriangle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import StepMediaPanel from "@/components/admin/fluxo/StepMediaPanel";
@@ -356,9 +356,10 @@ export default function StepInspector({
 
               return (
                 <div className="space-y-1.5 rounded-lg border border-info/30 bg-info/5 p-3">
-                  <Label className="text-sm">Próximo passo (padrão)</Label>
+                  <Label className="text-sm">O que fazer se o cliente não responder</Label>
                   <p className="text-xs text-muted-foreground">
-                    Para onde o bot vai quando nenhum botão nem regra casa.
+                    Quando o cliente não clica em botão nem manda mensagem, o bot
+                    segue por aqui.
                   </p>
                   <Select value={current} onValueChange={handleChange}>
                     <SelectTrigger>
@@ -366,19 +367,31 @@ export default function StepInspector({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="order">
-                        ➡ Seguir a ordem da lista{nextByOrder ? ` (#${nextByOrder.position} ${nextByOrder.title})` : " (fim do fluxo)"}
+                        ➡ Ir para o próximo passo sem esperar{nextByOrder ? ` (#${nextByOrder.position} ${nextByOrder.title})` : " (fim do fluxo)"}
                       </SelectItem>
-                      <SelectItem value="repeat">🔁 Repetir este passo</SelectItem>
+                      <SelectItem value="repeat">⏳ Esperar e repetir a mensagem (recomendado para perguntas)</SelectItem>
                       <SelectItem value="humano">👤 Encerrar / falar com humano</SelectItem>
                       {sortedSteps
                         .filter((s) => s.id !== step.id)
                         .map((s) => (
                           <SelectItem key={s.id} value={`step:${s.id}`}>
-                            #{s.position} {s.title}{!s.is_active ? " (inativo)" : ""}
+                            Ir para: #{s.position} {s.title}{!s.is_active ? " (inativo)" : ""}
                           </SelectItem>
                         ))}
                     </SelectContent>
                   </Select>
+                  {current === "order" && (
+                    <div className="mt-1.5 flex items-start gap-1.5 rounded-md bg-warning/10 p-2 text-[11px] text-warning-foreground dark:text-warning">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        Atenção: com esta opção o bot <strong>não espera a resposta</strong> e
+                        já manda o próximo passo. Se este passo faz uma pergunta
+                        (ex.: "qual o valor da sua conta?"), o cliente vai receber
+                        várias mensagens seguidas sem chance de responder. Para
+                        perguntas, use <strong>"Esperar e repetir"</strong>.
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })()}

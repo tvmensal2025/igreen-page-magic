@@ -12,6 +12,7 @@ import {
 import { Plus, MoreVertical, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { usePrompt } from "@/components/ui/prompt-dialog";
 import { Variant, ALL_VARIANTS, VARIANT_LABEL } from "./flowTypes";
 
 interface Props {
@@ -33,7 +34,11 @@ export default function VariantDistributionBar({
   onChanged,
 }: Props) {
   const confirm = useConfirm();
+  const prompt = usePrompt();
   const [activeVariants, setActiveVariants] = useState<Variant[]>([]);
+  // Nome real de cada fluxo (definido pelo consultor). O cliente nunca vê a
+  // letra; o nome é o rótulo amigável mostrado no chip.
+  const [flowNames, setFlowNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<Variant | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -47,7 +52,20 @@ export default function VariantDistributionBar({
     setActiveVariants(arr.filter((v) => ALL_VARIANTS.includes(v as Variant)) as Variant[]);
   }, [consultantId]);
 
-  useEffect(() => { loadActive(); }, [loadActive]);
+  const loadNames = useCallback(async () => {
+    const { data } = await supabase
+      .from("bot_flows")
+      .select("variant, name")
+      .eq("consultant_id", consultantId)
+      .eq("is_active", true);
+    const map: Record<string, string> = {};
+    for (const r of ((data as any[]) || [])) {
+      if (r?.variant && r?.name) map[String(r.variant)] = String(r.name);
+    }
+    setFlowNames(map);
+  }, [consultantId]);
+
+  useEffect(() => { loadActive(); loadNames(); }, [loadActive, loadNames]);
 
   async function toggleActive(v: Variant, on: boolean) {
     const current = new Set(activeVariants);
@@ -76,11 +94,28 @@ export default function VariantDistributionBar({
       onSelectVariant(target);
       return;
     }
+    // Pede o nome do fluxo. O cliente nunca vê a letra (é só código interno);
+    // o nome é o que identifica o fluxo para o consultor.
+    const nome = await prompt({
+      title: "Criar novo fluxo",
+      description: "Dê um nome para o seu fluxo (ex.: \"Atendimento Solar SP\"). Ele começa vazio, do zero.",
+      placeholder: "Nome do fluxo",
+      defaultValue: "",
+      confirmText: "Criar do zero",
+    });
+    // Cancelou o prompt → não cria nada.
+    if (nome === null) return;
+    const nomeLimpo = nome.trim();
+    if (!nomeLimpo) {
+      toast.error("Dê um nome para o fluxo.");
+      return;
+    }
+
     setCreating(true);
-    const { error } = await (supabase as any).rpc("ensure_bot_flow_variant", {
+    const { data: newId, error } = await (supabase as any).rpc("create_empty_bot_flow_variant", {
       _consultant_id: consultantId,
       _variant: target,
-      _source_variant: editingVariant,
+      _name: nomeLimpo,
     });
     setCreating(false);
     // Sempre revalida a lista de variantes existentes — mesmo em erro,
@@ -88,10 +123,10 @@ export default function VariantDistributionBar({
     await onChanged();
     if (error) {
       const msg = String(error.message || "").trim();
-      toast.error(`Não foi possível criar o fluxo ${target}${msg ? `: ${msg}` : ""}`);
+      toast.error(`Não foi possível criar o fluxo${msg ? `: ${msg}` : ""}`);
       return;
     }
-    toast.success(`Fluxo ${target} criado a partir do modelo público (ou da variante ${editingVariant})`);
+    toast.success(`Fluxo "${nomeLimpo}" criado. Comece a montar os passos!`);
     onSelectVariant(target);
   }
 
@@ -108,14 +143,21 @@ export default function VariantDistributionBar({
       .eq("is_active", true)
       .maybeSingle();
     if (!row?.id) { toast.error("Fluxo não encontrado."); return; }
-    const novo = window.prompt(`Novo nome para o fluxo ${v}:`, (row as any).name || `Fluxo ${v}`);
-    if (!novo || !novo.trim()) return;
+    const novo = await prompt({
+      title: "Renomear fluxo",
+      description: "Esse nome é o que identifica o fluxo para você. O cliente nunca vê.",
+      placeholder: "Nome do fluxo",
+      defaultValue: (row as any).name || `Fluxo ${v}`,
+      confirmText: "Salvar",
+    });
+    if (novo === null || !novo.trim()) return;
     const { error } = await supabase
       .from("bot_flows")
       .update({ name: novo.trim() })
       .eq("id", (row as any).id);
     if (error) { toast.error(error.message); return; }
-    toast.success(`Fluxo ${v} renomeado.`);
+    toast.success("Fluxo renomeado.");
+    await loadNames();
     await onChanged();
   }
 
@@ -187,8 +229,8 @@ export default function VariantDistributionBar({
                 >
                   <span className={`h-2 w-2 rounded-full ${isActive ? "bg-primary/100" : "bg-muted-foreground/40"}`} />
                   <span className="font-semibold">{v}</span>
-                  <span className="hidden text-muted-foreground sm:inline">
-                    {VARIANT_LABEL[v].replace(/^[A-E]\s*/, "")}
+                  <span className="hidden max-w-[160px] truncate text-muted-foreground sm:inline">
+                    {flowNames[v] ?? VARIANT_LABEL[v].replace(/^[A-E]\s*/, "")}
                   </span>
                 </button>
                 {busy === v ? (
@@ -237,7 +279,7 @@ export default function VariantDistributionBar({
               <DropdownMenuContent align="start">
                 {ALL_VARIANTS.filter((v) => !existingVariants.includes(v)).map((v) => (
                   <DropdownMenuItem key={v} onClick={() => createVariant(v)}>
-                    Criar fluxo {v} — {VARIANT_LABEL[v].replace(/^[A-E]\s*/, "")}
+                    Novo fluxo do zero <span className="ml-1 text-muted-foreground">(espaço {v})</span>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
