@@ -234,7 +234,14 @@ export function BulkSendPanel({ instanceName, customers, templates, applyTemplat
 
         if (selectedTemplate && hasTemplateItems) {
           // Envia todos os itens do template em ordem (multi-arquivo).
-          allOk = await sendTemplate(selectedTemplate, { instanceName, phone, renderText });
+          // M2/M3 já embutidos no sendTemplate: retry automático em timeout
+          // e relato de qual item falhou (logado para diagnóstico).
+          allOk = await sendTemplate(selectedTemplate, {
+            instanceName, phone, renderText,
+            onItemError: (label, err) => {
+              console.warn(`[bulk] item '${label}' falhou para ${phone}: ${err}`);
+            },
+          });
           // Mensagem livre adicional digitada no campo (além do template).
           if (message.trim()) {
             const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "text", text: renderText(message) });

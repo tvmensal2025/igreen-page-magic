@@ -717,13 +717,16 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         }
 
         if (!isSuperAdmin) {
-          // Fallback: checa e-mail da sessão atual contra o whitelist.
+          // Fallback seguro: confirma o papel pela funcao is_super_admin
+          // (SECURITY DEFINER no banco), em vez de e-mail fixo no codigo.
           const { data: { user } } = await supabase.auth.getUser();
-          const email = user?.email?.toLowerCase().trim();
-          if (email === "rafael.ids@icloud.com" && user?.id === consultantId) {
-            isSuperAdmin = true;
-            setPhoneNumber(settings.whapi_connected_phone || "+55 11 99009-2401");
-            addLog("ℹ️ Super admin reconhecido via e-mail (settings indisponíveis)");
+          if (user?.id === consultantId) {
+            const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: user.id });
+            if (isSuper === true) {
+              isSuperAdmin = true;
+              setPhoneNumber(settings.whapi_connected_phone || "+55 11 99009-2401");
+              addLog("ℹ️ Super admin reconhecido pelo papel (settings indisponíveis)");
+            }
           }
         }
 
@@ -738,20 +741,23 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           return;
         }
       } catch (e) {
-        // Falha na leitura de settings — checa só pelo e-mail antes de cair no Evolution.
+        // Falha na leitura de settings — confirma o papel pela funcao segura
+        // is_super_admin antes de cair no Evolution.
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          const email = user?.email?.toLowerCase().trim();
-          if (email === "rafael.ids@icloud.com" && user?.id === consultantId) {
-            setIsWhapi(true);
-            setHasInstance(true);
-            setStatus("connected");
-            setPhoneNumber("+55 11 99009-2401");
-            setError(null);
-            setIsLoading(false);
-            addLog("✅ Conectado via Whapi Cloud (Super Admin, fallback e-mail)");
-            setHealth("healthy");
-            return;
+          if (user?.id === consultantId) {
+            const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: user.id });
+            if (isSuper === true) {
+              setIsWhapi(true);
+              setHasInstance(true);
+              setStatus("connected");
+              setPhoneNumber("+55 11 99009-2401");
+              setError(null);
+              setIsLoading(false);
+              addLog("✅ Conectado via Whapi Cloud (Super Admin, fallback por papel)");
+              setHealth("healthy");
+              return;
+            }
           }
         } catch (_) { /* segue para Evolution normalmente */ }
       }

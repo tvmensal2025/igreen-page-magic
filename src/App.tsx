@@ -33,6 +33,7 @@ const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
 import { CookieBanner } from "@/components/CookieBanner";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
 import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportProvider";
 
@@ -64,16 +65,16 @@ const App = () => (
           }>
             <Routes>
               <Route path="/auth" element={<Auth />} />
-              <Route path="/admin" element={<Admin />} />
-              <Route path="/admin/whatsapp-clients" element={<WhatsAppClientsPage />} />
-              <Route path="/admin/fluxos" element={<FluxoBuilder />} />
-              <Route path="/admin/fluxo-b" element={<AdminFluxoB />} />
-              <Route path="/admin/saude-bot" element={<SaudeBot />} />
-              <Route path="/admin/saude-producao" element={<SaudeProducao />} />
-              <Route path="/admin/conhecimento" element={<AdminKnowledge />} />
-              <Route path="/admin/reaquecimento" element={<AdminReaquecimento />} />
-              <Route path="/admin/conversao" element={<AdminConversao />} />
-              <Route path="/admin/meta-ads" element={<AdminMetaAds />} />
+              <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+              <Route path="/admin/whatsapp-clients" element={<ProtectedRoute><WhatsAppClientsPage /></ProtectedRoute>} />
+              <Route path="/admin/fluxos" element={<ProtectedRoute><FluxoBuilder /></ProtectedRoute>} />
+              <Route path="/admin/fluxo-b" element={<ProtectedRoute><AdminFluxoB /></ProtectedRoute>} />
+              <Route path="/admin/saude-bot" element={<ProtectedRoute><SaudeBot /></ProtectedRoute>} />
+              <Route path="/admin/saude-producao" element={<ProtectedRoute><SaudeProducao /></ProtectedRoute>} />
+              <Route path="/admin/conhecimento" element={<ProtectedRoute><AdminKnowledge /></ProtectedRoute>} />
+              <Route path="/admin/reaquecimento" element={<ProtectedRoute><AdminReaquecimento /></ProtectedRoute>} />
+              <Route path="/admin/conversao" element={<ProtectedRoute><AdminConversao /></ProtectedRoute>} />
+              <Route path="/admin/meta-ads" element={<ProtectedRoute><AdminMetaAds /></ProtectedRoute>} />
               
               
               <Route path="/admin/faq" element={<Navigate to="/admin/conhecimento?tab=ia" replace />} />
@@ -82,8 +83,8 @@ const App = () => (
               <Route path="/admin/bot-tools" element={<Navigate to="/admin/whatsapp-clients" replace />} />
               <Route path="/admin/bot-audit" element={<Navigate to="/admin/whatsapp-clients" replace />} />
 
-              <Route path="/super-admin" element={<SuperAdmin />} />
-              <Route path="/super-admin/suporte" element={<SuperAdminRemoteSupport />} />
+              <Route path="/super-admin" element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
+              <Route path="/super-admin/suporte" element={<ProtectedRoute><SuperAdminRemoteSupport /></ProtectedRoute>} />
               <Route path="/assistente" element={<AssistentePage />} />
               <Route path="/crm" element={<CRMLandingPage />} />
               <Route path="/licenciado/preview" element={<LicenciadaPreview />} />

@@ -236,7 +236,10 @@ export function useMessages(
 
     const startPolling = () => {
       if (intervalRef.current) return;
-      intervalRef.current = setInterval(fetchMessages, 20000);
+      // Polling de segurança a cada 6s (antes 20s). O realtime abaixo cobre o
+      // caso comum (mensagem nova chega na hora); o polling garante consistencia
+      // se o realtime falhar/cair.
+      intervalRef.current = setInterval(fetchMessages, 6000);
     };
     const stopPolling = () => {
       if (intervalRef.current) {
@@ -246,6 +249,25 @@ export function useMessages(
     };
     startPolling();
 
+    // Realtime: assina a tabela `conversations`. Qualquer mensagem gravada
+    // (inbound do cliente OU outbound do painel/bot) agenda um refetch do chat
+    // aberto — as mensagens aparecem quase na hora, sem esperar os 6s.
+    // Debounce de 700ms evita rajada de refetches quando chegam varias linhas
+    // juntas. Nome de canal estavel por telefone + cleanup (boa pratica Supabase).
+    const phoneKey = remoteJid.split("@")[0];
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
+    const channel = supabase
+      .channel(`chat-conv-${phoneKey}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "conversations" },
+        () => {
+          if (debounceId) clearTimeout(debounceId);
+          debounceId = setTimeout(() => { fetchMessages(); }, 700);
+        },
+      )
+      .subscribe();
+
     const onVisibility = () => {
       if (document.hidden) stopPolling();
       else { fetchMessages(); startPolling(); }
@@ -254,6 +276,8 @@ export function useMessages(
 
     return () => {
       stopPolling();
+      if (debounceId) clearTimeout(debounceId);
+      supabase.removeChannel(channel);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [fetchMessages, instanceName, remoteJid, isWhapi]);

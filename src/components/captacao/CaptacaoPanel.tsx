@@ -26,6 +26,9 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [phone, setPhone] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [variant, setVariant] = useState<"A" | "B" | "C" | "D" | "E">("A");
+  // Fluxos reais do consultor (variante + nome) para o atalho dinâmico —
+  // substitui o A/B/C fixo. Reflete renomeacoes feitas no construtor.
+  const [flowOptions, setFlowOptions] = useState<Array<{ variant: string; name: string }>>([]);
   const [mismatch, setMismatch] = useState<{ flag: boolean; bill: string; doc: string; acked: boolean }>({ flag: false, bill: "", doc: "", acked: false });
   const [showAside, setShowAside] = useState(false);
   const [fichaOpen, setFichaOpen] = useState(false); // ficha deslizante (Cockpit)
@@ -39,6 +42,38 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const connected = !!instanceName;
 
   useEffect(() => { setSentSteps(new Set()); setPhone(null); setCustomerName(null); setShowAside(false); setVariant("A"); setMismatch({ flag: false, bill: "", doc: "", acked: false }); }, [selectedId]);
+
+  // Carrega os fluxos ativos do consultor (variante + nome) para o atalho.
+  // Reassina a tabela bot_flows para refletir criacao/renomeacao em tempo real
+  // (quando o consultor muda o nome no construtor, aparece aqui na hora).
+  useEffect(() => {
+    let mounted = true;
+    const loadFlows = async () => {
+      const { data } = await supabase
+        .from("bot_flows")
+        .select("variant, name")
+        .eq("consultant_id", consultantId)
+        .eq("is_active", true)
+        .order("variant", { ascending: true });
+      if (!mounted) return;
+      // Deduplica por variante (uma por letra), mantendo o nome.
+      const seen = new Set<string>();
+      const opts: Array<{ variant: string; name: string }> = [];
+      for (const f of ((data as any[]) || [])) {
+        const v = String(f.variant || "").toUpperCase();
+        if (!v || seen.has(v)) continue;
+        seen.add(v);
+        opts.push({ variant: v, name: String(f.name || `Fluxo ${v}`) });
+      }
+      setFlowOptions(opts);
+    };
+    loadFlows();
+    const ch = supabase
+      .channel(`capt-flows-${consultantId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bot_flows", filter: `consultant_id=eq.${consultantId}` }, loadFlows)
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(ch); };
+  }, [consultantId]);
 
   // Reconstitui sentSteps a partir do log de conversations outbound: tile fica ✓
   // mesmo após trocar de lead ou recarregar a página.
@@ -85,7 +120,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
       setPhone(row?.phone_whatsapp || null);
       setCustomerName(row?.name || null);
       const v = String(row?.flow_variant || "A").toUpperCase();
-      setVariant((["A", "B", "C"].includes(v) ? v : "A") as "A" | "B" | "C" | "D" | "E");
+      setVariant((/^[A-Z]$/.test(v) ? v : "A") as "A" | "B" | "C" | "D" | "E");
       setMismatch({
         flag: !!row?.name_mismatch_flag,
         bill: row?.bill_holder_name || "",
@@ -197,16 +232,16 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                 <div className="hidden md:block shrink-0">
                   <WhatsAppStatusPill connected={connected} />
                 </div>
-                {/* Variante A/B/C */}
-                <div className="hidden sm:flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 shrink-0">
-                  {(["A", "B", "C"] as const).map((v) => (
+                {/* Atalho de fluxos reais do consultor (variante + nome) */}
+                <div className="hidden sm:flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 shrink-0 max-w-[320px] overflow-x-auto">
+                  {(flowOptions.length > 0 ? flowOptions : [{ variant: "A", name: "Fluxo A" }]).map((f) => (
                     <button
-                      key={v}
-                      onClick={() => changeVariant(v)}
-                      className={`px-2 py-0.5 text-[11px] font-bold rounded-sm transition ${variant === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
-                      title={`Fluxo variante ${v}`}
+                      key={f.variant}
+                      onClick={() => changeVariant(f.variant as "A" | "B" | "C" | "D" | "E")}
+                      className={`px-2 py-0.5 text-[11px] font-semibold rounded-sm transition whitespace-nowrap ${variant === f.variant ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
+                      title={`Usar ${f.name}`}
                     >
-                      {v}
+                      {f.name}
                     </button>
                   ))}
                 </div>

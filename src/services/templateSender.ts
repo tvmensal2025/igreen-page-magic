@@ -15,6 +15,42 @@ export interface SendTemplateOptions {
   isWhapi?: boolean;
   /** Aplica placeholders ({{nome}} etc.) no texto de cada item. */
   renderText?: (text: string) => string;
+  /**
+   * M1 — Progresso: chamado a cada item enviado. `index` é 1-based.
+   * Permite a UI mostrar "enviando 2 de 3..." em vez de só girar.
+   */
+  onProgress?: (index: number, total: number, label: string) => void;
+  /**
+   * M3 — Falha por item: chamado quando um item específico falha (após o
+   * retry). Permite a UI dizer "o áudio falhou, texto e imagem foram".
+   */
+  onItemError?: (label: string, error: string) => void;
+}
+
+/** Rótulo amigável (pt-BR) do tipo do item, para progresso/erros. */
+function itemLabel(type: string | null | undefined): string {
+  switch (type) {
+    case "image": return "imagem";
+    case "video": return "vídeo";
+    case "audio": return "áudio";
+    case "document": return "documento";
+    default: return "texto";
+  }
+}
+
+/**
+ * M2 — Envia uma mensagem com 1 retry automático em caso de timeout.
+ * Falhas "duras" (número inválido, etc.) não são repetidas — só timeouts,
+ * que costumam ser transitórios (rede/servidor lento).
+ */
+async function sendWithRetry(
+  payload: Parameters<typeof sendWhatsAppMessage>[0],
+): Promise<Awaited<ReturnType<typeof sendWhatsAppMessage>>> {
+  const first = await sendWhatsAppMessage(payload);
+  if (first.status !== "timeout") return first;
+  // Espera curta e tenta de novo uma única vez.
+  await new Promise((r) => setTimeout(r, 1500));
+  return sendWhatsAppMessage(payload);
 }
 
 /** Converte o tipo do item/template em categoria de envio. */
@@ -90,6 +126,10 @@ export async function sendTemplate(
   let allOk = true;
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
+    const label = itemLabel(it.message_type);
+
+    // M1 — avisa a UI qual item está saindo (1-based).
+    opts.onProgress?.(i + 1, items.length, label);
 
     // Delay entre itens (a partir do 2º).
     if (i > 0 && it.delay_seconds > 0) {
@@ -103,30 +143,39 @@ export async function sendTemplate(
 
     // Imagem anexa do item (quando o tipo principal não é imagem) — envia antes.
     if (it.image_url && it.message_type !== "image") {
-      const ri = await sendWhatsAppMessage({
+      const ri = await sendWithRetry({
         instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi,
         mediaCategory: "image", mediaUrl: it.image_url,
       });
-      if (ri.status === "failed") allOk = false;
+      if (ri.status === "failed" || ri.status === "timeout") {
+        allOk = false;
+        opts.onItemError?.("imagem", ri.error || "falha no envio");
+      }
     }
 
     let r;
     if (category === "text") {
       if (!text.trim()) continue;
-      r = await sendWhatsAppMessage({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: "text", text });
+      r = await sendWithRetry({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: "text", text });
     } else if (category === "audio") {
       if (!it.media_url) continue;
-      r = await sendWhatsAppMessage({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: "audio", mediaUrl: it.media_url });
+      r = await sendWithRetry({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: "audio", mediaUrl: it.media_url });
       // Áudio não carrega legenda — manda o texto numa mensagem separada.
       if (text.trim()) {
-        const rt = await sendWhatsAppMessage({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: "text", text });
-        if (rt.status === "failed") allOk = false;
+        const rt = await sendWithRetry({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: "text", text });
+        if (rt.status === "failed" || rt.status === "timeout") {
+          allOk = false;
+          opts.onItemError?.("texto", rt.error || "falha no envio");
+        }
       }
     } else {
       if (!it.media_url) continue;
-      r = await sendWhatsAppMessage({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: category, mediaUrl: it.media_url, text });
+      r = await sendWithRetry({ instanceName: opts.instanceName, phone: opts.phone, isWhapi: opts.isWhapi, mediaCategory: category, mediaUrl: it.media_url, text });
     }
-    if (r && r.status === "failed") allOk = false;
+    if (r && (r.status === "failed" || r.status === "timeout")) {
+      allOk = false;
+      opts.onItemError?.(label, r.error || "falha no envio");
+    }
   }
 
   return allOk;
