@@ -109,10 +109,39 @@ export function clearFeatureFlagCache(): void {
 // ─── flow_engine_v3 (Phase C Task 20 do whatsapp-flow-architecture-v3) ──────
 //
 // Mesmo padrão do `flow_reliability_v2`. Cache 30s in-process.
+//
+// ROLLBACK EM SEGUNDOS (Cérebro IA — Requisito 2.6 / Tarefa 14.3)
+// ---------------------------------------------------------------
+// A resposta real do Cérebro é gateada por esta flag (via
+// `deveResponderComCerebro` → `isV2Active`). Para DESLIGAR o Cérebro a qualquer
+// momento basta baixar a flag do consultor (`canary`/`on` → `dark`/`off`) — pelo
+// RolloutPanel ("Rollback global", que zera todos) ou por um `UPDATE` por
+// consultor. NÃO precisa de deploy: na próxima leitura não-cacheada o gate passa
+// a devolver `false` e o caminho atual (vendedora) volta a responder.
+//
+// Propagação: o cache é in-process e dura no máximo `FEATURE_FLAG_CACHE_TTL_MS`
+// (30s) por instância de Edge Function. Logo, o pior caso de propagação do
+// rollback é ~30s ("em segundos"), limitado e seguro — o default em erro/ausência
+// é `off`, nunca "fica ligado". Esse limite de 30s é aceito pelo design (§8,
+// plano de rollout) e por isso o TTL NÃO é encurtado: encurtá-lo adicionaria um
+// round-trip ao Postgres em todo turno do caminho normal (cada webhook), o que
+// o cache existe justamente para evitar. Quando for preciso forçar a
+// invalidação no mesmo processo (ex.: testes, ou um ponto de rollback que rode
+// na mesma instância), use `clearFlowEngineV3Cache()`.
 
 export type FlowEngineV3Flag = FlowReliabilityV2Flag;
 
 const engineV3Cache = new Map<string, CacheEntry>();
+
+/**
+ * Invalida o cache in-process da flag `flow_engine_v3` (sem tocar no cache de
+ * `flow_reliability_v2`). Útil para forçar releitura imediata da flag — por
+ * exemplo, num rollback que precise valer no mesmo processo sem esperar o TTL,
+ * ou em testes. O caminho normal continua usando o cache de 30s intacto.
+ */
+export function clearFlowEngineV3Cache(): void {
+  engineV3Cache.clear();
+}
 
 export async function getFlowEngineV3(
   supabase: SupabaseClient,

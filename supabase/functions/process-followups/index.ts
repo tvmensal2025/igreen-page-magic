@@ -10,6 +10,7 @@
 // Respeita quiet hours (BRT 22h-7h).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { runFluxoBAI } from "../_shared/fluxo-b-ai.ts";
+import { executarFollowupCerebro } from "../_shared/cerebro/followup-hook.ts";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
@@ -131,22 +132,55 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Roda IA com nudge interno
+        // Roda IA com nudge interno.
+        //
+        // Religação ao Cérebro (Tarefa 13 / Req 14.1, 14.2): quando o consultor
+        // está com `flow_engine_v3 = on`, o nudge passa pelo Cérebro (N1) via
+        // `executarFollowupCerebro` (inbound sintético `no_input`). Enquanto não
+        // está em `on` (off/dark/canary) — ou em QUALQUER erro do Cérebro —, o
+        // hook devolve `usouCerebro=false` e seguimos chamando a Vendedora_Atual
+        // (`runFluxoBAI`), preservando o comportamento atual. Fail-open total:
+        // uma falha do Cérebro nunca impede o follow-up.
         const t0 = Date.now();
-        let aiResult: any;
-        try {
-          aiResult = await runFluxoBAI({
-            supabase,
-            customerId: c.id,
-            inboundText: "[system_nudge]",
-            customer: c,
-            nudgeHook: c.followup_hook || null,
-          } as any);
-        } catch (e: any) {
-          errCount++;
-          errors.push({ id: c.id, phase: "ai", error: String(e?.message || e).slice(0, 200) });
-          await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
-          continue;
+        let aiResult: any = null;
+
+        const canalFollowup = channelTag.startsWith("whapi") ? "whapi" : "evolution";
+        const cerebro = await executarFollowupCerebro({
+          supabase,
+          customerId: c.id,
+          consultantId: c.consultant_id,
+          channel: canalFollowup,
+        });
+
+        if (cerebro.usouCerebro) {
+          // Cérebro no comando (consultor em `on`). Sem texto (handoff/vazio) →
+          // não envia e reagenda, sem cair na vendedora (evita 2 caminhos).
+          if (!cerebro.reply) {
+            errCount++;
+            errors.push({ id: c.id, phase: "cerebro", error: cerebro.shouldHandoff ? "handoff" : "empty_reply" });
+            await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
+            continue;
+          }
+          aiResult = {
+            reply: cerebro.reply,
+            conversationStepUpdate: "cerebro_followup",
+          };
+        } else {
+          // Vendedora_Atual (caminho atual, sem mudança).
+          try {
+            aiResult = await runFluxoBAI({
+              supabase,
+              customerId: c.id,
+              inboundText: "[system_nudge]",
+              customer: c,
+              nudgeHook: c.followup_hook || null,
+            } as any);
+          } catch (e: any) {
+            errCount++;
+            errors.push({ id: c.id, phase: "ai", error: String(e?.message || e).slice(0, 200) });
+            await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
+            continue;
+          }
         }
 
         const reply = String(aiResult?.reply || "").trim();

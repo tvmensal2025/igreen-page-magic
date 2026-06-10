@@ -1571,6 +1571,30 @@ Deno.serve(async (req) => {
         console.warn("[engine-v3-hook] erro não-bloqueante:", e?.message);
       }
 
+      // ─── Cérebro IA — hook de SOMBRA (Tarefa 9.2) ──────────────────
+      // Espelha o hook do engine v3 acima, no MESMO ponto e com os MESMOS
+      // dados de inbound/consultor/cliente (par simétrico com evolution-webhook).
+      // Só roda em `flow_engine_v3='dark'`: observa e registra a decisão do
+      // Cérebro SEM enviar nada ao cliente. Fail-open total — qualquer erro é
+      // engolido e NUNCA afeta o caminho legado.
+      try {
+        const { executarCerebroSombra } = await import("../_shared/cerebro/sombra-hook.ts");
+        await executarCerebroSombra({
+          supabase,
+          customerId: customer.id,
+          consultantId: superAdminConsultantId,
+          legacyStep: stepBefore,
+          inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
+          inboundText: messageText ?? null,
+          inboundButtonId: buttonId ?? null,
+          inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
+          inboundMessageId: messageId ?? null,
+          channel: "whapi",
+        });
+      } catch (e: any) {
+        console.warn("[cerebro-sombra-hook] erro não-bloqueante:", e?.message);
+      }
+
       // ─── Engine v3 gate (Task 29 — flow-engine-v3-rewrite) ──────────
       // When `consultants.use_engine_v3 = true`, the v3 engine takes
       const runEngine = async () => engine === "flow"
@@ -1588,6 +1612,50 @@ Deno.serve(async (req) => {
             instanceName: "whapi-superadmin",
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           });
+      // ─── Cérebro IA — RESPOSTA real (Tarefa 15.1) ────────────────────
+      // Par simétrico com evolution-webhook. Ponto: DEPOIS do gate do engine v3
+      // (acima, que já deu early-return se assumiu o turno) e IMEDIATAMENTE ANTES
+      // de invocar a vendedora (runConversationalFlow/runBotFlow via runEngine).
+      // O motor determinístico v3 mantém prioridade; o Cérebro só substitui o
+      // caminho CONVERSACIONAL legado (Fluxo B / runFluxoBAI / runConversational).
+      //
+      // Só age em canary/on (gate em deveResponderComCerebro). Fail-open total:
+      // erro → respondeu=false e a vendedora responde como hoje. Envio pelo
+      // sender REAL do canal (anti-ban + trio de proteção intactos). OTP
+      // (interceptado no topo) e OCR/portal (despachados pelo Cérebro) intactos.
+      let _cerebroRespondeu = false;
+      try {
+        const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
+        const r = await responderComCerebro({
+          supabase,
+          customerId: customer.id,
+          consultantId: superAdminConsultantId,
+          inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
+          inboundText: messageText ?? null,
+          inboundButtonId: buttonId ?? null,
+          inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
+          inboundMessageId: messageId ?? null,
+          channel: "whapi",
+          // Sender REAL do canal já protegido (anti-ban + dedup + lock + rate
+          // limit). Retorna false quando o guard bloqueou o envio.
+          enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+        });
+        _cerebroRespondeu = r.respondeu;
+      } catch (e: any) {
+        // Fail-open: erro ao ligar o Cérebro nunca bloqueia o atendimento.
+        console.warn("[cerebro-resposta-hook] erro não-bloqueante:", e?.message);
+        _cerebroRespondeu = false;
+      }
+      // GATE (Property 1 — um caminho conversacional só): quando o Cérebro é a
+      // fonte de verdade do turno (canary/on), a vendedora legada NÃO responde o
+      // mesmo turno — evita resposta dupla. Em off/dark, respondeu=false e segue
+      // o caminho atual normalmente (comportamento idêntico ao de hoje).
+      if (_cerebroRespondeu) {
+        return new Response(
+          JSON.stringify({ ok: true, mode: "cerebro" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       const result = testMode && testRunId
         ? await botRequestStore.run({ testMode: true, runId: testRunId, supabase, turn: testTurn, realServices, bypassQuietHours: testMode && headerBypassQuiet, fastClock: testMode && headerFastClock, forceOcrFail: testMode && headerForceOcrFail }, runEngine)
         : await runEngine();

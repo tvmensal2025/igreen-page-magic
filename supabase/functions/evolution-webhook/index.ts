@@ -1474,6 +1474,29 @@ Deno.serve(async (req) => {
       console.warn("[engine-v3-hook] erro não-bloqueante:", e?.message);
     }
 
+    // ─── 7.7) Cérebro IA — hook de SOMBRA (Tarefa 9.2) ────────────────
+    // Espelha o hook do engine v3 acima, no MESMO ponto e com os MESMOS dados
+    // de inbound/consultor/cliente. Só roda em `flow_engine_v3='dark'`: observa
+    // e registra a decisão do Cérebro SEM enviar nada ao cliente. Fail-open
+    // total — qualquer erro é engolido e NUNCA afeta o caminho legado.
+    try {
+      const { executarCerebroSombra } = await import("../_shared/cerebro/sombra-hook.ts");
+      await executarCerebroSombra({
+        supabase,
+        customerId: customer.id,
+        consultantId: instanceData.consultant_id,
+        legacyStep: stepBefore,
+        inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
+        inboundText: messageText ?? null,
+        inboundButtonId: buttonId ?? null,
+        inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
+        inboundMessageId: messageId ?? null,
+        channel: "evolution",
+      });
+    } catch (e: any) {
+      console.warn("[cerebro-sombra-hook] erro não-bloqueante:", e?.message);
+    }
+
     try {
       const customerOverride = (customer as any).conversational_flow_enabled;
       const consultantFlag = (consultantData as any)?.conversational_flow_enabled === true;
@@ -1694,6 +1717,52 @@ Deno.serve(async (req) => {
         });
         return new Response(
           JSON.stringify({ ok: true, mode: "engine_v3", v3: v3Outcome }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // ─── Cérebro IA — RESPOSTA real (Tarefa 15.1) ────────────────────
+      // Ponto: DEPOIS do gate do engine v3 (acima, que já deu early-return se
+      // assumiu o turno) e IMEDIATAMENTE ANTES do dispatch da vendedora
+      // (runConversationalFlow/runBotFlow). Assim o motor determinístico v3
+      // mantém prioridade e o Cérebro só substitui o caminho CONVERSACIONAL
+      // legado (Fluxo B / runFluxoBAI / runConversational).
+      //
+      // Só age em canary/on (gate em deveResponderComCerebro). Fail-open total:
+      // qualquer erro → respondeu=false e a vendedora responde como hoje. O
+      // envio usa o sender REAL do canal (anti-ban + trio de proteção intactos);
+      // o Cérebro não reimplementa envio. OTP (interceptado no topo) e o
+      // pipeline de OCR/portal (despachado pelo próprio Cérebro) seguem intactos.
+      let _cerebroRespondeu = false;
+      try {
+        const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
+        const r = await responderComCerebro({
+          supabase,
+          customerId: customer.id,
+          consultantId: instanceData.consultant_id,
+          inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
+          inboundText: messageText ?? null,
+          inboundButtonId: buttonId ?? null,
+          inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
+          inboundMessageId: messageId ?? null,
+          channel: "evolution",
+          // Sender REAL do canal já protegido (anti-ban + dedup + lock + rate
+          // limit). Retorna false quando o guard bloqueou o envio.
+          enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+        });
+        _cerebroRespondeu = r.respondeu;
+      } catch (e: any) {
+        // Fail-open: erro ao ligar o Cérebro nunca bloqueia o atendimento.
+        console.warn("[cerebro-resposta-hook] erro não-bloqueante:", e?.message);
+        _cerebroRespondeu = false;
+      }
+      // GATE (Property 1 — um caminho conversacional só): quando o Cérebro é a
+      // fonte de verdade do turno (canary/on), a vendedora legada NÃO responde o
+      // mesmo turno — evita resposta dupla. Em off/dark, respondeu=false e segue
+      // o caminho atual normalmente (comportamento idêntico ao de hoje).
+      if (_cerebroRespondeu) {
+        return new Response(
+          JSON.stringify({ ok: true, mode: "cerebro" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }

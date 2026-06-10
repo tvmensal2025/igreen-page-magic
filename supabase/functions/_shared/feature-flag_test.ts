@@ -2,7 +2,11 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import fc from "https://esm.sh/fast-check@3.23.2";
 import {
   clearFeatureFlagCache,
+  clearFlowEngineV3Cache,
+  type FlowEngineV3Flag,
+  FEATURE_FLAG_CACHE_TTL_MS,
   type FlowReliabilityV2Flag,
+  getFlowEngineV3,
   getFlowReliabilityV2,
   isV2Active,
   isV2Dark,
@@ -233,4 +237,97 @@ Deno.test("PBT: cache freezes flag for 30s across remote UPDATEs", async () => {
     ),
     { numRuns: 75 },
   );
+});
+
+// ─── Cérebro IA — rollback em segundos via chave (Req 2.6 / Tarefa 14.3) ──────
+//
+// Fake do Supabase para a coluna `flow_engine_v3` (a chave que gateia a resposta
+// real do Cérebro). Mesmo formato do anterior, mas grava na coluna certa.
+
+function makeFakeEngineV3(initial: Array<[string, unknown]> = []): {
+  client: any;
+  setValue: (id: string, v: unknown) => void;
+  selectCalls: () => number;
+} {
+  const rows = new Map<string, { flow_engine_v3: unknown }>();
+  let selectCalls = 0;
+  for (const [id, v] of initial) rows.set(id, { flow_engine_v3: v });
+  const client = {
+    from(_table: string) {
+      return {
+        select(_cols: string) {
+          return {
+            eq(_col: string, value: string) {
+              return {
+                single: async () => {
+                  selectCalls += 1;
+                  const row = rows.get(value);
+                  if (!row) {
+                    return { data: null, error: { code: "PGRST116", message: "no row" } };
+                  }
+                  return { data: row, error: null };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  return {
+    client,
+    setValue: (id, v) => rows.set(id, { flow_engine_v3: v }),
+    selectCalls: () => selectCalls,
+  };
+}
+
+Deno.test("TTL do cache da flag é de 30s (limite de propagação do rollback)", () => {
+  // O design (§8) aceita até 30s de propagação como "segundos". Documentado e
+  // não encurtado para não adicionar um round-trip por turno no caminho normal.
+  assertEquals(FEATURE_FLAG_CACHE_TTL_MS, 30_000);
+});
+
+Deno.test("2.6: clearFlowEngineV3Cache força releitura imediata da flag (rollback sem esperar o TTL)", async () => {
+  clearFeatureFlagCache();
+  const fake = makeFakeEngineV3([["c1", "canary"]]);
+
+  // Consultor em canary → Cérebro é fonte de verdade (isV2Active = true).
+  const ligado = await getFlowEngineV3(fake.client, "c1");
+  assertEquals(ligado, "canary");
+  assertEquals(isV2Active(ligado), true);
+
+  // Operador faz o rollback baixando a chave do consultor (sem deploy).
+  fake.setValue("c1", "off");
+
+  // Dentro do TTL, o cache ainda devolveria o valor antigo (canary).
+  const aindaCacheado = await getFlowEngineV3(fake.client, "c1");
+  assertEquals(aindaCacheado, "canary");
+
+  // Forçar invalidação → a próxima leitura já reflete o rollback (off) e o gate
+  // deixa de considerar o Cérebro fonte de verdade.
+  clearFlowEngineV3Cache();
+  const desligado = await getFlowEngineV3(fake.client, "c1");
+  assertEquals(desligado, "off");
+  assertEquals(isV2Active(desligado), false);
+});
+
+Deno.test("clearFlowEngineV3Cache NÃO derruba o cache do caminho normal (flow_reliability_v2)", async () => {
+  clearFeatureFlagCache();
+  const v2 = makeFakeSupabase([["c1", "on"]]);
+  const engine = makeFakeEngineV3([["c1", "canary"]]);
+
+  // Aquece os dois caches.
+  await getFlowReliabilityV2(v2.client, "c1");
+  await getFlowEngineV3(engine.client, "c1");
+
+  // Invalida SÓ o cache do engineV3.
+  clearFlowEngineV3Cache();
+
+  // O caminho normal (flow_reliability_v2) segue cacheado: nenhuma nova query.
+  await getFlowReliabilityV2(v2.client, "c1");
+  assertEquals(v2.store.selectCalls, 1, "o cache do caminho normal deve permanecer intacto");
+
+  // Já o engineV3 relê (uma nova query após a invalidação).
+  await getFlowEngineV3(engine.client, "c1");
+  assertEquals(engine.selectCalls(), 2, "o engineV3 deve reler após a invalidação");
 });
