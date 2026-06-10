@@ -153,6 +153,52 @@ function expandirEndereco(rua: string): string {
   if (ABREVIACOES[primeira]) return ABREVIACOES[primeira] + " " + partes.slice(1).join(" ");
   return rua;
 }
+
+// ─── Concordância de gênero (ao/à, no/na) ─────────────────────────────────────
+// Resolve o problema de frases como "em frente ao Praça" (errado) → "em frente
+// à Praça", ou "Passe hoje no Padaria" (errado) → "Passe hoje na Padaria".
+// A heurística olha a primeira palavra do nome: usa uma lista de palavras com
+// gênero conhecido e, no que não estiver na lista, cai na regra "termina em A =
+// feminino". Assim acerta os casos comuns de pontos de referência e comércios.
+const GENERO_PALAVRAS: Record<string, "m" | "f"> = {
+  // Femininos (inclusive os que poderiam enganar)
+  "praça": "f", "praca": "f", "padaria": "f", "farmácia": "f", "farmacia": "f",
+  "escola": "f", "igreja": "f", "capela": "f", "matriz": "f", "paróquia": "f", "paroquia": "f",
+  "lanchonete": "f", "lotérica": "f", "loterica": "f", "academia": "f", "feira": "f",
+  "quadra": "f", "rodoviária": "f", "rodoviaria": "f", "avenida": "f", "rua": "f",
+  "alameda": "f", "travessa": "f", "estrada": "f", "creche": "f", "unidade": "f",
+  "prefeitura": "f", "câmara": "f", "camara": "f", "biblioteca": "f", "estação": "f", "estacao": "f",
+  "ótica": "f", "otica": "f", "hamburgueria": "f", "pizzaria": "f", "sorveteria": "f",
+  "barbearia": "f", "papelaria": "f", "drogaria": "f", "loja": "f", "banca": "f",
+  // Masculinos (inclusive os terminados em A ou ambíguos)
+  "mercado": "m", "supermercado": "m", "mercadinho": "m", "minimercado": "m",
+  "posto": "m", "banco": "m", "colégio": "m", "colegio": "m", "ginásio": "m", "ginasio": "m",
+  "shopping": "m", "centro": "m", "terminal": "m", "largo": "m", "parque": "m",
+  "campo": "m", "clube": "m", "hospital": "m", "açougue": "m", "acougue": "m",
+  "bar": "m", "restaurante": "m", "armazém": "m", "armazem": "m", "comércio": "m", "comercio": "m",
+  "salão": "m", "salao": "m", "cemitério": "m", "cemiterio": "m", "templo": "m",
+  "cinema": "m", "spa": "m", "hortifruti": "m", "sacolão": "m", "sacolao": "m",
+  "depósito": "m", "deposito": "m", "estádio": "m", "estadio": "m",
+};
+function generoPalavra(nome: string): "m" | "f" {
+  const primeira = (nome.trim().split(/\s+/)[0] || "").toLowerCase().replace(/[.,;:!?]/g, "");
+  if (GENERO_PALAVRAS[primeira]) return GENERO_PALAVRAS[primeira];
+  if (/(ção|são|agem|dade|tude)$/.test(primeira)) return "f";
+  if (/a$/.test(primeira)) return "f";
+  return "m";
+}
+// preposição "a" + artigo → "à" (feminino) / "ao" (masculino)
+function contraiA(nome: string): string {
+  return generoPalavra(nome) === "f" ? "à" : "ao";
+}
+// preposição "em" + artigo → "na" (feminino) / "no" (masculino)
+function contraiEm(nome: string): string {
+  return generoPalavra(nome) === "f" ? "na" : "no";
+}
+// concorda "localizado/localizada" com o gênero do comércio
+function localizadoConcordado(nome: string): string {
+  return generoPalavra(nome) === "f" ? "localizada" : "localizado";
+}
 const UNIDADES  = ["","um","dois","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"];
 const DEZENAS   = ["","","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"];
 const CENTENAS  = ["","cem","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
@@ -184,7 +230,7 @@ type RefTipo = "proximo" | "em_frente";
 type SorteioTipo = "dinheiro" | "vale" | "cesta" | "custom";
 
 const FIXO_MUTIRAO = "Hoje tem mutirão de cadastramento para reduzir o valor da sua conta de luz! É um direito seu! É isso mesmo! É uma iniciativa privada com incentivo do Governo Federal, pela Lei catorze mil e trezentos. Até vinte por cento de desconto todo mês na sua conta de luz! Sem investimento! Sem taxas! É só cadastrar! Quer saber como? Compareça hoje ao mutirão";
-const FIXO_COMERCIO = "Hoje tem cadastramento para reduzir o valor da sua conta de luz! É um direito seu! É isso mesmo! É uma iniciativa privada com incentivo do Governo Federal, pela Lei catorze mil e trezentos. Até vinte por cento de desconto todo mês na sua conta de luz! Sem investimento! Sem taxas! É só cadastrar! Quer saber como? Passe hoje no";
+const FIXO_COMERCIO = "Hoje tem cadastramento para reduzir o valor da sua conta de luz! É um direito seu! É isso mesmo! É uma iniciativa privada com incentivo do Governo Federal, pela Lei catorze mil e trezentos. Até vinte por cento de desconto todo mês na sua conta de luz! Sem investimento! Sem taxas! É só cadastrar! Quer saber como? Passe hoje";
 const FIXO_FINAL = "Traga: documento pessoal, fatura de energia atualizada e celular em mãos!";
 
 const SORTEIO_KEY = "tts_sorteio_igreen_v1";
@@ -224,6 +270,7 @@ interface AudioRow {
   place_name: string;
   script_text: string;
   audio_url: string;
+  audio_url_vinheta: string | null;
   audio_hash: string;
   is_public: boolean;
   play_count: number;
@@ -262,9 +309,11 @@ export function AudioStudio({ userId }: { userId: string }) {
   const [generating, setGenerating] = useState(false);
   const [audioUrl,   setAudioUrl]   = useState<string | null>(null);
   const [audioBlob,  setAudioBlob]  = useState<Blob | null>(null);
+  const [audioBlobVinheta, setAudioBlobVinheta] = useState<Blob | null>(null);
   const [lastRowId,  setLastRowId]  = useState<string | null>(null);
   const [lastIsPublic, setLastIsPublic] = useState(false);
   const [lastPublicUrl, setLastPublicUrl] = useState<string | null>(null);
+  const [lastPublicUrlVinheta, setLastPublicUrlVinheta] = useState<string | null>(null);
   const [playing,    setPlaying]    = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -310,7 +359,10 @@ export function AudioStudio({ userId }: { userId: string }) {
   const bairroP = fix(bairro.trim());
   if (bairroP && ruaP) ruaP = `${ruaP}, no bairro ${bairroP}`;
   const refP = fix(referencia.trim());
-  if (refP) ruaP = `${ruaP}, ${refTipo === "proximo" ? "próximo ao" : "em frente ao"} ${refP}`;
+  if (refP) {
+    const prep = refTipo === "proximo" ? "próximo" : "em frente";
+    ruaP = `${ruaP}, ${prep} ${contraiA(refP)} ${refP}`;
+  }
   const placeP = fix(placeName.trim());
   const horarioP = `Das ${horarioExtenso(horaInicio || "8")} às ${horarioExtenso(horaFim || "18")}.`;
   const sorteioTexto = kind === "mutirao" && sorteioAtivo
@@ -324,8 +376,8 @@ export function AudioStudio({ userId }: { userId: string }) {
   } else {
     const trecho1 = cidadeP ? `Atenção, moradores de ${cidadeP} e região!` : "Atenção, moradores de [cidade] e região!";
     const ondeFrag = placeP
-      ? `${placeP}${ruaP ? `, localizado na ${ruaP}` : ""}.`
-      : (ruaP ? `${ruaP}.` : "[nome do comércio].");
+      ? `${contraiEm(placeP)} ${placeP}${ruaP ? `, ${localizadoConcordado(placeP)} na ${ruaP}` : ""}.`
+      : (ruaP ? `na ${ruaP}.` : "[nome do comércio].");
     textoPreview = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL].filter(Boolean).join(" ");
   }
 
@@ -356,6 +408,25 @@ export function AudioStudio({ userId }: { userId: string }) {
     const blob = await ttsGenerate(text);
     await setCachedTTS(text, blob);
     return blob;
+  };
+
+  // Monta o áudio com a vinheta no início. Se a vinheta não estiver disponível
+  // (arquivo ausente no servidor), devolve null — o fluxo segue só com a versão
+  // sem vinheta, sem quebrar a geração.
+  const montarComVinheta = async (baseBlob: Blob): Promise<Blob | null> => {
+    try {
+      const vinhetaRes = await fetch("/audio/vinheta_tenda.mp3");
+      if (!vinhetaRes.ok) return null;
+      const vinhetaBlob = await vinhetaRes.blob();
+      if (!vinhetaBlob || vinhetaBlob.size === 0) return null;
+      const [vinhetaBuf, audioBuf] = await Promise.all([
+        decodeAudioBlob(vinhetaBlob), decodeAudioBlob(baseBlob),
+      ]);
+      const merged = concatWithCrossfade([vinhetaBuf, audioBuf], 100);
+      return await encodeMp3(merged, 192);
+    } catch {
+      return null;
+    }
   };
 
   const stopAudio = () => {
@@ -407,7 +478,7 @@ export function AudioStudio({ userId }: { userId: string }) {
         if (sorteioTexto) textos.push(sorteioTexto);
       } else {
         const trecho1 = `Atenção, moradores de ${cidadeP} e região!`;
-        const ondeFrag = `${placeP}${ruaP ? `, localizado na ${ruaP}` : ""}.`;
+        const ondeFrag = `${contraiEm(placeP)} ${placeP}${ruaP ? `, ${localizadoConcordado(placeP)} na ${ruaP}` : ""}.`;
         textos = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL];
       }
 
@@ -421,16 +492,30 @@ export function AudioStudio({ userId }: { userId: string }) {
       setAudioBlob(mp3Blob);
       setAudioUrl(URL.createObjectURL(mp3Blob));
 
-      const row = await saveToLibrary(mp3Blob, textoPreview);
-      if (row) { setLastRowId(row.id); setLastIsPublic(false); setLastPublicUrl(row.audio_url); }
-      toast({ title: "✅ Áudio gerado e salvo no seu histórico!" });
+      // Gera também a versão COM vinheta (se a vinheta estiver disponível) para
+      // salvar as duas no histórico de uma vez.
+      const vinhetaBlob = await montarComVinheta(mp3Blob);
+      setAudioBlobVinheta(vinhetaBlob);
+
+      const row = await saveToLibrary(mp3Blob, textoPreview, vinhetaBlob);
+      if (row) {
+        setLastRowId(row.id);
+        setLastIsPublic(false);
+        setLastPublicUrl(row.audio_url);
+        setLastPublicUrlVinheta(row.audio_url_vinheta);
+      }
+      toast({
+        title: vinhetaBlob
+          ? "✅ Áudio salvo com e sem vinheta!"
+          : "✅ Áudio gerado e salvo no seu histórico!",
+      });
       loadLibrary();
     } catch (e: any) {
       toast({ title: "Erro ao gerar áudio", description: e.message, variant: "destructive" });
     } finally { setGenerating(false); }
   };
 
-  const saveToLibrary = async (blob: Blob, scriptText: string): Promise<AudioRow | null> => {
+  const saveToLibrary = async (blob: Blob, scriptText: string, vinhetaBlob?: Blob | null): Promise<AudioRow | null> => {
     try {
       const path = `${userId}/${kind}-${Date.now()}.mp3`;
       const { error: upErr } = await supabase.storage.from("ai-agent-media").upload(path, blob, {
@@ -438,6 +523,18 @@ export function AudioStudio({ userId }: { userId: string }) {
       });
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from("ai-agent-media").getPublicUrl(path);
+
+      // Sobe também a versão com vinheta (quando existir).
+      let vinhetaUrl: string | null = null;
+      if (vinhetaBlob && vinhetaBlob.size > 0) {
+        const pathV = `${userId}/${kind}-vinheta-${Date.now()}.mp3`;
+        const { error: upErrV } = await supabase.storage.from("ai-agent-media").upload(pathV, vinhetaBlob, {
+          upsert: false, contentType: "audio/mpeg",
+        });
+        if (!upErrV) {
+          vinhetaUrl = supabase.storage.from("ai-agent-media").getPublicUrl(pathV).data.publicUrl;
+        }
+      }
 
       const ruaNome = fix(expandirEndereco(rua)).replace(/^(Rua|Avenida|Alameda|Travessa|Praça|Rodovia|Estrada)\s+/i, "");
       const hora  = `${horaInicio}h-${horaFim}h`;
@@ -461,6 +558,7 @@ export function AudioStudio({ userId }: { userId: string }) {
         place_name: placeP,
         script_text: scriptText,
         audio_url: pub.publicUrl,
+        audio_url_vinheta: vinhetaUrl,
         audio_hash: hashText(scriptText),
         is_public: false,
       }).select("*").single();
@@ -509,6 +607,8 @@ export function AudioStudio({ userId }: { userId: string }) {
       setLastRowId(row.consultant_id === userId ? row.id : null);
       setLastIsPublic(row.is_public);
       setLastPublicUrl(row.audio_url);
+      setLastPublicUrlVinheta(row.audio_url_vinheta);
+      setAudioBlobVinheta(null);
       const a = audioRef.current || new Audio(url);
       audioRef.current = a; a.src = url;
       a.onended = () => setPlaying(false);
@@ -544,12 +644,16 @@ export function AudioStudio({ userId }: { userId: string }) {
   const handleDownloadComVinheta = async () => {
     if (!audioBlob) return;
     try {
-      toast({ title: "Montando áudio com vinheta…" });
-      const vinhetaRes = await fetch("/audio/vinheta_tenda.mp3");
-      const vinhetaBlob = await vinhetaRes.blob();
-      const [vinhetaBuf, audioBuf] = await Promise.all([decodeAudioBlob(vinhetaBlob), decodeAudioBlob(audioBlob)]);
-      const merged  = concatWithCrossfade([vinhetaBuf, audioBuf], 100);
-      const mp3Blob = await encodeMp3(merged, 192);
+      // Reaproveita a versão com vinheta já gerada; só monta de novo se faltar.
+      let mp3Blob = audioBlobVinheta;
+      if (!mp3Blob) {
+        toast({ title: "Montando áudio com vinheta…" });
+        mp3Blob = await montarComVinheta(audioBlob);
+      }
+      if (!mp3Blob) {
+        toast({ title: "Vinheta indisponível no momento", variant: "destructive" });
+        return;
+      }
       const filename = `${kind}_vinheta_${cidade.trim().toLowerCase().replace(/\s+/g, "_") || "audio"}.mp3`;
       downloadBlob(mp3Blob, filename);
       toast({ title: "✅ Áudio com vinheta baixado!" });
@@ -563,27 +667,27 @@ export function AudioStudio({ userId }: { userId: string }) {
   return (
     <div className="min-h-full pb-10">
       {/* Header */}
-      <div className="flex items-center gap-3 pb-4 border-b border-border mb-4">
-        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+      <div className="flex items-center gap-3 pb-4 border-b border-border mb-5">
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0 ring-1 ring-primary/15">
           <Volume2 className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h2 className="text-base font-bold text-foreground">Estúdio de Áudio</h2>
-          <p className="text-xs text-muted-foreground">Gere e reaproveite áudios por cidade — Mutirão ou Comércio</p>
+          <h2 className="text-lg font-bold text-foreground leading-tight">Estúdio de Áudio</h2>
+          <p className="text-xs text-muted-foreground">Gere e reaproveite áudios por cidade · salvo com e sem vinheta</p>
         </div>
       </div>
 
       {/* Tabs Mutirão / Comércio */}
-      <div className="max-w-lg mx-auto grid grid-cols-2 gap-2 mb-4">
+      <div className="max-w-lg mx-auto grid grid-cols-2 gap-2 mb-5 p-1 bg-muted/40 rounded-2xl">
         <button
           onClick={() => setKind("mutirao")}
-          className={`h-12 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${kind === "mutirao" ? "bg-primary text-primary-foreground shadow" : "bg-card border border-border/50 text-muted-foreground"}`}
+          className={`h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${kind === "mutirao" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
         >
           <Megaphone className="w-4 h-4" /> Mutirão
         </button>
         <button
           onClick={() => setKind("comercio")}
-          className={`h-12 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${kind === "comercio" ? "bg-primary text-primary-foreground shadow" : "bg-card border border-border/50 text-muted-foreground"}`}
+          className={`h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${kind === "comercio" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
         >
           <Store className="w-4 h-4" /> Comércio
         </button>
@@ -682,9 +786,15 @@ export function AudioStudio({ userId }: { userId: string }) {
           </div>
 
           {/* Preview */}
-          <div className="bg-card rounded-xl border border-border/40 p-3">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Texto que a IA vai falar</p>
-            <p className="text-xs text-foreground/80 leading-relaxed">{textoPreview}</p>
+          <div className="relative rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/[0.07] via-card to-card p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-6 h-6 rounded-lg bg-primary/15 flex items-center justify-center">
+                <Volume2 className="w-3.5 h-3.5 text-primary" />
+              </span>
+              <p className="text-[11px] font-bold text-foreground uppercase tracking-wider">Roteiro do áudio</p>
+              <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">{textoPreview.length} caract.</span>
+            </div>
+            <p className="text-[13px] text-foreground/90 leading-relaxed italic">"{textoPreview}"</p>
           </div>
 
           {/* Sorteio — só mutirão */}
@@ -762,7 +872,7 @@ export function AudioStudio({ userId }: { userId: string }) {
           )}
 
           {/* Botão Gerar */}
-          <Button onClick={handleGenerate} disabled={generating} className="w-full h-[52px] text-base font-semibold rounded-xl gap-2" style={{ background: "var(--gradient-green, var(--pe-emerald, #22c55e))" }}>
+          <Button onClick={handleGenerate} disabled={generating} className="w-full h-14 text-base font-bold rounded-2xl gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow" style={{ background: "var(--gradient-green, var(--pe-emerald, #22c55e))" }}>
             {generating
               ? <><Loader2 className="w-5 h-5 animate-spin" /> Gerando áudio…</>
               : <><Volume2 className="w-5 h-5" /> Gerar Áudio de {kindLabel}</>}
@@ -770,48 +880,93 @@ export function AudioStudio({ userId }: { userId: string }) {
 
           {/* Player */}
           {audioUrl && (
-            <div className="bg-card rounded-xl border border-border/40 p-3 space-y-3 animate-in fade-in">
+            <div className="rounded-2xl border border-primary/20 bg-gradient-to-b from-primary/[0.06] to-card p-4 space-y-4 animate-in fade-in shadow-sm">
               <div className="flex items-center gap-3">
                 <button onClick={togglePlay}
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all shrink-0 ${playing ? "bg-primary text-primary-foreground shadow-lg" : "bg-primary/10 text-primary"}`}>
-                  {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                  className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all shrink-0 ${playing ? "bg-primary text-primary-foreground shadow-lg scale-105" : "bg-primary/10 text-primary hover:bg-primary/20"}`}>
+                  {playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
                 </button>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">{kindLabel} — {cidade || "cidade"}</p>
-                  <p className="text-[10px] text-muted-foreground">Voz Diego · Toque para ouvir</p>
+                  <p className="text-sm font-bold truncate">{kindLabel} — {cidade || "cidade"}</p>
+                  <p className="text-[11px] text-muted-foreground">Voz Diego · prévia sem vinheta</p>
                 </div>
-                <button onClick={stopAudio} className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/50 shrink-0">
+                <button onClick={stopAudio} className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/50 shrink-0" title="Recomeçar">
                   <RotateCcw className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <Button onClick={handleDownload} className="h-10 font-semibold text-xs rounded-xl gap-1">
-                  <Download className="w-4 h-4" /> Baixar MP3
-                </Button>
-                <Button onClick={handleDownloadComVinheta} variant="secondary" className="h-10 font-semibold text-xs rounded-xl gap-1">
-                  <Music className="w-4 h-4" /> Com vinheta
-                </Button>
+              {/* Versão SEM vinheta */}
+              <div className="rounded-xl border border-border/50 bg-card/60 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <Volume2 className="w-3.5 h-3.5" /> Sem vinheta
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button onClick={handleDownload} className="h-10 font-semibold text-xs rounded-xl gap-1">
+                    <Download className="w-4 h-4" /> Baixar
+                  </Button>
+                  {lastPublicUrl ? (
+                    <AudioWhatsAppPopover
+                      audioUrl={lastPublicUrl}
+                      label={`${kindLabel} — ${cidade || "cidade"}`}
+                      trigger={
+                        <Button variant="outline" className="h-10 text-xs gap-1 rounded-xl w-full">
+                          <Send className="w-4 h-4" /> WhatsApp
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <Button variant="outline" disabled className="h-10 text-xs gap-1 rounded-xl">
+                      <Send className="w-4 h-4" /> WhatsApp
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              {lastPublicUrl && (
-                <AudioWhatsAppPopover
-                  audioUrl={lastPublicUrl}
-                  label={`${kindLabel} — ${cidade || "cidade"}`}
-                  trigger={
-                    <Button variant="outline" className="w-full h-10 text-xs gap-2 rounded-xl">
-                      <Send className="w-4 h-4" /> Enviar no WhatsApp
+              {/* Versão COM vinheta */}
+              <div className="rounded-xl border border-primary/30 bg-primary/[0.04] p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary">
+                    <Music className="w-3.5 h-3.5" /> Com vinheta
+                  </span>
+                  {!audioBlobVinheta && !lastPublicUrlVinheta && (
+                    <span className="text-[10px] text-muted-foreground">indisponível</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={handleDownloadComVinheta}
+                    disabled={!audioBlobVinheta && !lastPublicUrlVinheta}
+                    variant="secondary"
+                    className="h-10 font-semibold text-xs rounded-xl gap-1"
+                  >
+                    <Download className="w-4 h-4" /> Baixar
+                  </Button>
+                  {lastPublicUrlVinheta ? (
+                    <AudioWhatsAppPopover
+                      audioUrl={lastPublicUrlVinheta}
+                      label={`${kindLabel} — ${cidade || "cidade"} (com vinheta)`}
+                      trigger={
+                        <Button variant="outline" className="h-10 text-xs gap-1 rounded-xl w-full">
+                          <Send className="w-4 h-4" /> WhatsApp
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <Button variant="outline" disabled className="h-10 text-xs gap-1 rounded-xl">
+                      <Send className="w-4 h-4" /> WhatsApp
                     </Button>
-                  }
-                />
-              )}
+                  )}
+                </div>
+              </div>
 
               {lastRowId && (
                 <Button
                   onClick={publishCurrent}
                   disabled={lastIsPublic}
                   variant={lastIsPublic ? "secondary" : "default"}
-                  className="w-full h-10 text-xs gap-2"
+                  className="w-full h-10 text-xs gap-2 rounded-xl"
                 >
                   {lastIsPublic ? <><Globe2 className="w-4 h-4" /> Publicado na biblioteca</> : <><Upload className="w-4 h-4" /> Publicar para outros consultores</>}
                 </Button>
@@ -825,7 +980,16 @@ export function AudioStudio({ userId }: { userId: string }) {
         </div>
 
         {/* ─── Coluna do histórico / biblioteca ─────────────────────────── */}
-        <aside className="bg-card rounded-xl border border-border/40 p-3 h-fit lg:sticky lg:top-4 space-y-3">
+        <aside className="bg-card rounded-2xl border border-border/40 p-4 h-fit lg:sticky lg:top-4 space-y-3 shadow-sm">
+          <div className="flex items-center gap-2 pb-1">
+            <span className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <History className="w-4 h-4 text-primary" />
+            </span>
+            <div>
+              <p className="text-sm font-bold leading-tight">Biblioteca</p>
+              <p className="text-[10px] text-muted-foreground">Áudios prontos para reaproveitar</p>
+            </div>
+          </div>
           <div className={`grid ${isSuperAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
             <button
               onClick={() => setLibTab("mine")}
@@ -878,8 +1042,8 @@ export function AudioStudio({ userId }: { userId: string }) {
               const isOpen = expandedRowId === row.id;
               const rowLabel = `${row.kind === "comercio" ? "Comércio" : "Mutirão"} — ${row.city || "cidade"}`;
               return (
-              <div key={row.id} className="rounded-lg border border-border/40 bg-background/40 p-2.5 space-y-1.5">
-                <div className="flex items-start gap-2">
+              <div key={row.id} className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-2 hover:border-primary/30 hover:bg-primary/[0.02] transition-colors">
+                <div className="flex items-start gap-2.5">
                   <button
                     onClick={() => {
                       setExpandedRowId(isOpen ? null : row.id);
@@ -887,35 +1051,50 @@ export function AudioStudio({ userId }: { userId: string }) {
                         supabase.rpc("audio_library_increment_play", { _id: row.id }).then(() => {});
                       }
                     }}
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${isOpen ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all ${isOpen ? "bg-primary text-primary-foreground shadow" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
                     title={isOpen ? "Recolher" : "Tocar"}
                   >
                     {isOpen ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
                   </button>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold truncate">
+                    <p className="text-xs font-bold truncate flex items-center gap-1">
                       {row.city || "—"}
-                      {row.is_public && libTab === "mine" && <Globe2 className="inline w-3 h-3 ml-1 text-primary" />}
-                      {!row.is_public && libTab === "mine" && <Lock className="inline w-3 h-3 ml-1 text-muted-foreground" />}
+                      {row.audio_url_vinheta && <Music className="inline w-3 h-3 text-primary" title="Tem versão com vinheta" />}
+                      {row.is_public && libTab === "mine" && <Globe2 className="inline w-3 h-3 text-primary" />}
+                      {!row.is_public && libTab === "mine" && <Lock className="inline w-3 h-3 text-muted-foreground" />}
                     </p>
                     <p className="text-[10px] text-muted-foreground truncate">
                       {row.kind === "comercio" && row.place_name ? `${row.place_name} · ` : ""}
                       {row.street || "—"} · {row.time_slot}
                     </p>
                     {libTab === "public" && row.play_count > 0 && (
-                      <p className="text-[10px] text-primary">▶ {row.play_count}× usado</p>
+                      <p className="text-[10px] text-primary font-medium">▶ {row.play_count}× reaproveitado</p>
                     )}
                   </div>
                 </div>
 
                 {isOpen && (
-                  <audio
-                    src={row.audio_url}
-                    controls
-                    autoPlay
-                    preload="metadata"
-                    className="w-full h-9"
-                  />
+                  <div className="space-y-1.5">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Sem vinheta</p>
+                    <audio
+                      src={row.audio_url}
+                      controls
+                      autoPlay
+                      preload="metadata"
+                      className="w-full h-9"
+                    />
+                    {row.audio_url_vinheta && (
+                      <>
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-primary">Com vinheta</p>
+                        <audio
+                          src={row.audio_url_vinheta}
+                          controls
+                          preload="metadata"
+                          className="w-full h-9"
+                        />
+                      </>
+                    )}
+                  </div>
                 )}
 
                 <div className="flex gap-1 flex-wrap">
@@ -928,6 +1107,17 @@ export function AudioStudio({ userId }: { userId: string }) {
                       </button>
                     }
                   />
+                  {row.audio_url_vinheta && (
+                    <AudioWhatsAppPopover
+                      audioUrl={row.audio_url_vinheta}
+                      label={`${rowLabel} (com vinheta)`}
+                      trigger={
+                        <button className="flex-1 h-7 rounded-md bg-primary/15 hover:bg-primary/25 text-primary text-[10px] font-semibold flex items-center justify-center gap-1" title="Enviar versão com vinheta">
+                          <Music className="w-3 h-3" /> Vinheta
+                        </button>
+                      }
+                    />
+                  )}
                   <button onClick={() => copyRowUrl(row)} className="h-7 px-2 rounded-md bg-muted/50 hover:bg-muted text-[10px] font-medium flex items-center justify-center gap-1" title="Copiar link">
                     <Copy className="w-3 h-3" />
                   </button>
