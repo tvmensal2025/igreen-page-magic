@@ -1038,11 +1038,11 @@ Deno.serve(async (req) => {
 
 
     // ─── Auto-tag lead source (Meta Ads) ─────────────────────────────────
-    // Prioridade:
-    //   1. Sinal forte: payload Whapi com referral/context (CTWA do Meta)
-    //   2. Match por initial_message: compara texto recebido com
-    //      facebook_campaigns.initial_message do consultor.
-    //   3. Fallback regex: frases típicas de anúncio no texto.
+    // Ordem de prioridade (mais precisa → mais fraca), conforme doc oficial Meta:
+    //   1. source_id (AD ID do clique) → casa com facebook_campaigns.fb_ad_ids (determinístico)
+    //   2. ctwa_clid → ctwa_clid_mapping (populado na criação da campanha)
+    //   3. initial_message → texto pré-preenchido (heurística)
+    //   4. regex → frases típicas de anúncio (último recurso)
     // Só roda quando source_campaign_id ainda não está preenchido.
     try {
       const alreadyTagged = !!(customer as any).source_campaign_id || !!(customer as any).lead_source;
@@ -1050,34 +1050,83 @@ Deno.serve(async (req) => {
         const rawMsg: any = body?.messages?.[0] || {};
         const referral = rawMsg.referral || rawMsg.context?.referred_product || rawMsg.context?.referral || rawMsg.ad_reply || null;
         const ctwaClid = rawMsg.ctwa_clid || referral?.ctwa_clid || null;
+        // source_id = AD ID que originou o clique (doc oficial Meta: referral.source_id).
+        const sourceAdId = referral?.source_id || referral?.sourceId || rawMsg.source_id || null;
+        const sourceType = referral?.source_type || referral?.sourceType || null;
         const hasReferral = !!(referral || ctwaClid);
 
         const referralPayload = referral
-          ? { ...referral, ctwa_clid: ctwaClid }
+          ? { ...referral, source_id: sourceAdId, source_type: sourceType, ctwa_clid: ctwaClid }
           : ctwaClid
           ? { ctwa_clid: ctwaClid }
           : null;
 
         let sourceCampaignId: string | null = null;
+        let matchMethod: "ad_id" | "ctwa_clid" | "exact_message" | "unmatched" = "unmatched";
 
-        // 1) Match por initial_message
-        if (messageText && messageText.trim().length > 5) {
+        // 1) Match DETERMINÍSTICO por AD ID (source_id) → fb_ad_ids da campanha.
+        if (sourceAdId) {
+          try {
+            const { data: campByAd } = await supabase
+              .from("facebook_campaigns")
+              .select("id")
+              .eq("consultant_id", (customer as any).consultant_id)
+              .contains("fb_ad_ids", JSON.stringify([String(sourceAdId)]))
+              .maybeSingle();
+            if ((campByAd as any)?.id) {
+              sourceCampaignId = (campByAd as any).id;
+              matchMethod = "ad_id";
+            }
+          } catch (e) {
+            console.warn("[lead-source] ad_id match falhou:", (e as Error).message);
+          }
+        }
+
+        // 2) Match via ctwa_clid_mapping (sinal forte).
+        if (ctwaClid && !sourceCampaignId) {
+          try {
+            const { data: mapping } = await supabase
+              .from("ctwa_clid_mapping")
+              .select("campaign_id")
+              .eq("ctwa_clid", ctwaClid)
+              .maybeSingle();
+            if ((mapping as any)?.campaign_id) {
+              sourceCampaignId = (mapping as any).campaign_id;
+              matchMethod = "ctwa_clid";
+            }
+          } catch (e) {
+            console.warn("[lead-source] ctwa_clid_mapping lookup falhou:", (e as Error).message);
+          }
+        }
+
+        // 3) Match por initial_message (heurística)
+        if (!sourceCampaignId && messageText && messageText.trim().length > 5) {
           try {
             const normalizedMsg = messageText.trim().toLowerCase().replace(/\s+/g, " ");
+            // Na ambiguidade (várias campanhas com a MESMA initial_message),
+            // prioriza ativa + mais recente em vez de chutar a primeira.
             const { data: campaigns } = await supabase
               .from("facebook_campaigns")
-              .select("id, initial_message")
+              .select("id, initial_message, status, created_at")
               .eq("consultant_id", (customer as any).consultant_id)
               .not("initial_message", "is", null)
+              .order("created_at", { ascending: false })
               .limit(50);
             if (campaigns && campaigns.length > 0) {
-              const matched = (campaigns as any[]).find((c) => {
+              const matches = (campaigns as any[]).filter((c) => {
                 const im = String(c.initial_message || "").trim().toLowerCase().replace(/\s+/g, " ");
                 return im.length > 5 && normalizedMsg.startsWith(im.slice(0, Math.min(im.length, 60)));
               });
-              if (matched) {
-                sourceCampaignId = matched.id;
-                console.log(`[lead-source] customer ${customer.id} matched campaign ${matched.id} via initial_message`);
+              if (matches.length > 0) {
+                const rank = (s: string) => (s === "active" ? 0 : s === "pending_review" ? 1 : s === "paused" ? 2 : 3);
+                matches.sort((a, b) => {
+                  const r = rank(a.status) - rank(b.status);
+                  if (r !== 0) return r;
+                  return String(b.created_at).localeCompare(String(a.created_at));
+                });
+                sourceCampaignId = matches[0].id;
+                matchMethod = "exact_message";
+                console.log(`[lead-source] customer ${customer.id} matched campaign ${matches[0].id} via initial_message (ambiguous=${matches.length > 1})`);
               }
             }
           } catch (e) {
@@ -1085,6 +1134,7 @@ Deno.serve(async (req) => {
           }
         }
 
+        // 4) Regex fallback para frases típicas de anúncio (último recurso)
         const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
         const textMatch = !hasAudio && !isFile && messageText && adsRegex.test(messageText);
 
@@ -1112,6 +1162,7 @@ Deno.serve(async (req) => {
           }
           if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
           if (ctwaClid) patch.ctwa_clid = ctwaClid;
+          if (sourceAdId) patch.source_ad_id = String(sourceAdId);
           const detail: Record<string, any> = {};
           if (referralPayload) detail.referral = referralPayload;
           if (utmDetail) Object.assign(detail, utmDetail);
@@ -1122,9 +1173,20 @@ Deno.serve(async (req) => {
             console.warn(`[lead-source] update falhou: ${tagErr.message}`);
           } else {
             Object.assign(customer, patch);
-            const reason = sourceCampaignId ? `campaign_match id=${sourceCampaignId}`
+            // Popula ctwa_clid_mapping (clid → campanha) quando temos os dois.
+            if (ctwaClid && sourceCampaignId) {
+              try {
+                await supabase.from("ctwa_clid_mapping").upsert(
+                  { ctwa_clid: String(ctwaClid), campaign_id: sourceCampaignId },
+                  { onConflict: "ctwa_clid" },
+                );
+              } catch (e) {
+                console.warn("[lead-source] ctwa_clid_mapping upsert falhou:", (e as Error).message);
+              }
+            }
+            const reason = sourceCampaignId ? `campaign_match id=${sourceCampaignId} method=${matchMethod}`
               : ctwaClid ? `ctwa=${ctwaClid}`
-              : hasReferral ? `referral`
+              : hasReferral ? `referral ad_id=${sourceAdId}`
               : utmDetail ? `utm=${JSON.stringify(utmDetail)}`
               : `regex msg="${(messageText || "").slice(0, 80)}"`;
             console.log(`[lead-source] customer ${customer.id} tagged ${patch.lead_source} (${reason})`);

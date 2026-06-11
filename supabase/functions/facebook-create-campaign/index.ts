@@ -154,6 +154,38 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 10/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // ─── BLOQUEIO: primeira mensagem (CTWA) precisa ser ÚNICA por consultor ───
+    // A initial_message é uma das chaves de atribuição lead → campanha. Duas
+    // campanhas com a MESMA frase deixam o match por texto ambíguo e embaralham
+    // CPL/comissão. Aqui rejeitamos a publicação quando a frase já existe
+    // (normalizada) em outra campanha ativa do mesmo consultor. A UI oferece a
+    // variação por IA (edge function ad-initial-message) antes de chegar aqui.
+    {
+      const rawInitial = buildInitialMessage(body.initial_message, body.distribuidora);
+      const norm = (s: string) => (s || "")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+      const normNew = norm(rawInitial);
+      if (normNew.length >= 5) {
+        const adminCheck = adminClient();
+        const { data: dupRows } = await adminCheck
+          .from("facebook_campaigns")
+          .select("initial_message")
+          .eq("consultant_id", auth.id)
+          .not("initial_message", "is", null)
+          .neq("initial_message", "")
+          .in("status", ["active", "pending_review", "paused"])
+          .limit(200);
+        const isDup = (dupRows || []).some((r: any) => norm(r.initial_message) === normNew);
+        if (isDup) {
+          return new Response(JSON.stringify({
+            error: "Essa primeira mensagem do WhatsApp já está em uso em outra campanha sua. Mude um pouco a frase (tem o botão 'Variar com IA') para conseguirmos medir cada campanha com precisão.",
+            code: "DUPLICATE_INITIAL_MESSAGE",
+          }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
+
     // Admin (Super Admin) usa a conta Facebook da plataforma diretamente —
     // bypass dos guardrails de carteira (ele paga via cartão na conta Meta).
     const adminDb = adminClient();
@@ -438,9 +470,9 @@ Deno.serve(async (req) => {
       targeting: JSON.stringify(targeting),
       status: "PAUSED",
       // frequency_control_specs só é aceito com optimization_goal=REACH (Meta).
-      ...(optimizationGoal === "REACH"
-        ? { frequency_control_specs: JSON.stringify([{ event: "IMPRESSIONS", interval_days: 7, max_frequency: 3 }]) }
-        : {}),
+      // Como aqui otimizamos sempre por CONVERSATIONS, ele nunca se aplica —
+      // por isso não enviamos esse campo (antes havia um `=== "REACH"` morto
+      // que o type-check acusava como comparação sem sobreposição de tipos).
       ...(adlabelsParam ? { adlabels: adlabelsParam } : {}),
       access_token: conn.token,
     };
@@ -897,7 +929,9 @@ Deno.serve(async (req) => {
     if (!adIds.length) throw new Error("Nenhum anúncio pôde ser criado no Facebook.");
 
     // 6) Persiste
-    const admin = adminClient();
+    // Reusa o `admin` (adminClient) já criado na validação de saldo lá em cima —
+    // redeclarar com `const admin` aqui causava SyntaxError ("Identifier 'admin'
+    // has already been declared") e derrubava a função INTEIRA no boot.
     // Em modo raio, serializa os pontos em `cities` (key sintético "radius:lat,lng:r")
     // pra preservar geo na listagem local — assim o dashboard não fica "sem cidade".
     const citiesPersist = hasCustomLocations

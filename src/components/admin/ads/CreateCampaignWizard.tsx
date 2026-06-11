@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, uploadAdVideo, validateAccount, type PreflightResult, type CustomLocation } from "@/services/facebookAds";
+import { CityHit, CopyPack, CopyPackV2, createCampaign, generateCopy, preflightCampaign, searchCities, searchCitiesBulk, uploadAdPhotos, uploadAdVideo, validateAccount, checkInitialMessage, varyInitialMessage, type PreflightResult, type CustomLocation } from "@/services/facebookAds";
 import { Check, ChevronRight, Loader2, MapPin, Search, Sparkles, TrendingUp, Upload, X, ImageIcon, Smartphone, Wand2, Save, Target, DollarSign, Video, Zap } from "lucide-react";
 import { AddressRadiusPicker, type RadiusPoint } from "./AddressRadiusPicker";
 import { DISTRIBUIDORAS_PRESETS, type DistribuidoraPreset } from "@/data/distribuidoraPresets";
@@ -187,6 +187,11 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       : "Olá! Quero saber mais sobre a redução na minha conta de luz.";
   const [initialMessage, setInitialMessage] = useState<string>(() => buildDefaultInitialMessage(null));
   const [initialMessageTouched, setInitialMessageTouched] = useState(false);
+  // Frase única (CTWA): bloqueia avançar quando a primeira mensagem já é usada
+  // em outra campanha do consultor. A IA gera uma variação mantendo o foco.
+  const [initialMsgDuplicate, setInitialMsgDuplicate] = useState(false);
+  const [initialMsgChecking, setInitialMsgChecking] = useState(false);
+  const [initialMsgVarying, setInitialMsgVarying] = useState(false);
 
   // Step 4: orçamento
   const [budget, setBudget] = useState(15); // R$/dia (min 10 — Modo Econômico)
@@ -219,6 +224,7 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     setBudget(15); setDuration(3);
     setPlacementMode("auto"); setPlacements(ALL_PLACEMENTS);
     setQuality(null); setPreflight(null); setLiveReach(null);
+    setInitialMsgDuplicate(false); setInitialMsgChecking(false); setInitialMsgVarying(false);
     setGeoMode("cities"); setRadiusPoints([]);
 
     // Recupera rascunho de cidades/presets do localStorage (por consultor)
@@ -320,6 +326,37 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
     if (initialMessageTouched) return;
     setInitialMessage(buildDefaultInitialMessage(distribuidoraPrimary));
   }, [distribuidoraPrimary, initialMessageTouched]);
+
+  // Checa (debounce) se a primeira mensagem do WhatsApp já é usada em outra
+  // campanha do consultor. Só roda no Step 3 (onde o campo aparece).
+  useEffect(() => {
+    if (!open || step !== 3) { setInitialMsgDuplicate(false); return; }
+    const msg = initialMessage.trim();
+    if (msg.length < 5) { setInitialMsgDuplicate(false); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setInitialMsgChecking(true);
+      try {
+        const r = await checkInitialMessage(msg, distribuidoraPrimary);
+        if (!cancelled) setInitialMsgDuplicate(!!r.duplicate);
+      } catch { if (!cancelled) setInitialMsgDuplicate(false); }
+      finally { if (!cancelled) setInitialMsgChecking(false); }
+    }, 600);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [open, step, initialMessage, distribuidoraPrimary]);
+
+  async function handleVaryInitialMessage() {
+    setInitialMsgVarying(true);
+    try {
+      const r = await varyInitialMessage(initialMessage.trim(), distribuidoraPrimary);
+      setInitialMessage(r.message);
+      setInitialMessageTouched(true);
+      setInitialMsgDuplicate(!!r.duplicate);
+      toast({ title: "Frase variada com IA", description: "Mantivemos o foco e deixamos única para medir esta campanha." });
+    } catch (e: any) {
+      toast({ title: "Não consegui variar agora", description: e?.message || "Tente de novo.", variant: "destructive" });
+    } finally { setInitialMsgVarying(false); }
+  }
 
   function addCity(c: CityHit) {
     if (cities.find(x => x.key === c.key)) return;
@@ -487,6 +524,14 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
       if (!copy) generateCopyForCities();
     } else if (step === 3) {
       if (!headline || !primaryText) return toast({ title: "Preencha título e texto", variant: "destructive" });
+      if (initialMessage.trim().length < 5) return toast({ title: "Escreva a primeira mensagem do WhatsApp", variant: "destructive" });
+      if (initialMsgDuplicate) {
+        return toast({
+          title: "Primeira mensagem repetida",
+          description: "Essa frase já está em uso em outra campanha sua. Toque em 'Variar com IA' para deixá-la única antes de avançar.",
+          variant: "destructive",
+        });
+      }
       if (quality && !quality.canPublish) {
         const blockHit = quality.copy.hits.find((h) => h.severity === "block");
         return toast({ title: "Termo proibido pela Meta", description: blockHit?.message || "Remova os itens em vermelho antes de avançar.", variant: "destructive" });
@@ -1364,8 +1409,33 @@ export function CreateCampaignWizard({ open, onClose, consultantId, onCreated }:
                         value={initialMessage}
                         onChange={(e) => { setInitialMessage(e.target.value); setInitialMessageTouched(true); }}
                         placeholder="Olá! Quero saber mais sobre a redução na conta de luz."
-                        className="bg-background/50"
+                        className={`bg-background/50 ${initialMsgDuplicate ? "border-destructive focus-visible:ring-destructive" : ""}`}
                       />
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleVaryInitialMessage}
+                          disabled={initialMsgVarying}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-medium text-primary hover:text-primary/80 disabled:opacity-50"
+                        >
+                          {initialMsgVarying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                          Variar com IA (mantém o foco)
+                        </button>
+                        {initialMsgChecking && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <Loader2 className="w-3 h-3 animate-spin" /> verificando…
+                          </span>
+                        )}
+                      </div>
+                      {initialMsgDuplicate && (
+                        <div className="flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive">
+                          <X className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <span>
+                            Essa frase já está em uso em <strong>outra campanha sua</strong>. Mude um pouco
+                            (ou toque em <strong>Variar com IA</strong>) para a gente medir cada campanha com precisão.
+                          </span>
+                        </div>
+                      )}
                       <div className="flex items-start gap-2 mt-1">
                         <div className="shrink-0 w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">EU</div>
                         <div className="bg-primary/100 text-white text-xs px-3 py-2 rounded-2xl rounded-tl-sm max-w-[85%] shadow">

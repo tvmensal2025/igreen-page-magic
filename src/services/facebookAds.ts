@@ -113,6 +113,24 @@ export async function generateCopy(cities: string[]): Promise<CopyPack> {
   return data as CopyPackV2;
 }
 
+// Primeira mensagem do WhatsApp (CTWA): checagem de duplicidade + variação por IA.
+export interface InitialMessageCheck { ok: boolean; duplicate: boolean; reason: string | null; suggestion: string | null }
+export async function checkInitialMessage(message: string, distribuidora?: string | null, excludeCampaignId?: string | null): Promise<InitialMessageCheck> {
+  const { data, error } = await supabase.functions.invoke("ad-initial-message", {
+    body: { action: "check", message, distribuidora, exclude_campaign_id: excludeCampaignId },
+  });
+  if (error) throw error;
+  return data as InitialMessageCheck;
+}
+export async function varyInitialMessage(message: string, distribuidora?: string | null, excludeCampaignId?: string | null): Promise<{ message: string; duplicate: boolean }> {
+  const { data, error } = await supabase.functions.invoke("ad-initial-message", {
+    body: { action: "vary", message, distribuidora, exclude_campaign_id: excludeCampaignId },
+  });
+  if (error) throw error;
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data as { message: string; duplicate: boolean };
+}
+
 export interface CustomLocation {
   latitude: number;
   longitude: number;

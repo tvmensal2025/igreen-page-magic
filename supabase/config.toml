@@ -45,6 +45,9 @@ verify_jwt = false
 [functions.ad-creative-builder]
 verify_jwt = true
 
+[functions.ad-initial-message]
+verify_jwt = true
+
 [functions.upload-documents-minio]
 verify_jwt = false
 

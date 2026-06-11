@@ -745,13 +745,15 @@ Deno.serve(async (req) => {
 
     // ─── 5.5) Auto-tag lead source (Meta Ads / CTWA) ─────────────────────
     // Detecta a origem do lead na PRIMEIRA mensagem (source_campaign_id ainda null).
-    // Prioridade:
-    //   1. Sinal forte: payload Evolution com referral/context CTWA do Meta
-    //      (body.data.message.extendedTextMessage.contextInfo.externalAdReply
-    //       ou body.data.message.imageMessage.contextInfo.externalAdReply)
-    //   2. Match por initial_message: compara o texto recebido com
-    //      facebook_campaigns.initial_message do consultor (busca exata normalizada).
-    //   3. Fallback regex: frases típicas de anúncio no texto.
+    // Ordem de prioridade (da mais precisa para a mais fraca), confirmada pela
+    // doc oficial Meta (Marketing API / Conversions API for Business Messaging):
+    //   1. source_id (AD ID do clique) → casa com facebook_campaigns.fb_ad_ids
+    //      → atribuição 100% DETERMINÍSTICA da campanha exata.
+    //   2. ctwa_clid → tabela ctwa_clid_mapping (populada na criação da campanha).
+    //   3. initial_message → texto pré-preenchido do CTWA (heurística).
+    //   4. regex → frases típicas de anúncio (último recurso).
+    // Como cada consultor tem o PRÓPRIO número no CTWA, o consultant_id já vem
+    // certo pela instância; aqui só travamos a CAMPANHA correta dentro dele.
     // Só roda quando source_campaign_id ainda não está preenchido.
     try {
       const alreadyTagged = !!(customer as any).source_campaign_id || !!(customer as any).lead_source;
@@ -767,6 +769,13 @@ Deno.serve(async (req) => {
           null;
         const externalAdReply = ctxInfo?.externalAdReply || null;
         const ctwaClid = body?.data?.ctwaClid || externalAdReply?.ctwaClid || null;
+        // source_id = AD ID que originou o clique (doc oficial Meta: referral.source_id).
+        // No Evolution/Baileys vem em externalAdReply.sourceId; aceitamos variações.
+        const sourceAdId = externalAdReply?.sourceId
+          || externalAdReply?.source_id
+          || body?.data?.sourceId
+          || null;
+        const sourceType = externalAdReply?.sourceType || externalAdReply?.source_type || null;
         const hasReferral = !!(externalAdReply || ctwaClid);
 
         // Payload completo do referral para auditoria
@@ -776,6 +785,8 @@ Deno.serve(async (req) => {
               body: externalAdReply.body,
               source_url: externalAdReply.sourceUrl,
               media_url: externalAdReply.thumbnailUrl,
+              source_id: sourceAdId,
+              source_type: sourceType,
               ctwa_clid: ctwaClid,
             }
           : ctwaClid
@@ -783,45 +794,28 @@ Deno.serve(async (req) => {
           : null;
 
         let sourceCampaignId: string | null = null;
+        let matchMethod: "ad_id" | "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
+        let matchSimilarity: number | null = null;
 
-        // 1) Match por initial_message (mais confiável — texto pré-preenchido da campanha)
-        if (messageText && messageText.trim().length > 5) {
+        // 1) Match DETERMINÍSTICO por AD ID (source_id) → fb_ad_ids da campanha.
+        if (sourceAdId) {
           try {
-            const normalizedMsg = messageText.trim().toLowerCase().replace(/\s+/g, " ");
-            const { data: campaigns } = await supabase
+            const { data: campByAd } = await supabase
               .from("facebook_campaigns")
-              .select("id, initial_message")
+              .select("id")
               .eq("consultant_id", instanceData.consultant_id)
-              .not("initial_message", "is", null)
-              .limit(50);
-
-            if (campaigns && campaigns.length > 0) {
-              const matched = (campaigns as any[]).find((c) => {
-                const im = String(c.initial_message || "").trim().toLowerCase().replace(/\s+/g, " ");
-                return im.length > 5 && normalizedMsg.startsWith(im.slice(0, Math.min(im.length, 60)));
-              });
-              if (matched) {
-                sourceCampaignId = matched.id;
-                jsonLog("info", "lead_source_campaign_matched", {
-                  customer_id: customer.id,
-                  consultant_id: instanceData.consultant_id,
-                  campaign_id: matched.id,
-                  method: "initial_message",
-                });
-              }
+              .contains("fb_ad_ids", JSON.stringify([String(sourceAdId)]))
+              .maybeSingle();
+            if ((campByAd as any)?.id) {
+              sourceCampaignId = (campByAd as any).id;
+              matchMethod = "ad_id";
             }
           } catch (e) {
-            console.warn("[lead-source] initial_message match falhou:", (e as Error).message);
+            console.warn("[lead-source] ad_id match falhou:", (e as Error).message);
           }
         }
 
-        // 2) Regex fallback para frases típicas de anúncio
-        const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
-        const textMatch = !isFile && messageText && adsRegex.test(messageText);
-
-        // 3) Match via ctwa_clid_mapping (Req 8.1) — sinal forte
-        let matchMethod: "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
-        let matchSimilarity: number | null = null;
+        // 2) Match via ctwa_clid_mapping (sinal forte) — populado na criação da campanha.
         if (ctwaClid && !sourceCampaignId) {
           try {
             const { data: mapping } = await supabase
@@ -837,27 +831,90 @@ Deno.serve(async (req) => {
             console.warn("[lead-source] ctwa_clid_mapping lookup falhou:", (e as Error).message);
           }
         }
-        if (sourceCampaignId && matchMethod === "unmatched") matchMethod = "exact_message";
+
+        // 3) Match por initial_message (heurística — texto pré-preenchido da campanha)
+        if (!sourceCampaignId && messageText && messageText.trim().length > 5) {
+          try {
+            const normalizedMsg = messageText.trim().toLowerCase().replace(/\s+/g, " ");
+            // Ordena por ativa primeiro e mais recente: na ambiguidade (várias
+            // campanhas com a MESMA initial_message), escolhe a que provavelmente
+            // está gerando tráfego agora, em vez de chutar a primeira do banco.
+            const { data: campaigns } = await supabase
+              .from("facebook_campaigns")
+              .select("id, initial_message, status, created_at")
+              .eq("consultant_id", instanceData.consultant_id)
+              .not("initial_message", "is", null)
+              .order("created_at", { ascending: false })
+              .limit(50);
+
+            if (campaigns && campaigns.length > 0) {
+              const matches = (campaigns as any[]).filter((c) => {
+                const im = String(c.initial_message || "").trim().toLowerCase().replace(/\s+/g, " ");
+                return im.length > 5 && normalizedMsg.startsWith(im.slice(0, Math.min(im.length, 60)));
+              });
+              if (matches.length > 0) {
+                const rank = (s: string) => (s === "active" ? 0 : s === "pending_review" ? 1 : s === "paused" ? 2 : 3);
+                matches.sort((a, b) => {
+                  const r = rank(a.status) - rank(b.status);
+                  if (r !== 0) return r;
+                  return String(b.created_at).localeCompare(String(a.created_at));
+                });
+                const matched = matches[0];
+                sourceCampaignId = matched.id;
+                matchMethod = "exact_message";
+                jsonLog("info", "lead_source_campaign_matched", {
+                  customer_id: customer.id,
+                  consultant_id: instanceData.consultant_id,
+                  campaign_id: matched.id,
+                  method: "initial_message",
+                  ambiguous: matches.length > 1,
+                  candidates: matches.length,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("[lead-source] initial_message match falhou:", (e as Error).message);
+          }
+        }
+
+        // 4) Regex fallback para frases típicas de anúncio (último recurso)
+        const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
+        const textMatch = !isFile && messageText && adsRegex.test(messageText);
 
         if (hasReferral || textMatch || sourceCampaignId) {
           const patch: Record<string, any> = { lead_source: "meta_ads" };
           if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
           if (ctwaClid) patch.source_ctwa_clid = ctwaClid;
+          if (sourceAdId) patch.source_ad_id = String(sourceAdId);
           if (referralPayload) patch.source_referral = referralPayload;
 
           await supabase.from("customers").update(patch).eq("id", customer.id);
           Object.assign(customer, patch);
 
+          // Popula ctwa_clid_mapping (clid → campanha) quando temos os dois.
+          // Assim o método #2 passa a funcionar de fato para cliques futuros.
+          if (ctwaClid && sourceCampaignId) {
+            try {
+              await supabase.from("ctwa_clid_mapping").upsert(
+                { ctwa_clid: String(ctwaClid), campaign_id: sourceCampaignId },
+                { onConflict: "ctwa_clid" },
+              );
+            } catch (e) {
+              console.warn("[lead-source] ctwa_clid_mapping upsert falhou:", (e as Error).message);
+            }
+          }
+
           const reason = sourceCampaignId
             ? `campaign_match id=${sourceCampaignId} method=${matchMethod}`
             : hasReferral
-            ? `referral ctwa=${ctwaClid}`
+            ? `referral ad_id=${sourceAdId} ctwa=${ctwaClid}`
             : `regex msg="${(messageText || "").slice(0, 60)}"`;
           jsonLog("info", "lead_source_tagged", {
             customer_id: customer.id,
             consultant_id: instanceData.consultant_id,
             reason,
             source_campaign_id: sourceCampaignId,
+            source_ad_id: sourceAdId,
             ctwa_clid: ctwaClid,
             match_method: matchMethod,
           });
