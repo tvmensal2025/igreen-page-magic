@@ -261,7 +261,7 @@ function resolverPasso(
  * ajustável conforme padrões observados em sombra.
  */
 const RE_CANCELAMENTO =
-  /\b(cancelar|cancela|desistir|desisto|parar|sair|chega|n[aã]o quero mais|esquece|esque[çc]a)\b/i;
+  /\b(cancelar|cancela|desistir|desisto|parar|chega|n[aã]o quero mais|esquece|esque[çc]a)\b|\bn[aã]o quero\b/i;
 
 /**
  * Marcadores de CORREÇÃO de dado já informado (Requisito 6.5). Sinalizam que o
