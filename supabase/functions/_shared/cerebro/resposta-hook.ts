@@ -61,7 +61,7 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getFlowEngineV3, isV2Active, type FlowEngineV3Flag } from "../feature-flag.ts";
+import { getFlowEngineV3, isV2Active, isCerebroAtivo, type FlowEngineV3Flag } from "../feature-flag.ts";
 import { processarTurno as processarTurnoReal } from "./index.ts";
 import { montarInbound } from "./sombra-hook.ts";
 import {
@@ -80,6 +80,110 @@ type AnySupabase = any;
 
 /** Canal de origem do turno (espelha os dois webhooks). */
 export type CanalWebhook = "evolution" | "whapi";
+
+/**
+ * Lista de NÚMEROS DE TESTE (modo de validação controlada).
+ * --------------------------------------------------------
+ * Quando o número que escreveu está nesta lista, o Cérebro RESPONDE de verdade
+ * mesmo que o consultor esteja em `off`/`dark`. Serve para validar o Cérebro ao
+ * vivo com um aparelho de teste SEM ligar o consultor inteiro (sem tocar nos
+ * clientes reais). Qualquer outro número segue a regra normal da flag (em
+ * `dark` quem responde é a vendedora antiga).
+ *
+ * FONTE: coluna `rollout_config.cerebro_numeros_teste` (texto CSV de números).
+ * Trocar a lista NÃO exige deploy — só um `UPDATE` na tabela (vale na hora,
+ * respeitando o cache de 30s). Em produção, manter VAZIA quando não estiver
+ * testando. Comparação por dígitos, ignorando `+`, espaços e traços.
+ *
+ * Cache GLOBAL de 30s (a lista é única, não por consultor): no máximo 1 leitura
+ * a cada 30s por instância de Edge Function. Nunca lança: erro → lista vazia
+ * (nenhum número de teste, fail-safe).
+ */
+export function soDigitos(valor: string | null | undefined): string {
+  return String(valor ?? "").replace(/\D/g, "");
+}
+
+const TTL_NUMEROS_TESTE_MS = 30_000;
+let _cacheNumerosTeste: { valor: Set<string>; expiraEm: number } | null = null;
+
+/** Limpa o cache da lista de números de teste (para testes). */
+export function limparCacheNumerosTeste(): void {
+  _cacheNumerosTeste = null;
+}
+
+/** Converte um CSV de números em Set de dígitos (descarta vazios/curtos). */
+function parseNumeros(csv: string | null | undefined): Set<string> {
+  const numeros = String(csv ?? "")
+    .split(",")
+    .map((n) => soDigitos(n))
+    .filter((n) => n.length >= 8);
+  return new Set(numeros);
+}
+
+/**
+ * Lê a lista de números de teste do banco (`rollout_config`), com cache global
+ * de 30s. Fail-safe: qualquer erro → lista vazia. Se `supabase` não for
+ * fornecido, usa só o cache (ou vazio) — assim funções puras de teste podem
+ * injetar a lista sem rede.
+ */
+export async function lerNumerosTeste(
+  supabase?: AnySupabase,
+): Promise<Set<string>> {
+  const agora = Date.now();
+  if (_cacheNumerosTeste && _cacheNumerosTeste.expiraEm > agora) {
+    return _cacheNumerosTeste.valor;
+  }
+  let valor = new Set<string>();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("rollout_config")
+        .select("cerebro_numeros_teste")
+        .eq("id", true)
+        .single();
+      if (!error && data) {
+        valor = parseNumeros((data as { cerebro_numeros_teste?: string }).cerebro_numeros_teste);
+      }
+    } catch {
+      valor = new Set();
+    }
+  }
+  _cacheNumerosTeste = { valor, expiraEm: agora + TTL_NUMEROS_TESTE_MS };
+  return valor;
+}
+
+/**
+ * Diz se um número está na lista de teste. Compara por sufixo de dígitos para
+ * tolerar variações de DDI/9º dígito (ex.: `5511971254913` casa com
+ * `11971254913`). Fail-safe: lista vazia → sempre `false`.
+ */
+export function ehNumeroDeTeste(
+  telefone: string | null | undefined,
+  numerosTeste: Set<string>,
+): boolean {
+  const alvo = soDigitos(telefone);
+  if (!alvo || !numerosTeste || numerosTeste.size === 0) return false;
+  for (const n of numerosTeste) {
+    if (n === alvo || alvo.endsWith(n) || n.endsWith(alvo)) return true;
+  }
+  return false;
+}
+
+/**
+ * Versão de conveniência que lê a lista do banco (cacheada) e checa o número.
+ * É o que os webhooks chamam. Nunca lança.
+ */
+export async function ehNumeroDeTesteAsync(
+  telefone: string | null | undefined,
+  supabase?: AnySupabase,
+): Promise<boolean> {
+  try {
+    const lista = await lerNumerosTeste(supabase);
+    return ehNumeroDeTeste(telefone, lista);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Sender injetável de texto. No webhook é o canal já protegido (anti-ban + trio
@@ -111,6 +215,13 @@ export interface EntradaRespostaHook {
   inboundMessageId?: string | null;
   /** Canal do webhook que originou o turno. */
   channel?: CanalWebhook;
+  /**
+   * Telefone do cliente (dígitos ou formato livre). Usado SÓ para o modo de
+   * número de teste: se este número estiver em `CEREBRO_NUMEROS_TESTE`, o
+   * Cérebro responde mesmo com o consultor em `off`/`dark`. Ausente → modo
+   * normal (decide só pela flag).
+   */
+  telefone?: string | null;
   /** Capacidades do canal; ausente → default permissivo por canal. */
   capabilities?: ChannelCapabilities;
   /**
@@ -188,13 +299,19 @@ function neutro(flag: FlowEngineV3Flag): ResultadoRespostaHook {
  * — verdadeiro em `canary` (consultor no subconjunto do rollout) e em `on`
  * (todos). Em `off`/`dark` e em qualquer erro (fail-open) → não responde.
  *
+ * EXCEÇÃO — NÚMERO DE TESTE: se `telefone` estiver na lista
+ * `CEREBRO_NUMEROS_TESTE`, responde MESMO em `off`/`dark`. Isso permite validar
+ * o Cérebro ao vivo com um aparelho de teste sem ligar o consultor inteiro
+ * (clientes reais seguem na vendedora antiga).
+ *
  * Nunca lança. É a peça pequena e testável que os webhooks consultam.
  */
 export async function deveResponderComCerebro(
   supabase: AnySupabase,
   consultantId: string,
   deps: DependenciasResposta = {},
-): Promise<{ responder: boolean; flag: FlowEngineV3Flag }> {
+  telefone?: string | null,
+): Promise<{ responder: boolean; flag: FlowEngineV3Flag; motivo: "flag" | "numero_teste" | "cerebro_ativo" }> {
   const lerFlag = deps.lerFlag ?? getFlowEngineV3;
   let flag: FlowEngineV3Flag = "off";
   try {
@@ -204,12 +321,27 @@ export async function deveResponderComCerebro(
       "[cerebro/resposta-hook] leitura de flag falhou (fail-open → caminho atual):",
       (e as { message?: string })?.message,
     );
-    return { responder: false, flag: "off" };
+    flag = "off";
+  }
+  // Número de teste tem prioridade: libera o Cérebro mesmo em off/dark, sem
+  // afetar nenhum cliente real (que não está na lista). Lê do banco (cacheado).
+  if (await ehNumeroDeTesteAsync(telefone, supabase)) {
+    return { responder: true, flag, motivo: "numero_teste" };
+  }
+  // FLAG DEDICADA do Cérebro (`cerebro_ativo='on'`): é a chave para o Cérebro
+  // ser a fonte de verdade de TODOS os clientes do consultor SEM acionar o gate
+  // do engine v3 (que reage a `flow_engine_v3='on'`). Fail-safe: erro → false.
+  try {
+    if (await isCerebroAtivo(supabase, consultantId)) {
+      return { responder: true, flag, motivo: "cerebro_ativo" };
+    }
+  } catch {
+    // ignora — segue para o critério da flag de rollout
   }
   // `isV2Active` é o MESMO critério do engine v3: canary OU on = fonte de
   // verdade. Em canary, a pertinência ao subconjunto já está embutida na flag
   // do consultor (gravada pelo cron de rollout).
-  return { responder: isV2Active(flag), flag };
+  return { responder: isV2Active(flag), flag, motivo: "flag" };
 }
 
 /**
@@ -242,7 +374,7 @@ export async function responderComCerebro(
 
   let flag: FlowEngineV3Flag = "off";
   try {
-    const decisao = await deveResponderComCerebro(supabase, consultantId, deps);
+    const decisao = await deveResponderComCerebro(supabase, consultantId, deps, entrada.telefone);
     flag = decisao.flag;
 
     // GATE: só responde quando o Cérebro é fonte de verdade (canary/on).

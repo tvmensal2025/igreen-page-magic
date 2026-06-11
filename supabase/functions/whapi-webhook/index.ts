@@ -1705,6 +1705,7 @@ Deno.serve(async (req) => {
           inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
           inboundMessageId: messageId ?? null,
           channel: "whapi",
+          telefone: phone ?? null,
           // Sender REAL do canal já protegido (anti-ban + dedup + lock + rate
           // limit). Retorna false quando o guard bloqueou o envio.
           enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),

@@ -176,3 +176,55 @@ export async function getFlowEngineV3(
   });
   return resolved;
 }
+
+// ─── cerebro_ativo (flag DEDICADA do Cérebro IA) ────────────────────────────
+//
+// Separada de `flow_engine_v3` (que é do engine v3). Necessária porque o gate
+// do engine v3 (`isEngineV3Enabled`) também trata `flow_engine_v3='on'` como
+// "assumir o turno" e daria early-return ANTES do Cérebro. Com uma flag
+// própria, ligar o Cérebro para todos NÃO aciona o engine v3.
+//
+// Valores: 'off' (não responde) | 'on' (Cérebro é fonte de verdade do
+// consultor). Default seguro: 'off'. Cache in-process de 30s, igual às demais.
+// Rollback: `UPDATE consultants SET cerebro_ativo='off'` (vale em ~30s).
+
+const cerebroAtivoCache = new Map<string, { value: boolean; expiresAt: number }>();
+
+/** Limpa o cache da flag cerebro_ativo (para rollback no mesmo processo / testes). */
+export function clearCerebroAtivoCache(): void {
+  cerebroAtivoCache.clear();
+}
+
+/**
+ * Lê `consultants.cerebro_ativo`. `true` somente quando vale exatamente 'on'.
+ * Fail-safe: qualquer erro/ausência → `false` (Cérebro não assume; caminho
+ * atual responde). Nunca lança. Cache de 30s por consultor.
+ */
+export async function isCerebroAtivo(
+  supabase: SupabaseClient,
+  consultantId: string,
+): Promise<boolean> {
+  if (!consultantId) return false;
+  const now = Date.now();
+  const cached = cerebroAtivoCache.get(consultantId);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  let resolved = false;
+  try {
+    const { data, error } = await supabase
+      .from("consultants")
+      .select("cerebro_ativo")
+      .eq("id", consultantId)
+      .single();
+    if (!error && data) {
+      resolved = (data as { cerebro_ativo?: string }).cerebro_ativo === "on";
+    }
+  } catch {
+    resolved = false;
+  }
+  cerebroAtivoCache.set(consultantId, {
+    value: resolved,
+    expiresAt: now + FEATURE_FLAG_CACHE_TTL_MS,
+  });
+  return resolved;
+}

@@ -1444,7 +1444,22 @@ Deno.serve(async (req) => {
     // paralelo. O fallback determinístico só dispara se o router retornar
     // erro/`skipped`, o que é tratado dentro da própria Edge Function
     // `ai-agent-router` (não aqui).
+    // Modo NÚMERO DE TESTE / Cérebro ATIVO: se este número está na lista de
+    // teste OU o consultor tem `cerebro_ativo='on'`, o turno NÃO é capturado
+    // pela IA KB-only (ai-agent-router) — segue até o hook do Cérebro, que é a
+    // fonte de verdade. Não afeta nada quando ambos estão desligados.
+    let _ehNumeroTesteCerebro = false;
+    let _cerebroAtivoConsultor = false;
+    try {
+      const { ehNumeroDeTesteAsync } = await import("../_shared/cerebro/resposta-hook.ts");
+      const { isCerebroAtivo } = await import("../_shared/feature-flag.ts");
+      _ehNumeroTesteCerebro = await ehNumeroDeTesteAsync(phone, supabase);
+      _cerebroAtivoConsultor = await isCerebroAtivo(supabase as any, instanceData.consultant_id);
+    } catch (_) { _ehNumeroTesteCerebro = false; _cerebroAtivoConsultor = false; }
+
     const aiShouldHandle =
+      !_ehNumeroTesteCerebro &&
+      !_cerebroAtivoConsultor &&
       aiCfg?.enabled === true &&
       CONVERSATIONAL_STEPS.has(currentStep) &&
       !(currentStep === "aguardando_conta" && isFile) &&
@@ -1810,6 +1825,7 @@ Deno.serve(async (req) => {
           inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
           inboundMessageId: messageId ?? null,
           channel: "evolution",
+          telefone: phone ?? null,
           // Sender REAL do canal já protegido (anti-ban + dedup + lock + rate
           // limit). Retorna false quando o guard bloqueou o envio.
           enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),

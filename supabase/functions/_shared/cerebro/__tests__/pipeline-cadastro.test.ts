@@ -33,7 +33,7 @@ import {
 
 import { extrairAcaoCadastro } from "../decisor-passo.ts";
 import { despacharAcaoCadastro } from "../despacho-cadastro.ts";
-import type { DispatchResult } from "../portal-worker.ts";
+import type { DispatchResult } from "../../portal-worker.ts";
 import type { AcaoCadastroDeferida, DeferredAction } from "../tipos.ts";
 
 // ─── Fixtures de DeferredAction (formato real do motor — engine/types.ts) ────
