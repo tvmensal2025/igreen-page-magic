@@ -184,93 +184,33 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
             <Label htmlFor="igreen_id" className="text-sm text-muted-foreground">ID iGreen</Label>
             <Input id="igreen_id" value={form.igreen_id} onChange={(e) => {
               const id = e.target.value;
-              const isAutoconexao = form.portal_kind === "autoconexao";
+              // Portal 2 (Autoconexão) é o padrão único hoje. O link de cadastro
+              // sempre aponta para o Autoconexão. (O Portal 1/digital continua no
+              // código, mas a escolha foi removida da interface.)
+              const url = id ? `https://green.igreenenergy.com.br/autoconexao/?id=${id}` : "";
               onFormChange({
                 igreen_id: id,
-                cadastro_url: id
-                  ? (isAutoconexao
-                      ? `https://green.igreenenergy.com.br/autoconexao/?id=${id}`
-                      : `https://digital.igreenenergy.com.br/?id=${id}&sendcontract=true`)
-                  : "",
+                portal_kind: "autoconexao",
+                cadastro_url: url,
                 licenciada_cadastro_url: id ? `https://expansao.igreenenergy.com.br/?id=${id}&checkout=true` : "",
               });
+              if (id) void persistPortalKind("autoconexao", url);
             }} placeholder="ex: 126928" className="bg-secondary border-border" />
           </div>
         </div>
 
-        {/* Seletor de Portal de cadastro */}
-        <div className="mt-6 space-y-3 rounded-xl border border-border bg-secondary/30 p-4">
-          <div>
-            <Label className="text-sm font-semibold text-foreground">Qual portal usar para cadastrar clientes?</Label>
-            <p className="text-xs text-muted-foreground mt-1">
-              Você pode escolher entre o portal antigo (Conta de Energia) e o novo (Autoconexão).
-              O link de divulgação muda conforme a opção.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className={`flex flex-col gap-1 cursor-pointer rounded-lg border p-3 transition-colors ${
-              form.portal_kind !== "autoconexao"
-                ? "border-primary bg-primary/5"
-                : "border-border bg-secondary hover:border-primary/40"
-            }`}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="portal_kind"
-                  value="digital"
-                  checked={form.portal_kind !== "autoconexao"}
-                  onChange={() => {
-                    const id = form.igreen_id;
-                    const url = id ? `https://digital.igreenenergy.com.br/?id=${id}&sendcontract=true` : "";
-                    onFormChange({
-                      portal_kind: "digital",
-                      cadastro_url: url,
-                    });
-                    void persistPortalKind("digital", url);
-                  }}
-                  className="accent-primary"
-                />
-                <span className="font-semibold text-sm text-foreground">Conta de Energia (digital)</span>
-              </div>
-              <span className="text-xs text-muted-foreground pl-6">
-                Portal antigo. Cliente preenche tudo numa página única. Cadastro via automação no servidor.
-              </span>
-            </label>
-
-            <label className={`flex flex-col gap-1 cursor-pointer rounded-lg border p-3 transition-colors ${
-              form.portal_kind === "autoconexao"
-                ? "border-primary bg-primary/5"
-                : "border-border bg-secondary hover:border-primary/40"
-            }`}>
-              <div className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="portal_kind"
-                  value="autoconexao"
-                  checked={form.portal_kind === "autoconexao"}
-                  onChange={() => {
-                    const id = form.igreen_id;
-                    const url = id ? `https://green.igreenenergy.com.br/autoconexao/?id=${id}` : "";
-                    onFormChange({
-                      portal_kind: "autoconexao",
-                      cadastro_url: url,
-                    });
-                    void persistPortalKind("autoconexao", url);
-                  }}
-                  className="accent-primary"
-                />
-                <span className="font-semibold text-sm text-foreground">Autoconexão (novo)</span>
-              </div>
-              <span className="text-xs text-muted-foreground pl-6">
-                Cadastro em 5 passos com leitura automática de documento e conta. Mais rápido (~3-5s).
-              </span>
-            </label>
-          </div>
-        </div>
+        {/*
+          Seletor de Portal (Conta de Energia / Autoconexão) REMOVIDO da UI.
+          Hoje só o Portal 2 (Autoconexão) está ativo, então o campo de dados
+          fica mais limpo e o link já vem direto do Autoconexão. O código do
+          Portal 1 (digital) e a função persistPortalKind seguem preservados
+          no projeto/histórico — se a empresa reativar o Portal 1, basta
+          restaurar este bloco. Ver git para a versão completa do seletor.
+        */}
 
         <div className="mt-4 space-y-2">
           <Label htmlFor="cadastro_url" className="text-sm text-muted-foreground">
-            Link de cadastro {form.portal_kind === "autoconexao" ? "(Autoconexão)" : "(Conta de Energia)"}
+            Link de cadastro
           </Label>
           <Input id="cadastro_url" value={form.cadastro_url} readOnly className="bg-secondary/50 border-border text-muted-foreground cursor-not-allowed" />
         </div>
