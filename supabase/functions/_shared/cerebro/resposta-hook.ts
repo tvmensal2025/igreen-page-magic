@@ -377,6 +377,30 @@ export async function responderComCerebro(
     const decisao = await deveResponderComCerebro(supabase, consultantId, deps, entrada.telefone);
     flag = decisao.flag;
 
+    // OBSERVABILIDADE (diagnóstico de ativação): registra, best-effort, o
+    // resultado do GATE deste hook em `ai_decisions` (phase `cerebro_resposta`).
+    // Nunca lança nem afeta o turno. Permite auditar por que o Cérebro
+    // respondeu ou não (gate/flag/numero de teste) sem depender de logs.
+    try {
+      await supabase.from("ai_decisions").insert({
+        customer_id: customerId,
+        consultant_id: consultantId,
+        phase: "cerebro_resposta",
+        source: "cerebro_gate",
+        suppressed: !decisao.responder,
+        channel: entrada.channel ?? null,
+        user_input: entrada.inboundText ?? null,
+        ai_output: {
+          gate: {
+            responder: decisao.responder,
+            motivo: decisao.motivo,
+            flag: decisao.flag,
+            telefone: entrada.telefone ?? null,
+          },
+        },
+      });
+    } catch (_) { /* best-effort: nunca derruba o turno */ }
+
     // GATE: só responde quando o Cérebro é fonte de verdade (canary/on).
     // Em `off`/`dark` o envio NÃO é responsabilidade deste hook (o sombra-hook
     // cuida do `dark`; em `off` o Cérebro fica inativo).
@@ -428,6 +452,27 @@ export async function responderComCerebro(
         enviou = false;
       }
     }
+
+    // OBSERVABILIDADE: registra o RESULTADO do turno respondido pelo Cérebro
+    // (best-effort). Mostra se houve texto, se enviou e se foi handoff.
+    try {
+      await supabase.from("ai_decisions").insert({
+        customer_id: customerId,
+        consultant_id: consultantId,
+        phase: "cerebro_resposta_envio",
+        source: "cerebro_on",
+        suppressed: !temTexto,
+        reply_sent: temTexto ? reply : null,
+        channel: entrada.channel ?? null,
+        user_input: entrada.inboundText ?? null,
+        ai_output: {
+          enviou,
+          temTexto,
+          shouldHandoff: !!resultado.shouldHandoff,
+          flag,
+        },
+      });
+    } catch (_) { /* best-effort */ }
 
     return {
       respondeu: true,
