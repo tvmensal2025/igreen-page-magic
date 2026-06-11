@@ -320,10 +320,14 @@ export function pickVariant(variant: "A" | "B" | "C" | "D"): VariantStrategy {
     case "A":
       return variantA;
     case "B":
-      // Variant B é Vendedora V2 (IA livre). NUNCA deve chegar aqui — o
-      // gate em webhook + loader bloqueia antes. Lançamos para falhar
-      // ruidosamente caso algum caller esquecido tente rodar B no V3.
-      throw new Error("pickVariant: variant B is handled by Vendedora V2, not V3 step engine");
+      // Variant B = Fluxo B (antiga Vendedora V2). No caminho do Cérebro IA,
+      // o fluxo B passa a ser comandado por `bot_flow_steps` (construtor
+      // visual), então renderiza os passos EXATAMENTE como a variant A
+      // (texto + mídia + botões do passo). O Escritor (N4) é quem reescreve o
+      // texto final; aqui só montamos o outbound-base do passo decidido.
+      // Obs.: o engine v3 nunca chega aqui (o loader bloqueia B sem
+      // `permitirVariantB`), então esta delegação só vale para o Cérebro.
+      return variantA;
     case "C":
       return variantC;
     case "D":

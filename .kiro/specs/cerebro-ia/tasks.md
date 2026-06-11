@@ -126,6 +126,16 @@ REUSADOS, nunca reescritos. Cada tarefa fecha sozinha sem deixar o sistema quebr
   - _Requirements: 15.2, 15.3_
 - [x] 14.3 Rollback em segundos via chave, se preciso.
   - _Requirements: 2.6_
+- [x] 14.4 CORREÇÃO (bug de produção 2026-06-11): suporte a `flow_variant='B'` no
+  caminho do Cérebro. `loadContext` ganhou o parâmetro `permitirVariantB` (só o
+  Cérebro usa; engine v3 segue bloqueando B) e `pickVariant('B')` passa a delegar
+  para a estratégia da variant A (renderiza os passos do construtor). Sem isso,
+  ~99% dos clientes (variant B) caíam em handoff (`passoAtualId=null`), pois o
+  loader lançava para B. Inclui chave dedicada `consultants.cerebro_ativo` e modo
+  número de teste (`rollout_config.cerebro_numeros_teste`) para validar sem tocar
+  em clientes reais. Testes: `__tests__/variant-b-suporte.test.ts`,
+  `__tests__/numero-teste.test.ts`.
+  - _Requirements: 2.4, 6.2, 6.4_
 
 - [x] 15. LIGADO (on) — Cérebro para todos do consultor habilitado
 - [x] 15.1 Em `on`, todo turno conversacional passa pelo Cérebro; vendedora antiga não responde mais.

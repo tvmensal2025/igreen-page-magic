@@ -43,6 +43,15 @@ export interface LoadContextArgs {
   customerId: string;
   /** Channel adapter capabilities — passed in by the webhook entry. */
   capabilities: ChannelCapabilities;
+  /**
+   * Quando `true`, NÃO lança para `flow_variant='B'`: carrega o fluxo B do
+   * construtor visual normalmente (igual a A/D). Usado SOMENTE pelo Cérebro IA
+   * (`cerebro/decisor-passo.ts`), que SUBSTITUI a Vendedora_Atual do Fluxo B
+   * fazendo `bot_flow_steps` comandar a conversa. O engine v3 (webhook-entry)
+   * NÃO passa esta flag — para ele, B continua bloqueado (default `false`),
+   * preservando o comportamento atual de roteamento.
+   */
+  permitirVariantB?: boolean;
 }
 
 /**
@@ -54,6 +63,7 @@ export interface LoadContextArgs {
  */
 export async function loadContext(args: LoadContextArgs): Promise<LoadedContext> {
   const { supabase, customerId, capabilities } = args;
+  const permitirVariantB = args.permitirVariantB === true;
 
   // ─── 1. Read customer + flow_state ─────────────────────────────────────
   const { data: customer, error: cErr } = await supabase
@@ -79,10 +89,16 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
   const consultantId = customer.consultant_id as string;
   const variant = ((customer.flow_variant as string) || "A").toUpperCase() as "A" | "B" | "C" | "D";
 
-  // Variant B = Vendedora V2 (IA livre). NUNCA carregar flow V3 para B —
-  // o webhook deve bypassar o V3 antes de chamar o loader. Se chegou aqui,
-  // é bug de roteamento e queremos falhar ruidosamente.
-  if (variant === "B") {
+  // Variant B = Vendedora V2 (IA livre). NUNCA carregar flow V3 para B pelo
+  // caminho do engine v3 — o webhook deve bypassar o V3 antes de chamar o
+  // loader. Se chegou aqui SEM `permitirVariantB`, é bug de roteamento e
+  // queremos falhar ruidosamente.
+  //
+  // EXCEÇÃO (Cérebro IA): quando `permitirVariantB=true`, o Cérebro carrega o
+  // fluxo B do construtor visual normalmente — ele SUBSTITUI a Vendedora_Atual
+  // fazendo `bot_flow_steps` comandar a conversa (variant B passa a ser
+  // roteirizada como A/D para fins de decisão de passo).
+  if (variant === "B" && !permitirVariantB) {
     throw new Error("v3-loader: variant_b_should_not_reach_v3 — Fluxo B roda na Vendedora V2");
   }
 

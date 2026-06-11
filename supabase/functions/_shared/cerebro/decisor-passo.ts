@@ -90,7 +90,12 @@ export async function decidirPasso(
   // ─── 1. Carrega o contexto do motor (estado + fluxo + capacidades) ──────
   // `loadContext` é a ÚNICA fonte de `bot_flow_steps` — a ordem dos passos vem
   // daqui, nunca do código (Requisito 6.2).
-  const ctx = await loadContext({ supabase, customerId, capabilities });
+  //
+  // `permitirVariantB: true` — o Cérebro SUBSTITUI a Vendedora_Atual do Fluxo B
+  // (Regra de Ouro do design): para ele, o fluxo B é comandado por
+  // `bot_flow_steps` igual a A/D. Sem esta flag, o loader lançaria para B
+  // (~99% dos clientes), derrubando o turno em handoff.
+  const ctx = await loadContext({ supabase, customerId, capabilities, permitirVariantB: true });
 
   // ─── 2. Monta a configuração pura + hooks declarativos do motor ─────────
   // O `runEngine` é PURO: tempo, aleatoriedade e limites entram como dados via
