@@ -84,8 +84,8 @@ Deno.serve(async (req) => {
       if (!c.phone_whatsapp) continue;
       const firstName = (c.name || "").split(" ")[0] || "";
       const msg = firstName
-        ? `Oi ${firstName}, ainda está aí? 🙂 Posso continuar te ajudando quando quiser.`
-        : `Oi! Ainda está aí? 🙂 Posso continuar te ajudando quando quiser.`;
+        ? `Oi ${firstName}! Aqui é da iGreen 🌱 Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`
+        : `Oi! Aqui é da iGreen 🌱 Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`;
       try {
         await sender.sendText(`${c.phone_whatsapp}@s.whatsapp.net`, msg);
         await supabase.from("customers").update({

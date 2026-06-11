@@ -40,15 +40,43 @@ const MAX_AUTO_SENDS_PER_LEAD = 3;
 const SEND_DEBOUNCE_HOURS = 48;
 const STUCK_HOURS = 24;
 
+/** Configuração de reaquecimento por consultor (tabela reactivation_settings). */
+export interface ReactSettings {
+  auto_enabled: boolean;
+  horas_ate_primeiro_followup: number;
+  max_envios: number;
+  horas_entre_envios: number;
+  janela_inicio: number;
+  janela_fim: number;
+  enviar_fim_de_semana: boolean;
+}
+
+/** Defaults usados quando o consultor ainda não salvou configuração. */
+const DEFAULT_SETTINGS: ReactSettings = {
+  auto_enabled: false, // sem config explícita, NÃO envia automático
+  horas_ate_primeiro_followup: STUCK_HOURS,
+  max_envios: MAX_AUTO_SENDS_PER_LEAD,
+  horas_entre_envios: SEND_DEBOUNCE_HOURS,
+  janela_inicio: 9,
+  janela_fim: 20,
+  enviar_fim_de_semana: false,
+};
+
 // ─── Helpers puros (exportados para testes) ──────────────────────────────────
 
 /**
  * Determina se a hora atual no fuso do consultor está dentro da janela
- * 09:00–20:00 e é dia de semana (segunda–sexta).
- * Default fuso = `America/Sao_Paulo`.
+ * configurável e respeita fim de semana.
+ * Default fuso = `America/Sao_Paulo`, janela 09–20, sem fim de semana.
  */
-export function isInsideWindow(timezone: string | null): boolean {
+export function isInsideWindow(
+  timezone: string | null,
+  opts?: { inicio?: number; fim?: number; fimDeSemana?: boolean },
+): boolean {
   const tz = timezone || "America/Sao_Paulo";
+  const inicio = opts?.inicio ?? 9;
+  const fim = opts?.fim ?? 20;
+  const permiteFimDeSemana = opts?.fimDeSemana ?? false;
   try {
     const fmt = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
@@ -62,8 +90,8 @@ export function isInsideWindow(timezone: string | null): boolean {
     if (!hourPart || !weekdayPart) return false;
     const hour = parseInt(hourPart.value, 10);
     const weekday = weekdayPart.value; // Sun, Mon, Tue, ...
-    if (weekday === "Sat" || weekday === "Sun") return false;
-    return hour >= 9 && hour < 20;
+    if (!permiteFimDeSemana && (weekday === "Sat" || weekday === "Sun")) return false;
+    return hour >= inicio && hour < fim;
   } catch {
     // Fuso inválido → conserva default seguro: permite envio.
     return true;
@@ -181,6 +209,29 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     return { templates_processed: 0, total_sent: 0, total_failed: 0, total_skipped_window: 0, total_skipped_capture_mode: 0 };
   }
 
+  // Carrega as configurações de reaquecimento de todos os consultores envolvidos.
+  const consultantIds = Array.from(new Set((templates as any[]).map((t) => t.consultant_id)));
+  const settingsByConsultant = new Map<string, ReactSettings>();
+  try {
+    const { data: settingsRows } = await supabase
+      .from("reactivation_settings")
+      .select("*")
+      .in("consultant_id", consultantIds);
+    for (const row of (settingsRows as any[]) || []) {
+      settingsByConsultant.set(row.consultant_id, {
+        auto_enabled: row.auto_enabled,
+        horas_ate_primeiro_followup: row.horas_ate_primeiro_followup,
+        max_envios: row.max_envios,
+        horas_entre_envios: row.horas_entre_envios,
+        janela_inicio: row.janela_inicio,
+        janela_fim: row.janela_fim,
+        enviar_fim_de_semana: row.enviar_fim_de_semana,
+      });
+    }
+  } catch (e: any) {
+    console.warn("[reactivation-cron] load reactivation_settings falhou:", e?.message);
+  }
+
   let totalSentGlobal = 0;
 
   outer: for (const tpl of templates as any[]) {
@@ -190,8 +241,20 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     const consultant = tpl.consultants;
     if (!consultant) continue;
 
-    // Verifica janela horária.
-    if (!isInsideWindow(consultant.timezone ?? null)) {
+    // Configuração do consultor (ou defaults seguros).
+    const settings = settingsByConsultant.get(tpl.consultant_id) ?? DEFAULT_SETTINGS;
+
+    // Liga/desliga geral: se o consultor não habilitou, pula tudo dele.
+    if (!settings.auto_enabled) {
+      continue;
+    }
+
+    // Verifica janela horária configurável.
+    if (!isInsideWindow(consultant.timezone ?? null, {
+      inicio: settings.janela_inicio,
+      fim: settings.janela_fim,
+      fimDeSemana: settings.enviar_fim_de_semana,
+    })) {
       totalSkippedWindow++;
       continue;
     }
@@ -243,7 +306,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     const consultantName = String(consultant.name || "iGreen").trim().split(/\s+/)[0];
 
     // Leads candidatos para este template.
-    const candidates = await fetchCandidates(supabase, tpl);
+    const candidates = await fetchCandidates(supabase, tpl, settings);
     if (candidates.length === 0) continue;
 
     for (const customer of candidates) {
@@ -332,11 +395,11 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
   return { templates_processed: templatesProcessed, total_sent: totalSent, total_failed: totalFailed, total_skipped_window: totalSkippedWindow, total_skipped_capture_mode: totalSkippedCaptureMode };
 }
 
-async function fetchCandidates(supabase: SupabaseClient, tpl: any): Promise<any[]> {
-  const stuckBoundary = new Date(Date.now() - STUCK_HOURS * 3600 * 1000).toISOString();
-  const debounceBoundary = new Date(Date.now() - SEND_DEBOUNCE_HOURS * 3600 * 1000).toISOString();
+async function fetchCandidates(supabase: SupabaseClient, tpl: any, settings: ReactSettings): Promise<any[]> {
+  const stuckBoundary = new Date(Date.now() - settings.horas_ate_primeiro_followup * 3600 * 1000).toISOString();
+  const debounceBoundary = new Date(Date.now() - settings.horas_entre_envios * 3600 * 1000).toISOString();
 
-  // IDs com envio recente (debounce 48h).
+  // IDs com envio recente (debounce configurável).
   const { data: recentSends } = await supabase
     .from("reactivation_sends")
     .select("customer_id")
@@ -367,7 +430,7 @@ async function fetchCandidates(supabase: SupabaseClient, tpl: any): Promise<any[
 
   return ((candidates as any[]) || []).filter((c) => {
     if (debounced.has(c.id)) return false;
-    if ((autoCount.get(c.id) ?? 0) >= MAX_AUTO_SENDS_PER_LEAD) return false;
+    if ((autoCount.get(c.id) ?? 0) >= settings.max_envios) return false;
     return true;
   });
 }

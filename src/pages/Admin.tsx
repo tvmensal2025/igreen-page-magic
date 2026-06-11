@@ -43,7 +43,7 @@ const PanfletoModal = lazy(() => import("@/components/admin/PanfletoModal").then
 const AdsCentralTab = lazy(() => import("@/components/admin/ads/AdsCentralTab").then(m => ({ default: m.AdsCentralTab })));
 const CaptacaoPanel = lazy(() => import("@/components/captacao/CaptacaoPanel").then(m => ({ default: m.CaptacaoPanel })));
 const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTab").then(m => ({ default: m.ParceirosTab })));
-const ConversaoTab = lazy(() => import("@/components/admin/ConversaoTab").then(m => ({ default: m.ConversaoTab })));
+const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
 
 
@@ -375,7 +375,7 @@ const AdminContent = () => {
           )}
 
           {userId && activeTab === "conversao" && (
-            <ConversaoTab consultantId={userId} />
+            <ConversaoCockpit consultantId={userId} />
           )}
 
           {userId && activeTab === "captacao" && (

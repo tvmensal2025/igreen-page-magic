@@ -27,6 +27,8 @@ interface SingleBody {
   message_text: string;
   template_id?: string | null;
   schedule_at?: string | null; // ISO datetime
+  media_url?: string | null;
+  media_kind?: "image" | "video" | "document" | null;
 }
 
 interface BatchBody {
@@ -159,8 +161,9 @@ Deno.serve(async (req: Request) => {
     // ─── Single ──────────────────────────────────────────────────────
     if (body.mode === "single") {
       const { customer_id, message_text, template_id, schedule_at } = body;
-      if (!customer_id || !message_text || message_text.trim().length === 0) {
-        return new Response(JSON.stringify({ error: "customer_id and message_text required" }), {
+      const hasMediaForValidation = !!body.media_url && !!body.media_kind;
+      if (!customer_id || (!hasMediaForValidation && (!message_text || message_text.trim().length === 0))) {
+        return new Response(JSON.stringify({ error: "customer_id and (message_text or media) required" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -212,7 +215,10 @@ Deno.serve(async (req: Request) => {
       // Send now
       const remoteJid = `${(customer as any).phone_whatsapp}@s.whatsapp.net`;
       try {
-        const ok = await sender.sendText(remoteJid, finalText);
+        const hasMedia = !!body.media_url && !!body.media_kind;
+        const ok = hasMedia
+          ? await sender.sendMedia(remoteJid, body.media_url!, finalText, body.media_kind!)
+          : await sender.sendText(remoteJid, finalText);
         const status = ok ? "sent" : "failed";
         await logSend(supabase, {
           customer_id,
@@ -229,8 +235,8 @@ Deno.serve(async (req: Request) => {
           await supabase.from("conversations").insert({
             customer_id,
             message_direction: "outbound",
-            message_text: finalText,
-            message_type: "text",
+            message_text: finalText || (hasMedia ? `[${body.media_kind}]` : ""),
+            message_type: hasMedia ? body.media_kind! : "text",
             conversation_step: (customer as any).conversation_step,
           });
         }

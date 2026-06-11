@@ -78,3 +78,19 @@ Deno.test("isInsideWindow: timezone inválido cai em default seguro", () => {
   const result = isInsideWindow("Mars/Olympus");
   assertEquals(result, true);
 });
+
+Deno.test("isInsideWindow: janela configurável aceita opts sem lançar", () => {
+  const result = isInsideWindow("America/Sao_Paulo", { inicio: 8, fim: 22, fimDeSemana: true });
+  assertEquals(typeof result, "boolean");
+});
+
+Deno.test("isInsideWindow: janela 0-24 com fim de semana é sempre verdadeira", () => {
+  // inicio=0, fim=24 cobre todas as horas; fimDeSemana=true remove o bloqueio de sáb/dom.
+  const result = isInsideWindow("America/Sao_Paulo", { inicio: 0, fim: 24, fimDeSemana: true });
+  assertEquals(result, true);
+});
+
+Deno.test("isInsideWindow: janela impossível (inicio=fim) nunca permite", () => {
+  const result = isInsideWindow("America/Sao_Paulo", { inicio: 12, fim: 12, fimDeSemana: true });
+  assertEquals(result, false);
+});
