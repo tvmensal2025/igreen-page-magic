@@ -272,10 +272,11 @@ export default function VariantDistributionBar({
           {ALL_VARIANTS.filter((v) => !existingVariants.includes(v)).length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 text-xs" disabled={creating}>
+                <Button variant="outline" size="sm" className="h-8 text-xs bg-primary text-white hover:bg-primary/90 hover:text-white border-0 shadow-sm transition-all" disabled={creating}>
                   {creating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
-                  Criar fluxo
+                  Construir novo fluxo
                 </Button>
+
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 {ALL_VARIANTS.filter((v) => !existingVariants.includes(v)).map((v) => (
