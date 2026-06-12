@@ -333,15 +333,16 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
             </SelectContent>
           </Select>
 
-          <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl">
-            <ClipboardCheck className="w-4 h-4" />
-            Validar clientes
+          <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-white shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]">
+            <CheckCircle2 className="w-4 h-4" />
+            Validar novos clientes
           </Button>
           <PosVendaAutoConfigDialog consultantId={consultantId} />
-          <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl">
+          <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl border-border/60">
             <RefreshCw className={`w-4 h-4 ${recomputing ? "animate-spin" : ""}`} />
-            Recalcular colunas
+            Recalcular tudo
           </Button>
+
         </div>
       </div>
 
