@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState, useCallback, Suspense } from "reac
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 import { Plus, Loader2, Play, LayoutTemplate } from "lucide-react";
 import {
@@ -115,7 +114,8 @@ export default function FluxoBuilder() {
       .eq("is_active", true);
     
     if (allFlows) {
-      setExistingVariants(allFlows.map(f => f.variant as Variant));
+      const variants = allFlows.map(f => f.variant as Variant);
+      setExistingVariants(variants.length > 0 ? variants : ["A"]);
       const names: Record<string, string> = {};
       allFlows.forEach(f => { names[f.variant] = f.name || `Fluxo ${f.variant}`; });
       setFlowNames(names);
@@ -331,7 +331,12 @@ export default function FluxoBuilder() {
         consultantId={userId}
         consultantName={consultantName} 
       />
-      <TemplateGalleryDialog open={galleryOpen} onOpenChange={setGalleryOpen} />
+      <TemplateGalleryDialog 
+        open={galleryOpen} 
+        onOpenChange={setGalleryOpen} 
+        consultantId={userId}
+        existingVariants={existingVariants}
+      />
     </div>
   );
 }
