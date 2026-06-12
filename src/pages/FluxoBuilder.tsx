@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState, useCallback, Suspense } from "reac
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
-import { Plus, Loader2, Play, LayoutTemplate } from "lucide-react";
+import { Plus, Loader2, Play, LayoutTemplate, TrendingUp } from "lucide-react";
+
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
 } from "@dnd-kit/core";
