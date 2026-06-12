@@ -277,6 +277,77 @@ function EntradasSection({
 
 /* ─────────────────────────────────────────────────────────────────────── */
 
+// Cadeia provável até 3 saltos à frente. Segue exit padrão; se não houver,
+// usa a primeira saída com destStep. Para em loop, em destino abstrato (fim,
+// humano, cadastro) ou ao atingir o limite.
+function ProximosSaltosSection({
+  step,
+  steps,
+  onJumpToStep,
+}: {
+  step: Step;
+  steps: Step[];
+  onJumpToStep?: (id: string) => void;
+}) {
+  const cadeia: { from: Step; via: string; to: Step }[] = [];
+  const visitados = new Set<string>([step.id]);
+  let atual: Step | null = step;
+  for (let i = 0; i < 3 && atual; i++) {
+    const exits = getStepExits(atual, steps);
+    const escolhido =
+      exits.find((e) => e.kind === "default" && e.destStep) ??
+      exits.find((e) => e.destStep);
+    if (!escolhido?.destStep) break;
+    if (visitados.has(escolhido.destStep.id)) {
+      cadeia.push({
+        from: atual,
+        via: "loop ↺",
+        to: escolhido.destStep,
+      });
+      break;
+    }
+    visitados.add(escolhido.destStep.id);
+    cadeia.push({
+      from: atual,
+      via:
+        escolhido.kind === "button" ? `botão "${escolhido.label}"` :
+        escolhido.kind === "keyword" ? `palavra "${escolhido.label}"` :
+        "caminho padrão",
+      to: escolhido.destStep,
+    });
+    atual = escolhido.destStep;
+  }
+
+  if (cadeia.length === 0) return null;
+
+  return (
+    <section>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Próximos saltos prováveis</p>
+      <ol className="mt-1 space-y-1">
+        {cadeia.map((salto, i) => (
+          <li
+            key={`${salto.from.id}->${salto.to.id}:${i}`}
+            className="flex items-center gap-1.5 rounded-md border border-border/60 bg-background/50 p-2 text-xs"
+          >
+            <span className="text-muted-foreground">#{salto.from.position}</span>
+            <ArrowRight className="h-3 w-3 text-primary" />
+            <button
+              type="button"
+              onClick={() => onJumpToStep?.(salto.to.id)}
+              className="flex-1 text-left hover:underline"
+            >
+              <span className="font-medium text-primary">#{salto.to.position} {salto.to.title}</span>
+            </button>
+            <span className="text-[10px] text-muted-foreground">via {salto.via}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
 function RegrasSection({
   step,
   steps,
