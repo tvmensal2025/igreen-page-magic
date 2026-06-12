@@ -1059,7 +1059,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold truncate flex items-center gap-1">
                       {row.city || "—"}
-                      {row.audio_url_vinheta && <Music className="inline w-3 h-3 text-primary" title="Tem versão com vinheta" />}
+                      {row.audio_url_vinheta && <span title="Tem versão com vinheta"><Music className="inline w-3 h-3 text-primary" /></span>}
                       {row.is_public && libTab === "mine" && <Globe2 className="inline w-3 h-3 text-primary" />}
                       {!row.is_public && libTab === "mine" && <Lock className="inline w-3 h-3 text-muted-foreground" />}
                     </p>
