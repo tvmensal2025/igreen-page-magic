@@ -317,11 +317,12 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
   let lastSection = "oficial";
 
   return (
-    <div className="space-y-4">
-      {/* campo de busca */}
+    <div className="space-y-4" style={{ color: CREAM }}>
+      {/* busca */}
       <div className="relative">
         <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+          style={{ color: GOLD }}
           viewBox="0 0 24 24"
         >
           <path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z" />
@@ -330,29 +331,35 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar aula ou módulo..."
-          className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm text-white
-                     bg-white/5 border border-white/10 placeholder-white/30
-                     focus:outline-none focus:border-[#00A859]/50 transition-colors"
+          className="w-full pl-9 pr-4 py-3 text-sm focus:outline-none transition-colors"
+          style={{
+            background: SURFACE,
+            color: CREAM,
+            border: `1px solid rgba(245,240,224,.12)`,
+            borderRadius: 2,
+            fontFamily: FONT_DISPLAY,
+          }}
         />
         {search && (
           <button
             onClick={() => setSearch("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40
-                       hover:text-white/70 text-xs"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+            style={{ color: GOLD }}
           >
             ✕
           </button>
         )}
       </div>
 
-      {/* ---- RESULTADOS DE BUSCA ---- */}
+      {/* resultados */}
       {searchResults !== null && (
         <div>
-          <p className="text-xs text-white/40 font-semibold mb-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.25em] mb-3"
+             style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
             {searchResults.length} resultado{searchResults.length !== 1 ? "s" : ""}
           </p>
           {searchResults.length === 0 ? (
-            <p className="text-sm text-white/40 py-8 text-center">
+            <p className="text-sm py-8 text-center" style={{ color: "rgba(245,240,224,.4)" }}>
               Nenhuma aula encontrada.
             </p>
           ) : (
@@ -362,7 +369,6 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
                   key={l.yt}
                   lesson={l}
                   num={l.lessonIndex + 1}
-                  color={l.catColor}
                   prog={getLessonProg(l.yt)}
                   onOpen={() => onOpenLesson(l.globalIndex)}
                 />
@@ -372,8 +378,8 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
         </div>
       )}
 
-      {/* ---- CATÁLOGO COMPLETO ---- */}
-      {searchResults === null && CATALOG.map((cat, ci) => {
+      {/* catálogo */}
+      {searchResults === null && CATALOG.map((cat) => {
         let section = "oficial";
         if (cat.id.startsWith("igreen-")) section = "igreen-pratica";
         else if (cat.id.startsWith("cap-") || cat.extra) section = "capacitacao";
@@ -382,15 +388,24 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
         if (section !== lastSection) {
           lastSection = section;
           const txt = section === "igreen-pratica"
-            ? "🚀 Treinamentos iGreen na Prática — aprenda com quem já faz acontecer"
-            : "📚 Capacitação Profissional — vendas, técnica e mercado";
+            ? "iGreen na Prática"
+            : "Capacitação Profissional";
+          const sub = section === "igreen-pratica"
+            ? "aprenda com quem já faz acontecer"
+            : "vendas, técnica e mercado";
           divider = (
-            <div key={`div-${section}`} className="flex items-center gap-3 my-2">
-              <div className="flex-1 h-px bg-white/8" />
-              <span className="text-[11px] font-bold text-white/30 uppercase tracking-wider shrink-0 max-w-[60%] text-center">
-                {txt}
-              </span>
-              <div className="flex-1 h-px bg-white/8" />
+            <div key={`div-${section}`} className="py-4 text-center">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px" style={{ background: GOLD }} />
+                <p className="text-[10px] font-bold uppercase tracking-[0.32em]"
+                   style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
+                  {txt}
+                </p>
+                <div className="flex-1 h-px" style={{ background: GOLD }} />
+              </div>
+              <p className="text-[10px] mt-1 italic" style={{ color: "rgba(245,240,224,.4)" }}>
+                {sub}
+              </p>
             </div>
           );
         }
@@ -400,29 +415,31 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
         return (
           <div key={cat.id}>
             {divider}
-            <section className="space-y-2">
-              {/* cabeçalho da trilha */}
-              <div
-                className="flex items-center gap-3 pl-3 border-l-4"
-                style={{ borderColor: cat.color }}
-              >
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-base sm:text-lg font-black text-white leading-tight truncate">
+            <section className="space-y-3">
+              {/* cabeçalho da trilha — magazine */}
+              <div className="pb-2" style={{ borderBottom: `1px solid rgba(245,240,224,.12)` }}>
+                <p className="text-[9px] font-bold tracking-[0.32em] uppercase"
+                   style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
+                  Trilha
+                </p>
+                <div className="flex items-end justify-between gap-3 mt-1">
+                  <h3 className="text-xl sm:text-2xl font-bold leading-tight"
+                      style={{ color: CREAM, fontFamily: FONT_DISPLAY }}>
                     {cat.title}
                   </h3>
-                  <p className="text-xs text-white/40 mt-0.5">
-                    {cat.modules.length} módulo{cat.modules.length !== 1 ? "s" : ""} · {totalAulas} aulas
-                    {cat.extra && (
-                      <span className="ml-2 text-[9px] font-black bg-[#00A859] text-black px-1.5 py-0.5 rounded">
-                        Externo
-                      </span>
-                    )}
-                  </p>
+                  <BookOpen className="w-4 h-4 shrink-0 mb-1" style={{ color: GOLD }} />
                 </div>
-                <BookOpen className="w-4 h-4 text-white/20 shrink-0" />
+                <p className="text-[11px] mt-1" style={{ color: "rgba(245,240,224,.5)" }}>
+                  {cat.modules.length} módulo{cat.modules.length !== 1 ? "s" : ""} · {totalAulas} aulas
+                  {cat.extra && (
+                    <span className="ml-2 text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5"
+                          style={{ background: GOLD, color: EMERALD_DP, borderRadius: 1 }}>
+                      Externo
+                    </span>
+                  )}
+                </p>
               </div>
 
-              {/* módulos */}
               <div className="space-y-2">
                 {cat.modules.map((mod, mi) => (
                   <ModuleBlock
