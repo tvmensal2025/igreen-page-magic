@@ -859,6 +859,7 @@ export default function FluxoBuilder() {
           <div className="flex-1 min-w-0">
 
 
+
             <h2 className="text-sm font-semibold truncate">
               Fluxo {editingVariant}
               <span className="ml-1 font-normal text-muted-foreground">
@@ -1373,6 +1374,7 @@ export default function FluxoBuilder() {
     </div>
   );
 }
+
 
 
 
