@@ -162,7 +162,6 @@ export default function StepCoachPanel({ step, steps, validation, onJumpToStep }
           <p className="mt-1 text-sm font-semibold">{step.title}</p>
           <p className="text-xs text-muted-foreground">
             Tipo: {stepTypeLabel(step.step_type)}
-            {step.wait_for === "reply" ? " · espera resposta do lead" : " · só envia e segue"}
           </p>
           {step.message_text && (
             <div className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/40 p-2 text-xs">
