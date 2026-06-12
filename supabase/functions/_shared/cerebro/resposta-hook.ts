@@ -208,7 +208,13 @@ export interface EntradaRespostaHook {
   supabase: SupabaseClient | AnySupabase;
   customerId: string;
   consultantId: string;
-  inboundKind?: "text" | "button_click" | "media" | "timer_expired" | "no_input";
+  inboundKind?:
+    | "text"
+    | "button_click"
+    | "media"
+    | "timer_expired"
+    | "no_input"
+    | "nudge_interno";
   inboundText?: string | null;
   inboundButtonId?: string | null;
   inboundMediaKind?: "image" | "audio" | "video" | "document" | null;
@@ -229,6 +235,15 @@ export interface EntradaRespostaHook {
    * não envia, só devolve `reply`/`outbound` para o chamador enviar.
    */
   enviarTexto?: EnviarTexto;
+  /**
+   * NUDGE INTERNO (Fase 2 da migração Vendedora→Cérebro): contexto textual do
+   * gatilho de reaquecimento disparado pelo cron `process-followups`. Só faz
+   * sentido com `inboundKind === "nudge_interno"`. Para o Cérebro o turno é
+   * tratado como `no_input` (a porta de reaquecimento que o motor já entende —
+   * ver `followup-hook.ts`); o `nudgeHook` fica registrado em `ai_decisions`
+   * para auditoria. Ausente → nudge genérico.
+   */
+  nudgeHook?: string | null;
   /** Dependências injetáveis (para teste isolado, sem rede). */
   deps?: DependenciasResposta;
 }
