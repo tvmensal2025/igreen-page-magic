@@ -868,12 +868,12 @@ export default function FluxoBuilder() {
             </p>
           </div>
           <div className="flex items-center gap-1">
-            {/* Toggle de visualização (Lista/Diagrama/Planilha) */}
             <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
             <TooltipProvider delayDuration={150}>
+              <div className="flex items-center gap-1">
+                {/* Galeria de modelos da comunidade */}
+                <Tooltip>
 
-              {/* Galeria de modelos da comunidade */}
-              <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline"
@@ -1038,7 +1038,13 @@ export default function FluxoBuilder() {
           className={viewMode === "lista" ? "space-y-3" : "hidden"}
           aria-hidden={viewMode !== "lista"}
         >
-          {steps.length === 0 ? (
+          {/* Seção de Preferências da IA — em destaque no topo quando colapsado */}
+          <div id="ai-preferences-section" className="mb-6 scroll-mt-24">
+            <AiPreferencesCard consultantId={userId} />
+          </div>
+
+          {/* Toolbar principal e Lista de Passos */}
+
             <div className="rounded-2xl border border-dashed bg-gradient-to-b from-muted/30 to-transparent p-10 text-center">
               <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
                 <GitBranch className="h-7 w-7" />
