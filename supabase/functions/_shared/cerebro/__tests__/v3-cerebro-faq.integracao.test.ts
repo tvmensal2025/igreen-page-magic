@@ -133,7 +133,7 @@ const FAQ_DB: Array<{ keywords: RegExp; row: FaqRow }> = [
     },
   },
   {
-    keywords: /demora|prazo|quando|come[cç]a/i,
+    keywords: /demora|prazo|quando|come[cç]|tempo/i,
     row: {
       title: "Quanto tempo demora para começar?",
       content:
