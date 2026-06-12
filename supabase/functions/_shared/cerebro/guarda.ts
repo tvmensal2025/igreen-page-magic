@@ -55,8 +55,8 @@ import { traduzirComGlossario } from "./glossario.ts";
 // REÚSO (Requisito 9.7): crítico de qualidade por IA da Vendedora_Atual.
 import { criticar } from "../vendedora/critico.ts";
 // REÚSO (Requisito 9.7): travas estruturais determinísticas já existentes.
-import { TRAVA_POR_ETAPA, validarResposta } from "../vendedora/templates.ts";
-import type { Etapa, PerfilOutput, PlannerOutput } from "../vendedora/types.ts";
+import { TRAVA_POR_ETAPA, validarResposta } from "./comum/templates.ts";
+import type { Etapa, PerfilOutput, PlannerOutput } from "./comum/types.ts";
 
 // Etapas "ricas" onde a Vendedora_Atual roda o crítico de IA. Mantido idêntico
 // para preservar o comportamento e o controle de custo (Requisito 16.5): a

@@ -49,8 +49,8 @@ import { validarMensagem } from "./guarda.ts"; // N5
 // REÚSO (Requisito 8.3): recuperação de conteúdo via RAG da Vendedora_Atual. A
 // própria `buscarContexto` já é fail-open (devolve [] em erro); ainda assim a
 // envolvemos em try/catch para o turno nunca travar por causa do RAG.
-import { buscarContexto, formatChunks } from "../vendedora/rag.ts";
-import type { Etapa } from "../vendedora/types.ts";
+import { buscarContexto, formatChunks } from "./comum/rag.ts";
+import type { Etapa } from "./comum/types.ts";
 
 /** Teto de tempo de um turno (C3 do design). Estourou → handoff. */
 const TETO_TURNO_MS = 25_000;

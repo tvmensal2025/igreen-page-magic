@@ -24,8 +24,8 @@ import {
   type PassoEquivalente,
   traduzirEtapaAntiga,
 } from "../migracao.ts";
-import { ETAPAS_ORDER } from "../../vendedora/types.ts";
-import type { Etapa } from "../../vendedora/types.ts";
+import { ETAPAS_ORDER } from "../comum/types.ts";
+import type { Etapa } from "../comum/types.ts";
 import { CADASTRO_STEP_REGISTRY } from "../../pipeline-cadastro/registry.ts";
 
 // ─── 1. Cada etapa conhecida → passo esperado ────────────────────────────────
