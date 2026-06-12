@@ -27,6 +27,7 @@ import {
   ArrowLeft, ShieldAlert, Check, X, Eye, Send, Play, Square, Loader2,
   Maximize2, Minimize2, Camera, Copy, Activity, MousePointer2, KeyboardIcon,
   AlertTriangle,
+  ScreenShare,
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
