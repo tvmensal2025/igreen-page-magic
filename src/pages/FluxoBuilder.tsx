@@ -837,8 +837,9 @@ export default function FluxoBuilder() {
           onOpenSidebar={() => setSidebarOpen(true)}
         />
         <div className="flex-1 min-h-0 overflow-y-auto bg-background">
-      {/* Header — limpo e profissional */}
-      <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
+          {/* Header — limpo e profissional */}
+          <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
+
         {/* Faixa 1: Distribuição entre variantes (ativar/pausar/criar) — sempre no topo */}
         {userId && (
           <div className="pt-3">
@@ -1367,13 +1368,14 @@ export default function FluxoBuilder() {
         flowId={flowId}
         defaultName={`Fluxo ${editingVariant}`}
       />
-    </main>
-    )}
-    </div>
-    </div>
+        </main>
+      )}
+        </div>
+      </div>
     </div>
   );
 }
+
 
 
 
