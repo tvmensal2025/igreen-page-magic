@@ -45,6 +45,7 @@ const CaptacaoPanel = lazy(() => import("@/components/captacao/CaptacaoPanel").t
 const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTab").then(m => ({ default: m.ParceirosTab })));
 const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
+const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 
 
 
@@ -81,7 +82,7 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio") return tab as AdminTabId;
+      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy") return tab as AdminTabId;
     }
     return "dashboard";
   });
@@ -234,6 +235,7 @@ const AdminContent = () => {
     "links": { title: "Links", subtitle: "Sua landing, QR Codes e materiais" },
     "materiais": { title: "Materiais", subtitle: "Biblioteca de assets de divulgação" },
     "audio-studio": { title: "Estúdio de Áudio", subtitle: "Grave sua voz ou gere com IA e envie pelo WhatsApp" },
+    "academy": { title: "iGreen Academy", subtitle: "Treinamentos, provas e seu nível de conhecimento" },
   };
   const currentMeta = TAB_META[activeTab];
 
@@ -305,7 +307,9 @@ const AdminContent = () => {
       {/* Content */}
       <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm" || activeTab === "crm-clientes"
         ? "w-full flex-1 min-h-0 px-2 sm:px-3 py-2 overflow-hidden flex flex-col gap-2"
-        : "flex-1 min-h-0 overflow-y-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6 overflow-x-hidden"}>
+        : activeTab === "academy"
+          ? "flex-1 min-h-0 overflow-y-auto w-full p-0 overflow-x-hidden"
+          : "flex-1 min-h-0 overflow-y-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6 overflow-x-hidden"}>
         {/* OCR Review Banner */}
         <OcrReviewBanner consultantId={userId} />
 
@@ -399,6 +403,10 @@ const AdminContent = () => {
             <div className="max-w-2xl mx-auto w-full">
               <AudioStudioPanel userId={userId} />
             </div>
+          )}
+
+          {activeTab === "academy" && (
+            <AcademyTab />
           )}
 
         </Suspense>

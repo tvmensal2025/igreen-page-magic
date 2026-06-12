@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   LogOut,
   Mic,
+  GraduationCap,
 } from "lucide-react";
 
 export type AdminTabId =
@@ -31,7 +32,8 @@ export type AdminTabId =
   | "central-anuncios"
   | "links"
   | "materiais"
-  | "audio-studio";
+  | "audio-studio"
+  | "academy";
 
 interface NavItem {
   id: AdminTabId;
@@ -73,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "links", label: "Links", icon: LinkIcon },
       { id: "materiais", label: "Materiais", icon: FolderDown },
       { id: "audio-studio", label: "Estúdio de áudio", icon: Mic },
+      { id: "academy", label: "Academy", icon: GraduationCap },
     ],
   },
 ];
