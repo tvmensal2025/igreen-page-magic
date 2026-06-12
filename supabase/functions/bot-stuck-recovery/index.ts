@@ -232,38 +232,30 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Chamar IA em modo rescue → gera mensagem na persona, sem emoji/canned
-        const aiResp = await fetch(`${SUPABASE_URL}/functions/v1/ai-sales-agent`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SERVICE_KEY,
-            Authorization: `Bearer ${SERVICE_KEY}`,
-          },
-          body: JSON.stringify({ customer_id: lead.id, mode: "rescue" }),
+        // Cérebro IA em modo rescue (nudge de reaquecimento). Substitui
+        // a chamada antiga ao ai-sales-agent (vendedora apagada).
+        const { executarFollowupCerebro } = await import("../_shared/cerebro/followup-hook.ts");
+        const cerebro = await executarFollowupCerebro({
+          supabase,
+          customerId: lead.id,
+          consultantId: lead.consultant_id,
+          channel: "evolution",
         });
-        if (!aiResp.ok) {
-          stats.ai_failed++;
-          console.error(`❌ ai-sales-agent ${aiResp.status} for ${lead.id}`);
-          continue;
-        }
-        const aiJson = await aiResp.json().catch(() => ({}));
-        const decision = aiJson?.decision;
-        const tool = decision?.tool;
-        const message: string | undefined = decision?.args?.message;
 
-        // Se IA decidiu marcar perdido / agendar / handoff — só persiste, não envia spam
-        if (tool !== "send_text" && tool !== "send_media") {
+        if (!cerebro.usouCerebro || cerebro.shouldHandoff) {
+          // Sem rescue (handoff/cérebro desligado) — cooldown e segue.
           await supabase.from("customers").update({
             next_rescue_allowed_at: new Date(Date.now() + COOLDOWN_AFTER_RESCUE_MIN * 60_000).toISOString(),
           }).eq("id", lead.id);
           continue;
         }
 
-        if (!message || message.trim().length < 3) {
+        const message = (cerebro.reply || "").trim();
+        if (!message || message.length < 3) {
           stats.ai_failed++;
           continue;
         }
+
 
         const _raw = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, inst.instance_name);
         const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
