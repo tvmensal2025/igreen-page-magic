@@ -672,35 +672,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
     } catch (e) { console.warn("[respondAndReentry] FAQ falhou:", (e as any)?.message); }
 
-    // 2) IA de vendas (timeout 8s) — só responder, não muda step
-    if (!answer) {
-      try {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 15000);
-        const aiResp = await fetch(`${supabaseUrl}/functions/v1/ai-sales-agent`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${serviceKey}`,
-            apikey: serviceKey,
-          },
-          body: JSON.stringify({
-            customer_id: customer.id,
-            user_input: questionText,
-            mode: "answer_only",
-          }),
-          signal: ctrl.signal,
-        });
-        clearTimeout(tid);
-        if (aiResp.ok) {
-          const body = await aiResp.json().catch(() => ({}));
-          const txt = (body?.reply || body?.decision?.args?.message || body?.message || "").toString().trim();
-          if (txt) { answer = txt; source = "ai"; }
-        }
-      } catch (e) { console.warn("[respondAndReentry] IA falhou:", (e as any)?.message); }
-    }
+    // 2) IA de vendas REMOVIDA (vendedora apagada). Cérebro IA responde antes
+    //    de chegar aqui. FAQ-miss cai direto no fallback de reentry abaixo.
+
 
     // 3) Sem resposta da IA → não inventa "já explico melhor".
     //    Mantém answer vazia e a finalMsg passa a ser só o reentry completo.
