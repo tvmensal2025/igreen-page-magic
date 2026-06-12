@@ -209,6 +209,65 @@ export default function StepCoachPanel({
 
 /* ─────────────────────────────────────────────────────────────────────── */
 
+// Calcula quem aponta para este passo (grafo invertido). Reusa getStepExits
+// para garantir que o "como chega" siga EXATAMENTE a mesma lógica do "para
+// onde vai" — botões, palavras-chave e padrão.
+function EntradasSection({
+  step,
+  steps,
+  onJumpToStep,
+}: {
+  step: Step;
+  steps: Step[];
+  onJumpToStep?: (id: string) => void;
+}) {
+  const entradas = steps
+    .filter((s) => s.id !== step.id && s.is_active)
+    .flatMap((origem) =>
+      getStepExits(origem, steps)
+        .filter((exit) => exit.destStep?.id === step.id)
+        .map((exit) => ({ origem, exit })),
+    );
+
+  return (
+    <section>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Como o lead chega aqui</p>
+      {entradas.length === 0 ? (
+        <div className="mt-1 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <span>
+            {step.position === 1
+              ? "Este é o ponto de partida — o lead começa por aqui."
+              : "Ninguém aponta pra esse passo. Ele está solto no fluxo."}
+          </span>
+        </div>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {entradas.map(({ origem, exit }, i) => (
+            <li key={`${origem.id}:${exit.id}:${i}`} className="rounded-md border border-border/60 bg-background/50 p-2 text-xs">
+              <button
+                type="button"
+                onClick={() => onJumpToStep?.(origem.id)}
+                className="text-left hover:underline"
+              >
+                <span className="font-medium text-primary">#{origem.position} {origem.title}</span>
+                <span className="text-muted-foreground">
+                  {" "}— {exit.kind === "button"
+                    ? `quando tocam em "${exit.label}"`
+                    : exit.kind === "keyword"
+                      ? `quando escrevem "${exit.label}"`
+                      : "como caminho padrão"}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
 function RegrasSection({
   step,
   steps,
