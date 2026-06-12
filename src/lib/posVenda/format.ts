@@ -23,6 +23,16 @@ export function formatPhoneBR(phone: string | null | undefined): string {
   return phone;
 }
 
+/**
+ * Cria um link encurtado amigável para o WhatsApp.
+ */
+export function createShortWhatsAppLink(phone: string, text?: string): string {
+  const clean = phone.replace(/\D/g, "");
+  const base = `https://wa.me/${clean}`;
+  if (!text) return base;
+  return `${base}?text=${encodeURIComponent(text)}`;
+}
+
 export function initialsFrom(name: string | null | undefined): string {
   const n = (name || "?").trim();
   if (!n) return "?";

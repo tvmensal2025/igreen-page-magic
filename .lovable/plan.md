@@ -1,46 +1,33 @@
-## Objetivo
-Deixar o editor `/admin/fluxos` mais limpo e amigável para leigos: barra de topo compacta, nada de jargão "variante", criação de fluxo sem bug "variante inválida" e ajuda contextual em cada passo.
+The user wants to refine the "aprovado" (approved) flow and related UI/UX aspects, focusing on making it professional, easy for laypeople to use, and fixing specific issues like the "invalidate" button, visual layout, and the setup process for post-sale messages.
 
-> Aviso: `.lovable/` está no `.gitignore`, então este plano não persistirá após o próximo snapshot. Posso remover essa entrada se você quiser manter planos salvos.
+### Proposed Changes
 
-## 1. Barra de topo compacta com tooltip (FluxoBuilder.tsx)
-- Transformar **"Testar fluxo"**, **"Auto-corrigir"** e o **badge de alertas** em **botões-ícone** (apenas ícone visível ~32px). Ao passar o mouse, expandem em tooltip/label.
-- Juntar tudo numa única linha à direita do título "Fluxo", liberando bastante espaço horizontal.
-- Manter `disabled` quando `steps.length === 0` ou sem auto-fixes.
+#### 1. CRM & Validation Improvements
+- **Invalidate Client**: Enhance the "invalidate" functionality in `PendingApprovalDialog.tsx` to ensure it's prominent and works as expected. The user mentioned some are marked as validated but aren't.
+- **Visual Cleanup**: Clean up the "Pending Approval" dialog. Improve the display of customers without phone numbers (using `isPlaceholderPhone` from `format.ts`).
+- **Layout Organization**: Move the distribution flow to the top as requested, removing or hiding the diagram and spreadsheet by default (keeping code for future use).
+- **Consolidation**: Combine "Create" and "Build" flow buttons into a single "Build Flow" button to avoid confusion.
 
-## 2. Remover o termo "Variante" da UI
-Substituir por "Fluxo" em todos os textos visíveis (sem mexer no schema/coluna `variant` do banco):
-- `VariantDistributionBar.tsx`: trocar "Distribuição de fluxos" (ok) e remover "round-robin 1 a 1" pesado → algo como "Revezando entre fluxos ativos". Tooltip em linguagem leiga.
-- `CreateFlowFromTemplateDialog.tsx`:
-  - Label "Variante (A/B/C/D)" → **"Identificação do fluxo"** com texto explicativo: "Letra usada só pra identificar internamente. Crie quantos fluxos quiser."
-  - Texto "Variantes permitem A/B testing…" → "Cada cliente novo entra em um dos fluxos ativos, alternando. Isso te ajuda a comparar resultados."
-  - Mensagens de erro/sucesso (`toast`, `Alert`) trocar "variante X" → "fluxo X".
-- `FlowSimulator.tsx`, `VariantsPanel.tsx`, demais labels visíveis: mesma troca textual.
+#### 2. WhatsApp Link Customization
+- **Shortener**: Implement a simpler/smaller WhatsApp link generator to replace the long current links.
 
-## 3. Corrigir "variante inválida" ao criar fluxo (CreateFlowFromTemplateDialog.tsx)
-Hoje o dialog trava nas letras `A/B/C/D` (linha 307: `(["A", "B", "C", "D"] as const)`), por isso clicar em "Criar fluxo E/F…" devolve "variante inválida".
+#### 3. Post-Sale Configuration Wizard (Aprovado, Reprovado, etc.)
+- **Simplified Setup**: Refine `PosVendaSetupWizard.tsx` to make it more intuitive for laypeople. Add small help buttons/popups explaining each step.
+- **Media Customization**: Ensure the "Aprovado", "Reprovado", "30/60/90/120 days" stages are fully customizable (audio, image, text, video) and easy to configure.
+- **Preview Integration**: Ensure the preview correctly shows audio, video, and images exactly as they will appear.
 
-Correção:
-- Importar `ALL_VARIANTS` de `flowTypes.ts` e renderizar **todas as letras livres** (não usadas) como opções de seleção, em grid responsivo.
-- Pré-selecionar automaticamente a próxima letra livre quando o dialog abre (em vez de "A").
-- Mostrar letras já em uso como `disabled` com badge "Em uso" (comportamento já existe, só ampliar).
-- Validar `variant` contra `ALL_VARIANTS` antes do submit.
+#### 4. UI/UX Refinement
+- **Modern Look**: Apply a more consistent "premium" visual style across these components (shadows, border-radius, gradients, clean spacing).
+- **Responsive Preview**: Use an iPhone 14 Pro Max frame for the mobile preview as requested.
+- **Help Popups**: Add help icons with tooltips or popups for each step to guide users.
 
-## 4. Ajuda em cada passo (botão "?")
-Em `StepTimelineItem` (cards da lista) e/ou `StepInspector`:
-- Adicionar pequeno botão `<HelpCircle className="h-3 w-3" />` (ghost, 20px) ao lado do tipo do passo.
-- Click abre `Popover` curto explicando o tipo daquele passo, usando a `hint` que já existe em `STEP_TYPE_OPTIONS` (flowTypes.ts), mais 1-2 exemplos práticos do que o leigo pode fazer ali (ex.: "Use este passo para enviar um áudio de boas-vindas").
-- Mesma ajuda para os campos do inspetor: botão `?` ao lado de "Regras", "Mídias", "Botões" com texto curto e claro.
+### Technical Details
 
-## 5. Garantia de não quebrar nada
-- Schema do banco intacto (`variant`, `active_variants`, RPCs `ensure_bot_flow_variant`/`seed_default_camila_flow` continuam recebendo letras A–Z como já aceitam).
-- Código de Diagrama e Planilha permanece guardado (sem alteração).
-- Lógica de round-robin, RLS e edge functions não tocadas — apenas textos e UI.
-
-## Arquivos a alterar
-- `src/pages/FluxoBuilder.tsx` (barra superior compacta)
-- `src/components/admin/flow-builder/VariantDistributionBar.tsx` (textos)
-- `src/components/admin/flow-builder/CreateFlowFromTemplateDialog.tsx` (todas letras + textos)
-- `src/components/admin/flow-builder/StepTimelineItem.tsx` (botão de ajuda)
-- `src/components/admin/flow-builder/StepInspector.tsx` (botões de ajuda nas abas)
-- `src/components/admin/flow-builder/FlowSimulator.tsx` e `VariantsPanel.tsx` (apenas labels visíveis)
+- **Files to Modify**:
+    - `src/components/whatsapp/PendingApprovalDialog.tsx`: UI layout, invalidate button, scope filtering.
+    - `src/components/whatsapp/PosVendaSetupWizard.tsx`: Setup experience, help buttons, preview size/style.
+    - `src/pages/WhatsAppClientsPage.tsx`: Top-level layout, button consolidation.
+    - `src/lib/posVenda/format.ts`: Potential additions for link shortening logic.
+    - `src/components/whatsapp/PosVendaKanban.tsx`: UI cleanup.
+- **Database**: The `customers` table already has `pos_venda_invalid` and `pos_venda_pending_stage`, which we'll continue to use.
+- **Infrastructure**: No new infrastructure required, primarily frontend (React/Tailwind) changes.

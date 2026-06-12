@@ -286,18 +286,24 @@ export default function WhatsAppClientsPage() {
         </TabsList>
       </Tabs>
 
-      {/* Kanban Pós-Venda (Clientes iGreen) */}
+      {/* CRM Pós-Venda (Clientes iGreen) */}
       {!isLeadsTab && consultantId && (
-        <div className="premium-card !p-4">
-          <div className="mb-3">
-            <h2 className="text-lg font-bold font-heading text-foreground">CRM Pós-Venda</h2>
-            <p className="text-xs text-muted-foreground">
-              Aprovado · Reprovado · 30 · 60 · 90 · 120 dias — recalcula sozinho todo dia. Arrastar fixa manual.
-            </p>
+        <div className="premium-card !p-4 bg-gradient-to-br from-background to-muted/20">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold font-heading text-foreground flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-primary" />
+                CRM Pós-Venda
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Acompanhamento automático: Aprovado, Reprovado e ciclo de 30 a 120 dias.
+              </p>
+            </div>
           </div>
           <PosVendaKanban consultantId={consultantId} />
         </div>
       )}
+
 
       {/* Stats (Leads WhatsApp) */}
       {isLeadsTab && (

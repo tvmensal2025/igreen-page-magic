@@ -41,12 +41,13 @@ export function ViewToggle({
     <ToggleGroupItem
       value="diagrama"
       aria-label="Visualizar fluxo em diagrama"
-      className={ITEM_BASE_CLASSES}
+      className={cn(ITEM_BASE_CLASSES, "hidden")}
     >
       <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
       <span>Diagrama</span>
     </ToggleGroupItem>
   );
+
 
   return (
     <ToggleGroup
@@ -84,11 +85,12 @@ export function ViewToggle({
       <ToggleGroupItem
         value="planilha"
         aria-label="Visualizar fluxo em planilha"
-        className={ITEM_BASE_CLASSES}
+        className={cn(ITEM_BASE_CLASSES, "hidden")}
       >
         <Table2 className="h-3.5 w-3.5" aria-hidden="true" />
         <span>Planilha</span>
       </ToggleGroupItem>
+
     </ToggleGroup>
   );
 }

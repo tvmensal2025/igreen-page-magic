@@ -9,13 +9,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Check, Sparkles, Upload, FileAudio, Image as ImageIcon, Video, Type,
-  Loader2, ChevronUp, ChevronDown, GripVertical, FileText,
+  Loader2, ChevronUp, ChevronDown, GripVertical, FileText, HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { POS_VENDA_STAGES, type PosVendaStage } from "@/lib/posVenda/format";
 import { uploadMedia, getAcceptString } from "@/services/minioUpload";
 import { sha256File, findExistingByHash } from "@/lib/mediaHash";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
 
 interface FullTemplate {
   id: string;
@@ -361,14 +369,36 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[94vh] overflow-hidden flex flex-col gap-0 p-0">
 
-        <DialogHeader className="px-6 pt-6 pb-3 border-b">
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
-            Configure suas mensagens pós-venda
+        <DialogHeader className="px-6 pt-6 pb-3 border-b bg-muted/20">
+          <DialogTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              Configuração Profissional do Pós-Venda
+            </div>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                  <HelpCircle className="w-4 h-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80">
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-sm">Como configurar seu fluxo?</h4>
+                  <p className="text-xs text-muted-foreground">
+                    1. Escolha um dos 6 estágios no topo.<br/>
+                    2. Use um template pronto ou crie o seu.<br/>
+                    3. Defina a ordem de envio (ex: texto primeiro, depois áudio).<br/>
+                    4. Veja o preview no celular à direita.<br/>
+                    5. Clique em salvar para aplicar em todos os novos clientes.
+                  </p>
+                </div>
+              </PopoverContent>
+            </Popover>
           </DialogTitle>
-          <DialogDescription>
-            Escolha texto, áudio, imagem ou vídeo, defina a ordem e veja como vai chegar no WhatsApp.
+          <DialogDescription className="mt-1">
+            Personalize as mensagens que seus clientes receberão automaticamente após a aprovação iGreen.
           </DialogDescription>
+
 
           <div className="space-y-1.5 mt-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -452,7 +482,20 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
 
                   {/* Ordem de envio */}
                   <div>
-                    <h4 className="text-sm font-semibold mb-2">Ordem de envio</h4>
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      Ordem de envio
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <HelpCircle className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">Clique nas setas para definir qual mídia será enviada primeiro.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </h4>
+
                     <div className="flex flex-col gap-1.5">
                       {stageCfg.send_order.map((slot, idx) => {
                         const meta = SLOT_META[slot];
@@ -736,9 +779,12 @@ function PhonePreview({
     resolve("video");
 
   return (
-    <div className="w-full max-w-[300px] aspect-[9/16] rounded-[2rem] border-[10px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden flex flex-col relative">
-      {/* Dynamic Island */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 h-7 w-28 bg-black rounded-full" />
+    <div className="w-[300px] h-[600px] rounded-[3rem] border-[12px] border-zinc-900 bg-zinc-900 shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col relative scale-[0.95] origin-top ring-1 ring-zinc-800">
+      {/* iPhone 14 Pro Dynamic Island */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20 h-7 w-28 bg-black rounded-b-2xl flex items-center justify-center">
+        <div className="h-1 w-8 bg-zinc-800 rounded-full" />
+      </div>
+
       {/* Status bar */}
       <div className="h-9 bg-zinc-900 flex items-center justify-between px-6 pt-1">
         <span className="text-[10px] text-white font-medium">9:41</span>

@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState, useCallback, Suspense } from "reac
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
-import { Plus, Loader2, Play, LayoutTemplate } from "lucide-react";
+import { Plus, Loader2, Play, LayoutTemplate, TrendingUp } from "lucide-react";
+
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
 } from "@dnd-kit/core";
@@ -178,7 +180,7 @@ export default function FluxoBuilder() {
         <div className="flex-1 min-h-0 overflow-y-auto bg-background">
           <header className="sticky top-0 z-20 border-b bg-card/80 backdrop-blur-md">
             {userId && (
-              <div className="pt-3">
+              <div className="pt-3 border-b border-border/10">
                 <VariantDistributionBar
                   consultantId={userId}
                   existingVariants={existingVariants}
@@ -187,20 +189,24 @@ export default function FluxoBuilder() {
                   onChanged={() => loadData(editingVariant)}
                 />
               </div>
+
             )}
 
-            <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+            <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2">
               <div className="flex-1 min-w-0">
-                <h2 className="text-sm font-semibold truncate flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
-                    {editingVariant}
-                  </span>
-                  <span>{flowNames[editingVariant] || VARIANT_LABEL[editingVariant]}</span>
-                </h2>
-                <p className="text-[10px] text-muted-foreground truncate opacity-80">
-                  {steps.length} passos · arraste para reordenar
-                </p>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold truncate flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded bg-primary/10 text-[10px] font-black text-primary border border-primary/20">
+                      {editingVariant}
+                    </span>
+                    <span>{flowNames[editingVariant] || VARIANT_LABEL[editingVariant]}</span>
+                  </h2>
+                  <Badge variant="outline" className="text-[9px] py-0 h-4 border-border/40 font-medium">
+                    {steps.length} passos
+                  </Badge>
+                </div>
               </div>
+
 
               <div className="flex items-center gap-1">
                 <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
@@ -268,9 +274,11 @@ export default function FluxoBuilder() {
                       </div>
                     </SortableContext>
                   </DndContext>
-                  <Button variant="outline" className="w-full border-dashed border-2 h-12">
-                    <Plus className="mr-2 h-4 w-4" /> Adicionar passo
+                  <Button variant="outline" className="w-full border-dashed border-2 h-12 hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary group">
+                    <Plus className="mr-2 h-4 w-4 group-hover:scale-110 transition-transform" /> 
+                    Adicionar passo ao fluxo
                   </Button>
+
                 </div>
               )}
 

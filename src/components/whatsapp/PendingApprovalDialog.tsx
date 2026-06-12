@@ -8,7 +8,14 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, Info } from "lucide-react";
+
 import { toast } from "sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
 import PosVendaSetupWizard from "./PosVendaSetupWizard";
@@ -162,11 +169,31 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl h-[85vh] max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-            <DialogTitle className="text-lg">Confirmar novos clientes</DialogTitle>
-            <DialogDescription className="text-sm">
-              Vindos do iGreen, aguardando sua revisão antes de entrar na autoprogressão (30 / 60 / 90 / 120 dias).
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0 bg-muted/20">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-primary" />
+                Confirmar novos clientes
+              </DialogTitle>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                      <HelpCircle className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[300px]">
+                    <p className="text-xs">
+                      Revise os clientes sincronizados do iGreen. Ao confirmar, eles entram na autoprogressão e recebem as mensagens automáticas configuradas (30/60/90/120 dias).
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <DialogDescription className="text-sm mt-1">
+              Clientes sincronizados que aguardam revisão para iniciar o fluxo pós-venda.
             </DialogDescription>
+
 
             {/* Escopo: meus clientes ou toda a rede (validar de outros consultores) */}
             <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -265,32 +292,56 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                 )}
                               </div>
                             </div>
-                            <div className="flex gap-1 shrink-0">
-                              <Button size="sm" variant="default" className="h-8" onClick={() => act(c.id, "approve")}>
-                                Confirmar
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-8" onClick={() => act(c.id, "review")}>
-                                Rever
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                title="Marcar como inválido"
-                                onClick={() => setConfirmInvalidate(c)}
-                              >
-                                <Ban className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8"
-                                title="Adiar 24h"
-                                onClick={() => act(c.id, "snooze")}
-                              >
-                                <Clock className="w-4 h-4" />
-                              </Button>
+                            <div className="flex gap-1.5 shrink-0">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button size="sm" variant="default" className="h-9 px-3 font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => act(c.id, "approve")}>
+                                      Validar
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Confirmar e iniciar fluxo</TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button size="sm" variant="outline" className="h-9 px-3 border-border/60" onClick={() => act(c.id, "review")}>
+                                      Rever
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Manter em espera para revisão posterior</TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
+                                      onClick={() => setConfirmInvalidate(c)}
+                                    >
+                                      <Ban className="w-4 h-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Marcar como inválido (não aparecerá mais)</TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-9 w-9 text-muted-foreground border border-transparent hover:border-border"
+                                      onClick={() => act(c.id, "snooze")}
+                                    >
+                                      <Clock className="w-4 h-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Adiar por 24 horas</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             </div>
+
                           </div>
                         );
                       })}
