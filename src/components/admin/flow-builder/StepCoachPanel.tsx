@@ -69,15 +69,20 @@ export default function StepCoachPanel({
   const journey = useFlowJourney(steps, validation, { consultantId, variant });
 
   // Lembra o passo anterior para gerar saudação contextual ("Boa, agora vamos pro #4…").
+  // Importante: guardamos o anterior ANTES de atualizar o ref, para `falarEtapa`
+  // receber o passo de origem da troca (e não o atual).
   const anteriorRef = useRef<Step | null>(null);
+  const [anteriorSnap, setAnteriorSnap] = useState<Step | null>(null);
   const [transicao, setTransicao] = useState(false);
   useEffect(() => {
     if (step && anteriorRef.current?.id !== step.id) {
+      setAnteriorSnap(anteriorRef.current);
+      anteriorRef.current = step;
       setTransicao(true);
       const t = setTimeout(() => setTransicao(false), 280);
       return () => clearTimeout(t);
     }
-  }, [step?.id]);
+  }, [step?.id, step]);
 
   return (
     <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
