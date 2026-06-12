@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { Plus, Loader2, Play, LayoutTemplate, TrendingUp } from "lucide-react";
+import { Plus, Loader2, Play, LayoutTemplate, TrendingUp, GraduationCap } from "lucide-react";
 
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
@@ -21,6 +21,8 @@ import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import StepCoachPanel from "@/components/admin/flow-builder/StepCoachPanel";
+import FlowTourOverlay, { tourPendente } from "@/components/admin/flow-builder/FlowTourOverlay";
+import FlowHealthDialog from "@/components/admin/flow-builder/FlowHealthDialog";
 import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalleryDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
@@ -61,6 +63,8 @@ export default function FluxoBuilder() {
 
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
 
@@ -128,6 +132,13 @@ export default function FluxoBuilder() {
   }, []);
 
   useEffect(() => { loadData(editingVariant); }, [editingVariant, loadData]);
+
+  // Auto-abre o tour na primeira vez que o consultor abre um fluxo vazio.
+  useEffect(() => {
+    if (!loading && steps.length === 0 && tourPendente()) {
+      setTourOpen(true);
+    }
+  }, [loading, steps.length]);
 
   const filteredSteps = useMemo(() => {
     return steps.filter(s => {
@@ -230,6 +241,14 @@ export default function FluxoBuilder() {
                       </TooltipTrigger>
                       <TooltipContent>Simular</TooltipContent>
                     </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setTourOpen(true)}>
+                          <GraduationCap className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Tour guiado</TooltipContent>
+                    </Tooltip>
                   </div>
                 </TooltipProvider>
               </div>
@@ -315,7 +334,12 @@ export default function FluxoBuilder() {
                 step={steps.find(s => s.id === inspectorId) || null}
                 steps={steps}
                 validation={validation}
+                consultantId={userId}
+                variant={editingVariant}
                 onJumpToStep={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
+                onOpenInspector={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
+                onSimulateFromHere={() => setSimulatorOpen(true)}
+                onOpenHealth={() => setHealthOpen(true)}
               />
               <WhatsAppPreview 
                 step={steps.find(s => s.id === inspectorId) || null} 
@@ -352,6 +376,16 @@ export default function FluxoBuilder() {
         consultantId={userId}
         existingVariants={existingVariants}
       />
+      <FlowHealthDialog
+        open={healthOpen}
+        onOpenChange={setHealthOpen}
+        validation={validation}
+        steps={steps}
+        actionLabel="Fechar"
+        onConfirm={() => setHealthOpen(false)}
+        onJumpToStep={(id) => { setInspectorId(id); setInspectorTab("conteudo"); setHealthOpen(false); }}
+      />
+      <FlowTourOverlay open={tourOpen} onClose={() => setTourOpen(false)} />
     </div>
   );
 }
