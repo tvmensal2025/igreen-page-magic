@@ -25,7 +25,7 @@
  * cruza o mapa com esse registro para garantir que nenhum `stepKey` foi inventado.
  */
 
-import type { Etapa } from "../vendedora/types.ts";
+import type { Etapa } from "./comum/types.ts";
 import type { BotFlowStep } from "./tipos.ts";
 
 /**

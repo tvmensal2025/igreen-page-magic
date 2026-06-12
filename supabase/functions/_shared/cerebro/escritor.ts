@@ -47,7 +47,7 @@ import type {
 } from "./tipos.ts";
 
 // REÚSO (Requisito 8.3): gateway de IA com cascata de modelos da Vendedora_Atual.
-import { chatCascade, type ChatMsg } from "../vendedora/gateway.ts";
+import { chatCascade, type ChatMsg } from "./comum/gateway.ts";
 
 // Modelos baratos primeiro, com fallback — mesma família usada pela escrita da
 // Vendedora_Atual (`vendedora/orchestrator.ts`). Manter a lista enxuta faz

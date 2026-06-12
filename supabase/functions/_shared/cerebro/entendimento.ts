@@ -30,8 +30,8 @@ import type {
 // dúvidas da Vendedora_Atual já reconhece pedido de humano, desistência e os
 // tipos de objeção. Em vez de recriar essa rede de padrões, importamos e a
 // usamos como base para mapear a intenção comercial.
-import { classificarObjecao } from "../vendedora/templates.ts";
-import type { ObjecaoTipo } from "../vendedora/templates.ts";
+import { classificarObjecao } from "./comum/templates.ts";
+import type { ObjecaoTipo } from "./comum/templates.ts";
 
 // REÚSO (Requisito 4.2): extratores de dados de cadastro já existentes da
 // Vendedora_Atual. NÃO reimplementamos a regex de extração — importamos e

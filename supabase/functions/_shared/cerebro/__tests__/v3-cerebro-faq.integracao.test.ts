@@ -39,8 +39,8 @@ import {
   assertStringIncludes,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-import { buscarContexto, formatChunks } from "../../vendedora/rag.ts";
-import type { Etapa } from "../../vendedora/types.ts";
+import { buscarContexto, formatChunks } from "../comum/rag.ts";
+import type { Etapa } from "../comum/types.ts";
 
 // ─── Util: stub do fetch global (apenas para o endpoint de embeddings) ───
 type FetchFn = typeof fetch;

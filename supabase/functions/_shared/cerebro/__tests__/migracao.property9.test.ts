@@ -30,8 +30,8 @@ import {
   MAPA_ETAPA_PARA_PASSO,
   pontoDeEntradaMigracao,
 } from "../migracao.ts";
-import { ETAPAS_ORDER } from "../../vendedora/types.ts";
-import type { Etapa } from "../../vendedora/types.ts";
+import { ETAPAS_ORDER } from "../comum/types.ts";
+import type { Etapa } from "../comum/types.ts";
 
 // ─── Referências de "início do cadastro" ─────────────────────────────────────
 //
