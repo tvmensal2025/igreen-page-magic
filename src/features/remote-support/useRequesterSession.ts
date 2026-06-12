@@ -118,12 +118,14 @@ export function useRequesterSession(userId: string | null | undefined) {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled && data) {
-          setSession(data as unknown as SupportSession);
-        }
-      })
-      .catch(e => console.warn("[remote-support] load session:", e));
+      .then(
+        ({ data }) => {
+          if (!cancelled && data) {
+            setSession(data as unknown as SupportSession);
+          }
+        },
+        (e) => console.warn("[remote-support] load session:", e),
+      );
 
     return () => { cancelled = true; };
   }, [userId]);
