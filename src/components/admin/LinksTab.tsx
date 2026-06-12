@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { Copy, Globe, QrCode, FileText, LinkIcon, Monitor } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Copy, QrCode, FileText, LinkIcon, ExternalLink, ChevronDown, ChevronUp, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LinkCard } from "./LinkCard";
-import { PreviewTab } from "./PreviewTab";
+import { supabase } from "@/integrations/supabase/client";
+import { LinksDashboard } from "./LinksDashboard";
 
 interface LinksTabProps {
   slug: string;
@@ -12,107 +12,150 @@ interface LinksTabProps {
   onPanfletoOpen?: () => void;
 }
 
+// ─── Redes sociais para rastreamento ───
+const SOCIAL_SOURCES = [
+  { source: "whatsapp", label: "WhatsApp", icon: "💬" },
+  { source: "instagram", label: "Instagram", icon: "📸" },
+  { source: "facebook", label: "Facebook", icon: "📘" },
+  { source: "tiktok", label: "TikTok", icon: "🎵" },
+  { source: "youtube", label: "YouTube", icon: "🎬" },
+  { source: "google", label: "Google", icon: "🔍" },
+];
+
+// ─── Páginas (sem duplicatas: Green=cliente, Expansão=licenciado) ───
+function getAllPages(slug: string) {
+  return [
+    { id: "green", emoji: "🌱", label: "Conexão Green", sublabel: "Desconto na conta de luz", path: slug },
+    { id: "expansao", emoji: "🚀", label: "Conexão Expansão", sublabel: "Oportunidade para consultores", path: `licenciado/${slug}` },
+    { id: "cadastro", emoji: "📱", label: "Cadastro Rápido", sublabel: "QR Code + WhatsApp (3 min)", path: `cadastro/${slug}` },
+    { id: "telecom", emoji: "📶", label: "Conexão Telecom", sublabel: "Internet 5G mais rápida", path: `conexao-telecom/${slug}` },
+    { id: "seguros", emoji: "🛡️", label: "Conexão Seguros", sublabel: "Proteção veicular acessível", path: `conexao-seguros/${slug}` },
+    { id: "solar", emoji: "☀️", label: "Conexão Solar", sublabel: "Placas sem investimento", path: `conexao-solar/${slug}` },
+    { id: "placas", emoji: "🔋", label: "Conexão Placas", sublabel: "Instale e economize 95%", path: `conexao-placas/${slug}` },
+    { id: "livre", emoji: "⚡", label: "Conexão Livre", sublabel: "Mercado livre de energia", path: `conexao-livre/${slug}` },
+    { id: "club", emoji: "🛍️", label: "Conexão Club", sublabel: "30 mil lojas com desconto", path: `conexao-club/${slug}` },
+    { id: "club-pj", emoji: "🏢", label: "Conexão Club PJ", sublabel: "Benefícios para empresas", path: `conexao-club-pj/${slug}` },
+  ];
+}
+
 export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: LinksTabProps) {
-  const [view, setView] = useState<"links" | "preview">("links");
+  const [tab, setTab] = useState<"dashboard" | "links">("dashboard");
+  const [expandedPage, setExpandedPage] = useState<string | null>(null);
+  const [consultantId, setConsultantId] = useState<string>();
+
+  useEffect(() => {
+    supabase
+      .from("consultants_public" as any)
+      .select("id")
+      .eq("license", slug)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setConsultantId((data as any).id);
+      });
+  }, [slug]);
+
+  const pages = useMemo(() => getAllPages(slug), [slug]);
 
   return (
     <div className="space-y-6">
-      {/* Sub-toggle */}
+      {/* Abas internas */}
       <div className="flex gap-2 border-b border-border">
-        <button
-          onClick={() => setView("links")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            view === "links" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <LinkIcon className="w-4 h-4" /> Links
-        </button>
-        <button
-          onClick={() => setView("preview")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            view === "preview" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Monitor className="w-4 h-4" /> Preview
-        </button>
+        <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={<BarChart3 className="w-4 h-4" />} label="Resultados" />
+        <TabButton active={tab === "links"} onClick={() => setTab("links")} icon={<LinkIcon className="w-4 h-4" />} label="Meus Links" />
       </div>
 
-      {view === "preview" ? (
-        <PreviewTab slug={slug} baseUrl={baseUrl} />
+      {tab === "dashboard" ? (
+        <LinksDashboard consultantId={consultantId} />
       ) : (
-        <>
-          {/* Main Links */}
-          <div className="space-y-4">
-            <h2 className="font-heading font-bold text-foreground text-lg flex items-center gap-2">
-              <LinkIcon className="w-5 h-5 text-primary" /> Links Principais
-            </h2>
-            <LinkCard emoji="🏠" title="Landing Page — Cliente" description="Para captar clientes que querem desconto na conta de luz" url={`https://${baseUrl}/${slug}`} onCopy={onCopy} previewUrl={`/${slug}`} />
-            <LinkCard emoji="💼" title="Landing Page — Licenciado" description="Para recrutar novos licenciados para sua equipe" url={`https://${baseUrl}/licenciado/${slug}`} onCopy={onCopy} previewUrl={`/licenciado/${slug}`} />
-            <LinkCard emoji="📱" title="Página de Cadastro" description="Cadastro rápido em 3 minutos via WhatsApp com QR Code" url={`https://${baseUrl}/cadastro/${slug}`} onCopy={onCopy} previewUrl={`/cadastro/${slug}`} />
-
-            {onPanfletoOpen && (
-              <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl border-2 border-primary/30 p-5 flex items-center gap-4">
-                <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center text-2xl shrink-0">
-                  📄
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-foreground">Panfleto pronto pra gráfica</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    A5 com QR único da sua licença + G verde no centro. Imprima quantos quiser — sempre vai pro seu WhatsApp atual.
-                  </p>
-                </div>
-                <Button onClick={onPanfletoOpen} className="gap-2 shrink-0">
-                  <FileText className="w-4 h-4" /> Gerar panfleto
-                </Button>
+        <div className="space-y-4">
+          {/* Panfleto */}
+          {onPanfletoOpen && (
+            <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl border border-primary/20 p-4 flex items-center gap-3">
+              <span className="text-2xl">📄</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-heading font-bold text-foreground text-sm">Panfleto pra Gráfica</p>
+                <p className="text-[11px] text-muted-foreground">A5 com QR do seu WhatsApp. Imprima quantos quiser.</p>
               </div>
-            )}
-          </div>
-
-          {/* Tracking Links */}
-          {[
-            { pageLabel: "Cliente", pagePath: slug, emoji: "🏠" },
-            { pageLabel: "Licenciado", pagePath: `licenciado/${slug}`, emoji: "💼" },
-          ].map((page) => (
-            <div key={page.pagePath} className="space-y-3">
-              <h2 className="font-heading font-bold text-foreground text-lg flex items-center gap-2">
-                <Globe className="w-5 h-5 text-primary" /> Links de Rastreamento — {page.emoji} {page.pageLabel}
-              </h2>
-              <p className="text-xs text-muted-foreground -mt-1">Compartilhe o link certo em cada rede social para saber de onde vem seu tráfego</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { source: "whatsapp", label: "WhatsApp", icon: "💬", color: "bg-[hsl(142,70%,45%)]" },
-                  { source: "instagram", label: "Instagram", icon: "📸", color: "bg-[hsl(330,80%,55%)]" },
-                  { source: "facebook", label: "Facebook", icon: "📘", color: "bg-[hsl(220,80%,55%)]" },
-                  { source: "youtube", label: "YouTube", icon: "🎬", color: "bg-[hsl(0,80%,50%)]" },
-                  { source: "tiktok", label: "TikTok", icon: "🎵", color: "bg-[hsl(270,80%,55%)]" },
-                  { source: "google", label: "Google", icon: "🔍", color: "bg-[hsl(45,90%,50%)]" },
-                ].map((s) => {
-                  const fullUrl = `https://${baseUrl}/${page.pagePath}?utm_source=${s.source}`;
-                  return (
-                    <div key={s.source} className="bg-card rounded-xl border border-border p-4 flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg shrink-0 ${s.color} bg-opacity-20`}>
-                        {s.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-foreground">{s.label}</p>
-                        <p className="text-xs text-muted-foreground truncate">{fullUrl.replace("https://", "")}</p>
-                      </div>
-                      <div className="flex gap-1.5 shrink-0">
-                        <Button size="sm" variant="outline" onClick={() => onQrOpen(fullUrl, `${s.label} — ${page.pageLabel}`)} className="gap-1 rounded-lg text-xs px-2">
-                          <QrCode className="w-3 h-3" />
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => onCopy(fullUrl)} className="gap-1 rounded-lg text-xs">
-                          <Copy className="w-3 h-3" /> Copiar
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <Button size="sm" onClick={onPanfletoOpen} className="gap-1.5 shrink-0">
+                <FileText className="w-3.5 h-3.5" /> Gerar
+              </Button>
             </div>
-          ))}
-        </>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Toque em um produto para ver os links de cada rede social (Instagram, WhatsApp, etc)
+          </p>
+
+          {pages.map((page) => {
+            const fullUrl = `https://${baseUrl}/${page.path}`;
+            const isExpanded = expandedPage === page.id;
+
+            return (
+              <div key={page.id} className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                <button
+                  type="button"
+                  onClick={() => setExpandedPage(isExpanded ? null : page.id)}
+                  className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/20 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl shrink-0 ring-1 ring-primary/20">
+                    {page.emoji}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-heading font-bold text-sm text-foreground">{page.label}</p>
+                    <p className="text-[11px] text-muted-foreground">{page.sublabel}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" title="Copiar link" onClick={(e) => { e.stopPropagation(); onCopy(fullUrl); }}>
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" title="QR Code" onClick={(e) => { e.stopPropagation(); onQrOpen(fullUrl, page.label); }}>
+                      <QrCode className="w-3.5 h-3.5" />
+                    </Button>
+                    <a href={fullUrl} target="_blank" rel="noopener noreferrer" title="Abrir" onClick={(e) => e.stopPropagation()} className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-muted transition-colors">
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                    </a>
+                  </div>
+                  {isExpanded ? <ChevronUp className="w-4 h-4 text-primary shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+                </button>
+
+                {isExpanded && (
+                  <div className="border-t border-border bg-muted/10 px-4 pb-4 pt-3">
+                    <p className="text-xs font-heading font-bold text-muted-foreground mb-2">📲 Compartilhe por rede social:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {SOCIAL_SOURCES.map((s) => {
+                        const trackedUrl = `${fullUrl}?utm_source=${s.source}`;
+                        return (
+                          <div key={s.source} className="flex items-center gap-2 bg-card rounded-xl border border-border p-3 hover:border-primary/30 transition-colors">
+                            <span className="text-xl shrink-0">{s.icon}</span>
+                            <p className="text-xs font-bold text-foreground flex-1">{s.label}</p>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" title="QR Code" onClick={() => onQrOpen(trackedUrl, `${s.label} — ${page.label}`)}>
+                              <QrCode className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-[10px] shrink-0 rounded-lg" onClick={() => onCopy(trackedUrl)}>
+                              <Copy className="w-3 h-3 mr-1" /> Copiar
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
+  );
+}
+
+function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+    >
+      {icon} {label}
+    </button>
   );
 }

@@ -10,14 +10,21 @@ export function useInstancePhone(consultantId: string | undefined) {
     queryKey: ["instance-phone", consultantId],
     queryFn: async () => {
       if (!consultantId) return null;
-      const { data } = await supabase
-        .from("whatsapp_instances")
-        .select("connected_phone")
-        .eq("consultant_id", consultantId)
-        .not("connected_phone", "is", null)
-        .limit(1)
-        .maybeSingle();
-      return (data as any)?.connected_phone as string | null;
+      try {
+        const { data, error } = await supabase
+          .from("whatsapp_instances")
+          .select("connected_phone")
+          .eq("consultant_id", consultantId)
+          .not("connected_phone", "is", null)
+          .limit(1)
+          .maybeSingle();
+        // Em páginas públicas o anon pode não ter acesso (RLS/401):
+        // tratamos como "sem instância" e seguimos com o telefone do perfil.
+        if (error) return null;
+        return ((data as any)?.connected_phone as string | null) ?? null;
+      } catch {
+        return null;
+      }
     },
     enabled: !!consultantId,
   });

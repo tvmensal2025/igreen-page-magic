@@ -29,6 +29,7 @@ const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
 const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
+const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
 const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
@@ -93,6 +94,17 @@ const App = () => (
               <Route path="/politica-privacidade" element={<PoliticaPrivacidade />} />
               <Route path="/install" element={<InstallPage />} />
               <Route path="/reset" element={<ResetApp />} />
+              {/* Landing pages Conexão (9 produtos) */}
+              <Route path="/conexao-telecom/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-seguros/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-solar/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-placas/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-livre/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-club/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-club-pj/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-green/:licenca" element={<ConexaoProductPage />} />
+              <Route path="/conexao-expansao/:licenca" element={<ConexaoProductPage />} />
+
               {/* ⚠️ Catch-all de 1º nível: captura o slug público do consultor.
                   Mantenha QUALQUER rota nova ACIMA desta linha, senão ela será
                   interpretada como uma licença e cairá na ConsultantPage. */}

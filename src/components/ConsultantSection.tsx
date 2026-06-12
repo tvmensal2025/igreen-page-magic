@@ -54,6 +54,7 @@ const ConsultantSection = ({
               src={photo}
               alt={`${name} - Consultor(a) iGreen Energy`}
               loading="lazy"
+              decoding="async"
               className="rounded-2xl w-full max-w-sm mx-auto shadow-lg relative z-10 transition-transform duration-500 group-hover:scale-[1.02]"
               style={{ boxShadow: 'var(--shadow-green)' }}
             />
@@ -89,7 +90,7 @@ const ConsultantSection = ({
       </div>
 
       <footer className="bg-card/50 py-10 text-center mt-16 border-t border-border">
-        <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" loading="lazy" className="mx-auto mb-4 w-36" />
+        <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" loading="lazy" decoding="async" className="mx-auto mb-4 w-36" />
         <p className="text-muted-foreground font-heading text-sm tracking-wider">
           {name.toUpperCase()} | CONSULTOR(A) IGREEN ENERGY{displayId ? ` ID ${displayId}` : ""}
         </p>

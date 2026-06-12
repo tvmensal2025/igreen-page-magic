@@ -24,12 +24,12 @@ const ClubSection = () => {
 
         <div className="max-w-4xl mx-auto rounded-2xl overflow-hidden relative mb-14" style={{ boxShadow: 'var(--shadow-green-lg)' }}>
           <div className="absolute inset-0 rounded-2xl border border-primary/20 z-10 pointer-events-none" />
-          <LazyVideo src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/club-de-beneficios.mp4" />
+          <LazyVideo src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/club-de-beneficios.mp4" poster="/videos/posters/club-de-beneficios.webp" />
         </div>
 
         <div className="max-w-4xl mx-auto rounded-2xl overflow-hidden relative mb-14" style={{ boxShadow: 'var(--shadow-green-lg)' }}>
           <div className="absolute inset-0 rounded-2xl border border-primary/20 z-10 pointer-events-none" />
-          <LazyVideo src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/igreen_club_3.mp4" />
+          <LazyVideo src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/igreen_club_3.mp4" poster="/videos/posters/igreen_club_3.webp" />
         </div>
 
         <div className="max-w-4xl mx-auto">
@@ -58,6 +58,7 @@ const ClubSection = () => {
               alt="Lojas parceiras iGreen Club - Pague Menos, Casas Bahia, Netshoes, Movida, Vivara, Electrolux, Magalu, Philips, Cinemark e mais"
               className="w-full"
               loading="lazy"
+              decoding="async"
             />
           </div>
 
@@ -71,7 +72,7 @@ const ClubSection = () => {
               {banners.map((b, i) => (
                 <CarouselItem key={i} className="pl-4 basis-full sm:basis-1/2 lg:basis-1/3">
                   <div className="rounded-2xl overflow-hidden border border-primary/20" style={{ boxShadow: 'var(--shadow-card)' }}>
-                    <img src={b.src} alt={b.alt} className="w-full aspect-square object-cover" loading="lazy" />
+                    <img src={b.src} alt={b.alt} className="w-full aspect-square object-cover" loading="lazy" decoding="async" />
                   </div>
                 </CarouselItem>
               ))}

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0c" />
+  <title>iGreen Academy — Treinamentos</title>
+  <meta name="description" content="Treinamentos oficiais iGreen Energy. Aprenda todas as conexões com aulas em vídeo." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <a href="#" class="brand" id="brandHome" aria-label="iGreen Academy">
+      <span class="brand__leaf">🌿</span>
+      <span class="brand__name">iGreen<span>Academy</span></span>
+    </a>
+    <button class="topbar__search-btn" id="searchToggle" aria-label="Buscar">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+    </button>
+  </header>
+
+  <!-- BUSCA (expansível) -->
+  <div class="searchbar" id="searchbar">
+    <input id="searchInput" type="text" placeholder="Buscar aula ou módulo..." autocomplete="off" />
+    <button id="searchClear" aria-label="Limpar">✕</button>
+  </div>
+
+  <main class="app" id="app">
+    <!-- HERO / CONTINUAR -->
+    <section class="resume" id="resume">
+      <div class="resume__bg" id="resumeBg"></div>
+      <div class="resume__overlay"></div>
+      <div class="resume__inner">
+        <div class="resume__info">
+          <span class="resume__label" id="resumeLabel">Comece agora</span>
+          <h2 class="resume__title" id="resumeTitle">Carregando...</h2>
+          <p class="resume__sub" id="resumeSub"></p>
+        </div>
+        <button class="resume__btn" id="resumeBtn">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+          <span id="resumeBtnText">Continuar</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- NÍVEL DE CONHECIMENTO -->
+    <section class="level-card" id="levelCard">
+      <div class="level-card__icon" id="levelIcon">⚡</div>
+      <div class="level-card__info">
+        <span class="level-card__label">Seu nível de conhecimento</span>
+        <span class="level-card__name" id="levelName">Faísca</span>
+        <span class="level-card__desc" id="levelDesc">Está começando a jornada.</span>
+      </div>
+      <div class="level-card__next" id="levelNext"></div>
+    </section>
+
+    <!-- PROGRESSO GERAL -->
+    <section class="progress-card">
+      <div class="progress-card__top">
+        <span class="progress-card__label">Aulas assistidas</span>
+        <span class="progress-card__pct" id="statPct">0%</span>
+      </div>
+      <div class="progress-card__bar"><span id="statBar"></span></div>
+      <span class="progress-card__sub" id="statDone">0 de 0 aulas concluídas</span>
+      <div class="progress-card__exams" id="examsSummary">0 provas aprovadas</div>
+    </section>
+
+    <!-- LISTA DE MÓDULOS (accordion) -->
+    <div id="catalog"></div>
+
+    <!-- RESULTADOS DE BUSCA -->
+    <div id="searchResults" class="search-results hidden"></div>
+  </main>
+
+  <footer class="footer">
+    <p>iGreen Academy • Conteúdo de treinamento iGreen Energy.</p>
+  </footer>
+
+  <!-- PLAYER (tela cheia no mobile) -->
+  <div class="player" id="player" aria-hidden="true">
+    <div class="player__bar">
+      <button class="player__back" id="playerBack" aria-label="Voltar">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        <span>Voltar</span>
+      </button>
+      <span class="player__crumb" id="playerCrumb"></span>
+    </div>
+
+    <div class="player__stage">
+      <div class="player__ratio" id="playerMount"></div>
+    </div>
+
+    <div class="player__body">
+      <div class="player__titlerow">
+        <h1 id="playerTitle">Título da aula</h1>
+        <span class="player__doneflag" id="playerDoneFlag">✓ Concluída</span>
+      </div>
+      <p class="player__pct" id="playerPct">0% assistido</p>
+
+      <div class="player__actions">
+        <button class="pbtn pbtn--prev" id="prevLesson">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+          Anterior
+        </button>
+        <button class="pbtn pbtn--done" id="markDone">✓ Marcar como concluída</button>
+        <button class="pbtn pbtn--next" id="nextLesson">
+          Próxima
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </button>
+      </div>
+
+      <!-- lista de aulas do módulo atual, dentro do player -->
+      <div class="player__playlist" id="playerPlaylist"></div>
+    </div>
+  </div>
+
+  <!-- MODAL DE PROVA -->
+  <div class="quiz" id="quiz" aria-hidden="true">
+    <div class="quiz__backdrop" id="quizBackdrop"></div>
+    <div class="quiz__dialog" role="dialog" aria-modal="true">
+      <button class="quiz__close" id="quizClose" aria-label="Fechar">✕</button>
+
+      <!-- TELA INTRO -->
+      <div class="quiz__screen" id="quizIntro">
+        <div class="quiz__badge">📝 PROVA DO MÓDULO</div>
+        <h2 id="quizModuleTitle">Módulo</h2>
+        <p class="quiz__sub" id="quizIntroSub">Responda as questões para ser aprovado e evoluir de nível.</p>
+        <ul class="quiz__rules">
+          <li>✅ Aprovação: <b>70%</b> de acerto</li>
+          <li>🔁 Pode refazer quantas vezes quiser</li>
+          <li>🏆 Aprovar libera selo de conhecimento</li>
+        </ul>
+        <button class="quiz__start" id="quizStart">Começar prova</button>
+      </div>
+
+      <!-- TELA PERGUNTAS -->
+      <div class="quiz__screen hidden" id="quizQuestions">
+        <div class="quiz__progress"><span id="quizProgressBar"></span></div>
+        <div class="quiz__qcount" id="quizQCount">Questão 1 de 4</div>
+        <h3 class="quiz__q" id="quizQText">Pergunta</h3>
+        <div class="quiz__options" id="quizOptions"></div>
+      </div>
+
+      <!-- TELA RESULTADO -->
+      <div class="quiz__screen hidden" id="quizResult">
+        <div class="quiz__resulticon" id="quizResultIcon">🎉</div>
+        <h2 id="quizResultTitle">Aprovado!</h2>
+        <div class="quiz__score" id="quizScore">100%</div>
+        <p class="quiz__resultsub" id="quizResultSub"></p>
+        <div class="quiz__resultbtns">
+          <button class="quiz__retry" id="quizRetry">Refazer prova</button>
+          <button class="quiz__done" id="quizDoneBtn">Concluir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="quizzes.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

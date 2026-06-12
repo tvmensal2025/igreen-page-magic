@@ -17,7 +17,7 @@ const HowItWorksSection = () => (
 
       <div className="max-w-4xl mx-auto rounded-2xl overflow-hidden relative mb-14" style={{ boxShadow: 'var(--shadow-green-lg)' }}>
         <div className="absolute inset-0 rounded-2xl border border-primary/20 z-10 pointer-events-none" />
-        <LazyVideo src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/casasustentavel.mp4" />
+        <LazyVideo src="https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/video%20igreen/casasustentavel.mp4" poster="/videos/posters/casasustentavel.webp" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-12 items-center">

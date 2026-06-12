@@ -433,3 +433,39 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     cidades: ["Florianópolis", "Joinville", "Blumenau", "São José", "Chapecó", "Itajaí", "Lages", "Criciúma", "Jaraguá do Sul", "Palhoça", "Balneário Camboriú"],
   },
 ];
+
+// ── Lookup cidade → distribuidora ─────────────────────────────────────────
+// Usado no wizard para AVISAR a qual distribuidora uma cidade pertence
+// (e o bônus), sem precisar despejar todas as cidades da distribuidora na tela.
+
+function normalizeCityName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .toLowerCase()
+    .replace(/['`´]/g, "")
+    .trim();
+}
+
+// Índice nome-normalizado → preset (construído uma vez).
+const CITY_TO_PRESET: Map<string, DistribuidoraPreset> = (() => {
+  const map = new Map<string, DistribuidoraPreset>();
+  for (const preset of DISTRIBUIDORAS_PRESETS) {
+    for (const cidade of preset.cidades) {
+      const key = normalizeCityName(cidade);
+      // Mantém o primeiro preset (tiers altos vêm primeiro na lista).
+      if (!map.has(key)) map.set(key, preset);
+    }
+  }
+  return map;
+})();
+
+/**
+ * Descobre a distribuidora de uma cidade pelo nome. Aceita "Cidade" ou
+ * "Cidade, UF" / "Cidade - UF". Retorna undefined se não houver bônus mapeado.
+ */
+export function findDistribuidoraForCity(cityName: string): DistribuidoraPreset | undefined {
+  if (!cityName) return undefined;
+  const justCity = cityName.split(/[,\-–]/)[0];
+  return CITY_TO_PRESET.get(normalizeCityName(justCity));
+}

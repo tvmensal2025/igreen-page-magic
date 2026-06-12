@@ -1,4 +1,5 @@
 import { trackClickEvent } from "@/hooks/useTrackEvent";
+import { useEffect, useRef, useState } from "react";
 import AnimatedCounter from "@/components/common/AnimatedCounter";
 import AmbientGlow from "@/components/common/AmbientGlow";
 import LandingNav from "@/components/common/LandingNav";
@@ -16,6 +17,35 @@ const DEFAULT_WHATSAPP_URL = "https://wa.me/5500000000000?text=Ol%C3%A1,%20gosta
 const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProps) => {
   const CADASTRO = cadastroUrl || DEFAULT_CADASTRO_URL;
   const WHATSAPP = whatsappUrl || DEFAULT_WHATSAPP_URL;
+
+  // O vídeo do topo (~10 MB) só começa a carregar depois que a página já
+  // renderizou o conteúdo principal. Assim o título e o layout aparecem na
+  // hora, sem o vídeo "roubar" banda do primeiro carregamento. O vídeo
+  // continua tocando sozinho (autoplay) logo em seguida — nada é removido.
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [loadVideo, setLoadVideo] = useState(false);
+
+  useEffect(() => {
+    // Espera o navegador ficar ocioso (ou ~1.2s) antes de baixar o vídeo.
+    const idle = (cb: () => void) => {
+      const w = window as unknown as { requestIdleCallback?: (cb: () => void) => number };
+      if (typeof w.requestIdleCallback === "function") return w.requestIdleCallback(cb);
+      return window.setTimeout(cb, 1200);
+    };
+    const id = idle(() => setLoadVideo(true));
+    return () => {
+      const w = window as unknown as { cancelIdleCallback?: (id: number) => void };
+      if (typeof w.cancelIdleCallback === "function") w.cancelIdleCallback(id as number);
+      else clearTimeout(id as number);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loadVideo) {
+      videoRef.current?.load();
+      videoRef.current?.play().catch(() => {/* autoplay pode ser bloqueado; usuário dá play */});
+    }
+  }, [loadVideo]);
 
   const handleClick = (target: string) => {
     if (consultantId) trackClickEvent(consultantId, target, "client");
@@ -63,15 +93,17 @@ const HeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: HeroSectionProp
               <div className="ml-3 h-5 flex-1 max-w-xs rounded-md bg-muted/60" />
             </div>
             <video
+              ref={videoRef}
               controls
               playsInline
               autoPlay
               muted
               loop
-              preload="metadata"
-              className="w-full aspect-video block"
+              preload="none"
+              poster="/videos/posters/Green_Energy.webp"
+              className="w-full aspect-video block bg-black/40"
             >
-              <source src="/videos/Green_Energy.mp4" type="video/mp4" />
+              {loadVideo && <source src="/videos/Green_Energy.mp4" type="video/mp4" />}
               Seu navegador não suporta vídeos.
             </video>
           </div>

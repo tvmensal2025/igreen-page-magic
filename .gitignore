@@ -48,3 +48,6 @@ dist-ssr
 
 # Lovable workspace metadata (gerado automaticamente)
 .lovable/
+
+# Kiro settings — contém tokens em texto puro (NUNCA commitar)
+.kiro/settings/mcp.json

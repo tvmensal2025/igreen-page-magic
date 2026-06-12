@@ -9,6 +9,10 @@ const videos = [
   "/videos/depoimento-5.mp4",
 ];
 
+function posterFor(src: string) {
+  return src.replace("/videos/", "/videos/posters/").replace(/\.mp4$/, ".webp");
+}
+
 function VideoCard({ src, index }: { src: string; index: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -27,6 +31,7 @@ function VideoCard({ src, index }: { src: string; index: number }) {
           ref={videoRef}
           controls={playing}
           preload="none"
+          poster={posterFor(src)}
           className="w-full aspect-[9/16] object-cover"
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}

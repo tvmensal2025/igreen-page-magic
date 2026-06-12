@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CreateCampaignWizard } from "./CreateCampaignWizard";
+import { CreateCampaignWizard } from "./campaign-wizard";
 import { CampaignsList } from "./CampaignsList";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";

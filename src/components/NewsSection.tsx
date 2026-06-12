@@ -13,6 +13,11 @@ const videos = [
   `${SUPABASE_BASE}/noticaia9.mp4`,
 ];
 
+function posterFor(src: string) {
+  const file = src.split("/").pop()?.replace(/\.mp4$/, "") || "";
+  return `/videos/posters/${file}.webp`;
+}
+
 function NewsVideoCard({ src }: { src: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -30,7 +35,8 @@ function NewsVideoCard({ src }: { src: string }) {
         <video
           ref={videoRef}
           controls={playing}
-          preload="metadata"
+          preload="none"
+          poster={posterFor(src)}
           className="w-full aspect-[4/3] object-cover"
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
