@@ -37,8 +37,10 @@ export function IncomingOperatorRequestDialog({ session, onResolved }: Props) {
       .select("name")
       .eq("id", session.operator_id)
       .maybeSingle()
-      .then(({ data }) => setOperatorName(data?.name ?? "Suporte"))
-      .catch(() => setOperatorName("Suporte"));
+      .then(
+        ({ data }) => setOperatorName(data?.name ?? "Suporte"),
+        () => setOperatorName("Suporte"),
+      );
   }, [session?.operator_id]);
 
   const isOpen =
