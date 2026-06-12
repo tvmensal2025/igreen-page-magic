@@ -132,7 +132,7 @@ export default function VariantDistributionBar({
 
   async function renameVariant(v: Variant) {
     if (v === "D") {
-      toast.error("O fluxo D (padrão Camila) não pode ser renomeado.");
+      toast.error("O fluxo D não pode ser renomeado.");
       return;
     }
     const { data: row } = await supabase
@@ -144,11 +144,11 @@ export default function VariantDistributionBar({
       .maybeSingle();
     if (!row?.id) { toast.error("Fluxo não encontrado."); return; }
     const novo = await prompt({
-      title: "Renomear fluxo",
-      description: "Esse nome é o que identifica o fluxo para você. O cliente nunca vê.",
-      placeholder: "Nome do fluxo",
+      title: "Nome do Fluxo",
+      description: "Escolha um nome para identificar este fluxo. Este nome é apenas para seu controle interno.",
+      placeholder: "Ex: Atendimento Solar SP",
       defaultValue: (row as any).name || `Fluxo ${v}`,
-      confirmText: "Salvar",
+      confirmText: "Salvar Nome",
     });
     if (novo === null || !novo.trim()) return;
     const { error } = await supabase
@@ -156,10 +156,11 @@ export default function VariantDistributionBar({
       .update({ name: novo.trim() })
       .eq("id", (row as any).id);
     if (error) { toast.error(error.message); return; }
-    toast.success("Fluxo renomeado.");
+    toast.success("Nome do fluxo atualizado!");
     await loadNames();
     await onChanged();
   }
+
 
   async function deleteVariant(v: Variant) {
     // Bloqueia exclusão do último fluxo restante (precisa sobrar pelo menos 1).

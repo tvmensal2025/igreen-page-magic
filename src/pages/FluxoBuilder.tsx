@@ -237,12 +237,8 @@ export default function FluxoBuilder() {
   }, []);
 
   // task 10.2 — `viewMode` controla Lista ↔ Diagrama ↔ Planilha (R1.1).
-  // 2026-06-10: por decisão de produto, só o Modo_Lista é exposto. Diagrama e
-  // Planilha foram considerados ruído para o uso real e ficam guardados (os
-  // renders condicionais permanecem no arquivo, mas inalcançáveis). Para
-  // reativar, troque o estado abaixo por `useState<ViewMode>(readInitialViewMode)`
-  // e reexponha o `<ViewToggle>` no header.
-  const [viewMode, setViewModeState] = useState<ViewMode>("lista");
+  const [viewMode, setViewModeState] = useState<ViewMode>(readInitialViewMode());
+
   const [useV2, setUseV2State] = useState<boolean>(readUseV2);
   const setUseV2 = useCallback((next: boolean) => {
     setUseV2State(next);
@@ -841,8 +837,9 @@ export default function FluxoBuilder() {
           onOpenSidebar={() => setSidebarOpen(true)}
         />
         <div className="flex-1 min-h-0 overflow-y-auto bg-background">
-      {/* Header — limpo e profissional */}
-      <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
+          {/* Header — limpo e profissional */}
+          <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
+
         {/* Faixa 1: Distribuição entre variantes (ativar/pausar/criar) — sempre no topo */}
         {userId && (
           <div className="pt-3">
@@ -863,6 +860,36 @@ export default function FluxoBuilder() {
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-semibold truncate">
               Fluxo {editingVariant}
+            </h2>
+          </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
               <span className="ml-1 font-normal text-muted-foreground">
                 — {VARIANT_LABEL[editingVariant].replace(/^Fluxo\s+[A-E]\s*/, "")}
               </span>
@@ -871,11 +898,16 @@ export default function FluxoBuilder() {
               {steps.length} {steps.length === 1 ? "passo" : "passos"} · arraste para reordenar e veja o preview ao vivo
             </p>
           </div>
-          <TooltipProvider delayDuration={150}>
-            <div className="flex items-center gap-1">
-              {/* Galeria de modelos da comunidade */}
-              <Tooltip>
+          <div className="flex items-center gap-1">
+            <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
+
+            <TooltipProvider delayDuration={150}>
+              <div className="flex items-center gap-1">
+
+                {/* Galeria de modelos da comunidade */}
+                <Tooltip>
                 <TooltipTrigger asChild>
+
                   <Button
                     variant="outline"
                     size="icon"
@@ -1039,6 +1071,11 @@ export default function FluxoBuilder() {
           className={viewMode === "lista" ? "space-y-3" : "hidden"}
           aria-hidden={viewMode !== "lista"}
         >
+          {/* Seção de Preferências da IA — em destaque no topo quando colapsado */}
+          <div id="ai-preferences-section" className="mb-6 scroll-mt-24">
+            <AiPreferencesCard consultantId={userId} />
+          </div>
+
           {steps.length === 0 ? (
             <div className="rounded-2xl border border-dashed bg-gradient-to-b from-muted/30 to-transparent p-10 text-center">
               <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
@@ -1065,15 +1102,14 @@ export default function FluxoBuilder() {
             </div>
           ) : (
             <>
+
               <StepListToolbar
                 query={listQuery}
                 onQueryChange={setListQuery}
                 typeFilter={typeFilter}
-                onToggleType={toggleTypeFilter}
-                onClear={() => { setListQuery(""); setTypeFilter(new Set()); }}
-                total={steps.length}
-                visible={filteredSteps.length}
+                onToggleTypeFilter={toggleTypeFilter}
               />
+
 
               {filteredSteps.length === 0 ? (
                 <div className="rounded-lg border border-dashed bg-muted/10 p-6 text-center text-xs text-muted-foreground">
@@ -1360,8 +1396,41 @@ export default function FluxoBuilder() {
         flowId={flowId}
         defaultName={`Fluxo ${editingVariant}`}
       />
+        </main>
+      )}
         </div>
       </div>
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
