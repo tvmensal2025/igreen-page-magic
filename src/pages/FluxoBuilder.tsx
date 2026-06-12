@@ -856,6 +856,7 @@ export default function FluxoBuilder() {
             navegação já vivem na topbar da plataforma — aqui fica só o
             contexto (qual fluxo, quantos passos) e as ações. */}
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-semibold truncate">
               Fluxo {editingVariant}
@@ -1372,6 +1373,7 @@ export default function FluxoBuilder() {
     </div>
   );
 }
+
 
 
 
