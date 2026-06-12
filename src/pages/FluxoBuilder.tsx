@@ -63,6 +63,8 @@ export default function FluxoBuilder() {
 
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
 
@@ -130,6 +132,13 @@ export default function FluxoBuilder() {
   }, []);
 
   useEffect(() => { loadData(editingVariant); }, [editingVariant, loadData]);
+
+  // Auto-abre o tour na primeira vez que o consultor abre um fluxo vazio.
+  useEffect(() => {
+    if (!loading && steps.length === 0 && tourPendente()) {
+      setTourOpen(true);
+    }
+  }, [loading, steps.length]);
 
   const filteredSteps = useMemo(() => {
     return steps.filter(s => {
@@ -317,7 +326,12 @@ export default function FluxoBuilder() {
                 step={steps.find(s => s.id === inspectorId) || null}
                 steps={steps}
                 validation={validation}
+                consultantId={userId}
+                variant={editingVariant}
                 onJumpToStep={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
+                onOpenInspector={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
+                onSimulateFromHere={() => setSimulatorOpen(true)}
+                onOpenHealth={() => setHealthOpen(true)}
               />
               <WhatsAppPreview 
                 step={steps.find(s => s.id === inspectorId) || null} 
