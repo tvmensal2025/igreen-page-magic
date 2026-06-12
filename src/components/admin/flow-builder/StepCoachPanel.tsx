@@ -149,6 +149,13 @@ export default function StepCoachPanel({
               onOpenInspector={onOpenInspector}
             />
 
+            {/* (3.b) Como o lead CHEGA aqui — grafo invertido */}
+            <EntradasSection
+              step={step}
+              steps={steps}
+              onJumpToStep={onJumpToStep}
+            />
+
             {/* (4) Diagnóstico vivo */}
             <DiagnosticoSection
               step={step}
