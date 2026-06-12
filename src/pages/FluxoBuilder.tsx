@@ -874,6 +874,7 @@ export default function FluxoBuilder() {
                 {/* Galeria de modelos da comunidade */}
                 <Tooltip>
 
+
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline"
@@ -1044,8 +1045,15 @@ export default function FluxoBuilder() {
           </div>
 
           {/* Toolbar principal e Lista de Passos */}
+          <StepListToolbar
+            query={listQuery}
+            onQueryChange={setListQuery}
+            typeFilter={typeFilter}
+            onToggleTypeFilter={toggleTypeFilter}
+          />
 
-            <div className="rounded-2xl border border-dashed bg-gradient-to-b from-muted/30 to-transparent p-10 text-center">
+          {steps.length === 0 ? (
+
               <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
                 <GitBranch className="h-7 w-7" />
               </div>
@@ -1365,6 +1373,14 @@ export default function FluxoBuilder() {
         flowId={flowId}
         defaultName={`Fluxo ${editingVariant}`}
       />
+    </main>
+    )}
+    </div>
+    </div>
+    </div>
+    );
+}
+
         </div>
       </div>
     </div>
