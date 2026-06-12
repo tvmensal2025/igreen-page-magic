@@ -129,7 +129,7 @@ export default function StepCoachPanel({
                 transicao ? "translate-y-1 opacity-0" : "translate-y-0 opacity-100"
               }`}
             >
-              <p className="text-sm">{falarEtapa(step, anteriorRef.current)}</p>
+              <p className="text-sm">{falarEtapa(step, anteriorSnap)}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Tipo: {stepTypeLabel(step.step_type)}
               </p>
