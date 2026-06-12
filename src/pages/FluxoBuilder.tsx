@@ -20,6 +20,7 @@ import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
 import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard";
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
+import StepCoachPanel from "@/components/admin/flow-builder/StepCoachPanel";
 import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalleryDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
@@ -310,6 +311,12 @@ export default function FluxoBuilder() {
             </div>
 
             <aside className="space-y-4">
+              <StepCoachPanel
+                step={steps.find(s => s.id === inspectorId) || null}
+                steps={steps}
+                validation={validation}
+                onJumpToStep={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
+              />
               <WhatsAppPreview 
                 step={steps.find(s => s.id === inspectorId) || null} 
                 steps={steps} 
