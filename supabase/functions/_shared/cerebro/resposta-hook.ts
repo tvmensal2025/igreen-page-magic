@@ -423,7 +423,28 @@ export async function responderComCerebro(
       return neutro(flag);
     }
 
-    const inbound = montarInbound(entrada);
+    // NUDGE INTERNO (Fase 2): o cron `process-followups` chama este hook com
+    // `inboundKind="nudge_interno"` para reaquecer um lead silente. Para o
+    // motor, equivale a um turno `no_input` (mesma porta de reaquecimento do
+    // `followup-hook`); o `nudgeHook` textual fica registrado em
+    // `ai_decisions` para auditoria — o Cérebro NÃO precisa do texto do hook
+    // como inbound, ele já lê o estado/fluxo e decide.
+    const ehNudgeInterno = entrada.inboundKind === "nudge_interno";
+    const inbound = ehNudgeInterno
+      ? ({ kind: "no_input" } as const)
+      : montarInbound(entrada);
+    if (ehNudgeInterno) {
+      try {
+        await supabase.from("ai_decisions").insert({
+          customer_id: customerId,
+          consultant_id: consultantId,
+          phase: "cerebro_resposta_nudge",
+          source: "cerebro_nudge_interno",
+          channel: entrada.channel ?? null,
+          ai_output: { nudgeHook: (entrada.nudgeHook ?? "").slice(0, 500) || null },
+        });
+      } catch (_) { /* best-effort */ }
+    }
     const capabilities = entrada.capabilities ??
       capabilitiesPadrao(entrada.channel ?? "evolution");
 
