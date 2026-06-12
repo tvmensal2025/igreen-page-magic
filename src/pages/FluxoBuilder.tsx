@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play, Lock, Unlock, LayoutTemplate, Send } from "lucide-react";
+import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play, Lock, Unlock, LayoutTemplate, Send, LayoutPanelLeft } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Switch } from "@/components/ui/switch";
@@ -40,102 +40,158 @@ import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
 
-const FlowDiagram = React.lazy(
-  () => import("@/components/admin/flow-builder/FlowDiagram"),
-);
-const FlowDiagramV2 = React.lazy(
-  () => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"),
-);
-const FlowSpreadsheet = React.lazy(
-  () => import("@/components/admin/flow-builder/FlowSpreadsheet"),
-);
-import FlowReviewPanel, { type ReviewResult } from "@/components/admin/flow-builder/FlowReviewPanel";
-
-function readUseV2(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    const v = window.localStorage.getItem("flow-diagram-v2");
-    return v === null ? true : v === "1";
-  } catch {
-    return true;
-  }
-}
-
-function readInitialViewMode(): ViewMode {
-  if (typeof window === "undefined") return "lista";
-  try {
-    const v = window.localStorage.getItem("flow-view-mode");
-    if (v === "diagrama" || v === "planilha" || v === "lista") return v;
-    return "lista";
-  } catch {
-    return "lista";
-  }
-}
+const FlowDiagramV2 = React.lazy(() => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"));
+const FlowSpreadsheet = React.lazy(() => import("@/components/admin/flow-builder/FlowSpreadsheet"));
 
 export default function FluxoBuilder() {
   const navigate = useNavigate();
   const confirm = useConfirm();
+  
+  // State
   const [userId, setUserId] = useState<string | null>(null);
-  const [consultantName, setConsultantName] = useState<string>("");
-  const [consultantPhoto, setConsultantPhoto] = useState<string>("");
-  const [consultantLevel, setConsultantLevel] = useState<string>("iGreen Energy");
+  const [consultantName, setConsultantName] = useState("");
+  const [consultantPhoto, setConsultantPhoto] = useState("");
+  const [consultantLevel, setConsultantLevel] = useState("iGreen Energy");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("pe:sidebar-collapsed") === "1";
-  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => 
+    typeof window !== "undefined" && window.localStorage.getItem("pe:sidebar-collapsed") === "1"
+  );
+  
   const [flowId, setFlowId] = useState<string | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [togglingSync, setTogglingSync] = useState(false);
-  const [stepsSourceFlowId, setStepsSourceFlowId] = useState<string | null>(null);
-  const isReadOnly = syncMode === "public";
   const [editingVariant, setEditingVariant] = useState<Variant>("A");
   const [existingVariants, setExistingVariants] = useState<Variant[]>(["A"]);
+  const [flowNames, setFlowNames] = useState<Record<string, string>>({});
+  
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspectorId, setInspectorId] = useState<string | null>(null);
-  const [inspectorTab, setInspectorTab] = useState<"conteudo" | "regras" | "midias" | "avancado">("conteudo");
-  const [pulseStepId, setPulseStepId] = useState<string | null>(null);
-  const [mediaCounts, setMediaCounts] = useState<Record<string, { audio: number; image: number; video: number }>>({});
-  const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [simulatorOpen, setSimulatorOpen] = useState(false);
-  const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<any>("conteudo");
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    const v = typeof window !== "undefined" ? window.localStorage.getItem("flow-view-mode") : "lista";
+    return (v === "diagrama" || v === "planilha" || v === "lista") ? v : "lista";
+  });
+
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [publishOpen, setPublishOpen] = useState(false);
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
-  const [reviewError, setReviewError] = useState<string | null>(null);
-  const [suggestingStepId, setSuggestingStepId] = useState<string | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
+  
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
-  const [viewMode, setViewModeState] = useState<ViewMode>(readInitialViewMode());
-  const [useV2, setUseV2State] = useState<boolean>(readUseV2);
-  const [panelHidden, setPanelHiddenState] = useState<boolean>(() => {
-    try { return window.localStorage.getItem("flow-panel-hidden") === "1"; } catch { return false; }
-  });
+  const [panelHidden, setPanelHidden] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
+  const [togglingSync, setTogglingSync] = useState(false);
+
   const { isNarrow } = useViewportWidth();
-  const diagramReadOnly = isNarrow;
+  const validation = useFlowValidation(steps);
+
   const setViewMode = useCallback((next: ViewMode) => {
     setViewModeState(next);
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("flow-view-mode", next);
-      }
-    } catch {}
+    localStorage.setItem("flow-view-mode", next);
   }, []);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // Helper hooks, handlers (addStep, deleteStep, etc) would go here
-  // Omitted for brevity: assuming they exist from previous state
+  // Handlers
+  const toggleSidebarCollapsed = () => {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    localStorage.setItem("pe:sidebar-collapsed", next ? "1" : "0");
+  };
 
-  if (loading) {
+  const loadData = useCallback(async (v: Variant) => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setUserId(user.id);
+
+    const { data: consultant } = await supabase.from("consultants").select("*").eq("id", user.id).maybeSingle();
+    if (consultant) {
+      setConsultantName(consultant.name || "");
+      setConsultantPhoto(consultant.photo_url || "");
+      setConsultantLevel(consultant.level || "iGreen Energy");
+    }
+
+    const { data: flow } = await supabase.from("bot_flows")
+      .select("*, bot_flow_steps(*)")
+      .eq("consultant_id", user.id)
+      .eq("variant", v)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (flow) {
+      setFlowId(flow.id);
+      setSyncMode(flow.sync_mode as any);
+      const mappedSteps = (flow.bot_flow_steps || []).map((s: any) => ({
+        ...s,
+        transitions: parseTransitions(s.transitions),
+        captures: parseCaptures(s.captures),
+        fallback: parseFallback(s.fallback, s.transitions)
+      })).sort((a: any, b: any) => a.position - b.position);
+      setSteps(mappedSteps);
+    } else {
+      setSteps([]);
+      setFlowId(null);
+    }
+    
+    const { data: allFlows } = await supabase.from("bot_flows")
+      .select("variant, name")
+      .eq("consultant_id", user.id)
+      .eq("is_active", true);
+    
+    if (allFlows) {
+      setExistingVariants(allFlows.map(f => f.variant as Variant));
+      const names: Record<string, string> = {};
+      allFlows.forEach(f => { names[f.variant] = f.name || `Fluxo ${f.variant}`; });
+      setFlowNames(names);
+    }
+
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadData(editingVariant); }, [editingVariant, loadData]);
+
+  const filteredSteps = useMemo(() => {
+    return steps.filter(s => {
+      if (typeFilter.size > 0 && !typeFilter.has(s.step_type)) return false;
+      if (!listQuery) return true;
+      const q = listQuery.toLowerCase();
+      return s.title.toLowerCase().includes(q) || (s.message_text || "").toLowerCase().includes(q);
+    });
+  }, [steps, listQuery, typeFilter]);
+
+  const patchStep = async (id: string, patch: Partial<Step>) => {
+    setSteps(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+    await supabase.from("bot_flow_steps").update(patch as any).eq("id", id);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setSteps(items => {
+      const oldIndex = items.findIndex(i => i.id === active.id);
+      const newIndex = items.findIndex(i => i.id === over.id);
+      const next = arrayMove(items, oldIndex, newIndex);
+      
+      // Update positions in DB
+      next.forEach((step, idx) => {
+        const pos = idx + 1;
+        if (step.position !== pos) {
+          supabase.from("bot_flow_steps").update({ position: pos }).eq("id", step.id).then();
+        }
+      });
+      
+      return next.map((s, i) => ({ ...s, position: i + 1 }));
+    });
+  };
+
+  if (loading && !steps.length) {
     return (
-      <div className="h-[100dvh] flex items-center justify-center">
+      <div className="h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -146,15 +202,16 @@ export default function FluxoBuilder() {
       <AppSidebar
         activeTab={"whatsapp" as AdminTabId}
         onTabChange={(tab) => navigate(`/admin?tab=${tab}`)}
-        consultantName={consultantName || "Consultor"}
+        consultantName={consultantName}
         consultantLevel={consultantLevel}
-        consultantPhoto={consultantPhoto || undefined}
+        consultantPhoto={consultantPhoto}
         open={sidebarOpen}
         onOpenChange={setSidebarOpen}
         collapsed={sidebarCollapsed}
-        onCollapse={collapseSidebar}
+        onCollapse={toggleSidebarCollapsed}
       />
-      <div className="flex-1 flex flex-col min-w-0">
+      
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <AppTopbar
           title="Construtor de Fluxos"
           subtitle="Monte o atendimento do WhatsApp · preview ao vivo"
@@ -162,6 +219,7 @@ export default function FluxoBuilder() {
           sidebarCollapsed={sidebarCollapsed}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
+        
         <div className="flex-1 min-h-0 overflow-y-auto bg-background">
           <header className="sticky top-0 z-20 border-b bg-card/80 backdrop-blur-md">
             {userId && (
@@ -171,35 +229,130 @@ export default function FluxoBuilder() {
                   existingVariants={existingVariants}
                   editingVariant={editingVariant}
                   onSelectVariant={setEditingVariant}
-                  onChanged={() => userId && reload(userId, editingVariant)}
+                  onChanged={() => loadData(editingVariant)}
                 />
               </div>
             )}
+
             <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-0">
                 <h2 className="text-sm font-semibold truncate flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
                     {editingVariant}
                   </span>
-                  <span>Fluxo {editingVariant}</span>
+                  <span>{flowNames[editingVariant] || VARIANT_LABEL[editingVariant]}</span>
                 </h2>
+                <p className="text-[10px] text-muted-foreground truncate opacity-80">
+                  {steps.length} passos · arraste para reordenar
+                </p>
               </div>
+
               <div className="flex items-center gap-1">
-                <ViewToggle value={viewMode} onChange={setViewMode} />
+                <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
+                <TooltipProvider delayDuration={150}>
+                  <div className="flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setGalleryOpen(true)}>
+                          <LayoutTemplate className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Galeria</TooltipContent>
+                    </Tooltip>
+                    
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setSimulatorOpen(true)} disabled={!steps.length}>
+                          <Play className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Simular</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TooltipProvider>
               </div>
             </div>
           </header>
-          
-          <main className="mx-auto grid gap-4 px-4 py-6 max-w-7xl">
-            <section className={viewMode === "lista" ? "space-y-4" : "hidden"}>
-              <div id="ai-preferences-section" className="mb-2">
-                <AiPreferencesCard consultantId={userId ?? ""} />
-              </div>
-              <div>Content List...</div>
-            </section>
+
+          <main className="mx-auto grid gap-6 px-4 py-6 max-w-7xl lg:grid-cols-[1fr_380px]">
+            {/* Left Column */}
+            <div className="min-w-0">
+              {viewMode === "lista" && (
+                <div className="space-y-4">
+                  <AiPreferencesCard consultantId={userId} />
+                  
+                  <StepListToolbar
+                    query={listQuery}
+                    onQueryChange={setListQuery}
+                    typeFilter={typeFilter}
+                    onToggleType={(t) => {
+                      const next = new Set(typeFilter);
+                      if (next.has(t)) next.delete(t); else next.add(t);
+                      setTypeFilter(next);
+                    }}
+                    onClear={() => { setListQuery(""); setTypeFilter(new Set()); }}
+                    total={steps.length}
+                    visible={filteredSteps.length}
+                  />
+
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={filteredSteps.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-1">
+                        {filteredSteps.map((s, i) => (
+                          <StepTimelineItem
+                            key={s.id}
+                            step={s}
+                            steps={steps}
+                            selected={inspectorId === s.id}
+                            isStart={i === 0 && !listQuery && typeFilter.size === 0}
+                            isLast={i === filteredSteps.length - 1}
+                            onSelect={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
+                            onEdit={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
+                            onDelete={() => {}}
+                            onDuplicate={() => {}}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                  
+                  <Button variant="outline" className="w-full border-dashed border-2 h-12" onClick={() => {}}>
+                    <Plus className="mr-2 h-4 w-4" /> Adicionar passo
+                  </Button>
+                </div>
+              )}
+
+              {viewMode === "diagrama" && (
+                <div className="h-[70vh] rounded-xl border bg-card overflow-hidden">
+                  <Suspense fallback={<div className="h-full flex items-center justify-center"><Loader2 className="animate-spin" /></div>}>
+                    <FlowDiagramV2 steps={steps} consultantId={userId || ""} onSelectStep={setInspectorId} />
+                  </Suspense>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Preview */}
+            <aside className="space-y-4">
+              <WhatsAppPreview steps={steps} consultantName={consultantName} currentStepId={inspectorId} />
+            </aside>
           </main>
         </div>
       </div>
+
+      {inspectorId && (
+        <StepInspector
+          step={steps.find(s => s.id === inspectorId) || null}
+          steps={steps}
+          consultantId={userId || ""}
+          variant={editingVariant}
+          initialTab={inspectorTab}
+          onClose={() => setInspectorId(null)}
+          onPatch={(patch) => patchStep(inspectorId, patch)}
+        />
+      )}
+
+      <FlowSimulator open={simulatorOpen} onOpenChange={setSimulatorOpen} steps={steps} consultantName={consultantName} />
+      <TemplateGalleryDialog open={galleryOpen} onOpenChange={setGalleryOpen} />
     </div>
   );
 }
