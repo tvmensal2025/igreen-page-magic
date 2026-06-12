@@ -69,15 +69,20 @@ export default function StepCoachPanel({
   const journey = useFlowJourney(steps, validation, { consultantId, variant });
 
   // Lembra o passo anterior para gerar saudação contextual ("Boa, agora vamos pro #4…").
+  // Importante: guardamos o anterior ANTES de atualizar o ref, para `falarEtapa`
+  // receber o passo de origem da troca (e não o atual).
   const anteriorRef = useRef<Step | null>(null);
+  const [anteriorSnap, setAnteriorSnap] = useState<Step | null>(null);
   const [transicao, setTransicao] = useState(false);
   useEffect(() => {
     if (step && anteriorRef.current?.id !== step.id) {
+      setAnteriorSnap(anteriorRef.current);
+      anteriorRef.current = step;
       setTransicao(true);
       const t = setTimeout(() => setTransicao(false), 280);
       return () => clearTimeout(t);
     }
-  }, [step?.id]);
+  }, [step?.id, step]);
 
   return (
     <Card className="border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
@@ -124,7 +129,7 @@ export default function StepCoachPanel({
                 transicao ? "translate-y-1 opacity-0" : "translate-y-0 opacity-100"
               }`}
             >
-              <p className="text-sm">{falarEtapa(step, anteriorRef.current)}</p>
+              <p className="text-sm">{falarEtapa(step, anteriorSnap)}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Tipo: {stepTypeLabel(step.step_type)}
               </p>
@@ -142,6 +147,13 @@ export default function StepCoachPanel({
               steps={steps}
               onJumpToStep={onJumpToStep}
               onOpenInspector={onOpenInspector}
+            />
+
+            {/* (3.b) Como o lead CHEGA aqui — grafo invertido */}
+            <EntradasSection
+              step={step}
+              steps={steps}
+              onJumpToStep={onJumpToStep}
             />
 
             {/* (4) Diagnóstico vivo */}
@@ -194,6 +206,67 @@ export default function StepCoachPanel({
     </Card>
   );
 }
+
+/* ─────────────────────────────────────────────────────────────────────── */
+
+// Calcula quem aponta para este passo (grafo invertido). Reusa getStepExits
+// para garantir que o "como chega" siga EXATAMENTE a mesma lógica do "para
+// onde vai" — botões, palavras-chave e padrão.
+function EntradasSection({
+  step,
+  steps,
+  onJumpToStep,
+}: {
+  step: Step;
+  steps: Step[];
+  onJumpToStep?: (id: string) => void;
+}) {
+  const entradas = steps
+    .filter((s) => s.id !== step.id && s.is_active)
+    .flatMap((origem) =>
+      getStepExits(origem, steps)
+        .filter((exit) => exit.destStep?.id === step.id)
+        .map((exit) => ({ origem, exit })),
+    );
+
+  return (
+    <section>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Como o lead chega aqui</p>
+      {entradas.length === 0 ? (
+        <div className="mt-1 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <span>
+            {step.position === 1
+              ? "Este é o ponto de partida — o lead começa por aqui."
+              : "Ninguém aponta pra esse passo. Ele está solto no fluxo."}
+          </span>
+        </div>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {entradas.map(({ origem, exit }, i) => (
+            <li key={`${origem.id}:${exit.id}:${i}`} className="rounded-md border border-border/60 bg-background/50 p-2 text-xs">
+              <button
+                type="button"
+                onClick={() => onJumpToStep?.(origem.id)}
+                className="text-left hover:underline"
+              >
+                <span className="font-medium text-primary">#{origem.position} {origem.title}</span>
+                <span className="text-muted-foreground">
+                  {" "}— {exit.kind === "button"
+                    ? `quando tocam em "${exit.label}"`
+                    : exit.kind === "keyword"
+                      ? `quando escrevem "${exit.label}"`
+                      : "como caminho padrão"}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 
 /* ─────────────────────────────────────────────────────────────────────── */
 
