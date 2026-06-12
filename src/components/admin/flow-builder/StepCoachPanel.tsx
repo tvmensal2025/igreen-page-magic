@@ -149,6 +149,13 @@ export default function StepCoachPanel({
               onOpenInspector={onOpenInspector}
             />
 
+            {/* (3.a) Próximos saltos — cadeia provável até 3 passos à frente */}
+            <ProximosSaltosSection
+              step={step}
+              steps={steps}
+              onJumpToStep={onJumpToStep}
+            />
+
             {/* (3.b) Como o lead CHEGA aqui — grafo invertido */}
             <EntradasSection
               step={step}
