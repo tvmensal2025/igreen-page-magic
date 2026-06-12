@@ -311,6 +311,12 @@ export default function FluxoBuilder() {
             </div>
 
             <aside className="space-y-4">
+              <StepCoachPanel
+                step={steps.find(s => s.id === inspectorId) || null}
+                steps={steps}
+                validation={validation}
+                onJumpToStep={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
+              />
               <WhatsAppPreview 
                 step={steps.find(s => s.id === inspectorId) || null} 
                 steps={steps} 
