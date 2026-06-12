@@ -6,7 +6,7 @@
 // the closure variables are now properties of `ctx`.
 
 import { resolveFlowId } from "../../_shared/resolve-flow.ts";
-import { runFluxoBAI } from "../../_shared/fluxo-b-ai.ts";
+// runFluxoBAI removido — Cérebro IA responde via responderComCerebro no webhook (vendedora apagada).
 import {
   validateCustomerForPortal,
   isPlaceholderEmail,
@@ -624,46 +624,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   } = ctx;
 
   // ═══════════════════════════════════════════════════════════════════
-  // 🤖 FLUXO B — IA livre conversacional (espelho do whapi-webhook).
+  // 🧠 FLUXO B — desativado. Cérebro IA (responderComCerebro) já respondeu
+  // antes de chegar aqui (evolution-webhook/index.ts). Vendedora apagada.
   // ═══════════════════════════════════════════════════════════════════
-  try {
-    const _fbVariant = String((customer as any)?.flow_variant || "").toUpperCase();
-    const _fbStep = String((customer as any)?.conversation_step || "");
-    const _fbWaitingMedia = _fbStep === "aguardando_conta" || _fbStep === "aguardando_documento";
-    if (
-      _fbVariant === "B" &&
-      !isFile && !hasImage && !hasDocument &&
-      !_fbWaitingMedia &&
-      messageText && messageText.trim().length > 0
-    ) {
-      console.log(`[fluxo-b] dispatching customer=${customer.id} step=${_fbStep}`);
-      // Timeout duro de 25s: se a IA travar, cai pro fluxo legado (silêncio).
-      const r = await Promise.race([
-        runFluxoBAI({ supabase, customerId: customer.id, inboundText: messageText, customer }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("fluxo_b_timeout_25s")), 25_000),
-        ),
-      ]);
-      try { await ctx.sender.sendText(remoteJid, r.reply); } catch (e) {
-        console.warn(`[fluxo-b] sendText falhou:`, (e as any)?.message);
-      }
-      await supabase.from("conversations").insert({
-        customer_id: customer.id,
-        message_direction: "outbound",
-        message_text: r.reply,
-        message_type: "text",
-        conversation_step: r.conversationStepUpdate || _fbStep || "fluxo_b_ai",
-      });
-      return { reply: "", updates: {} };
-    }
-  } catch (e) {
-    // NUNCA fall-through pro fluxo A/D — leads B ficam com a Vendedora.
-    console.error(`[fluxo-b] erro — NÃO faz fallback p/ A/D:`, (e as Error).message);
-    try {
-      await ctx.sender.sendText(remoteJid, "Tive uma instabilidade aqui agora. Pode repetir, por favor?");
-    } catch (_) { /* segue */ }
-    return { reply: "", updates: {} };
-  }
+
 
   // ═══════════════════════════════════════════════════════════════════
   // 🛟 respondAndReentry — fallback universal pra mensagens fora do esperado.
