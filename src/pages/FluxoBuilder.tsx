@@ -4,12 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { ArrowLeft, Plus, AlertTriangle, ExternalLink, Loader2, Sparkles, Wand2, GitBranch, BookOpen, Play, Lock, Unlock, LayoutTemplate, Send, LayoutPanelLeft } from "lucide-react";
-import { toast } from "sonner";
-import { useConfirm } from "@/components/ui/confirm-dialog";
-import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
+import { Plus, Loader2, Play, LayoutTemplate } from "lucide-react";
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
 } from "@dnd-kit/core";
@@ -21,50 +16,40 @@ import StepTimelineItem from "@/components/admin/flow-builder/StepTimelineItem";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
 import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
-import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDialog";
-import CreateFlowFromTemplateDialog from "@/components/admin/flow-builder/CreateFlowFromTemplateDialog";
 import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard";
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
-import FluxoBEditor from "@/components/admin/flow-builder/FluxoBEditor";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
-import PublishTemplateDialog from "@/components/admin/flow-builder/PublishTemplateDialog";
 import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalleryDialog";
-import FlowHealthDialog from "@/components/admin/flow-builder/FlowHealthDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
-  Step, Variant, ALL_VARIANTS, VARIANT_LABEL,
+  Step, Variant, VARIANT_LABEL,
   parseTransitions, parseCaptures, parseFallback,
 } from "@/components/admin/flow-builder/flowTypes";
 import ViewToggle, { type ViewMode } from "@/components/admin/flow-builder/ViewToggle";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const FlowDiagramV2 = React.lazy(() => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"));
-const FlowSpreadsheet = React.lazy(() => import("@/components/admin/flow-builder/FlowSpreadsheet"));
 
 export default function FluxoBuilder() {
   const navigate = useNavigate();
-  const confirm = useConfirm();
   
-  // State
   const [userId, setUserId] = useState<string | null>(null);
   const [consultantName, setConsultantName] = useState("");
   const [consultantPhoto, setConsultantPhoto] = useState("");
-  const [consultantLevel, setConsultantLevel] = useState("iGreen Energy");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => 
     typeof window !== "undefined" && window.localStorage.getItem("pe:sidebar-collapsed") === "1"
   );
   
-  const [flowId, setFlowId] = useState<string | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingVariant, setEditingVariant] = useState<Variant>("A");
   const [existingVariants, setExistingVariants] = useState<Variant[]>(["A"]);
   const [flowNames, setFlowNames] = useState<Record<string, string>>({});
   
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<any>("conteudo");
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
@@ -74,16 +59,8 @@ export default function FluxoBuilder() {
 
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
-  const [healthOpen, setHealthOpen] = useState(false);
-  const [publishOpen, setPublishOpen] = useState(false);
-  const [createFromTemplateOpen, setCreateFromTemplateOpen] = useState(false);
-  
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
-  const [panelHidden, setPanelHidden] = useState(false);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [syncMode, setSyncMode] = useState<"public" | "custom" | null>(null);
-  const [togglingSync, setTogglingSync] = useState(false);
 
   const { isNarrow } = useViewportWidth();
   const validation = useFlowValidation(steps);
@@ -95,7 +72,6 @@ export default function FluxoBuilder() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // Handlers
   const toggleSidebarCollapsed = () => {
     const next = !sidebarCollapsed;
     setSidebarCollapsed(next);
@@ -112,7 +88,6 @@ export default function FluxoBuilder() {
     if (consultant) {
       setConsultantName(consultant.name || "");
       setConsultantPhoto(consultant.photo_url || "");
-      setConsultantLevel(consultant.level || "iGreen Energy");
     }
 
     const { data: flow } = await supabase.from("bot_flows")
@@ -123,8 +98,6 @@ export default function FluxoBuilder() {
       .maybeSingle();
 
     if (flow) {
-      setFlowId(flow.id);
-      setSyncMode(flow.sync_mode as any);
       const mappedSteps = (flow.bot_flow_steps || []).map((s: any) => ({
         ...s,
         transitions: parseTransitions(s.transitions),
@@ -134,7 +107,6 @@ export default function FluxoBuilder() {
       setSteps(mappedSteps);
     } else {
       setSteps([]);
-      setFlowId(null);
     }
     
     const { data: allFlows } = await supabase.from("bot_flows")
@@ -163,29 +135,13 @@ export default function FluxoBuilder() {
     });
   }, [steps, listQuery, typeFilter]);
 
-  const patchStep = async (id: string, patch: Partial<Step>) => {
-    setSteps(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
-    await supabase.from("bot_flow_steps").update(patch as any).eq("id", id);
-  };
-
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
     setSteps(items => {
       const oldIndex = items.findIndex(i => i.id === active.id);
       const newIndex = items.findIndex(i => i.id === over.id);
-      const next = arrayMove(items, oldIndex, newIndex);
-      
-      // Update positions in DB
-      next.forEach((step, idx) => {
-        const pos = idx + 1;
-        if (step.position !== pos) {
-          supabase.from("bot_flow_steps").update({ position: pos }).eq("id", step.id).then();
-        }
-      });
-      
-      return next.map((s, i) => ({ ...s, position: i + 1 }));
+      return arrayMove(items, oldIndex, newIndex).map((s, i) => ({ ...s, position: i + 1 }));
     });
   };
 
@@ -203,7 +159,6 @@ export default function FluxoBuilder() {
         activeTab={"whatsapp" as AdminTabId}
         onTabChange={(tab) => navigate(`/admin?tab=${tab}`)}
         consultantName={consultantName}
-        consultantLevel={consultantLevel}
         consultantPhoto={consultantPhoto}
         open={sidebarOpen}
         onOpenChange={setSidebarOpen}
@@ -275,12 +230,10 @@ export default function FluxoBuilder() {
           </header>
 
           <main className="mx-auto grid gap-6 px-4 py-6 max-w-7xl lg:grid-cols-[1fr_380px]">
-            {/* Left Column */}
             <div className="min-w-0">
               {viewMode === "lista" && (
                 <div className="space-y-4">
                   <AiPreferencesCard consultantId={userId} />
-                  
                   <StepListToolbar
                     query={listQuery}
                     onQueryChange={setListQuery}
@@ -315,8 +268,7 @@ export default function FluxoBuilder() {
                       </div>
                     </SortableContext>
                   </DndContext>
-                  
-                  <Button variant="outline" className="w-full border-dashed border-2 h-12" onClick={() => {}}>
+                  <Button variant="outline" className="w-full border-dashed border-2 h-12">
                     <Plus className="mr-2 h-4 w-4" /> Adicionar passo
                   </Button>
                 </div>
@@ -325,15 +277,36 @@ export default function FluxoBuilder() {
               {viewMode === "diagrama" && (
                 <div className="h-[70vh] rounded-xl border bg-card overflow-hidden">
                   <Suspense fallback={<div className="h-full flex items-center justify-center"><Loader2 className="animate-spin" /></div>}>
-                    <FlowDiagramV2 steps={steps} consultantId={userId || ""} onSelectStep={setInspectorId} />
+                    <FlowDiagramV2
+                      steps={steps}
+                      selectedId={inspectorId}
+                      consultantId={userId || ""}
+                      consultantName={consultantName}
+                      consultantSlug={""}
+                      flowId={null}
+                      editingVariant={editingVariant}
+                      mediaCounts={{}}
+                      validation={validation}
+                      readOnly={isNarrow}
+                      onSelectStep={setInspectorId}
+                      onOpenInspector={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
+                      onPatchStep={async () => {}}
+                      onAddStep={async () => null}
+                      onDuplicateStep={async () => {}}
+                      onDeleteStep={async () => {}}
+                      onAutoFixAll={async () => {}}
+                    />
                   </Suspense>
                 </div>
               )}
             </div>
 
-            {/* Right Column: Preview */}
             <aside className="space-y-4">
-              <WhatsAppPreview steps={steps} consultantName={consultantName} currentStepId={inspectorId} />
+              <WhatsAppPreview 
+                step={steps.find(s => s.id === inspectorId) || null} 
+                steps={steps} 
+                consultantName={consultantName} 
+              />
             </aside>
           </main>
         </div>
@@ -347,11 +320,17 @@ export default function FluxoBuilder() {
           variant={editingVariant}
           initialTab={inspectorTab}
           onClose={() => setInspectorId(null)}
-          onPatch={(patch) => patchStep(inspectorId, patch)}
+          onPatch={() => {}}
         />
       )}
 
-      <FlowSimulator open={simulatorOpen} onOpenChange={setSimulatorOpen} steps={steps} consultantName={consultantName} />
+      <FlowSimulator 
+        open={simulatorOpen} 
+        onOpenChange={setSimulatorOpen} 
+        steps={steps} 
+        consultantId={userId}
+        consultantName={consultantName} 
+      />
       <TemplateGalleryDialog open={galleryOpen} onOpenChange={setGalleryOpen} />
     </div>
   );
