@@ -20,11 +20,13 @@ export default function JourneyStepper({ stages, focoId, onFocus }: Props) {
       <ol className="flex items-center gap-1">
         {stages.map((stage, i) => {
           const ativo = stage.id === focoId;
-          const Icon = stage.status === "feito"
-            ? Check
-            : stage.status === "em_andamento"
-              ? Loader2
-              : Circle;
+          const Icon = ativo
+            ? Circle
+            : stage.status === "feito"
+              ? Check
+              : stage.status === "em_andamento"
+                ? Loader2
+                : Circle;
           return (
             <li key={stage.id} className="flex items-center gap-1">
               <button
