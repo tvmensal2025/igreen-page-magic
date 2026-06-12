@@ -79,11 +79,8 @@ verify_jwt = false
 [functions.ai-transcribe-media]
 verify_jwt = false
 
-[functions.ai-sales-agent]
-verify_jwt = false
 
-[functions.ai-followup-cron]
-verify_jwt = false
+
 
 [functions.ad-creative-qa]
 verify_jwt = false
