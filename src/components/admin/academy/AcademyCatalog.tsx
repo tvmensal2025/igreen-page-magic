@@ -187,57 +187,71 @@ function ModuleBlock({
 
   return (
     <div
-      className={`rounded-xl overflow-hidden border transition-colors
-                  ${open ? "border-white/20" : "border-white/10"} bg-[#16161b]`}
+      className="overflow-hidden transition-colors"
+      style={{
+        background: SURFACE,
+        border: `1px solid ${open ? GOLD : "rgba(245,240,224,.10)"}`,
+        borderRadius: 3,
+      }}
     >
       {/* cabeçalho clicável */}
       <button
-        className="w-full flex items-center gap-3 p-3 sm:p-4 text-left
-                   hover:bg-white/5 transition-colors"
+        className="w-full flex items-center gap-3 p-3 sm:p-4 text-left transition-colors hover:bg-[rgba(245,240,224,.04)]"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
       >
         <span
-          className="w-8 h-8 rounded-lg flex items-center justify-center
-                     text-xs font-black text-white shrink-0"
-          style={{ background: cat.color }}
+          className="w-9 h-9 flex items-center justify-center text-xs font-bold shrink-0"
+          style={{
+            background: open ? GOLD : "transparent",
+            color: open ? EMERALD_DP : GOLD,
+            border: `1px solid ${GOLD}`,
+            borderRadius: 1,
+            fontFamily: FONT_DISPLAY,
+          }}
         >
-          {modIndex + 1}
+          {String(modIndex + 1).padStart(2, "0")}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-white truncate">{mod.title}</p>
+          <p className="text-sm font-semibold truncate"
+             style={{ color: CREAM, fontFamily: FONT_DISPLAY }}>
+            {mod.title}
+          </p>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[11px] text-white/40">{total} aula{total !== 1 ? "s" : ""}</span>
+            <span className="text-[10px] tracking-wider uppercase"
+                  style={{ color: "rgba(245,240,224,.4)" }}>
+              {total} aula{total !== 1 ? "s" : ""}
+            </span>
             {mod.certificate && (
-              <span className="text-[9px] font-black text-yellow-400 flex items-center gap-0.5">
+              <span className="text-[9px] font-bold tracking-wider uppercase flex items-center gap-0.5"
+                    style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
                 <Award className="w-2.5 h-2.5" /> Certificado
               </span>
             )}
             <span
-              className={`text-[11px] font-bold ml-auto ${allDone ? "text-[#00A859]" : "text-white/30"}`}
+              className="text-[11px] font-bold ml-auto"
+              style={{ color: allDone ? GOLD : "rgba(245,240,224,.3)", fontFamily: FONT_DISPLAY }}
             >
               {done}/{total}
             </span>
           </div>
         </div>
         <ChevronDown
-          className={`w-4 h-4 text-white/40 shrink-0 transition-transform duration-200
-                      ${open ? "rotate-180" : ""}`}
+          className="w-4 h-4 shrink-0 transition-transform duration-200"
+          style={{ color: GOLD, transform: open ? "rotate(180deg)" : undefined }}
         />
       </button>
 
-      {/* mini barra de progresso */}
-      <div className="h-[3px] bg-white/5">
+      {/* mini barra */}
+      <div className="h-[2px]" style={{ background: "rgba(245,240,224,.08)" }}>
         <div
-          className="h-full bg-[#00A859] transition-all duration-500"
-          style={{ width: trackW }}
+          className="h-full transition-all duration-500"
+          style={{ width: trackW, background: `linear-gradient(90deg, ${EMERALD}, ${GOLD})` }}
         />
       </div>
 
-      {/* conteúdo aberto: carrossel + botão prova */}
       {open && (
         <div>
-          {/* carrossel horizontal */}
           <div
             className="flex gap-3 overflow-x-auto px-3 pt-3 pb-2
                        scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent"
@@ -251,7 +265,6 @@ function ModuleBlock({
                   <LessonCard
                     lesson={l}
                     num={li + 1}
-                    color={cat.color}
                     prog={prog}
                     onOpen={() => onOpenLesson(gi >= 0 ? gi : 0)}
                   />
@@ -260,16 +273,19 @@ function ModuleBlock({
             })}
           </div>
 
-          {/* botão prova */}
           {hasQuiz && (
             <div className="px-3 pb-3 pt-1">
               <button
                 onClick={() => onOpenQuiz(quizKey)}
-                className={`w-full py-3 rounded-xl text-sm font-black transition-colors
-                            flex items-center justify-center gap-2
-                            ${exam?.passed
-                              ? "bg-[#00A859] text-white"
-                              : "border border-dashed border-[#00A859]/50 bg-[#00A859]/8 text-[#00A859] hover:bg-[#00A859]/15"}`}
+                className="w-full py-3 text-sm font-bold transition-colors
+                           flex items-center justify-center gap-2 uppercase tracking-wider"
+                style={{
+                  background: exam?.passed ? GOLD : "transparent",
+                  color: exam?.passed ? EMERALD_DP : GOLD,
+                  border: `1px ${exam?.passed ? "solid" : "dashed"} ${GOLD}`,
+                  borderRadius: 2,
+                  fontFamily: FONT_DISPLAY,
+                }}
               >
                 {exam?.passed
                   ? <><Award className="w-4 h-4" /> Aprovado · {exam.score}%</>
