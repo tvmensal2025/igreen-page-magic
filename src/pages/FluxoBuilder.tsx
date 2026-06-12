@@ -838,37 +838,35 @@ export default function FluxoBuilder() {
         />
         <div className="flex-1 min-h-0 overflow-y-auto bg-background">
           {/* Header — limpo e profissional */}
-          <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
+          <header className="sticky top-0 z-20 border-b bg-card/80 backdrop-blur-md">
+            {/* Faixa 1: Distribuição entre variantes (ativar/pausar/criar) — sempre no topo */}
+            {userId && (
+              <div className="pt-3">
+                <VariantDistributionBar
+                  consultantId={userId}
+                  existingVariants={existingVariants}
+                  editingVariant={editingVariant}
+                  onSelectVariant={setEditingVariant}
+                  onChanged={() => userId && reload(userId, editingVariant)}
+                />
+              </div>
+            )}
 
-        {/* Faixa 1: Distribuição entre variantes (ativar/pausar/criar) — sempre no topo */}
-        {userId && (
-          <div className="pt-3">
-            <VariantDistributionBar
-              consultantId={userId}
-              existingVariants={existingVariants}
-              editingVariant={editingVariant}
-              onSelectVariant={setEditingVariant}
-              onChanged={() => userId && reload(userId, editingVariant)}
-            />
-          </div>
-        )}
-
-        {/* Faixa 2: contexto do fluxo + ações principais. O título e a
-            navegação já vivem na topbar da plataforma — aqui fica só o
-            contexto (qual fluxo, quantos passos) e as ações. */}
-        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-semibold truncate">
-              Fluxo {editingVariant}
-            </h2>
-          </div>
-
-
-
-
-
-
-
+            {/* Faixa 2: contexto do fluxo + ações principais */}
+            <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-semibold truncate flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
+                    {editingVariant}
+                  </span>
+                  <span>
+                    {flowNames?.[editingVariant] || VARIANT_LABEL[editingVariant].replace(/^Fluxo\s+[A-E]\s*/, "")}
+                  </span>
+                </h2>
+                <p className="text-[10px] text-muted-foreground truncate opacity-80">
+                  {steps.length} {steps.length === 1 ? "passo" : "passos"} · arraste para reordenar
+                </p>
+              </div>
 
 
 
@@ -890,23 +888,24 @@ export default function FluxoBuilder() {
 
 
 
-              <span className="ml-1 font-normal text-muted-foreground">
-                — {VARIANT_LABEL[editingVariant].replace(/^Fluxo\s+[A-E]\s*/, "")}
-              </span>
-            </h2>
-            <p className="text-xs text-muted-foreground truncate">
-              {steps.length} {steps.length === 1 ? "passo" : "passos"} · arraste para reordenar e veja o preview ao vivo
-            </p>
-          </div>
+
+
+
+
+
+
+
+
           <div className="flex items-center gap-1">
             <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
-
             <TooltipProvider delayDuration={150}>
               <div className="flex items-center gap-1">
 
+          </div>
                 {/* Galeria de modelos da comunidade */}
                 <Tooltip>
-                <TooltipTrigger asChild>
+                  <TooltipTrigger asChild>
+
 
                   <Button
                     variant="outline"
@@ -1397,13 +1396,14 @@ export default function FluxoBuilder() {
         flowId={flowId}
         defaultName={`Fluxo ${editingVariant}`}
       />
-        </main>
-      )}
-        </div>
-      </div>
+    </main>
+    )}
     </div>
-  );
+  </div>
+</div>
+);
 }
+
 
 
 
