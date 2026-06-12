@@ -333,3 +333,51 @@ for (const flagLigado of ["canary", "on"] as FlowEngineV3Flag[]) {
     );
   }
 }
+
+// ─── Fase 2 (migração Vendedora→Cérebro): nudge interno ─────────────────────
+//
+// Quando o cron `process-followups` chama o hook com
+// `inboundKind="nudge_interno"`, o turno é traduzido para `no_input` (mesma
+// porta de reaquecimento que o `followup-hook.ts` já usa). O `nudgeHook`
+// textual é metadata para auditoria — NÃO entra como `text` no motor, para
+// evitar que o Cérebro responda achando que o lead falou algo.
+
+Deno.test("Fase 2: nudge_interno é tratado como `no_input` (não vira `text`)", async () => {
+  const { deps, chamadas } = montarDeps({ flag: "on" });
+  const r = await responderComCerebro(entradaBase({
+    deps,
+    inboundKind: "nudge_interno",
+    inboundText: "lead silente há 24h",
+    nudgeHook: "reaqueça com prova social",
+  }));
+
+  assertEquals(r.respondeu, true);
+  assertEquals(chamadas.processarTurnoChamado, 1);
+  assertEquals(
+    chamadas.ultimoInbound?.kind,
+    "no_input",
+    "nudge_interno deve virar no_input para o Cérebro (não `text`)",
+  );
+});
+
+Deno.test("Fase 2: nudge_interno sem hook ainda funciona (hook é opcional)", async () => {
+  const { deps, chamadas } = montarDeps({ flag: "canary" });
+  const r = await responderComCerebro(entradaBase({
+    deps,
+    inboundKind: "nudge_interno",
+    inboundText: null,
+  }));
+  assertEquals(r.respondeu, true);
+  assertEquals(chamadas.ultimoInbound?.kind, "no_input");
+});
+
+Deno.test("Fase 2: nudge_interno em `off` NÃO responde (cai no caminho atual)", async () => {
+  const { deps, chamadas } = montarDeps({ flag: "off" });
+  const r = await responderComCerebro(entradaBase({
+    deps,
+    inboundKind: "nudge_interno",
+    nudgeHook: "reaqueça",
+  }));
+  assertEquals(r.respondeu, false);
+  assertEquals(chamadas.processarTurnoChamado, 0);
+});
