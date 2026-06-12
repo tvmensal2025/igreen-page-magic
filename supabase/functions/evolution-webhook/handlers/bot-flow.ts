@@ -2178,7 +2178,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         : { data: null };
       const cfg = cfgPrivate || cfgGlobal;
 
-      const useSalesAi = cfg?.enabled !== false && cfg?.handoff_rules?.use_sales_ai === true;
+      const useSalesAi = false; // vendedora apagada — Cérebro IA responde no webhook antes deste handler
       if (useSalesAi) {
         // 🔄 Persiste updates pendentes ANTES de chamar a IA, senão o
         // ai-sales-agent re-busca o customer do banco e lê valores stale
