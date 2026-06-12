@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { Plus, Loader2, Play, LayoutTemplate, TrendingUp } from "lucide-react";
+import { Plus, Loader2, Play, LayoutTemplate, TrendingUp, GraduationCap } from "lucide-react";
 
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
@@ -240,6 +240,14 @@ export default function FluxoBuilder() {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Simular</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setTourOpen(true)}>
+                          <GraduationCap className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Tour guiado</TooltipContent>
                     </Tooltip>
                   </div>
                 </TooltipProvider>
