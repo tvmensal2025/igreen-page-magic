@@ -1,19 +1,19 @@
-// Fluxo B — IA livre conversacional.
+// Vendedora APAGADA — este arquivo é um stub de compatibilidade.
 //
-// Este módulo é APENAS um wrapper fino para `runVendedoraV2`. Todo o
-// caminho legacy (nudge manual, FLUXO_B_TOOLS, callWithTools, system prompt
-// próprio, fallback profissional, sanitizeReply local) foi REMOVIDO porque
-// estava causando duplicação e mistura com o V3 step engine.
+// O caminho conversacional agora é 100% Cérebro IA (ver
+// `_shared/cerebro/resposta-hook.ts` no whapi/evolution webhooks). Este
+// `runFluxoBAI` só é invocado em 3 situações remanescentes:
 //
-// Regras:
-// - Variant B = Vendedora V2. Sem exceção, sem fallback para o V3.
-// - Nudge interno do worker `process-followups`: vira mensagem sintética
-//   prefixada `[nudge_interno]` no inboundText. A Vendedora a trata como
-//   turno novo (sem mensagem do lead) e decide como reaquecer.
-// - Memória, RAG, fallback determinístico, sanitizer: tudo já vive dentro
-//   da Vendedora V2.
-
-import { runVendedoraV2 } from "./vendedora/index.ts";
+//   1. `whapi-webhook/handlers/bot-flow.ts` / `evolution-webhook/handlers/bot-flow.ts`
+//      — fallback quando o Cérebro NÃO assumiu o turno (cérebro respondeu
+//      false). Como `cerebro_ativo='on'` é o default global, isso só ocorre
+//      se o Cérebro tiver erro de runtime, e o webhook já tem fail-soft.
+//   2. `process-followups` — nudge interno de reaquecimento.
+//   3. `fluxo-b-ai/index.ts` edge (painel admin "Testar com lead simulado").
+//
+// Em todos os casos devolvemos uma resposta determinística curta e segura.
+// Quando a Onda B portar nudge + tester pro Cérebro, este arquivo e seus
+// callers podem ser removidos.
 
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
@@ -26,7 +26,6 @@ export interface FluxoBRunInput {
   customer?: any;
   // deno-lint-ignore no-explicit-any
   consultant?: any;
-  // Nudge interno do worker de follow-up. Vira marcador no inboundText.
   nudgeHook?: string | null;
 }
 
@@ -44,40 +43,28 @@ export interface FluxoBRunResult {
   debug?: any;
 }
 
+const NAME_FROM_HOOK = (hook?: string | null) => (hook || "").trim().slice(0, 60);
+
 export async function runFluxoBAI(input: FluxoBRunInput): Promise<FluxoBRunResult> {
-  const { supabase, customerId } = input;
+  const started = Date.now();
+  const hook = NAME_FROM_HOOK(input.nudgeHook);
+  const isNudge = hook.length > 0;
 
-  // Recarrega customer (precisamos do conversation_summary fresco).
-  let customer = input.customer;
-  if (customerId && customerId !== "00000000-0000-0000-0000-000000000000") {
-    const { data } = await supabase.from("customers").select("*").eq("id", customerId).maybeSingle();
-    if (data) customer = data;
-  }
-  if (!customer) throw new Error(`[fluxo-b-ai] customer ${customerId} not found`);
-
-  // Nudge interno: marca o inboundText para a Vendedora reconhecer.
-  const hook = (input.nudgeHook || "").trim();
-  const inboundText = hook
-    ? `[nudge_interno hook="${hook.slice(0, 200)}"] (sem mensagem nova do lead — reaqueça)`
-    : input.inboundText;
-
-  const v = await runVendedoraV2({
-    supabase,
-    customerId,
-    inboundText,
-    customer,
-    consultant: input.consultant,
-  });
+  // Mensagem segura, curta, com CTA — sem promessas. O Cérebro é a fonte
+  // de verdade do diálogo; aqui só seguramos o turno sem quebrar a UX.
+  const reply = isNudge
+    ? "Oi! Voltando aqui pra continuar nosso papo — ainda quer simular sua economia de luz?"
+    : "Recebi sua mensagem. Pode me confirmar rapidinho como posso te ajudar?";
 
   return {
-    reply: v.reply,
-    toolsApplied: v.toolsApplied,
-    conversationStepUpdate: v.conversationStepUpdate,
-    shouldHandoff: v.shouldHandoff,
-    modelUsed: v.modelUsed,
-    latencyMs: v.latencyMs,
-    customerUpdates: v.customerUpdates,
-    variantId: hook ? "b.v2.nudge" : "b.v2",
-    debug: v.debug,
+    reply,
+    toolsApplied: [],
+    conversationStepUpdate: null,
+    shouldHandoff: false,
+    modelUsed: "stub.vendedora-retired",
+    latencyMs: Date.now() - started,
+    customerUpdates: {},
+    variantId: isNudge ? "stub.nudge" : "stub.reply",
+    debug: { reason: "vendedora_apagada", hook },
   };
 }

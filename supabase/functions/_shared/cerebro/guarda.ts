@@ -53,7 +53,7 @@ import type { CustomerSnapshot } from "../engine/types.ts";
 import { traduzirComGlossario } from "./glossario.ts";
 
 // REÚSO (Requisito 9.7): crítico de qualidade por IA da Vendedora_Atual.
-import { criticar } from "../vendedora/critico.ts";
+import { criticar } from "./comum/critico.ts";
 // REÚSO (Requisito 9.7): travas estruturais determinísticas já existentes.
 import { TRAVA_POR_ETAPA, validarResposta } from "./comum/templates.ts";
 import type { Etapa, PerfilOutput, PlannerOutput } from "./comum/types.ts";

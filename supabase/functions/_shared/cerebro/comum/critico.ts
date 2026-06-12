@@ -1,4 +1,5 @@
-// Camada 5 — Crítico. Valida resposta antes de enviar.
+// Crítico de qualidade por IA — portado de vendedora/critico.ts antes de
+// apagar a vendedora. Valida resposta antes de enviar.
 
 import { chat } from "./gateway.ts";
 import type { CriticoOutput, PerfilOutput, PlannerOutput } from "./types.ts";
@@ -58,7 +59,6 @@ ${args.texto}`;
       sugestao: parsed.sugestao ? String(parsed.sugestao).slice(0, 800) : undefined,
     };
   } catch (e) {
-    // V2 hardening: silêncio do crítico NÃO é mais aprovação automática.
     return { aprovado: false, problemas: [`critico_falhou:${(e as Error).message.slice(0,80)}`] };
   }
 }
