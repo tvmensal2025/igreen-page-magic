@@ -237,12 +237,8 @@ export default function FluxoBuilder() {
   }, []);
 
   // task 10.2 — `viewMode` controla Lista ↔ Diagrama ↔ Planilha (R1.1).
-  // 2026-06-10: por decisão de produto, só o Modo_Lista é exposto. Diagrama e
-  // Planilha foram considerados ruído para o uso real e ficam guardados (os
-  // renders condicionais permanecem no arquivo, mas inalcançáveis). Para
-  // reativar, troque o estado abaixo por `useState<ViewMode>(readInitialViewMode)`
-  // e reexponha o `<ViewToggle>` no header.
-  const [viewMode, setViewModeState] = useState<ViewMode>("lista");
+  const [viewMode, setViewModeState] = useState<ViewMode>(readInitialViewMode());
+
   const [useV2, setUseV2State] = useState<boolean>(readUseV2);
   const setUseV2 = useCallback((next: boolean) => {
     setUseV2State(next);
@@ -871,8 +867,11 @@ export default function FluxoBuilder() {
               {steps.length} {steps.length === 1 ? "passo" : "passos"} · arraste para reordenar e veja o preview ao vivo
             </p>
           </div>
-          <TooltipProvider delayDuration={150}>
-            <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1">
+            {/* Toggle de visualização (Lista/Diagrama/Planilha) */}
+            <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
+            <TooltipProvider delayDuration={150}>
+
               {/* Galeria de modelos da comunidade */}
               <Tooltip>
                 <TooltipTrigger asChild>
