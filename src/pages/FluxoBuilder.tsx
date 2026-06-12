@@ -1375,7 +1375,6 @@ export default function FluxoBuilder() {
   );
 }
 
-}
 
 
 
