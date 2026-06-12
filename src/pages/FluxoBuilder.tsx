@@ -858,6 +858,7 @@ export default function FluxoBuilder() {
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
           <div className="flex-1 min-w-0">
 
+
             <h2 className="text-sm font-semibold truncate">
               Fluxo {editingVariant}
               <span className="ml-1 font-normal text-muted-foreground">
@@ -872,6 +873,7 @@ export default function FluxoBuilder() {
             <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
             <TooltipProvider delayDuration={150}>
               <div className="flex items-center gap-1">
+
                 {/* Galeria de modelos da comunidade */}
                 <Tooltip>
                 <TooltipTrigger asChild>
@@ -1371,5 +1373,6 @@ export default function FluxoBuilder() {
     </div>
   );
 }
+
 
 
