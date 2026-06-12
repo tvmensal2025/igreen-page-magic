@@ -59,6 +59,13 @@ export type Database = {
             foreignKeyName: "ad_account_managers_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "ad_account_managers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -549,6 +556,13 @@ export type Database = {
             foreignKeyName: "ad_spend_daily_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "ad_spend_daily_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -1004,6 +1018,13 @@ export type Database = {
             foreignKeyName: "ai_costs_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "ai_costs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -1439,6 +1460,13 @@ export type Database = {
             foreignKeyName: "ai_winning_conversations_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "ai_winning_conversations_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -1498,6 +1526,7 @@ export type Database = {
         Row: {
           audio_hash: string
           audio_url: string
+          audio_url_vinheta: string | null
           city: string
           consultant_id: string
           created_at: string
@@ -1514,6 +1543,7 @@ export type Database = {
         Insert: {
           audio_hash?: string
           audio_url: string
+          audio_url_vinheta?: string | null
           city?: string
           consultant_id: string
           created_at?: string
@@ -1530,6 +1560,7 @@ export type Database = {
         Update: {
           audio_hash?: string
           audio_url?: string
+          audio_url_vinheta?: string | null
           city?: string
           consultant_id?: string
           created_at?: string
@@ -2196,6 +2227,36 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_match_log: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          customer_id: string
+          id: number
+          message_sample: string | null
+          method: string
+          similarity: number | null
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          customer_id: string
+          id?: number
+          message_sample?: string | null
+          method: string
+          similarity?: number | null
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          customer_id?: string
+          id?: number
+          message_sample?: string | null
+          method?: string
+          similarity?: number | null
+        }
+        Relationships: []
+      }
       capture_achievements: {
         Row: {
           badge_key: string
@@ -2264,6 +2325,13 @@ export type Database = {
           winners?: Json
         }
         Relationships: [
+          {
+            foreignKeyName: "capture_diagnostics_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
           {
             foreignKeyName: "capture_diagnostics_consultant_id_fkey"
             columns: ["consultant_id"]
@@ -2603,6 +2671,7 @@ export type Database = {
           approved: boolean | null
           bot_engine_mode: string
           cadastro_url: string
+          cerebro_ativo: string
           conversational_flow_enabled: boolean
           created_at: string | null
           facebook_label_id: string | null
@@ -2624,6 +2693,7 @@ export type Database = {
           photo_url: string | null
           portal_kind: string
           referred_by: string | null
+          timezone: string | null
           use_engine_v3: boolean
         }
         Insert: {
@@ -2639,6 +2709,7 @@ export type Database = {
           approved?: boolean | null
           bot_engine_mode?: string
           cadastro_url: string
+          cerebro_ativo?: string
           conversational_flow_enabled?: boolean
           created_at?: string | null
           facebook_label_id?: string | null
@@ -2660,6 +2731,7 @@ export type Database = {
           photo_url?: string | null
           portal_kind?: string
           referred_by?: string | null
+          timezone?: string | null
           use_engine_v3?: boolean
         }
         Update: {
@@ -2675,6 +2747,7 @@ export type Database = {
           approved?: boolean | null
           bot_engine_mode?: string
           cadastro_url?: string
+          cerebro_ativo?: string
           conversational_flow_enabled?: boolean
           created_at?: string | null
           facebook_label_id?: string | null
@@ -2696,9 +2769,17 @@ export type Database = {
           photo_url?: string | null
           portal_kind?: string
           referred_by?: string | null
+          timezone?: string | null
           use_engine_v3?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "consultants_referred_by_fkey"
+            columns: ["referred_by"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
           {
             foreignKeyName: "consultants_referred_by_fkey"
             columns: ["referred_by"]
@@ -2905,6 +2986,32 @@ export type Database = {
           utm_source?: string | null
         }
         Relationships: []
+      }
+      ctwa_clid_mapping: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          ctwa_clid: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          ctwa_clid: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          ctwa_clid?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ctwa_clid_mapping_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       customer_auto_message_log: {
         Row: {
@@ -3215,6 +3322,7 @@ export type Database = {
           lead_source_detail: Json | null
           link_assinatura: string | null
           link_facial: string | null
+          manual_override_reactivate: boolean
           media_consumo: number | null
           media_message_id: string | null
           media_storage: string | null
@@ -3414,6 +3522,7 @@ export type Database = {
           lead_source_detail?: Json | null
           link_assinatura?: string | null
           link_facial?: string | null
+          manual_override_reactivate?: boolean
           media_consumo?: number | null
           media_message_id?: string | null
           media_storage?: string | null
@@ -3613,6 +3722,7 @@ export type Database = {
           lead_source_detail?: Json | null
           link_assinatura?: string | null
           link_facial?: string | null
+          manual_override_reactivate?: boolean
           media_consumo?: number | null
           media_message_id?: string | null
           media_storage?: string | null
@@ -3703,6 +3813,13 @@ export type Database = {
             foreignKeyName: "customers_assigned_consultant_id_fkey"
             columns: ["assigned_consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "customers_assigned_consultant_id_fkey"
+            columns: ["assigned_consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -3724,6 +3841,13 @@ export type Database = {
             foreignKeyName: "customers_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -3739,6 +3863,13 @@ export type Database = {
             columns: ["consultant_id"]
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "customers_customer_referred_by_consultant_id_fkey"
+            columns: ["customer_referred_by_consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
             referencedColumns: ["consultant_id"]
           },
           {
@@ -4326,6 +4457,13 @@ export type Database = {
             foreignKeyName: "flow_router_rules_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "flow_router_rules_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -4342,6 +4480,127 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      flow_template_submissions: {
+        Row: {
+          author_consultant_id: string
+          author_name: string | null
+          author_phone: string | null
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          show_phone: boolean
+          source_flow_id: string | null
+          status: string
+          steps_snapshot: Json
+          updated_at: string
+          variant: string
+        }
+        Insert: {
+          author_consultant_id: string
+          author_name?: string | null
+          author_phone?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          show_phone?: boolean
+          source_flow_id?: string | null
+          status?: string
+          steps_snapshot?: Json
+          updated_at?: string
+          variant?: string
+        }
+        Update: {
+          author_consultant_id?: string
+          author_name?: string | null
+          author_phone?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          show_phone?: boolean
+          source_flow_id?: string | null
+          status?: string
+          steps_snapshot?: Json
+          updated_at?: string
+          variant?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_template_submissions_author_consultant_id_fkey"
+            columns: ["author_consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_author_consultant_id_fkey"
+            columns: ["author_consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_author_consultant_id_fkey"
+            columns: ["author_consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_author_consultant_id_fkey"
+            columns: ["author_consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "flow_template_submissions_source_flow_id_fkey"
+            columns: ["source_flow_id"]
+            isOneToOne: false
+            referencedRelation: "bot_flows"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4850,50 +5109,6 @@ export type Database = {
           },
         ]
       }
-      template_items: {
-        Row: {
-          created_at: string
-          delay_seconds: number
-          id: string
-          image_url: string | null
-          media_url: string | null
-          message_text: string | null
-          message_type: string
-          position: number
-          template_id: string
-        }
-        Insert: {
-          created_at?: string
-          delay_seconds?: number
-          id?: string
-          image_url?: string | null
-          media_url?: string | null
-          message_text?: string | null
-          message_type?: string
-          position?: number
-          template_id: string
-        }
-        Update: {
-          created_at?: string
-          delay_seconds?: number
-          id?: string
-          image_url?: string | null
-          media_url?: string | null
-          message_text?: string | null
-          message_type?: string
-          position?: number
-          template_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "template_items_template_id_fkey"
-            columns: ["template_id"]
-            isOneToOne: false
-            referencedRelation: "message_templates"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       network_members: {
         Row: {
           bonificavel: number | null
@@ -5095,6 +5310,13 @@ export type Database = {
             foreignKeyName: "page_events_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "page_events_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -5146,6 +5368,13 @@ export type Database = {
           utm_source?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "page_views_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
           {
             foreignKeyName: "page_views_consultant_id_fkey"
             columns: ["consultant_id"]
@@ -5423,6 +5652,36 @@ export type Database = {
           },
         ]
       }
+      pos_venda_default_media: {
+        Row: {
+          image_url: string | null
+          is_active: boolean
+          media_url: string | null
+          message_text: string | null
+          message_type: string
+          stage: string
+          updated_at: string
+        }
+        Insert: {
+          image_url?: string | null
+          is_active?: boolean
+          media_url?: string | null
+          message_text?: string | null
+          message_type?: string
+          stage: string
+          updated_at?: string
+        }
+        Update: {
+          image_url?: string | null
+          is_active?: boolean
+          media_url?: string | null
+          message_text?: string | null
+          message_type?: string
+          stage?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       production_health_snapshot: {
         Row: {
           active_variants: string[] | null
@@ -5477,6 +5736,13 @@ export type Database = {
             foreignKeyName: "production_health_snapshot_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "production_health_snapshot_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -5495,6 +5761,144 @@ export type Database = {
             referencedColumns: ["consultant_id"]
           },
         ]
+      }
+      reactivation_sends: {
+        Row: {
+          batch_id: string | null
+          consultant_id: string
+          conversation_step: string | null
+          customer_id: string
+          error_reason: string | null
+          id: string
+          message_text: string
+          outcome: string | null
+          sent_at: string
+          status: string
+          template_id: string | null
+          trigger_type: string
+        }
+        Insert: {
+          batch_id?: string | null
+          consultant_id: string
+          conversation_step?: string | null
+          customer_id: string
+          error_reason?: string | null
+          id?: string
+          message_text: string
+          outcome?: string | null
+          sent_at?: string
+          status?: string
+          template_id?: string | null
+          trigger_type?: string
+        }
+        Update: {
+          batch_id?: string | null
+          consultant_id?: string
+          conversation_step?: string | null
+          customer_id?: string
+          error_reason?: string | null
+          id?: string
+          message_text?: string
+          outcome?: string | null
+          sent_at?: string
+          status?: string
+          template_id?: string | null
+          trigger_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reactivation_sends_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reactivation_sends_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "reactivation_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reactivation_settings: {
+        Row: {
+          auto_enabled: boolean
+          consultant_id: string
+          enviar_fim_de_semana: boolean
+          horas_ate_primeiro_followup: number
+          horas_entre_envios: number
+          janela_fim: number
+          janela_inicio: number
+          max_envios: number
+          updated_at: string
+        }
+        Insert: {
+          auto_enabled?: boolean
+          consultant_id: string
+          enviar_fim_de_semana?: boolean
+          horas_ate_primeiro_followup?: number
+          horas_entre_envios?: number
+          janela_fim?: number
+          janela_inicio?: number
+          max_envios?: number
+          updated_at?: string
+        }
+        Update: {
+          auto_enabled?: boolean
+          consultant_id?: string
+          enviar_fim_de_semana?: boolean
+          horas_ate_primeiro_followup?: number
+          horas_entre_envios?: number
+          janela_fim?: number
+          janela_inicio?: number
+          max_envios?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      reactivation_templates: {
+        Row: {
+          auto_reactivate: boolean
+          consultant_id: string
+          conversation_step: string
+          created_at: string
+          id: string
+          is_active: boolean
+          media_kind: string | null
+          media_url: string | null
+          message_text: string
+          send_order: number
+          updated_at: string
+        }
+        Insert: {
+          auto_reactivate?: boolean
+          consultant_id: string
+          conversation_step: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          media_kind?: string | null
+          media_url?: string | null
+          message_text: string
+          send_order?: number
+          updated_at?: string
+        }
+        Update: {
+          auto_reactivate?: boolean
+          consultant_id?: string
+          conversation_step?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          media_kind?: string | null
+          media_url?: string | null
+          message_text?: string
+          send_order?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       referral_partners: {
         Row: {
@@ -5537,6 +5941,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "referral_partners_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
           {
             foreignKeyName: "referral_partners_consultant_id_fkey"
             columns: ["consultant_id"]
@@ -5717,6 +6128,13 @@ export type Database = {
             foreignKeyName: "rollout_alerts_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "rollout_alerts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -5772,6 +6190,13 @@ export type Database = {
             foreignKeyName: "rollout_audit_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "rollout_audit_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
             referencedRelation: "consultants"
             referencedColumns: ["id"]
           },
@@ -5797,6 +6222,9 @@ export type Database = {
           autopilot_enabled: boolean
           canary_min_hours: number
           canary_percent: number
+          cerebro_min_coincidencia_pct: number
+          cerebro_min_turnos: number
+          cerebro_numeros_teste: string | null
           dark_min_hours: number
           green_max_delegated_ratio: number
           green_max_paused_ratio: number
@@ -5810,6 +6238,9 @@ export type Database = {
           autopilot_enabled?: boolean
           canary_min_hours?: number
           canary_percent?: number
+          cerebro_min_coincidencia_pct?: number
+          cerebro_min_turnos?: number
+          cerebro_numeros_teste?: string | null
           dark_min_hours?: number
           green_max_delegated_ratio?: number
           green_max_paused_ratio?: number
@@ -5823,6 +6254,9 @@ export type Database = {
           autopilot_enabled?: boolean
           canary_min_hours?: number
           canary_percent?: number
+          cerebro_min_coincidencia_pct?: number
+          cerebro_min_turnos?: number
+          cerebro_numeros_teste?: string | null
           dark_min_hours?: number
           green_max_delegated_ratio?: number
           green_max_paused_ratio?: number
@@ -5832,6 +6266,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "rollout_config_alert_consultant_id_fkey"
+            columns: ["alert_consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
           {
             foreignKeyName: "rollout_config_alert_consultant_id_fkey"
             columns: ["alert_consultant_id"]
@@ -6039,6 +6480,50 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      template_items: {
+        Row: {
+          created_at: string
+          delay_seconds: number
+          id: string
+          image_url: string | null
+          media_url: string | null
+          message_text: string | null
+          message_type: string
+          position: number
+          template_id: string
+        }
+        Insert: {
+          created_at?: string
+          delay_seconds?: number
+          id?: string
+          image_url?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          message_type?: string
+          position?: number
+          template_id: string
+        }
+        Update: {
+          created_at?: string
+          delay_seconds?: number
+          id?: string
+          image_url?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          message_type?: string
+          position?: number
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_items_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -6421,6 +6906,93 @@ export type Database = {
       }
     }
     Views: {
+      cerebro_decisao_sombra: {
+        Row: {
+          coincide: boolean | null
+          consultant_id: string | null
+          created_at: string | null
+          customer_id: string | null
+          estagio: string | null
+          id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_decisions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cerebro_monitor_canario: {
+        Row: {
+          clientes_total: number | null
+          coincidencia_abaixo_limite: boolean | null
+          coincidencia_acertos: number | null
+          coincidencia_pct: number | null
+          coincidencia_turnos: number | null
+          consultant_id: string | null
+          consultant_name: string | null
+          convertidos_7d: number | null
+          convertidos_total: number | null
+          delegados_total: number | null
+          estagio: string | null
+          limite_coincidencia_pct: number | null
+          pausados_total: number | null
+          taxa_conversao_pct: number | null
+          turnos_24h: number | null
+          turnos_minimos: number | null
+        }
+        Relationships: []
+      }
+      cerebro_prontidao_avanco: {
+        Row: {
+          apto_avancar: boolean | null
+          atende_coincidencia: boolean | null
+          atende_turnos: boolean | null
+          estagio: string | null
+          limite_coincidencia_pct: number | null
+          motivo: string | null
+          taxa_coincidencia_pct: number | null
+          total_coincidencias: number | null
+          total_turnos: number | null
+          turnos_faltantes: number | null
+          turnos_minimos: number | null
+        }
+        Relationships: []
+      }
+      cerebro_sinal_alerta_coincidencia: {
+        Row: {
+          alerta_queda_coincidencia: boolean | null
+          estagio: string | null
+          limite_coincidencia_pct: number | null
+          mensagem: string | null
+          taxa_coincidencia_pct: number | null
+          total_turnos: number | null
+          turnos_minimos: number | null
+        }
+        Relationships: []
+      }
+      cerebro_taxa_coincidencia_por_estagio: {
+        Row: {
+          estagio: string | null
+          taxa_coincidencia_pct: number | null
+          total_coincidencias: number | null
+          total_turnos: number | null
+        }
+        Relationships: []
+      }
+      cerebro_taxa_coincidencia_por_estagio_consultor: {
+        Row: {
+          consultant_id: string | null
+          estagio: string | null
+          taxa_coincidencia_pct: number | null
+          total_coincidencias: number | null
+          total_turnos: number | null
+        }
+        Relationships: []
+      }
       consultants_public: {
         Row: {
           cadastro_url: string | null
@@ -6465,6 +7037,13 @@ export type Database = {
           referred_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "consultants_referred_by_fkey"
+            columns: ["referred_by"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
           {
             foreignKeyName: "consultants_referred_by_fkey"
             columns: ["referred_by"]
@@ -6665,6 +7244,10 @@ export type Database = {
         Args: { p_consultant: string; p_tokens?: number }
         Returns: boolean
       }
+      create_empty_bot_flow_variant: {
+        Args: { _consultant_id: string; _name?: string; _variant: string }
+        Returns: string
+      }
       credit_consultant_wallet:
         | {
             Args: {
@@ -6829,6 +7412,24 @@ export type Database = {
           step: string
         }[]
       }
+      list_stuck_leads: {
+        Args: {
+          p_consultant: string
+          p_limit?: number
+          p_offset?: number
+          p_step?: string
+        }
+        Returns: {
+          conversation_step: string
+          flow_variant: string
+          hours_stuck: number
+          id: string
+          name: string
+          phone_whatsapp: string
+          total_count: number
+          updated_at: string
+        }[]
+      }
       log_admin_action: {
         Args: {
           _action: string
@@ -6944,6 +7545,10 @@ export type Database = {
         }
         Returns: Json
       }
+      review_flow_template: {
+        Args: { _approve: boolean; _note?: string; _submission_id: string }
+        Returns: undefined
+      }
       seed_default_camila_flow: {
         Args: { _consultant_id: string }
         Returns: string
@@ -6956,6 +7561,22 @@ export type Database = {
           _intent_name: string
           _text_response: string
           _triggers: string[]
+        }
+        Returns: string
+      }
+      stuck_leads_grouped_by_step: {
+        Args: { p_consultant: string }
+        Returns: {
+          conversation_step: string
+          lead_count: number
+        }[]
+      }
+      submit_flow_template: {
+        Args: {
+          _description?: string
+          _flow_id: string
+          _name: string
+          _show_phone?: boolean
         }
         Returns: string
       }
@@ -6996,6 +7617,15 @@ export type Database = {
           _slot_key: string
         }
         Returns: boolean
+      }
+      use_flow_template: {
+        Args: {
+          _consultant_id: string
+          _name?: string
+          _submission_id: string
+          _variant: string
+        }
+        Returns: string
       }
     }
     Enums: {
