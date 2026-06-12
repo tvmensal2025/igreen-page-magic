@@ -368,6 +368,16 @@ export default function FluxoBuilder() {
         consultantId={userId}
         existingVariants={existingVariants}
       />
+      <FlowHealthDialog
+        open={healthOpen}
+        onOpenChange={setHealthOpen}
+        validation={validation}
+        steps={steps}
+        actionLabel="Fechar"
+        onConfirm={() => setHealthOpen(false)}
+        onJumpToStep={(id) => { setInspectorId(id); setInspectorTab("conteudo"); setHealthOpen(false); }}
+      />
+      <FlowTourOverlay open={tourOpen} onClose={() => setTourOpen(false)} />
     </div>
   );
 }
