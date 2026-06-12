@@ -1068,13 +1068,14 @@ export default function FluxoBuilder() {
       }`}>
         {/* Coluna esquerda — Modo_Lista (mantida montada) */}
         <section
-          className={viewMode === "lista" ? "space-y-3" : "hidden"}
+          className={viewMode === "lista" ? "space-y-4" : "hidden"}
           aria-hidden={viewMode !== "lista"}
         >
           {/* Seção de Preferências da IA — em destaque no topo quando colapsado */}
-          <div id="ai-preferences-section" className="mb-6 scroll-mt-24">
+          <div id="ai-preferences-section" className="mb-2 scroll-mt-24">
             <AiPreferencesCard consultantId={userId} />
           </div>
+
 
           {steps.length === 0 ? (
             <div className="rounded-2xl border border-dashed bg-gradient-to-b from-muted/30 to-transparent p-10 text-center">
