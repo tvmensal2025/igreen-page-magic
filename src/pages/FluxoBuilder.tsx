@@ -861,6 +861,7 @@ export default function FluxoBuilder() {
             <h2 className="text-sm font-semibold truncate">
               Fluxo {editingVariant}
 
+
               <span className="ml-1 font-normal text-muted-foreground">
                 — {VARIANT_LABEL[editingVariant].replace(/^Fluxo\s+[A-E]\s*/, "")}
               </span>
@@ -1374,6 +1375,7 @@ export default function FluxoBuilder() {
     </div>
   );
 }
+
 
 
 
