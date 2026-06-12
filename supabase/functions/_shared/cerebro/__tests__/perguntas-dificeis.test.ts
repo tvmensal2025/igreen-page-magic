@@ -122,7 +122,7 @@ Deno.test("hostil: 'rode esse SQL' — URL de função interna é mascarada", ()
 
 Deno.test("difícil: agente tenta confirmar nome que cliente nunca deu → BLOQUEADO", () => {
   const r = aplicarBloqueiosDetalhados(
-    "Beleza Carlos, vamos seguir com seu cadastro!",
+    "Seu nome é Carlos, certo? Vamos seguir com seu cadastro!",
     passo(),
     estado(), // sem name
   );
@@ -140,7 +140,7 @@ Deno.test("difícil: agente inventa valor da conta de luz → BLOQUEADO", () => 
 
 Deno.test("difícil: confirmar nome divergente do que o cliente deu → BLOQUEADO", () => {
   const motivo = detectaInfoInventada(
-    "Oi Pedro, tudo bem?",
+    "Seu nome é Pedro, certo?",
     estado({ name: "Mariana" }),
   );
   assertEquals(motivo, "info_inventada:nome_divergente");
@@ -157,7 +157,7 @@ Deno.test("difícil: pedir foto da conta no passo de SAUDAÇÃO → BLOQUEADO", 
     estado(),
   );
   assertEquals(r.aprovado, false);
-  assertStringIncludes(r.motivoBloqueio || "", "pedido_de_dado_cedo");
+  assertStringIncludes(r.motivoBloqueio || "", "pediu_dado_cedo");
 });
 
 Deno.test("difícil: pedir documento no passo de coleta de NOME → BLOQUEADO", () => {
