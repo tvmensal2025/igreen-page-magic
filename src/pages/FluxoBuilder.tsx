@@ -873,9 +873,8 @@ export default function FluxoBuilder() {
               <div className="flex items-center gap-1">
                 {/* Galeria de modelos da comunidade */}
                 <Tooltip>
-
-
                 <TooltipTrigger asChild>
+
                   <Button
                     variant="outline"
                     size="icon"
@@ -1044,16 +1043,8 @@ export default function FluxoBuilder() {
             <AiPreferencesCard consultantId={userId} />
           </div>
 
-          {/* Toolbar principal e Lista de Passos */}
-          <StepListToolbar
-            query={listQuery}
-            onQueryChange={setListQuery}
-            typeFilter={typeFilter}
-            onToggleTypeFilter={toggleTypeFilter}
-          />
-
           {steps.length === 0 ? (
-
+            <div className="rounded-2xl border border-dashed bg-gradient-to-b from-muted/30 to-transparent p-10 text-center">
               <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
                 <GitBranch className="h-7 w-7" />
               </div>
@@ -1078,15 +1069,14 @@ export default function FluxoBuilder() {
             </div>
           ) : (
             <>
+
               <StepListToolbar
                 query={listQuery}
                 onQueryChange={setListQuery}
                 typeFilter={typeFilter}
-                onToggleType={toggleTypeFilter}
-                onClear={() => { setListQuery(""); setTypeFilter(new Set()); }}
-                total={steps.length}
-                visible={filteredSteps.length}
+                onToggleTypeFilter={toggleTypeFilter}
               />
+
 
               {filteredSteps.length === 0 ? (
                 <div className="rounded-lg border border-dashed bg-muted/10 p-6 text-center text-xs text-muted-foreground">
@@ -1373,13 +1363,14 @@ export default function FluxoBuilder() {
         flowId={flowId}
         defaultName={`Fluxo ${editingVariant}`}
       />
-    </main>
-    )}
+        </main>
+      )}
     </div>
-    </div>
-    </div>
-    );
+  </div>
+</div>
+);
 }
+
 
         </div>
       </div>
