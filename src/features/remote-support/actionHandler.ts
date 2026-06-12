@@ -265,7 +265,7 @@ export async function executeCommand(
       logAction(
         sessionId, "operator", `cmd:${cmd.kind}`,
         cmd.selector ?? cmd.url ?? null,
-        cmd as Record<string, unknown>,
+        cmd as unknown as Record<string, unknown>,
       ).catch(() => { /* log é melhor esforço */ });
     }
 

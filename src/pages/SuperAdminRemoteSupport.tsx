@@ -27,6 +27,7 @@ import {
   ArrowLeft, ShieldAlert, Check, X, Eye, Send, Play, Square, Loader2,
   Maximize2, Minimize2, Camera, Copy, Activity, MousePointer2, KeyboardIcon,
   AlertTriangle,
+  ScreenShare,
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
@@ -1313,12 +1314,14 @@ function HistoryView({ consultants }: { consultants: ConsultantRow[] }) {
       .select("*")
       .order("created_at", { ascending: false })
       .limit(50)
-      .then(({ data, error: err }) => {
-        if (err) throw err;
-        setRows((data ?? []) as unknown as SupportSession[]);
-      })
-      .catch(e => setError(e instanceof Error ? e.message : "Erro ao carregar histórico"))
-      .finally(() => setLoading(false));
+      .then(
+        ({ data, error: err }) => {
+          if (err) throw err;
+          setRows((data ?? []) as unknown as SupportSession[]);
+        },
+        (e) => setError(e instanceof Error ? e.message : "Erro ao carregar histórico"),
+      )
+      .then(() => setLoading(false), () => setLoading(false));
   }, []);
 
   const name = (id: string | null) =>

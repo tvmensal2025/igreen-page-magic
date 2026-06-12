@@ -390,8 +390,7 @@ export function useFlowValidation(steps: Step[], mediaCounts?: MediaCountsMap): 
         (s) =>
           s.is_active &&
           (s.step_type === "finalizar_cadastro" ||
-            s.transitions.some((t) => t.goto_special === "humano") ||
-            (s.fallback?.mode === "handoff")),
+            s.transitions.some((t) => t.goto_special === "humano")),
       );
       if (!hasEnding) {
         // aponta no primeiro passo (início) para o aviso ter um lar.

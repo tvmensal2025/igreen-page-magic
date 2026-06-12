@@ -111,7 +111,7 @@ export function createWhatsAppSender(evolutionUrl: string, evolutionKey: string,
       return true;
     } catch (e: any) {
       console.error("sendAudio Evolution erro:", e?.message);
-      return false;
+      return { ok: false, status: 0, detail: e?.message || "network error" };
     }
   }
 
