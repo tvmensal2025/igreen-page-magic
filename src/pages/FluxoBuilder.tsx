@@ -21,6 +21,8 @@ import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import StepCoachPanel from "@/components/admin/flow-builder/StepCoachPanel";
+import FlowTourOverlay, { tourPendente } from "@/components/admin/flow-builder/FlowTourOverlay";
+import FlowHealthDialog from "@/components/admin/flow-builder/FlowHealthDialog";
 import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalleryDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import {
