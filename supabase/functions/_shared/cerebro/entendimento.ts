@@ -42,7 +42,7 @@ import type { ObjecaoTipo } from "./comum/templates.ts";
 //   - `vendedora/extractors.ts`: extrator de e-mail da V2 (regex determinística
 //     com cascata opcional de IA), usado para o e-mail.
 import { extractNome, extractValor } from "../captureExtractors.ts";
-import { extrairEmail } from "../vendedora/extractors.ts";
+import { extrairEmail } from "./comum/extrair-email.ts";
 
 // ─── Intenção comercial (Tarefa 3.1) ─────────────────────────────────────────
 
