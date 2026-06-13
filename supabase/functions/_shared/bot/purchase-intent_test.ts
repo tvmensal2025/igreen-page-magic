@@ -19,5 +19,6 @@ Deno.test("hasPurchaseIntent: negação antes da frase", () => {
 Deno.test("hasPurchaseIntent: perguntas comuns não disparam", () => {
   assertEquals(hasPurchaseIntent("é golpe?"), false);
   assertEquals(hasPurchaseIntent("como funciona?"), false);
+  assertEquals(hasPurchaseIntent("Eu ja estou me cadastrando?"), false);
   assertEquals(hasPurchaseIntent(""), false);
 });

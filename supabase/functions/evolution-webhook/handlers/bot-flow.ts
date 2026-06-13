@@ -672,24 +672,69 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
     } catch (e) { console.warn("[respondAndReentry] FAQ falhou:", (e as any)?.message); }
 
-    // 2) IA de vendas REMOVIDA (vendedora apagada). Cérebro IA responde antes
-    //    de chegar aqui. FAQ-miss cai direto no fallback de reentry abaixo.
-
-
-    // 3) Sem resposta da IA → não inventa "já explico melhor".
-    //    Mantém answer vazia e a finalMsg passa a ser só o reentry completo.
-    if (!answer) {
-      source = "fallback";
-    }
-
     // Detour + handoff suave após 8 desvios
     const detourNext = Number((customer as any).detour_count || 0) + 1;
     const patch: Record<string, any> = { detour_count: detourNext };
     let courtesyTail = "";
 
-    // 🛒 Detecção de intenção de compra — se o lead quer avançar, reset detour
-    const { hasPurchaseIntent } = await import("../../_shared/bot/purchase-intent.ts");
-    if (hasPurchaseIntent(questionText)) {
+    // 2) Orquestrador + RAG quando FAQ não casou (Fluxo D bypassa Cérebro no topo)
+    if (!answer && questionText.trim()) {
+      try {
+        const { data: hist } = await supabase
+          .from("conversations")
+          .select("message_direction, message_text, created_at")
+          .eq("customer_id", customer.id)
+          .order("created_at", { ascending: false })
+          .limit(8);
+        const recentHistory = ((hist as any[]) || [])
+          .slice()
+          .reverse()
+          .map((r) => `${r.message_direction === "inbound" ? "Lead" : "Bot"}: ${String(r.message_text || "").slice(0, 240)}`)
+          .join("\n");
+
+        const { runOrchestrator } = await import("../../_shared/ai-orchestrator.ts");
+        const orch = await runOrchestrator({
+          supabase,
+          customer,
+          consultantId: customer.consultant_id,
+          message: questionText,
+          step: stepNow,
+          history: recentHistory,
+          isButton: false,
+          hasMedia: false,
+        });
+
+        const orchText = (orch.reply || "").trim();
+        if (orchText && orch.confidence >= 0.55) {
+          answer = orchText;
+          source = "ai";
+          patch.ai_followups_count = Number((customer as any).ai_followups_count || 0) + 1;
+          console.log(
+            `[respondAndReentry] orchestrator route=${orch.route} conf=${orch.confidence.toFixed(2)} chain=${orch.modelChain.join("→")}`,
+          );
+          if (orch.shouldHandoff) {
+            patch.bot_paused = true;
+            patch.bot_paused_reason = "ai_handoff_duvidas";
+            patch.bot_paused_at = new Date().toISOString();
+            courtesyTail = "\n\n🙌 Vou chamar alguém do time para te atender pessoalmente — em instantes alguém responde por aqui.";
+            try {
+              const { notifyHandoff } = await import("../../_shared/notify-consultant.ts");
+              await notifyHandoff(supabase, customer, "IA detectou necessidade de humano").catch(() => {});
+            } catch (_) { /* noop */ }
+          }
+        }
+      } catch (e) {
+        console.warn("[respondAndReentry] orchestrator falhou:", (e as Error).message);
+      }
+    }
+
+    if (!answer) {
+      source = "fallback";
+    }
+
+    // 🛒 Detecção de intenção de compra — só AVANÇO (status/pergunta não disparam incentivo)
+    const { classifyLeadIntent } = await import("../../_shared/bot/purchase-intent.ts");
+    if (classifyLeadIntent(questionText) === "advance") {
       console.log(`[respondAndReentry] 🛒 purchase intent detected — resetting detour`);
       try {
         await supabase.from("customers").update({ detour_count: 0 }).eq("id", customer.id);
@@ -760,7 +805,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       } as any);
     } catch (_) { /* noop */ }
 
-    const reentryLine = reentryTail ? `\n\n📋 Voltando: ${reentryTail}` : "";
+    const reentryLine = source !== "ai" && reentryTail ? `\n\n📋 Voltando: ${reentryTail}` : "";
     const finalMsg = answer
       ? `${answer}${reentryLine}${courtesyTail}`
       : `${reentryFull || reentryTail || ""}${courtesyTail}`.trim();
@@ -775,9 +820,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       });
     } catch (_) { /* noop */ }
 
-    // 🔁 Reemite botões do passo após FAQ para o lead ter CTA de volta ao fluxo
+    // 🔁 Reemite botões/lista numerada após FAQ/IA
     try {
-      if (detourNext < 8) { // não reemite se vai para handoff
+      if (detourNext < 8 && !patch.bot_paused) {
         const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
         await reemitStepButtons({
           supabase,
@@ -793,7 +838,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     } catch (e) { console.warn("[respondAndReentry] button re-emission failed:", (e as Error).message); }
 
     console.log(`[respondAndReentry] reason=${reason} source=${source} detour=${detourNext} step=${stepNow}`);
-    return { reply: "", updates: { __inline_sent: true } as any };
+    return { reply: "", updates: { ...patch, __inline_sent: true } as any };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -2265,12 +2310,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   // 🎯 Atalho determinístico: intenção forte de cadastro em step conversacional
   // → pula a IA e empurra para coletar a conta de luz (próximo passo físico).
   // Resolve o caso "Jeferson disse 'Cadastro' e a IA mandou 2 vídeos sem texto".
-  const STRONG_PURCHASE_INTENT = /^(cadastr|quero\s+(?:cadastr|fazer|come[çc]ar|entrar|me\s*cadastr)|bora|vamos|partiu|simbora|aceito|topo|t[oô]\s+dentro|pode\s+(?:fazer|cadastr)|fa[çc]a\s+(?:o\s*)?cadastr|come[çc]ar|fechado|fechou)\b/i;
   const conversationalForShortcut = new Set(["welcome", "menu_inicial", "pos_video", "checkin_pos_video", "qualificacao"]);
+  const { wantsToAdvance } = await import("../../_shared/bot/cadastro-intent.ts");
   if (
     !isFile && !customer.bot_paused && !billTrusted &&
     conversationalForShortcut.has(step) &&
-    messageText && STRONG_PURCHASE_INTENT.test(messageText.trim())
+    messageText && wantsToAdvance(messageText.trim())
   ) {
     console.log(`🎯 [intent-shortcut] cadastro detectado em step=${step} → forçando aguardando_conta`);
     step = "aguardando_conta";

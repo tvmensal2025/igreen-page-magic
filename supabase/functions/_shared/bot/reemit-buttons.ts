@@ -80,11 +80,12 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
 
       if (!flowRow?.id) return false;
 
+      // conversation_step costuma ser UUID; aceita id ou step_key.
       const { data: stepRow } = await supabase
         .from("bot_flow_steps")
-        .select("captures")
+        .select("captures, step_key")
         .eq("flow_id", flowRow.id)
-        .eq("step_key", stepKey)
+        .or(`step_key.eq.${stepKey},id.eq.${stepKey}`)
         .maybeSingle();
 
       captures = Array.isArray((stepRow as any)?.captures) ? (stepRow as any).captures : [];

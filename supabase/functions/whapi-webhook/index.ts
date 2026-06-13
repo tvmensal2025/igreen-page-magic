@@ -1693,7 +1693,13 @@ Deno.serve(async (req) => {
       // sender REAL do canal (anti-ban + trio de proteção intactos). OTP
       // (interceptado no topo) e OCR/portal (despachados pelo Cérebro) intactos.
       let _cerebroRespondeu = false;
-      try {
+      // Fluxo D = botões (Whapi) / lista numerada (Evolution). O Cérebro só
+      // envia texto e encerra o turno antes do motor determinístico — por isso
+      // os botões "somem" quando cerebro_ativo ou número de teste está ligado.
+      const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
+      if (_fbVarCerebro === "D") {
+        console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+      } else try {
         const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
         const r = await responderComCerebro({
           supabase,

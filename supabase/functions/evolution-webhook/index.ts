@@ -1813,7 +1813,10 @@ Deno.serve(async (req) => {
       // o Cérebro não reimplementa envio. OTP (interceptado no topo) e o
       // pipeline de OCR/portal (despachado pelo próprio Cérebro) seguem intactos.
       let _cerebroRespondeu = false;
-      try {
+      const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
+      if (_fbVarCerebro === "D") {
+        console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+      } else try {
         const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
         const r = await responderComCerebro({
           supabase,

@@ -1,3 +1,5 @@
+import { wantsToAdvance } from "./bot/cadastro-intent.ts";
+
 // ─── Normalização e validação pós-OCR documento ─────────────────────────
 export function normalizarRG(rg: string | undefined): string {
   if (!rg || typeof rg !== "string") return "";
@@ -141,9 +143,13 @@ export function getReplyForStep(step: string, c: any): string {
   }
 }
 
-// ─── Strong intent regex (deterministic override before LLM) ───────────
-export const RE_INTENT_CADASTRAR =
-  /\b(cadastr|quero (me )?(cadastr|participar)|vamos l[áa]|como (eu )?(fa[çc]o|cadastr)|quero o desconto|me cadastra|simbora|bora cadastrar|inscrever)\b/i;
+// ─── Strong intent (deterministic override before LLM) ───────────────
+/** @deprecated Prefer `wantsToAdvance()` — mantido para `.test()` legado. */
+export const RE_INTENT_CADASTRAR = {
+  test(text: string): boolean {
+    return wantsToAdvance(text);
+  },
+};
 
 export const RE_INTENT_HUMANO =
   /\b(humano|atendente|pessoa real|operador|consultor de verdade|falar com algu[eé]m)\b/i;
