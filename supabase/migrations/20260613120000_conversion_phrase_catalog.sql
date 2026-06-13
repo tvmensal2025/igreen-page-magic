@@ -66,7 +66,7 @@ CREATE TRIGGER set_conversion_phrase_catalog_updated_at
 
 -- Seed global (idempotente por shortcut)
 INSERT INTO public.conversion_phrase_catalog
-  (shortcut, category, conversation_step, temperature, trigger_keywords, message_text, next_action, conversion_chance, is_system)
+  (shortcut, category, conversation_step, temperature, trigger_keywords, message_text, next_action, conversion_chance)
 SELECT * FROM (VALUES
   ('/fup1h', 'followup', NULL::text, 'warm'::public.lead_temperature, ARRAY[]::text[], '{{nome}}, ainda dá pra continuar de onde paramos? 🙂', 'Retomar conversa agora', 45),
   ('/fup24h', 'followup', NULL, 'warm', ARRAY[]::text[], '{{nome}}, ontem você perguntou sobre desconto na luz. Se quiser, te mando uma simulação rápida — só preciso do valor da conta 📊', 'Pedir valor da conta', 50),
