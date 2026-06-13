@@ -33,6 +33,9 @@ export interface OrchestratorInput {
   consultantId: string;
   message: string;
   step?: string | null;
+  /** Ação concreta que o bot está aguardando NESTE passo (ex: "confirmar o
+   *  telefone com DDD"). Evita que a IA invente em que etapa o lead está. */
+  stepGoal?: string | null;
   history?: string;       // pre-formatted "Lead: ... / Bot: ..." lines
   isButton?: boolean;
   hasMedia?: boolean;
@@ -97,7 +100,7 @@ async function runTriage(input: OrchestratorInput): Promise<TriageOut> {
       jsonSchema: TRIAGE_SCHEMA,
       messages: [
         { role: "system", content: TRIAGE_SYSTEM },
-        { role: "user", content: `PASSO ATUAL: ${input.step || "?"}\nMENSAGEM: "${msg.slice(0, 600)}"` },
+        { role: "user", content: `PASSO ATUAL: ${input.step || "?"}\nAÇÃO PENDENTE: ${input.stepGoal || "—"}\nMENSAGEM: "${msg.slice(0, 600)}"` },
       ],
       signal: ctrl.signal,
     });
@@ -143,6 +146,11 @@ Decida UMA ação. Regras:
 4. "clarify" → ambíguo demais. reply = 1 pergunta curta pra entender.
 5. "continue" → não precisa responder agora (ex: ok/obrigado). reply="".
 
+CONTEXTO DO PASSO (CRÍTICO): o bot está aguardando uma AÇÃO PENDENTE específica do lead (ela vem no prompt).
+- NUNCA invente em que etapa o cadastro está. Não diga "estamos validando seus documentos", "conferindo seu pagamento" etc. se isso não estiver na AÇÃO PENDENTE.
+- Se o lead perguntar sobre o status ("já estou me cadastrando?", "em que passo estou?"), responda com base APENAS na AÇÃO PENDENTE — explique de forma curta e honesta o que falta fazer agora.
+- NÃO repita literalmente o pedido do dado (ex: não peça o telefone de novo): o sistema reapresenta a pergunta automaticamente logo depois da sua resposta. Sua resposta deve só esclarecer a dúvida.
+
 Estilo: PT-BR, WhatsApp, 2-4 frases, no máx 1 emoji simples, sem markdown pesado.${persona}`;
 }
 
@@ -167,6 +175,7 @@ async function runOrchestratorBrain(input: OrchestratorInput): Promise<{
         { role: "system", content: buildOrchSystem(persona) },
         { role: "user", content:
 `PASSO: ${input.step || "?"}
+AÇÃO PENDENTE DO BOT (o que o lead precisa fazer agora): ${input.stepGoal || "—"}
 NOME LEAD: ${String(input.customer?.name || "").split(/\s+/)[0] || "(?)"}
 VALOR CONTA: ${input.customer?.electricity_bill_value || "(?)"}
 ESTADO: ${input.customer?.address_state || "(?)"}

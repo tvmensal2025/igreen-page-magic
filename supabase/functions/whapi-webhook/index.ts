@@ -148,11 +148,11 @@ Deno.serve(async (req) => {
 
 
     const {
-      remoteJid, buttonId, hasImage, hasDocument, hasAudio, isButton,
-      imageMessage, documentMessage, audioMessage, key, message, messageId,
+      remoteJid, hasImage, hasDocument, hasAudio,
+      imageMessage, documentMessage, audioMessage, key, message,
       fileBase64: whapiFileBase64, fileUrl: whapiFileUrl, fromName,
     } = parsed;
-    let { messageText, isFile } = parsed;
+    let { messageText, isFile, isButton, buttonId, messageId } = parsed;
 
     // Helper: limpa emojis/símbolos do pushName e pega o primeiro nome válido
     const cleanPushName = (raw: string | null | undefined): string | null => {
@@ -951,6 +951,7 @@ Deno.serve(async (req) => {
       message_text: inboundLogText,
       message_type: inboundLogType,
       conversation_step: customer.conversation_step,
+      external_message_id: messageId || null,
     }).select("id").maybeSingle();
 
     // ─── Modo Captação (manual): dispara IA p/ sugerir campos em background ──
@@ -1389,6 +1390,108 @@ Deno.serve(async (req) => {
     let reply: string | null = "";
     let updates: Record<string, any> = {};
     let engineUsed: "sys" | "flow" = "sys";
+
+    const applyTurnResult = async (
+      turnReply: string | null,
+      turnUpdates: Record<string, any>,
+      turnStepBefore: string,
+    ) => {
+      let localReply = turnReply;
+      let localUpdates = { ...turnUpdates };
+
+      if (localUpdates.conversation_step) {
+        const prefixed = normalizeOutgoing(String(localUpdates.conversation_step), engineUsed);
+        if (prefixed) localUpdates.conversation_step = prefixed;
+      }
+
+      if (Object.keys(localUpdates).length > 0 || localReply) {
+        (localUpdates as any).last_bot_reply_at = new Date().toISOString();
+        (localUpdates as any).last_bot_interaction_at = new Date().toISOString();
+        if ((customer as any).followup_count > 0) (localUpdates as any).followup_count = 0;
+      }
+      const STUCK_STATES = new Set(["abandoned", "stuck_finalizar", "stuck_contact", "email_pendente_revisao", "contato_incompleto", "automation_failed"]);
+      if ((Object.keys(localUpdates).length > 0 || localReply) && customer?.status && STUCK_STATES.has(customer.status) && !(localUpdates as any).status) {
+        (localUpdates as any).status = "pending";
+        (localUpdates as any).error_message = null;
+        (localUpdates as any).rescue_attempts = 0;
+      }
+      try {
+        const lastOut = (customer as any).last_bot_reply_at ? new Date((customer as any).last_bot_reply_at) : null;
+        if (lastOut && (Date.now() - lastOut.getTime()) < 60 * 60 * 1000) {
+          await supabase.rpc("increment_ab_metric", {
+            p_template_key: "any", p_step_key: turnStepBefore, p_variant: "default",
+            p_consultant_id: superAdminConsultantId, p_metric: "replied",
+          });
+        }
+        if (localUpdates.conversation_step && stripPrefix(localUpdates.conversation_step) !== turnStepBefore) {
+          await supabase.rpc("increment_ab_metric", {
+            p_template_key: "any", p_step_key: turnStepBefore, p_variant: "default",
+            p_consultant_id: superAdminConsultantId, p_metric: "advanced",
+          });
+        }
+      } catch (_) { /* tracking não bloqueia */ }
+
+      const __intent = (localUpdates as any).__intent ?? null;
+      const __confidence = (localUpdates as any).__confidence ?? null;
+      const __inline_sent_flag = (localUpdates as any).__inline_sent === true;
+      for (const k of Object.keys(localUpdates)) {
+        if (k.startsWith("__")) delete (localUpdates as any)[k];
+      }
+
+      if (Object.keys(localUpdates).length > 0) {
+        const { error: updateError } = await supabase.from("customers").update(localUpdates).eq("id", customer.id).select();
+        if (updateError) console.error(`❌ ERRO ao salvar updates:`, updateError);
+        else Object.assign(customer, localUpdates);
+        if (localUpdates.conversation_step && stripPrefix(localUpdates.conversation_step) !== turnStepBefore) {
+          await logStepTransition(supabase, {
+            customer_id: customer.id, consultant_id: superAdminConsultantId,
+            phone, from_step: turnStepBefore, to_step: stripPrefix(localUpdates.conversation_step),
+            intent: __intent, confidence: __confidence,
+          });
+        }
+        if (localUpdates.conversation_step) {
+          await syncDealStageFromStep(supabase, customer.id, localUpdates.conversation_step);
+        }
+      }
+
+      const handlerSentInline = localReply === "" && (Object.keys(localUpdates).length > 0 || __inline_sent_flag);
+      let finalReply = localReply;
+      if (!finalReply && !handlerSentInline) finalReply = "";
+      if (silentMode && finalReply) {
+        console.log(`🤫 [silent-capture] suprimindo reply final ("${finalReply.slice(0, 60)}...") — IA manual`);
+        finalReply = "";
+      }
+      if (finalReply) {
+        let isDuplicate = false;
+        try {
+          const sinceIso = new Date(Date.now() - 60_000).toISOString();
+          const { data: lastOut } = await supabase
+            .from("conversations")
+            .select("message_text, created_at")
+            .eq("customer_id", customer.id)
+            .eq("message_direction", "outbound")
+            .gte("created_at", sinceIso)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (lastOut && String((lastOut as any).message_text || "").trim() === String(finalReply).trim()) {
+            isDuplicate = true;
+          }
+        } catch (_) { /* noop */ }
+
+        if (!isDuplicate) {
+          try { await sender.sendText(remoteJid, finalReply); } catch (e: any) { console.error("Erro enviar:", e); }
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "outbound",
+            message_text: finalReply,
+            message_type: "text",
+            conversation_step: localUpdates.conversation_step || turnStepBefore,
+          });
+        }
+      }
+    };
+
     try {
       // ─── Engine v3 gate (FIRST — before any legacy routing) ──────────
       // When v3 is enabled for the consultant, it takes FULL ownership of
@@ -1743,6 +1846,30 @@ Deno.serve(async (req) => {
         (updates as any).__intent = (updates as any).__intent;
         (updates as any).__confidence = (updates as any).__confidence;
       }
+
+      await applyTurnResult(reply, updates, stepBefore);
+
+      // 📥 Drena mensagens que chegaram com lock ocupado (pending_inbound)
+      try {
+        const { drainPendingInboundTurns } = await import("../_shared/bot/pending-inbound.ts");
+        const drained = await drainPendingInboundTurns(supabase, customer.id, async (replay) => {
+          messageText = replay.messageText;
+          messageId = replay.messageId;
+          isFile = replay.isFile;
+          isButton = replay.isButton;
+          buttonId = replay.buttonId;
+          const { data: fresh } = await supabase.from("customers").select("*").eq("id", customer.id).maybeSingle();
+          if (fresh) customer = fresh;
+          const drainStepBefore = stripPrefix((customer as any).conversation_step || "");
+          (customer as any).conversation_step = drainStepBefore;
+          console.log(`[pending-drain] replay customer=${customer.id} text="${String(messageText).slice(0, 80)}"`);
+          const drainResult = await runEngine();
+          await applyTurnResult(drainResult.reply, drainResult.updates, drainStepBefore);
+        });
+        if (drained > 0) console.log(`[pending-drain] ${drained} turn(s) customer=${customer.id}`);
+      } catch (e) {
+        console.warn("[pending-drain] falhou:", (e as Error).message);
+      }
     } catch (botErr: any) {
       console.error(`💥 [whapi bot-flow crash] step=${stepBefore}:`, botErr);
       captureError(botErr, {
@@ -1751,121 +1878,11 @@ Deno.serve(async (req) => {
       });
       reply = "Tive um probleminha aqui. Pode me mandar de novo, por favor?";
       updates = {};
+      await applyTurnResult(reply, updates, stepBefore);
     }
 
-    // Normaliza o conversation_step de saída — flow ganha prefixo, sys vai cru.
-    if (updates.conversation_step) {
-      const prefixed = normalizeOutgoing(String(updates.conversation_step), engineUsed);
-      if (prefixed) updates.conversation_step = prefixed;
-    }
-
-    // ─── Persist updates ───────────────────────────────────────────────
-    if (Object.keys(updates).length > 0 || reply) {
-      (updates as any).last_bot_reply_at = new Date().toISOString();
-      // Reseta follow-up state — cliente respondeu, conversa está viva
-      (updates as any).last_bot_interaction_at = new Date().toISOString();
-      if ((customer as any).followup_count > 0) (updates as any).followup_count = 0;
-    }
-    const STUCK_STATES = new Set(["abandoned", "stuck_finalizar", "stuck_contact", "email_pendente_revisao", "contato_incompleto", "automation_failed"]);
-    if ((Object.keys(updates).length > 0 || reply) && customer?.status && STUCK_STATES.has(customer.status) && !(updates as any).status) {
-      (updates as any).status = "pending";
-      (updates as any).error_message = null;
-      (updates as any).rescue_attempts = 0;
-    }
-    // A/B: cliente respondeu (qualquer msg dentro de 1h da última outbound conta como "replied")
-    try {
-      const lastOut = (customer as any).last_bot_reply_at ? new Date((customer as any).last_bot_reply_at) : null;
-      if (lastOut && (Date.now() - lastOut.getTime()) < 60 * 60 * 1000) {
-        await supabase.rpc("increment_ab_metric", {
-          p_template_key: "any", p_step_key: stepBefore, p_variant: "default",
-          p_consultant_id: superAdminConsultantId, p_metric: "replied",
-        });
-      }
-      if (updates.conversation_step && stripPrefix(updates.conversation_step) !== stepBefore) {
-        await supabase.rpc("increment_ab_metric", {
-          p_template_key: "any", p_step_key: stepBefore, p_variant: "default",
-          p_consultant_id: superAdminConsultantId, p_metric: "advanced",
-        });
-      }
-    } catch (e) { /* tracking não bloqueia */ }
-
-    // Extrai metadados de telemetria (não persistir no customers).
-    const __intent = (updates as any).__intent ?? null;
-    const __confidence = (updates as any).__confidence ?? null;
-    const __inline_sent_flag = (updates as any).__inline_sent === true;
-    // Strip TODAS as chaves internas "__*" antes do update — previne erros
-    // de coluna inexistente (ex: __ai_faq, __intent etc.) que quebram tudo.
-    for (const k of Object.keys(updates)) {
-      if (k.startsWith("__")) delete (updates as any)[k];
-    }
-
-    if (Object.keys(updates).length > 0) {
-      const { error: updateError } = await supabase.from("customers").update(updates).eq("id", customer.id).select();
-      if (updateError) console.error(`❌ ERRO ao salvar updates:`, updateError);
-      if (updates.conversation_step && stripPrefix(updates.conversation_step) !== stepBefore) {
-        await logStepTransition(supabase, {
-          customer_id: customer.id, consultant_id: superAdminConsultantId,
-          phone, from_step: stepBefore, to_step: stripPrefix(updates.conversation_step),
-          intent: __intent, confidence: __confidence,
-        });
-      }
-      // Avança o estágio do deal no Kanban conforme o lead progride na conversa.
-      if (updates.conversation_step) {
-        await syncDealStageFromStep(supabase, customer.id, updates.conversation_step);
-      }
-    }
-
-    // ─── Send reply ────────────────────────────────────────────────────
-    // Considera "inline_sent" sempre que houver QUALQUER update — inclusive só __inline_sent.
-    const handlerSentInline = reply === "" && (Object.keys(updates).length > 0 || __inline_sent_flag);
-    let finalReply = reply;
-    if (!finalReply && !handlerSentInline) {
-      // Sem fallback robotizado. Silêncio é melhor do que empurrar texto fantasma.
-      finalReply = "";
-    }
-    if (silentMode && finalReply) {
-      console.log(`🤫 [silent-capture] suprimindo reply final ("${finalReply.slice(0, 60)}...") — IA manual`);
-      finalReply = "";
-    }
-    if (finalReply) {
-      // 🛡️ Anti-duplicação universal: bloqueia envio de texto idêntico ao último
-      // outbound feito ao mesmo cliente nos últimos 60s. Cobre TODAS as origens
-      // (dispatchStepFromFlow, respondAndReentry, replies finais, etc).
-      let isDuplicate = false;
-      try {
-        const sinceIso = new Date(Date.now() - 60_000).toISOString();
-        const { data: lastOut } = await supabase
-          .from("conversations")
-          .select("message_text, created_at")
-          .eq("customer_id", customer.id)
-          .eq("message_direction", "outbound")
-          .gte("created_at", sinceIso)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (lastOut && String((lastOut as any).message_text || "").trim() === String(finalReply).trim()) {
-          const ageMs = Date.now() - new Date((lastOut as any).created_at).getTime();
-          console.warn(`🛡️ [anti-dup] skip — mesma msg enviada há ${Math.round(ageMs/1000)}s para customer=${customer.id}`);
-          isDuplicate = true;
-        }
-      } catch (_) { /* anti-dup é best-effort */ }
-
-      if (!isDuplicate) {
-        try { await sender.sendText(remoteJid, finalReply); } catch (e: any) { console.error("Erro enviar:", e); }
-        // ─── Log outbound (apenas se houve resposta de texto enviada inline aqui) ─────
-        await supabase.from("conversations").insert({
-          customer_id: customer.id,
-          message_direction: "outbound",
-          message_text: finalReply,
-          message_type: "text",
-          conversation_step: updates.conversation_step || stepBefore,
-        });
-      }
-    }
-
-    // 🔓 Libera o lock antes de retornar + limpa marker de fila pendente.
+    // 🔓 Libera o lock antes de retornar (pending já foi drenado dentro do try).
     try { await supabase.rpc("release_customer_processing_lock", { _customer_id: customer.id }); } catch (_) {}
-    try { await supabase.rpc("clear_pending_inbound", { _customer_id: customer.id }); } catch (_) {}
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
