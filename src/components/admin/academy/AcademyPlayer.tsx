@@ -1,6 +1,7 @@
 /**
  * Player de vídeo YouTube usando a IFrame API.
  * Rastreia progresso e expõe callbacks para o pai.
+ * Tema: Esmeralda Premium (deep emerald + gold + cream).
  */
 import { useEffect, useRef, useCallback } from "react";
 import {
@@ -30,6 +31,21 @@ interface YTPlayerInstance {
   getCurrentTime():  number;
 }
 
+/* ---- paleta Esmeralda Premium ---- */
+const C = {
+  bg:        "#08120e",
+  surface:   "#0d1a14",
+  border:    "rgba(201,168,76,0.18)",
+  borderHi:  "rgba(201,168,76,0.45)",
+  gold:      "#c9a84c",
+  goldSoft:  "rgba(201,168,76,0.12)",
+  cream:     "#f5f0e0",
+  creamDim:  "rgba(245,240,224,0.62)",
+  creamMute: "rgba(245,240,224,0.40)",
+  emerald:   "#0d7a5f",
+  danger:    "#e07a6b",
+};
+
 /* ---- carrega script UMA vez ---- */
 let ytApiReady = false;
 if (typeof window !== "undefined") {
@@ -46,10 +62,6 @@ if (typeof window !== "undefined") {
   } else {
     ytApiReady = true;
   }
-}
-
-function thumbUrl(yt: string) {
-  return `https://i.ytimg.com/vi/${yt}/mqdefault.jpg`;
 }
 
 /* ---- props ---- */
@@ -143,29 +155,40 @@ export function AcademyPlayer({
   }, [onClose, onNext, onPrev, hasPrev, hasNext]);
 
   return (
-    /* slide up from bottom */
-    <div className="fixed inset-0 z-[100] flex flex-col bg-[#0a0a0c]
-                    animate-in slide-in-from-bottom-4 duration-300">
-
+    <div
+      className="fixed inset-0 z-[100] flex flex-col animate-in slide-in-from-bottom-4 duration-300"
+      style={{
+        background: `radial-gradient(120% 80% at 50% 0%, #0f2018 0%, ${C.bg} 60%)`,
+        color: C.cream,
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+      }}
+    >
       {/* ---- barra superior ---- */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 h-14 px-3
-                      bg-black/80 backdrop-blur-md border-b border-white/10 shrink-0">
+      <div
+        className="sticky top-0 z-10 flex items-center gap-3 h-14 px-3 sm:px-5 shrink-0 backdrop-blur-md"
+        style={{ background: "rgba(8,18,14,0.85)", borderBottom: `1px solid ${C.border}` }}
+      >
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg
-                     text-white/70 hover:text-white hover:bg-white/10
-                     text-sm font-semibold transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          style={{ color: C.creamDim }}
+          onMouseEnter={e => { e.currentTarget.style.color = C.cream; e.currentTarget.style.background = C.goldSoft; }}
+          onMouseLeave={e => { e.currentTarget.style.color = C.creamDim; e.currentTarget.style.background = "transparent"; }}
         >
           <ArrowLeft className="w-4 h-4" />
           <span className="hidden sm:inline">Voltar</span>
         </button>
-        <span className="text-xs text-white/40 truncate flex-1 min-w-0">
-          {lesson.catTitle} › {lesson.moduleTitle}
-        </span>
+        <div className="flex-1 min-w-0 flex items-center gap-2 text-xs">
+          <span className="uppercase tracking-[0.18em]" style={{ color: C.gold, letterSpacing: "0.18em" }}>
+            {lesson.catTitle}
+          </span>
+          <span style={{ color: C.creamMute }}>·</span>
+          <span className="truncate" style={{ color: C.creamDim }}>{lesson.moduleTitle}</span>
+        </div>
       </div>
 
       {/* ---- vídeo ---- */}
-      <div className="bg-black w-full shrink-0">
+      <div className="w-full shrink-0" style={{ background: "#000" }}>
         <div className="relative w-full max-w-5xl mx-auto" style={{ aspectRatio: "16/9" }}>
           <div ref={mountRef} className="absolute inset-0 w-full h-full" />
         </div>
@@ -173,40 +196,66 @@ export function AcademyPlayer({
 
       {/* ---- info + controles ---- */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-          {/* título + badge concluída */}
-          <div className="flex items-start gap-3">
-            <h1 className="flex-1 text-lg sm:text-xl font-black text-white leading-snug">
-              {lesson.title}
-            </h1>
-            {progress.done && (
-              <span className="shrink-0 mt-0.5 flex items-center gap-1 text-xs font-black
-                               text-[#00A859] bg-[#00A859]/15 border border-[#00A859]/30
-                               px-2 py-1 rounded-full">
-                <CheckCircle className="w-3 h-3" /> Concluída
+          {/* kicker + título + badge */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-none w-8" style={{ background: C.gold }} />
+              <span className="text-[10px] font-semibold uppercase" style={{ color: C.gold, letterSpacing: "0.28em" }}>
+                Aula em curso
               </span>
-            )}
+            </div>
+            <div className="flex items-start gap-3">
+              <h1
+                className="flex-1 text-2xl sm:text-3xl leading-tight tracking-tight"
+                style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", fontWeight: 600, color: C.cream }}
+              >
+                {lesson.title}
+              </h1>
+              {progress.done && (
+                <span
+                  className="shrink-0 mt-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase px-2.5 py-1 rounded-full"
+                  style={{
+                    color: C.gold,
+                    background: C.goldSoft,
+                    border: `1px solid ${C.borderHi}`,
+                    letterSpacing: "0.18em",
+                  }}
+                >
+                  <CheckCircle className="w-3 h-3" /> Concluída
+                </span>
+              )}
+            </div>
           </div>
 
           {/* progresso */}
-          <div className="space-y-1">
-            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+          <div className="space-y-2">
+            <div className="flex justify-between text-[11px] uppercase" style={{ color: C.creamMute, letterSpacing: "0.2em" }}>
+              <span>Progresso</span>
+              <span style={{ color: C.gold }}>{progress.pct}%</span>
+            </div>
+            <div className="h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(245,240,224,0.08)" }}>
               <div
-                className="h-full bg-[#00A859] transition-all duration-500"
-                style={{ width: `${progress.pct}%` }}
+                className="h-full transition-all duration-500"
+                style={{
+                  width: `${progress.pct}%`,
+                  background: `linear-gradient(90deg, ${C.emerald}, ${C.gold})`,
+                }}
               />
             </div>
-            <p className="text-xs text-white/40">{progress.pct}% assistido</p>
           </div>
 
           {/* ações */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-2">
             <button
               onClick={onPrev} disabled={!hasPrev}
-              className="flex items-center gap-1 px-3 py-2.5 rounded-xl text-sm font-bold
-                         border border-white/15 bg-white/5 text-white hover:bg-white/10
-                         disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1 px-4 py-3 rounded-lg text-sm font-medium transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+              style={{
+                color: C.cream,
+                background: "rgba(245,240,224,0.04)",
+                border: `1px solid ${C.border}`,
+              }}
             >
               <ChevronLeft className="w-4 h-4" /> Anterior
             </button>
@@ -214,21 +263,37 @@ export function AcademyPlayer({
             <button
               onClick={() => onMarkDone(videoId)}
               disabled={progress.done}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl
-                          text-sm font-black transition-colors
-                          ${progress.done
-                            ? "border border-white/10 bg-white/5 text-white/30 cursor-default"
-                            : "bg-[#00A859] hover:bg-[#007A3D] text-white"}`}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-semibold uppercase transition-all"
+              style={
+                progress.done
+                  ? {
+                      color: C.creamMute,
+                      background: "rgba(245,240,224,0.04)",
+                      border: `1px solid ${C.border}`,
+                      letterSpacing: "0.14em",
+                      cursor: "default",
+                    }
+                  : {
+                      color: C.bg,
+                      background: `linear-gradient(135deg, ${C.gold}, #b8943f)`,
+                      border: "1px solid transparent",
+                      letterSpacing: "0.14em",
+                      boxShadow: "0 8px 24px -12px rgba(201,168,76,0.6)",
+                    }
+              }
             >
               <CheckCircle className="w-4 h-4" />
-              {progress.done ? "✓ Concluída" : "Marcar como concluída"}
+              {progress.done ? "Concluída" : "Marcar concluída"}
             </button>
 
             <button
               onClick={onNext} disabled={!hasNext}
-              className="flex items-center gap-1 px-3 py-2.5 rounded-xl text-sm font-bold
-                         border border-white/15 bg-white/5 text-white hover:bg-white/10
-                         disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1 px-4 py-3 rounded-lg text-sm font-medium transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+              style={{
+                color: C.cream,
+                background: "rgba(245,240,224,0.04)",
+                border: `1px solid ${C.border}`,
+              }}
             >
               Próxima <ChevronRight className="w-4 h-4" />
             </button>
