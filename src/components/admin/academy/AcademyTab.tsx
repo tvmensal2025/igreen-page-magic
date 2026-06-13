@@ -165,9 +165,8 @@ export function AcademyTab() {
             {/* capa de revista — imagem full-bleed com kicker dentro */}
             <button
               onClick={() => openPlayer(resumeIdx)}
-              className="group relative block w-full overflow-hidden text-left"
+              className="group relative block w-full overflow-hidden text-left aspect-[4/5] sm:aspect-[16/9] lg:aspect-[21/9]"
               style={{
-                aspectRatio: "4 / 5",
                 borderRadius: 4,
                 background: C.surface,
               }}
