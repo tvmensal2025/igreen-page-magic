@@ -4984,6 +4984,7 @@ export type Database = {
       }
       lead_insights: {
         Row: {
+          classification_source: string | null
           classified_at: string
           consultant_id: string
           conversion_chance: number | null
@@ -5005,6 +5006,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          classification_source?: string | null
           classified_at?: string
           consultant_id: string
           conversion_chance?: number | null
@@ -5026,6 +5028,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          classification_source?: string | null
           classified_at?: string
           consultant_id?: string
           conversion_chance?: number | null

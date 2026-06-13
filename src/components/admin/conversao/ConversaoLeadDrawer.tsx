@@ -20,6 +20,13 @@ const TEMP_META_LABEL: Record<Temp, string> = {
   objection: "Objeção", rescue: "Resgate",
 };
 
+const SOURCE_LABEL: Record<string, string> = {
+  rules: "Regras",
+  ai_lite: "IA lite",
+  ai_full: "IA full",
+  cache: "Cache",
+};
+
 interface TplOption {
   id: string;
   message_text: string;
@@ -180,6 +187,11 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
                 {lead.temperature && <span className="text-xs">{TEMP_META_LABEL[lead.temperature]}</span>}
                 {lead.conversion_chance != null && <span className="text-xs">· {lead.conversion_chance}% de chance</span>}
                 <span className="inline-flex items-center gap-1 text-xs"><Clock className="h-3 w-3" /> {formatStuck(lead.hours_stuck)}</span>
+                {lead.classification_source && lead.classification_source !== "cache" && (
+                  <span className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {SOURCE_LABEL[lead.classification_source] ?? lead.classification_source}
+                  </span>
+                )}
               </SheetDescription>
             </SheetHeader>
 

@@ -1,20 +1,19 @@
 // lead-temperature-classifier
-// Analisa as últimas mensagens de um lead e classifica:
-//   temperature, loss_reason, main_doubt, main_objection, summary,
-//   next_action, next_msg_draft, conversion_chance, signals
-// Grava em public.lead_insights (upsert).
+// Classifica leads com regras determinísticas (0 tokens) e IA lite só quando necessário.
 //
 // Modos:
-//   POST { customer_id }                      → classifica 1 lead
-//   POST { customer_ids: [...] }              → batch (até 25)
-//   POST { consultant_id, scope: "stale_24h" } → re-classifica tudo do consultor
-//                                                que está needs_reclassify=true ou
-//                                                classified_at < now()-24h
-//
-// IMPORTANTE: dry_run=true por padrão NÃO envia nada. Só lê + grava insights.
-// O envio de mensagens é responsabilidade de OUTRA função (F4).
+//   POST { customer_id }                       → classifica 1 lead
+//   POST { customer_ids: [...] }               → batch (até 25)
+//   POST { consultant_id, scope: "stale_24h" } → re-classifica antigos / needs_reclassify
+//   POST { consultant_id, scope: "all_unclassified" }
+//   POST { customer_id, force_ai: true }       → força IA lite mesmo com regras ok
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { classifyByRules } from "../_shared/conversion/rule-classifier.ts";
+import {
+  resolveDraftWithOverrides,
+  VALID_SHORTCUTS,
+} from "../_shared/conversion/phrase-catalog.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,30 +25,33 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const MODEL = "google/gemini-3-flash-preview";
 
-const TOOL_SCHEMA = {
+const RULE_CONFIDENCE_THRESHOLD = 0.85;
+
+const TOOL_SCHEMA_LITE = {
   type: "function",
   function: {
-    name: "classify_lead",
-    description: "Analisa a conversa de um lead da iGreen (energia solar por assinatura) e devolve diagnóstico de conversão.",
+    name: "classify_lead_lite",
+    description: "Classifica lead iGreen. NÃO escreva mensagem — só escolha temperature e shortcut do catálogo.",
     parameters: {
       type: "object",
       properties: {
         temperature: {
           type: "string",
           enum: ["hot", "warm", "cold", "dead", "objection", "rescue"],
-          description: "hot=pronto pra fechar (mandou conta/CPF, perguntando como pagar). warm=engajado, faltam dados. cold=respondeu pouco, sem demonstrar interesse forte. dead=disse não / parou há 7+ dias. objection=tem dúvida/medo claro que está travando. rescue=lead que mandou algo (PDF/áudio/pergunta) e ficou sem resposta nossa.",
         },
-        loss_reason: { type: "string", description: "Em até 60 caracteres: principal motivo de não ter avançado (silêncio_do_lead, desconfiança, preço, sem_conta_de_luz, etc). null se for hot." },
-        main_doubt: { type: "string", description: "Principal dúvida do lead em 1 frase curta. null se não houver." },
-        main_objection: { type: "string", description: "Principal objeção (golpe, fidelidade, preço, etc) em 1 frase. null se não houver." },
-        summary: { type: "string", description: "Resumo da conversa em 1-2 frases para o consultor entender em 3 segundos." },
-        next_action: { type: "string", description: "Próxima ação concreta e curta. Ex: 'Pedir foto da conta', 'Responder objeção golpe', 'Follow-up 24h'." },
-        next_msg_template_shortcut: { type: "string", description: "Atalho do template recomendado, se algum se aplica. Opções: /oi1 /oi2 /oi3 /fup1h /fup24h /fup72h /fup7d /golpe /fidelidade /preco /comofunciona /problema /depois /jadesconto /medo /quemsomos. null se nenhum se aplica." },
-        next_msg_draft: { type: "string", description: "Mensagem pronta personalizada (50-200 caracteres) que o consultor pode mandar agora. Use o nome do lead se souber." },
-        conversion_chance: { type: "integer", description: "Chance de virar venda nos próximos 7 dias, 0-100." },
+        loss_reason: { type: "string", description: "Até 60 chars. null se hot." },
+        main_doubt: { type: "string", description: "1 frase curta ou null." },
+        main_objection: { type: "string", description: "1 frase curta ou null." },
+        summary: { type: "string", description: "Resumo em 1-2 frases." },
+        next_action: { type: "string", description: "Próxima ação concreta e curta." },
+        next_msg_template_shortcut: {
+          type: "string",
+          enum: VALID_SHORTCUTS,
+          description: "Atalho da frase pronta a enviar.",
+        },
+        conversion_chance: { type: "integer", description: "0-100." },
         signals: {
           type: "object",
-          description: "Sinais detectados na conversa.",
           properties: {
             sent_bill: { type: "boolean" },
             mentioned_value: { type: "boolean" },
@@ -57,18 +59,18 @@ const TOOL_SCHEMA = {
             mentioned_scam_fear: { type: "boolean" },
             asked_how_it_works: { type: "boolean" },
             said_no: { type: "boolean" },
-            we_ghosted_them: { type: "boolean", description: "true se a ÚLTIMA mensagem foi do lead e nós não respondemos" },
+            we_ghosted_them: { type: "boolean" },
           },
         },
       },
-      required: ["temperature", "summary", "next_action", "next_msg_draft", "conversion_chance", "signals"],
+      required: ["temperature", "summary", "next_action", "next_msg_template_shortcut", "conversion_chance", "signals"],
     },
   },
 };
 
-async function callGemini(messagesText: string, leadName: string | null) {
-  const sys = `Você é um especialista em conversão no WhatsApp para iGreen Energy (energia solar por assinatura, desconto de 15-20% na conta de luz, sem obra, sem fidelidade, regulada pela ANEEL Lei 14.300). Analise a conversa abaixo e classifique o lead. Seja direto e prático — o consultor vai ler isso em 3 segundos. Responda em português do Brasil.`;
-  const user = `Lead: ${leadName ?? "(sem nome)"}\n\nConversa (mais recente embaixo):\n${messagesText}\n\nClassifique agora.`;
+async function callGeminiLite(messagesText: string, leadName: string | null) {
+  const sys = `Especialista em conversão WhatsApp iGreen Energy. Escolha temperature e o shortcut de frase pronta mais adequado. NÃO invente mensagem — só classifique. PT-BR.`;
+  const user = `Lead: ${leadName ?? "(sem nome)"}\n\nConversa:\n${messagesText}\n\nClassifique.`;
 
   const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -82,8 +84,8 @@ async function callGemini(messagesText: string, leadName: string | null) {
         { role: "system", content: sys },
         { role: "user", content: user },
       ],
-      tools: [TOOL_SCHEMA],
-      tool_choice: { type: "function", function: { name: "classify_lead" } },
+      tools: [TOOL_SCHEMA_LITE],
+      tool_choice: { type: "function", function: { name: "classify_lead_lite" } },
     }),
   });
 
@@ -96,17 +98,75 @@ async function callGemini(messagesText: string, leadName: string | null) {
   const data = await r.json();
   const call = data?.choices?.[0]?.message?.tool_calls?.[0];
   if (!call?.function?.arguments) throw new Error("no_tool_call");
-  const args = JSON.parse(call.function.arguments);
-  return { args, tokens: data?.usage?.total_tokens ?? null };
+  return { args: JSON.parse(call.function.arguments), tokens: data?.usage?.total_tokens ?? null };
 }
 
-async function classifyOne(sb: any, customerId: string) {
+function formatMessages(msgs: any[]): string {
+  return msgs
+    .map((m: any) => {
+      const who = m.message_direction === "outbound" ? "NÓS" : "LEAD";
+      const ts = new Date(m.created_at).toLocaleString("pt-BR");
+      const body = m.message_type && m.message_type !== "text"
+        ? `[${m.message_type}] ${m.message_text ?? ""}`
+        : (m.message_text ?? "");
+      return `[${ts}] ${who}: ${body.slice(0, 400)}`;
+    })
+    .join("\n");
+}
+
+function hoursSince(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  return (Date.now() - new Date(iso).getTime()) / 3_600_000;
+}
+
+async function getConsultantName(sb: any, consultantId: string): Promise<string> {
+  const { data } = await sb
+    .from("consultants")
+    .select("name, display_name")
+    .eq("id", consultantId)
+    .maybeSingle();
+  return data?.display_name || data?.name || "";
+}
+
+/**
+ * Carrega os overrides de frase do consultor a partir de
+ * `conversion_phrase_catalog` (consultant_id = dono). Retorna um Map
+ * shortcut → texto. Falha silenciosa: sem overrides o runtime cai no
+ * catálogo embarcado (phrase-catalog.ts).
+ */
+async function loadConsultantOverrides(sb: any, consultantId: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const { data } = await sb
+      .from("conversion_phrase_catalog")
+      .select("shortcut, message_text")
+      .eq("consultant_id", consultantId);
+    for (const row of (data as Array<{ shortcut: string; message_text: string }>) ?? []) {
+      if (row.shortcut && row.message_text) map.set(row.shortcut, row.message_text);
+    }
+  } catch (_) {
+    /* tabela ausente ou erro → usa só o catálogo embarcado */
+  }
+  return map;
+}
+
+async function classifyOne(
+  sb: any,
+  customerId: string,
+  opts: { forceAi?: boolean; overrides?: Map<string, string> } = {},
+) {
   const { data: customer } = await sb
     .from("customers")
-    .select("id, consultant_id, name, customer_origin, lead_source")
+    .select("id, consultant_id, name, conversation_step, electricity_bill_value, last_bot_interaction_at, created_at")
     .eq("id", customerId)
     .maybeSingle();
   if (!customer) return { customer_id: customerId, skipped: "not_found" };
+
+  const { data: existing } = await sb
+    .from("lead_insights")
+    .select("messages_count_at_classify, needs_reclassify, classified_at")
+    .eq("customer_id", customerId)
+    .maybeSingle();
 
   const { data: msgs, error: msgsErr } = await sb
     .from("conversations")
@@ -120,32 +180,115 @@ async function classifyOne(sb: any, customerId: string) {
   const recent = (msgs ?? []).reverse();
   if (recent.length === 0) return { customer_id: customerId, skipped: "no_messages" };
 
-  const formatted = recent
-    .map((m: any) => {
-      const who = m.message_direction === "outbound" ? "NÓS" : "LEAD";
-      const ts = new Date(m.created_at).toLocaleString("pt-BR");
-      const body = m.message_type && m.message_type !== "text" ? `[${m.message_type}] ${m.message_text ?? ""}` : (m.message_text ?? "");
-      return `[${ts}] ${who}: ${body.slice(0, 400)}`;
-    })
-    .join("\n");
+  if (
+    !opts.forceAi &&
+    existing?.classified_at &&
+    !existing.needs_reclassify &&
+    existing.messages_count_at_classify === recent.length
+  ) {
+    return { customer_id: customerId, skipped: "cache", source: "cache" };
+  }
 
-  const { args, tokens } = await callGemini(formatted, customer.name);
+  const ref = customer.last_bot_interaction_at || customer.created_at;
+  const hoursStuck = hoursSince(ref);
+  const consultantName = await getConsultantName(sb, customer.consultant_id);
+
+  const ruleResult = classifyByRules({
+    messages: recent,
+    conversationStep: customer.conversation_step ?? null,
+    hoursStuck,
+    billValue: customer.electricity_bill_value != null ? Number(customer.electricity_bill_value) : null,
+    customerName: customer.name ?? null,
+  });
+
+  let source: "rules" | "ai_lite" = "rules";
+  let tokens: number | null = 0;
+  let payload: {
+    temperature: string;
+    loss_reason: string | null;
+    main_doubt: string | null;
+    main_objection: string | null;
+    summary: string;
+    next_action: string;
+    shortcut: string;
+    conversion_chance: number;
+    signals: Record<string, boolean>;
+  };
+
+  if (ruleResult.confidence >= RULE_CONFIDENCE_THRESHOLD && !opts.forceAi) {
+    payload = {
+      temperature: ruleResult.temperature,
+      loss_reason: ruleResult.loss_reason,
+      main_doubt: ruleResult.main_doubt,
+      main_objection: ruleResult.main_objection,
+      summary: ruleResult.summary,
+      next_action: ruleResult.next_action,
+      shortcut: ruleResult.shortcut,
+      conversion_chance: ruleResult.conversion_chance,
+      signals: { ...ruleResult.signals },
+    };
+  } else {
+    try {
+      const { args, tokens: used } = await callGeminiLite(formatMessages(recent), customer.name);
+      source = "ai_lite";
+      tokens = used;
+      const shortcut = args.next_msg_template_shortcut || ruleResult.shortcut;
+      payload = {
+        temperature: args.temperature || ruleResult.temperature,
+        loss_reason: args.loss_reason ?? ruleResult.loss_reason,
+        main_doubt: args.main_doubt ?? ruleResult.main_doubt,
+        main_objection: args.main_objection ?? ruleResult.main_objection,
+        summary: args.summary || ruleResult.summary,
+        next_action: args.next_action || ruleResult.next_action,
+        shortcut,
+        conversion_chance: Math.max(0, Math.min(100, args.conversion_chance ?? ruleResult.conversion_chance)),
+        signals: { ...ruleResult.signals, ...(args.signals ?? {}) },
+      };
+    } catch (e) {
+      // Fallback rules sem gastar tokens
+      payload = {
+        temperature: ruleResult.temperature,
+        loss_reason: ruleResult.loss_reason,
+        main_doubt: ruleResult.main_doubt,
+        main_objection: ruleResult.main_objection,
+        summary: ruleResult.summary,
+        next_action: ruleResult.next_action,
+        shortcut: ruleResult.shortcut,
+        conversion_chance: ruleResult.conversion_chance,
+        signals: { ...ruleResult.signals },
+      };
+      source = "rules";
+    }
+  }
+
+  const { draft } = resolveDraftWithOverrides(
+    payload.shortcut,
+    {
+      name: customer.name,
+      electricity_bill_value: customer.electricity_bill_value != null
+        ? Number(customer.electricity_bill_value)
+        : null,
+    },
+    consultantName,
+    opts.overrides,
+  );
 
   const upsert = {
     customer_id: customerId,
     consultant_id: customer.consultant_id,
-    temperature: args.temperature,
-    loss_reason: args.loss_reason ?? null,
-    main_doubt: args.main_doubt ?? null,
-    main_objection: args.main_objection ?? null,
-    summary: args.summary,
-    next_action: args.next_action,
-    next_msg_draft: args.next_msg_draft,
-    next_msg_template_shortcut: args.next_msg_template_shortcut ?? null,
-    conversion_chance: Math.max(0, Math.min(100, args.conversion_chance ?? 0)),
-    signals: args.signals ?? {},
-    model_used: MODEL,
+    temperature: payload.temperature,
+    loss_reason: payload.loss_reason,
+    main_doubt: payload.main_doubt,
+    main_objection: payload.main_objection,
+    summary: payload.summary,
+    next_action: payload.next_action,
+    next_msg_draft: draft || null,
+    next_msg_template_shortcut: payload.shortcut,
+    conversion_chance: payload.conversion_chance,
+    signals: payload.signals,
+    model_used: source === "ai_lite" ? MODEL : "rules",
     tokens_used: tokens,
+    classification_source: source,
     classified_at: new Date().toISOString(),
     messages_count_at_classify: recent.length,
     needs_reclassify: false,
@@ -153,7 +296,14 @@ async function classifyOne(sb: any, customerId: string) {
 
   const { error } = await sb.from("lead_insights").upsert(upsert, { onConflict: "customer_id" });
   if (error) return { customer_id: customerId, error: error.message };
-  return { customer_id: customerId, temperature: args.temperature, chance: upsert.conversion_chance };
+  return {
+    customer_id: customerId,
+    temperature: payload.temperature,
+    chance: payload.conversion_chance,
+    source,
+    shortcut: payload.shortcut,
+    tokens_used: tokens,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -161,6 +311,7 @@ Deno.serve(async (req) => {
   try {
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
     const body = await req.json().catch(() => ({}));
+    const forceAi = body.force_ai === true;
 
     let ids: string[] = [];
     if (body.customer_id) ids = [body.customer_id];
@@ -186,6 +337,18 @@ Deno.serve(async (req) => {
         })
         .map((c: any) => c.id)
         .slice(0, 25);
+    } else if (body.scope === "needs_reclassify_global") {
+      // Cron global: varre leads marcados needs_reclassify=true em TODOS os
+      // consultores. Seguro porque o caminho rules custa 0 tokens; AI lite só
+      // entra em casos ambíguos. Lote pequeno por execução (a cada 15 min).
+      const limit = Math.min(Number(body.limit) || 100, 200);
+      const { data } = await sb
+        .from("lead_insights")
+        .select("customer_id")
+        .eq("needs_reclassify", true)
+        .order("updated_at", { ascending: true })
+        .limit(limit);
+      ids = (data ?? []).map((r: any) => r.customer_id);
     }
 
     if (ids.length === 0) {
@@ -194,17 +357,45 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Cache de overrides do catálogo por consultor (1 query por consultor,
+    // reaproveitada entre os leads dele no mesmo request).
+    const overridesByConsultant = new Map<string, Map<string, string>>();
+    async function overridesFor(consultantId: string): Promise<Map<string, string>> {
+      const cached = overridesByConsultant.get(consultantId);
+      if (cached) return cached;
+      const loaded = await loadConsultantOverrides(sb, consultantId);
+      overridesByConsultant.set(consultantId, loaded);
+      return loaded;
+    }
+
     const results: any[] = [];
     for (const id of ids) {
       try {
-        results.push(await classifyOne(sb, id));
+        // Resolve o consultor do lead para carregar os overrides certos.
+        const { data: own } = await sb
+          .from("customers")
+          .select("consultant_id")
+          .eq("id", id)
+          .maybeSingle();
+        const overrides = own?.consultant_id
+          ? await overridesFor(own.consultant_id)
+          : undefined;
+        results.push(await classifyOne(sb, id, { forceAi, overrides }));
       } catch (e) {
         results.push({ customer_id: id, error: (e as Error).message });
         if ((e as Error).message === "rate_limited" || (e as Error).message === "no_credits") break;
       }
     }
 
-    return new Response(JSON.stringify({ processed: results.length, results }), {
+    const byRules = results.filter((r) => r.source === "rules").length;
+    const byAi = results.filter((r) => r.source === "ai_lite").length;
+    const cached = results.filter((r) => r.skipped === "cache").length;
+
+    return new Response(JSON.stringify({
+      processed: results.length,
+      stats: { rules: byRules, ai_lite: byAi, cache: cached },
+      results,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

@@ -13,15 +13,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
   LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
-  ListOrdered, MessageSquareText, Settings2,
+  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   priorityScore, priorityTier, TIER_META, formatStuck, type Temp,
 } from "./score";
+import { stepLabel, loadFlowTitles } from "./stepLabels";
 import { ConversaoLeadDrawer } from "./ConversaoLeadDrawer";
 import { FrasesPanel } from "./FrasesPanel";
 import { ConfigPanel } from "./ConfigPanel";
+import { ResultadosPanel } from "./ResultadosPanel";
 
 const TEMP_META: Record<Temp, { label: string; icon: any; cls: string }> = {
   hot:       { label: "Quente",  icon: Flame,         cls: "bg-destructive/15 text-destructive border-destructive/30" },
@@ -53,9 +55,17 @@ export interface LeadRow {
   next_action: string | null;
   next_msg_draft: string | null;
   classified_at: string | null;
+  classification_source: string | null;
   // derivado
   score: number;
 }
+
+const SOURCE_LABEL: Record<string, string> = {
+  rules: "Regras",
+  ai_lite: "IA lite",
+  ai_full: "IA full",
+  cache: "Cache",
+};
 
 type OriginFilter = "all" | "meta_ads" | "whatsapp_direct" | "partner";
 
@@ -91,6 +101,11 @@ export function ConversaoCockpit({ consultantId }: Props) {
   const [partnerFilter, setPartnerFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<LeadRow | null>(null);
+  const [bulkStale, setBulkStale] = useState(false);
+  const [flowTitles, setFlowTitles] = useState<Map<string, string>>(new Map());
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchSending, setBatchSending] = useState<{ done: number; total: number } | null>(null);
   const [searchParams] = useSearchParams();
   const { partners } = useReferralPartners();
 
@@ -104,7 +119,7 @@ export function ConversaoCockpit({ consultantId }: Props) {
         id, name, phone_whatsapp, customer_origin, lead_source, bot_paused,
         last_bot_interaction_at, created_at, electricity_bill_value, referral_partner_id, conversation_step,
         lead_insights ( temperature, conversion_chance, summary, main_doubt, main_objection,
-                        loss_reason, next_action, next_msg_draft, classified_at )
+                        loss_reason, next_action, next_msg_draft, classified_at, classification_source )
       `)
       .eq("consultant_id", consultantId)
       .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
@@ -118,10 +133,30 @@ export function ConversaoCockpit({ consultantId }: Props) {
     }
 
     const now = Date.now();
+    const customerIds = (data ?? []).map((c: any) => c.id as string);
+    const inboundMap = new Map<string, number>();
+    if (customerIds.length > 0) {
+      const { data: counts, error: countErr } = await (supabase as any).rpc("count_inbound_messages", {
+        p_customer_ids: customerIds,
+      });
+      if (countErr) {
+        // Sem inbound_count o score perde o boost de engajamento, mas a fila
+        // continua utilizável. Avisa discretamente em vez de falhar silencioso.
+        console.warn("[conversao] count_inbound_messages falhou:", countErr.message);
+        toast.warning("Engajamento indisponível", {
+          description: "Aplique a migration de conversão para ordenar por mensagens.",
+        });
+      }
+      for (const row of (counts as { customer_id: string; cnt: number }[]) ?? []) {
+        inboundMap.set(row.customer_id, Number(row.cnt));
+      }
+    }
+
     const mapped: LeadRow[] = (data ?? []).map((c: any) => {
       const li = Array.isArray(c.lead_insights) ? c.lead_insights[0] : c.lead_insights;
       const ref = c.last_bot_interaction_at || c.created_at;
       const hours = ref ? (now - new Date(ref).getTime()) / 3_600_000 : null;
+      const inboundCount = inboundMap.get(c.id) ?? null;
       const base: LeadRow = {
         customer_id: c.id,
         name: c.name,
@@ -129,7 +164,7 @@ export function ConversaoCockpit({ consultantId }: Props) {
         bill_value: c.electricity_bill_value != null ? Number(c.electricity_bill_value) : null,
         bot_paused: c.bot_paused,
         hours_stuck: hours,
-        inbound_count: null, // preenchido depois (lazy) — score usa null=neutro
+        inbound_count: inboundCount,
         referral_partner_id: c.referral_partner_id ?? null,
         lead_source: c.lead_source,
         conversation_step: c.conversation_step ?? null,
@@ -142,6 +177,7 @@ export function ConversaoCockpit({ consultantId }: Props) {
         next_action: li?.next_action ?? null,
         next_msg_draft: li?.next_msg_draft ?? null,
         classified_at: li?.classified_at ?? null,
+        classification_source: li?.classification_source ?? null,
         score: 0,
       };
       base.score = priorityScore({
@@ -154,6 +190,8 @@ export function ConversaoCockpit({ consultantId }: Props) {
       return base;
     });
     setRows(mapped);
+    const steps = mapped.map((r) => r.conversation_step).filter(Boolean) as string[];
+    loadFlowTitles(steps).then(setFlowTitles);
     setLoading(false);
   }, [consultantId]);
 
@@ -219,11 +257,16 @@ export function ConversaoCockpit({ consultantId }: Props) {
   const classifyOne = useCallback(async (customerId: string) => {
     setClassifying(customerId);
     try {
-      const { error } = await supabase.functions.invoke("lead-temperature-classifier", {
+      const { data, error } = await supabase.functions.invoke("lead-temperature-classifier", {
         body: { customer_id: customerId },
       });
       if (error) throw error;
-      toast.success("Lead reclassificado pela IA");
+      const src = (data?.results?.[0]?.source ?? data?.results?.[0]?.skipped) as string | undefined;
+      const label = src === "rules" ? "por regras (0 tokens)"
+        : src === "ai_lite" ? "com IA"
+        : src === "cache" ? "(sem mudança)"
+        : "";
+      toast.success(`Lead reclassificado ${label}`.trim());
       await fetchRows();
     } catch (e: any) {
       toast.error("Falha ao classificar", { description: e.message });
@@ -231,6 +274,25 @@ export function ConversaoCockpit({ consultantId }: Props) {
       setClassifying(null);
     }
   }, [fetchRows]);
+
+  const classifyStale = useCallback(async () => {
+    setBulkStale(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("lead-temperature-classifier", {
+        body: { consultant_id: consultantId, scope: "stale_24h" },
+      });
+      if (error) throw error;
+      const stats = data?.stats;
+      toast.success(`${data?.processed ?? 0} leads reclassificados`, {
+        description: stats ? `${stats.rules ?? 0} por regras, ${stats.ai_lite ?? 0} IA lite` : undefined,
+      });
+      await fetchRows();
+    } catch (e: any) {
+      toast.error("Falha ao reclassificar", { description: e.message });
+    } finally {
+      setBulkStale(false);
+    }
+  }, [consultantId, fetchRows]);
 
   const classifyAll = useCallback(async () => {
     if (metrics.unclassified === 0) { toast.info("Nada para classificar"); return; }
@@ -263,11 +325,85 @@ export function ConversaoCockpit({ consultantId }: Props) {
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
 
+  // ─── Seleção + envio em lote ────────────────────────────────────────────────
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedIds(new Set(filtered.map((r) => r.customer_id)));
+  }, [filtered]);
+
+  // Envia o template de reaquecimento da etapa de cada lead selecionado.
+  // Fatiado client-side em chunks de 20 (a edge function dorme ~5s entre
+  // envios; um único request com centenas de leads estouraria o timeout).
+  const CHUNK = 20;
+  const sendBatch = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length < 2) {
+      toast.info("Selecione ao menos 2 leads para o envio em lote");
+      return;
+    }
+    const batchId = crypto.randomUUID();
+    setBatchSending({ done: 0, total: ids.length });
+    let sent = 0;
+    let failed = 0;
+    try {
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        if (chunk.length < 2) {
+          // A edge function exige 2–500; envia o resto via single fallback.
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          const url = (import.meta as any).env?.VITE_SUPABASE_URL || "";
+          const lead = rows.find((r) => r.customer_id === chunk[0]);
+          if (token && lead?.next_msg_draft) {
+            const res = await fetch(`${url}/functions/v1/reactivation-send`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ mode: "single", customer_id: chunk[0], message_text: lead.next_msg_draft }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (res.ok && d.ok) sent++; else failed++;
+          } else {
+            failed++;
+          }
+          setBatchSending({ done: Math.min(i + chunk.length, ids.length), total: ids.length });
+          continue;
+        }
+        const { data, error } = await supabase.functions.invoke("reactivation-send", {
+          body: { mode: "batch", customer_ids: chunk, batch_id: batchId },
+        });
+        if (error) throw error;
+        sent += data?.sent ?? 0;
+        failed += data?.failed ?? 0;
+        setBatchSending({ done: Math.min(i + chunk.length, ids.length), total: ids.length });
+      }
+      toast.success(`Reaquecimento enviado`, { description: `${sent} enviados, ${failed} falharam` });
+      exitSelectMode();
+      await fetchRows();
+    } catch (e: any) {
+      toast.error("Falha no envio em lote", { description: e.message });
+    } finally {
+      setBatchSending(null);
+    }
+  }, [selectedIds, rows, exitSelectMode, fetchRows]);
+
   return (
     <Tabs defaultValue="fila" className="space-y-5">
       <TabsList>
         <TabsTrigger value="fila" className="gap-1.5"><ListOrdered className="h-4 w-4" /> Fila de leads</TabsTrigger>
         <TabsTrigger value="frases" className="gap-1.5"><MessageSquareText className="h-4 w-4" /> Frases</TabsTrigger>
+        <TabsTrigger value="resultados" className="gap-1.5"><TrendingUp className="h-4 w-4" /> Resultados</TabsTrigger>
         <TabsTrigger value="config" className="gap-1.5"><Settings2 className="h-4 w-4" /> Configurar</TabsTrigger>
       </TabsList>
 
@@ -276,6 +412,8 @@ export function ConversaoCockpit({ consultantId }: Props) {
           metrics={metrics}
           bulk={bulk}
           onClassifyAll={classifyAll}
+          onClassifyStale={classifyStale}
+          staleLoading={bulkStale}
           onReload={fetchRows}
           loading={loading}
         />
@@ -294,6 +432,19 @@ export function ConversaoCockpit({ consultantId }: Props) {
           setSearch={setSearch}
         />
 
+        <SelectionBar
+          selectMode={selectMode}
+          selectedCount={selectedIds.size}
+          batchSending={batchSending}
+          onToggleMode={() => {
+            setSelectMode((v) => !v);
+            setSelectedIds(new Set());
+          }}
+          onSelectAll={() => setSelectedIds(new Set(filtered.map((r) => r.customer_id)))}
+          onClear={() => setSelectedIds(new Set())}
+          onSend={sendBatch}
+        />
+
         {loading ? (
           <Card className="grid place-items-center p-16">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -308,7 +459,11 @@ export function ConversaoCockpit({ consultantId }: Props) {
                   key={r.customer_id}
                   lead={r}
                   rank={idx + 1}
+                  stepLabelText={stepLabel(r.conversation_step, flowTitles)}
                   classifying={classifying === r.customer_id}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(r.customer_id)}
+                  onToggleSelect={() => toggleSelect(r.customer_id)}
                   onOpen={() => setSelected(r)}
                   onClassify={() => classifyOne(r.customer_id)}
                 />
@@ -320,6 +475,10 @@ export function ConversaoCockpit({ consultantId }: Props) {
 
       <TabsContent value="frases">
         <FrasesPanel consultantId={consultantId} availableSteps={availableSteps} />
+      </TabsContent>
+
+      <TabsContent value="resultados">
+        <ResultadosPanel consultantId={consultantId} />
       </TabsContent>
 
       <TabsContent value="config">
@@ -342,10 +501,12 @@ export function ConversaoCockpit({ consultantId }: Props) {
 //  Sub-componentes
 // ════════════════════════════════════════════════════════════════════════════
 
-function HeroStrip({ metrics, bulk, onClassifyAll, onReload, loading }: {
+function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading }: {
   metrics: { total: number; classified: number; unclassified: number; hotStuck: number; revenueAtStake: number; avgChance: number };
   bulk: { done: number; total: number } | null;
   onClassifyAll: () => void;
+  onClassifyStale: () => void;
+  staleLoading: boolean;
   onReload: () => void;
   loading: boolean;
 }) {
@@ -369,6 +530,12 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onReload, loading }: {
             <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
               {bulk ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
               Classificar {metrics.unclassified}
+            </Button>
+          )}
+          {metrics.unclassified === 0 && metrics.classified > 0 && (
+            <Button size="sm" variant="outline" onClick={onClassifyStale} disabled={!!bulk || staleLoading} className="gap-1.5">
+              {staleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Reclassificar 24h
             </Button>
           )}
         </div>
@@ -489,8 +656,10 @@ function FilterBar({
   );
 }
 
-function LeadCard({ lead, rank, classifying, onOpen, onClassify }: {
-  lead: LeadRow; rank: number; classifying: boolean; onOpen: () => void; onClassify: () => void;
+function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify }: {
+  lead: LeadRow; rank: number; stepLabelText: string; classifying: boolean;
+  selectMode: boolean; selected: boolean; onToggleSelect: () => void;
+  onOpen: () => void; onClassify: () => void;
 }) {
   const tier = priorityTier(lead.score);
   const TM = TIER_META[tier];
@@ -507,11 +676,19 @@ function LeadCard({ lead, rank, classifying, onOpen, onClassify }: {
       transition={{ duration: 0.18 }}
     >
       <Card
-        className="group relative cursor-pointer overflow-hidden p-3 transition hover:border-primary/40 hover:shadow-sm"
-        onClick={onOpen}
+        className={`group relative cursor-pointer overflow-hidden p-3 transition hover:border-primary/40 hover:shadow-sm ${selected ? "border-primary/60 ring-1 ring-primary/40" : ""}`}
+        onClick={selectMode ? onToggleSelect : onOpen}
       >
         {/* Faixa de prioridade na lateral */}
         <span className={`absolute left-0 top-0 h-full w-1 ${TM.dot}`} />
+
+        {selectMode && (
+          <span
+            className={`absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card"}`}
+          >
+            {selected && <CheckSquare className="h-3.5 w-3.5" />}
+          </span>
+        )}
 
         <div className="flex items-start gap-3 pl-1.5">
           <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium ${temp ? temp.cls : "border-border/40 bg-muted/40 text-muted-foreground"}`}>
@@ -531,10 +708,18 @@ function LeadCard({ lead, rank, classifying, onOpen, onClassify }: {
                   <TempIcon className="h-2.5 w-2.5" /> {temp.label}
                 </span>
               )}
+              {lead.classification_source && lead.classification_source !== "cache" && (
+                <span className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[9px] text-muted-foreground">
+                  {SOURCE_LABEL[lead.classification_source] ?? lead.classification_source}
+                </span>
+              )}
               <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
                 <Clock className="h-2.5 w-2.5" /> {formatStuck(lead.hours_stuck)}
               </span>
             </div>
+            {lead.conversation_step && (
+              <p className="mt-1 truncate text-[10px] text-muted-foreground">{stepLabelText}</p>
+            )}
           </div>
           <div className="text-right">
             <div className="font-mono text-sm font-semibold text-foreground">{Math.round(lead.score)}</div>
@@ -576,6 +761,50 @@ function LeadCard({ lead, rank, classifying, onOpen, onClassify }: {
         )}
       </Card>
     </motion.div>
+  );
+}
+
+function SelectionBar({ selectMode, selectedCount, batchSending, onToggleMode, onSelectAll, onClear, onSend }: {
+  selectMode: boolean;
+  selectedCount: number;
+  batchSending: { done: number; total: number } | null;
+  onToggleMode: () => void;
+  onSelectAll: () => void;
+  onClear: () => void;
+  onSend: () => void;
+}) {
+  if (!selectMode) {
+    return (
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={onToggleMode} className="gap-1.5">
+          <CheckSquare className="h-4 w-4" /> Selecionar para envio em lote
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-2.5">
+      <span className="text-xs font-medium text-foreground">{selectedCount} selecionado(s)</span>
+      <Button variant="ghost" size="sm" onClick={onSelectAll} className="h-7 text-[11px]">Selecionar todos</Button>
+      <Button variant="ghost" size="sm" onClick={onClear} className="h-7 text-[11px]">Limpar</Button>
+      <div className="ml-auto flex items-center gap-2">
+        {batchSending && (
+          <span className="text-[11px] text-muted-foreground font-mono">{batchSending.done}/{batchSending.total}</span>
+        )}
+        <Button
+          size="sm"
+          className="h-7 gap-1.5 text-[11px]"
+          disabled={selectedCount < 2 || !!batchSending}
+          onClick={onSend}
+        >
+          {batchSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          Reativar selecionados
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggleMode} disabled={!!batchSending}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 }
 
