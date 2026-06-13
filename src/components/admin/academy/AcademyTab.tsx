@@ -340,16 +340,32 @@ function Stat({ kicker, value, sub, accent }: {
   return (
     <div className="p-4 text-center" style={{ background: C.bg }}>
       <p className="text-[9px] font-bold tracking-[0.25em] uppercase"
-         style={{ color: accent, fontFamily: FONT_FAMILY_DISPLAY }}>
+         style={{ color: accent, fontFamily: FONT_FAMILY_BODY }}>
         {kicker}
       </p>
-      <p className="mt-1 text-2xl sm:text-3xl font-bold leading-none"
+      <p className="mt-1 text-2xl sm:text-3xl leading-none"
          style={{ color: C.cream, fontFamily: FONT_FAMILY_DISPLAY }}>
         {value}
       </p>
       <p className="mt-1 text-[10px]" style={{ color: C.cream40 }}>
         {sub}
       </p>
+    </div>
+  );
+}
+
+/* ---- mini-stat inline (hero) ---- */
+function MiniStat({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div>
+      <dt className="text-[9px] font-bold tracking-[0.25em] uppercase"
+          style={{ color: accent, fontFamily: FONT_FAMILY_BODY }}>
+        {label}
+      </dt>
+      <dd className="mt-1 text-xl leading-none"
+          style={{ color: C.cream, fontFamily: FONT_FAMILY_DISPLAY }}>
+        {value}
+      </dd>
     </div>
   );
 }
