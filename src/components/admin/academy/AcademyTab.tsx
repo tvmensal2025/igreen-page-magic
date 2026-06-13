@@ -42,8 +42,8 @@ const C = {
   cream10:   "rgba(245,240,224,.09)",
 };
 
-const FONT_FAMILY_BODY = "'DM Sans', system-ui, sans-serif";
-const FONT_FAMILY_DISPLAY = "'Space Grotesk', 'DM Sans', system-ui, sans-serif";
+const FONT_FAMILY_BODY = "'Fira Sans', system-ui, sans-serif";
+const FONT_FAMILY_DISPLAY = "'DM Serif Display', 'Fira Sans', Georgia, serif";
 
 /* injeta Google Fonts uma vez */
 function useAcademyFonts() {
@@ -53,7 +53,7 @@ function useAcademyFonts() {
     const l = document.createElement("link");
     l.id = id;
     l.rel = "stylesheet";
-    l.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap";
+    l.href = "https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Fira+Sans:wght@400;500;600;700&display=swap";
     document.head.appendChild(l);
   }, []);
 }
