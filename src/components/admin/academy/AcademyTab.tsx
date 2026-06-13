@@ -42,8 +42,8 @@ const C = {
   cream10:   "rgba(245,240,224,.09)",
 };
 
-const FONT_FAMILY_BODY = "'DM Sans', system-ui, sans-serif";
-const FONT_FAMILY_DISPLAY = "'Space Grotesk', 'DM Sans', system-ui, sans-serif";
+const FONT_FAMILY_BODY = "'Fira Sans', system-ui, sans-serif";
+const FONT_FAMILY_DISPLAY = "'DM Serif Display', 'Fira Sans', Georgia, serif";
 
 /* injeta Google Fonts uma vez */
 function useAcademyFonts() {
@@ -53,7 +53,7 @@ function useAcademyFonts() {
     const l = document.createElement("link");
     l.id = id;
     l.rel = "stylesheet";
-    l.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap";
+    l.href = "https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Fira+Sans:wght@400;500;600;700&display=swap";
     document.head.appendChild(l);
   }, []);
 }
@@ -135,14 +135,14 @@ export function AcademyTab() {
         fontFamily: FONT_FAMILY_BODY,
       }}
     >
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-10">
 
         {/* ===== EDITORIAL MASTHEAD ===== */}
         <header className="flex items-end justify-between border-b pb-3"
                 style={{ borderColor: C.cream20 }}>
           <div>
             <p className="text-[10px] font-bold tracking-[0.32em] uppercase"
-               style={{ color: C.gold, fontFamily: FONT_FAMILY_DISPLAY }}>
+               style={{ color: C.gold, fontFamily: FONT_FAMILY_BODY }}>
               iGreen · Academy
             </p>
             <p className="text-[10px] mt-0.5" style={{ color: C.cream40 }}>
@@ -153,53 +153,43 @@ export function AcademyTab() {
             <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: C.cream40 }}>
               Nível
             </p>
-            <p className="text-sm font-bold" style={{ color: C.cream, fontFamily: FONT_FAMILY_DISPLAY }}>
+            <p className="text-base" style={{ color: C.cream, fontFamily: FONT_FAMILY_DISPLAY }}>
               {lvl.icon} {lvl.name}
             </p>
           </div>
         </header>
 
-        {/* ===== HERO COVER (magazine) ===== */}
+        {/* ===== HERO CINEMASCOPE (split-screen) ===== */}
         {resumeLesson && (
-          <section className="space-y-4">
-            {/* capa de revista — imagem full-bleed com kicker dentro */}
+          <section className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-8 items-stretch">
+
+            {/* COVER lateral — proporção controlada, nunca domina */}
             <button
               onClick={() => openPlayer(resumeIdx)}
-              className="group relative block w-full overflow-hidden text-left aspect-[4/5] sm:aspect-[16/9] lg:aspect-[21/9]"
+              className="group relative block w-full overflow-hidden text-left aspect-[16/10] lg:aspect-auto lg:min-h-[380px] lg:max-h-[460px]"
               style={{
                 borderRadius: 4,
                 background: C.surface,
               }}
             >
-              {/* foto */}
               <img
                 src={thumbHi(resumeLesson.yt)}
                 onError={(e) => { (e.currentTarget as HTMLImageElement).src = thumbLo(resumeLesson.yt); }}
                 alt={resumeLesson.title}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
               />
-              {/* vinheta editorial */}
+              {/* gradiente sutil só para legibilidade do play */}
               <div
                 className="absolute inset-0"
                 style={{
-                  background: `linear-gradient(180deg, ${C.emeraldDp}33 0%, transparent 30%, ${C.bg}cc 70%, ${C.bg} 100%)`,
+                  background: `linear-gradient(180deg, ${C.emeraldDp}22 0%, transparent 40%, ${C.bg}66 100%)`,
                 }}
               />
-              {/* moldura interna */}
-              <div className="absolute inset-3 border pointer-events-none"
-                   style={{ borderColor: `${C.cream}26`, borderRadius: 2 }} />
+              {/* moldura dourada fininha */}
+              <div className="absolute inset-2 border pointer-events-none"
+                   style={{ borderColor: `${C.gold}44`, borderRadius: 2 }} />
 
-              {/* kicker topo */}
-              <div className="absolute top-5 left-5 right-5 flex items-center gap-2">
-                <span className="h-px flex-1" style={{ background: C.gold }} />
-                <span className="text-[10px] font-bold tracking-[0.3em] uppercase"
-                      style={{ color: C.gold, fontFamily: FONT_FAMILY_DISPLAY }}>
-                  {anyProgress ? "Continue · Capítulo em aberto" : "Comece por aqui"}
-                </span>
-                <span className="h-px flex-1" style={{ background: C.gold }} />
-              </div>
-
-              {/* play */}
+              {/* play centralizado */}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
                               w-16 h-16 rounded-full flex items-center justify-center
                               transition-transform duration-300 group-hover:scale-110"
@@ -210,67 +200,70 @@ export function AcademyTab() {
                 <Play className="w-6 h-6 ml-0.5" style={{ fill: C.emeraldDp, color: C.emeraldDp }} />
               </div>
 
-              {/* manchete */}
-              <div className="absolute left-0 right-0 bottom-0 p-5 sm:p-7">
-                <p className="text-[10px] font-semibold tracking-[0.25em] uppercase mb-2"
-                   style={{ color: C.goldSoft }}>
+              {/* legenda foto */}
+              <div className="absolute left-0 right-0 bottom-0 px-4 py-3 flex items-center gap-2"
+                   style={{ background: `linear-gradient(180deg, transparent, ${C.bg}cc)` }}>
+                <span className="h-px w-6" style={{ background: C.gold }} />
+                <p className="text-[10px] tracking-[0.25em] uppercase font-semibold"
+                   style={{ color: C.goldSoft, fontFamily: FONT_FAMILY_BODY }}>
                   {resumeLesson.catTitle}
                 </p>
-                <h1 className="font-bold leading-[1.05] tracking-tight"
-                    style={{
-                      fontFamily: FONT_FAMILY_DISPLAY,
-                      color: C.cream,
-                      fontSize: "clamp(1.6rem, 7vw, 2.4rem)",
-                    }}>
-                  {resumeLesson.title}
-                </h1>
-                <div className="mt-3 flex items-center gap-2 text-[11px]" style={{ color: C.cream60 }}>
-                  <span>{resumeLesson.moduleTitle}</span>
-                </div>
               </div>
             </button>
 
-            {/* CTA editorial */}
-            <button
-              onClick={() => openPlayer(resumeIdx)}
-              className="w-full flex items-center justify-between px-5 py-4 transition-colors"
-              style={{
-                background: C.cream,
-                color: C.emeraldDp,
-                borderRadius: 2,
-                fontFamily: FONT_FAMILY_DISPLAY,
-              }}
-            >
-              <span className="text-sm font-bold tracking-wide uppercase">
-                {anyProgress ? "Retomar leitura" : "Assistir agora"}
-              </span>
-              <ArrowRight className="w-5 h-5" />
-            </button>
+            {/* CONTEÚDO lateral — manchete + meta + CTA */}
+            <div className="flex flex-col justify-between gap-6 py-2">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <span className="h-px w-8" style={{ background: C.gold }} />
+                  <p className="text-[10px] font-bold tracking-[0.3em] uppercase"
+                     style={{ color: C.gold, fontFamily: FONT_FAMILY_BODY }}>
+                    {anyProgress ? "Continue assistindo" : "Comece por aqui"}
+                  </p>
+                </div>
+
+                <h1 className="leading-[1.05] tracking-tight"
+                    style={{
+                      fontFamily: FONT_FAMILY_DISPLAY,
+                      color: C.cream,
+                      fontSize: "clamp(1.8rem, 4.2vw, 3rem)",
+                    }}>
+                  {resumeLesson.title}
+                </h1>
+
+                <p className="text-sm" style={{ color: C.cream60, fontFamily: FONT_FAMILY_BODY }}>
+                  {resumeLesson.moduleTitle}
+                </p>
+
+                {/* mini-stats inline */}
+                <dl className="grid grid-cols-3 gap-4 pt-4 border-t" style={{ borderColor: C.cream20 }}>
+                  <MiniStat label="Aulas"     value={`${doneAulas}/${totalAulas}`} accent={C.gold} />
+                  <MiniStat label="Progresso" value={`${pct}%`}                    accent={C.emerald} />
+                  <MiniStat label="Provas"    value={`${passedCount}/${totalQuizzes}`} accent={C.gold} />
+                </dl>
+              </div>
+
+              {/* CTA */}
+              <button
+                onClick={() => openPlayer(resumeIdx)}
+                className="w-full flex items-center justify-between px-5 py-4 transition-all hover:translate-x-1"
+                style={{
+                  background: C.cream,
+                  color: C.emeraldDp,
+                  borderRadius: 2,
+                  fontFamily: FONT_FAMILY_BODY,
+                }}
+              >
+                <span className="text-sm font-bold tracking-wide uppercase">
+                  {anyProgress ? "Retomar leitura" : "Assistir agora"}
+                </span>
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
           </section>
         )}
 
-        {/* ===== STATS GRID (editorial) ===== */}
-        <section className="grid grid-cols-3 gap-px border"
-                 style={{ borderColor: C.cream20, background: C.cream20 }}>
-          <Stat
-            kicker="Aulas"
-            value={`${doneAulas}`}
-            sub={`de ${totalAulas}`}
-            accent={C.gold}
-          />
-          <Stat
-            kicker="Progresso"
-            value={`${pct}%`}
-            sub="completo"
-            accent={C.emerald}
-          />
-          <Stat
-            kicker="Provas"
-            value={`${passedCount}`}
-            sub={`de ${totalQuizzes}`}
-            accent={C.gold}
-          />
-        </section>
+
 
         {/* ===== PROGRESS BAR EDITORIAL ===== */}
         <section className="space-y-2">
@@ -347,16 +340,32 @@ function Stat({ kicker, value, sub, accent }: {
   return (
     <div className="p-4 text-center" style={{ background: C.bg }}>
       <p className="text-[9px] font-bold tracking-[0.25em] uppercase"
-         style={{ color: accent, fontFamily: FONT_FAMILY_DISPLAY }}>
+         style={{ color: accent, fontFamily: FONT_FAMILY_BODY }}>
         {kicker}
       </p>
-      <p className="mt-1 text-2xl sm:text-3xl font-bold leading-none"
+      <p className="mt-1 text-2xl sm:text-3xl leading-none"
          style={{ color: C.cream, fontFamily: FONT_FAMILY_DISPLAY }}>
         {value}
       </p>
       <p className="mt-1 text-[10px]" style={{ color: C.cream40 }}>
         {sub}
       </p>
+    </div>
+  );
+}
+
+/* ---- mini-stat inline (hero) ---- */
+function MiniStat({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div>
+      <dt className="text-[9px] font-bold tracking-[0.25em] uppercase"
+          style={{ color: accent, fontFamily: FONT_FAMILY_BODY }}>
+        {label}
+      </dt>
+      <dd className="mt-1 text-xl leading-none"
+          style={{ color: C.cream, fontFamily: FONT_FAMILY_DISPLAY }}>
+        {value}
+      </dd>
     </div>
   );
 }
