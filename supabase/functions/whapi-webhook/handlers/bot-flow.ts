@@ -684,11 +684,43 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       source = "fallback";
     }
 
-    // Detour + handoff suave após 5 desvios
+    // Detour + handoff suave após 8 desvios
     const detourNext = Number((customer as any).detour_count || 0) + 1;
     const patch: Record<string, any> = { detour_count: detourNext };
     let courtesyTail = "";
-    if (detourNext >= 5) {
+
+    // 🛒 Detecção de intenção de compra — se o lead quer avançar, reset detour
+    const { hasPurchaseIntent } = await import("../../_shared/bot/purchase-intent.ts");
+    if (hasPurchaseIntent(questionText)) {
+      console.log(`[respondAndReentry] 🛒 purchase intent detected — resetting detour`);
+      try {
+        await supabase.from("customers").update({ detour_count: 0 }).eq("id", customer.id);
+      } catch (_) { /* noop */ }
+      // Responde com incentivo e reapresenta botões (não fica silencioso)
+      const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+      const encourageText = firstName
+        ? `Ótimo, ${firstName}! Vamos lá então 😊`
+        : `Ótimo! Vamos lá então 😊`;
+      try { await sendText(remoteJid, encourageText); } catch (_) { /* noop */ }
+      try {
+        await supabase.from("conversations").insert({
+          customer_id: customer.id, message_direction: "outbound",
+          message_text: encourageText, message_type: "text", conversation_step: stepNow,
+        });
+      } catch (_) { /* noop */ }
+      // Reapresenta botões para o lead avançar
+      try {
+        const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+        await reemitStepButtons({
+          supabase, customerId: customer.id, consultantId: customer.consultant_id,
+          flowVariant: (customer as any)?.flow_variant || "A", stepKey: stepNow,
+          remoteJid, sendButtons, sendText,
+        });
+      } catch (_) { /* noop */ }
+      return { reply: "", updates: { __inline_sent: true, detour_count: 0 } as any };
+    }
+
+    if (detourNext >= 8) {
       patch.bot_paused = true;
       patch.bot_paused_reason = "muitas_duvidas";
       patch.bot_paused_at = new Date().toISOString();
@@ -744,6 +776,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         message_text: finalMsg, message_type: "text", conversation_step: stepNow,
       });
     } catch (_) { /* noop */ }
+
+    // 🔁 Reemite botões do passo após FAQ (paridade com evolution-webhook)
+    try {
+      if (detourNext < 8) {
+        const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+        await reemitStepButtons({
+          supabase,
+          customerId: customer.id,
+          consultantId: customer.consultant_id,
+          flowVariant: (customer as any)?.flow_variant || "A",
+          stepKey: stepNow,
+          remoteJid,
+          sendButtons,
+          sendText,
+        });
+      }
+    } catch (e) { console.warn("[respondAndReentry] button re-emission failed:", (e as Error).message); }
 
     console.log(`[respondAndReentry] reason=${reason} source=${source} detour=${detourNext} step=${stepNow}`);
     return { reply: "", updates: { __inline_sent: true } as any };
@@ -936,10 +985,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const reentry = getReentryPromptForStep(stepKey, customer);
           const text = [qa.text, reentry].filter(Boolean).join("\n\n");
 
-          // Sprint C3: threshold 5 (era 3) + handoff alert visível ao consultor
+          // Sprint C3: threshold 8 (era 5) + handoff alert visível ao consultor
           const detourNext = Number((customer as any).detour_count || 0) + 1;
           const patch: Record<string, any> = { detour_count: detourNext };
-          if (detourNext >= 5) {
+          if (detourNext >= 8) {
             patch.bot_paused = true;
             patch.bot_paused_reason = "muitas_duvidas";
             patch.bot_paused_at = new Date().toISOString();
@@ -953,6 +1002,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             } catch (e) { console.warn("[midflow-qa] handoff alert falhou:", (e as Error).message); }
           }
           try { await supabase.from("customers").update(patch).eq("id", customer.id); } catch (_) {}
+
+          // Reemite botões do step após a FAQ (se não vai para handoff).
+          // Envia o texto inline aqui para garantir ordem: FAQ → botões.
+          if (detourNext < 8 && text) {
+            try {
+              await sendText(remoteJid, text);
+              await supabase.from("conversations").insert({
+                customer_id: customer.id, message_direction: "outbound",
+                message_text: text, message_type: "text", conversation_step: stepKey,
+              });
+            } catch (_) { /* noop */ }
+            try {
+              const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+              await reemitStepButtons({
+                supabase, customerId: customer.id, consultantId: customer.consultant_id,
+                flowVariant: (customer as any)?.flow_variant || "A", stepKey,
+                remoteJid, sendButtons, sendText,
+              });
+            } catch (_) { /* noop */ }
+            return { reply: "", updates: { __inline_sent: true } as any };
+          }
           return { reply: text, updates: { __inline_sent: qa.mediaUrls.length > 0 || undefined } as any };
         } else {
           console.log(`[midflow-qa] hit=false step="${(customer as any).conversation_step}" → respondAndReentry (IA + reentry)`);
@@ -1042,6 +1112,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       if (!stepRow) {
         console.log(`[dispatch:${stepKey}] step não configurado no Flow Builder — nada para enviar`);
+        return false;
+      }
+
+      // R6 (paridade com evolution-webhook): step que depende de valor_conta
+      // NÃO pode disparar sem a captura — senão vaza "{{economia_range}}"
+      // literal. Detecta pelo texto referenciando as chaves de economia/valor.
+      const _stepText = String((stepRow as any).message_text || "");
+      const _needsBill = /\{\{?\s*(valor_conta|economia_range|economia_faixa|economia_mensal|economia_anual|valor)\s*\}?\}/i.test(_stepText);
+      const _hasBill = Number((customer as any).electricity_bill_value || 0) >= 30;
+      if (_needsBill && !_hasBill) {
+        console.warn(`[dispatch:${stepKey}] bloqueado: step exige valor_conta mas lead não tem (electricity_bill_value=${(customer as any).electricity_bill_value}). Redirecionando para aguardando_conta.`);
+        try {
+          await supabase
+            .from("customers")
+            .update({ conversation_step: "aguardando_conta", updated_at: new Date().toISOString() })
+            .eq("id", customer.id);
+        } catch (_) { /* best-effort */ }
+        try {
+          const nudge = `Antes de calcular sua economia, me conta: *quanto vem em média a sua conta de luz por mês?* 💡`;
+          await sendText(remoteJid, nudge);
+        } catch (_) { /* segue */ }
         return false;
       }
 
@@ -1181,42 +1272,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             conversation_step: stepKey,
           });
 
-          // 🔁 Reemite os botões do passo após a resposta da IA, para o lead
-          // ter caminho clicável de volta ao fluxo (senão o CTA "toque numa
-          // das opções" fica órfão e o lead trava).
-          // Skip quando: handoff acionado, muitos follow-ups (anti-loop),
-          // ou o passo não tem _buttons configurados.
-          try {
-            const followups = Number((customer as any).ai_followups_count || 0);
-            if (!orch.shouldHandoff && followups < 2) {
-              const caps = Array.isArray((stepRow as any).captures) ? (stepRow as any).captures : [];
-              const btnCap = caps.find((c: any) => c?.field === "_buttons" && c?.enabled !== false);
-              const rawButtons = Array.isArray(btnCap?.value) ? btnCap.value : [];
-              const renderedButtons = rawButtons
-                .map((b: any) => ({
-                  id: String(b?.id || "").trim(),
-                  title: String(b?.title || "").trim().slice(0, 20),
-                }))
-                .filter((b: any) => b.id && b.title)
-                .slice(0, 3);
-              if (renderedButtons.length > 0) {
-                if (!isMockMode() && !isFlowInstantMode()) await new Promise((r) => setTimeout(r, 600));
-                const promptText = "👇 *Escolha uma opção:*";
-                await sendButtons(remoteJid, promptText, renderedButtons);
-                await supabase.from("conversations").insert({
-                  customer_id: customer.id,
-                  message_direction: "outbound",
-                  message_text: promptText,
-                  message_type: "buttons",
-                  conversation_step: stepKey,
-                });
-              }
+          // 🔁 Reemite botões do passo após resposta IA (paridade Evolution)
+          if (!orch.shouldHandoff) {
+            try {
+              const followups = Number((customer as any).ai_followups_count || 0);
+              const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+              await reemitStepButtons({
+                supabase,
+                customerId: customer.id,
+                consultantId: customer.consultant_id,
+                flowVariant: (customer as any)?.flow_variant || "A",
+                stepKey,
+                remoteJid,
+                sendButtons,
+                sendText,
+                followups,
+                stepCaptures: Array.isArray((stepRow as any)?.captures) ? (stepRow as any).captures : [],
+              });
+            } catch (e) {
+              console.warn(`[dispatch:${stepKey}] button re-emission failed:`, (e as Error).message);
             }
-          } catch (e) {
-            console.warn(`[dispatch:${stepKey}] reemissão de botões pós-IA falhou:`, (e as Error).message);
           }
-
-
 
           if (orch.shouldHandoff) {
             try {
@@ -1703,8 +1779,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     if (!sentSomething) return null;
-    // G: keepStep=true (off-topic intercept) → não muda conversation_step
+
     if (opts?.keepStep) {
+      try {
+        const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+        await reemitStepButtons({
+          supabase,
+          customerId: customer.id,
+          consultantId: customer.consultant_id,
+          flowVariant: (customer as any)?.flow_variant || "A",
+          stepKey: step,
+          remoteJid,
+          sendButtons,
+          sendText,
+        });
+      } catch (_) { /* noop */ }
       return { reply: "", updates: { __inline_sent: true } as any };
     }
     return { reply: "", updates: { conversation_step: qa.is_closing ? "aguardando_conta" : (step || "qualificacao"), __inline_sent: true } as any };

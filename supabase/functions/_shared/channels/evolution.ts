@@ -11,9 +11,11 @@
 //
 // Capabilities deliberadas (bot-engine-channel-unification §Design 2):
 //   - `supportsButtons=false`, `maxButtons=0` — política do projeto:
-//     hoje renderizamos lista numerada por estabilidade do Baileys/Evolution
-//     (sendButtons falha em vários cenários reais). O motor entrega
-//     `kind="choice"` e o adapter/dispatcher faz Rendering_Numbered.
+//     renderizamos lista numerada por estabilidade do Baileys/Evolution
+//     (sendButtons pode retornar HTTP 200 sem renderizar no aparelho).
+//     O helper `sendChoice` abaixo preserva TODAS as opções no texto numerado.
+//     Para habilitar botões reais no futuro: mudar para true/3 + validar
+//     versão Evolution em staging antes de produção.
 //   - `supportsList=true` — `sendList` é estável (reservado para fluxos
 //     futuros; o caminho atual usa lista numerada em texto plano).
 //   - `supportsAudio=true`: `sendAudio` existe e funciona.
@@ -36,6 +38,7 @@ import {
   parseEvolutionMessage,
   extractMediaUrl,
 } from "../evolution-api.ts";
+import { idempotencyFromCtx } from "./idempotency-from-ctx.ts";
 import { normalizePhone } from "../utils.ts";
 
 /**
@@ -82,36 +85,43 @@ export function createEvolutionAdapter(input: CreateEvolutionAdapterInput): Chan
   return {
     capabilities: EVOLUTION_CAPABILITIES,
 
-    async sendText(jid, text, _ctx) {
+    async sendText(jid, text, ctx) {
+      const idem = idempotencyFromCtx(ctx, text.slice(0, 200));
       try {
-        const ok = await sender.sendText(jid, text);
+        const ok = await sender.sendText(jid, text, idem);
         return toResult(ok);
       } catch (e: any) {
         return { ok: false, reason: "network", detail: e?.message ?? String(e) };
       }
     },
 
-    async sendChoice(jid, prompt, choice, _ctx) {
+    async sendChoice(jid, prompt, choice, ctx) {
       // Renderização channel-aware (Task D do design):
       //   button → tenta botão real; sender legado já cai para texto numerado
       //            interno se a Evolution falhar — comportamento preservado.
       //   list   → não suportado: fallback para texto numerado.
       //   number → texto numerado direto.
-      const safeOptions = (choice.options || []).slice(0, EVOLUTION_CAPABILITIES.maxButtons);
-      if (
-        choice.preferred === "button" && EVOLUTION_CAPABILITIES.supportsButtons &&
-        safeOptions.length > 0
-      ) {
+      const allOptions = choice.options || [];
+      // Só usa botões reais quando o nº de opções cabe no limite do canal.
+      // Acima disso, cair para texto numerado preservando TODAS as opções
+      // (slice cego perderia as opções 4+).
+      const canUseButtons = choice.preferred === "button" &&
+        EVOLUTION_CAPABILITIES.supportsButtons &&
+        allOptions.length > 0 &&
+        allOptions.length <= EVOLUTION_CAPABILITIES.maxButtons;
+      if (canUseButtons) {
         try {
-          const ok = await sender.sendButtons(jid, prompt, safeOptions);
+          const idem = idempotencyFromCtx(ctx, `${prompt}|${allOptions.map((o) => o.id).join(",")}`);
+          const ok = await sender.sendButtons(jid, prompt, allOptions, idem);
           return toResult(ok);
         } catch (e: any) {
           return { ok: false, reason: "network", detail: e?.message ?? String(e) };
         }
       }
-      const numbered = renderNumberedList(prompt, choice.options || []);
+      const numbered = renderNumberedList(prompt, allOptions);
       try {
-        const ok = await sender.sendText(jid, numbered);
+        const idem = idempotencyFromCtx(ctx, numbered.slice(0, 200));
+        const ok = await sender.sendText(jid, numbered, idem);
         // Quando o caller pediu "button" mas caímos em texto, sinalizamos
         // downgrade para o dispatcher logar `channel_choice_downgrade`.
         if (choice.preferred === "button" && ok) {
@@ -174,7 +184,7 @@ export function createEvolutionAdapter(input: CreateEvolutionAdapterInput): Chan
         messageText: text,
         buttonId,
         rawNumberReply,
-        hasMedia: !!parsed.isFile,
+        hasMedia: !!parsed.isFile || parsed.mediaKind === "video",
         mediaKind: parsed.mediaKind ?? null,
         raw,
       };

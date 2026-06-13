@@ -10,6 +10,20 @@ import { fetchWithTimeout, logStructured, TIMEOUT_WHAPI } from "./utils.ts";
 import { captureError } from "./sentry.ts";
 import { shouldUseFastClock } from "./test-mode.ts";
 import { isFlowInstantMode } from "./flow-pace.ts";
+import {
+  acquireOutboundSlot,
+  recordOutboundResult,
+  type AcquireOutboundSlotInput,
+} from "./idempotency.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+export interface WhapiIdempotencyOptions {
+  idempotencyKey?: string;
+  customerId?: string;
+  consultantId?: string;
+  payloadHash?: string;
+  supabase?: SupabaseClient;
+}
 
 export interface WhapiButton {
   id: string;
@@ -23,6 +37,54 @@ export interface WhapiButton {
  */
 export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whapi.cloud") {
   const url = baseUrl.replace(/\/$/, "");
+
+  async function withIdempotency(
+    label: string,
+    idempotency: WhapiIdempotencyOptions | undefined,
+    doSend: () => Promise<boolean>,
+  ): Promise<boolean> {
+    const idemKey = idempotency?.idempotencyKey;
+    const idemSupabase = idempotency?.supabase;
+    const idemEnabled = !!(
+      idemKey && idemSupabase &&
+      idempotency?.customerId &&
+      idempotency?.consultantId &&
+      idempotency?.payloadHash
+    );
+    if (idemEnabled) {
+      try {
+        const slot = await acquireOutboundSlot(
+          idemSupabase!,
+          {
+            idempotencyKey: idemKey!,
+            customerId: idempotency!.customerId!,
+            consultantId: idempotency!.consultantId!,
+            payloadHash: idempotency!.payloadHash!,
+          } as AcquireOutboundSlotInput,
+        );
+        if (!slot.acquired) {
+          logStructured("info", "whapi_send_idempotent_replay", {
+            kind: label,
+            previous_status: slot.previousResultStatus ?? null,
+          });
+          return slot.previousResultStatus !== "failed";
+        }
+      } catch (e) {
+        console.warn(`[whapi-api] idempotency pre-check threw; sending anyway`, e);
+      }
+    }
+    let ok = false;
+    try {
+      ok = await doSend();
+    } finally {
+      if (idemEnabled) {
+        try {
+          await recordOutboundResult(idemSupabase!, idemKey!, ok ? "sent" : "failed", null);
+        } catch (_) { /* swallow */ }
+      }
+    }
+    return ok;
+  }
 
   async function sendWithRetry(label: string, doSend: () => Promise<Response>, maxAttempts = 3): Promise<boolean> {
     let lastStatus = 0;
@@ -83,58 +145,67 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
   async function sendText(
     remoteJid: string,
     text: string,
-    opts?: { typingSec?: number },
+    opts?: { typingSec?: number; idempotency?: WhapiIdempotencyOptions },
   ): Promise<boolean> {
-    // Whapi usa chatId no formato "5511999990001@s.whatsapp.net"
-    const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
-    const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
-    const typing = opts?.typingSec ?? typingTimeFor(text);
-    console.log(`📤 [whapi:sendText] -> ${to} (typing ${typing}s) | "${preview}${text.length > 60 ? "..." : ""}"`);
-    const ok = await sendWithRetry("send_text", () =>
-      fetchWithTimeout(`${url}/messages/text`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ to, body: text, typing_time: typing }),
-        timeout: TIMEOUT_WHAPI + typing * 1000,
-      })
-    );
-    console.log(`${ok ? "✅" : "❌"} [whapi:sendText] resultado=${ok}`);
-    return ok;
+    return withIdempotency("send_text", opts?.idempotency, async () => {
+      // Whapi usa chatId no formato "5511999990001@s.whatsapp.net"
+      const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
+      const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
+      const typing = opts?.typingSec ?? typingTimeFor(text);
+      console.log(`📤 [whapi:sendText] -> ${to} (typing ${typing}s) | "${preview}${text.length > 60 ? "..." : ""}"`);
+      const ok = await sendWithRetry("send_text", () =>
+        fetchWithTimeout(`${url}/messages/text`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ to, body: text, typing_time: typing }),
+          timeout: TIMEOUT_WHAPI + typing * 1000,
+        })
+      );
+      console.log(`${ok ? "✅" : "❌"} [whapi:sendText] resultado=${ok}`);
+      return ok;
+    });
   }
 
-  async function sendButtons(remoteJid: string, message: string, buttons: WhapiButton[]): Promise<boolean> {
-    const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
-    const safeButtons = buttons.slice(0, 3).map((b) => ({
-      type: "quick_reply" as const,
-      title: (b.title || "").substring(0, 25),
-      id: b.id,
-    }));
+  async function sendButtons(
+    remoteJid: string,
+    message: string,
+    buttons: WhapiButton[],
+    idempotency?: WhapiIdempotencyOptions,
+  ): Promise<boolean> {
+    return withIdempotency("send_buttons", idempotency, async () => {
+      const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
+      const safeButtons = buttons.slice(0, 3).map((b) => ({
+        type: "quick_reply" as const,
+        title: (b.title || "").substring(0, 25),
+        id: b.id,
+      }));
 
-    console.log(`📤 [whapi:sendButtons] -> ${to} (${safeButtons.length} botões: ${safeButtons.map(b => b.id).join(",")})`);
-    const ok = await sendWithRetry("send_buttons", () =>
-      fetchWithTimeout(`${url}/messages/interactive`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          to,
-          type: "button",
-          body: { text: message },
-          footer: { text: "iGreen Energy ☀️" },
-          action: { buttons: safeButtons },
-        }),
-        timeout: TIMEOUT_WHAPI,
-      })
-    );
+      console.log(`📤 [whapi:sendButtons] -> ${to} (${safeButtons.length} botões: ${safeButtons.map(b => b.id).join(",")})`);
+      const ok = await sendWithRetry("send_buttons", () =>
+        fetchWithTimeout(`${url}/messages/interactive`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            to,
+            type: "button",
+            body: { text: message },
+            footer: { text: "iGreen Energy ☀️" },
+            action: { buttons: safeButtons },
+          }),
+          timeout: TIMEOUT_WHAPI,
+        })
+      );
 
-    if (ok) {
-      console.log(`✅ [whapi:sendButtons] botões entregues`);
-      return true;
-    }
+      if (ok) {
+        console.log(`✅ [whapi:sendButtons] botões entregues`);
+        return true;
+      }
 
-    // Fallback: texto numerado (caso botões falhem por instabilidade do WhatsApp)
-    console.warn(`⚠️ [whapi:sendButtons] FALHOU -> caindo para texto numerado`);
-    const textWithOptions = `${message}\n\n${buttons.map((b, i) => `${i + 1}️⃣ ${b.title}`).join("\n")}\n\n_Digite o número da opção:_`;
-    return sendText(remoteJid, textWithOptions);
+      // Fallback: texto numerado (sem re-acquire de idempotência)
+      console.warn(`⚠️ [whapi:sendButtons] FALHOU -> caindo para texto numerado`);
+      const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
+      return sendText(remoteJid, textWithOptions);
+    });
   }
 
   async function sendMedia(

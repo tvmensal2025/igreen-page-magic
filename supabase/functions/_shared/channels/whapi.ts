@@ -26,6 +26,7 @@ import type {
   SendResult,
 } from "./types.ts";
 import { createWhapiSender, parseWhapiMessage } from "../whapi-api.ts";
+import { idempotencyFromCtx } from "./idempotency-from-ctx.ts";
 import { normalizePhone } from "../utils.ts";
 
 /**
@@ -66,34 +67,38 @@ export function createWhapiAdapter(input: CreateWhapiAdapterInput): ChannelAdapt
   return {
     capabilities: WHAPI_CAPABILITIES,
 
-    async sendText(jid, text, _ctx) {
+    async sendText(jid, text, ctx) {
+      const idem = idempotencyFromCtx(ctx, text.slice(0, 200));
       try {
-        const ok = await sender.sendText(jid, text);
+        const ok = await sender.sendText(jid, text, { idempotency: idem });
         return toResult(ok);
       } catch (e: any) {
         return { ok: false, reason: "network", detail: e?.message ?? String(e) };
       }
     },
 
-    async sendChoice(jid, prompt, choice, _ctx) {
-      const safeOptions = (choice.options || []).slice(0, WHAPI_CAPABILITIES.maxButtons);
-      // Whapi suporta botão real e lista — preferimos o que o caller pediu.
-      // `list` ainda é renderizado via `sendButtons` legado por enquanto;
-      // quando a Phase D introduzir `dispatch-choice.ts` puro, esse caminho
-      // passará por lá. Por ora, replicamos o comportamento atual.
-      if (choice.preferred === "button" && WHAPI_CAPABILITIES.supportsButtons && safeOptions.length > 0) {
+    async sendChoice(jid, prompt, choice, ctx) {
+      const allOptions = choice.options || [];
+      // Só usa botões reais quando cabem no limite (≤3). Acima disso, texto
+      // numerado preserva TODAS as opções (paridade com Evolution).
+      const canUseButtons = choice.preferred === "button" &&
+        WHAPI_CAPABILITIES.supportsButtons &&
+        allOptions.length > 0 &&
+        allOptions.length <= WHAPI_CAPABILITIES.maxButtons;
+      if (canUseButtons) {
         try {
-          const ok = await sender.sendButtons(jid, prompt, safeOptions);
+          const idem = idempotencyFromCtx(ctx, `${prompt}|${allOptions.map((o) => o.id).join(",")}`);
+          const ok = await sender.sendButtons(jid, prompt, allOptions, idem);
           return toResult(ok);
         } catch (e: any) {
           return { ok: false, reason: "network", detail: e?.message ?? String(e) };
         }
       }
-      // Para `list` ou `number` ou se preferred=button mas opções vazias:
-      // cai para texto numerado determinístico.
-      const numbered = renderNumberedList(prompt, choice.options || []);
+      // Para `list`, `number`, opções vazias ou >maxButtons: texto numerado.
+      const numbered = renderNumberedList(prompt, allOptions);
       try {
-        const ok = await sender.sendText(jid, numbered);
+        const idem = idempotencyFromCtx(ctx, numbered.slice(0, 200));
+        const ok = await sender.sendText(jid, numbered, { idempotency: idem });
         if (choice.preferred === "button" && ok) {
           return { ok: false, reason: "downgraded", detail: "rendered_as_numbered_list" };
         }

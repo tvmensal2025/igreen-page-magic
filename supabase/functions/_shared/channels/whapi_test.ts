@@ -128,3 +128,37 @@ Deno.test("whapi parseInbound: takeover humano (from_me com source=app)", () => 
   const r = ADAPTER.parseInbound(raw, "whapi-superadmin");
   assertEquals(r?.isFromMe, true);
 });
+
+Deno.test("whapi sendChoice: >3 opções usa texto numerado (não interactive)", async () => {
+  const calls: Array<{ url: string; body: string }> = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), body: String(init?.body ?? "") });
+    return new Response("ok", { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    const result = await ADAPTER.sendChoice(
+      "5511999999999@s.whatsapp.net",
+      "Escolha",
+      {
+        preferred: "button",
+        options: [
+          { id: "a", title: "A" },
+          { id: "b", title: "B" },
+          { id: "c", title: "C" },
+          { id: "d", title: "D" },
+        ],
+      },
+      {},
+    );
+    assertEquals(result.ok, false);
+    assertEquals(result.reason, "downgraded");
+    assertEquals(calls.some((c) => c.url.includes("/messages/interactive")), false);
+    const textCall = calls.find((c) => c.url.includes("/messages/text"));
+    assertEquals(!!textCall, true);
+    assertEquals(textCall!.body.includes("*4.* D"), true);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});

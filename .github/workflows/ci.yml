@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 # Concurrency: cancela build anterior do mesmo branch quando um novo é pushed.
@@ -20,6 +23,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run test
 
   deno-check:
@@ -65,7 +69,10 @@ jobs:
             supabase/functions/_shared/human-pace_test.ts \
             supabase/functions/_shared/text-hash_test.ts \
             supabase/functions/_shared/grounding_test.ts \
-            supabase/functions/_shared/bot/dedupe_test.ts \
+            supabase/functions/_shared/bot/ \
+            supabase/functions/_shared/whapi-api_sendbuttons_test.ts \
+            supabase/functions/_shared/channels/idempotency-from-ctx_test.ts \
+            supabase/functions/_shared/channels/adapter-idempotency_test.ts \
             supabase/functions/_shared/__tests__/config-toml-webhook-guard_test.ts
 
   engine-purity-check:
