@@ -264,28 +264,6 @@ export function AcademyTab() {
         )}
 
 
-        {/* ===== STATS GRID (editorial) ===== */}
-        <section className="grid grid-cols-3 gap-px border"
-                 style={{ borderColor: C.cream20, background: C.cream20 }}>
-          <Stat
-            kicker="Aulas"
-            value={`${doneAulas}`}
-            sub={`de ${totalAulas}`}
-            accent={C.gold}
-          />
-          <Stat
-            kicker="Progresso"
-            value={`${pct}%`}
-            sub="completo"
-            accent={C.emerald}
-          />
-          <Stat
-            kicker="Provas"
-            value={`${passedCount}`}
-            sub={`de ${totalQuizzes}`}
-            accent={C.gold}
-          />
-        </section>
 
         {/* ===== PROGRESS BAR EDITORIAL ===== */}
         <section className="space-y-2">
