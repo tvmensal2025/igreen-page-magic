@@ -352,6 +352,61 @@ export async function runUnifiedEngineWebhookEntry(
       consultantName,
     });
 
+    // ─── Deferred AI answer: resolve + re-emit step buttons ──────────
+    if (result.deferred?.kind === "ai_answer" && result.deferred.thenRepeatStep) {
+      try {
+        const { answerFaqWithAI } = await import("../ai-faq-answerer.ts");
+        const faq = await answerFaqWithAI({
+          supabase: args.supabase,
+          question: result.deferred.question,
+          consultantId: args.consultantId,
+          leadName: ctx.state.customer.name ?? "",
+          currentStepLabel: result.deferred.stepId,
+        });
+        if (faq.text) {
+          const qSlug = encodeURIComponent(result.deferred.question.trim().slice(0, 120));
+          await args.adapter.sendText(args.jid, faq.text, {
+            customerId: args.customerId,
+            consultantId: args.consultantId,
+            stepId: result.deferred.stepId,
+            idempotencyKey: `deferred_faq:${args.customerId}:${result.deferred.stepId}:${qSlug}`,
+          });
+        }
+        // Re-emit ONLY the current step's choice (buttons), not the full
+        // step prompt — senão o lead recebe a resposta da FAQ + o texto do
+        // passo repetido a cada dúvida (verboso). Filtramos o outbound para
+        // manter apenas `kind: "choice"`.
+        if (!faq.shouldHandoff) {
+          const postState = { ...ctx.state, ...result.stateUpdate };
+          const repeatResult = runEngine({
+            state: postState,
+            inbound: { kind: "no_input" } as InboundEvent,
+            flow: ctx.flow,
+            capabilities: ctx.capabilities,
+            hooks,
+            config,
+          });
+          const choiceOnly = repeatResult.outbound.filter((o) => o.kind === "choice");
+          if (choiceOnly.length > 0) {
+            await executeActions({
+              supabase: args.supabase,
+              adapter: args.adapter,
+              jid: args.jid,
+              state: postState,
+              result: { ...repeatResult, outbound: choiceOnly },
+              now: config.now,
+              testRunId: args.testRunId ?? null,
+              testTurn: args.testTurn ?? null,
+              inboundLog: null,
+              consultantName,
+            });
+          }
+        }
+      } catch (e: unknown) {
+        console.warn("[v3-deferred] ai_answer resolution failed:", e instanceof Error ? e.message : String(e));
+      }
+    }
+
     // ─── CRM Kanban sync: advance deal stage based on new step ────────
     // The legacy webhooks call syncDealStageFromStep after each turn.
     // The v3 engine must do the same so the Kanban board stays in sync.

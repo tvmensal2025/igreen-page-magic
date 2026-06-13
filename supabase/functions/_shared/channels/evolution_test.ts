@@ -139,3 +139,16 @@ Deno.test("evolution parseInbound: '1 minuto' NÃO vira rawNumberReply", () => {
   const r = ADAPTER.parseInbound(raw, "test-instance");
   assertEquals(r?.rawNumberReply, null);
 });
+
+Deno.test("evolution parseInbound: vídeo inclui hasMedia", () => {
+  const raw = {
+    instance: "test-instance",
+    data: {
+      key: { remoteJid: "5511999999999@s.whatsapp.net", fromMe: false, id: "MID-VID" },
+      message: { videoMessage: { mimetype: "video/mp4", url: "https://x" } },
+    },
+  };
+  const r = ADAPTER.parseInbound(raw, "test-instance");
+  assertEquals(r?.hasMedia, true);
+  assertEquals(r?.mediaKind, "video");
+});

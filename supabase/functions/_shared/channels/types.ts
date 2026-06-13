@@ -65,6 +65,16 @@ export interface SendContext {
   stepId: string;
   /** Idempotency key derivada de _shared/idempotency.ts. */
   idempotencyKey: string;
+  /**
+   * Quando presente, adapters aplicam dedup em `outbound_message_log`
+   * (cron/nudge, channel-sender). Omitir no caminho V3 dispatcher.
+   */
+  supabase?: import("https://esm.sh/@supabase/supabase-js@2").SupabaseClient;
+  /**
+   * true quando o dispatcher V3 já chamou `acquireOutboundSlot` — evita
+   * double-acquire no adapter com a mesma chave.
+   */
+  idempotencySlotAcquired?: boolean;
 }
 
 /** Resultado canônico de qualquer envio. Adapter nunca lança. */

@@ -123,6 +123,7 @@ export async function dispatch(
       consultantId: ctx.consultantId,
       stepId: result.nextState.currentStepId ?? "",
       idempotencyKey: idemKey,
+      idempotencySlotAcquired: true,
     };
 
     let sendOk = false;

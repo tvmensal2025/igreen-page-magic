@@ -78,7 +78,7 @@ async function sendText(
   sendCtx: SendContext,
 ) {
   if (!(await guardOk(supabase, channel.instanceName, "text"))) return;
-  const r = await channel.adapter.sendText(jid, text, sendCtx);
+  const r = await channel.adapter.sendText(jid, text, { ...sendCtx, supabase });
   if (!r.ok) console.error(`[${channel.kind}] sendText falhou:`, (r as any).detail);
   else await registerSend(supabase, channel.instanceName);
 }

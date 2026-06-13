@@ -682,11 +682,43 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       source = "fallback";
     }
 
-    // Detour + handoff suave após 5 desvios
+    // Detour + handoff suave após 8 desvios
     const detourNext = Number((customer as any).detour_count || 0) + 1;
     const patch: Record<string, any> = { detour_count: detourNext };
     let courtesyTail = "";
-    if (detourNext >= 5) {
+
+    // 🛒 Detecção de intenção de compra — se o lead quer avançar, reset detour
+    const { hasPurchaseIntent } = await import("../../_shared/bot/purchase-intent.ts");
+    if (hasPurchaseIntent(questionText)) {
+      console.log(`[respondAndReentry] 🛒 purchase intent detected — resetting detour`);
+      try {
+        await supabase.from("customers").update({ detour_count: 0 }).eq("id", customer.id);
+      } catch (_) { /* noop */ }
+      // Responde com incentivo e reapresenta botões (não fica silencioso)
+      const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+      const encourageText = firstName
+        ? `Ótimo, ${firstName}! Vamos lá então 😊`
+        : `Ótimo! Vamos lá então 😊`;
+      try { await sendText(remoteJid, encourageText); } catch (_) { /* noop */ }
+      try {
+        await supabase.from("conversations").insert({
+          customer_id: customer.id, message_direction: "outbound",
+          message_text: encourageText, message_type: "text", conversation_step: stepNow,
+        });
+      } catch (_) { /* noop */ }
+      // Reapresenta botões para o lead avançar
+      try {
+        const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+        await reemitStepButtons({
+          supabase, customerId: customer.id, consultantId: customer.consultant_id,
+          flowVariant: (customer as any)?.flow_variant || "A", stepKey: stepNow,
+          remoteJid, sendButtons, sendText,
+        });
+      } catch (_) { /* noop */ }
+      return { reply: "", updates: { __inline_sent: true, detour_count: 0 } as any };
+    }
+
+    if (detourNext >= 8) {
       patch.bot_paused = true;
       patch.bot_paused_reason = "muitas_duvidas";
       patch.bot_paused_at = new Date().toISOString();
@@ -742,6 +774,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         message_text: finalMsg, message_type: "text", conversation_step: stepNow,
       });
     } catch (_) { /* noop */ }
+
+    // 🔁 Reemite botões do passo após FAQ para o lead ter CTA de volta ao fluxo
+    try {
+      if (detourNext < 8) { // não reemite se vai para handoff
+        const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+        await reemitStepButtons({
+          supabase,
+          customerId: customer.id,
+          consultantId: customer.consultant_id,
+          flowVariant: (customer as any)?.flow_variant || "A",
+          stepKey: stepNow,
+          remoteJid,
+          sendButtons,
+          sendText,
+        });
+      }
+    } catch (e) { console.warn("[respondAndReentry] button re-emission failed:", (e as Error).message); }
 
     console.log(`[respondAndReentry] reason=${reason} source=${source} detour=${detourNext} step=${stepNow}`);
     return { reply: "", updates: { __inline_sent: true } as any };
@@ -933,10 +982,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const reentry = getReentryPromptForStep(stepKey, customer);
           const text = [qa.text, reentry].filter(Boolean).join("\n\n");
 
-          // Sprint C3: threshold 5 (era 3) + handoff alert visível ao consultor
+          // Threshold 8 desvios + handoff alert visível ao consultor
           const detourNext = Number((customer as any).detour_count || 0) + 1;
           const patch: Record<string, any> = { detour_count: detourNext };
-          if (detourNext >= 5) {
+          if (detourNext >= 8) {
             patch.bot_paused = true;
             patch.bot_paused_reason = "muitas_duvidas";
             patch.bot_paused_at = new Date().toISOString();
@@ -950,6 +999,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             } catch (e) { console.warn("[midflow-qa] handoff alert falhou:", (e as Error).message); }
           }
           try { await supabase.from("customers").update(patch).eq("id", customer.id); } catch (_) {}
+
+          // Reemite botões do step após a FAQ (se não vai para handoff).
+          // Envia o texto inline aqui para garantir ordem: FAQ → botões.
+          if (detourNext < 8 && text) {
+            try {
+              await sendText(remoteJid, text);
+              await supabase.from("conversations").insert({
+                customer_id: customer.id, message_direction: "outbound",
+                message_text: text, message_type: "text", conversation_step: stepKey,
+              });
+            } catch (_) { /* noop */ }
+            try {
+              const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+              await reemitStepButtons({
+                supabase, customerId: customer.id, consultantId: customer.consultant_id,
+                flowVariant: (customer as any)?.flow_variant || "A", stepKey,
+                remoteJid, sendButtons, sendText,
+              });
+            } catch (_) { /* noop */ }
+            return { reply: "", updates: { __inline_sent: true } as any };
+          }
           return { reply: text, updates: { __inline_sent: qa.mediaUrls.length > 0 || undefined } as any };
         } else {
           console.log(`[midflow-qa] hit=false step="${(customer as any).conversation_step}" → respondAndReentry (IA + reentry)`);
@@ -1091,6 +1161,74 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         _slot === "esclarecer_duvidas" ||
         (/duvid/.test(_sk) && _sk !== "duvidas_pos_club");
       if (isAiAnswerStep) {
+        // ── Limite de perguntas (fallback: { mode: "ai_limit", max_questions, then })
+        try {
+          const fb: any = (stepRow as any)?.fallback ?? null;
+          if (fb && fb.mode === "ai_limit") {
+            const maxQ = Math.max(1, Number(fb.max_questions ?? 3));
+            const since = (customer as any)?.last_step_advanced_at || null;
+            let q = supabase
+              .from("conversations")
+              .select("id", { count: "exact", head: true })
+              .eq("customer_id", customer.id)
+              .eq("message_direction", "inbound")
+              .eq("conversation_step", stepKey);
+            if (since) q = q.gte("created_at", since);
+            const { count } = await q;
+            const askedCount = Number(count || 0);
+            console.log(`[dispatch:${stepKey}] ai_limit check: ${askedCount}/${maxQ} perguntas (then=${fb.then})`);
+            if (askedCount >= maxQ) {
+              const then = String(fb.then || "humano");
+              if (then === "humano") {
+                await supabase
+                  .from("customers")
+                  .update({ bot_paused: true, bot_paused_reason: "ai_limit_atingido" })
+                  .eq("id", customer.id);
+                try {
+                  const { notifyHandoff } = await import("../../_shared/notify-consultant.ts");
+                  await notifyHandoff(supabase, customer, `Limite de ${maxQ} perguntas IA atingido no passo "${stepKey}"`).catch(() => {});
+                } catch (_) { /* best-effort */ }
+                const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+                const msg = firstName
+                  ? `${firstName}, vou te conectar com um especialista agora para tirar suas dúvidas com calma 🙌`
+                  : "Vou te conectar com um especialista agora para tirar suas dúvidas com calma 🙌";
+                await sendText(remoteJid, msg);
+                await supabase.from("conversations").insert({
+                  customer_id: customer.id,
+                  message_direction: "outbound",
+                  message_text: msg,
+                  message_type: "text",
+                  conversation_step: stepKey,
+                });
+                return true;
+              }
+              if (then === "next") {
+                const { data: nextStep } = await supabase
+                  .from("bot_flow_steps")
+                  .select("step_key, position")
+                  .eq("flow_id", (flow as any).id)
+                  .eq("is_active", true)
+                  .gt("position", 0)
+                  .order("position", { ascending: true });
+                const current = (nextStep as any[])?.find((s) => s.step_key === stepKey);
+                const next = current
+                  ? (nextStep as any[])?.find((s) => s.position > current.position)
+                  : null;
+                if (next?.step_key) {
+                  console.log(`[dispatch:${stepKey}] ai_limit → next=${next.step_key}`);
+                  await supabase
+                    .from("customers")
+                    .update({ conversation_step: next.step_key, last_step_advanced_at: new Date().toISOString() })
+                    .eq("id", customer.id);
+                  return true;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[dispatch:${stepKey}] ai_limit check falhou:`, (e as Error).message);
+        }
+
         try {
           const { data: lastInbound } = await supabase
             .from("conversations")
@@ -1114,19 +1252,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             .map((r) => `${r.message_direction === "inbound" ? "Lead" : "Bot"}: ${String(r.message_text || "").slice(0, 240)}`)
             .join("\n");
 
-          const { answerFaqWithAI } = await import("../../_shared/ai-faq-answerer.ts");
+          // Paridade Whapi: orquestrador unificado (Triagem → GPT → Gemini RAG)
+          const { runOrchestrator } = await import("../../_shared/ai-orchestrator.ts");
           const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
-          const ai = await answerFaqWithAI({
+          const orch = await runOrchestrator({
             supabase,
-            question: question || "O lead chegou no passo de esclarecer dúvidas. Convide-o gentilmente a fazer a pergunta dele e tranquilize-o de que vamos esclarecer tudo.",
-            leadName: firstName,
-            currentStepLabel: stepKey,
+            customer,
             consultantId: customer.consultant_id,
-            recentHistory,
-            model: "google/gemini-3.1-pro-preview",
+            message: question || "",
+            step: stepKey,
+            history: recentHistory,
           });
 
-          let answerText = (ai.text || "").trim();
+          let answerText = (orch.reply || "").trim();
           if (!answerText) {
             answerText = firstName
               ? `${firstName}, pode mandar sua dúvida que eu te explico tudo agora 😊`
@@ -1142,7 +1280,29 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             conversation_step: stepKey,
           });
 
-          if (ai.shouldHandoff) {
+          // 🔁 Reemite botões do passo após resposta IA (paridade Whapi)
+          if (!orch.shouldHandoff) {
+            try {
+              const followups = Number((customer as any).ai_followups_count || 0);
+              const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+              await reemitStepButtons({
+                supabase,
+                customerId: customer.id,
+                consultantId: customer.consultant_id,
+                flowVariant: (customer as any)?.flow_variant || "A",
+                stepKey,
+                remoteJid,
+                sendButtons,
+                sendText,
+                followups,
+                stepCaptures: Array.isArray((stepRow as any)?.captures) ? (stepRow as any).captures : [],
+              });
+            } catch (e) {
+              console.warn(`[dispatch:${stepKey}] button re-emission failed:`, (e as Error).message);
+            }
+          }
+
+          if (orch.shouldHandoff) {
             try {
               await supabase
                 .from("customers")
@@ -1153,11 +1313,25 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             } catch (_e) { /* best-effort */ }
           }
 
-          console.log(`[dispatch:${stepKey}] AI answer enviada (conf=${ai.confidence.toFixed(2)} handoff=${ai.shouldHandoff})`);
+          console.log(`[dispatch:${stepKey}] orchestrator reply (route=${orch.route} conf=${orch.confidence.toFixed(2)} handoff=${orch.shouldHandoff} chain=${orch.modelChain.join("→")})`);
           return true;
         } catch (e) {
-          console.warn(`[dispatch:${stepKey}] AI answer falhou — caindo no texto estático:`, (e as Error).message);
-          // segue fluxo padrão abaixo
+          console.warn(`[dispatch:${stepKey}] AI answer falhou — enviando fallback texto puro (sem mídia):`, (e as Error).message);
+          try {
+            const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+            const fallbackText = firstName
+              ? `${firstName}, pode mandar sua dúvida que eu te explico tudo agora 😊`
+              : "Pode mandar sua dúvida, que eu explico tudo agora 😊";
+            await sendText(remoteJid, fallbackText);
+            await supabase.from("conversations").insert({
+              customer_id: customer.id,
+              message_direction: "outbound",
+              message_text: fallbackText,
+              message_type: "text",
+              conversation_step: stepKey,
+            });
+          } catch (_) { /* best-effort */ }
+          return true;
         }
       }
 
@@ -1646,8 +1820,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     if (!sentSomething) return null;
-    // G: keepStep=true (off-topic intercept) → não muda conversation_step
+
     if (opts?.keepStep) {
+      try {
+        const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+        await reemitStepButtons({
+          supabase,
+          customerId: customer.id,
+          consultantId: customer.consultant_id,
+          flowVariant: (customer as any)?.flow_variant || "A",
+          stepKey: step,
+          remoteJid,
+          sendButtons,
+          sendText,
+        });
+      } catch (_) { /* noop */ }
       return { reply: "", updates: { __inline_sent: true } as any };
     }
     return { reply: "", updates: { conversation_step: qa.is_closing ? "aguardando_conta" : (step || "qualificacao"), __inline_sent: true } as any };
