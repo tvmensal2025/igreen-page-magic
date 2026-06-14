@@ -1,83 +1,76 @@
-# Redesign — Admin · Produtos & Vendas
+# Auditoria — Fluxo D (Whapi), Fluxo B (IA livre) e Pipeline de Cadastro
 
-## Estética travada (não negociar nesta entrega)
+Objetivo: mapear, testar e produzir um relatório executivo do estado real do sistema de fluxo conversacional + cadastro, identificando o que está funcionando, o que está quebrado/silenciosamente degradado e o que está obsoleto.
 
-**Paleta Sage & Cream**
-- `#f5f0e8` background · `#dce5d4` surface · `#a8c0a0` mid · `#7d9b76` accent verde · `#1a2e1f` ink · `#c9a84c` gold (premium/KPI destaque)
+## Escopo
 
-**Tipografia**
-- DM Serif Display → manchetes editoriais (h1/h2 do hero, nomes de cliente em cards)
-- Fira Sans 300/400/500/600 → toda a UI, números, tabelas, botões
+1. **Fluxo D (Whapi)** — entrada principal hoje
+   - `whapi-webhook` (handlers, state-machine conversacional)
+   - `whapi-proxy`, `_shared/whapi-api.ts`
+   - `_shared/flow-router.ts`, `resolve-flow.ts`, `pick-flow-variant.ts`
+   - Crons: `flow-d-health-cron`, `flow-d-stuck-watchdog`, `bot-stuck-recovery`, `bot-loop-watchdog`, `bot-followup-checker`
+   - Specs já existentes: `flow-d-retry-rules-fix`, `fluxo-d-auditoria`, `captacao-fluxo-d-conversao`
 
-**Linguagem visual**
-- Cantos retos (`rounded-none` nos CTAs e blocos KPI; `rounded` discreto só em inputs/avatares)
-- Borda fina `border-[#a8c0a0]/30`, divisores sublinhados em vez de cartões com sombra pesada
-- Sombras só `shadow-sm`; profundidade vem da hierarquia tipográfica
-- Acento dourado `#c9a84c` reservado para 1 KPI "premium" por hero (não pulverizar)
+2. **Fluxo B (IA livre + base de conhecimento)**
+   - Edge function `fluxo-b-ai`
+   - Página admin `src/pages/AdminFluxoB.tsx`
+   - Base de conhecimento: `ai_knowledge_sections`, `embed-knowledge`, `faq-organizer`
+   - Verificar se ainda é roteado em produção ou se foi descontinuado pelo Fluxo D
 
----
+3. **Pipeline de Cadastro**
+   - `_shared/pipeline-cadastro/registry.ts` + testes
+   - `_shared/bot/cadastro-intent.ts`
+   - `capture-extract`, `finalize-capture`, `igreen-ingest-customers`, `igreen-ingest-xlsx`
+   - Workers `worker-portal`, `worker-portal-2`, `worker-igreen-sync`
+   - Tabelas: `customer_flow_state`, `customers`, `capture_*`, `portal2_audit_traces`
 
-## Escopo (somente UI/presentation)
+4. **Gates/segurança comuns**
+   - `_shared/bot/kill-switch-gate.ts`, `global-flag.ts`, `paused.ts`, `orchestrator-gate.ts`, `ai-cooldown.ts`
+   - `force_bot_phones`, `app_settings`, `rollout_config`
 
-Não mexer em rotas, hooks de dados, schemas Supabase, edge functions ou contratos de API. Reaproveitar 100% dos hooks existentes (`useSales`, `useProducts`, `useUpdateSaleStatus`, `useProposals`, etc.).
+## Metodologia
 
-### Arquivos a alterar
+Para cada um dos três blocos:
 
-1. **`src/features/produtos/theme.ts`** (novo) — tokens Sage como CSS variables (`--pv-bg`, `--pv-surface`, `--pv-mid`, `--pv-accent`, `--pv-ink`, `--pv-gold`) + carregamento das fontes Google via `<link>` injetado uma vez.
+1. **Mapeamento estático**
+   - Ler entrypoints + handlers + helpers
+   - Diagrama em ASCII do fluxo de mensagem (webhook → router → state-machine → cadastro → resposta)
+   - Listar dependências (tabelas, secrets, funções chamadas)
 
-2. **`src/features/produtos/ProdutosModule.tsx`**
-   - Trocar `<TabsList>` shadcn por nav editorial inline (links com underline `border-b-2 border-[#7d9b76]` na ativa)
-   - Aplicar `bg-[#f5f0e8]` no wrapper e injetar fontes
-   - Topbar do módulo: nav à esquerda + slot do `OrcamentoButton` à direita (mesma linha, alinhamento `items-end`)
+2. **Testes automatizados existentes**
+   - Rodar `supabase--test_edge_functions` nos módulos: `whapi-webhook`, `fluxo-b-ai`, `pipeline-cadastro`, `bot/*`, `flow-router`
+   - Anotar falhas, testes pulados, cobertura visível
 
-3. **`src/features/produtos/orcamento/OrcamentoButton.tsx`** — restilizar para CTA Sage (`bg-[#7d9b76]` → hover `#1a2e1f`, retangular, "NOVO ORÇAMENTO" maiúsculo com tracking).
+3. **Smoke test ao vivo (read-only + chamadas idempotentes)**
+   - `supabase--curl_edge_functions` em endpoints de health: `flow-d-health-cron`, `bot-health-intel`, `bot-audit-runner`, `bot-e2e-runner` (modo dry-run se suportado)
+   - `supabase--edge_function_logs` últimas 24h para: `whapi-webhook`, `fluxo-b-ai`, `flow-d-stuck-watchdog`, `bot-stuck-recovery`, `capture-extract`, `finalize-capture` — contar erros/warns
+   - Query em `engine_logs`, `bot_flow_audit_log`, `flow_d_health_runs`, `inbound_media_failures`, `worker_phase_logs` para taxa de erro recente
 
-4. **`src/features/produtos/crm/SalesPipelineBoard.tsx`** — referência direta do protótipo:
-   - Hero magazine `grid-cols-12` (col-span-7 manchete + parágrafo / col-span-5 grid 2×2 de KPIs)
-   - KPIs: Ganho Estimado (gold), Ciclo Médio (sparkline SVG), Propostas Ativas, Conversão. Valores derivados de `sales` agregados.
-   - Colunas com header `border-b border-[#a8c0a0]` + nome maiúsculo + valor total em `text-[#7d9b76]`
-   - **Cards ricos**: kicker (família do produto), tempo na etapa, nome do cliente em Fira Medium, kWh/mês + valor lado a lado, footer com status-dot (cor por urgência) + próxima ação. Última coluna "Ativo" em cartão escuro `bg-[#1a2e1f]` com número em gold.
+4. **Sanidade de dados**
+   - `customer_flow_state` parados há >24h por estágio
+   - `customers` com cadastro incompleto vs concluído (última semana)
+   - `bot_flows` ativos e `flow_variants` em rollout
+   - Verificar se algum cliente recente caiu no Fluxo B vs Fluxo D
 
-5. **`src/features/produtos/catalogo/ProductCatalogTable.tsx`**
-   - Hero magazine reduzido (col-span-7/5) com KPIs: Produtos Ativos, Famílias, Maior Pontuação, Comissão Média
-   - Donut Recharts por família (substitui lista plana)
-   - Agrupar produtos por `family` em seções colapsáveis com cabeçalho serif
-   - Campo de busca + chips de filtro por família no topo da listagem
+5. **Validação do Fluxo B especificamente**
+   - Confirmar se está sendo chamado por alguém (grep no webhook + logs)
+   - Se a base de conhecimento (`ai_knowledge_sections`) tem conteúdo
+   - Se há rota ativa ou se virou legado
 
-6. **`src/features/produtos/acompanhamento/*`** (painel principal)
-   - Hero magazine + 4 KPIs (Vendas no mês, kWh total, Comissão prevista, Vendas ativas)
-   - 2 gráficos Recharts lado a lado: AreaChart (vendas ao longo do tempo) + BarChart horizontal (top 5 produtos)
-   - Tabela compacta abaixo, mesma linguagem dos cards do pipeline
+## Entregável
 
-7. **`src/features/produtos/orcamento/ProposalsPanel.tsx`**
-   - Hero + KPIs (Orçamentos abertos, Taxa de aceite, Ticket médio, Vencendo hoje)
-   - Card destaque "última proposta enviada" (col-span-7) + grid de cards menores ao lado
-   - Sparkline de aceites nos últimos 7 dias no KPI principal
+Um único relatório em `.kiro/specs/auditoria-fluxos-2026-06/report.md` com:
 
-8. **`src/features/produtos/orcamento/OrcamentoBuilderSheet.tsx`** (modal Novo Orçamento) — refazer com layout sidebar+conteúdo:
-   - Sidebar esquerda `bg-[#dce5d4]` com 3 passos numerados (Cliente → Técnico → Finalizar) e estado ativo
-   - Header com título serif "Configurar Orçamento" + subtítulo
-   - Form em grid 2-col com labels uppercase tracking-widest, inputs `bg-white border-[#a8c0a0]/20 rounded-xl`
-   - Painel de **prévia em tempo real** (lado direito ou rodapé) recalculando economia/valor enquanto digita
-   - Footer: "Cancelar" texto + "Próximo Passo" `bg-[#1a2e1f]` rounded-xl
+- Resumo executivo (3-5 bullets, status semáforo 🟢🟡🔴)
+- Por bloco (D, B, Cadastro): arquitetura, o que funciona, o que falha, evidências (logs/queries), recomendações priorizadas
+- Tabela de funções edge auditadas: nome, status, último erro, ação sugerida
+- Lista de itens obsoletos a remover/arquivar
+- Próximos passos sugeridos (sem implementar ainda)
 
----
+Sem alterações de código nesta etapa — apenas leitura, queries e chamadas idempotentes. Qualquer correção vira spec separada após sua aprovação do relatório.
 
 ## Detalhes técnicos
 
-- **Recharts** já está no projeto (usado em outras telas) — só importar. Se faltar, `bun add recharts`.
-- **Fontes** via `<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Fira+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">` injetado por `theme.ts` em `useEffect` (1 vez, idempotente).
-- **Tokens** ficam locais ao módulo (`theme.ts` injeta as CSS vars em `:root` com prefixo `--pv-*`), não tocando no design system global do app (admin segue tema escuro nas outras áreas).
-- **Animações**: `transition-colors duration-300` em hovers; `transition-all` no CTA; sem framer-motion adicional (pesado e fora do escopo).
-- **Drag-and-drop do kanban**: mantém a implementação atual (`onDragStart/onDrop`), só restila os cards.
-
-## Fora do escopo
-
-- Lógica de negócio (cálculo de comissão, fluxo de venda, status transitions)
-- Tema dark global do admin (este módulo fica "claro" como ilha editorial, igual ao protótipo)
-- Mobile-first refinado (ajusta com `md:`/`lg:` mas alvo principal é desktop 1440px do protótipo)
-- Edição do catálogo (continua read-only conforme RLS atual)
-
-## Validação ao final
-
-Build limpa, abrir `/admin` → Produtos & Vendas, verificar cada uma das 4 sub-abas + abrir modal Novo Orçamento, conferir que dados reais (vendas, produtos, propostas) renderizam no novo layout sem regressão de funcionalidade.
+- Ferramentas: `code--view`, `code--exec` (rg/ls), `supabase--read_query`, `supabase--analytics_query`, `supabase--edge_function_logs`, `supabase--test_edge_functions`, `supabase--curl_edge_functions`
+- Nenhuma migração, nenhum deploy, nenhum secret novo
+- Tempo estimado de execução: ~15-20 chamadas de ferramenta em paralelo por bloco
