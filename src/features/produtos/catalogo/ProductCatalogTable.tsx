@@ -1,15 +1,30 @@
 // =============================================================================
-// Catálogo de Produtos — Tabela (visão admin)
+// Catálogo de Produtos — Tabela (Magazine 7+5 redesign)
 // =============================================================================
-// Lista os produtos do catálogo (tabela `products`) com família, regra de
-// pontuação e regra de comissão resumidas. Leitura: serve de referência para
-// o consultor entender como cada produto pontua e remunera. A edição do
-// catálogo é restrita ao admin (RLS) e fora do escopo desta tela.
+// Hero editorial + KPIs + donut SVG por família, busca, chips de filtro, e
+// produtos agrupados por família em seções com cabeçalho serif.
 // =============================================================================
 
-import { Badge } from "@/components/ui/badge";
+import { useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import { useProducts } from "./hooks";
-import { PRODUCT_FAMILY_LABEL, type CommissionRule, type ScoringRule } from "./types";
+import {
+  PRODUCT_FAMILY_LABEL,
+  type CommissionRule,
+  type ProductFamily,
+  type ScoringRule,
+} from "./types";
+import { pvSerif } from "../theme";
+
+const FAMILY_COLOR: Record<ProductFamily, string> = {
+  energia: "#7d9b76",
+  placas: "#c9a84c",
+  telecom: "#5b8aa6",
+  seguros: "#9b6f4f",
+  club: "#1a2e1f",
+  expansao: "#a8c0a0",
+};
 
 function describeScoring(rule: ScoringRule): string {
   switch (rule.mode) {
@@ -32,7 +47,7 @@ function describeCommission(rule: CommissionRule): string {
     case "royalties_percent":
       return `Royalties até ${rule.max_percent}%`;
     case "fixed":
-      return `R$${rule.own} geração própria${rule.chip_activation ? ` · R$${rule.chip_activation}/ativação` : ""}`;
+      return `R$${rule.own} próprio${rule.chip_activation ? ` · R$${rule.chip_activation}/ativação` : ""}`;
     case "per_policy":
       return "Por apólice";
     case "recruitment":
@@ -43,54 +58,285 @@ function describeCommission(rule: CommissionRule): string {
   }
 }
 
+function maxCommissionPct(rule: CommissionRule): number {
+  if (rule.type === "recurring_percent" || rule.type === "royalties_percent")
+    return rule.max_percent;
+  return 0;
+}
+
 export function ProductCatalogTable() {
   const { data: products = [], isLoading } = useProducts({ includeInactive: true });
+  const [search, setSearch] = useState("");
+  const [familyFilter, setFamilyFilter] = useState<ProductFamily | "all">("all");
+
+  const filtered = useMemo(() => {
+    return products.filter((p) => {
+      if (familyFilter !== "all" && p.family !== familyFilter) return false;
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return p.name.toLowerCase().includes(q) || p.brandName.toLowerCase().includes(q);
+    });
+  }, [products, search, familyFilter]);
+
+  const byFamily = useMemo(() => {
+    const map = new Map<ProductFamily, typeof products>();
+    for (const p of filtered) {
+      const list = map.get(p.family) ?? [];
+      list.push(p);
+      map.set(p.family, list);
+    }
+    return Array.from(map.entries());
+  }, [filtered]);
+
+  const familyCounts = useMemo(() => {
+    const counts = new Map<ProductFamily, number>();
+    for (const p of products) {
+      counts.set(p.family, (counts.get(p.family) ?? 0) + 1);
+    }
+    return counts;
+  }, [products]);
+
+  const kpis = useMemo(() => {
+    const ativos = products.filter((p) => p.isActive).length;
+    const familias = familyCounts.size;
+    const maxPct = products.reduce((acc, p) => Math.max(acc, maxCommissionPct(p.commissionRule)), 0);
+    const validPcts = products
+      .map((p) => maxCommissionPct(p.commissionRule))
+      .filter((v) => v > 0);
+    const avgPct = validPcts.length
+      ? Math.round(validPcts.reduce((a, b) => a + b, 0) / validPcts.length)
+      : 0;
+    return { ativos, familias, maxPct, avgPct };
+  }, [products, familyCounts]);
 
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-[#7d9b76] border-t-transparent rounded-full" />
       </div>
-    );
-  }
-
-  if (products.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground text-center py-8">
-        Catálogo vazio. Rode a migration de produtos para popular os produtos Conexão.
-      </p>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border/60 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-border/60 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Catálogo de produtos</h3>
-        <Badge variant="secondary" className="text-[10px]">{products.length} produto(s)</Badge>
+    <div className="space-y-10">
+      {/* Hero magazine 7+5 */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <div className="lg:col-span-7">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+            Catálogo iGreen
+          </span>
+          <h1 className={`text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] ${pvSerif}`}>
+            Produtos &<br />Famílias
+          </h1>
+          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+            {products.length} produto(s) no catálogo distribuídos em {kpis.familias} família(s).
+            Pontuação e comissão lado a lado para o consultor saber como cada item rende.
+          </p>
+        </div>
+
+        <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+          <KpiBlock kicker="Produtos Ativos" value={String(kpis.ativos)} accent="accent" />
+          <KpiBlock kicker="Famílias" value={String(kpis.familias)} accent="ink" />
+          <KpiBlock kicker="Maior Comissão" value={kpis.maxPct ? `${kpis.maxPct}%` : "—"} accent="gold" />
+          <KpiBlock kicker="Média Recorrente" value={kpis.avgPct ? `${kpis.avgPct}%` : "—"} accent="accent" />
+        </div>
+      </section>
+
+      {/* Donut por família */}
+      <FamilyDonut counts={familyCounts} total={products.length} />
+
+      {/* Busca + chips */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#1a2e1f]/40" />
+          <Input
+            placeholder="Buscar produto ou marca..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 pl-9 text-xs rounded-none bg-white border-[#a8c0a0]/40 focus-visible:ring-[#7d9b76]"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <FilterChip
+            label={`Todos (${products.length})`}
+            active={familyFilter === "all"}
+            onClick={() => setFamilyFilter("all")}
+          />
+          {Array.from(familyCounts.entries()).map(([fam, count]) => (
+            <FilterChip
+              key={fam}
+              label={`${PRODUCT_FAMILY_LABEL[fam]} (${count})`}
+              active={familyFilter === fam}
+              onClick={() => setFamilyFilter(fam)}
+              color={FAMILY_COLOR[fam]}
+            />
+          ))}
+        </div>
       </div>
-      <div className="divide-y divide-border/40">
-        {products.map((p) => (
-          <div key={p.id} className="flex items-center justify-between gap-3 px-4 py-3">
+
+      {/* Grupos por família */}
+      {byFamily.length === 0 ? (
+        <p className="text-xs text-[#1a2e1f]/50 text-center py-8 italic">
+          Nenhum produto encontrado.
+        </p>
+      ) : (
+        <div className="space-y-10">
+          {byFamily.map(([family, items]) => (
+            <section key={family} className="space-y-4">
+              <div className="flex items-end justify-between border-b border-[#a8c0a0]/40 pb-2">
+                <h2 className={`text-3xl text-[#1a2e1f] ${pvSerif}`}>
+                  {PRODUCT_FAMILY_LABEL[family]}
+                </h2>
+                <span className="text-[10px] uppercase tracking-widest text-[#1a2e1f]/50 font-semibold">
+                  {items.length} produto(s)
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {items.map((p) => (
+                  <div
+                    key={p.id}
+                    className="bg-white p-5 border border-[#dce5d4] hover:border-[#7d9b76] transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className={`text-lg text-[#1a2e1f] leading-tight ${pvSerif}`}>
+                          {p.name}
+                        </p>
+                        <p className="text-[10px] text-[#1a2e1f]/50 uppercase tracking-wider mt-0.5">
+                          {p.brandName}
+                        </p>
+                      </div>
+                      {!p.isActive && (
+                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-[#f5f0e8] border border-[#dce5d4] text-[#1a2e1f]/50">
+                          inativo
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 pt-3 border-t border-[#f5f0e8]">
+                      <div>
+                        <p className="text-[9px] uppercase tracking-widest text-[#1a2e1f]/50 font-semibold">
+                          Pontuação
+                        </p>
+                        <p className="text-xs text-[#1a2e1f] mt-1">{describeScoring(p.scoringRule)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] uppercase tracking-widest text-[#1a2e1f]/50 font-semibold">
+                          Comissão
+                        </p>
+                        <p className="text-xs text-[#1a2e1f] mt-1">{describeCommission(p.commissionRule)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function KpiBlock({
+  kicker,
+  value,
+  accent,
+}: {
+  kicker: string;
+  value: string;
+  accent: "gold" | "accent" | "ink";
+}) {
+  const borderColor =
+    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
+  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+  return (
+    <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
+      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+        {kicker}
+      </span>
+      <div className={`text-3xl font-light text-[#1a2e1f] mt-1 ${pvSerif}`}>{value}</div>
+    </div>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+  color,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 border transition-colors ${
+        active
+          ? "bg-[#1a2e1f] text-white border-[#1a2e1f]"
+          : "bg-white text-[#1a2e1f]/70 border-[#dce5d4] hover:border-[#7d9b76]"
+      }`}
+      style={active && color ? { backgroundColor: color, borderColor: color } : undefined}
+    >
+      {label}
+    </button>
+  );
+}
+
+function FamilyDonut({
+  counts,
+  total,
+}: {
+  counts: Map<ProductFamily, number>;
+  total: number;
+}) {
+  if (total === 0) return null;
+  const entries = Array.from(counts.entries());
+  const radius = 60;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  return (
+    <div className="bg-white border border-[#dce5d4] p-6 flex flex-col md:flex-row items-center gap-8">
+      <svg viewBox="0 0 160 160" className="w-32 h-32 -rotate-90">
+        <circle cx="80" cy="80" r={radius} fill="none" stroke="#f5f0e8" strokeWidth="22" />
+        {entries.map(([fam, count]) => {
+          const pct = count / total;
+          const length = circumference * pct;
+          const dash = `${length} ${circumference - length}`;
+          const el = (
+            <circle
+              key={fam}
+              cx="80"
+              cy="80"
+              r={radius}
+              fill="none"
+              stroke={FAMILY_COLOR[fam]}
+              strokeWidth="22"
+              strokeDasharray={dash}
+              strokeDashoffset={-offset}
+            />
+          );
+          offset += length;
+          return el;
+        })}
+      </svg>
+      <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {entries.map(([fam, count]) => (
+          <div key={fam} className="flex items-center gap-2">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: FAMILY_COLOR[fam] }}
+            />
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-medium text-foreground truncate">{p.name}</p>
-                {!p.isActive && (
-                  <Badge variant="outline" className="text-[9px] text-muted-foreground">inativo</Badge>
-                )}
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                {p.brandName} · {PRODUCT_FAMILY_LABEL[p.family]}
+              <p className="text-[10px] uppercase tracking-wider text-[#1a2e1f]/60 font-semibold truncate">
+                {PRODUCT_FAMILY_LABEL[fam]}
               </p>
-            </div>
-            <div className="flex items-center gap-4 shrink-0 text-right">
-              <div>
-                <p className="text-[10px] text-muted-foreground">Pontuação</p>
-                <p className="text-[11px] text-foreground">{describeScoring(p.scoringRule)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Comissão</p>
-                <p className="text-[11px] text-foreground">{describeCommission(p.commissionRule)}</p>
-              </div>
+              <p className="text-xs text-[#1a2e1f] font-medium">{count} produto(s)</p>
             </div>
           </div>
         ))}

@@ -1,13 +1,8 @@
 // =============================================================================
-// Orçamento — Painel de propostas enviadas
-// =============================================================================
-// Lista os orçamentos do consultor com status, validade, ações (copiar link,
-// WhatsApp, responder contraproposta) e timeline de eventos expandível.
+// Orçamento — Painel de propostas enviadas (Magazine 7+5 redesign)
 // =============================================================================
 
 import { useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -45,6 +40,7 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
+import { pvSerif } from "../theme";
 
 type StatusFilter = "all" | "pending" | "accepted" | "closed";
 
@@ -52,17 +48,18 @@ const PENDING: ProposalStatus[] = ["sent", "viewed", "countered"];
 const CLOSED: ProposalStatus[] = ["rejected", "expired", "draft"];
 
 const STATUS_COLOR: Record<ProposalStatus, string> = {
-  draft: "bg-zinc-500/15 text-zinc-300",
-  sent: "bg-sky-500/15 text-sky-300",
-  viewed: "bg-indigo-500/15 text-indigo-300",
-  accepted: "bg-emerald-500/15 text-emerald-300",
-  rejected: "bg-red-500/15 text-red-300",
-  countered: "bg-amber-500/15 text-amber-300",
-  expired: "bg-zinc-500/15 text-zinc-400",
+  draft: "bg-[#f5f0e8] text-[#1a2e1f]/60 border-[#dce5d4]",
+  sent: "bg-[#dce5d4] text-[#1a2e1f] border-[#a8c0a0]",
+  viewed: "bg-[#a8c0a0]/30 text-[#1a2e1f] border-[#a8c0a0]",
+  accepted: "bg-[#7d9b76] text-white border-[#7d9b76]",
+  rejected: "bg-red-100 text-red-700 border-red-200",
+  countered: "bg-[#c9a84c]/20 text-[#7a5f1e] border-[#c9a84c]/40",
+  expired: "bg-[#f5f0e8] text-[#1a2e1f]/40 border-[#dce5d4]",
 };
 
 const PUBLIC_BASE = "https://igreen.cloud";
-const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const BRL = (n: number) =>
+  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 interface ProposalsPanelProps {
   consultantId: string;
@@ -83,6 +80,29 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
     for (const p of products) map.set(p.id, p);
     return map;
   }, [products]);
+
+  const kpis = useMemo(() => {
+    const pending = proposals.filter((p) => PENDING.includes(p.status));
+    const accepted = proposals.filter((p) => p.status === "accepted");
+    const totalPending = pending.reduce((acc, p) => acc + (p.amount ?? 0), 0);
+    const ticketAvg = proposals.length
+      ? proposals.reduce((acc, p) => acc + (p.amount ?? 0), 0) / proposals.length
+      : 0;
+    const totalDecided = accepted.length + proposals.filter((p) => p.status === "rejected").length;
+    const acceptRate = totalDecided > 0 ? Math.round((accepted.length / totalDecided) * 100) : 0;
+    const expiringSoon = pending.filter((p) => {
+      if (!p.validUntil) return false;
+      const days = (new Date(p.validUntil).getTime() - Date.now()) / 86400000;
+      return days > 0 && days <= 2;
+    }).length;
+    return {
+      abertos: pending.length,
+      totalPending,
+      acceptRate,
+      ticketAvg,
+      expiringSoon,
+    };
+  }, [proposals]);
 
   const filtered = useMemo(() => {
     return proposals.filter((p) => {
@@ -114,50 +134,73 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-[#7d9b76] border-t-transparent rounded-full" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-foreground">Orçamentos enviados</h3>
-          <Badge variant="secondary" className="text-[10px]">{proposals.length}</Badge>
+    <div className="space-y-10">
+      {/* Hero magazine 7+5 */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <div className="lg:col-span-7">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+            Orçamentos
+          </span>
+          <h1 className={`text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] ${pvSerif}`}>
+            Propostas em<br />andamento
+          </h1>
+          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+            {proposals.length} orçamento(s) emitido(s), {kpis.abertos} aguardando resposta
+            {kpis.expiringSoon > 0 && (
+              <> — <span className="text-[#c9a84c] font-semibold">{kpis.expiringSoon} vencendo em até 2 dias</span></>
+            )}
+            .
+          </p>
         </div>
-        <div className="flex gap-1">
-          {(
-            [
-              ["all", "Todas"],
-              ["pending", "Aguardando"],
-              ["accepted", "Aceitas"],
-              ["closed", "Encerradas"],
-            ] as const
-          ).map(([key, label]) => (
-            <Button
-              key={key}
-              variant={filter === key ? "default" : "outline"}
-              size="sm"
-              className="h-7 text-[11px]"
-              onClick={() => setFilter(key)}
-            >
-              {label}
-            </Button>
-          ))}
+        <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+          <KpiBlock kicker="Em aberto" value={String(kpis.abertos)} accent="accent" />
+          <KpiBlock kicker="Taxa de aceite" value={`${kpis.acceptRate}%`} accent="gold" />
+          <KpiBlock kicker="Ticket médio" value={BRL(kpis.ticketAvg)} accent="accent" />
+          <KpiBlock kicker="Vencendo (≤2d)" value={String(kpis.expiringSoon)} accent="ink" />
         </div>
+      </section>
+
+      {/* Filtros + lista */}
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["all", `Todas (${proposals.length})`],
+            ["pending", `Aguardando (${kpis.abertos})`],
+            ["accepted", "Aceitas"],
+            ["closed", "Encerradas"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setFilter(key)}
+            className={`text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 border transition-colors ${
+              filter === key
+                ? "bg-[#1a2e1f] text-white border-[#1a2e1f]"
+                : "bg-white text-[#1a2e1f]/70 border-[#dce5d4] hover:border-[#7d9b76]"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-10">
+        <p className="text-xs text-[#1a2e1f]/50 text-center py-12 italic">
           {proposals.length === 0
-            ? "Nenhum orçamento criado ainda. Use o botão Orçamento no topo para enviar sua primeira proposta."
+            ? "Nenhum orçamento criado ainda. Use o botão Novo orçamento no topo."
             : "Nenhum orçamento neste filtro."}
         </p>
       ) : (
-        <div className="rounded-xl border border-border/60 overflow-hidden divide-y divide-border/40">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filtered.map((proposal) => (
-            <ProposalRow
+            <ProposalCard
               key={proposal.id}
               proposal={proposal}
               productName={productById.get(proposal.productId)?.name ?? "Produto"}
@@ -173,7 +216,29 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
   );
 }
 
-interface ProposalRowProps {
+function KpiBlock({
+  kicker,
+  value,
+  accent,
+}: {
+  kicker: string;
+  value: string;
+  accent: "gold" | "accent" | "ink";
+}) {
+  const borderColor =
+    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
+  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+  return (
+    <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
+      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+        {kicker}
+      </span>
+      <div className={`text-2xl font-light text-[#1a2e1f] mt-1 ${pvSerif}`}>{value}</div>
+    </div>
+  );
+}
+
+interface ProposalCardProps {
   proposal: Proposal;
   productName: string;
   consultantId: string;
@@ -182,14 +247,14 @@ interface ProposalRowProps {
   onDelete: () => void;
 }
 
-function ProposalRow({
+function ProposalCard({
   proposal,
   productName,
   consultantId,
   instanceName,
   isWhapi,
   onDelete,
-}: ProposalRowProps) {
+}: ProposalCardProps) {
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
@@ -203,14 +268,24 @@ function ProposalRow({
   );
 
   const link = `${PUBLIC_BASE}/proposta/${proposal.publicToken}`;
-  const recipientLabel =
-    proposal.recipientName ||
-    proposal.recipientPhone ||
-    "Destinatário";
+  const recipientLabel = proposal.recipientName || proposal.recipientPhone || "Destinatário";
 
   const amountLabel = proposal.amount
     ? `${BRL(proposal.amount)}${proposal.amountPeriod === "month" ? "/mês" : ""}`
     : "—";
+
+  const daysLeft = proposal.validUntil
+    ? Math.ceil((new Date(proposal.validUntil).getTime() - Date.now()) / 86400000)
+    : null;
+  const validityLabel =
+    daysLeft === null
+      ? null
+      : daysLeft <= 0
+      ? "Expirada"
+      : daysLeft <= 2
+      ? `Expira em ${daysLeft}d`
+      : `Válida ${daysLeft}d`;
+  const validityUrgent = daysLeft !== null && daysLeft > 0 && daysLeft <= 2;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(link);
@@ -220,7 +295,7 @@ function ProposalRow({
   const handleWhatsApp = async () => {
     const phone = proposal.recipientPhone;
     if (!phone) {
-      toast({ title: "Telefone não disponível", description: "Este orçamento foi enviado a um cliente da base.", variant: "destructive" });
+      toast({ title: "Telefone não disponível", variant: "destructive" });
       return;
     }
     if (!instanceName) {
@@ -233,7 +308,6 @@ function ProposalRow({
       `Segue o orçamento de *${productName}*:\n` +
       `${proposal.amount ? `Valor: *${amountLabel}*\n` : ""}` +
       `\nVeja os detalhes e responda por aqui:\n${link}`;
-
     const result = await sendWhatsAppMessage({
       instanceName,
       phone,
@@ -242,7 +316,6 @@ function ProposalRow({
       isWhapi,
     });
     setSending(false);
-
     if (result.status === "sent" || result.status === "pending") {
       toast({ title: "Orçamento enviado no WhatsApp!" });
     } else {
@@ -280,92 +353,91 @@ function ProposalRow({
   return (
     <>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <div className="px-4 py-3">
+        <div className="bg-white border border-[#dce5d4] hover:border-[#7d9b76] transition-colors p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-xs font-medium text-foreground truncate">{recipientLabel}</p>
-                <Badge className={`text-[10px] ${STATUS_COLOR[proposal.status]}`}>
+                <span
+                  className={`text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 border ${STATUS_COLOR[proposal.status]}`}
+                >
                   {PROPOSAL_STATUS_LABEL[proposal.status]}
-                </Badge>
-                <ValidityBadge validUntil={proposal.validUntil} status={proposal.status} />
+                </span>
+                {validityLabel && (
+                  <span
+                    className={`text-[10px] font-medium ${
+                      validityUrgent ? "text-[#c9a84c]" : "text-[#1a2e1f]/50"
+                    }`}
+                  >
+                    {validityLabel}
+                  </span>
+                )}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {productName} · {amountLabel}
+              <h4 className={`text-xl text-[#1a2e1f] mt-2 leading-tight ${pvSerif}`}>
+                {recipientLabel}
+              </h4>
+              <p className="text-xs text-[#1a2e1f]/60 mt-1">
+                {productName} · <span className="text-[#1a2e1f] font-semibold">{amountLabel}</span>
               </p>
             </div>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="text-[#1a2e1f]/40 hover:text-[#1a2e1f] p-1"
+                title="Ver histórico"
+              >
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </div>
 
-            <div className="flex items-center gap-1 shrink-0">
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopy} title="Copiar link">
+          <div className="mt-4 pt-3 border-t border-[#f5f0e8] flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-1">
+              <IconBtn onClick={handleCopy} title="Copiar link">
                 <Copy className="h-3.5 w-3.5" />
-              </Button>
+              </IconBtn>
               {proposal.recipientPhone && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={handleWhatsApp}
-                  disabled={sending}
-                  title="Enviar no WhatsApp"
-                >
+                <IconBtn onClick={handleWhatsApp} disabled={sending} title="Enviar no WhatsApp">
                   {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                </Button>
+                </IconBtn>
               )}
               {proposal.status === "countered" && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => setReplyOpen(true)}
-                  title="Responder contraproposta"
-                >
+                <IconBtn onClick={() => setReplyOpen(true)} title="Responder contraproposta">
                   <MessageSquare className="h-3.5 w-3.5" />
-                </Button>
+                </IconBtn>
               )}
               {["draft", "sent", "expired"].includes(proposal.status) && (
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={onDelete} title="Excluir">
+                <IconBtn onClick={onDelete} title="Excluir" danger>
                   <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                </IconBtn>
               )}
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" title="Ver histórico">
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
-                </Button>
-              </CollapsibleTrigger>
             </div>
           </div>
 
-          <CollapsibleContent className="mt-3">
+          <CollapsibleContent className="mt-4 pt-4 border-t border-[#f5f0e8]">
             {eventsLoading ? (
-              <div className="flex justify-center py-4">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <div className="flex justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-[#1a2e1f]/40" />
               </div>
             ) : events.length === 0 ? (
-              <p className="text-[10px] text-muted-foreground">Sem eventos registrados.</p>
+              <p className="text-[10px] text-[#1a2e1f]/50 italic">Sem eventos registrados.</p>
             ) : (
-              <div className="space-y-2 border-l-2 border-border/60 pl-3 ml-1">
+              <div className="space-y-2 border-l-2 border-[#a8c0a0]/40 pl-3">
                 {events.map((ev, i) => (
                   <div key={i} className="text-[11px]">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground capitalize">{ev.type.replace("_", " ")}</span>
-                      <span className="text-muted-foreground">
+                      <span className="font-bold uppercase tracking-wider text-[#1a2e1f] text-[10px]">
+                        {ev.type.replace("_", " ")}
+                      </span>
+                      <span className="text-[#1a2e1f]/50">
                         {new Date(ev.createdAt).toLocaleString("pt-BR")}
                       </span>
                     </div>
                     {ev.counterAmount !== null && (
-                      <p className="text-muted-foreground">Valor: {BRL(ev.counterAmount)}</p>
+                      <p className="text-[#1a2e1f]/70">Valor: {BRL(ev.counterAmount)}</p>
                     )}
-                    {ev.note && <p className="text-muted-foreground">{ev.note}</p>}
-                    {ev.attachmentUrl && (
-                      <a
-                        href={ev.attachmentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary underline"
-                      >
-                        Ver anexo
-                      </a>
-                    )}
+                    {ev.note && <p className="text-[#1a2e1f]/70 italic">{ev.note}</p>}
                   </div>
                 ))}
               </div>
@@ -398,16 +470,27 @@ function ProposalRow({
                 value={replyNote}
                 onChange={(e) => setReplyNote(e.target.value)}
                 className="text-sm min-h-[60px] resize-none"
-                placeholder="Mensagem para acompanhar a contraproposta..."
+                placeholder="Mensagem para acompanhar..."
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReplyOpen(false)}>Cancelar</Button>
-            <Button onClick={handleReply} disabled={replyToCounter.isPending}>
-              {replyToCounter.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+            <button
+              type="button"
+              onClick={() => setReplyOpen(false)}
+              className="px-4 py-2 text-xs uppercase tracking-widest text-[#1a2e1f]/60 hover:text-[#1a2e1f]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleReply}
+              disabled={replyToCounter.isPending}
+              className="inline-flex items-center gap-2 bg-[#1a2e1f] hover:bg-[#7d9b76] text-white px-5 py-2.5 text-xs font-semibold uppercase tracking-widest transition-colors disabled:opacity-50"
+            >
+              {replyToCounter.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Enviar resposta
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -415,26 +498,32 @@ function ProposalRow({
   );
 }
 
-function ValidityBadge({
-  validUntil,
-  status,
+function IconBtn({
+  children,
+  onClick,
+  title,
+  disabled,
+  danger,
 }: {
-  validUntil: string | null;
-  status: ProposalStatus;
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
+  danger?: boolean;
 }) {
-  if (!validUntil || status === "accepted" || status === "rejected" || status === "expired") {
-    if (status === "expired") {
-      return <Badge variant="outline" className="text-[10px] text-zinc-400">Expirada</Badge>;
-    }
-    return null;
-  }
-
-  const daysLeft = Math.ceil((new Date(validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  if (daysLeft <= 0) {
-    return <Badge variant="outline" className="text-[10px] text-zinc-400">Expirada</Badge>;
-  }
-  if (daysLeft <= 2) {
-    return <Badge variant="outline" className="text-[10px] text-amber-400">Expira em {daysLeft}d</Badge>;
-  }
-  return <Badge variant="outline" className="text-[10px] text-muted-foreground">Válida {daysLeft}d</Badge>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`h-7 w-7 inline-flex items-center justify-center border transition-colors ${
+        danger
+          ? "border-red-200 text-red-500 hover:bg-red-50"
+          : "border-[#dce5d4] text-[#1a2e1f]/70 hover:border-[#7d9b76] hover:text-[#1a2e1f]"
+      } disabled:opacity-40`}
+    >
+      {children}
+    </button>
+  );
 }

@@ -1,13 +1,9 @@
 // =============================================================================
-// Orçamento — Botão da topbar
-// =============================================================================
-// Botão aditivo que vai no slot `extra` da AppTopbar (hoje vazio). Abre o
-// OrcamentoBuilderSheet sem tocar no layout nem nas demais abas. Aparece em
-// qualquer aba do painel — montar orçamento é uma ação global do consultor.
+// Orçamento — Botão da topbar (Sage CTA editorial)
 // =============================================================================
 
 import { useState } from "react";
-import { FileText } from "lucide-react";
+import { Plus } from "lucide-react";
 import { OrcamentoBuilderSheet } from "./OrcamentoBuilderSheet";
 
 interface OrcamentoButtonProps {
@@ -24,17 +20,11 @@ export function OrcamentoButton({ consultantId, instanceName, isWhapi }: Orcamen
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold transition-all"
-        style={{
-          background: "var(--pe-accent-glow)",
-          border: "1px solid rgba(16,185,129,0.25)",
-          color: "var(--pe-emerald-strong)",
-        }}
+        className="inline-flex items-center gap-2 bg-[#7d9b76] hover:bg-[#1a2e1f] text-white px-5 py-2.5 rounded-none text-xs font-semibold tracking-[0.18em] uppercase shadow-sm transition-colors duration-300 self-start md:self-auto"
         aria-label="Novo orçamento"
-        title="Criar novo orçamento"
       >
-        <FileText className="w-4 h-4" />
-        <span className="hidden sm:inline">Orçamento</span>
+        <span>Novo orçamento</span>
+        <Plus className="w-4 h-4" />
       </button>
 
       <OrcamentoBuilderSheet

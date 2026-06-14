@@ -1,84 +1,83 @@
-# Apagar a Vendedora — Auditoria + Plano Seguro
+# Redesign — Admin · Produtos & Vendas
 
-## Veredito da auditoria
+## Estética travada (não negociar nesta entrega)
 
-**NÃO pode apagar agora.** Apagar `_shared/vendedora/` neste momento quebra produção em ~10 lugares. Faltam extrações reais — não só shims.
+**Paleta Sage & Cream**
+- `#f5f0e8` background · `#dce5d4` surface · `#a8c0a0` mid · `#7d9b76` accent verde · `#1a2e1f` ink · `#c9a84c` gold (premium/KPI destaque)
 
-## O que JÁ está no Cérebro (pode apagar com segurança depois)
+**Tipografia**
+- DM Serif Display → manchetes editoriais (h1/h2 do hero, nomes de cliente em cards)
+- Fira Sans 300/400/500/600 → toda a UI, números, tabelas, botões
 
+**Linguagem visual**
+- Cantos retos (`rounded-none` nos CTAs e blocos KPI; `rounded` discreto só em inputs/avatares)
+- Borda fina `border-[#a8c0a0]/30`, divisores sublinhados em vez de cartões com sombra pesada
+- Sombras só `shadow-sm`; profundidade vem da hierarquia tipográfica
+- Acento dourado `#c9a84c` reservado para 1 KPI "premium" por hero (não pulverizar)
 
-| Arquivo vendedora | Status                                |
-| ----------------- | ------------------------------------- |
-| `types.ts`        | shim → `cerebro/comum/types.ts` ✅     |
-| `gateway.ts`      | shim → `cerebro/comum/gateway.ts` ✅   |
-| `rag.ts`          | shim → `cerebro/comum/rag.ts` ✅       |
-| `templates.ts`    | shim → `cerebro/comum/templates.ts` ✅ |
+---
 
+## Escopo (somente UI/presentation)
 
-## O que NÃO foi migrado (lógica única, ainda viva)
+Não mexer em rotas, hooks de dados, schemas Supabase, edge functions ou contratos de API. Reaproveitar 100% dos hooks existentes (`useSales`, `useProducts`, `useUpdateSaleStatus`, `useProposals`, etc.).
 
+### Arquivos a alterar
 
-| Arquivo            | Linhas | Onde precisa virar antes de apagar                                                        |
-| ------------------ | ------ | ----------------------------------------------------------------------------------------- |
-| `orchestrator.ts`  | 541    | É o `runVendedoraV2` inteiro — chamado por todos os webhooks                              |
-| `extractors.ts`    | 209    | Extrai nome/valor/email do inbound — Cérebro hoje usa `entendimento.ts` (overlap parcial) |
-| `closer.ts`        | 148    | Finaliza captura (portal_submitting) — Cérebro não tem equivalente                        |
-| `memory.ts`        | 112    | Lê/grava `customer_memory` + resumo — Cérebro não chama isso direto                       |
-| `perfilador.ts`    | 69     | Classifica perfil/sentimento/urgência — Cérebro não tem                                   |
-| `critico.ts`       | 64     | QA da resposta — Cérebro tem `guarda.ts` (overlap, mas regras diferentes)                 |
-| `state-machine.ts` | 39     | Decide etapa determinística — Cérebro tem `decisor-passo.ts` (overlap)                    |
-| `state.ts`         | 44     | Lê/grava `fluxo_b_state` — Cérebro usa `estado.ts` mas em outra coluna                    |
-| `index.ts`         | 44     | Reexporta `runVendedoraV2`                                                                |
+1. **`src/features/produtos/theme.ts`** (novo) — tokens Sage como CSS variables (`--pv-bg`, `--pv-surface`, `--pv-mid`, `--pv-accent`, `--pv-ink`, `--pv-gold`) + carregamento das fontes Google via `<link>` injetado uma vez.
 
+2. **`src/features/produtos/ProdutosModule.tsx`**
+   - Trocar `<TabsList>` shadcn por nav editorial inline (links com underline `border-b-2 border-[#7d9b76]` na ativa)
+   - Aplicar `bg-[#f5f0e8]` no wrapper e injetar fontes
+   - Topbar do módulo: nav à esquerda + slot do `OrcamentoButton` à direita (mesma linha, alinhamento `items-end`)
 
-## Quem chama `runFluxoBAI`/`runVendedoraV2` hoje
+3. **`src/features/produtos/orcamento/OrcamentoButton.tsx`** — restilizar para CTA Sage (`bg-[#7d9b76]` → hover `#1a2e1f`, retangular, "NOVO ORÇAMENTO" maiúsculo com tracking).
 
-1. `whapi-webhook/handlers/bot-flow.ts:645`
-2. `evolution-webhook/handlers/bot-flow.ts:642`
-3. `process-followups/index.ts:171` (nudge)
-4. `fluxo-b-ai/index.ts` (edge dedicada — chamada por ai-followup-cron, ai-closer-cron, bot-stuck-recovery)
-5. `ai-sales-agent/index.ts` (edge legada)
+4. **`src/features/produtos/crm/SalesPipelineBoard.tsx`** — referência direta do protótipo:
+   - Hero magazine `grid-cols-12` (col-span-7 manchete + parágrafo / col-span-5 grid 2×2 de KPIs)
+   - KPIs: Ganho Estimado (gold), Ciclo Médio (sparkline SVG), Propostas Ativas, Conversão. Valores derivados de `sales` agregados.
+   - Colunas com header `border-b border-[#a8c0a0]` + nome maiúsculo + valor total em `text-[#7d9b76]`
+   - **Cards ricos**: kicker (família do produto), tempo na etapa, nome do cliente em Fira Medium, kWh/mês + valor lado a lado, footer com status-dot (cor por urgência) + próxima ação. Última coluna "Ativo" em cartão escuro `bg-[#1a2e1f]` com número em gold.
 
-Os webhooks `index.ts` têm gate `cerebro_ativo` → quando ON, early-return com `responderComCerebro` SEM cair na vendedora. Quando OFF, cai no bot-flow → vendedora.
+5. **`src/features/produtos/catalogo/ProductCatalogTable.tsx`**
+   - Hero magazine reduzido (col-span-7/5) com KPIs: Produtos Ativos, Famílias, Maior Pontuação, Comissão Média
+   - Donut Recharts por família (substitui lista plana)
+   - Agrupar produtos por `family` em seções colapsáveis com cabeçalho serif
+   - Campo de busca + chips de filtro por família no topo da listagem
 
-## Plano em 3 ondas (cada uma deployável e reversível)
+6. **`src/features/produtos/acompanhamento/*`** (painel principal)
+   - Hero magazine + 4 KPIs (Vendas no mês, kWh total, Comissão prevista, Vendas ativas)
+   - 2 gráficos Recharts lado a lado: AreaChart (vendas ao longo do tempo) + BarChart horizontal (top 5 produtos)
+   - Tabela compacta abaixo, mesma linguagem dos cards do pipeline
 
-### Onda A — Cérebro responde 100% no caminho principal (sem apagar nada)
+7. **`src/features/produtos/orcamento/ProposalsPanel.tsx`**
+   - Hero + KPIs (Orçamentos abertos, Taxa de aceite, Ticket médio, Vencendo hoje)
+   - Card destaque "última proposta enviada" (col-span-7) + grid de cards menores ao lado
+   - Sparkline de aceites nos últimos 7 dias no KPI principal
 
-1. Migration SQL: `UPDATE consultants SET cerebro_ativo='on'` + `ALTER COLUMN ... SET DEFAULT 'on'`.
-2. Remover o gate `cerebro_ativo` dos 2 webhooks: `responderComCerebro` SEMPRE roda; `try/catch` fail-soft — se cérebro lançar, loga `cerebro_error` e devolve uma resposta determinística curta (NÃO cai mais na vendedora).
-3. `process-followups`: trocar `runFluxoBAI` por chamada direta ao Cérebro com `nudgeHook`. (Hoje o Cérebro não tem entrypoint de nudge — criar `cerebro/nudge-hook.ts` reaproveitando `resposta-hook.ts`.)
-4. Validar 1h em produção: zero `cerebro_error`, zero `outbound_message_log` duplicado, `cerebro_monitor_canario.mode='apply'` em 100% dos turnos.
+8. **`src/features/produtos/orcamento/OrcamentoBuilderSheet.tsx`** (modal Novo Orçamento) — refazer com layout sidebar+conteúdo:
+   - Sidebar esquerda `bg-[#dce5d4]` com 3 passos numerados (Cliente → Técnico → Finalizar) e estado ativo
+   - Header com título serif "Configurar Orçamento" + subtítulo
+   - Form em grid 2-col com labels uppercase tracking-widest, inputs `bg-white border-[#a8c0a0]/20 rounded-xl`
+   - Painel de **prévia em tempo real** (lado direito ou rodapé) recalculando economia/valor enquanto digita
+   - Footer: "Cancelar" texto + "Próximo Passo" `bg-[#1a2e1f]` rounded-xl
 
-### Onda B — Extrair o que falta para o Cérebro
+---
 
-5. Portar `closer.ts` → `cerebro/finalizador.ts` (finalize-capture / portal_submitting).
-6. Portar `perfilador.ts` → `cerebro/perfilador.ts` (ou inlinear em `entendimento.ts`).
-7. Reaproveitar `extractors.ts` dentro de `entendimento.ts` (já tem overlap — auditar campo a campo).
-8. `memory.ts`: o Cérebro já lê `customer_memory` via `cerebro/comum/`. Confirmar paridade ou portar funções faltantes.
-9. Atualizar `ai-summarize-conversation`, `ai-extract-memory`, `ai-sales-agent`, `ai-closer-cron`, `ai-followup-cron`, `bot-stuck-recovery` para NÃO importar nada de `vendedora/`. Onde só usam `gateway`/`rag`/`templates`/`types` (shims), trocar import para `cerebro/comum/`.
+## Detalhes técnicos
 
-### Onda C — Apagar
+- **Recharts** já está no projeto (usado em outras telas) — só importar. Se faltar, `bun add recharts`.
+- **Fontes** via `<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Fira+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">` injetado por `theme.ts` em `useEffect` (1 vez, idempotente).
+- **Tokens** ficam locais ao módulo (`theme.ts` injeta as CSS vars em `:root` com prefixo `--pv-*`), não tocando no design system global do app (admin segue tema escuro nas outras áreas).
+- **Animações**: `transition-colors duration-300` em hovers; `transition-all` no CTA; sem framer-motion adicional (pesado e fora do escopo).
+- **Drag-and-drop do kanban**: mantém a implementação atual (`onDragStart/onDrop`), só restila os cards.
 
-10. Apagar diretório `_shared/vendedora/` inteiro.
-11. Apagar `_shared/fluxo-b-ai.ts`.
-12. Apagar edge function `fluxo-b-ai/` (e remover do `supabase/config.toml`, cancelar cron se houver).
-13. Apagar edge function `ai-sales-agent/` se já não for chamada de lugar nenhum (`rg ai-sales-agent` na src/).
-14. Limpar flags mortas em `_shared/feature-flag.ts` (`cerebro_ativo` se decidirmos remover o toggle).
-15. Atualizar docs `mem/features/ai-orchestrator-architecture.md`, `mem/whatsapp/flow-engine-v3-rollout.md`, steering files.
+## Fora do escopo
 
-## Sinais de rollback
+- Lógica de negócio (cálculo de comissão, fluxo de venda, status transitions)
+- Tema dark global do admin (este módulo fica "claro" como ilha editorial, igual ao protótipo)
+- Mobile-first refinado (ajusta com `md:`/`lg:` mas alvo principal é desktop 1440px do protótipo)
+- Edição do catálogo (continua read-only conforme RLS atual)
 
-- `cerebro_error` > 0 nos edge logs → reverter Onda A com 1 `UPDATE consultants SET cerebro_ativo='off'`.
-- `outbound_message_log` com 2 envios mesmo `message_id` → bug de early-return; reverter webhook.
-- `cerebro_sinal_alerta_coincidencia` enchendo → cérebro divergindo da vendedora; pausar Onda B até investigar.
+## Validação ao final
 
-## O que precisa de DECISÃO sua antes de eu começar
-
-**(1)** Posso começar pela **Onda A passo 1+2** agora (migration + remover gate dos webhooks com fail-soft determinístico, SEM portar nudge ainda)? É o passo que tira a vendedora do caminho principal sem apagar código.
-
-**(2)** Ou prefere que eu faça **Onda B inteira primeiro** (portar closer/perfilador/extractors/memory) e só depois ativar Cérebro 100% + apagar? Mais lento mas mais seguro.
-
-**(3)** Em qualquer cenário: confirma que `process-followups` (nudge de reaquecimento) PODE ficar 24h sem rodar enquanto eu porto `nudge-hook.ts` pro Cérebro? Se não, preciso manter `_shared/fluxo-b-ai.ts` vivo até a Onda B terminar.  
-  
-pode aplicar tudo
+Build limpa, abrir `/admin` → Produtos & Vendas, verificar cada uma das 4 sub-abas + abrir modal Novo Orçamento, conferir que dados reais (vendas, produtos, propostas) renderizam no novo layout sem regressão de funcionalidade.

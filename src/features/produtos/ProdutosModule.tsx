@@ -1,18 +1,18 @@
 // =============================================================================
-// Módulo Multiproduto iGreen — Container
+// Módulo Multiproduto iGreen — Container (Magazine 7+5 redesign)
 // =============================================================================
-// Reúne as sub-telas do módulo (Acompanhamento, Pipeline/CRM de vendas,
-// Orçamentos e Catálogo) em abas internas. Entra como UMA única aba no
-// AppSidebar; o CRM de vendas vive DENTRO daqui, não como item separado.
+// Wrapper editorial Sage & Cream com nav inline + CTA "Novo orçamento". Cada
+// sub-aba renderiza seu próprio hero magazine + conteúdo (kanban/tabela/lista).
 // =============================================================================
 
 import { useEffect, useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LayoutDashboard, KanbanSquare, PackageSearch, FileText } from "lucide-react";
 import { AcompanhamentoPanel } from "./acompanhamento";
 import { SalesPipelineBoard } from "./crm";
 import { ProductCatalogTable } from "./catalogo/ProductCatalogTable";
 import { ProposalsPanel } from "./orcamento/ProposalsPanel";
+import { OrcamentoButton } from "./orcamento/OrcamentoButton";
+import { usePvFonts, pvBody } from "./theme";
 
 export type ProdutosTabId = "acompanhamento" | "pipeline" | "orcamentos" | "catalogo";
 
@@ -24,6 +24,13 @@ interface ProdutosModuleProps {
   onTabChange?: (tab: ProdutosTabId) => void;
 }
 
+const TABS: { id: ProdutosTabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "acompanhamento", label: "Acompanhamento", icon: LayoutDashboard },
+  { id: "orcamentos", label: "Orçamentos", icon: FileText },
+  { id: "pipeline", label: "Pipeline", icon: KanbanSquare },
+  { id: "catalogo", label: "Catálogo", icon: PackageSearch },
+];
+
 export function ProdutosModule({
   consultantId,
   initialTab = "acompanhamento",
@@ -31,58 +38,66 @@ export function ProdutosModule({
   isWhapi,
   onTabChange,
 }: ProdutosModuleProps) {
+  usePvFonts();
   const [tab, setTab] = useState<ProdutosTabId>(initialTab);
 
   useEffect(() => {
     setTab(initialTab);
   }, [initialTab]);
 
-  const handleTabChange = (value: string) => {
-    const next = value as ProdutosTabId;
+  const change = (next: ProdutosTabId) => {
     setTab(next);
     onTabChange?.(next);
   };
 
   return (
-    <Tabs value={tab} onValueChange={handleTabChange} className="flex flex-col h-full min-h-0">
-      <TabsList className="self-start">
-        <TabsTrigger value="acompanhamento" className="gap-1.5">
-          <LayoutDashboard className="h-3.5 w-3.5" />
-          Acompanhamento
-        </TabsTrigger>
-        <TabsTrigger value="orcamentos" className="gap-1.5">
-          <FileText className="h-3.5 w-3.5" />
-          Orçamentos
-        </TabsTrigger>
-        <TabsTrigger value="pipeline" className="gap-1.5">
-          <KanbanSquare className="h-3.5 w-3.5" />
-          Pipeline de vendas
-        </TabsTrigger>
-        <TabsTrigger value="catalogo" className="gap-1.5">
-          <PackageSearch className="h-3.5 w-3.5" />
-          Catálogo
-        </TabsTrigger>
-      </TabsList>
+    <div className={`min-h-full bg-[#f5f0e8] text-[#1a2e1f] ${pvBody}`}>
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 space-y-8">
+        {/* Topbar editorial */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-[#a8c0a0]/30 pb-4 gap-4">
+          <nav className="flex gap-6 sm:gap-8 text-sm font-medium text-[#1a2e1f]/60 overflow-x-auto">
+            {TABS.map(({ id, label, icon: Icon }) => {
+              const active = tab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => change(id)}
+                  className={`pb-2 flex items-center gap-1.5 whitespace-nowrap transition-colors duration-200 ${
+                    active
+                      ? "text-[#1a2e1f] border-b-2 border-[#7d9b76]"
+                      : "hover:text-[#1a2e1f]"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+          <OrcamentoButton
+            consultantId={consultantId}
+            instanceName={instanceName}
+            isWhapi={isWhapi}
+          />
+        </div>
 
-      <TabsContent value="acompanhamento" className="flex-1 min-h-0 overflow-y-auto">
-        <AcompanhamentoPanel consultantId={consultantId} />
-      </TabsContent>
-
-      <TabsContent value="orcamentos" className="flex-1 min-h-0 overflow-y-auto">
-        <ProposalsPanel
-          consultantId={consultantId}
-          instanceName={instanceName}
-          isWhapi={isWhapi}
-        />
-      </TabsContent>
-
-      <TabsContent value="pipeline" className="flex-1 min-h-0 overflow-hidden">
-        <SalesPipelineBoard consultantId={consultantId} />
-      </TabsContent>
-
-      <TabsContent value="catalogo" className="flex-1 min-h-0 overflow-y-auto">
-        <ProductCatalogTable />
-      </TabsContent>
-    </Tabs>
+        {/* Conteúdo */}
+        <div className="animate-in fade-in duration-200">
+          {tab === "acompanhamento" && (
+            <AcompanhamentoPanel consultantId={consultantId} />
+          )}
+          {tab === "orcamentos" && (
+            <ProposalsPanel
+              consultantId={consultantId}
+              instanceName={instanceName}
+              isWhapi={isWhapi}
+            />
+          )}
+          {tab === "pipeline" && <SalesPipelineBoard consultantId={consultantId} />}
+          {tab === "catalogo" && <ProductCatalogTable />}
+        </div>
+      </div>
+    </div>
   );
 }

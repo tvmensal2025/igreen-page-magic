@@ -87,7 +87,29 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10 text-[#1a2e1f]">
+      {/* Hero magazine 7+5 */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <div className="lg:col-span-7">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+            Acompanhamento
+          </span>
+          <h1 className="text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] font-[DM_Serif_Display,Georgia,serif]">
+            Sua performance<br />em movimento
+          </h1>
+          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+            {summary.totalActive} venda(s) ativa(s) acumulando {KWH(summary.totalPointsKwh)} no plano
+            de carreira. Ganho estimado mensal de <span className="font-semibold text-[#7d9b76]">{BRL(financial.totalEstimatedCommission)}</span>.
+          </p>
+        </div>
+        <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+          <HeroKpi kicker="Vendas Ativas" value={String(summary.totalActive)} accent="accent" />
+          <HeroKpi kicker="Pontos kWh" value={summary.totalPointsKwh.toLocaleString("pt-BR")} accent="accent" />
+          <HeroKpi kicker="Ganho/mês" value={BRL(financial.totalEstimatedCommission)} accent="gold" />
+          <HeroKpi kicker="Nível" value={career.current.label} accent="ink" />
+        </div>
+      </section>
+
       {/* Cards de desempenho */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
@@ -323,6 +345,30 @@ function SummaryCard({ icon, label, value, hint }: SummaryCardProps) {
       </div>
       <p className="text-lg font-bold text-foreground mt-2">{value}</p>
       {hint && <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>}
+    </div>
+  );
+}
+
+function HeroKpi({
+  kicker,
+  value,
+  accent,
+}: {
+  kicker: string;
+  value: string;
+  accent: "gold" | "accent" | "ink";
+}) {
+  const borderColor =
+    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
+  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+  return (
+    <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
+      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+        {kicker}
+      </span>
+      <div className="text-2xl font-light text-[#1a2e1f] mt-1 font-[DM_Serif_Display,Georgia,serif]">
+        {value}
+      </div>
     </div>
   );
 }

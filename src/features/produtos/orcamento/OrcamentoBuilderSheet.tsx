@@ -1,30 +1,18 @@
 // =============================================================================
-// Orçamento — Builder (Sheet lateral)
+// Orçamento — Builder (Sheet lateral editorial)
 // =============================================================================
-// Painel que monta o orçamento e gera o link público profissional. Abre pelo
-// botão na topbar (slot extra). Fluxo:
-//   1. escolher produto (catálogo)
-//   2. escolher destinatário (base do consultor ou número avulso)
-//   3. montar o valor conforme a família (plano / projeto / economia estimada)
-//   4. mensagem + prazo de validade
-//   5. criar proposta (status 'sent') → gera link → envia no WhatsApp
-//
-// A venda só nasce quando o cliente aceita (na página pública). Aqui só cria a
-// proposta. Não toca em sales, CRM nem nas demais abas.
+// Layout sidebar+conteúdo Sage & Cream com steps numerados, header serif e
+// painel de prévia em tempo real. Toda a lógica original (catalogo, pricing,
+// createProposal, WhatsApp) é mantida — só a apresentação muda.
 // =============================================================================
 
 import { useMemo, useState } from "react";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -33,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Copy, Send, Check } from "lucide-react";
+import { Loader2, Copy, Send, Check, X } from "lucide-react";
 import { useProducts } from "../catalogo/hooks";
 import { PRODUCT_FAMILY_LABEL } from "../catalogo/types";
 import { getCommercialConfig } from "./catalog";
@@ -41,6 +29,7 @@ import { computeQuoteAmount } from "./pricing";
 import { useCreateProposal } from "./hooks";
 import { RecipientPicker, type RecipientSelection } from "./components/RecipientPicker";
 import { sendWhatsAppMessage } from "@/services/messageSender";
+import { pvSerif, pvBody, usePvFonts } from "../theme";
 
 interface OrcamentoBuilderSheetProps {
   consultantId: string;
@@ -53,6 +42,12 @@ interface OrcamentoBuilderSheetProps {
 const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const PUBLIC_BASE = "https://igreen.cloud";
 
+const STEPS = [
+  { id: 1, label: "Produto" },
+  { id: 2, label: "Cliente" },
+  { id: 3, label: "Valor & envio" },
+] as const;
+
 export function OrcamentoBuilderSheet({
   consultantId,
   instanceName,
@@ -60,6 +55,7 @@ export function OrcamentoBuilderSheet({
   open,
   onOpenChange,
 }: OrcamentoBuilderSheetProps) {
+  usePvFonts();
   const { toast } = useToast();
   const { data: products = [] } = useProducts();
   const createProposal = useCreateProposal(consultantId);
@@ -89,6 +85,8 @@ export function OrcamentoBuilderSheet({
       currentBill: currentBill ? Number(currentBill) : undefined,
     });
   }, [product, config, plan, projectAmount, installments, currentBill]);
+
+  const currentStep = !product ? 1 : !recipient ? 2 : 3;
 
   const resetForm = () => {
     setProductId("");
@@ -177,191 +175,313 @@ export function OrcamentoBuilderSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Novo orçamento</SheetTitle>
-          <SheetDescription>
-            Monte uma proposta profissional e envie por link. A venda só é criada quando o
-            cliente aceita.
-          </SheetDescription>
-        </SheetHeader>
-
-        {createdLink ? (
-          <div className="mt-6 space-y-4">
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
-              <div className="flex items-center gap-2 text-emerald-500">
-                <Check className="h-4 w-4" />
-                <span className="text-sm font-semibold">Orçamento criado</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2 break-all">{createdLink}</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 gap-2" onClick={handleCopy}>
-                <Copy className="h-4 w-4" /> Copiar link
-              </Button>
-              <Button className="flex-1 gap-2" onClick={handleSendWhatsApp}>
-                <Send className="h-4 w-4" /> Enviar no WhatsApp
-              </Button>
-            </div>
-            <Button variant="ghost" className="w-full" onClick={resetForm}>
-              Criar outro orçamento
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-6 space-y-5">
-            {/* Produto */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Produto</label>
-              <Select value={productId} onValueChange={(v) => { setProductId(v); setPlanId(""); }}>
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Escolha o produto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {products.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="text-sm">
-                      {p.name} · {PRODUCT_FAMILY_LABEL[p.family]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {config && (
-                <p className="text-[11px] text-muted-foreground">{config.commercialNote}</p>
-              )}
-            </div>
-
-            {/* Destinatário */}
-            {product && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-foreground">Destinatário</label>
-                <RecipientPicker
-                  consultantId={consultantId}
-                  value={recipient}
-                  onChange={setRecipient}
-                />
-              </div>
-            )}
-
-            {/* Valor por família */}
-            {config?.pricingMode === "plan_monthly" && config.plans.length > 0 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-foreground">Plano</label>
-                <Select value={planId} onValueChange={setPlanId}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="Escolha o plano" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {config.plans.map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="text-sm">
-                        {p.label} — {BRL(p.price)}/mês
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {config?.pricingMode === "project_once" && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-foreground">Valor do projeto</label>
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    value={projectAmount}
-                    onChange={(e) => setProjectAmount(e.target.value)}
-                    placeholder="Ex.: 18000"
-                    className="h-9 text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-foreground">Parcelas</label>
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    value={installments}
-                    onChange={(e) => setInstallments(e.target.value)}
-                    placeholder="Ex.: 60"
-                    className="h-9 text-sm"
-                  />
-                </div>
-              </div>
-            )}
-
-            {config?.pricingMode === "savings_estimate" && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-foreground">Conta de luz atual</label>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  value={currentBill}
-                  onChange={(e) => setCurrentBill(e.target.value)}
-                  placeholder="Ex.: 350"
-                  className="h-9 text-sm"
-                />
-              </div>
-            )}
-
-            {/* Preview do valor */}
-            {quote && quote.amount > 0 && (
-              <div className="rounded-lg border border-border/60 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">{quote.label}</span>
-                  <span className="text-base font-bold text-foreground">
-                    {BRL(quote.amount)}
-                    {quote.period === "month" && (
-                      <span className="text-[11px] font-normal text-muted-foreground">/mês</span>
-                    )}
-                  </span>
-                </div>
-                {quote.details.length > 0 && (
-                  <div className="space-y-1 border-t border-border/40 pt-2">
-                    {quote.details.map((d, i) => (
-                      <div key={i} className="flex items-start justify-between gap-2 text-[11px]">
-                        <span className="text-muted-foreground">{d.label}</span>
-                        <span className="text-foreground text-right">{d.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Mensagem + prazo */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Mensagem (opcional)</label>
-              <Textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Uma mensagem pessoal para acompanhar o orçamento..."
-                className="text-sm min-h-[70px] resize-none"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Validade</label>
-              <Select value={validForDays} onValueChange={setValidForDays}>
-                <SelectTrigger className="h-9 text-sm w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="3" className="text-sm">3 dias</SelectItem>
-                  <SelectItem value="7" className="text-sm">7 dias</SelectItem>
-                  <SelectItem value="15" className="text-sm">15 dias</SelectItem>
-                  <SelectItem value="30" className="text-sm">30 dias</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">
-                O orçamento expira automaticamente após o prazo.
+      <SheetContent
+        side="right"
+        className={`w-full sm:max-w-3xl p-0 bg-[#f5f0e8] border-l border-[#a8c0a0]/30 text-[#1a2e1f] ${pvBody}`}
+      >
+        <div className="flex flex-col md:flex-row h-full">
+          {/* Sidebar steps */}
+          <aside className="md:w-56 bg-[#dce5d4] p-6 md:p-8 md:flex flex-col gap-8 hidden">
+            <div>
+              <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#7d9b76]">
+                iGreen
+              </span>
+              <p className={`text-2xl text-[#1a2e1f] leading-tight mt-1 ${pvSerif}`}>
+                Novo<br />Orçamento
               </p>
             </div>
+            <ol className="flex flex-col gap-5">
+              {STEPS.map((step) => {
+                const done = step.id < currentStep;
+                const active = step.id === currentStep;
+                return (
+                  <li
+                    key={step.id}
+                    className={`flex items-center gap-3 transition-opacity ${
+                      done || active ? "opacity-100" : "opacity-40"
+                    }`}
+                  >
+                    <span
+                      className={`w-7 h-7 rounded-full border flex items-center justify-center text-[11px] font-bold ${
+                        done
+                          ? "bg-[#7d9b76] border-[#7d9b76] text-white"
+                          : active
+                          ? "bg-[#1a2e1f] border-[#1a2e1f] text-white"
+                          : "bg-transparent border-[#1a2e1f]"
+                      }`}
+                    >
+                      {done ? <Check className="h-3.5 w-3.5" /> : step.id}
+                    </span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#1a2e1f]">
+                      {step.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            <div className="mt-auto text-[10px] text-[#1a2e1f]/50 leading-relaxed">
+              A venda só é criada quando o cliente aceita o orçamento na página pública.
+            </div>
+          </aside>
 
-            <Button className="w-full gap-2" disabled={!canSubmit} onClick={handleCreate}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {submitting ? "Criando..." : "Criar orçamento"}
-            </Button>
+          {/* Conteúdo */}
+          <div className="flex-1 overflow-y-auto p-6 md:p-10">
+            <div className="flex items-start justify-between mb-8">
+              <div>
+                <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#7d9b76] block mb-2">
+                  Configurar
+                </span>
+                <h2 className={`text-3xl md:text-4xl text-[#1a2e1f] ${pvSerif}`}>
+                  Novo orçamento
+                </h2>
+                <p className="text-sm text-[#1a2e1f]/60 mt-2 max-w-md">
+                  Monte uma proposta profissional e envie por link único.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                className="text-[#1a2e1f]/40 hover:text-[#1a2e1f] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {createdLink ? (
+              <div className="space-y-5">
+                <div className="bg-white border-l-4 border-[#7d9b76] p-5">
+                  <div className="flex items-center gap-2 text-[#7d9b76]">
+                    <Check className="h-4 w-4" />
+                    <span className="text-xs font-bold uppercase tracking-widest">
+                      Orçamento criado
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#1a2e1f]/70 mt-3 break-all">{createdLink}</p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="flex-1 inline-flex items-center justify-center gap-2 bg-white border border-[#a8c0a0]/40 text-[#1a2e1f] px-5 py-3 text-xs font-semibold uppercase tracking-widest hover:bg-[#dce5d4] transition-colors"
+                  >
+                    <Copy className="h-4 w-4" /> Copiar link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendWhatsApp}
+                    className="flex-1 inline-flex items-center justify-center gap-2 bg-[#1a2e1f] hover:bg-[#7d9b76] text-white px-5 py-3 text-xs font-semibold uppercase tracking-widest transition-colors"
+                  >
+                    <Send className="h-4 w-4" /> Enviar no WhatsApp
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="w-full text-xs text-[#1a2e1f]/60 hover:text-[#1a2e1f] underline underline-offset-4 py-2"
+                >
+                  Criar outro orçamento
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                {/* Form */}
+                <div className="lg:col-span-3 space-y-5">
+                  <Field label="Produto">
+                    <Select value={productId} onValueChange={(v) => { setProductId(v); setPlanId(""); }}>
+                      <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none">
+                        <SelectValue placeholder="Escolha o produto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {products.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="text-sm">
+                            {p.name} · {PRODUCT_FAMILY_LABEL[p.family]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {config && (
+                      <p className="text-[11px] text-[#1a2e1f]/60 italic mt-1.5">
+                        {config.commercialNote}
+                      </p>
+                    )}
+                  </Field>
+
+                  {product && (
+                    <Field label="Destinatário">
+                      <RecipientPicker
+                        consultantId={consultantId}
+                        value={recipient}
+                        onChange={setRecipient}
+                      />
+                    </Field>
+                  )}
+
+                  {config?.pricingMode === "plan_monthly" && config.plans.length > 0 && (
+                    <Field label="Plano">
+                      <Select value={planId} onValueChange={setPlanId}>
+                        <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none">
+                          <SelectValue placeholder="Escolha o plano" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {config.plans.map((p) => (
+                            <SelectItem key={p.id} value={p.id} className="text-sm">
+                              {p.label} — {BRL(p.price)}/mês
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
+
+                  {config?.pricingMode === "project_once" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Valor do projeto">
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          value={projectAmount}
+                          onChange={(e) => setProjectAmount(e.target.value)}
+                          placeholder="Ex.: 18000"
+                          className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none"
+                        />
+                      </Field>
+                      <Field label="Parcelas">
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          value={installments}
+                          onChange={(e) => setInstallments(e.target.value)}
+                          placeholder="Ex.: 60"
+                          className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none"
+                        />
+                      </Field>
+                    </div>
+                  )}
+
+                  {config?.pricingMode === "savings_estimate" && (
+                    <Field label="Conta de luz atual">
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        value={currentBill}
+                        onChange={(e) => setCurrentBill(e.target.value)}
+                        placeholder="Ex.: 350"
+                        className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none"
+                      />
+                    </Field>
+                  )}
+
+                  <Field label="Mensagem (opcional)">
+                    <Textarea
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder="Uma mensagem pessoal..."
+                      className="text-sm min-h-[70px] resize-none bg-white border-[#a8c0a0]/40 rounded-none"
+                    />
+                  </Field>
+
+                  <Field label="Validade">
+                    <Select value={validForDays} onValueChange={setValidForDays}>
+                      <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="3" className="text-sm">3 dias</SelectItem>
+                        <SelectItem value="7" className="text-sm">7 dias</SelectItem>
+                        <SelectItem value="15" className="text-sm">15 dias</SelectItem>
+                        <SelectItem value="30" className="text-sm">30 dias</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+
+                {/* Prévia em tempo real */}
+                <aside className="lg:col-span-2 lg:sticky lg:top-0 self-start">
+                  <div className="bg-[#1a2e1f] text-[#f5f0e8] p-6 space-y-4">
+                    <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#c9a84c]">
+                      Prévia
+                    </span>
+                    {product ? (
+                      <>
+                        <h3 className={`text-2xl leading-tight ${pvSerif}`}>{product.name}</h3>
+                        <p className="text-[11px] uppercase tracking-wider text-[#f5f0e8]/60">
+                          {PRODUCT_FAMILY_LABEL[product.family]}
+                        </p>
+                        {recipient && (
+                          <div className="pt-3 border-t border-white/10">
+                            <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50">
+                              Para
+                            </p>
+                            <p className="text-sm font-medium mt-0.5">{recipient.name}</p>
+                            <p className="text-[11px] text-[#f5f0e8]/60">{recipient.phone}</p>
+                          </div>
+                        )}
+                        {quote && quote.amount > 0 ? (
+                          <div className="pt-3 border-t border-white/10">
+                            <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50">
+                              {quote.label}
+                            </p>
+                            <p className={`text-3xl text-[#c9a84c] mt-1 ${pvSerif}`}>
+                              {BRL(quote.amount)}
+                              {quote.period === "month" && (
+                                <span className="text-xs font-normal text-[#f5f0e8]/60 ml-1">
+                                  /mês
+                                </span>
+                              )}
+                            </p>
+                            {quote.details.length > 0 && (
+                              <ul className="mt-3 space-y-1.5">
+                                {quote.details.map((d, i) => (
+                                  <li
+                                    key={i}
+                                    className="flex justify-between gap-2 text-[11px] text-[#f5f0e8]/70"
+                                  >
+                                    <span>{d.label}</span>
+                                    <span className="text-[#f5f0e8] text-right">{d.value}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-[#f5f0e8]/40 italic pt-3 border-t border-white/10">
+                            Preencha os valores para ver a prévia.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-[#f5f0e8]/40 italic">
+                        Escolha um produto para começar.
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!canSubmit}
+                    onClick={handleCreate}
+                    className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-[#7d9b76] hover:bg-[#1a2e1f] disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
+                  >
+                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {submitting ? "Criando..." : "Criar orçamento"}
+                  </button>
+                </aside>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#1a2e1f]/60 block">
+        {label}
+      </label>
+      {children}
+    </div>
   );
 }
