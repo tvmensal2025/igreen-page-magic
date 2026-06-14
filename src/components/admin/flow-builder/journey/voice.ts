@@ -16,7 +16,7 @@ import type { FlowWarning } from "../useFlowValidation";
 
 /** Frase que descreve UMA saída do passo, em linguagem natural. */
 export function falarRegra(exit: StepExit): string {
-  const destino = exit.destLabel.replace(/^[⚠📝🔁🤖👤🏁#]\s?/, "").trim() || exit.destLabel;
+  const destino = exit.destLabel.replace(/^[⚠📝🔁🤖👤🏁#]\s?/u, "").trim() || exit.destLabel;
 
   if (exit.kind === "button") {
     if (exit.missing) {

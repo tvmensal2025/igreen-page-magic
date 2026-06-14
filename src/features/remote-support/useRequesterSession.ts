@@ -111,7 +111,7 @@ export function useRequesterSession(userId: string | null | undefined) {
     let cancelled = false;
 
     supabase
-      .from("remote_support_sessions" as "remote_support_sessions")
+      .from("remote_support_sessions" as const)
       .select("*")
       .eq("requester_id", userId)
       .in("status", ["requested", "pending_code", "active"])

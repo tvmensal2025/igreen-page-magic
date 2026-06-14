@@ -395,7 +395,7 @@ for (const channel of [
       }
 
       // Outbound do próximo (ou re-emit do atual)
-      let outboundStep: Step | undefined = nextStep ?? (res.special === "ai_answer" ? cur : undefined);
+      const outboundStep: Step | undefined = nextStep ?? (res.special === "ai_answer" ? cur : undefined);
       let outbound: Outbound[] = [];
       if (res.special === "humano") outbound = [{ kind: "handoff" }];
       else if (outboundStep) outbound = buildOutbound(outboundStep, channel.caps);

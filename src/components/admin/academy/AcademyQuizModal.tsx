@@ -50,7 +50,19 @@ type Screen = "intro" | "questions" | "result";
 export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props) {
   const quiz = QUIZZES[quizKey];
   if (!quiz) return null;
+  
+  return <AcademyQuizModalInner quiz={quiz} quizKey={quizKey} onClose={onClose} onPass={onPass} lastResult={lastResult} />;
+}
 
+interface InnerProps {
+  quiz: typeof QUIZZES[string];
+  quizKey: string;
+  onClose: () => void;
+  onPass: (key: string, result: ExamResult) => void;
+  lastResult: ExamResult | null;
+}
+
+function AcademyQuizModalInner({ quiz, quizKey, onClose, onPass, lastResult }: InnerProps) {
   const { cat, mod } = moduleTitleByKey(quizKey);
   const [screen,    setScreen   ] = useState<Screen>("intro");
   const [questions, setQuestions] = useState<QuizQuestion[]>(() => shuffleQuiz(quiz.questions));

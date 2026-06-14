@@ -73,7 +73,7 @@ export default function TemplateGalleryDialog({
 
   useEffect(() => { if (open) load(); }, [open, load]);
 
-  async function useTemplate(tpl: TemplateRow) {
+  async function applyTemplate(tpl: TemplateRow) {
     if (!consultantId) return;
     // Acha o próximo espaço (letra) livre para o novo fluxo.
     const freeVariant = ALL_VARIANTS.find((v) => !existingVariants.includes(v));
@@ -157,7 +157,7 @@ export default function TemplateGalleryDialog({
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => useTemplate(tpl)}
+                      onClick={() => applyTemplate(tpl)}
                       disabled={usingId === tpl.id}
                     >
                       {usingId === tpl.id

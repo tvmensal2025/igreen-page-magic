@@ -43,7 +43,7 @@ type Mode = "enabled" | "disabled" | "missing" | "error";
 
 function makeMockSupabase(mode: Mode) {
   let selected = "";
-  let lastEq: Record<string, unknown> = {};
+  const lastEq: Record<string, unknown> = {};
   const builder: any = {
     select(cols: string) {
       selected = cols;

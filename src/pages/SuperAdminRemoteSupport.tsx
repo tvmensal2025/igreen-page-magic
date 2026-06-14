@@ -125,7 +125,7 @@ export default function SuperAdminRemoteSupport() {
 
   const refresh = async () => {
     const { data } = await supabase
-      .from("remote_support_sessions" as "remote_support_sessions")
+      .from("remote_support_sessions" as const)
       .select("*")
       .in("status", ["requested", "pending_code", "active"])
       .order("created_at", { ascending: false });
@@ -1310,7 +1310,7 @@ function HistoryView({ consultants }: { consultants: ConsultantRow[] }) {
     setLoading(true);
     setError(null);
     supabase
-      .from("remote_support_sessions" as "remote_support_sessions")
+      .from("remote_support_sessions" as const)
       .select("*")
       .order("created_at", { ascending: false })
       .limit(50)
