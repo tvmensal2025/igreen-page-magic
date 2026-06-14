@@ -51,7 +51,7 @@ export function ProdutosModule({
   };
 
   return (
-    <div className={`min-h-full bg-[#f5f0e8] text-[#1a2e1f] ${pvBody}`}>
+    <div className={`min-h-full w-full bg-[#f5f0e8] text-[#1a2e1f] ${pvBody}`}>
       <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 space-y-8">
         {/* Topbar editorial */}
         <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-[#a8c0a0]/30 pb-4 gap-4">
