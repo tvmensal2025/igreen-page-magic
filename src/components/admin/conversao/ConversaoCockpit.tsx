@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -108,6 +108,10 @@ export function ConversaoCockpit({ consultantId }: Props) {
   const [batchSending, setBatchSending] = useState<{ done: number; total: number } | null>(null);
   const [searchParams] = useSearchParams();
   const { partners } = useReferralPartners();
+  // Dispara a classificação sob demanda uma única vez por consultor ao abrir a
+  // Central. Evita o trabalho ocioso do cron periódico: só processa quando
+  // alguém realmente abre a tela.
+  const autoClassifiedFor = useRef<string | null>(null);
 
   // ─── Data ────────────────────────────────────────────────────────────────
   const fetchRows = useCallback(async () => {
@@ -324,6 +328,46 @@ export function ConversaoCockpit({ consultantId }: Props) {
       setBulk(null);
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
+
+  // ─── Classificação sob demanda ao abrir a Central ───────────────────────────
+  // Em vez de um cron periódico processar todos os leads o tempo todo (gasto
+  // ocioso quando ninguém está olhando), classifica só quando o consultor abre
+  // a tela. Top 25 por prioridade (score) garante abertura rápida; o restante
+  // fica para o botão manual ou para a rede de segurança do cron diário.
+  // Dispara uma única vez por consultor por sessão (autoClassifiedFor).
+  const autoClassifyOnOpen = useCallback(async () => {
+    // Pega os pendentes (sem classificação) já ordenados por prioridade.
+    const pending = rows
+      .filter((r) => !r.classified_at)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 25)
+      .map((r) => r.customer_id);
+    if (pending.length === 0) return;
+    setBulk({ done: 0, total: pending.length });
+    try {
+      const { data, error } = await supabase.functions.invoke("lead-temperature-classifier", {
+        body: { customer_ids: pending },
+      });
+      if (error) throw error;
+      const results = (data?.results ?? []) as any[];
+      const eff = results.filter((r) => r?.temperature).length;
+      setBulk({ done: eff, total: pending.length });
+      await fetchRows();
+    } catch {
+      // Silencioso: a classificação sob demanda é conveniência, não bloqueia a
+      // tela. O consultor ainda pode classificar manualmente.
+    } finally {
+      setBulk(null);
+    }
+  }, [rows, fetchRows]);
+
+  useEffect(() => {
+    // Espera o primeiro carregamento terminar e roda uma vez por consultor.
+    if (loading || !consultantId) return;
+    if (autoClassifiedFor.current === consultantId) return;
+    autoClassifiedFor.current = consultantId;
+    void autoClassifyOnOpen();
+  }, [loading, consultantId, autoClassifyOnOpen]);
 
   // ─── Seleção + envio em lote ────────────────────────────────────────────────
   const toggleSelect = useCallback((id: string) => {

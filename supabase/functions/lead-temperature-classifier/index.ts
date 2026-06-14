@@ -14,6 +14,7 @@ import {
   resolveDraftWithOverrides,
   VALID_SHORTCUTS,
 } from "../_shared/conversion/phrase-catalog.ts";
+import { isLeadClassifiable } from "./origin-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -157,10 +158,17 @@ async function classifyOne(
 ) {
   const { data: customer } = await sb
     .from("customers")
-    .select("id, consultant_id, name, conversation_step, electricity_bill_value, last_bot_interaction_at, created_at")
+    .select("id, consultant_id, name, conversation_step, electricity_bill_value, last_bot_interaction_at, created_at, customer_origin")
     .eq("id", customerId)
     .maybeSingle();
   if (!customer) return { customer_id: customerId, skipped: "not_found" };
+
+  // Clientes sincronizados do portal iGreen são carteira validada (aprovado,
+  // reprovado, devolutiva) — não entram em temperatura/funil de leads. Guarda
+  // única que cobre todos os caminhos (customer_id, customer_ids, scopes).
+  if (!isLeadClassifiable(customer.customer_origin)) {
+    return { customer_id: customerId, skipped: "igreen_sync" };
+  }
 
   const { data: existing } = await sb
     .from("lead_insights")
@@ -338,14 +346,18 @@ Deno.serve(async (req) => {
         .map((c: any) => c.id)
         .slice(0, 25);
     } else if (body.scope === "needs_reclassify_global") {
-      // Cron global: varre leads marcados needs_reclassify=true em TODOS os
+      // Cron diário leve: varre leads marcados needs_reclassify=true em TODOS os
       // consultores. Seguro porque o caminho rules custa 0 tokens; AI lite só
-      // entra em casos ambíguos. Lote pequeno por execução (a cada 15 min).
+      // entra em casos ambíguos. Rede de segurança — o uso real é coberto pela
+      // classificação sob demanda (abertura da Central + envio).
+      // Inner join com customers excluindo igreen_sync: carteira validada não
+      // entra em temperatura, e isso evita repescar resíduo em loop ocioso.
       const limit = Math.min(Number(body.limit) || 100, 200);
       const { data } = await sb
         .from("lead_insights")
-        .select("customer_id")
+        .select("customer_id, customers!inner(customer_origin)")
         .eq("needs_reclassify", true)
+        .neq("customers.customer_origin", "igreen_sync")
         .order("updated_at", { ascending: true })
         .limit(limit);
       ids = (data ?? []).map((r: any) => r.customer_id);

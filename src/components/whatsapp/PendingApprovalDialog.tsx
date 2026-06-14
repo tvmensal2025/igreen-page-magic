@@ -14,11 +14,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, Info } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature } from "lucide-react";
 
 import { toast } from "sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
 import PosVendaSetupWizard from "./PosVendaSetupWizard";
+import ApproveBillValueDialog, { needsBillValueForApproval } from "./ApproveBillValueDialog";
 
 interface Pending {
   id: string;
@@ -38,7 +39,7 @@ interface Props {
   openSignal?: number;
 }
 
-type ActionKind = "approve" | "review" | "snooze" | "invalidate";
+type ActionKind = "approve" | "review" | "snooze" | "invalidate" | "missing_signature";
 
 export default function PendingApprovalDialog({ consultantId, onResolved, openSignal }: Props) {
   const [open, setOpen] = useState(false);
@@ -48,6 +49,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   const [wizardOpen, setWizardOpen] = useState(false);
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
+  /** Cliente aguardando informe da fatura antes de aprovar. */
+  const [billPrompt, setBillPrompt] = useState<Pending | null>(null);
   // Escopo: "mine" = meus clientes / "all" = toda a rede (validar de outros consultores)
   const [scope, setScope] = useState<"mine" | "all">("mine");
 
@@ -102,7 +105,12 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   }, [consultantId]);
 
   const grouped = useMemo(() => {
-    const g: Record<string, Pending[]> = { aprovado: [], reprovado: [], devolutiva: [] };
+    const g: Record<string, Pending[]> = {
+      aprovado: [],
+      falta_assinatura: [],
+      reprovado: [],
+      devolutiva: [],
+    };
     for (const it of items) {
       const k = it.pos_venda_pending_stage || "aprovado";
       (g[k] ||= []).push(it);
@@ -121,13 +129,23 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
       snooze: "Adiado 24h",
       review: "Mantido em Espera",
       invalidate: "Cliente marcado como inválido",
+      missing_signature: "Marcado como falta assinatura — permanece em espera.",
     }[action];
     toast.success(msg);
     onResolved?.();
   }
 
   async function actBulk() {
-    const ids = (grouped["aprovado"] || []).map((p) => p.id);
+    const list = grouped["aprovado"] || [];
+    const semFatura = list.filter((p) => needsBillValueForApproval(p.pos_venda_pending_stage, p.electricity_bill_value));
+    if (semFatura.length > 0) {
+      toast.error(
+        `${semFatura.length} cliente(s) aprovado(s) sem valor da conta — valide individualmente e informe a fatura antes.`,
+      );
+      setConfirmBulk(false);
+      return;
+    }
+    const ids = list.map((p) => p.id);
     for (const id of ids) {
       await supabase.rpc("confirm_pending_classification" as any, { _customer_id: id, _action: "approve" });
     }
@@ -137,9 +155,26 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     onResolved?.();
   }
 
+  function handleApproveClick(c: Pending) {
+    if (needsBillValueForApproval(c.pos_venda_pending_stage, c.electricity_bill_value)) {
+      setBillPrompt(c);
+      return;
+    }
+    void act(c.id, "approve");
+  }
+
   function handleBulkClick() {
     if (hasConfig === false) {
       setWizardOpen(true);
+      return;
+    }
+    const semFatura = (grouped["aprovado"] || []).filter((p) =>
+      needsBillValueForApproval(p.pos_venda_pending_stage, p.electricity_bill_value),
+    );
+    if (semFatura.length > 0) {
+      toast.error(
+        `${semFatura.length} cliente(s) sem valor da conta. Valide um a um e informe a fatura.`,
+      );
       return;
     }
     setConfirmBulk(true);
@@ -159,8 +194,9 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     );
   }
 
-  const sections: { key: string; label: string; icon: any; tone: string; accent: string }[] = [
+  const sections: { key: string; label: string; icon: typeof CheckCircle2; tone: string; accent: string }[] = [
     { key: "aprovado", label: "Aprovados", icon: CheckCircle2, tone: "text-primary", accent: "bg-primary/10 border-primary/20" },
+    { key: "falta_assinatura", label: "Falta assinatura", icon: FileSignature, tone: "text-info", accent: "bg-info/10 border-info/20" },
     { key: "reprovado", label: "Reprovados", icon: XCircle, tone: "text-destructive", accent: "bg-destructive/10 border-destructive/20" },
     { key: "devolutiva", label: "Devolutiva", icon: AlertTriangle, tone: "text-warning", accent: "bg-warning/10 border-warning/20" },
   ];
@@ -184,7 +220,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                   </TooltipTrigger>
                   <TooltipContent className="max-w-[300px]">
                     <p className="text-xs">
-                      Revise os clientes sincronizados do iGreen. Ao confirmar, eles entram na autoprogressão e recebem as mensagens automáticas configuradas (30/60/90/120 dias).
+                      Revise os clientes sincronizados do iGreen. Use <strong>Falta assinatura</strong> quando o cliente ainda não assinou.
+                      Ao confirmar aprovados, eles entram na autoprogressão (30/60/90/120 dias).
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -258,6 +295,9 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                           Confirmar todos ({list.length})
                         </Button>
                       )}
+                      {sec.key === "falta_assinatura" && (
+                        <span className="text-[10px] text-muted-foreground pr-1">Aguardando assinatura no iGreen</span>
+                      )}
                     </div>
                     <div className="divide-y divide-border/30 bg-background/40">
                       {list.map((c) => {
@@ -282,26 +322,54 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                     {formatPhoneBR(c.phone_whatsapp)}
                                   </span>
                                 )}
-                                {c.electricity_bill_value != null && (
+                                {c.electricity_bill_value != null && Number(c.electricity_bill_value) > 0 ? (
                                   <span className="text-xs text-muted-foreground">
                                     R$ {Number(c.electricity_bill_value).toFixed(2)}
                                   </span>
-                                )}
+                                ) : sec.key === "aprovado" || sec.key === "falta_assinatura" ? (
+                                  <Badge variant="outline" className="text-[10px] gap-1 border-warning/40 text-warning">
+                                    <AlertTriangle className="w-2.5 h-2.5" />
+                                    Informe a conta
+                                  </Badge>
+                                ) : null}
                                 {c.andamento_igreen && (
                                   <Badge variant="outline" className="text-[10px] py-0">{c.andamento_igreen}</Badge>
                                 )}
                               </div>
                             </div>
-                            <div className="flex gap-1.5 shrink-0">
+                            <div className="flex gap-1.5 shrink-0 flex-wrap justify-end max-w-[280px] sm:max-w-none">
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button size="sm" variant="default" className="h-9 px-3 font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => act(c.id, "approve")}>
+                                    <Button size="sm" variant="default" className="h-9 px-3 font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => handleApproveClick(c)}>
                                       Validar
                                     </Button>
                                   </TooltipTrigger>
-                                  <TooltipContent>Confirmar e iniciar fluxo</TooltipContent>
+                                  <TooltipContent>
+                                    {sec.key === "falta_assinatura"
+                                      ? "Cliente assinou — confirmar e iniciar fluxo"
+                                      : sec.key === "aprovado"
+                                        ? "Confirmar e iniciar fluxo"
+                                        : "Confirmar classificação do sync"}
+                                  </TooltipContent>
                                 </Tooltip>
+
+                                {(sec.key === "aprovado" || sec.key === "devolutiva") && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-9 px-2.5 text-xs border-info/50 text-info hover:bg-info/10"
+                                        onClick={() => act(c.id, "missing_signature")}
+                                      >
+                                        <FileSignature className="w-3.5 h-3.5 mr-1 shrink-0" />
+                                        Falta assinatura
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Mantém em espera até o cliente assinar no iGreen</TooltipContent>
+                                  </Tooltip>
+                                )}
 
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -396,6 +464,19 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ApproveBillValueDialog
+        customer={billPrompt}
+        open={!!billPrompt}
+        onOpenChange={(o) => { if (!o) setBillPrompt(null); }}
+        onSaved={async (customerId, billValue) => {
+          setItems((prev) =>
+            prev.map((p) => (p.id === customerId ? { ...p, electricity_bill_value: billValue } : p)),
+          );
+          await act(customerId, "approve");
+          setBillPrompt(null);
+        }}
+      />
 
       <PosVendaSetupWizard
         consultantId={consultantId}

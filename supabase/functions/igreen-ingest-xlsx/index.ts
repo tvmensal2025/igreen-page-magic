@@ -375,6 +375,7 @@ Deno.serve(async (req) => {
         const status = String(rec.status || "").toLowerCase();
         if (/reprov|cancel/.test(andamento) || ["rejected", "cancelled", "canceled"].includes(status)) return "reprovado";
         if (andamento.includes("devolutiva") || status === "devolutiva") return "devolutiva";
+        if (andamento.includes("falta assinatura") || status === "awaiting_signature") return "falta_assinatura";
         return "aprovado";
       };
       const errorsDetail: Array<{ phone: string; codigo: string | null; motivo: string }> = [];

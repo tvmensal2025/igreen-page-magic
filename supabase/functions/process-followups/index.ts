@@ -25,6 +25,14 @@ const json = (b: unknown, s = 200) =>
 const MAX_FOLLOWUP_ATTEMPTS = 3;
 const RETRY_DELAY_MIN = 10;
 
+// Passos terminais: cliente já concluiu o fluxo (portal/OTP/assinatura) ou está
+// em mão humana. Espelha TERMINAL_STEPS do bot-followup-checker. Quem está aqui
+// NÃO recebe follow-up automático — já fechou ou saiu do bot.
+const TERMINAL_STEPS = new Set([
+  "complete", "portal_submitting", "portal_submitted", "registered_igreen",
+  "awaiting_signature", "finalizando", "validando_otp", "aguardando_humano",
+]);
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -62,14 +70,21 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
     const { data: due, error } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, variant_id, followup_count, assigned_human_id, flow_variant")
+      .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
       .lte("next_followup_at", now)
       .eq("bot_paused", false)
       .is("assigned_human_id", null)
+      // Carteira sincronizada do portal iGreen (igreen_sync) NÃO recebe follow-up
+      // automático: já é cliente validado/reprovado/devolutiva. Inclui leads do
+      // bot (whatsapp_lead/manual) e registros sem origem definida (null).
+      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
       .limit(50);
     if (error) return json({ error: error.message }, 500);
 
-    const rows = due || [];
+    // Defesa em profundidade: mesmo que um agendamento órfão sobreviva, um lead
+    // em passo terminal (portal/OTP/assinatura/completo) já concluiu o fluxo e
+    // não deve receber nudge. Espelha TERMINAL_STEPS do bot-followup-checker.
+    const rows = (due || []).filter((c: any) => !TERMINAL_STEPS.has(c.conversation_step || ""));
     if (rows.length === 0) return json({ ok: true, processed: 0 });
 
     // Carrega credenciais Whapi global (fallback)

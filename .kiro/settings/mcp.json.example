@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "url": "https://mcp.supabase.com/mcp?project_ref=zlzasfhcxcznaprrragl"
+    },
+    "github": {
+      "command": "bash",
+      "args": ["scripts/mcp-github.sh"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--headless"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "postgres": {
+      "command": "bash",
+      "args": ["scripts/mcp-postgres.sh"]
+    },
+    "analyzer": {
+      "command": "bash",
+      "args": ["scripts/mcp-analyzer.sh"]
+    }
+  }
+}

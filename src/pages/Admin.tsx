@@ -46,6 +46,10 @@ const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTa
 const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
+const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
+const OrcamentoButton = lazy(() => import("@/features/produtos/orcamento").then(m => ({ default: m.OrcamentoButton })));
+
+import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
 
 
@@ -82,10 +86,11 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy") return tab as AdminTabId;
+      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos") return tab as AdminTabId;
     }
     return "dashboard";
   });
+  const [produtosSubTab, setProdutosSubTab] = useState<ProdutosTabId>("acompanhamento");
 
   const [pendingChatPhone, setPendingChatPhone] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -227,6 +232,7 @@ const AdminContent = () => {
     "crm-clientes": { title: "Clientes ativos", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
     "conversao": { title: "Conversão", subtitle: "Análise de funil e gargalos" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
+    "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, faturamento, pipeline de vendas e acompanhamento de ganhos" },
     "captacao": { title: "Captação", subtitle: "Novos clientes interessados e originação" },
     "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
     "rede": { title: "Rede", subtitle: "Sua estrutura e hierarquia" },
@@ -285,6 +291,17 @@ const AdminContent = () => {
           onTogglePrivacy={togglePrivacy}
           onOpenAi={() => setAiChatOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
+          extra={
+            userId ? (
+              <Suspense fallback={null}>
+                <OrcamentoButton
+                  consultantId={userId}
+                  instanceName={instanceName}
+                  isWhapi={isWhapi}
+                />
+              </Suspense>
+            ) : undefined
+          }
           notificationSlot={
             <Suspense fallback={<div className="w-9 h-9" />}>
               <NotificationCenter
@@ -295,6 +312,10 @@ const AdminContent = () => {
                 onClearAll={clearAll}
                 onAction={(n) => {
                   if (n.type === "new_lead" || n.type === "deal_moved") setActiveTab("crm");
+                  else if (n.type === "proposal_update") {
+                    setActiveTab("produtos");
+                    setProdutosSubTab("orcamentos");
+                  }
                   else if (n.type === "devolutiva" || n.type === "status_change" || n.type === "new_customer") setActiveTab("crm-clientes");
                 }}
               />
@@ -305,7 +326,7 @@ const AdminContent = () => {
       <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSave}>
 
       {/* Content */}
-      <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm" || activeTab === "crm-clientes"
+      <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm" || activeTab === "crm-clientes" || activeTab === "produtos"
         ? "w-full flex-1 min-h-0 px-2 sm:px-3 py-2 overflow-hidden flex flex-col gap-2"
         : activeTab === "academy"
           ? "flex-1 min-h-0 overflow-y-auto w-full p-0 overflow-x-hidden"
@@ -380,6 +401,16 @@ const AdminContent = () => {
 
           {userId && activeTab === "conversao" && (
             <ConversaoCockpit consultantId={userId} />
+          )}
+
+          {userId && activeTab === "produtos" && (
+            <ProdutosModule
+              consultantId={userId}
+              initialTab={produtosSubTab}
+              instanceName={instanceName}
+              isWhapi={isWhapi}
+              onTabChange={setProdutosSubTab}
+            />
           )}
 
           {userId && activeTab === "captacao" && (

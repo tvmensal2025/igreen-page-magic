@@ -287,7 +287,9 @@ export default function StepInspector({
                 Variáveis disponíveis:{" "}
                 <code className="rounded bg-muted px-1">{"{{nome}}"}</code>,{" "}
                 <code className="rounded bg-muted px-1">{"{{valor_conta}}"}</code>,{" "}
-                <code className="rounded bg-muted px-1">{"{{representante}}"}</code>
+                <code className="rounded bg-muted px-1">{"{{representante}}"}</code>,{" "}
+                <code className="rounded bg-muted px-1">{"{{economia_mensal}}"}</code>,{" "}
+                <code className="rounded bg-muted px-1">{"{{economia_anual}}"}</code>
               </p>
             </div>
 

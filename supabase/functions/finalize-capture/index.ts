@@ -165,6 +165,11 @@ Deno.serve(async (req) => {
       status: "portal_submitting",
       conversation_step: "portal_submitting",
       finalized_at: new Date().toISOString(),
+      // Lead concluiu e entrou no portal: cancela qualquer follow-up agendado
+      // ("me chama amanhã") para o process-followups não tocar um cliente que
+      // já fechou e virou carteira via sync.
+      next_followup_at: null,
+      followup_hook: null,
       ...(finalizedBy ? { finalized_by: finalizedBy } : {}),
     };
     const mediaAtual = Number((full as any)?.media_consumo || 0);

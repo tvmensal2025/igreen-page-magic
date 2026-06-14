@@ -40,6 +40,11 @@ Deno.serve(async (req) => {
       otp_received_at: new Date().toISOString(),
       conversation_step: "validando_otp",
       status: "validating_otp",
+      // Conclusão do fluxo: cancela qualquer follow-up agendado. Sem isso, um
+      // agendamento órfão ("me chama amanhã") feito antes da conclusão dispararia
+      // o process-followups depois que o cliente já entrou no portal.
+      next_followup_at: null,
+      followup_hook: null,
     }).eq("id", customer_id);
 
     if (updateErr) {

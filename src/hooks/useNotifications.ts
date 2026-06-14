@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface Notification {
   id: string;
-  type: "new_lead" | "status_change" | "devolutiva" | "new_customer" | "deal_moved" | "page_view";
+  type: "new_lead" | "status_change" | "devolutiva" | "new_customer" | "deal_moved" | "page_view" | "proposal_update";
   title: string;
   description: string;
   timestamp: string;
@@ -89,6 +89,19 @@ export function useNotifications(consultantId: string | null) {
         else if (newStatus === "rejected") addNotification({ type: "status_change", title: "❌ Cliente reprovado", description: `${name} foi reprovado`, meta: { customerId: customer.id, status: "rejected" } });
         else if (newStatus === "devolutiva") addNotification({ type: "devolutiva", title: "⚠️ Devolutiva recebida", description: `${name} — ${customer.devolutiva || "Verificar pendência"}`, meta: { customerId: customer.id, status: "devolutiva" } });
         else if (newStatus === "awaiting_signature") addNotification({ type: "status_change", title: "✍️ Falta assinatura", description: `${name} precisa assinar o contrato`, meta: { customerId: customer.id, status: "awaiting_signature" } });
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "proposals", filter: `consultant_id=eq.${consultantId}` }, (payload) => {
+        const oldProposal = payload.old as any;
+        const newProposal = payload.new as any;
+        // Só notifica quando o destinatário responde (aceite/recusa/contraproposta).
+        if (oldProposal.status === newProposal.status) return;
+        if (newProposal.status === "accepted") {
+          addNotification({ type: "proposal_update", title: "🎉 Proposta aceita!", description: "Um cliente aceitou sua proposta. A venda foi criada em captura.", meta: { proposalId: newProposal.id, status: "accepted" } });
+        } else if (newProposal.status === "countered") {
+          addNotification({ type: "proposal_update", title: "💬 Contraproposta recebida", description: "Um cliente enviou uma contraproposta. Abra para responder.", meta: { proposalId: newProposal.id, status: "countered" } });
+        } else if (newProposal.status === "rejected") {
+          addNotification({ type: "proposal_update", title: "📋 Proposta recusada", description: "Um cliente recusou sua proposta.", meta: { proposalId: newProposal.id, status: "rejected" } });
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };

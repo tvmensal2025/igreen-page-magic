@@ -31,8 +31,38 @@ export type FlowWarning = {
   autoFix?: () => Partial<Step> | null;
 };
 
+// Conjunto CANÔNICO de variáveis (nomes "oficiais"). Usado na lógica de ordem
+// de captura (`var_before_capture`), que cruza a variável usada no texto com o
+// passo que a PRODUZ (`VAR_PRODUCERS`). Mantém-se enxuto de propósito: incluir
+// sinônimos aqui faria a checagem de ordem perder a correspondência 1:1 com os
+// produtores e gerar falso positivo (ex.: {{valor}} não casaria com
+// capture_conta, que produz "valor_conta").
 const KNOWN_VARS = new Set([
   "nome", "valor_conta", "economia_range", "telefone", "cpf", "representante", "email",
+]);
+
+// Conjunto AMPLO de variáveis reconhecidas pelo runtime (`render-vars.ts`).
+// Usado SOMENTE para o aviso "variável desconhecida": tudo que o runtime sabe
+// resolver (chaves canônicas + sinônimos tolerados) NÃO deve alarmar o
+// consultor. Espelha NAME_KEYS/PHONE_KEYS/CPF_KEYS/REP_KEYS/BILL_KEYS e as
+// chaves de economia de `supabase/functions/_shared/render-vars.ts`. Se o
+// runtime ganhar uma nova chave, adicione-a aqui também (os dois precisam andar
+// juntos — ver scripts/audit-flow-corrections.py, que vigia essa paridade).
+const RECOGNIZED_VARS = new Set([
+  // nome e sinônimos
+  "nome", "nome_completo", "name", "first_name", "primeiro_nome", "cliente",
+  // telefone e sinônimos
+  "telefone", "phone", "celular", "whatsapp", "numero", "número",
+  // cpf e sinônimos
+  "cpf", "documento", "doc",
+  // representante e sinônimos
+  "representante", "consultor", "consultora", "atendente", "vendedor", "vendedora",
+  // valor da conta e sinônimos
+  "valor_conta", "valor", "conta", "fatura",
+  // economia (derivadas do valor da conta)
+  "economia_mensal", "economia_anual", "economia_range", "economia_faixa",
+  // e-mail
+  "email",
 ]);
 
 /** Rótulo amigável (pt-BR) de cada variável, para mensagens sem jargão. */
@@ -40,6 +70,9 @@ function labelVar(v: string): string {
   const map: Record<string, string> = {
     valor_conta: "valor da conta de luz",
     economia_range: "economia estimada",
+    economia_mensal: "economia mensal",
+    economia_anual: "economia anual",
+    economia_faixa: "economia estimada",
     telefone: "telefone",
     cpf: "CPF",
     email: "e-mail",
@@ -157,7 +190,7 @@ export function useFlowValidation(steps: Step[], mediaCounts?: MediaCountsMap): 
       const matches = text.match(/\{\{([a-z0-9_]+)\}\}/gi) || [];
       for (const m of matches) {
         const name = m.slice(2, -2).toLowerCase();
-        if (!KNOWN_VARS.has(name)) {
+        if (!RECOGNIZED_VARS.has(name)) {
           warnings.push({
             id: `${s.id}:unresolved_var:${name}`,
             stepId: s.id,
@@ -352,19 +385,30 @@ export function useFlowValidation(steps: Step[], mediaCounts?: MediaCountsMap): 
     // {{valor_conta}} mas vem antes do passo que pergunta o valor). Resultado:
     // a mensagem sai com o campo vazio ("Na sua conta de , você economiza ...").
     // Mapa: qual variável cada tipo de passo PRODUZ.
+    // economia_* são DERIVADAS do valor da conta (render-vars.ts: billNum * 0.20).
+    // Por isso o passo capture_conta as "produz" junto com valor_conta — usá-las
+    // antes da captura sai em branco, igual a economia_range.
     const VAR_PRODUCERS: Record<string, string[]> = {
-      capture_conta: ["valor_conta", "economia_range"],
+      capture_conta: ["valor_conta", "economia_range", "economia_mensal", "economia_anual", "economia_faixa"],
       capture_documento: ["nome", "cpf"],
       capture_email: ["email"],
       confirm_phone: ["telefone"],
     };
+    // Variáveis RASTREÁVEIS na checagem de ordem: as canônicas (KNOWN_VARS) +
+    // tudo que algum passo PRODUZ (VAR_PRODUCERS). Assim economia_mensal/anual/
+    // faixa entram sem precisar virar canônicas — e sinônimos não-produzidos
+    // (ex.: {{valor}}, {{conta}}) continuam de fora, evitando falso positivo.
+    const TRACKABLE_VARS = new Set<string>([
+      ...KNOWN_VARS,
+      ...Object.values(VAR_PRODUCERS).flat(),
+    ]);
     const orderedForVars = [...steps].filter((s) => s.is_active).sort((a, b) => a.position - b.position);
     const producedSoFar = new Set<string>();
     for (const s of orderedForVars) {
       // 1) Checa o texto do passo: usa variável ainda não produzida?
       const usedVars = (s.message_text?.match(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g) ?? [])
         .map((m) => m.replace(/[{}\s]/g, "").toLowerCase())
-        .filter((v) => KNOWN_VARS.has(v));
+        .filter((v) => TRACKABLE_VARS.has(v));
       for (const v of usedVars) {
         // 'nome' costuma vir do WhatsApp; não alarmamos por ele.
         if (v === "nome" || v === "representante") continue;

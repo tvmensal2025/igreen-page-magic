@@ -108,8 +108,6 @@ export function AddLeadDialog({ consultantId, stages, onLeadAdded }: AddLeadDial
           remote_jid: formatRemoteJid(c.phone_whatsapp),
           stage,
           notes: notes.trim() || null,
-          approved_at: stage === "aprovado" ? new Date().toISOString() : null,
-          rejected_at: stage === "reprovado" ? new Date().toISOString() : null,
         }));
         const { error } = await supabase.from("crm_deals").insert(inserts);
         if (error) throw error;
@@ -125,8 +123,6 @@ export function AddLeadDialog({ consultantId, stages, onLeadAdded }: AddLeadDial
           remote_jid: formatRemoteJid(newPhone),
           stage,
           notes: (newName.trim() ? `${newName.trim()} — ` : "") + (notes.trim() || ""),
-          approved_at: stage === "aprovado" ? new Date().toISOString() : null,
-          rejected_at: stage === "reprovado" ? new Date().toISOString() : null,
         });
         if (error) throw error;
         toast({ title: "Cliente interessado adicionado!" });

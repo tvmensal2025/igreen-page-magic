@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
-import { Camera, Settings, Globe, Save, Bot, Loader2 } from "lucide-react";
+import { Camera, Settings, Globe, Save, Bot, Loader2, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import {
+  GRADUACAO_OPTIONS,
+  graduacaoDisplay,
+  careerBonusPercent,
+} from "@/features/produtos/acompanhamento/greenCommission";
+import { useGreenSettings, useSaveGreenProfile } from "@/features/produtos/acompanhamento/greenHooks";
 
 interface DadosTabProps {
   form: {
@@ -36,6 +43,67 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
   const [personaName, setPersonaName] = useState<string>("Camila");
   const [personaLoading, setPersonaLoading] = useState<boolean>(true);
   const [personaSaving, setPersonaSaving] = useState<boolean>(false);
+
+  // ─── Graduação Green (consultant_commission_settings) ──────────────────
+  const { data: greenSettings } = useGreenSettings(userId);
+  const saveGreenProfile = useSaveGreenProfile(userId);
+  const [graduacao, setGraduacao] = useState<string>("licenciado");
+  const [cadastroIdsText, setCadastroIdsText] = useState<string>("");
+  const [cadastroIdsSaving, setCadastroIdsSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (greenSettings?.graduacao) setGraduacao(greenSettings.graduacao);
+    if (greenSettings?.cadastroIgreenIds?.length) {
+      setCadastroIdsText(greenSettings.cadastroIgreenIds.join(", "));
+    }
+  }, [greenSettings?.graduacao, greenSettings?.cadastroIgreenIds]);
+
+  const gradInfo = graduacaoDisplay(graduacao);
+  const bonusPct = careerBonusPercent(graduacao);
+  const exemploFatura = 300;
+  const bonusExemplo = (exemploFatura * bonusPct) / 100;
+
+  const formatBonus = (pct: number) =>
+    pct.toLocaleString("pt-BR", { minimumFractionDigits: pct % 1 ? 1 : 0, maximumFractionDigits: 1 });
+
+  const saveGraduacao = async (value: string) => {
+    if (!userId) return;
+    setGraduacao(value);
+    try {
+      await saveGreenProfile.mutateAsync({ graduacao: value });
+      const info = graduacaoDisplay(value);
+      toast({
+        title: "✅ Graduação salva",
+        description: `${info.label} · +${formatBonus(info.bonusPct)}% carreira`,
+        duration: 1800,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: "Erro ao salvar graduação", description: msg, variant: "destructive" });
+    }
+  };
+
+  const saveCadastroIds = async () => {
+    if (!userId) return;
+    setCadastroIdsSaving(true);
+    const ids = cadastroIdsText
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    try {
+      await saveGreenProfile.mutateAsync({ cadastroIgreenIds: ids });
+      toast({
+        title: "✅ Códigos de cadastro salvos",
+        description: ids.length ? `${ids.length} ID(s) extras para contagem CP.` : "Nenhum ID extra.",
+        duration: 1800,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: "Erro ao salvar códigos", description: msg, variant: "destructive" });
+    } finally {
+      setCadastroIdsSaving(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -256,6 +324,79 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           <p className="text-[11px] text-muted-foreground">
             Salvo automaticamente ao sair do campo. Default: Camila.
           </p>
+        </div>
+      </div>
+
+      {/* Graduação Green — alimenta o bônus de carreira da comissão */}
+      <div className="bg-card rounded-2xl border border-border p-6">
+        <h3 className="font-heading font-bold text-foreground mb-1 flex items-center gap-2">
+          <GraduationCap className="w-5 h-5 text-primary" /> Plano de Carreira
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Sua graduação na iGreen e códigos de cadastro CP. O bônus de carreira soma ao recorrente em todos os cálculos Green.
+        </p>
+
+        {/* Valor do bônus — sempre visível junto da graduação */}
+        <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 mb-4">
+          <p className="text-sm font-semibold text-foreground">
+            {gradInfo.label} · +{formatBonus(bonusPct)}% carreira
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Exemplo: fatura de R$ {exemploFatura.toLocaleString("pt-BR")} → +R$ {bonusExemplo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês só de carreira
+          </p>
+        </div>
+
+        <div className="space-y-4 max-w-md">
+          <div className="space-y-2">
+            <Label htmlFor="graduacao" className="text-sm text-muted-foreground">Graduação atual</Label>
+            <Select
+              value={graduacao}
+              onValueChange={saveGraduacao}
+              disabled={saveGreenProfile.isPending}
+            >
+              <SelectTrigger id="graduacao" className="bg-secondary border-border">
+                <SelectValue placeholder="Selecione sua graduação" />
+              </SelectTrigger>
+              <SelectContent>
+                {GRADUACAO_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label} (+{formatBonus(o.bonusPct)}%)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              {saveGreenProfile.isPending ? "Salvando…" : "Salvo automaticamente ao selecionar."}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cadastro-ids" className="text-sm text-muted-foreground">
+              Códigos iGreen de cadastro (CP extras)
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="cadastro-ids"
+                value={cadastroIdsText}
+                onChange={(e) => setCadastroIdsText(e.target.value)}
+                placeholder="Ex: 124170, 122160"
+                className="bg-secondary border-border"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={saveCadastroIds}
+                disabled={cadastroIdsSaving}
+                className="shrink-0"
+              >
+                {cadastroIdsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              IDs além do seu perfil que contam como cliente direto. Use quando o sync traz código de cadastrador errado.
+            </p>
+          </div>
         </div>
       </div>
 

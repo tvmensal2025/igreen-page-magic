@@ -374,29 +374,44 @@ async function syncOneConsultant(
     records.push(record);
   }
 
-  // Proteção mid-conversation
+  // Proteção mid-conversation + detecção de leads que viram carteira
   const allPhones = records.map((r) => String(r.phone_whatsapp));
   const midConvoPhones = new Set<string>();
+  // Clientes que hoje são lead/manual e, neste sync, passam a igreen_sync.
+  // Precisam ter resíduo de temperatura (lead_insights) e de funil (crm_deals)
+  // removido: carteira validada/reprovada/devolutiva não entra nessas trilhas.
+  // Só preenchido quando o consultor é conhecido (cleanup escopado por dono).
+  const flippingToWalletIds: string[] = [];
   for (let i = 0; i < allPhones.length; i += 200) {
     const chunk = allPhones.slice(i, i + 200);
-    const { data: existing } = await supabase
+    let q = supabase
       .from("customers")
-      .select("phone_whatsapp, conversation_step")
-      .in("phone_whatsapp", chunk)
-      .not("conversation_step", "is", null);
+      .select("id, phone_whatsapp, conversation_step, customer_origin")
+      .in("phone_whatsapp", chunk);
+    // Escopa por consultor quando conhecido — evita tocar cliente homônimo
+    // (mesmo telefone) de outro consultor.
+    if (consultantId) q = q.eq("consultant_id", consultantId);
+    const { data: existing } = await q;
     if (existing) {
-      for (const e of existing as Array<{ phone_whatsapp: string; conversation_step: string | null }>) {
-        if (e.conversation_step && e.conversation_step !== "complete") {
-          midConvoPhones.add(e.phone_whatsapp);
-        }
+      for (const e of existing as Array<{ id: string; phone_whatsapp: string; conversation_step: string | null; customer_origin: string | null }>) {
+        const midConvo = !!e.conversation_step && e.conversation_step !== "complete";
+        if (midConvo) midConvoPhones.add(e.phone_whatsapp);
+        const isLeadOrigin = !e.customer_origin || e.customer_origin === "whatsapp_lead" || e.customer_origin === "manual";
+        if (consultantId && isLeadOrigin && !midConvo) flippingToWalletIds.push(e.id);
       }
     }
   }
   if (midConvoPhones.size > 0) {
     console.log(`⚠️ Protecting ${midConvoPhones.size} mid-conversation leads`);
   }
+  // Mid-conversation: preserva status E origem. Um lead em atendimento não vira
+  // carteira no meio da conversa. Omitir as colunas no upsert mantém o valor
+  // atual (o registro já existe, então onConflict só atualiza o que vier).
   for (const rec of records) {
-    if (midConvoPhones.has(String(rec.phone_whatsapp))) delete rec.status;
+    if (midConvoPhones.has(String(rec.phone_whatsapp))) {
+      delete rec.status;
+      delete rec.customer_origin;
+    }
   }
 
   let updatedCount = 0;
@@ -416,6 +431,35 @@ async function syncOneConsultant(
     }
   }
 
+  // Cleanup de resíduo: leads que viraram carteira (igreen_sync) neste sync não
+  // podem manter linha de temperatura (lead_insights) nem card de funil
+  // (crm_deals). Escopado por consultor (flippingToWalletIds só é populado
+  // quando consultantId é conhecido). Falha aqui não invalida o sync.
+  let cleanedInsights = 0;
+  let cleanedDeals = 0;
+  if (consultantId && flippingToWalletIds.length > 0) {
+    for (let i = 0; i < flippingToWalletIds.length; i += 100) {
+      const idChunk = flippingToWalletIds.slice(i, i + 100);
+      const { error: liErr, count: liCount } = await supabase
+        .from("lead_insights")
+        .delete({ count: "exact" })
+        .in("customer_id", idChunk);
+      if (liErr) console.error(`lead_insights cleanup error at ${i}:`, liErr);
+      else cleanedInsights += liCount || 0;
+
+      const { error: cdErr, count: cdCount } = await supabase
+        .from("crm_deals")
+        .delete({ count: "exact" })
+        .eq("consultant_id", consultantId)
+        .in("customer_id", idChunk);
+      if (cdErr) console.error(`crm_deals cleanup error at ${i}:`, cdErr);
+      else cleanedDeals += cdCount || 0;
+    }
+    if (cleanedInsights > 0 || cleanedDeals > 0) {
+      console.log(`🧹 Cleanup leads→carteira: ${cleanedInsights} insights, ${cleanedDeals} deals removidos`);
+    }
+  }
+
   const syncTimestamp = new Date().toISOString();
   await supabase
     .from("settings")
@@ -429,6 +473,8 @@ async function syncOneConsultant(
     skipped_no_phone: skippedNoPhone,
     updated: updatedCount,
     errors: errorCount,
+    cleaned_insights: cleanedInsights,
+    cleaned_deals: cleanedDeals,
     synced_at: syncTimestamp,
   };
 }

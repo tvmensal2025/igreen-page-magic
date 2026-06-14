@@ -73,13 +73,18 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
           <span className="text-[10px] text-muted-foreground truncate block sensitive-phone">
             {deal.remote_jid?.split("@")[0] || "Sem contato"}
           </span>
-          <div className={`mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9px] font-medium ${stepTone}`}
+          <div className={`mt-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9px] font-medium min-w-0 max-w-full ${stepTone}`}
             title={stepInfo ? `Parou em: ${stepInfo.label}` : "Sem interação registrada no bot"}
           >
-            <Footprints className="h-2.5 w-2.5" />
+            <Footprints className="h-2.5 w-2.5 shrink-0" />
             {stepInfo
-              ? <span>{stepInfo.number}{stepInfo.total ? `/${stepInfo.total}` : ""} · <span className="truncate max-w-[110px] inline-block align-bottom">{stepInfo.label}</span></span>
-              : <span>Sem interação</span>}
+              ? (
+                <span className="flex items-baseline gap-1 min-w-0">
+                  <span className="shrink-0">{stepInfo.number}{stepInfo.total ? `/${stepInfo.total}` : ""} ·</span>
+                  <span className="truncate min-w-0">{stepInfo.label}</span>
+                </span>
+              )
+              : <span className="truncate">Sem interação</span>}
           </div>
           <div className="mt-1">
             <KanbanSlaIndicator enteredAt={lastAdvanced} />

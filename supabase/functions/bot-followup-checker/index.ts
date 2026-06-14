@@ -71,6 +71,10 @@ Deno.serve(async (req) => {
       .is("bot_paused_until", null)
       .eq("bot_paused", false)
       .is("assigned_human_id", null)
+      // Carteira sincronizada do portal iGreen (igreen_sync) NÃO recebe follow-up
+      // automático — já é cliente validado/reprovado/devolutiva. Inclui leads do
+      // bot (whatsapp_lead/manual) e registros sem origem definida (null).
+      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
       .limit(50);
 
     // Semana 1 do rollout v3: filtra batch por customer_flow_state.status.
@@ -114,6 +118,8 @@ Deno.serve(async (req) => {
       .is("bot_paused_until", null)
       .eq("bot_paused", false)
       .is("assigned_human_id", null)
+      // Só leads do bot — carteira iGreen (igreen_sync) não é "esfriada".
+      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
       .limit(50);
 
     const coldAllowed = new Set(

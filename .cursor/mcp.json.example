@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/mcp-supabase.sh"]
+    },
+    "github": {
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/mcp-github.sh"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--headless"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "postgres": {
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/mcp-postgres.sh"]
+    },
+    "analyzer": {
+      "command": "bash",
+      "args": ["${workspaceFolder}/scripts/mcp-analyzer.sh"]
+    }
+  }
+}

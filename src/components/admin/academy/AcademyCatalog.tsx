@@ -1,10 +1,13 @@
 /**
- * Catálogo da Academy: trilhas → módulos (accordion) → pôsteres de aulas.
+ * Catálogo da Academy — estilo Netflix.
+ * Trilhas → módulos, cada módulo é uma "fileira" horizontal de pôsteres de aula
+ * com scroll lateral e cards que crescem no hover. Tema: iGreen oficial (dark).
  */
-import { useState, useRef, useEffect } from "react";
-import { ChevronDown, BookOpen, Award, ClipboardList } from "lucide-react";
+import { useState, useRef } from "react";
+import { ChevronLeft, ChevronRight, BookOpen, Award, ClipboardList, Search, Check } from "lucide-react";
 import { CATALOG, QUIZZES, type AcademyTrack, type AcademyModule } from "@/data/academyCatalog";
 import type { LessonProgress, ExamResult } from "@/hooks/useAcademyProgress";
+import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 function thumb(yt: string) {
   return `https://i.ytimg.com/vi/${yt}/mqdefault.jpg`;
@@ -58,113 +61,79 @@ interface Props {
   onOpenQuiz:     (key: string) => void;
 }
 
-/* ---- tokens locais (paleta Esmeralda Premium) ---- */
-const GOLD     = "#c9a84c";
-const GOLD_SFT = "#d9bb6a";
-const CREAM    = "#f5f0e0";
-const EMERALD  = "#0d7a5f";
-const EMERALD_DP = "#064e3b";
-const SURFACE  = "#0f1d17";
-const SURFACE2 = "#142a22";
-const FONT_DISPLAY = "'Space Grotesk', 'DM Sans', system-ui, sans-serif";
-
-/* ---- pôster individual (editorial) ---- */
+/* ---- pôster individual (estilo Netflix card) ---- */
 function LessonCard({
   lesson, num, prog, onOpen,
 }: {
   lesson: { title: string; yt: string };
   num:    number;
-  color?: string;
   prog:   LessonProgress;
   onOpen: () => void;
 }) {
   return (
     <button
       onClick={onOpen}
-      className="group relative flex-none w-44 overflow-hidden text-left
-                 transition-transform duration-200 hover:-translate-y-0.5
-                 focus-visible:outline-2"
-      style={{
-        background: SURFACE,
-        border: `1px solid ${prog.done ? GOLD : "rgba(245,240,224,.10)"}`,
-        borderRadius: 3,
-        outlineColor: GOLD,
-      }}
+      className="group/card relative flex-none w-40 sm:w-48 overflow-hidden text-left rounded-md
+                 transition-all duration-200 ease-out hover:scale-[1.06] hover:z-10
+                 focus-visible:outline-2 focus-visible:outline-offset-2"
+      style={{ scrollSnapAlign: "start", outlineColor: AC.primary }}
     >
       {/* thumbnail */}
-      <div className="relative aspect-video overflow-hidden" style={{ background: "#000" }}>
+      <div className="relative aspect-video overflow-hidden rounded-md" style={{ background: "#000" }}>
         <img
           loading="lazy"
           src={thumb(lesson.yt)}
           alt={lesson.title}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-[1.08]"
         />
-        {/* vinheta */}
+        {/* vinheta inferior para legibilidade */}
         <div className="absolute inset-0 pointer-events-none"
-             style={{ background: `linear-gradient(180deg, transparent 50%, ${EMERALD_DP}cc 100%)` }} />
+             style={{ background: `linear-gradient(180deg, transparent 45%, ${AC.bg}f2 100%)` }} />
 
-        {/* play */}
+        {/* play no hover */}
         <div className="absolute inset-0 flex items-center justify-center
-                        opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center"
-               style={{ background: CREAM, boxShadow: `0 0 0 1px ${GOLD}` }}>
-            <svg viewBox="0 0 24 24" className="w-4 h-4 ml-0.5" style={{ fill: EMERALD_DP }}>
+                        opacity-0 group-hover/card:opacity-100 transition-opacity duration-200">
+          <div className="w-11 h-11 rounded-full flex items-center justify-center"
+               style={{ background: AC.primary, boxShadow: `0 6px 20px -4px ${AC.primary}` }}>
+            <svg viewBox="0 0 24 24" className="w-5 h-5 ml-0.5" style={{ fill: "#FFFFFF" }}>
               <path d="M8 5v14l11-7z" />
             </svg>
           </div>
         </div>
 
+        {/* número da aula */}
+        <span className="absolute top-1.5 left-2 text-[10px] font-bold tabular-nums"
+              style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY, textShadow: "0 1px 4px rgba(0,0,0,.8)" }}>
+          {String(num).padStart(2, "0")}
+        </span>
+
         {/* done badge */}
         {prog.done && (
-          <div className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center"
-               style={{ background: GOLD, borderRadius: 1 }}>
-            <svg viewBox="0 0 24 24" className="w-3 h-3" style={{ fill: EMERALD_DP }}>
-              <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" />
-            </svg>
+          <div className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full"
+               style={{ background: AC.primary }}>
+            <Check className="w-3 h-3" style={{ color: "#FFFFFF" }} strokeWidth={3} />
           </div>
         )}
 
-        {/* progress bar */}
+        {/* progress bar (em andamento) */}
         {prog.pct > 0 && !prog.done && (
           <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: "rgba(0,0,0,.5)" }}>
-            <div className="h-full" style={{ width: `${prog.pct}%`, background: GOLD }} />
+            <div className="h-full" style={{ width: `${prog.pct}%`, background: AC.primary }} />
           </div>
         )}
-      </div>
 
-      {/* info panel editorial */}
-      <div className="p-2.5 space-y-1" style={{ background: SURFACE }}>
-        <div className="flex items-center gap-1.5">
-          <span className="h-px flex-1" style={{ background: GOLD }} />
-          <p className="text-[9px] font-bold tracking-[0.25em] uppercase"
-             style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
-            Aula {String(num).padStart(2, "0")}
-          </p>
-          <span className="h-px flex-1" style={{ background: GOLD }} />
-        </div>
-        <p className="text-[11px] font-semibold leading-snug line-clamp-2"
-           style={{ color: CREAM, fontFamily: FONT_DISPLAY }}>
+        {/* título sobre a vinheta */}
+        <p className="absolute left-2 right-2 bottom-1.5 text-[11px] font-semibold leading-snug line-clamp-2"
+           style={{ color: AC.text, fontFamily: AC_FONT_BODY, textShadow: "0 1px 4px rgba(0,0,0,.9)" }}>
           {lesson.title}
         </p>
-        {prog.done && (
-          <span className="inline-block text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 mt-0.5"
-                style={{ background: GOLD, color: EMERALD_DP, borderRadius: 1, fontFamily: FONT_DISPLAY }}>
-            Concluída
-          </span>
-        )}
-        {!prog.done && prog.pct > 0 && (
-          <span className="inline-block text-[9px] font-bold tracking-wider px-1.5 py-0.5 mt-0.5"
-                style={{ border: `1px solid ${GOLD}`, color: GOLD_SFT, borderRadius: 1, fontFamily: FONT_DISPLAY }}>
-            {prog.pct}%
-          </span>
-        )}
       </div>
     </button>
   );
 }
 
-/* ---- módulo (accordion) ---- */
-function ModuleBlock({
+/* ---- fileira horizontal (Netflix row) ---- */
+function ModuleRow({
   cat, mod, modIndex, flatList,
   getLessonProg, getExam, onOpenLesson, onOpenQuiz,
 }: {
@@ -175,7 +144,7 @@ function ModuleBlock({
   onOpenLesson:  (gi: number) => void;
   onOpenQuiz:    (key: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const quizKey  = `${cat.id}-${modIndex}`;
   const hasQuiz  = !!QUIZZES[quizKey];
   const exam     = getExam(quizKey);
@@ -183,118 +152,103 @@ function ModuleBlock({
   const done  = mod.lessons.filter(l => getLessonProg(l.yt).done).length;
   const total = mod.lessons.length;
   const allDone = done === total && total > 0;
-  const trackW  = total ? `${(done / total) * 100}%` : "0%";
+
+  const scrollBy = (dir: number) => {
+    scrollRef.current?.scrollBy({ left: dir * 320, behavior: "smooth" });
+  };
 
   return (
-    <div
-      className="overflow-hidden transition-colors"
-      style={{
-        background: SURFACE,
-        border: `1px solid ${open ? GOLD : "rgba(245,240,224,.10)"}`,
-        borderRadius: 3,
-      }}
-    >
-      {/* cabeçalho clicável */}
-      <button
-        className="w-full flex items-center gap-3 p-3 sm:p-4 text-left transition-colors hover:bg-[rgba(245,240,224,.04)]"
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-      >
-        <span
-          className="w-9 h-9 flex items-center justify-center text-xs font-bold shrink-0"
-          style={{
-            background: open ? GOLD : "transparent",
-            color: open ? EMERALD_DP : GOLD,
-            border: `1px solid ${GOLD}`,
-            borderRadius: 1,
-            fontFamily: FONT_DISPLAY,
-          }}
-        >
+    <div className="space-y-2">
+      {/* cabeçalho da fileira */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded"
+              style={{ background: AC.primarySoft, color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
           {String(modIndex + 1).padStart(2, "0")}
         </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate"
-             style={{ color: CREAM, fontFamily: FONT_DISPLAY }}>
-            {mod.title}
-          </p>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] tracking-wider uppercase"
-                  style={{ color: "rgba(245,240,224,.4)" }}>
-              {total} aula{total !== 1 ? "s" : ""}
-            </span>
-            {mod.certificate && (
-              <span className="text-[9px] font-bold tracking-wider uppercase flex items-center gap-0.5"
-                    style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
-                <Award className="w-2.5 h-2.5" /> Certificado
-              </span>
-            )}
-            <span
-              className="text-[11px] font-bold ml-auto"
-              style={{ color: allDone ? GOLD : "rgba(245,240,224,.3)", fontFamily: FONT_DISPLAY }}
-            >
-              {done}/{total}
-            </span>
-          </div>
-        </div>
-        <ChevronDown
-          className="w-4 h-4 shrink-0 transition-transform duration-200"
-          style={{ color: GOLD, transform: open ? "rotate(180deg)" : undefined }}
-        />
-      </button>
-
-      {/* mini barra */}
-      <div className="h-[2px]" style={{ background: "rgba(245,240,224,.08)" }}>
-        <div
-          className="h-full transition-all duration-500"
-          style={{ width: trackW, background: `linear-gradient(90deg, ${EMERALD}, ${GOLD})` }}
-        />
+        <h4 className="text-sm sm:text-base font-semibold truncate"
+            style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY }}>
+          {mod.title}
+        </h4>
+        {mod.certificate && (
+          <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-bold tracking-wider uppercase"
+                style={{ color: AC.primary }}>
+            <Award className="w-3 h-3" /> Certificado
+          </span>
+        )}
+        <span className="ml-auto text-[11px] font-semibold tabular-nums shrink-0"
+              style={{ color: allDone ? AC.primary : AC.textMute, fontFamily: AC_FONT_DISPLAY }}>
+          {done}/{total}
+        </span>
       </div>
 
-      {open && (
-        <div>
-          <div
-            className="flex gap-3 overflow-x-auto px-3 pt-3 pb-2
-                       scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent"
-            style={{ scrollSnapType: "x mandatory" }}
-          >
-            {mod.lessons.map((l, li) => {
-              const gi   = flatList.findIndex(f => f.yt === l.yt);
-              const prog = getLessonProg(l.yt);
-              return (
-                <div key={l.yt} style={{ scrollSnapAlign: "start" }}>
-                  <LessonCard
-                    lesson={l}
-                    num={li + 1}
-                    prog={prog}
-                    onOpen={() => onOpenLesson(gi >= 0 ? gi : 0)}
-                  />
-                </div>
-              );
-            })}
-          </div>
+      {/* trilho horizontal com setas */}
+      <div className="group/row relative">
+        {/* seta esquerda */}
+        <button
+          onClick={() => scrollBy(-1)}
+          aria-label="Anterior"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full
+                     flex items-center justify-center opacity-0 group-hover/row:opacity-100
+                     transition-opacity disabled:hidden"
+          style={{ background: "rgba(17,17,17,0.85)", border: `1px solid ${AC.border}`, color: AC.text }}
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
 
+        <div
+          ref={scrollRef}
+          className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1"
+          style={{ scrollSnapType: "x mandatory" }}
+        >
+          {mod.lessons.map((l, li) => {
+            const gi   = flatList.findIndex(f => f.yt === l.yt);
+            const prog = getLessonProg(l.yt);
+            return (
+              <LessonCard
+                key={l.yt}
+                lesson={l}
+                num={li + 1}
+                prog={prog}
+                onOpen={() => onOpenLesson(gi >= 0 ? gi : 0)}
+              />
+            );
+          })}
+
+          {/* card de prova ao fim da fileira */}
           {hasQuiz && (
-            <div className="px-3 pb-3 pt-1">
-              <button
-                onClick={() => onOpenQuiz(quizKey)}
-                className="w-full py-3 text-sm font-bold transition-colors
-                           flex items-center justify-center gap-2 uppercase tracking-wider"
-                style={{
-                  background: exam?.passed ? GOLD : "transparent",
-                  color: exam?.passed ? EMERALD_DP : GOLD,
-                  border: `1px ${exam?.passed ? "solid" : "dashed"} ${GOLD}`,
-                  borderRadius: 2,
-                  fontFamily: FONT_DISPLAY,
-                }}
-              >
-                {exam?.passed
-                  ? <><Award className="w-4 h-4" /> Aprovado · {exam.score}%</>
-                  : <><ClipboardList className="w-4 h-4" /> Fazer prova</>}
-              </button>
-            </div>
+            <button
+              onClick={() => onOpenQuiz(quizKey)}
+              className="group/card relative flex-none w-40 sm:w-48 aspect-video rounded-md overflow-hidden
+                         flex flex-col items-center justify-center gap-2 transition-all duration-200 hover:scale-[1.06]"
+              style={{
+                scrollSnapAlign: "start",
+                background: exam?.passed ? AC.primarySoft : "rgba(255,255,255,0.04)",
+                border: `1px ${exam?.passed ? "solid" : "dashed"} ${exam?.passed ? AC.primary : AC.border}`,
+              }}
+            >
+              {exam?.passed
+                ? <Award className="w-7 h-7" style={{ color: AC.primary }} />
+                : <ClipboardList className="w-7 h-7" style={{ color: AC.textDim }} />}
+              <span className="text-[11px] font-bold uppercase tracking-wider px-2 text-center"
+                    style={{ color: exam?.passed ? AC.primary : AC.textDim, fontFamily: AC_FONT_DISPLAY }}>
+                {exam?.passed ? `Aprovado · ${exam.score}%` : "Fazer prova"}
+              </span>
+            </button>
           )}
         </div>
-      )}
+
+        {/* seta direita */}
+        <button
+          onClick={() => scrollBy(1)}
+          aria-label="Próximo"
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full
+                     flex items-center justify-center opacity-0 group-hover/row:opacity-100
+                     transition-opacity"
+          style={{ background: "rgba(17,17,17,0.85)", border: `1px solid ${AC.border}`, color: AC.text }}
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -303,7 +257,6 @@ function ModuleBlock({
 export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson, onOpenQuiz }: Props) {
   const [search, setSearch] = useState("");
 
-  // filtra aulas pelo termo
   const searchTerm = search.toLowerCase().trim();
   const searchResults = searchTerm
     ? flatList.filter(l =>
@@ -313,57 +266,49 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
       )
     : null;
 
-  // divisores de seção
   let lastSection = "oficial";
 
   return (
-    <div className="space-y-4" style={{ color: CREAM }}>
+    <div className="space-y-7" style={{ color: AC.text }}>
       {/* busca */}
-      <div className="relative">
-        <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
-          style={{ color: GOLD }}
-          viewBox="0 0 24 24"
-        >
-          <path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z" />
-        </svg>
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: AC.primary }} />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar aula ou módulo..."
-          className="w-full pl-9 pr-4 py-3 text-sm focus:outline-none transition-colors"
+          className="w-full pl-9 pr-9 py-2.5 text-sm rounded-lg focus:outline-none transition-colors"
           style={{
-            background: SURFACE,
-            color: CREAM,
-            border: `1px solid rgba(245,240,224,.12)`,
-            borderRadius: 2,
-            fontFamily: FONT_DISPLAY,
+            background: AC.surface,
+            color: AC.text,
+            border: `1px solid ${AC.border}`,
+            fontFamily: AC_FONT_BODY,
           }}
         />
         {search && (
           <button
             onClick={() => setSearch("")}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
-            style={{ color: GOLD }}
+            style={{ color: AC.textMute }}
           >
             ✕
           </button>
         )}
       </div>
 
-      {/* resultados */}
+      {/* resultados da busca — grade simples */}
       {searchResults !== null && (
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.25em] mb-3"
-             style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
+             style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
             {searchResults.length} resultado{searchResults.length !== 1 ? "s" : ""}
           </p>
           {searchResults.length === 0 ? (
-            <p className="text-sm py-8 text-center" style={{ color: "rgba(245,240,224,.4)" }}>
+            <p className="text-sm py-8 text-center" style={{ color: AC.textMute }}>
               Nenhuma aula encontrada.
             </p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
               {searchResults.map(l => (
                 <LessonCard
                   key={l.yt}
@@ -378,7 +323,7 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
         </div>
       )}
 
-      {/* catálogo */}
+      {/* catálogo em fileiras */}
       {searchResults === null && CATALOG.map((cat) => {
         let section = "oficial";
         if (cat.id.startsWith("igreen-")) section = "igreen-pratica";
@@ -394,18 +339,15 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
             ? "aprenda com quem já faz acontecer"
             : "vendas, técnica e mercado";
           divider = (
-            <div key={`div-${section}`} className="py-4 text-center">
+            <div key={`div-${section}`} className="pt-2 pb-1">
               <div className="flex items-center gap-3">
-                <div className="flex-1 h-px" style={{ background: GOLD }} />
-                <p className="text-[10px] font-bold uppercase tracking-[0.32em]"
-                   style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
+                <span className="h-px w-6" style={{ background: AC.primary }} />
+                <p className="text-[10px] font-bold uppercase tracking-[0.3em]"
+                   style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
                   {txt}
                 </p>
-                <div className="flex-1 h-px" style={{ background: GOLD }} />
               </div>
-              <p className="text-[10px] mt-1 italic" style={{ color: "rgba(245,240,224,.4)" }}>
-                {sub}
-              </p>
+              <p className="text-[11px] mt-1" style={{ color: AC.textMute }}>{sub}</p>
             </div>
           );
         }
@@ -413,36 +355,38 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
         const totalAulas = cat.modules.reduce((s, m) => s + m.lessons.length, 0);
 
         return (
-          <div key={cat.id}>
+          <div key={cat.id} className="space-y-4">
             {divider}
-            <section className="space-y-3">
-              {/* cabeçalho da trilha — magazine */}
-              <div className="pb-2" style={{ borderBottom: `1px solid rgba(245,240,224,.12)` }}>
-                <p className="text-[9px] font-bold tracking-[0.32em] uppercase"
-                   style={{ color: GOLD, fontFamily: FONT_DISPLAY }}>
-                  Trilha
-                </p>
-                <div className="flex items-end justify-between gap-3 mt-1">
-                  <h3 className="text-xl sm:text-2xl font-bold leading-tight"
-                      style={{ color: CREAM, fontFamily: FONT_DISPLAY }}>
+            <section className="space-y-4">
+              {/* cabeçalho da trilha */}
+              <div className="flex items-end justify-between gap-3 pb-1"
+                   style={{ borderBottom: `1px solid ${AC.border}` }}>
+                <div>
+                  <p className="text-[9px] font-bold tracking-[0.3em] uppercase"
+                     style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
+                    Trilha
+                  </p>
+                  <h3 className="text-lg sm:text-xl font-bold leading-tight mt-0.5"
+                      style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY }}>
                     {cat.title}
                   </h3>
-                  <BookOpen className="w-4 h-4 shrink-0 mb-1" style={{ color: GOLD }} />
+                  <p className="text-[11px] mt-0.5" style={{ color: AC.textMute }}>
+                    {cat.modules.length} módulo{cat.modules.length !== 1 ? "s" : ""} · {totalAulas} aulas
+                    {cat.extra && (
+                      <span className="ml-2 text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded"
+                            style={{ background: AC.primarySoft, color: AC.primary }}>
+                        Externo
+                      </span>
+                    )}
+                  </p>
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: "rgba(245,240,224,.5)" }}>
-                  {cat.modules.length} módulo{cat.modules.length !== 1 ? "s" : ""} · {totalAulas} aulas
-                  {cat.extra && (
-                    <span className="ml-2 text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5"
-                          style={{ background: GOLD, color: EMERALD_DP, borderRadius: 1 }}>
-                      Externo
-                    </span>
-                  )}
-                </p>
+                <BookOpen className="w-4 h-4 shrink-0 mb-1" style={{ color: AC.primary }} />
               </div>
 
-              <div className="space-y-2">
+              {/* fileiras dos módulos */}
+              <div className="space-y-5">
                 {cat.modules.map((mod, mi) => (
-                  <ModuleBlock
+                  <ModuleRow
                     key={`${cat.id}-${mi}`}
                     cat={cat} mod={mod} modIndex={mi}
                     flatList={flatList}

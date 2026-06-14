@@ -1,30 +1,13 @@
 /**
  * Modal de prova da Academy.
  * Embaralha questões e alternativas a cada tentativa (Fisher-Yates).
- * Tema: Esmeralda Premium (deep emerald + gold + cream).
+ * Tema: iGreen oficial (modo escuro) — ver ./theme.ts
  */
 import { useCallback, useEffect, useState } from "react";
 import { X, RefreshCw, CheckCircle } from "lucide-react";
 import { CATALOG, QUIZZES, PASS_SCORE, type QuizQuestion } from "@/data/academyCatalog";
 import type { ExamResult } from "@/hooks/useAcademyProgress";
-
-/* ---------- paleta Esmeralda Premium ---------- */
-const C = {
-  bg:        "#08120e",
-  surface:   "#0d1a14",
-  border:    "rgba(201,168,76,0.18)",
-  borderHi:  "rgba(201,168,76,0.50)",
-  gold:      "#c9a84c",
-  goldSoft:  "rgba(201,168,76,0.12)",
-  cream:     "#f5f0e0",
-  creamDim:  "rgba(245,240,224,0.65)",
-  creamMute: "rgba(245,240,224,0.42)",
-  emerald:   "#0d7a5f",
-  danger:    "#e07a6b",
-  dangerBg:  "rgba(224,122,107,0.14)",
-};
-const FONT_DISPLAY = "'Space Grotesk', system-ui, sans-serif";
-const FONT_BODY    = "'DM Sans', system-ui, sans-serif";
+import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 /* ---------- helpers ---------- */
 function shuffle<T>(arr: T[]): T[] {
@@ -120,11 +103,11 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-      style={{ fontFamily: FONT_BODY, color: C.cream }}
+      style={{ fontFamily: AC_FONT_BODY, color: AC.text }}
     >
       <div
         className="absolute inset-0 backdrop-blur-md"
-        style={{ background: "rgba(8,18,14,0.78)" }}
+        style={{ background: "rgba(17,17,17,0.78)" }}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -134,18 +117,18 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
         aria-modal="true"
         className="relative z-10 w-full max-w-[560px] max-h-[92vh] overflow-y-auto rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         style={{
-          background: `linear-gradient(160deg, #0f2018 0%, ${C.surface} 55%, ${C.bg} 100%)`,
-          border: `1px solid ${C.border}`,
-          boxShadow: "0 30px 80px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.08)",
+          background: `linear-gradient(160deg, ${AC.surface2} 0%, ${AC.surface} 55%, ${AC.bg} 100%)`,
+          border: `1px solid ${AC.border}`,
+          boxShadow: "0 30px 80px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,168,89,0.08)",
         }}
       >
         {/* fechar */}
         <button
           onClick={onClose}
           className="absolute top-3 right-3 w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-          style={{ background: "rgba(245,240,224,0.06)", color: C.creamDim }}
-          onMouseEnter={e => { e.currentTarget.style.background = C.goldSoft; e.currentTarget.style.color = C.gold; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,240,224,0.06)"; e.currentTarget.style.color = C.creamDim; }}
+          style={{ background: "rgba(255,255,255,0.06)", color: AC.textDim }}
+          onMouseEnter={e => { e.currentTarget.style.background = AC.primarySoft; e.currentTarget.style.color = AC.primary; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = AC.textDim; }}
           aria-label="Fechar"
         >
           <X className="w-4 h-4" />
@@ -157,43 +140,43 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
           {screen === "intro" && (
             <div className="text-center space-y-5">
               <div className="flex items-center justify-center gap-3">
-                <span className="h-px w-8" style={{ background: C.gold }} />
-                <span className="text-[10px] font-semibold uppercase" style={{ color: C.gold, letterSpacing: "0.32em" }}>
+                <span className="h-px w-8" style={{ background: AC.primary }} />
+                <span className="text-[10px] font-semibold uppercase" style={{ color: AC.primary, letterSpacing: "0.32em" }}>
                   Prova do módulo
                 </span>
-                <span className="h-px w-8" style={{ background: C.gold }} />
+                <span className="h-px w-8" style={{ background: AC.primary }} />
               </div>
 
               <h2
                 className="text-2xl sm:text-3xl leading-tight tracking-tight"
-                style={{ fontFamily: FONT_DISPLAY, fontWeight: 600, color: C.cream }}
+                style={{ fontFamily: AC_FONT_DISPLAY, fontWeight: 700, color: AC.text }}
               >
                 {mod}
               </h2>
-              <p className="text-sm" style={{ color: C.creamDim }}>{cat} · {questions.length} questões</p>
+              <p className="text-sm" style={{ color: AC.textDim }}>{cat} · {questions.length} questões</p>
 
               <ul
                 className="text-left rounded-xl p-5 space-y-3 text-sm"
-                style={{ background: "rgba(245,240,224,0.03)", border: `1px solid ${C.border}`, color: C.creamDim }}
+                style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${AC.border}`, color: AC.textDim }}
               >
                 <li className="flex items-start gap-2">
-                  <span style={{ color: C.gold }}>•</span>
-                  <span>Aprovação: <strong style={{ color: C.cream }}>{PASS_SCORE}%</strong> de acerto</span>
+                  <span style={{ color: AC.primary }}>•</span>
+                  <span>Aprovação: <strong style={{ color: AC.text }}>{PASS_SCORE}%</strong> de acerto</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: C.gold }}>•</span>
+                  <span style={{ color: AC.primary }}>•</span>
                   <span>Pode refazer quantas vezes quiser</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: C.gold }}>•</span>
+                  <span style={{ color: AC.primary }}>•</span>
                   <span>Aprovar libera o selo de conhecimento</span>
                 </li>
               </ul>
 
               {lastResult && (
-                <p className="text-xs" style={{ color: C.creamMute }}>
+                <p className="text-xs" style={{ color: AC.textMute }}>
                   Último resultado:{" "}
-                  <span style={{ color: lastResult.passed ? C.gold : C.danger, fontWeight: 600 }}>
+                  <span style={{ color: lastResult.passed ? AC.primary : AC.danger, fontWeight: 600 }}>
                     {lastResult.score}% — {lastResult.passed ? "Aprovado" : "Reprovado"}
                   </span>
                 </p>
@@ -203,12 +186,12 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
                 onClick={startQuiz}
                 className="w-full py-4 rounded-xl text-sm uppercase transition-all"
                 style={{
-                  fontFamily: FONT_DISPLAY,
-                  fontWeight: 600,
+                  fontFamily: AC_FONT_DISPLAY,
+                  fontWeight: 700,
                   letterSpacing: "0.18em",
-                  color: C.bg,
-                  background: `linear-gradient(135deg, ${C.gold}, #b8943f)`,
-                  boxShadow: "0 10px 28px -10px rgba(201,168,76,0.55)",
+                  color: "#FFFFFF",
+                  background: `linear-gradient(135deg, ${AC.primary}, ${AC.primaryDeep})`,
+                  boxShadow: "0 10px 28px -10px rgba(0,168,89,0.55)",
                 }}
               >
                 Começar prova
@@ -220,21 +203,21 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
           {screen === "questions" && (
             <div className="space-y-6">
               <div>
-                <div className="flex justify-between text-[10px] uppercase mb-2" style={{ color: C.creamMute, letterSpacing: "0.24em" }}>
+                <div className="flex justify-between text-[10px] uppercase mb-2" style={{ color: AC.textMute, letterSpacing: "0.24em" }}>
                   <span>Questão {String(current + 1).padStart(2, "0")} / {String(questions.length).padStart(2, "0")}</span>
-                  <span style={{ color: C.gold }}>{pct}%</span>
+                  <span style={{ color: AC.primary }}>{pct}%</span>
                 </div>
-                <div className="h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(245,240,224,0.08)" }}>
+                <div className="h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
                   <div
                     className="h-full transition-all duration-300"
-                    style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${C.emerald}, ${C.gold})` }}
+                    style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${AC.primaryDeep}, ${AC.primary})` }}
                   />
                 </div>
               </div>
 
               <h3
                 className="text-lg sm:text-xl leading-snug"
-                style={{ fontFamily: FONT_DISPLAY, fontWeight: 500, color: C.cream }}
+                style={{ fontFamily: AC_FONT_DISPLAY, fontWeight: 600, color: AC.text }}
               >
                 {q.q}
               </h3>
@@ -245,12 +228,12 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
                   const correct = locked && i === q.answer;
                   const wrong   = locked && i === chosen && chosen !== q.answer;
                   const baseStyle: React.CSSProperties = correct
-                    ? { borderColor: C.gold, background: C.goldSoft, color: C.cream }
+                    ? { borderColor: AC.primary, background: AC.primarySoft, color: AC.text }
                     : wrong
-                    ? { borderColor: C.danger, background: C.dangerBg, color: C.cream }
+                    ? { borderColor: AC.danger, background: AC.dangerBg, color: AC.text }
                     : locked
-                    ? { borderColor: C.border, background: "rgba(245,240,224,0.03)", color: C.creamMute, cursor: "default" }
-                    : { borderColor: C.border, background: "rgba(245,240,224,0.04)", color: C.cream };
+                    ? { borderColor: AC.border, background: "rgba(255,255,255,0.03)", color: AC.textMute, cursor: "default" }
+                    : { borderColor: AC.border, background: "rgba(255,255,255,0.04)", color: AC.text };
                   return (
                     <button
                       key={i}
@@ -260,21 +243,21 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
                       style={{ border: "1px solid transparent", ...baseStyle }}
                       onMouseEnter={e => {
                         if (locked) return;
-                        e.currentTarget.style.borderColor = C.borderHi;
-                        e.currentTarget.style.background = C.goldSoft;
+                        e.currentTarget.style.borderColor = AC.borderHi;
+                        e.currentTarget.style.background = AC.primarySoft;
                       }}
                       onMouseLeave={e => {
                         if (locked) return;
-                        e.currentTarget.style.borderColor = C.border;
-                        e.currentTarget.style.background = "rgba(245,240,224,0.04)";
+                        e.currentTarget.style.borderColor = AC.border;
+                        e.currentTarget.style.background = "rgba(255,255,255,0.04)";
                       }}
                     >
                       <span
                         className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold"
                         style={{
-                          fontFamily: FONT_DISPLAY,
-                          border: `1px solid ${correct || wrong ? "currentColor" : C.border}`,
-                          color: correct ? C.gold : wrong ? C.danger : C.creamDim,
+                          fontFamily: AC_FONT_DISPLAY,
+                          border: `1px solid ${correct || wrong ? "currentColor" : AC.border}`,
+                          color: correct ? AC.primary : wrong ? AC.danger : AC.textDim,
                         }}
                       >
                         {String.fromCharCode(65 + i)}
@@ -292,28 +275,28 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
             <div className="text-center space-y-5">
               <div className="text-5xl">{result.passed ? "🏆" : "↻"}</div>
               <div className="flex items-center justify-center gap-3">
-                <span className="h-px w-8" style={{ background: result.passed ? C.gold : C.danger }} />
+                <span className="h-px w-8" style={{ background: result.passed ? AC.primary : AC.danger }} />
                 <span
                   className="text-[10px] font-semibold uppercase"
-                  style={{ color: result.passed ? C.gold : C.danger, letterSpacing: "0.32em" }}
+                  style={{ color: result.passed ? AC.primary : AC.danger, letterSpacing: "0.32em" }}
                 >
                   {result.passed ? "Aprovado" : "Quase lá"}
                 </span>
-                <span className="h-px w-8" style={{ background: result.passed ? C.gold : C.danger }} />
+                <span className="h-px w-8" style={{ background: result.passed ? AC.primary : AC.danger }} />
               </div>
 
               <p
                 className="text-6xl tracking-tight"
                 style={{
-                  fontFamily: FONT_DISPLAY,
-                  fontWeight: 600,
-                  color: result.passed ? C.gold : C.danger,
+                  fontFamily: AC_FONT_DISPLAY,
+                  fontWeight: 700,
+                  color: result.passed ? AC.primary : AC.danger,
                 }}
               >
                 {result.score}%
               </p>
 
-              <p className="text-sm" style={{ color: C.creamDim }}>
+              <p className="text-sm" style={{ color: AC.textDim }}>
                 {result.passed
                   ? `Você acertou ${result.acertos} de ${questions.length}. Parabéns!`
                   : `Você acertou ${result.acertos} de ${questions.length}. Precisa de ${PASS_SCORE}% — revise o módulo e tente de novo.`}
@@ -324,9 +307,9 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
                   onClick={startQuiz}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-colors"
                   style={{
-                    color: C.cream,
-                    background: "rgba(245,240,224,0.04)",
-                    border: `1px solid ${C.border}`,
+                    color: AC.text,
+                    background: "rgba(255,255,255,0.04)",
+                    border: `1px solid ${AC.border}`,
                   }}
                 >
                   <RefreshCw className="w-4 h-4" /> Refazer
@@ -335,12 +318,12 @@ export function AcademyQuizModal({ quizKey, onClose, onPass, lastResult }: Props
                   onClick={onClose}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm uppercase transition-all"
                   style={{
-                    fontFamily: FONT_DISPLAY,
-                    fontWeight: 600,
+                    fontFamily: AC_FONT_DISPLAY,
+                    fontWeight: 700,
                     letterSpacing: "0.16em",
-                    color: C.bg,
-                    background: `linear-gradient(135deg, ${C.gold}, #b8943f)`,
-                    boxShadow: "0 10px 28px -10px rgba(201,168,76,0.5)",
+                    color: "#FFFFFF",
+                    background: `linear-gradient(135deg, ${AC.primary}, ${AC.primaryDeep})`,
+                    boxShadow: "0 10px 28px -10px rgba(0,168,89,0.5)",
                   }}
                 >
                   <CheckCircle className="w-4 h-4" /> Concluir

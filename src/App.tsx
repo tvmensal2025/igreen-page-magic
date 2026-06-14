@@ -30,6 +30,7 @@ const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
+const ProposalPublicPage = lazy(() => import("./pages/ProposalPublicPage"));
 const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
@@ -104,6 +105,9 @@ const App = () => (
               <Route path="/conexao-club-pj/:licenca" element={<ConexaoProductPage />} />
               <Route path="/conexao-green/:licenca" element={<ConexaoProductPage />} />
               <Route path="/conexao-expansao/:licenca" element={<ConexaoProductPage />} />
+
+              {/* Página pública de orçamento/proposta */}
+              <Route path="/proposta/:token" element={<ProposalPublicPage />} />
 
               {/* ⚠️ Catch-all de 1º nível: captura o slug público do consultor.
                   Mantenha QUALQUER rota nova ACIMA desta linha, senão ela será

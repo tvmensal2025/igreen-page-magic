@@ -17,6 +17,7 @@ import {
   LogOut,
   Mic,
   GraduationCap,
+  Package,
 } from "lucide-react";
 
 export type AdminTabId =
@@ -25,6 +26,7 @@ export type AdminTabId =
   | "crm-clientes"
   | "conversao"
   | "clientes"
+  | "produtos"
   | "captacao"
   | "parceiros"
   | "rede"
@@ -62,6 +64,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Gestão Comercial",
     items: [
+      { id: "produtos", label: "Produtos & Vendas", icon: Package },
       { id: "captacao", label: "Captação", icon: ClipboardList },
       { id: "parceiros", label: "Parceiros", icon: Handshake },
       { id: "rede", label: "Rede", icon: Network },

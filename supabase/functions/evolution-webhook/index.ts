@@ -29,7 +29,7 @@ import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead, notifyPartnerNewLead } from "../_shared/notify-consultant.ts";
-import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
+import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
@@ -1946,7 +1946,11 @@ Deno.serve(async (req) => {
       }
       // Avança o estágio do deal no Kanban conforme o lead progride na conversa.
       if (updates.conversation_step) {
-        await syncDealStageFromStep(supabase, customer.id, updates.conversation_step);
+        await syncCustomerStage(supabase, {
+          customerId: customer.id,
+          stepKeyAfter: updates.conversation_step,
+          consultantId: instanceData.consultant_id,
+        });
       }
     }
 

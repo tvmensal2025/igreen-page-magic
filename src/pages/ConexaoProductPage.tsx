@@ -9,13 +9,17 @@ import WhatsAppFloat from "@/components/WhatsAppFloat";
 import SEOHead from "@/components/SEOHead";
 import LoadingScreen from "@/components/LoadingScreen";
 import PageStatus from "@/components/common/PageStatus";
-import { conexaoProducts, type ConexaoSection } from "@/data/conexaoProducts";
+import { useProduct, resolveLanding, type ResolvedLanding, type ProductSection } from "@/features/produtos/catalogo";
 import consultantDefault from "@/assets/consultant.jpg";
 import { trackClickEvent } from "@/hooks/useTrackEvent";
 
 // ─────────────────────────────────────────────
-// Página reutilizável para os 7 produtos "Conexão"
+// Página reutilizável para os produtos "Conexão"
 // Rota: /conexao-<produto>/:licenca
+//
+// O conteúdo vem do catálogo no banco (tabela products) via useProduct.
+// Durante a migração, resolveLanding cai no catálogo estático
+// (src/data/conexaoProducts.ts) quando landing_content ainda está vazio.
 // ─────────────────────────────────────────────
 
 const ConexaoProductPage = () => {
@@ -24,14 +28,16 @@ const ConexaoProductPage = () => {
 
   // Extrai o slug do produto a partir do pathname (ex: /conexao-telecom/abc → "conexao-telecom")
   const productSlug = location.pathname.split("/")[1];
-  const product = conexaoProducts.find((p) => p.slug === productSlug);
+
+  const { data: dbProduct, isLoading: isProductLoading } = useProduct(productSlug);
+  const product = resolveLanding(dbProduct, productSlug);
 
   const { data: consultant, isLoading } = useConsultant(licenca || "");
   useTrackView(consultant?.id, "client");
 
   const { data: instancePhone } = useInstancePhone(consultant?.id);
 
-  if (isLoading) return <LoadingScreen />;
+  if (isLoading || isProductLoading) return <LoadingScreen />;
 
   if (!product) {
     return (
@@ -98,7 +104,7 @@ export default ConexaoProductPage;
 // ═══════════════════════════════════════════════
 
 interface HeroProps {
-  product: (typeof conexaoProducts)[number];
+  product: ResolvedLanding;
   whatsappUrl: string;
 }
 
@@ -141,7 +147,7 @@ function HeroSection({ product, whatsappUrl }: HeroProps) {
 }
 
 interface DynamicSectionProps {
-  section: ConexaoSection;
+  section: ProductSection;
   productSlug: string;
   whatsappUrl: string;
   ctaLabel: string;
@@ -169,7 +175,7 @@ function DynamicSection({ section, productSlug, whatsappUrl, ctaLabel }: Dynamic
 }
 
 // ─── ABOUT ───
-function AboutSection({ section }: { section: ConexaoSection }) {
+function AboutSection({ section }: { section: ProductSection }) {
   return (
     <section className="relative overflow-hidden py-16 md:py-20">
       <div className="section-container">
@@ -197,7 +203,7 @@ function AboutSection({ section }: { section: ConexaoSection }) {
 }
 
 // ─── VIDEO ───
-function VideoSection({ section }: { section: ConexaoSection }) {
+function VideoSection({ section }: { section: ProductSection }) {
   if (!section.videoId) return null;
   return (
     <section className="relative overflow-hidden py-16 md:py-20">
@@ -222,7 +228,7 @@ function VideoSection({ section }: { section: ConexaoSection }) {
 }
 
 // ─── PLANS ───
-function PlansSection({ section }: { section: ConexaoSection }) {
+function PlansSection({ section }: { section: ProductSection }) {
   return (
     <section className="relative overflow-hidden py-16 md:py-20">
       <div className="section-container">
@@ -254,7 +260,7 @@ function PlansSection({ section }: { section: ConexaoSection }) {
 }
 
 // ─── BENEFITS ───
-function BenefitsSection({ section }: { section: ConexaoSection }) {
+function BenefitsSection({ section }: { section: ProductSection }) {
   return (
     <section className="relative overflow-hidden py-16 md:py-20">
       <div className="section-container">
@@ -278,7 +284,7 @@ function BenefitsSection({ section }: { section: ConexaoSection }) {
 }
 
 // ─── GALLERY ───
-function GallerySection({ section, productSlug }: { section: ConexaoSection; productSlug: string }) {
+function GallerySection({ section, productSlug }: { section: ProductSection; productSlug: string }) {
   return (
     <section className="relative overflow-hidden py-16 md:py-20">
       <div className="section-container">
@@ -306,7 +312,7 @@ function GallerySection({ section, productSlug }: { section: ConexaoSection; pro
 }
 
 // ─── FAQ ───
-function FAQSection({ section }: { section: ConexaoSection }) {
+function FAQSection({ section }: { section: ProductSection }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
@@ -358,7 +364,7 @@ function AdvantagesSection({
   whatsappUrl,
   ctaLabel,
 }: {
-  section: ConexaoSection;
+  section: ProductSection;
   whatsappUrl: string;
   ctaLabel: string;
 }) {
@@ -397,7 +403,7 @@ function AdvantagesSection({
 interface ConsultorSectionProps {
   consultant: NonNullable<ReturnType<typeof useConsultant>["data"]>;
   whatsappUrl: string;
-  product: (typeof conexaoProducts)[number];
+  product: ResolvedLanding;
 }
 
 function ConsultorSection({ consultant, whatsappUrl, product }: ConsultorSectionProps) {

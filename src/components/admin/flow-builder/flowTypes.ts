@@ -266,6 +266,10 @@ export function renderVarsPreview(
     .replace(/\{\{nome\}\}/gi, "João")
     .replace(/\{\{valor_conta\}\}/gi, "450,00")
     .replace(/\{\{economia_range\}\}/gi, "R$ 80 a R$ 90")
+    // Derivadas do valor da conta (20%): mantêm o mesmo cálculo do runtime
+    // (render-vars.ts) para o preview bater com o que o cliente recebe.
+    .replace(/\{\{economia_mensal\}\}/gi, "90,00")
+    .replace(/\{\{economia_anual\}\}/gi, "1.080,00")
     .replace(/\{\{telefone\}\}/gi, "(11) 99999-8888")
     .replace(/\{\{cpf\}\}/gi, "123.456.789-00")
     .replace(/\{\{representante\}\}/gi, rep)

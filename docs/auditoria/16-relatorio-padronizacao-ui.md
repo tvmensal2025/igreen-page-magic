@@ -1,178 +1,207 @@
 # Relatório de Auditoria de UI/UX — Padronização iGreen
 
-> Documento de diagnóstico. **Nenhum código de produção foi alterado.**
-> Aguardando aprovação antes de executar as correções (etapas no fim).
+> Documento de diagnóstico, **reescrito e reverificado em 14/06/2026** contra o
+> código atual (não contra a versão anterior do relatório). Os números antigos
+> estavam desatualizados; esta versão reflete o que foi medido e confirmado hoje.
+>
+> Verificação feita com: leitura de código, contagem real por busca, build
+> (`tsc --noEmit`), suíte de testes (`vitest`), inspeção ao vivo via navegador
+> em `http://localhost:8080/` e revisão das migrations RLS do banco.
 
 ## Resumo em uma frase
 
-O sistema funciona, mas tem **3 a 4 "designs" diferentes brigando entre si**,
-muita cor fora da paleta iGreen, uma área com cara de "terminal hacker" e
-nomes técnicos (Lead, Dashboard, CRM) aparecendo para o usuário final.
+A maior parte dos problemas de UI apontados na auditoria anterior **já foi
+corrigida**: a paleta foi unificada no verde de marca, a estética "terminal"
+sumiu do que está em uso, e o tema concorrente `painel-elite` agora herda os
+tokens oficiais. O que sobra é faxina pontual de cor e **um risco real de
+segurança no banco** (escalonamento de privilégio via RLS) que merece prioridade.
 
 ---
 
-## 1. Rotas / páginas encontradas (em `src/App.tsx`)
+## 0. Estado de saúde técnico (novo)
 
-Público / consultor:
-- `/` → redireciona para `/auth`
-- `/auth` — login/cadastro
-- `/:licenca` — página pública do consultor (catch-all)
-- `/licenciado/:licenca` e `/licenciado/preview`
-- `/cadastro/:licenca`
-- `/crm` — landing page do CRM
-- `/politica-privacidade`, `/install`, `/reset`
-- `/assistente`
+| Verificação | Resultado |
+|---|---|
+| `tsc --noEmit` | ✅ Passa, exit 0, sem erros |
+| App sobe (`npm run dev`) | ✅ Vite limpo na porta 8080 |
+| Testes (`vitest`) | ⚠️ 182/185 passam; 3 falhas por testes desatualizados |
+| Lint (`eslint`) | ⚠️ 19 erros (`prefer-const`) + 1108 warnings (`no-explicit-any`) |
 
-Área administrativa (`/admin/...`):
-- `/admin` (painel principal, com abas internas)
-- `/admin/whatsapp-clients`
-- `/admin/fluxos`, `/admin/fluxo-b`
-- `/admin/saude-bot`, `/admin/saude-producao`
-- `/admin/conhecimento`, `/admin/reaquecimento`
-- `/admin/conversao`, `/admin/meta-ads`
-- `/admin/faq` e várias rotas legadas (redirecionam)
+As 3 falhas de teste **não são bug de produção**:
+- `evolutionApi.test.ts` — payload esperado não inclui o evento `MESSAGES_UPDATE`
+  que o código passou a enviar (teste atrás do código).
+- 2 testes do `evolution-kill-switch-guard` — usam assertion de posição de byte
+  (`expected 12016 to be less than 5200`) que quebrou porque o arquivo cresceu.
+  A guarda continua presente; só mudou de offset.
 
-Super admin:
-- `/super-admin`, `/super-admin/suporte`
+---
 
-Total: **403 arquivos `.tsx`** em `src/`.
+## 1. Rotas / páginas (em `src/App.tsx`)
 
-## 2. Componentes globais encontrados
+Público / consultor: `/` → `/auth`; `/auth`; `/:licenca` (catch-all);
+`/licenciado/:licenca` e `/licenciado/preview`; `/cadastro/:licenca`; `/crm`;
+`/politica-privacidade`, `/install`, `/reset`; `/assistente`.
 
-- Biblioteca **shadcn/ui** completa em `src/components/ui/` (button, card,
-  input, select, dialog, badge, alert, table, sidebar, toast, tooltip etc.).
+Admin (`/admin/...`): painel principal com abas internas, `whatsapp-clients`,
+`fluxos`, `fluxo-b`, `saude-bot`, `saude-producao`, `conhecimento`,
+`reaquecimento`, `conversao`, `meta-ads`, `faq` (+ rotas legadas que redirecionam).
+
+Super admin: `/super-admin`, `/super-admin/suporte`.
+
+Total: **433 arquivos `.tsx`** em `src/` (eram 403 na auditoria anterior).
+
+## 2. Componentes globais
+
+- Biblioteca **shadcn/ui** completa em `src/components/ui/`.
 - Layout próprio em `src/components/layout/` (AppSidebar, AppHeader, AppTopbar,
   ResizableShell).
-- Toasts via **sonner** + toaster do shadcn (293 chamadas a `toast.` no projeto).
+- Toasts via **sonner** + toaster do shadcn.
+- Abordagem de token `hsl(var(--token))` no Tailwind — é exatamente o padrão
+  recomendado pelo shadcn/ui atual. ✅
 
 ## 3. Arquivos de tema / design system
 
-- `tailwind.config.ts` — mapeia tokens via `hsl(var(--...))`. Bom: já é
-  centralizado.
-- `src/index.css` — tokens de cor reais (light + dark) + dezenas de classes
-  utilitárias customizadas (`.btn-cta`, `.feature-card`, `.glass-card`...) +
-  **um tema inteiro escopado `.ads-central-2026`** (emerald + dourado).
-- `src/styles/painel-elite.css` — **outro tema completo** (`.painel-elite`,
-  emerald escuro), que sobrescreve os tokens shadcn dentro do painel admin.
+- `tailwind.config.ts` — mapeia tokens via `hsl(var(--...))`. Centralizado. ✅
+- `src/index.css` — tokens light + dark + utilitárias + tema escopado
+  `.ads-central-2026`.
+- `src/styles/painel-elite.css` — tema do painel admin.
 
-➡️ Existem **pelo menos 3 sistemas de cor concorrentes**: tema global,
-`painel-elite` e `ads-central-2026`, além do tema "terminal" do dashboard.
+➡️ **Mudança importante vs. auditoria anterior:** os temas deixaram de ser
+"paletas concorrentes". O `painel-elite.css` hoje define os mesmos verdes
+oficiais (`#00A859` / `#007A3D`) e **sobrescreve os tokens shadcn com os mesmos
+valores** do tema global. Não há mais conflito de identidade entre eles.
 
-## 4. Cores atuais encontradas
+## 4. Cores — token global (`index.css`), valores atuais
 
-Token global (`index.css`):
-- `--primary` verde `130 100% 32%` (≈ `#00A859`, **alinhado** com a marca ✅)
-- `--accent` **laranja** `30 100% 50%` ❌ (fora da identidade pedida)
-- `--destructive` vermelho `0 84% 60%` ✅
+- `--primary` verde `152 100% 33%` (= `#00A859`, marca) ✅
+- `--accent` verde claro `152 55% 94%` (= `#E8F8EF`) ✅ **— era laranja, foi corrigido**
+- `--destructive` vermelho `0 72% 51%` ✅
+- Semânticos definidos: `--success`, `--warning`, `--info` ✅
+- Dark theme oficial (`#111111` / `#1A1A1A`) presente e coerente ✅
 
-`painel-elite.css`: verde "emerald" escuro `#064e3b` / accent `#059669` +
-dourado `#c9a84c`.
-`ads-central-2026`: emerald `162 75% 28%` + dourado `40 72% 42%`.
-
-## 5. Cores erradas / fora da paleta (números reais)
-
-Classes Tailwind com cores que **não** são da paleta iGreen:
+## 5. Cores fora da paleta (números reais de hoje)
 
 | Família | Ocorrências |
 |---|---|
-| blue | 181 |
-| orange | 128 |
-| purple | 89 |
-| violet | 46 |
-| cyan | 39 |
-| rose | 36 |
-| sky | 31 |
-| pink | 11 |
-| indigo | 9 |
-| fuchsia | 1 |
-| **Total fora da paleta** | **~566** |
+| amber | 27 |
+| orange | 11 |
+| blue | 10 |
+| cyan | 10 |
+| violet | 8 |
+| sky | 8 |
+| rose | 7 |
+| red | 7 |
+| yellow | 5 |
+| purple | 4 |
+| indigo | 2 |
+| teal | 2 |
+| **Subtotal não-neutro** | **~127** |
 
-Verde fora do token (hardcoded em vez de usar `primary`):
-`emerald-*` 462x, `green-*` 215x, `teal-*` 14x, `lime-*` 12x.
+Neutros (geralmente legítimos): zinc 33, gray 32, neutral 13, slate 12, stone 2
+(≈ 92).
 
-Cores hex cravadas em classes (`bg-[#...]`): **96 ocorrências em 16 arquivos**.
-Estilos inline com cor/background: **117 ocorrências**.
+**Total geral de classes de cor com escala numérica: ~219** (era ~566).
+Cores hex cravadas (`[#...]`): **104 em 17 arquivos**. Estilos inline com
+cor/background: **214**. `font-mono`: **129 ocorrências em 63 arquivos** —
+amostragem mostra uso legítimo (números, moeda, telefone), não estética de código.
 
-Pior ofensor visual: `src/components/admin/dashboard/` (FunnelStrip, MainChart,
-RecentClicks, CpcPanel) usa fundo preto `#0a0f0a`, fonte mono e rótulos tipo
-`FNL_04`, `CHART_01`, `PNL_02` — **estética de terminal/hacker**, o oposto de
-"plataforma profissional".
+## 6. Estética "terminal hacker" — RESOLVIDO ✅
 
-## 6. Textos técnicos encontrados na interface
+A auditoria anterior apontava `src/components/admin/dashboard/` como "pior
+ofensor", com fundo preto, fonte mono e rótulos `FNL_04` / `CHART_01` / `PNL_02`.
 
-- "Lead" / "Leads" aparece em cabeçalhos de tabela e selects em várias telas
-  (ConversaoTab, AdminMetaAds, AdminFaq, ResultsDashboard, NetworkHealthPanel,
-  PartnerRankingTable, VariantsPanel, SaudeProducao).
-- "Dashboard", "CRM Leads", "CRM Clientes" no menu lateral (`AppSidebar`).
-- Códigos de painel `FNL_04`, `CHART_01`, etc. visíveis no dashboard.
-- 66 arquivos usam `font-mono` (muitos exibem dados como se fossem "código").
+Verificação de hoje:
+- **Não existe nenhum** `FNL_04`, `CHART_01`, `PNL_02` ou similar no codebase.
+- Os componentes vivos do dashboard (`MainChart`, `CpcPanel`, `FunnelStrip`,
+  `RecentClicks`, `AdMetricsCards`, `AdMetricsCharts`, `AdAccountSwitcher`) usam
+  tokens semânticos (`bg-card`, `border-border`, `hsl(var(--primary))`) e rótulos
+  humanos em PT-BR ("Funil de conversão", "Clientes interessados").
+- Inspeção ao vivo confirmou: `/auth` é um login dark limpo (Open Sans), sem
+  nada de terminal.
 
-## 7. Nomes inconsistentes para a mesma coisa
+## 7. Código morto removido (novo) ✅
 
-- "Lead" x "Cliente" x "Cliente interessado" x "Contato" usados de forma
-  misturada para a mesma entidade.
-- "Dashboard" (menu) x "Painel" (resto do texto).
-- "Captação" x "Conversão" x "CRM" como abas separadas sem hierarquia clara.
+Investigação de dependências no diretório `dashboard/` encontrou 4 arquivos sem
+nenhuma referência (sem import estático, lazy, barrel ou string) — **já deletados
+nesta sessão**, com `tsc --noEmit` passando limpo depois:
+- `HeroKpis.tsx` (continha resíduo de fundo preto cravado)
+- `TerminalTicker.tsx`
+- `ClickValueGrid.tsx`
+- `Sparkline.tsx` (morto transitivo — só era usado pelos dois acima)
 
-## 8. Botões com texto/uso ruim
+## 8. Linguagem / textos técnicos
 
-- `Button` base só tem 6 variantes shadcn padrão; o projeto cria botões
-  manualmente com cores cravadas (ex.: `bg-[#1877F2]` do Facebook, vários
-  `bg-red`, `bg-orange`).
-- Botões "verde de marca" (`.btn-cta`) existem na landing, mas o painel usa
-  outro verde (painel-elite). Falta um botão principal único.
+- "Lead"/"Leads" ainda aparece em ~42 pontos. Boa parte das telas já migrou para
+  "Cliente interessado" (visto em `MainChart`, `FunnelStrip`), mas a troca não é
+  uniforme em todas as tabelas/selects.
+- Menu lateral (`AppSidebar`) e títulos: revisar consistência "Dashboard" x
+  "Painel".
 
-## 9. Mensagens de erro técnicas
+## 9. SEGURANÇA — pendência de prioridade ALTA (novo)
 
-- 149 chamadas `toast.error(...)`. É preciso revisar caso a caso para garantir
-  que nenhuma mostre texto cru de API/erro 500/"failed". (Amostragem necessária
-  na etapa de execução.)
+**Risco: escalonamento de privilégio via RLS na tabela `public.consultants`.**
 
-## 10. Problemas de responsividade (a confirmar com Playwright)
+A policy criada em `20260326121425` e **nunca redefinida**:
 
-- Tabelas densas (`pe-table`, dashboards) tendem a estourar no mobile.
-- Dashboard "terminal" usa grids fixos de 4 colunas.
-- A confirmar nos breakpoints 390/430/768/1366/1920px.
+```sql
+CREATE POLICY "Owner update" ON public.consultants
+  FOR UPDATE TO authenticated USING (id = auth.uid());
+```
 
-## 11. Problemas de contraste (a confirmar)
+Não tem `WITH CHECK` nem restrição de coluna. Verifiquei todas as migrations
+posteriores: **não há** `REVOKE UPDATE (approved)` nem trigger que impeça a
+mudança desse campo (o único revoke/grant de coluna é para
+`igreen_portal_password` / `igreen_access_token`).
 
-- Cinzas claros como `text-zinc-500/600` sobre fundo claro em alguns painéis.
-- Verde claro sobre branco em chips.
-- `--accent` laranja sobre branco.
+Consequência: um consultor autenticado pode, em tese, dar `UPDATE` na própria
+linha setando `approved = true` e furar o gate de aprovação. O guard no front
+(`useAdminAuth` → bloqueio quando `!approved`) é **client-side** e não protege o
+dado.
 
-## 12. Arquivos que precisam ser alterados (prioridade)
+> Ressalva honesta: confirmado por leitura das migrations; **não testei o exploit
+> ao vivo** contra o banco. O padrão de correção já existe no projeto — a migration
+> `20260601030000_owner_update_customers_with_check` fez exatamente isso para a
+> tabela `customers`. Falta replicar em `consultants`.
 
-Núcleo (alto impacto, baixo risco):
-1. `src/index.css` — corrigir `--accent` p/ verde, unificar dourado, revisar dark.
-2. `src/styles/painel-elite.css` — alinhar verdes ao token único.
-3. `tailwind.config.ts` — opcional: expor `success/warning/info` como tokens.
-4. `src/components/ui/button.tsx` e `badge.tsx` — variantes oficiais.
+Correção proposta (a aprovar antes de aplicar): substituir a policy por uma
+versão com `WITH CHECK` que impeça o próprio dono de alterar `approved` (e
+idealmente `id`), mantendo a policy de admin (`Admins update consultants`)
+intacta para a aprovação legítima.
 
-Limpeza de cor (médio esforço):
-5. `src/components/admin/dashboard/*` — remover estética terminal.
-6. ~16 arquivos com `bg-[#...]` e ~566 ocorrências de cores fora da paleta.
+## 10. Cadastro aberto (a confirmar)
 
-Linguagem:
-7. `src/components/layout/AppSidebar.tsx` — renomear itens do menu.
-8. Tabelas/selects com "Lead" → "Cliente interessado".
+`/auth` permite "Criar conta" sem gating visível. O signup cria o consultor com
+`approved: false` (correto), mas isso só segura se o item 9 for corrigido —
+senão a auto-aprovação contorna o fluxo.
 
-## 13. Plano de correção por prioridade (proposto)
+---
 
-- **Etapa 1 — Tokens.** Unificar paleta em `index.css` + `painel-elite.css`
-  (verde único `#00A859`/`#007A3D`, accent deixa de ser laranja, dourado só
-  onde fizer sentido). Zero mudança de layout.
-- **Etapa 2 — Componentes base.** Padronizar `button`, `badge`, `card`, alertas
-  e o dashboard "terminal".
-- **Etapa 3 — Cores espalhadas.** Trocar `blue/purple/orange/...` e hex cravados
-  por tokens semânticos.
-- **Etapa 4 — Linguagem.** Menu, tabelas, selects e títulos para PT-BR humano.
-- **Etapa 5 — Mensagens.** Revisar toasts de erro/sucesso.
-- **Etapa 6 — Responsividade + contraste** (validação Playwright).
-- **Etapa 7 — Varredura final** (`tsc --noEmit`, `vite build`, revisão visual).
+## 11. Plano de correção por prioridade (atualizado)
+
+1. **[ALTO · segurança]** Migration de RLS em `consultants`: `WITH CHECK` na
+   policy "Owner update" para travar `approved`/`id`. Mostrar SQL antes de aplicar.
+2. **[MÉDIO · testes]** Atualizar os 3 testes desatualizados (adicionar
+   `MESSAGES_UPDATE` no payload esperado; trocar assertions de offset de byte por
+   verificação robusta de ordem).
+3. **[BAIXO · lint]** `eslint --fix` nos 19 erros `prefer-const`; reduzir
+   `no-explicit-any` aos poucos.
+4. **[BAIXO · cor]** Trocar as ~127 ocorrências não-neutras (amber/orange/blue…)
+   e os 104 hex cravados por tokens semânticos, arquivo a arquivo.
+5. **[BAIXO · linguagem]** Uniformizar "Lead" → "Cliente interessado" nas tabelas
+   e selects restantes.
+
+## 12. O que NÃO é mais necessário
+
+- Reescrever o design system do zero (já está aplicado e coerente).
+- Remover "estética terminal" (não existe mais no que está em uso).
+- Corrigir `--accent` laranja e unificar `painel-elite` (já feito).
+- Usar Figma para corrigir UI — só agregaria como documentação/Code Connect.
 
 ## Riscos / cuidados
 
 - Não mexer em nomes internos de banco/variáveis (só no que o usuário vê).
-- `painel-elite` e `ads-central-2026` afetam telas inteiras; mudar tokens deles
-  exige revisão visual cuidadosa.
+- Mudanças de token em `painel-elite` e `ads-central-2026` afetam telas inteiras;
+  exigem revisão visual.
 - Validar sempre com `npx tsc --noEmit` e `npx vite build` antes de commitar.
+- A migration de segurança toca RLS de produção: revisar e aprovar o SQL antes de
+  aplicar; nunca aplicar direto sem backup/rollback documentado.

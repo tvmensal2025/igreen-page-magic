@@ -1,7 +1,7 @@
 /**
  * Player de vídeo YouTube usando a IFrame API.
  * Rastreia progresso e expõe callbacks para o pai.
- * Tema: Esmeralda Premium (deep emerald + gold + cream).
+ * Tema: iGreen oficial (modo escuro) — ver ./theme.ts
  */
 import { useEffect, useRef, useCallback } from "react";
 import {
@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { AcademyLesson } from "@/data/academyCatalog";
 import type { LessonProgress } from "@/hooks/useAcademyProgress";
+import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 /* ---- tipos globais da IFrame API (não instalar lib) ---- */
 declare global {
@@ -30,21 +31,6 @@ interface YTPlayerInstance {
   getDuration():     number;
   getCurrentTime():  number;
 }
-
-/* ---- paleta Esmeralda Premium ---- */
-const C = {
-  bg:        "#08120e",
-  surface:   "#0d1a14",
-  border:    "rgba(201,168,76,0.18)",
-  borderHi:  "rgba(201,168,76,0.45)",
-  gold:      "#c9a84c",
-  goldSoft:  "rgba(201,168,76,0.12)",
-  cream:     "#f5f0e0",
-  creamDim:  "rgba(245,240,224,0.62)",
-  creamMute: "rgba(245,240,224,0.40)",
-  emerald:   "#0d7a5f",
-  danger:    "#e07a6b",
-};
 
 /* ---- carrega script UMA vez ---- */
 let ytApiReady = false;
@@ -158,32 +144,32 @@ export function AcademyPlayer({
     <div
       className="fixed inset-0 z-[100] flex flex-col animate-in slide-in-from-bottom-4 duration-300"
       style={{
-        background: `radial-gradient(120% 80% at 50% 0%, #0f2018 0%, ${C.bg} 60%)`,
-        color: C.cream,
-        fontFamily: "'DM Sans', system-ui, sans-serif",
+        background: `radial-gradient(120% 80% at 50% 0%, ${AC.surface} 0%, ${AC.bg} 60%)`,
+        color: AC.text,
+        fontFamily: AC_FONT_BODY,
       }}
     >
       {/* ---- barra superior ---- */}
       <div
         className="sticky top-0 z-10 flex items-center gap-3 h-14 px-3 sm:px-5 shrink-0 backdrop-blur-md"
-        style={{ background: "rgba(8,18,14,0.85)", borderBottom: `1px solid ${C.border}` }}
+        style={{ background: "rgba(17,17,17,0.85)", borderBottom: `1px solid ${AC.border}` }}
       >
         <button
           onClick={onClose}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-          style={{ color: C.creamDim }}
-          onMouseEnter={e => { e.currentTarget.style.color = C.cream; e.currentTarget.style.background = C.goldSoft; }}
-          onMouseLeave={e => { e.currentTarget.style.color = C.creamDim; e.currentTarget.style.background = "transparent"; }}
+          style={{ color: AC.textDim }}
+          onMouseEnter={e => { e.currentTarget.style.color = AC.text; e.currentTarget.style.background = AC.primarySoft; }}
+          onMouseLeave={e => { e.currentTarget.style.color = AC.textDim; e.currentTarget.style.background = "transparent"; }}
         >
           <ArrowLeft className="w-4 h-4" />
           <span className="hidden sm:inline">Voltar</span>
         </button>
         <div className="flex-1 min-w-0 flex items-center gap-2 text-xs">
-          <span className="uppercase tracking-[0.18em]" style={{ color: C.gold, letterSpacing: "0.18em" }}>
+          <span className="uppercase tracking-[0.18em]" style={{ color: AC.primary, letterSpacing: "0.18em" }}>
             {lesson.catTitle}
           </span>
-          <span style={{ color: C.creamMute }}>·</span>
-          <span className="truncate" style={{ color: C.creamDim }}>{lesson.moduleTitle}</span>
+          <span style={{ color: AC.textMute }}>·</span>
+          <span className="truncate" style={{ color: AC.textDim }}>{lesson.moduleTitle}</span>
         </div>
       </div>
 
@@ -201,15 +187,15 @@ export function AcademyPlayer({
           {/* kicker + título + badge */}
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <span className="h-px flex-none w-8" style={{ background: C.gold }} />
-              <span className="text-[10px] font-semibold uppercase" style={{ color: C.gold, letterSpacing: "0.28em" }}>
+              <span className="h-px flex-none w-8" style={{ background: AC.primary }} />
+              <span className="text-[10px] font-semibold uppercase" style={{ color: AC.primary, letterSpacing: "0.28em" }}>
                 Aula em curso
               </span>
             </div>
             <div className="flex items-start gap-3">
               <h1
                 className="flex-1 text-2xl sm:text-3xl leading-tight tracking-tight"
-                style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", fontWeight: 600, color: C.cream }}
+                style={{ fontFamily: AC_FONT_DISPLAY, fontWeight: 700, color: AC.text }}
               >
                 {lesson.title}
               </h1>
@@ -217,9 +203,9 @@ export function AcademyPlayer({
                 <span
                   className="shrink-0 mt-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase px-2.5 py-1 rounded-full"
                   style={{
-                    color: C.gold,
-                    background: C.goldSoft,
-                    border: `1px solid ${C.borderHi}`,
+                    color: AC.primary,
+                    background: AC.primarySoft,
+                    border: `1px solid ${AC.borderHi}`,
                     letterSpacing: "0.18em",
                   }}
                 >
@@ -231,16 +217,16 @@ export function AcademyPlayer({
 
           {/* progresso */}
           <div className="space-y-2">
-            <div className="flex justify-between text-[11px] uppercase" style={{ color: C.creamMute, letterSpacing: "0.2em" }}>
+            <div className="flex justify-between text-[11px] uppercase" style={{ color: AC.textMute, letterSpacing: "0.2em" }}>
               <span>Progresso</span>
-              <span style={{ color: C.gold }}>{progress.pct}%</span>
+              <span style={{ color: AC.primary }}>{progress.pct}%</span>
             </div>
-            <div className="h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(245,240,224,0.08)" }}>
+            <div className="h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
               <div
                 className="h-full transition-all duration-500"
                 style={{
                   width: `${progress.pct}%`,
-                  background: `linear-gradient(90deg, ${C.emerald}, ${C.gold})`,
+                  background: `linear-gradient(90deg, ${AC.primaryDeep}, ${AC.primary})`,
                 }}
               />
             </div>
@@ -252,9 +238,9 @@ export function AcademyPlayer({
               onClick={onPrev} disabled={!hasPrev}
               className="flex items-center gap-1 px-4 py-3 rounded-lg text-sm font-medium transition-all disabled:opacity-25 disabled:cursor-not-allowed"
               style={{
-                color: C.cream,
-                background: "rgba(245,240,224,0.04)",
-                border: `1px solid ${C.border}`,
+                color: AC.text,
+                background: "rgba(255,255,255,0.04)",
+                border: `1px solid ${AC.border}`,
               }}
             >
               <ChevronLeft className="w-4 h-4" /> Anterior
@@ -267,18 +253,18 @@ export function AcademyPlayer({
               style={
                 progress.done
                   ? {
-                      color: C.creamMute,
-                      background: "rgba(245,240,224,0.04)",
-                      border: `1px solid ${C.border}`,
+                      color: AC.textMute,
+                      background: "rgba(255,255,255,0.04)",
+                      border: `1px solid ${AC.border}`,
                       letterSpacing: "0.14em",
                       cursor: "default",
                     }
                   : {
-                      color: C.bg,
-                      background: `linear-gradient(135deg, ${C.gold}, #b8943f)`,
+                      color: "#FFFFFF",
+                      background: `linear-gradient(135deg, ${AC.primary}, ${AC.primaryDeep})`,
                       border: "1px solid transparent",
                       letterSpacing: "0.14em",
-                      boxShadow: "0 8px 24px -12px rgba(201,168,76,0.6)",
+                      boxShadow: "0 8px 24px -12px rgba(0,168,89,0.6)",
                     }
               }
             >
@@ -290,9 +276,9 @@ export function AcademyPlayer({
               onClick={onNext} disabled={!hasNext}
               className="flex items-center gap-1 px-4 py-3 rounded-lg text-sm font-medium transition-all disabled:opacity-25 disabled:cursor-not-allowed"
               style={{
-                color: C.cream,
-                background: "rgba(245,240,224,0.04)",
-                border: `1px solid ${C.border}`,
+                color: AC.text,
+                background: "rgba(255,255,255,0.04)",
+                border: `1px solid ${AC.border}`,
               }}
             >
               Próxima <ChevronRight className="w-4 h-4" />

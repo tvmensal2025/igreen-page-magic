@@ -21,6 +21,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import PendingApprovalDialog from "./PendingApprovalDialog";
 import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
 import PosVendaAutoConfigDialog from "./PosVendaAutoConfigDialog";
+import ApproveBillValueDialog, { needsBillValueForApproval } from "./ApproveBillValueDialog";
 
 type Stage = "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
 
@@ -60,8 +61,8 @@ function daysSince(iso: string | null): number | null {
 function computeStage(c: PosVendaCustomer): Stage {
   if (c.pos_venda_stage && c.pos_venda_stage !== ("em_analise" as Stage)) return c.pos_venda_stage;
   if (/reprov|cancel/i.test(c.andamento_igreen || "") || ["rejected","cancelled","canceled"].includes(c.status)) return "reprovado";
-  // Esteira temporal conta a partir da APROVAÇÃO, não do envio ao portal.
-  const d = daysSince(c.pos_venda_approved_at);
+  // Esteira temporal: aprovação canônica, fallback portal_submitted_at (backfill).
+  const d = daysSince(c.pos_venda_approved_at || c.portal_submitted_at);
   if (d == null) return "espera";
   if (d >= 120) return "d120";
   if (d >= 90)  return "d90";
@@ -92,6 +93,8 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
   const [viewCustomerId, setViewCustomerId] = useState<string | null>(null);
   // Sinal para abrir o diálogo de validação de clientes manualmente
   const [validateSignal, setValidateSignal] = useState(0);
+  /** Aprovação pendente de valor da conta (move manual para aprovado). */
+  const [billPrompt, setBillPrompt] = useState<PosVendaCustomer | null>(null);
   // "mine" = registered_by_igreen_id = meu | "assigned" | "all" | <igreen_id específico>
   const [ownerFilter, setOwnerFilter] = useState<string>("mine");
 
@@ -165,6 +168,17 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
   async function moveTo(c: PosVendaCustomer, target: Stage, opts: { reason?: string } = {}) {
     const isOwner = c.consultant_id === consultantId || c.assigned_consultant_id === consultantId;
     if (!isOwner) { toast.error("Você não pode mover este cliente"); return; }
+    if (
+      target === "aprovado" &&
+      needsBillValueForApproval("aprovado", c.electricity_bill_value)
+    ) {
+      setBillPrompt(c);
+      return;
+    }
+    await applyMoveTo(c, target, opts);
+  }
+
+  async function applyMoveTo(c: PosVendaCustomer, target: Stage, opts: { reason?: string } = {}) {
     const patch: any = {
       pos_venda_stage: target,
       pos_venda_manual: true,
@@ -304,6 +318,19 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
     <div className="space-y-4">
       <PendingApprovalDialog consultantId={consultantId} onResolved={load} openSignal={validateSignal} />
       <CustomerQuickViewDialog customerId={viewCustomerId} onClose={() => setViewCustomerId(null)} />
+      <ApproveBillValueDialog
+        customer={billPrompt}
+        open={!!billPrompt}
+        onOpenChange={(o) => { if (!o) setBillPrompt(null); }}
+        onSaved={async (customerId, billValue) => {
+          const c = customers.find((x) => x.id === customerId) ?? billPrompt;
+          if (!c) return;
+          const updated = { ...c, electricity_bill_value: billValue };
+          setCustomers((prev) => prev.map((x) => (x.id === customerId ? updated : x)));
+          setBillPrompt(null);
+          await applyMoveTo(updated, "aprovado");
+        }}
+      />
 
       <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
         <div className="relative w-full sm:max-w-sm">

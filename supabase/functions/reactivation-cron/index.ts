@@ -425,6 +425,10 @@ async function fetchCandidates(supabase: SupabaseClient, tpl: any, settings: Rea
     .eq("consultant_id", tpl.consultant_id)
     .eq("conversation_step", tpl.conversation_step)
     .not("status", "in", "(approved,cancelled)")
+    // Carteira sincronizada do portal iGreen (igreen_sync) NÃO recebe reativação
+    // automática: já é cliente validado/reprovado/devolutiva. Inclui leads do bot
+    // (whatsapp_lead/manual) e registros sem origem definida (null).
+    .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
     .lt("updated_at", stuckBoundary)
     .limit(MAX_PER_RUN);
 

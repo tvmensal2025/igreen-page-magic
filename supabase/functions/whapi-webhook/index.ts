@@ -22,7 +22,7 @@ import { detectHandoffIntent } from "../_shared/captureExtractors.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import { botRequestStore, isTestPhone, logTestOutbound } from "../_shared/test-mode.ts";
 import { notifyNewLead, notifyPartnerNewLead } from "../_shared/notify-consultant.ts";
-import { syncDealStageFromStep } from "../_shared/crm-stage-sync.ts";
+import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
@@ -1450,7 +1450,11 @@ Deno.serve(async (req) => {
           });
         }
         if (localUpdates.conversation_step) {
-          await syncDealStageFromStep(supabase, customer.id, localUpdates.conversation_step);
+          await syncCustomerStage(supabase, {
+            customerId: customer.id,
+            stepKeyAfter: localUpdates.conversation_step,
+            consultantId: customer.consultant_id || superAdminConsultantId,
+          });
         }
       }
 
