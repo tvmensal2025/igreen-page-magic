@@ -349,6 +349,30 @@ function SummaryCard({ icon, label, value, hint }: SummaryCardProps) {
   );
 }
 
+function HeroKpi({
+  kicker,
+  value,
+  accent,
+}: {
+  kicker: string;
+  value: string;
+  accent: "gold" | "accent" | "ink";
+}) {
+  const borderColor =
+    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
+  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+  return (
+    <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
+      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+        {kicker}
+      </span>
+      <div className="text-2xl font-light text-[#1a2e1f] mt-1 font-[DM_Serif_Display,Georgia,serif]">
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function StatPill({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
   return (
     <div className={`rounded-lg border px-2 py-1.5 text-center ${highlight ? "border-primary/40 bg-primary/5" : "border-border/50 bg-background/60"}`}>
