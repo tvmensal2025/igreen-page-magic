@@ -137,3 +137,10 @@ verify_jwt = false
 
 [functions.igreen-ingest-customers]
 verify_jwt = false
+
+# Propostas públicas (/proposta/:token) — sem JWT; autenticação pelo public_token.
+[functions.proposal-public-get]
+verify_jwt = false
+
+[functions.proposal-respond]
+verify_jwt = false

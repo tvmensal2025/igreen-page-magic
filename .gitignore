@@ -51,3 +51,12 @@ dist-ssr
 
 # Kiro settings — contém tokens em texto puro (NUNCA commitar)
 .kiro/settings/mcp.json
+
+# Cursor MCP local (caminhos absolutos da máquina; usar mcp.json.example)
+.cursor/mcp.json
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Supabase CLI temp/cache
+supabase/.temp/
