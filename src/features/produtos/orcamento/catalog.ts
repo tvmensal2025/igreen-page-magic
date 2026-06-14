@@ -523,7 +523,7 @@ export const SLUG_COMMERCIAL: Record<string, SlugCommercialProfile> = {
       "Rede com +5.000 oficinas credenciadas",
     ],
     showClubBenefits: true,
-    heroImage: "/images/conexao-solar.webp",
+    heroImage: "/__l5e/assets-v1/e11e76fd-3666-4a8b-bae3-aff7cb8a6b27/conexao-seguros.jpg",
     heroSubtitle:
       "Proteja seu veículo com cobertura completa, assistência 24h e preço até 60% mais acessível que as seguradoras tradicionais.",
     heroVideoId: "d812a2d3-6e3c-4eb7-b2f3-2778df2c1f1b",
@@ -541,12 +541,17 @@ export const SLUG_COMMERCIAL: Record<string, SlugCommercialProfile> = {
         detail: "Guincho, carro reserva e rede com +5.000 oficinas em todo o Brasil.",
       },
     ],
+    gallery: [
+      "/__l5e/assets-v1/e11e76fd-3666-4a8b-bae3-aff7cb8a6b27/conexao-seguros.jpg",
+      "/images/cashback-sustentavel.jpeg",
+    ],
     stats: [
       { value: "até 60%", label: "mais barato" },
       { value: "24h", label: "assistência nacional" },
       { value: "+5.000", label: "oficinas credenciadas" },
     ],
   },
+
 };
 
 /** Retorna o perfil comercial específico de um produto (por slug), se houver. */
