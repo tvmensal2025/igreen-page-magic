@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { AdsButton } from "./AdsButton";
 import { Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { smartPublish } from "@/services/smartPublish";
@@ -58,11 +58,12 @@ export function SmartPublishButton({ template, consultantId, onPublished, onFall
   }
 
   return (
-    <Button
+    <AdsButton
+      variant="primary"
       size="sm"
       onClick={handleClick}
       disabled={loading}
-      className="w-full gap-1.5 bg-primary hover:bg-primary/90"
+      className="w-full"
     >
       {loading ? (
         <>
@@ -74,6 +75,6 @@ export function SmartPublishButton({ template, consultantId, onPublished, onFall
           <Zap className="w-3.5 h-3.5" /> Publicar inteligente
         </>
       )}
-    </Button>
+    </AdsButton>
   );
 }

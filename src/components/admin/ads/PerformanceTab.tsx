@@ -17,7 +17,7 @@ export function PerformanceTab({ consultantId, onGoToCentral }: Props) {
     <div className="space-y-5">
       <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground flex items-center gap-2">
+          <h2 className="text-xl sm:text-2xl ads-heading font-bold text-foreground flex items-center gap-2">
             <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
             Performance dos Anúncios
           </h2>

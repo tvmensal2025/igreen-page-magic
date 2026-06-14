@@ -47,7 +47,7 @@ function RegionPreview({ state }: { state: WizardState }) {
     <div className="w-full space-y-3">
       <div className="rounded-xl border border-[hsl(var(--ads-border))] bg-[hsl(var(--ads-surface))] p-4 text-center">
         <MapPin className="w-8 h-8 mx-auto text-[hsl(var(--ads-emerald))]" />
-        <div className="text-3xl font-black text-[hsl(var(--ads-emerald-2))] mt-2">
+        <div className="text-3xl ads-num mt-2">
           {isRadius ? state.radiusPoints.length : state.cities.length}
         </div>
         <div className="text-[11px] text-[hsl(var(--ads-muted))]">
@@ -192,7 +192,7 @@ function BudgetPreview({ state }: { state: WizardState }) {
     <div className="w-full space-y-3">
       <div className="rounded-xl border border-[hsl(var(--ads-border))] bg-[hsl(var(--ads-surface))] p-4 text-center">
         <DollarSign className="w-8 h-8 mx-auto text-[hsl(var(--ads-emerald))]" />
-        <div className="text-3xl font-black text-[hsl(var(--ads-emerald-2))] mt-2">R$ {state.budget}<span className="text-sm font-normal text-[hsl(var(--ads-muted))]">/dia</span></div>
+        <div className="text-3xl ads-num mt-2">R$ {state.budget}<span className="text-sm font-normal text-[hsl(var(--ads-muted))]">/dia</span></div>
         <div className="text-[11px] text-[hsl(var(--ads-muted))]">{state.duration === 0 ? "contínuo (até pausar)" : `por ${state.duration} dias`}</div>
       </div>
       <div className="rounded-lg border border-[hsl(var(--ads-border))] bg-[hsl(var(--ads-surface))] p-3 flex items-center justify-between">
@@ -201,7 +201,7 @@ function BudgetPreview({ state }: { state: WizardState }) {
       </div>
       <div className="rounded-lg border border-[hsl(var(--ads-border))] bg-[hsl(var(--ads-surface))] p-3 text-center">
         <div className="text-[10px] uppercase tracking-wide text-[hsl(var(--ads-muted))]">Conversas/dia estimadas</div>
-        <div className="text-xl font-black text-[hsl(var(--ads-emerald-2))]">{dailyLeads}</div>
+        <div className="text-xl ads-num">{dailyLeads}</div>
       </div>
     </div>
   );

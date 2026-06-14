@@ -33,12 +33,18 @@ Deno.serve(async (req) => {
     const supabase = getAdminClient("proposal-public-get");
 
     // Expira propostas vencidas antes de ler (best-effort).
-    await supabase.rpc("expire_overdue_proposals").catch(() => {});
+    // O query builder do supabase-js é "thenable" mas não expõe .catch() direto,
+    // então envolvemos em try/catch para não derrubar a função.
+    try {
+      await supabase.rpc("expire_overdue_proposals");
+    } catch (_e) {
+      // best-effort: ignorar falha de expiração não impede a leitura.
+    }
 
     const { data: proposal, error } = await supabase
       .from("proposals")
       .select(
-        "id, public_token, consultant_id, product_id, status, amount, amount_period, discount, line_items, message, valid_until, sent_at, viewed_at, responded_at",
+        "id, public_token, consultant_id, product_id, status, amount, amount_period, discount, line_items, message, valid_until, sent_at, viewed_at, responded_at, recipient_name",
       )
       .eq("public_token", token)
       .maybeSingle();
@@ -66,7 +72,7 @@ Deno.serve(async (req) => {
         .maybeSingle(),
       supabase
         .from("products")
-        .select("name, brand_name, family")
+        .select("slug, name, brand_name, family")
         .eq("id", proposal.product_id)
         .maybeSingle(),
     ]);
@@ -90,6 +96,7 @@ Deno.serve(async (req) => {
         validUntil: proposal.valid_until,
         sentAt: proposal.sent_at,
         respondedAt: proposal.responded_at,
+        recipientName: proposal.recipient_name,
       },
       consultant: consultant
         ? {
@@ -99,7 +106,12 @@ Deno.serve(async (req) => {
           }
         : null,
       product: product
-        ? { name: product.name, brandName: product.brand_name, family: product.family }
+        ? {
+            slug: product.slug,
+            name: product.name,
+            brandName: product.brand_name,
+            family: product.family,
+          }
         : null,
       events: events ?? [],
     });

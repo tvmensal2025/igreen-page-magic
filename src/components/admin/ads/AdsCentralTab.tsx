@@ -34,6 +34,7 @@ import { FunnelStrip } from "../dashboard/FunnelStrip";
 import { LeadSourceCard } from "../LeadSourceCard";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { AdsTile } from "./AdsTile";
+import { AdsButton } from "./AdsButton";
 
 interface Props {
   consultantId: string;
@@ -84,9 +85,9 @@ export function AdsCentralTab({ consultantId }: Props) {
       {/* Sticky glass header */}
       <header className="ads-header">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <Megaphone className="w-4 h-4 text-[hsl(var(--ads-gold))] shrink-0" />
+          <Megaphone className="w-4 h-4 text-primary shrink-0" />
           <span className="ads-wordmark">
-            iGreen · <span className="text-[hsl(var(--ads-gold))]">Anúncios</span>
+            iGreen · <span className="text-primary">Anúncios</span>
           </span>
           <span className="hidden md:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
             Centro de comando 2026 — modelos, campanhas, performance e inteligência.
@@ -95,9 +96,9 @@ export function AdsCentralTab({ consultantId }: Props) {
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           <SyncMetricsButton consultantId={consultantId} onSynced={() => setRefreshKey((k) => k + 1)} />
           <WalletChip consultantId={consultantId} />
-          <button type="button" onClick={() => setWizardOpen(true)} className="ads-cta-gold">
+          <AdsButton variant="cta" size="sm" onClick={() => setWizardOpen(true)}>
             <Plus className="w-3.5 h-3.5" /> Criar campanha
-          </button>
+          </AdsButton>
         </div>
       </header>
 
@@ -109,15 +110,16 @@ export function AdsCentralTab({ consultantId }: Props) {
           {navItems.map((n) => {
             const Icon = n.icon;
             return (
-              <button
+              <AdsButton
                 key={n.id}
-                type="button"
+                variant="nav"
+                size="nav"
+                active={view === n.id}
                 onClick={() => setView(n.id)}
-                className={`ads-nav-btn ${view === n.id ? "is-active" : ""}`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 {n.label}
-              </button>
+              </AdsButton>
             );
           })}
         </div>
@@ -224,7 +226,7 @@ export function AdsCentralTab({ consultantId }: Props) {
 
         {view !== "dashboard" && view !== "performance" && view !== "commissions" && (
           <div className="rounded-xl border border-dashed border-[hsl(var(--ads-border-strong))] bg-[hsl(var(--ads-surface)/.5)] p-3 flex items-start gap-2 text-xs text-[hsl(var(--ads-muted))]">
-            <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--ads-gold))] mt-0.5 shrink-0" />
+            <Sparkles className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
             <div>
               Recarregue sua carteira no botão acima e escolha um modelo pronto na{" "}
               <strong className="text-[hsl(var(--ads-emerald-2))]">Galeria</strong>. A campanha sobe

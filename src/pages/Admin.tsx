@@ -47,7 +47,6 @@ const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/Convers
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
-const OrcamentoButton = lazy(() => import("@/features/produtos/orcamento").then(m => ({ default: m.OrcamentoButton })));
 
 import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
@@ -278,6 +277,7 @@ const AdminContent = () => {
         onOpenChange={setSidebarOpen}
         collapsed={sidebarCollapsed}
         onCollapse={collapseSidebar}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
@@ -290,18 +290,6 @@ const AdminContent = () => {
           privacyMode={privacyMode}
           onTogglePrivacy={togglePrivacy}
           onOpenAi={() => setAiChatOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
-          extra={
-            userId ? (
-              <Suspense fallback={null}>
-                <OrcamentoButton
-                  consultantId={userId}
-                  instanceName={instanceName}
-                  isWhapi={isWhapi}
-                />
-              </Suspense>
-            ) : undefined
-          }
           notificationSlot={
             <Suspense fallback={<div className="w-9 h-9" />}>
               <NotificationCenter

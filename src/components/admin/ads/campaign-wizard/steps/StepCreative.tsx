@@ -43,7 +43,7 @@ export function StepCreative({ state, patch, patchFn, creative, consultantId }: 
       {/* Modo do criativo */}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => patch({ creativeMode: "photo" })}
-          className={`p-3 rounded-lg border text-left transition ${state.creativeMode === "photo" ? "border-[hsl(var(--ads-emerald-2))] bg-primary/10" : "border-[hsl(var(--ads-border))] hover:border-primary/50"}`}>
+          className={`ads-select-card ${state.creativeMode === "photo" ? "is-active" : ""}`}>
           <div className="font-semibold text-sm flex items-center gap-1.5">
             {state.creativeMode === "photo" && <Check className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald-2))]" />}
             <ImageIcon className="w-3.5 h-3.5" /> Fotos
@@ -51,7 +51,7 @@ export function StepCreative({ state, patch, patchFn, creative, consultantId }: 
           <div className="text-[11px] text-[hsl(var(--ads-muted))] mt-1">Até 4 por formato — Meta escolhe a melhor.</div>
         </button>
         <button type="button" onClick={() => patch({ creativeMode: "video" })}
-          className={`p-3 rounded-lg border text-left transition ${state.creativeMode === "video" ? "border-[hsl(var(--ads-emerald-2))] bg-primary/10" : "border-[hsl(var(--ads-border))] hover:border-primary/50"}`}>
+          className={`ads-select-card ${state.creativeMode === "video" ? "is-active" : ""}`}>
           <div className="font-semibold text-sm flex items-center gap-1.5">
             {state.creativeMode === "video" && <Check className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald-2))]" />}
             <Video className="w-3.5 h-3.5" /> Vídeo Reels
@@ -70,7 +70,7 @@ export function StepCreative({ state, patch, patchFn, creative, consultantId }: 
             <div className="grid grid-cols-3 gap-2 mt-2">
               {(Object.keys(FORMAT_SPEC) as AdFormat[]).map((k) => (
                 <button key={k} type="button" onClick={() => patch({ format: k })}
-                  className={`text-left text-xs p-2.5 rounded-lg border transition ${format === k ? "border-[hsl(var(--ads-emerald-2))] bg-primary/10" : "border-[hsl(var(--ads-border))] hover:bg-primary/5"}`}>
+                  className={`ads-select-card text-xs ${format === k ? "is-active" : ""}`}>
                   <div className="font-bold">{FORMAT_SPEC[k].label}</div>
                   <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-0.5">{FORMAT_SPEC[k].desc}</div>
                   <div className="text-[10px] mt-1 font-bold text-[hsl(var(--ads-emerald-2))]">{state.filesByFormat[k].length}/{PER_FORMAT_LIMIT} foto(s)</div>
@@ -148,10 +148,10 @@ function SortablePhoto({ id, file, format, aiResizing, onCrop, onAi, onRemove }:
       </button>
       <div className="absolute bottom-0 inset-x-0 bg-black/70 text-[10px] text-white px-1.5 py-1 flex items-center justify-between">
         <span>{file.w}×{file.h}</span>
-        {ok ? <span className="text-[#10b981]">✓</span> : (
+        {ok ? <span className="text-primary">✓</span> : (
           <div className="flex gap-1.5">
             <button type="button" onClick={onCrop} className="text-warning underline">Cortar</button>
-            <button type="button" onClick={onAi} disabled={aiResizing} className="text-[#10b981] underline flex items-center gap-0.5">
+            <button type="button" onClick={onAi} disabled={aiResizing} className="text-primary underline flex items-center gap-0.5">
               {aiResizing ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />} IA
             </button>
           </div>
@@ -196,7 +196,7 @@ function VideoUploader({ state, patch, creative }: { state: WizardState; patch: 
               </span>
             </label>
             {state.videoCaptionsLoading && <div className="flex items-center gap-2 text-[hsl(var(--ads-muted))]"><Loader2 className="w-3 h-3 animate-spin" /> Transcrevendo áudio…</div>}
-            {!state.videoCaptionsLoading && state.videoCaptionsSrt && <div className="text-[#10b981]">✓ Legenda pronta — vai junto com o vídeo.</div>}
+            {!state.videoCaptionsLoading && state.videoCaptionsSrt && <div className="text-primary">✓ Legenda pronta — vai junto com o vídeo.</div>}
             {!state.videoCaptionsLoading && state.videoCaptionsError && <div className="text-warning">⚠ {state.videoCaptionsError} (vídeo sobe sem legenda)</div>}
             {!state.videoCaptionsLoading && !state.videoCaptionsSrt && !state.videoCaptionsError && state.videoFile && (
               <button type="button" onClick={creative.generateCaptions}

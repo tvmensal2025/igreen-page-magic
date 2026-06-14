@@ -6,10 +6,19 @@
 //   - plan_monthly:     mensalidade do plano escolhido
 //   - project_once:     valor do projeto (à vista) + parcela de financiamento
 //   - savings_estimate: economia estimada sobre a conta de luz informada
+//   - market_free:      mercado livre de energia (até 30%, sem valor exato)
+//
+// Quando o `slug` é informado, a config é resolvida via resolveCommercialConfig
+// (perfil do slug sobrepõe a família). É o que permite Solar e Livre — ambos
+// da família `energia` — se comportarem de formas diferentes.
 // =============================================================================
 
 import type { ProductFamily } from "../catalogo/types";
-import { getCommercialConfig, type CommercialPlan } from "./catalog";
+import {
+  getCommercialConfig,
+  resolveCommercialConfig,
+  type CommercialPlan,
+} from "./catalog";
 
 export interface QuoteAmount {
   /** Valor principal exibido na proposta (R$). */
@@ -29,6 +38,8 @@ export interface QuoteDetail {
 
 export interface PlanPricingInput {
   family: ProductFamily;
+  /** Slug do produto. Quando presente, resolve o perfil específico (Solar × Livre). */
+  slug?: string;
   /** Plano escolhido (telecom, seguros, club). */
   plan?: CommercialPlan;
   /** Valor do projeto à vista (placas). */
@@ -49,7 +60,10 @@ const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", curren
 
 /** Calcula o valor do orçamento conforme a família e os dados informados. */
 export function computeQuoteAmount(input: PlanPricingInput): QuoteAmount {
-  const config = getCommercialConfig(input.family);
+  // Com slug, o perfil do produto sobrepõe a família (Solar × Livre × Placas).
+  const config = input.slug
+    ? resolveCommercialConfig(input.slug, input.family)
+    : getCommercialConfig(input.family);
 
   switch (config.pricingMode) {
     case "plan_monthly": {
@@ -106,6 +120,23 @@ export function computeQuoteAmount(input: PlanPricingInput): QuoteAmount {
           { label: "Desconto estimado", value: `${Math.round(rate * 100)}%` },
           { label: "Economia/mês", value: BRL(monthlySaving) },
           { label: "Economia/ano", value: BRL(yearlySaving) },
+        ],
+      };
+    }
+
+    case "market_free": {
+      // Mercado livre (Conexão Livre): SEM valor fechado. O foco é a solução e
+      // o teto de economia (até 30%). A estimativa exata vem da análise de
+      // viabilidade da Comerc, então não fixamos um valor monetário aqui.
+      const [, max] = config.savingsRange ?? [0.15, 0.3];
+      return {
+        amount: 0,
+        period: "month",
+        label: config.amountLabel,
+        details: [
+          { label: "Economia estimada", value: `até ${Math.round(max * 100)}%` },
+          { label: "Modelo", value: "Mercado Livre de Energia (ACL)" },
+          { label: "Análise de viabilidade", value: "Sem custo" },
         ],
       };
     }

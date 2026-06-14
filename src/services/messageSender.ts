@@ -9,6 +9,7 @@ import {
   sendDocument,
 } from "@/services/evolutionApi";
 import { whapiSendText, whapiSendMedia } from "@/services/whapiApi";
+import { supabase } from "@/integrations/supabase/client";
 import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("messageSender");
@@ -32,6 +33,9 @@ export interface SendPayload {
   fileName?: string;
   /** Quando true, envia via Whapi (super admin) em vez de Evolution */
   isWhapi?: boolean;
+  /** Quando informado, grava outbound em `conversations` para o chat atualizar via realtime */
+  customerId?: string | null;
+  conversationStep?: string;
 }
 
 function isTimeoutResponse(result: unknown): boolean {
@@ -69,12 +73,72 @@ async function enforcePerContactRateLimit(phone: string): Promise<void> {
   lastSendTimestamp.set(normalized, Date.now());
 }
 
+/** Grava outbound da plataforma — dispara realtime no chat aberto (useMessages). */
+export async function logPlatformOutbound(params: {
+  customerId?: string | null;
+  text: string;
+  messageType?: string;
+  conversationStep?: string;
+}): Promise<void> {
+  if (!params.customerId || !params.text.trim()) return;
+  try {
+    await supabase.from("conversations").insert({
+      customer_id: params.customerId,
+      message_direction: "outbound",
+      message_text: params.text.slice(0, 2000),
+      message_type: params.messageType || "text",
+      conversation_step: params.conversationStep || "platform_send",
+    });
+  } catch {
+    // non-critical — o polling de 6s ainda cobre
+  }
+}
+
+function buildOutboundLogText(
+  mediaCategory: MediaCategory,
+  text?: string,
+  fileName?: string,
+): string {
+  if (mediaCategory === "text") return text || "";
+  if (mediaCategory === "document") return fileName || "[documento]";
+  return `[${mediaCategory}]${text ? `: ${text}` : ""}`;
+}
+
+function notifyChatOutbound(
+  payload: Pick<SendPayload, "customerId" | "conversationStep">,
+  mediaCategory: MediaCategory,
+  text?: string,
+  fileName?: string,
+): void {
+  const logText = buildOutboundLogText(mediaCategory, text, fileName);
+  if (!logText.trim()) return;
+  void logPlatformOutbound({
+    customerId: payload.customerId,
+    text: logText,
+    messageType: mediaCategory,
+    conversationStep: payload.conversationStep,
+  });
+}
+
 /**
  * Send a single message through the correct Evolution API endpoint.
  * Returns a typed SendResult instead of throwing on timeout.
  */
 export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendResult> {
-  const { instanceName, phone, mediaCategory, text, mediaUrl, fileName, isWhapi } = payload;
+  const {
+    instanceName,
+    phone: rawPhone,
+    mediaCategory,
+    text,
+    mediaUrl,
+    fileName,
+    isWhapi,
+    customerId,
+    conversationStep,
+  } = payload;
+
+  // Normaliza telefone BR (DDI 55) — mesmo critério do bot (manual-step-send).
+  const phone = normalizeBrazilPhone(rawPhone) || rawPhone.replace(/\D/g, "");
 
   // Block invalid placeholder phones before hitting the API
   if (!phone || /sem_celular/i.test(phone) || phone.replace(/\D/g, "").length < 8) {
@@ -93,19 +157,23 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
         case "text":
           if (!text?.trim()) return { status: "failed", error: "Texto vazio" };
           await whapiSendText(phone, text);
+          notifyChatOutbound(payload, mediaCategory, text);
           return { status: "sent" };
         case "audio":
           if (!mediaUrl) return { status: "failed", error: "URL de áudio ausente" };
           await whapiSendMedia(phone, mediaUrl, "audio");
+          notifyChatOutbound(payload, mediaCategory);
           return { status: "sent" };
         case "document":
           if (!mediaUrl) return { status: "failed", error: "URL do documento ausente" };
           await whapiSendMedia(phone, mediaUrl, "document", undefined, fileName || "documento");
+          notifyChatOutbound(payload, mediaCategory, text, fileName);
           return { status: "sent" };
         case "image":
         case "video":
           if (!mediaUrl) return { status: "failed", error: "URL da mídia ausente" };
           await whapiSendMedia(phone, mediaUrl, mediaCategory, text || undefined);
+          notifyChatOutbound(payload, mediaCategory, text);
           return { status: "sent" };
         default:
           return { status: "failed", error: `Tipo desconhecido: ${mediaCategory}` };
@@ -171,6 +239,7 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
 
     if (rawStatus === "PENDING") {
       logger.warn("Envio em estado PENDING (não confirmado pelo WhatsApp ainda)", { phone, messageId });
+      notifyChatOutbound(payload, mediaCategory, text, fileName);
       return { status: "pending", messageId, error: "Mensagem na fila — aguardando confirmação do WhatsApp." };
     }
 
@@ -180,12 +249,31 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
       return { status: "failed", error: "Servidor não confirmou o envio." };
     }
 
+    notifyChatOutbound(payload, mediaCategory, text, fileName);
     return { status: "sent", messageId };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro desconhecido";
     logger.error("Falha no envio:", msg);
     return { status: "failed", error: msg };
   }
+}
+
+/**
+ * Normaliza um `phone_whatsapp` do banco para o formato de envio aceito pela
+ * Evolution/Whapi (só dígitos, com DDI 55). Espelha a validação usada pelo
+ * caminho do bot (`manual-step-send` linhas 116-135) — fonte de verdade do
+ * destinatário. Retorna null quando claramente inválido (placeholder
+ * `sem_celular`, curto demais ou fora do padrão BR de 12-13 dígitos).
+ */
+export function normalizeBrazilPhone(raw: string | null | undefined): string | null {
+  const original = String(raw || "");
+  if (/sem_celular/i.test(original)) return null;
+  let digits = original.replace(/\D/g, "");
+  if (!digits || digits.length < 10) return null;
+  // 10 (DDD + 8) ou 11 (DDD + 9) → prefixa o DDI 55.
+  if (digits.length === 10 || digits.length === 11) digits = "55" + digits;
+  if (digits.length < 12 || digits.length > 13) return null;
+  return digits;
 }
 
 /**

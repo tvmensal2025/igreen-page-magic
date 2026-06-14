@@ -46,10 +46,10 @@ export function StepBudget({ state, patch }: Props) {
             const active = (p.id === "eco" && isEco) || (p.id === "std" && isStd) || (p.id === "custom" && isCustom);
             return (
               <button key={p.id} type="button" onClick={() => selectPreset(p.id)}
-                className={`p-3 rounded-lg border text-left transition ${active ? "border-[hsl(var(--ads-gold))] bg-[hsl(var(--ads-gold))]/10" : "border-[hsl(var(--ads-border))] hover:border-primary/50"}`}>
+                className={`ads-select-card ${active ? "is-active" : ""}`}>
                 <div className="text-lg">{p.icon}</div>
                 <div className="font-semibold text-xs flex items-center gap-1 mt-1">
-                  {active && <Check className="w-3 h-3 text-[hsl(var(--ads-gold))]" />} {p.label}
+                  {active && <Check className="w-3 h-3 text-primary" />} {p.label}
                 </div>
                 <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-0.5">{p.hint}</div>
               </button>
@@ -61,7 +61,7 @@ export function StepBudget({ state, patch }: Props) {
       {/* Número grande de leads/dia */}
       <div className="rounded-xl border border-[hsl(var(--ads-border))] bg-primary/5 p-4 text-center">
         <div className="text-[11px] uppercase tracking-wider text-[hsl(var(--ads-muted))]">Conversas estimadas no WhatsApp</div>
-        <div className="text-4xl font-black text-[hsl(var(--ads-emerald-2))] my-1">{dailyLeads}<span className="text-sm font-normal text-[hsl(var(--ads-muted))]">/dia</span></div>
+        <div className="text-4xl ads-num font-semibold my-1">{dailyLeads}<span className="text-sm font-normal text-[hsl(var(--ads-muted))]">/dia</span></div>
         <div className="text-[11px] text-[hsl(var(--ads-muted))]">A R$ {budget}/dia × {duration === 0 ? "contínuo" : `${duration} dias`} = <strong className="text-foreground">R$ {total}</strong></div>
       </div>
 
@@ -89,12 +89,12 @@ export function StepBudget({ state, patch }: Props) {
           <div className="px-3 pb-3 space-y-3 border-t border-[hsl(var(--ads-border))] pt-3">
             <div className="grid grid-cols-2 gap-2">
               <button type="button" onClick={() => patch({ placementMode: "auto", placements: ALL_PLACEMENTS })}
-                className={`p-2.5 rounded-lg border text-left transition ${state.placementMode === "auto" ? "border-[hsl(var(--ads-emerald-2))] bg-primary/10" : "border-[hsl(var(--ads-border))]"}`}>
+                className={`ads-select-card ${state.placementMode === "auto" ? "is-active" : ""}`}>
                 <div className="font-semibold text-xs flex items-center gap-1.5">{state.placementMode === "auto" && <Check className="w-3 h-3 text-[hsl(var(--ads-emerald-2))]" />} Automático</div>
                 <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-0.5">Advantage+ otimiza CPL. <strong className="text-[hsl(var(--ads-emerald-2))]">Recomendado.</strong></div>
               </button>
               <button type="button" onClick={() => patch({ placementMode: "manual" })}
-                className={`p-2.5 rounded-lg border text-left transition ${state.placementMode === "manual" ? "border-[hsl(var(--ads-emerald-2))] bg-primary/10" : "border-[hsl(var(--ads-border))]"}`}>
+                className={`ads-select-card ${state.placementMode === "manual" ? "is-active" : ""}`}>
                 <div className="font-semibold text-xs flex items-center gap-1.5">{state.placementMode === "manual" && <Check className="w-3 h-3 text-[hsl(var(--ads-emerald-2))]" />} Manual</div>
                 <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-0.5">Você escolhe onde aparece.</div>
               </button>

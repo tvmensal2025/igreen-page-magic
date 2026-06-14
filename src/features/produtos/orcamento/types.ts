@@ -131,6 +131,7 @@ export interface PublicProposalView {
     validUntil: string | null;
     sentAt: string | null;
     respondedAt: string | null;
+    recipientName: string | null;
   };
   consultant: {
     name: string;
@@ -138,6 +139,7 @@ export interface PublicProposalView {
     igreenId: string | null;
   } | null;
   product: {
+    slug: string;
     name: string;
     brandName: string;
     family: string;

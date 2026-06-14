@@ -27,7 +27,11 @@ const TIER_LABEL: Record<string, string> = { alto: "🟢 Bônus alto", medio: "�
 export function StepRegion({ state, patch, region }: Props) {
   const reach = state.liveReach;
   const reachPct = reach ? Math.min(100, Math.round((reach.upper / 5_000_000) * 100)) : 0;
-  const reachColor = !reach ? "#71717a" : reach.lower < 50000 ? "#ef4444" : reach.upper > 5_000_000 ? "#ef4444" : "hsl(152 100% 33%)";
+  const reachColor = !reach
+    ? "hsl(var(--ads-muted))"
+    : reach.lower < 50000 || reach.upper > 5_000_000
+      ? "hsl(var(--destructive))"
+      : "hsl(var(--primary))";
   const chartData = [{ name: "alcance", v: Math.max(4, reachPct) }];
 
   return (
@@ -35,7 +39,7 @@ export function StepRegion({ state, patch, region }: Props) {
       {/* Modo de geo */}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => patch({ geoMode: "cities" })}
-          className={`p-3 rounded-lg border text-left transition ${state.geoMode === "cities" ? "border-[hsl(var(--ads-emerald))] bg-[hsl(var(--ads-emerald)/.08)]" : "border-[hsl(var(--ads-border))] hover:border-[hsl(var(--ads-emerald)/.5)]"}`}>
+          className={`ads-select-card ${state.geoMode === "cities" ? "is-active" : ""}`}>
           <div className="font-semibold text-sm flex items-center gap-1.5 text-[hsl(var(--ads-text))]">
             {state.geoMode === "cities" && <Check className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald))]" />}
             <MapPin className="w-3.5 h-3.5" /> Cidades
@@ -43,7 +47,7 @@ export function StepRegion({ state, patch, region }: Props) {
           <div className="text-[11px] text-[hsl(var(--ads-muted))] mt-1">Busque a cidade — avisamos a distribuidora.</div>
         </button>
         <button type="button" onClick={() => patch({ geoMode: "radius" })}
-          className={`p-3 rounded-lg border text-left transition ${state.geoMode === "radius" ? "border-[hsl(var(--ads-emerald))] bg-[hsl(var(--ads-emerald)/.08)]" : "border-[hsl(var(--ads-border))] hover:border-[hsl(var(--ads-emerald)/.5)]"}`}>
+          className={`ads-select-card ${state.geoMode === "radius" ? "is-active" : ""}`}>
           <div className="font-semibold text-sm flex items-center gap-1.5 text-[hsl(var(--ads-text))]">
             {state.geoMode === "radius" && <Check className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald))]" />}
             <Target className="w-3.5 h-3.5" /> Endereço + raio

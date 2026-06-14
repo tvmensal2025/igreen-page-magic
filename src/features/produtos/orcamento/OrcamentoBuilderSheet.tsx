@@ -24,7 +24,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Copy, Send, Check, X } from "lucide-react";
 import { useProducts } from "../catalogo/hooks";
 import { PRODUCT_FAMILY_LABEL } from "../catalogo/types";
-import { getCommercialConfig } from "./catalog";
+import {
+  isQuotableProduct,
+  resolveCommercialConfig,
+  getSlugProfile,
+  IGREEN_CLUB_BENEFITS,
+} from "./catalog";
 import { computeQuoteAmount } from "./pricing";
 import { useCreateProposal } from "./hooks";
 import { RecipientPicker, type RecipientSelection } from "./components/RecipientPicker";
@@ -71,20 +76,35 @@ export function OrcamentoBuilderSheet({
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const product = products.find((p) => p.id === productId);
-  const config = product ? getCommercialConfig(product.family) : null;
+  // Só os produtos vendáveis por orçamento (allowlist por slug). Os demais
+  // continuam no catálogo/banco, mas não aparecem no seletor do builder.
+  const quotableProducts = useMemo(
+    () => products.filter((p) => isQuotableProduct(p.slug)),
+    [products],
+  );
+
+  const product = quotableProducts.find((p) => p.id === productId);
+  // Config resolvida por slug: Solar × Livre (mesma família) se comportam
+  // diferente, e cada produto carrega seu perfil comercial (headline, benefícios).
+  const config = product ? resolveCommercialConfig(product.slug, product.family) : null;
+  const profile = product ? getSlugProfile(product.slug) : null;
   const plan = config?.plans.find((p) => p.id === planId);
 
   const quote = useMemo(() => {
     if (!product || !config) return null;
     return computeQuoteAmount({
       family: product.family,
+      slug: product.slug,
       plan,
       projectAmount: projectAmount ? Number(projectAmount) : undefined,
       installments: installments ? Number(installments) : undefined,
       currentBill: currentBill ? Number(currentBill) : undefined,
     });
   }, [product, config, plan, projectAmount, installments, currentBill]);
+
+  // Mercado livre (Conexão Livre) não tem valor fechado — o envio é permitido
+  // sem amount > 0, porque a proposta vende a solução, não um preço exato.
+  const isMarketFree = config?.pricingMode === "market_free";
 
   const currentStep = !product ? 1 : !recipient ? 2 : 3;
 
@@ -101,7 +121,11 @@ export function OrcamentoBuilderSheet({
   };
 
   const canSubmit =
-    !!product && !!recipient && !!quote && quote.amount > 0 && !submitting;
+    !!product &&
+    !!recipient &&
+    !!quote &&
+    (isMarketFree || quote.amount > 0) &&
+    !submitting;
 
   const handleCreate = async () => {
     if (!product || !recipient || !quote) return;
@@ -152,6 +176,8 @@ export function OrcamentoBuilderSheet({
       mediaCategory: "text",
       text,
       isWhapi,
+      customerId: recipient.customerId ?? undefined,
+      conversationStep: "orcamento_enviado",
     });
 
     if (result.status === "sent" || result.status === "pending") {
@@ -292,7 +318,7 @@ export function OrcamentoBuilderSheet({
                         <SelectValue placeholder="Escolha o produto" />
                       </SelectTrigger>
                       <SelectContent>
-                        {products.map((p) => (
+                        {quotableProducts.map((p) => (
                           <SelectItem key={p.id} value={p.id} className="text-sm">
                             {p.name} · {PRODUCT_FAMILY_LABEL[p.family]}
                           </SelectItem>
@@ -416,19 +442,28 @@ export function OrcamentoBuilderSheet({
                             <p className="text-[11px] text-[#f5f0e8]/60">{recipient.phone}</p>
                           </div>
                         )}
-                        {quote && quote.amount > 0 ? (
+                        {quote && (isMarketFree || quote.amount > 0) ? (
                           <div className="pt-3 border-t border-white/10">
                             <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50">
                               {quote.label}
                             </p>
-                            <p className={`text-3xl text-[#c9a84c] mt-1 ${pvSerif}`}>
-                              {BRL(quote.amount)}
-                              {quote.period === "month" && (
+                            {isMarketFree ? (
+                              <p className={`text-3xl text-[#c9a84c] mt-1 ${pvSerif}`}>
+                                até 30%
                                 <span className="text-xs font-normal text-[#f5f0e8]/60 ml-1">
-                                  /mês
+                                  de economia
                                 </span>
-                              )}
-                            </p>
+                              </p>
+                            ) : (
+                              <p className={`text-3xl text-[#c9a84c] mt-1 ${pvSerif}`}>
+                                {BRL(quote.amount)}
+                                {quote.period === "month" && (
+                                  <span className="text-xs font-normal text-[#f5f0e8]/60 ml-1">
+                                    /mês
+                                  </span>
+                                )}
+                              </p>
+                            )}
                             {quote.details.length > 0 && (
                               <ul className="mt-3 space-y-1.5">
                                 {quote.details.map((d, i) => (
@@ -445,7 +480,9 @@ export function OrcamentoBuilderSheet({
                           </div>
                         ) : (
                           <p className="text-xs text-[#f5f0e8]/40 italic pt-3 border-t border-white/10">
-                            Preencha os valores para ver a prévia.
+                            {isMarketFree
+                              ? "Mercado livre: a proposta vende a solução (até 30%), sem valor fechado."
+                              : "Preencha os valores para ver a prévia."}
                           </p>
                         )}
                       </>

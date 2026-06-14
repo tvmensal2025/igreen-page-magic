@@ -50,7 +50,7 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
           <div className="flex flex-col gap-1.5 mt-2">
             {(copy.variations?.headlines || copy.headlines.map((t) => ({ text: t, framework: "geral", score: 75 }))).map((h, i) => (
               <button key={i} onClick={() => patch({ headline: h.text })}
-                className={`text-xs text-left px-2.5 py-1.5 rounded-lg border transition flex items-center justify-between gap-2 ${state.headline === h.text ? "border-[hsl(var(--ads-emerald-2))] bg-primary/10" : "border-[hsl(var(--ads-border))] hover:bg-primary/5"}`}>
+                className={`ads-select-card text-xs flex items-center justify-between gap-2 ${state.headline === h.text ? "is-active" : ""}`}>
                 <span className="truncate">{h.text}</span>
                 <span className="flex items-center gap-1 shrink-0 text-[9px] uppercase text-[hsl(var(--ads-muted))]">{h.framework} · {h.score}</span>
               </button>
@@ -71,7 +71,7 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
           <div className="flex flex-col gap-1.5 mt-2">
             {(copy.variations?.primary_texts || copy.primary_texts.map((t) => ({ text: t, framework: "geral", score: 75 }))).map((t, i) => (
               <button key={i} onClick={() => patch({ primaryText: t.text })}
-                className={`text-xs text-left px-2.5 py-1.5 rounded-lg border transition ${state.primaryText === t.text ? "border-[hsl(var(--ads-emerald-2))] bg-primary/10" : "border-[hsl(var(--ads-border))] hover:bg-primary/5"}`}>
+                className={`ads-select-card text-xs ${state.primaryText === t.text ? "is-active" : ""}`}>
                 <div className="text-[9px] uppercase text-[hsl(var(--ads-muted))] mb-0.5">{t.framework} · {t.score}/100</div>
                 <div className="line-clamp-2">{t.text}</div>
               </button>

@@ -1,4 +1,4 @@
-import { PanelLeftClose, PanelLeftOpen, Eye, EyeOff, Sparkles, Settings } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Eye, EyeOff, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
 interface AppTopbarProps {
@@ -10,7 +10,6 @@ interface AppTopbarProps {
   privacyMode?: boolean;
   onTogglePrivacy?: () => void;
   onOpenAi?: () => void;
-  onOpenSettings?: () => void;
   notificationSlot?: ReactNode;
   extra?: ReactNode;
 }
@@ -24,7 +23,6 @@ export function AppTopbar({
   privacyMode,
   onTogglePrivacy,
   onOpenAi,
-  onOpenSettings,
   notificationSlot,
   extra,
 }: AppTopbarProps) {
@@ -66,16 +64,6 @@ export function AppTopbar({
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-full" style={{ background: "var(--pe-accent-glow)", border: "1px solid rgba(16,185,129,0.25)" }}>
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: "var(--pe-accent)" }} />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: "var(--pe-accent)" }} />
-            </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--pe-emerald-strong)" }}>
-              Operacional
-            </span>
-          </div>
-
           {onTogglePrivacy && (
             <button
               type="button"
@@ -105,19 +93,6 @@ export function AppTopbar({
           {extra}
 
           {notificationSlot}
-
-          {onOpenSettings && (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="p-2 rounded-lg transition-all hover:bg-[var(--pe-surface-muted)]"
-              style={{ color: "var(--pe-text-muted)" }}
-              aria-label="Configurações"
-              title="Configurações"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          )}
         </div>
       </div>
     </header>

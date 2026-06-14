@@ -539,24 +539,32 @@ html {
   }
 }
 
-/* Privacy Mode - blur sensitive data */
+/* Privacy Mode - blur sensitive data (nome, contato, valores, endereço).
+   Borrão forte o bastante para gravar vídeo/demonstrar sem expor pessoas.
+   Use uma das classes utilitárias abaixo em qualquer elemento que contenha
+   PII ou valores monetários. A classe .sensitive-data cobre o caso genérico. */
 .privacy-mode .sensitive-name,
 .privacy-mode .sensitive-phone,
 .privacy-mode .sensitive-cpf,
 .privacy-mode .sensitive-email,
+.privacy-mode .sensitive-address,
+.privacy-mode .sensitive-value,
 .privacy-mode .sensitive-data {
-  filter: blur(6px);
+  filter: blur(10px);
   user-select: none;
   pointer-events: none;
   transition: filter 0.2s ease;
 }
 
+/* Mantém o borrão mesmo no hover (não revela ao passar o mouse durante a gravação). */
 .privacy-mode .sensitive-name:hover,
 .privacy-mode .sensitive-phone:hover,
 .privacy-mode .sensitive-cpf:hover,
 .privacy-mode .sensitive-email:hover,
+.privacy-mode .sensitive-address:hover,
+.privacy-mode .sensitive-value:hover,
 .privacy-mode .sensitive-data:hover {
-  filter: blur(6px);
+  filter: blur(10px);
 }
 
 /* ═══════════════ Executive Performance Animations ═══════════════ */
@@ -761,35 +769,54 @@ html {
 
 
 /* ═══════════════════════════════════════════════════════════
-   ADS CENTRAL 2026 — Emerald Prestige bento scope
+   ADS CENTRAL 2026 — Paleta oficial iGreen (alinhada ao painel-elite)
    Scoped tokens & utilities used only inside .ads-central-2026
    ═══════════════════════════════════════════════════════════ */
 .ads-central-2026 {
-  /* Light Emerald Prestige — bright, legible, premium */
-  --ads-bg:        45 55% 96%;     /* cream paper */
-  --ads-surface:   0  0% 100%;     /* pure white tiles */
-  --ads-surface-2: 45 45% 98%;     /* warm white */
-  --ads-border:    158 25% 82%;
-  --ads-border-strong: 158 30% 65%;
-  --ads-emerald:   152 100% 26%;    /* verde iGreen para destaques */
-  --ads-emerald-2: 150 100% 17%;    /* verde escuro p/ títulos */
-  --ads-gold:      40  72% 42%;    /* rich gold, readable on white */
-  --ads-gold-soft: 40  60% 55%;
-  --ads-cream:     45  60% 92%;
-  --ads-text:      162 45% 12%;    /* dark emerald ink */
-  --ads-muted:     162 18% 38%;
-  --ads-danger:    0   72% 45%;
+  /* Paleta oficial iGreen: verde #00A859 + verde escuro #007A3D */
+  --ads-bg:        152 16% 97%;     /* cinza-fundo iGreen #F7F9F8 */
+  --ads-surface:   0  0% 100%;      /* branco */
+  --ads-surface-2: 152 30% 98%;     /* branco esverdeado */
+  --ads-border:    220 13% 91%;     /* cinza de borda #E5E7EB */
+  --ads-border-strong: 152 25% 78%;
+  --ads-emerald:   152 100% 33%;    /* verde iGreen #00A859 */
+  --ads-emerald-2: 150 100% 24%;    /* verde escuro #007A3D */
+  --ads-gold:      152 100% 33%;    /* alias legado → verde primário */
+  --ads-gold-soft: 150 100% 28%;
+  --ads-cream:     152 40% 94%;
+  --ads-text:      215 28% 17%;     /* texto principal #1F2937 */
+  --ads-muted:     215 14% 45%;     /* texto secundário */
+  --ads-danger:    0   72% 51%;
 
-  --ads-shadow-emerald: 0 20px 50px -20px hsl(var(--ads-emerald-2) / .25);
-  --ads-shadow-tile: 0 1px 0 0 hsl(var(--ads-border)) inset, 0 8px 24px -16px hsl(var(--ads-emerald-2) / .35);
+  --ads-shadow-emerald: 0 20px 50px -20px hsl(var(--ads-emerald-2) / .18);
+  --ads-shadow-tile: 0 1px 0 0 hsl(var(--ads-border)) inset, 0 8px 24px -16px hsl(var(--ads-emerald-2) / .12);
   --ads-gradient-tile: linear-gradient(180deg, hsl(var(--ads-surface)) 0%, hsl(var(--ads-surface-2)) 100%);
-  --ads-gradient-gold: linear-gradient(135deg, hsl(var(--ads-gold)) 0%, hsl(var(--ads-gold-soft)) 100%);
-  --ads-gradient-emerald: linear-gradient(135deg, hsl(var(--ads-emerald)) 0%, hsl(var(--ads-emerald-2)) 100%);
+  --ads-gradient-primary: linear-gradient(135deg, hsl(var(--ads-emerald)) 0%, hsl(var(--ads-emerald-2)) 100%);
+  --ads-gradient-gold: var(--ads-gradient-primary);
+  --ads-gradient-emerald: var(--ads-gradient-primary);
 
-  font-family: 'DM Sans', system-ui, sans-serif;
+  /* Força tema claro shadcn dentro do escopo ads */
+  --background: 152 16% 97%;
+  --foreground: 215 28% 17%;
+  --card: 0 0% 100%;
+  --card-foreground: 215 28% 17%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 215 28% 17%;
+  --primary: 152 100% 33%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 152 14% 94%;
+  --secondary-foreground: 150 100% 22%;
+  --muted: 152 14% 95%;
+  --muted-foreground: 215 14% 45%;
+  --accent: 152 55% 94%;
+  --accent-foreground: 150 100% 22%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 152 100% 33%;
+
+  font-family: 'Figtree', system-ui, -apple-system, sans-serif;
   color: hsl(var(--ads-text));
-  background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald) / .10), transparent 60%),
-              radial-gradient(800px 400px at 100% 0%, hsl(var(--ads-gold) / .10), transparent 60%),
+  background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald) / .08), transparent 60%),
               hsl(var(--ads-bg));
   min-height: 100%;
 }
@@ -836,7 +863,7 @@ html {
   --input: 220 13% 91%;
   --ring: 152 100% 33%;
 
-  font-family: var(--font-body, system-ui, sans-serif);
+  font-family: 'Figtree', system-ui, -apple-system, sans-serif;
   color: hsl(var(--ads-text));
 }
 
@@ -844,9 +871,14 @@ html {
 .ads-central-2026 h2,
 .ads-central-2026 h3,
 .ads-central-2026 h4,
-.ads-central-2026 .ads-display {
-  font-family: 'Space Grotesk', sans-serif;
-  font-feature-settings: 'ss01';
+.ads-central-2026 .ads-display,
+.ads-central-2026 .ads-heading,
+.ads-wizard-scope h1,
+.ads-wizard-scope h2,
+.ads-wizard-scope h3,
+.ads-wizard-scope h4,
+.ads-wizard-scope .ads-heading {
+  font-family: 'Outfit', system-ui, sans-serif;
   letter-spacing: -0.01em;
 }
 
@@ -863,7 +895,7 @@ html {
 }
 .ads-central-2026 .ads-tile:hover {
   transform: translateY(-2px);
-  border-color: hsl(var(--ads-gold) / .45);
+  border-color: hsl(var(--ads-emerald) / .45);
   box-shadow: var(--ads-shadow-emerald);
 }
 @keyframes ads-tile-in {
@@ -880,14 +912,15 @@ html {
   align-items: center;
   gap: .375rem;
 }
-.ads-central-2026 .ads-num {
-  font-family: 'Space Grotesk', sans-serif;
+.ads-central-2026 .ads-num,
+.ads-wizard-scope .ads-num {
+  font-family: 'Outfit', system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: hsl(var(--ads-emerald-2));
 }
-.ads-central-2026 .ads-num-gold { color: hsl(var(--ads-gold)); }
-.ads-central-2026 .ads-delta-up { color: hsl(var(--ads-gold)); }
+.ads-central-2026 .ads-num-gold { color: hsl(var(--ads-emerald)); }
+.ads-central-2026 .ads-delta-up { color: hsl(var(--ads-emerald)); }
 .ads-central-2026 .ads-delta-down { color: hsl(var(--ads-danger)); }
 
 .ads-central-2026 .ads-header {
@@ -906,7 +939,7 @@ html {
   flex-wrap: wrap;
 }
 .ads-central-2026 .ads-wordmark {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Outfit', system-ui, sans-serif;
   font-weight: 600;
   font-size: 0.95rem;
   letter-spacing: -.01em;
@@ -918,13 +951,14 @@ html {
 .ads-central-2026 .ads-wordmark::before {
   content: "";
   width: 8px; height: 8px; border-radius: 999px;
-  background: var(--ads-gradient-gold);
-  box-shadow: 0 0 12px hsl(var(--ads-gold) / .5);
+  background: var(--ads-gradient-primary);
+  box-shadow: 0 0 12px hsl(var(--ads-emerald) / .4);
 }
 
+.ads-central-2026 .ads-cta-primary,
 .ads-central-2026 .ads-cta-gold {
-  background: var(--ads-gradient-gold);
-  color: hsl(162 88% 8%);
+  background: var(--ads-gradient-primary);
+  color: #ffffff;
   font-weight: 600;
   border-radius: .625rem;
   padding: .5rem .9rem;
@@ -932,13 +966,14 @@ html {
   display: inline-flex;
   align-items: center;
   gap: .375rem;
-  border: 1px solid hsl(var(--ads-gold) / .7);
-  box-shadow: 0 6px 20px -6px hsl(var(--ads-gold) / .55);
+  border: 1px solid hsl(var(--ads-emerald-2) / .5);
+  box-shadow: 0 6px 20px -6px hsl(var(--ads-emerald) / .35);
   transition: transform .15s ease, box-shadow .25s ease;
 }
+.ads-central-2026 .ads-cta-primary:hover,
 .ads-central-2026 .ads-cta-gold:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 28px -6px hsl(var(--ads-gold) / .7);
+  box-shadow: 0 10px 28px -6px hsl(var(--ads-emerald) / .45);
 }
 
 .ads-central-2026 .ads-nav-pill {
@@ -951,7 +986,8 @@ html {
   overflow-x: auto;
   box-shadow: var(--ads-shadow-tile);
 }
-.ads-central-2026 .ads-nav-btn {
+.ads-central-2026 .ads-nav-btn,
+.ads-central-2026 .ads-nav-pill button {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -964,17 +1000,17 @@ html {
   white-space: nowrap;
   transition: color .2s ease, background .2s ease;
 }
-.ads-central-2026 .ads-nav-btn:hover { color: hsl(var(--ads-emerald-2)); background: hsl(var(--ads-emerald) / .08); }
-.ads-central-2026 .ads-nav-btn.is-active {
-  color: hsl(45 60% 95%);
+.ads-central-2026 .ads-nav-pill button:hover { color: hsl(var(--ads-emerald-2)); background: hsl(var(--ads-emerald) / .08); }
+.ads-central-2026 .ads-nav-pill button[data-active="true"] {
+  color: #ffffff;
   background: var(--ads-gradient-emerald);
 }
-.ads-central-2026 .ads-nav-btn.is-active::after {
+.ads-central-2026 .ads-nav-pill button[data-active="true"]::after {
   content: "";
   position: absolute;
   left: 18%; right: 18%; bottom: 2px;
   height: 2px;
-  background: var(--ads-gradient-gold);
+  background: hsl(var(--ads-emerald) / .6);
   border-radius: 2px;
 }
 
@@ -1028,4 +1064,23 @@ html {
 .ads-central-2026 .bg-muted,
 .ads-central-2026 .bg-muted\/50 { background: hsl(var(--ads-surface-2)) !important; }
 .ads-central-2026 .ads-num { color: hsl(var(--ads-emerald-2)); }
-.ads-central-2026 .ads-num-gold { color: hsl(var(--ads-gold)); }
+.ads-central-2026 .ads-num-gold { color: hsl(var(--ads-emerald)); }
+
+/* Card selecionável — wizard e dialogs */
+.ads-select-card,
+.ads-wizard-scope .ads-select-card {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--ads-border));
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.ads-select-card:hover,
+.ads-wizard-scope .ads-select-card:hover {
+  border-color: hsl(var(--ads-emerald) / .5);
+}
+.ads-select-card.is-active,
+.ads-wizard-scope .ads-select-card.is-active {
+  border-color: hsl(var(--ads-emerald));
+  background: hsl(var(--accent));
+}

@@ -93,12 +93,16 @@ interface PreviewProps {
 }
 ```
 
-## Design visual (CSS vars reutilizadas do painel ads)
-- `--ads-surface`: fundo principal (#0f1012)
-- `--ads-border`: bordas (#1e2024)
-- `--ads-gold`: CTAs e destaques (#d4af37)
-- `--ads-emerald-2`: texto primário (#10b981)
-- `--ads-muted`: texto secundário (#71717a)
+## Design visual (tokens oficiais iGreen — alinhados ao painel-elite)
+- `--ads-bg`: fundo `#F7F9F8` (152 16% 97%)
+- `--ads-surface`: branco `#FFFFFF`
+- `--ads-border`: bordas `#E5E7EB` (220 13% 91%)
+- `--ads-emerald`: verde primário `#00A859` (152 100% 33%)
+- `--ads-emerald-2`: verde escuro `#007A3D` (150 100% 24%)
+- `--ads-text`: texto principal `#1F2937`
+- `--ads-muted`: texto secundário
+- Tipografia: **Figtree** (corpo) + **Outfit** (títulos/KPIs)
+- Componentes: `AdsButton` (primary/secondary/ghost/nav/cta), `.ads-select-card` (cards selecionáveis)
 
 ## Regras de implementação
 1. Cada arquivo tem NO MÁXIMO 250 linhas (exceto useWizardState que pode ter ~350)

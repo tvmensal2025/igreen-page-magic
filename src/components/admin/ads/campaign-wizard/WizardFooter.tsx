@@ -2,7 +2,7 @@
  * WizardFooter — Barra inferior fixa com navegação (voltar/próximo/publicar).
  */
 import { ChevronLeft, ChevronRight, Loader2, Rocket } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AdsButton } from "../AdsButton";
 import type { WizardStep } from "./hooks/useWizardState";
 
 interface Props {
@@ -21,15 +21,9 @@ export function WizardFooter({ step, onBack, onNext, submitting, canAdvance }: P
     <footer className="shrink-0 border-t border-[hsl(var(--ads-border))] bg-[hsl(var(--ads-surface)/.8)] backdrop-blur-sm px-6 py-3 flex items-center justify-between">
       {/* Voltar */}
       {!isFirst ? (
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onBack}
-          disabled={submitting}
-          className="text-[hsl(var(--ads-muted))] hover:text-[hsl(var(--ads-emerald-2))]"
-        >
+        <AdsButton type="button" variant="ghost" size="md" onClick={onBack} disabled={submitting}>
           <ChevronLeft className="w-4 h-4 mr-1" /> Voltar
-        </Button>
+        </AdsButton>
       ) : (
         <div />
       )}
@@ -41,24 +35,14 @@ export function WizardFooter({ step, onBack, onNext, submitting, canAdvance }: P
 
       {/* Próximo / Publicar */}
       {isLast ? (
-        <Button
-          type="button"
-          onClick={onNext}
-          disabled={submitting || !canAdvance}
-          className="bg-[hsl(var(--ads-emerald))] text-white font-bold px-6 hover:bg-[hsl(var(--ads-emerald-2))] disabled:opacity-40"
-        >
+        <AdsButton type="button" variant="primary" size="md" onClick={onNext} disabled={submitting || !canAdvance} className="px-6 font-bold">
           {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Rocket className="w-4 h-4 mr-2" />}
           {submitting ? "Publicando..." : "Publicar campanha"}
-        </Button>
+        </AdsButton>
       ) : (
-        <Button
-          type="button"
-          onClick={onNext}
-          disabled={!canAdvance}
-          className="bg-[hsl(var(--ads-emerald))] text-white font-semibold px-5 hover:bg-[hsl(var(--ads-emerald-2))] disabled:opacity-40"
-        >
+        <AdsButton type="button" variant="primary" size="md" onClick={onNext} disabled={!canAdvance} className="px-5 font-semibold">
           Próximo <ChevronRight className="w-4 h-4 ml-1" />
-        </Button>
+        </AdsButton>
       )}
     </footer>
   );

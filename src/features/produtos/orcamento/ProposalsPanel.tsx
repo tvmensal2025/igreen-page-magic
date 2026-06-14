@@ -310,10 +310,12 @@ function ProposalCard({
       `\nVeja os detalhes e responda por aqui:\n${link}`;
     const result = await sendWhatsAppMessage({
       instanceName,
-      phone,
+      phone: proposal.recipientPhone,
       mediaCategory: "text",
       text,
       isWhapi,
+      customerId: proposal.customerId ?? undefined,
+      conversationStep: "orcamento_enviado",
     });
     setSending(false);
     if (result.status === "sent" || result.status === "pending") {

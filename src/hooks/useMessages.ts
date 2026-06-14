@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   findMessages,
+  findMessagesForChat,
   markAsRead,
   getBase64FromMediaMessage,
   type EvolutionMessage,
 } from "@/services/evolutionApi";
-import { whapiListMessages } from "@/services/whapiApi";
-import { sendWhatsAppMessage, resolveRecipient } from "@/services/messageSender";
+import { whapiListMessages, whapiListMessagesForChat } from "@/services/whapiApi";
+import { sendWhatsAppMessage, resolveRecipient, normalizeBrazilPhone } from "@/services/messageSender";
 import { supabase } from "@/integrations/supabase/client";
 import { createLogger } from "@/lib/logger";
 import { autoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
@@ -49,8 +50,36 @@ function normalizeMessageTimestamp(value: unknown): number {
   return n > 10_000_000_000 ? n / 1000 : n;
 }
 
+// O WhatsApp (Baileys/Evolution e Whapi) embrulha muitas mensagens dentro de
+// contêineres que escondem o conteúdo real um nível abaixo. Sem abrir esses
+// contêineres, `mapMessage` não acha texto nem mídia e a bolha renderiza VAZIA
+// (aparece só o horário). Aqui descemos recursivamente até o conteúdo real:
+//  - ephemeralMessage           → mensagens temporárias ("some depois")
+//  - viewOnceMessage(V2/V2Ext)  → "ver uma vez"
+//  - documentWithCaptionMessage → documento com legenda
+//  - editedMessage              → mensagem editada
+const MESSAGE_WRAPPER_KEYS = [
+  "ephemeralMessage",
+  "viewOnceMessage",
+  "viewOnceMessageV2",
+  "viewOnceMessageV2Extension",
+  "documentWithCaptionMessage",
+  "editedMessage",
+] as const;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function unwrapMessageContent(m: any, depth = 0): any {
+  if (!m || typeof m !== "object" || depth > 6) return m;
+  for (const key of MESSAGE_WRAPPER_KEYS) {
+    const inner = m[key]?.message;
+    if (inner) return unwrapMessageContent(inner, depth + 1);
+  }
+  return m;
+}
+
 function mapMessage(msg: EvolutionMessage): ChatMessage {
-  const m = msg.message;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const m = unwrapMessageContent(msg.message) as any;
   let text = "";
   let mediaType: ChatMessage["mediaType"];
   let mediaUrl: string | undefined;
@@ -77,6 +106,14 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaMimetype = m.videoMessage.mimetype || "video/mp4";
     mediaCaption = m.videoMessage.caption;
     text = m.videoMessage.caption || "";
+  } else if (m?.ptvMessage) {
+    // Vídeo redondo ("video note") — mesma estrutura do videoMessage.
+    mediaType = "video";
+    mediaUrl = m.ptvMessage.url;
+    mediaBase64 = m.ptvMessage.base64;
+    mediaMimetype = m.ptvMessage.mimetype || "video/mp4";
+    mediaCaption = m.ptvMessage.caption;
+    text = m.ptvMessage.caption || "";
   } else if (m?.audioMessage) {
     mediaType = "audio";
     mediaUrl = m.audioMessage.url;
@@ -96,6 +133,15 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaBase64 = m.stickerMessage.base64;
     mediaMimetype = m.stickerMessage.mimetype || "image/webp";
     text = "";
+  } else {
+    // Fallback: tipo de mensagem não suportado (localização, contato, enquete,
+    // botões, reação etc.). Antes a bolha aparecia totalmente vazia — só o
+    // horário —, dando a impressão de que a mensagem "não chegou". Agora ao
+    // menos mostramos um rótulo curto pra confirmar que a mensagem existe.
+    const inferred = m && typeof m === "object" ? Object.keys(m)[0] : undefined;
+    if (inferred && inferred !== "messageContextInfo") {
+      text = "📎 Mensagem não suportada neste formato";
+    }
   }
 
   return {
@@ -120,6 +166,7 @@ export function useMessages(
   remoteJid: string | null,
   preferredSendTargetJid: string | null = null,
   isWhapi: boolean = false,
+  customerId: string | null = null,
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -150,18 +197,28 @@ export function useMessages(
 
     try {
       setIsLoading((prev) => (!prev ? true : prev));
-      const phone = remoteJid.split("@")[0];
+      const altJid = preferredSendTargetJid || resolvedSendTargetJid;
+      const phoneCandidates = new Set<string>();
+      const rawFromJid = remoteJid.split("@")[0].replace(/\D/g, "");
+      const rawFromAlt = altJid?.split("@")[0].replace(/\D/g, "") || "";
+      if (rawFromJid) phoneCandidates.add(rawFromJid);
+      if (rawFromAlt) phoneCandidates.add(rawFromAlt);
+      const normalized = normalizeBrazilPhone(rawFromAlt || rawFromJid);
+      if (normalized) phoneCandidates.add(normalized);
+
       const [raw, clearedRow] = await Promise.all([
         isWhapi
-          ? whapiListMessages(remoteJid, 50)
-          : findMessages(instanceName!, remoteJid, 50),
-        supabase
-          .from("customers")
-          .select("chat_cleared_at")
-          .eq("phone_whatsapp", phone)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+          ? whapiListMessagesForChat(remoteJid, altJid, 50)
+          : findMessagesForChat(instanceName!, remoteJid, altJid, 50),
+        phoneCandidates.size > 0
+          ? supabase
+              .from("customers")
+              .select("chat_cleared_at")
+              .in("phone_whatsapp", Array.from(phoneCandidates))
+              .order("updated_at", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
 
       const clearedAtMs = clearedRow.data?.chat_cleared_at
@@ -226,7 +283,7 @@ export function useMessages(
       fetchingRef.current = false;
       setIsLoading(false);
     }
-  }, [instanceName, remoteJid, isWhapi]);
+  }, [instanceName, remoteJid, preferredSendTargetJid, resolvedSendTargetJid, isWhapi]);
 
   useEffect(() => {
     setMessages([]);
@@ -346,23 +403,39 @@ export function useMessages(
   );
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, phoneOverride?: string | null) => {
       if (!remoteJid || (!isWhapi && !instanceName)) {
         logger.error("sendMessage: missing instanceName or remoteJid", { instanceName, remoteJid });
-        return;
+        // Antes retornava mudo aqui: o consultor mandava "oi" e nada acontecia,
+        // sem toast nem motivo. Agora lançamos para que o ChatView mostre o
+        // toast de erro e o composer preserve o texto digitado.
+        throw new Error(
+          !remoteJid
+            ? "Conversa sem destinatário válido. Reabra a conversa e tente de novo."
+            : "WhatsApp não está conectado. Conecte o número e tente de novo.",
+        );
       }
 
-      logger.debug("sendMessage called", { text: text.slice(0, 50), remoteJid, preferredSendTargetJid, resolvedSendTargetJid });
+      logger.debug("sendMessage called", { text: text.slice(0, 50), remoteJid, preferredSendTargetJid, resolvedSendTargetJid, phoneOverride });
 
-      const targetJid = await resolveSendTargetJid();
-      if (!targetJid) {
-        logger.error("resolveSendTargetJid returned null");
-        throw new Error("Destinatário inválido para envio");
+      // Destinatário: prioriza o telefone real do cliente (mesma fonte do bot,
+      // `customers.phone_whatsapp`). Sem ele, cai no JID resolvido. Conversas com
+      // remoteJid `@lid` (ID criptografado) não carregam telefone no JID; mandar
+      // o `@lid` cru pra Evolution fazia o envio manual de texto falhar enquanto
+      // o fluxo (que usa phone_whatsapp) funcionava.
+      let recipient: string;
+      if (phoneOverride) {
+        recipient = phoneOverride;
+      } else {
+        const targetJid = await resolveSendTargetJid();
+        if (!targetJid) {
+          logger.error("resolveSendTargetJid returned null");
+          throw new Error("Destinatário inválido para envio");
+        }
+        recipient = resolveRecipient(targetJid);
       }
 
-      const recipient = resolveRecipient(targetJid);
-
-      logger.debug("sending to:", recipient, "targetJid:", targetJid, "instance:", instanceName, "text:", text.slice(0, 50));
+      logger.debug("sending to:", recipient, "instance:", instanceName, "text:", text.slice(0, 50));
 
       try {
         const result = await sendWhatsAppMessage({
@@ -371,6 +444,8 @@ export function useMessages(
           mediaCategory: "text",
           text,
           isWhapi,
+          customerId,
+          conversationStep: "consultor_manual",
         });
 
         if (result.status === "failed") {
@@ -433,7 +508,7 @@ export function useMessages(
         throw err;
       }
     },
-    [instanceName, remoteJid, resolveSendTargetJid, isWhapi]
+    [instanceName, remoteJid, resolveSendTargetJid, isWhapi, customerId]
   );
 
   return { messages, isLoading, sendMessage, loadMedia, refetch: fetchMessages, resolveSendTargetJid };

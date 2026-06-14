@@ -52,6 +52,36 @@ export function whapiListMessages(chatId: string, count = 50): Promise<Evolution
   return call<EvolutionMessage[]>("list_messages", { chatId: normalizeJid(chatId), count });
 }
 
+/** Mesma lógica de findMessagesForChat — Whapi/Evolution podem indexar msgs em JIDs diferentes. */
+export async function whapiListMessagesForChat(
+  remoteJid: string,
+  altJid?: string | null,
+  count = 50,
+): Promise<EvolutionMessage[]> {
+  const jids = new Set<string>([normalizeJid(remoteJid)]);
+  if (altJid) jids.add(normalizeJid(altJid));
+  const altPhone = altJid?.endsWith("@s.whatsapp.net") ? altJid.split("@")[0] : null;
+  if (altPhone) jids.add(normalizeJid(`${altPhone}@s.whatsapp.net`));
+
+  const batches = await Promise.all(
+    Array.from(jids).map((jid) =>
+      whapiListMessages(jid, count).catch(() => [] as EvolutionMessage[]),
+    ),
+  );
+
+  const seen = new Set<string>();
+  const merged: EvolutionMessage[] = [];
+  for (const batch of batches) {
+    for (const msg of batch) {
+      const id = msg.key?.id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      merged.push(msg);
+    }
+  }
+  return merged;
+}
+
 export async function whapiGetProfilePicture(chatId: string): Promise<string | null> {
   try {
     const r = await call<{ url: string | null }>("get_profile_pic", { chatId: normalizeJid(chatId) });

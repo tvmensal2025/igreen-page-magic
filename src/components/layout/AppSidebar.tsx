@@ -18,6 +18,7 @@ import {
   Mic,
   GraduationCap,
   Package,
+  Settings,
 } from "lucide-react";
 
 export type AdminTabId =
@@ -95,6 +96,7 @@ interface AppSidebarProps {
   onOpenChange?: (open: boolean) => void;
   collapsed?: boolean;
   onCollapse?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export function AppSidebar({
@@ -109,6 +111,7 @@ export function AppSidebar({
   onOpenChange,
   collapsed = false,
   onCollapse,
+  onOpenSettings,
 }: AppSidebarProps) {
   const handleItemClick = (item: NavItem) => {
     if (item.href && onNavigate) {
@@ -165,17 +168,6 @@ export function AppSidebar({
                 <p className="pe-heading text-base font-bold tracking-tight leading-tight truncate text-slate-50">{consultantName}</p>
                 <p className="text-[9px] mt-1 uppercase tracking-[0.22em] truncate text-primary">{consultantLevel}</p>
               </div>
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-                  aria-label="Sair"
-                  title="Sair"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => onOpenChange?.(false)}
@@ -219,6 +211,39 @@ export function AppSidebar({
             </div>
           ))}
         </nav>
+
+        {/* Configurações + Sair — colados no final, só ao expandir */}
+        {!collapsed && (onOpenSettings || onLogout) && (
+          <div className="px-3 pb-3 shrink-0 space-y-0.5">
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenSettings();
+                  onOpenChange?.(false);
+                }}
+                className="pe-nav-item w-full text-left"
+                title="Configurações"
+                aria-label="Configurações"
+              >
+                <Settings className="w-[18px] h-[18px] shrink-0" />
+                <span className="truncate">Configurações</span>
+              </button>
+            )}
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="pe-nav-item w-full text-left"
+                title="Sair"
+                aria-label="Sair"
+              >
+                <LogOut className="w-[18px] h-[18px] shrink-0" />
+                <span className="truncate">Sair</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {collapsed && onLogout && (
           <div className="p-2 shrink-0 flex justify-center">

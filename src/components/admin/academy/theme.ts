@@ -46,6 +46,10 @@ export const AC = {
   dangerBg: "rgba(220,38,38,0.14)",
 } as const;
 
-/** Tipografia oficial do projeto (ver --font-heading / --font-body). */
-export const AC_FONT_DISPLAY = "'Montserrat', system-ui, sans-serif";
-export const AC_FONT_BODY = "'Open Sans', system-ui, sans-serif";
+/**
+ * Tipografia única do admin (igual ao painel-elite e à Central de Anúncios):
+ * Outfit para títulos/display e Figtree para corpo. Mantém a Academy dentro
+ * da mesma identidade visual do restante do painel.
+ */
+export const AC_FONT_DISPLAY = "'Outfit', system-ui, sans-serif";
+export const AC_FONT_BODY = "'Figtree', system-ui, sans-serif";

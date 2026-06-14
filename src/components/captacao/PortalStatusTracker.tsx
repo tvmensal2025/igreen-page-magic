@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, CheckCircle2, AlertTriangle, KeyRound, ScanFace, Send, Copy, RefreshCw, XCircle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, KeyRound, ScanFace, Send, Copy, RefreshCw, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast as sonnerToast } from "sonner";
 
@@ -92,6 +92,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   const [row, setRow] = useState<Row | null>(null);
   const [trace, setTrace] = useState<PortalTrace | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (!customerId) return;
@@ -252,7 +253,19 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
             {retrying ? <Loader2 className="w-3 h-3 animate-spin" /> : <><RefreshCw className="w-3 h-3 mr-1" />Reenviar ao portal</>}
           </Button>
         )}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-5 w-5 shrink-0"
+          aria-label={collapsed ? "Expandir detalhes" : "Recolher detalhes"}
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          {collapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+        </Button>
       </div>
+      {!collapsed && (
+      <>
       {isOtp && row?.otp_code && (
         <div className="mt-1.5 flex items-center gap-1.5">
           <span className="opacity-80">Código recebido:</span>
@@ -287,6 +300,8 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
         <p className="mt-1 opacity-80 leading-snug">
           <span className="font-semibold">Motivo do manual:</span> {manualReason}
         </p>
+      )}
+      </>
       )}
     </div>
   );

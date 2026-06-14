@@ -43,7 +43,7 @@ export function AdQualityPanel({ headline, primary, description, cityCount, dist
         <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
           <Sparkles className="w-3.5 h-3.5" /> Score do anúncio
         </div>
-        <div className={`text-2xl font-black ${colorText}`}>{result.score}<span className="text-xs text-muted-foreground">/100</span></div>
+        <div className={`text-2xl ads-num ${colorText}`}>{result.score}<span className="text-xs text-muted-foreground">/100</span></div>
       </div>
       <div className={`text-xs font-semibold ${colorText}`}>{result.summary}</div>
 

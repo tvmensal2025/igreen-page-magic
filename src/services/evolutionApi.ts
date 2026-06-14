@@ -335,18 +335,30 @@ export async function findChats(instanceName: string): Promise<EvolutionChat[]> 
   return request<EvolutionChat[]>(`chat/findChats/${instanceName}`, "POST", {});
 }
 
+export interface EvolutionMessageContent {
+  conversation?: string;
+  extendedTextMessage?: { text: string };
+  imageMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
+  documentMessage?: { url?: string; fileName?: string; mimetype?: string; base64?: string };
+  audioMessage?: { url?: string; mimetype?: string; ptt?: boolean; base64?: string };
+  videoMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
+  // Vídeo redondo ("video note") — mesma forma do videoMessage.
+  ptvMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
+  stickerMessage?: { url?: string; mimetype?: string; base64?: string };
+  // Contêineres que escondem o conteúdo real um nível abaixo (em `.message`).
+  // Sem desembrulhar, a mensagem renderiza vazia no painel.
+  ephemeralMessage?: { message?: EvolutionMessageContent };
+  viewOnceMessage?: { message?: EvolutionMessageContent };
+  viewOnceMessageV2?: { message?: EvolutionMessageContent };
+  viewOnceMessageV2Extension?: { message?: EvolutionMessageContent };
+  documentWithCaptionMessage?: { message?: EvolutionMessageContent };
+  editedMessage?: { message?: EvolutionMessageContent };
+}
+
 export interface EvolutionMessage {
   key: { remoteJid: string; remoteJidAlt?: string; fromMe: boolean; id: string };
   pushName?: string;
-  message?: {
-    conversation?: string;
-    extendedTextMessage?: { text: string };
-    imageMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
-    documentMessage?: { url?: string; fileName?: string; mimetype?: string; base64?: string };
-    audioMessage?: { url?: string; mimetype?: string; ptt?: boolean; base64?: string };
-    videoMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
-    stickerMessage?: { url?: string; mimetype?: string; base64?: string };
-  };
+  message?: EvolutionMessageContent;
   messageTimestamp?: number;
   status?: number | string;
 }
@@ -368,6 +380,44 @@ export async function findMessages(instanceName: string, remoteJid: string, limi
   );
   if (Array.isArray(result)) return result;
   return result?.messages?.records || [];
+}
+
+/**
+ * Busca mensagens em todos os JIDs relevantes de uma conversa.
+ * Evolution/Baileys grava outbound em `@s.whatsapp.net` mesmo quando o chat
+ * aberto no painel usa `@lid` — filtrar só pelo remoteJid da sidebar fazia
+ * sumir mensagens enviadas pela plataforma (orçamento, texto manual, etc.).
+ */
+export async function findMessagesForChat(
+  instanceName: string,
+  remoteJid: string,
+  altJid?: string | null,
+  limit = 50,
+): Promise<EvolutionMessage[]> {
+  const jids = new Set<string>([remoteJid]);
+  if (altJid && altJid !== remoteJid) jids.add(altJid);
+
+  // Se o chat é @lid mas temos o telefone real no alt, garante também o JID BR.
+  const altPhone = altJid?.endsWith("@s.whatsapp.net") ? altJid.split("@")[0] : null;
+  if (altPhone) jids.add(`${altPhone}@s.whatsapp.net`);
+
+  const batches = await Promise.all(
+    Array.from(jids).map((jid) =>
+      findMessages(instanceName, jid, limit).catch(() => [] as EvolutionMessage[]),
+    ),
+  );
+
+  const seen = new Set<string>();
+  const merged: EvolutionMessage[] = [];
+  for (const batch of batches) {
+    for (const msg of batch) {
+      const id = msg.key?.id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      merged.push(msg);
+    }
+  }
+  return merged;
 }
 
 export interface EvolutionContact { id: string; remoteJid: string; pushName?: string; profilePicUrl?: string }

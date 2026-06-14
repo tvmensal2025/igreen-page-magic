@@ -103,7 +103,7 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
     <Card className="p-5 sm:p-6">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h3 className="font-heading font-bold text-base text-foreground flex items-center gap-2">
+          <h3 className="ads-heading font-bold text-base text-foreground flex items-center gap-2">
             <FilterIcon className="w-4 h-4 text-primary" />
             Funil de conversão com custos
           </h3>

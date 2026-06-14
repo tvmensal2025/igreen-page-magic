@@ -5,7 +5,7 @@ import { MessageBubble } from "./MessageBubble";
 import { MessageComposer } from "./MessageComposer";
 import { AddCustomerDialog } from "./AddCustomerDialog";
 import { useMessages } from "@/hooks/useMessages";
-import { sendWhatsAppMessage, resolveRecipient } from "@/services/messageSender";
+import { sendWhatsAppMessage, resolveRecipient, normalizeBrazilPhone } from "@/services/messageSender";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { MessageTemplate } from "@/types/whatsapp";
@@ -41,16 +41,22 @@ interface ChatViewProps {
 }
 
 export function ChatView({ instanceName, chat, templates, consultantId, initialMessage, isWhapi = false }: ChatViewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+  const [isCustomer, setIsCustomer] = useState(false);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const { messages, isLoading, sendMessage, loadMedia, resolveSendTargetJid, refetch } = useMessages(
     instanceName,
     chat?.remoteJid || null,
     chat?.sendTargetJid || null,
     isWhapi,
+    customerId,
   );
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const { toast } = useToast();
-  const [isCustomer, setIsCustomer] = useState(false);
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  // Telefone real do cliente (customers.phone_whatsapp), MESMA fonte de verdade
+  // que o bot (manual-step-send) usa para enviar. Quando o `remoteJid` da
+  // conversa é `@lid` (ID criptografado, não telefone), enviar o JID cru falha
+  // na Evolution — por isso priorizamos este número real no envio do painel.
+  const [customerPhone, setCustomerPhone] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [kanbanStages, setKanbanStages] = useState<Tables<"kanban_stages">[]>([]);
   const [sendingToCrm, setSendingToCrm] = useState(false);
@@ -252,7 +258,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   // Check if this contact is already a customer; auto-create a minimal
   // whatsapp_lead row so flow shortcuts (⚡) always have a customerId.
   useEffect(() => {
-    if (!chat) { setIsCustomer(false); setCustomerId(null); return; }
+    if (!chat) { setIsCustomer(false); setCustomerId(null); setCustomerPhone(null); return; }
     const rawPhone = chat.remoteJid.split("@")[0].replace(/\D/g, "");
     // BR phone pode estar gravado com ou sem DDI 55 — gera candidatos
     // pra garantir que o lookup ache o cliente existente e o botão ⚡
@@ -273,16 +279,20 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       // .maybeSingle() falhava ou trazia o shell antigo vazio → ficha 2/18.
       const { data: existingRows } = await supabase
         .from("customers")
-        .select("id, created_at")
+        .select("id, phone_whatsapp, created_at")
         .eq("consultant_id", consultantId)
         .in("phone_whatsapp", candidatesArr)
         .order("created_at", { ascending: false })
         .limit(1);
       if (cancelled) return;
-      const existing = (existingRows as Array<{ id: string }> | null)?.[0];
+      const existing = (existingRows as Array<{ id: string; phone_whatsapp?: string | null }> | null)?.[0];
       if (existing?.id) {
         setIsCustomer(true);
         setCustomerId(existing.id);
+        // Telefone real do cliente é a fonte de verdade do destinatário (mesma
+        // do bot). Sem isso, conversas com remoteJid `@lid` mandavam o JID cru
+        // pra Evolution e o envio manual falhava.
+        setCustomerPhone(existing.phone_whatsapp ?? insertPhone);
         return;
       }
       // Fallback fuzzy: últimos 9 dígitos (DDD + número), evita duplicar
@@ -297,10 +307,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           .order("created_at", { ascending: false })
           .limit(1);
         if (cancelled) return;
-        const found = (fuzzy as Array<{ id: string }> | null)?.[0];
+        const found = (fuzzy as Array<{ id: string; phone_whatsapp?: string | null }> | null)?.[0];
         if (found?.id) {
           setIsCustomer(true);
           setCustomerId(found.id);
+          setCustomerPhone(found.phone_whatsapp ?? insertPhone);
           return;
         }
       }
@@ -321,6 +332,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       if (created?.id) {
         setIsCustomer(true);
         setCustomerId(created.id);
+        setCustomerPhone(insertPhone);
       } else if (error) {
         logger.error("Falha ao auto-criar cliente para chat:", error);
         setIsCustomer(false);
@@ -397,12 +409,18 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     return () => ro.disconnect();
   }, [messages, scheduleScrollToBottom]);
 
-  // Unified helper to resolve JID for media/audio/document sends
+  // Unified helper to resolve JID for media/audio/document sends.
+  // Prioridade: telefone real do cliente (mesma fonte do bot) → fallback p/ JID
+  // resolvido. Conversas com remoteJid `@lid` (ID criptografado) não têm telefone
+  // no JID; mandar o `@lid` cru pra Evolution fazia o envio manual falhar enquanto
+  // o fluxo (que usa phone_whatsapp) funcionava.
   const getResolvedPhone = useCallback(async (): Promise<string | null> => {
+    const realPhone = normalizeBrazilPhone(customerPhone);
+    if (realPhone) return realPhone;
     const targetJid = await resolveSendTargetJid();
     if (!targetJid) return null;
     return resolveRecipient(targetJid);
-  }, [resolveSendTargetJid]);
+  }, [resolveSendTargetJid, customerPhone]);
 
   if (!chat) {
     return (
@@ -590,8 +608,26 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       <MessageComposer
         onSend={async (text) => {
           stickToBottomRef.current = true;
-          await sendMessage(text);
-          scheduleScrollToBottom(true);
+          try {
+            // Destinatário: telefone real do cliente (mesma fonte do bot) quando
+            // disponível — cobre conversas `@lid` onde o JID não tem telefone.
+            const override = normalizeBrazilPhone(customerPhone);
+            await sendMessage(text, override);
+            scheduleScrollToBottom(true);
+          } catch (err) {
+            // Falha de envio de TEXTO antes não tinha feedback nenhum: o erro
+            // subia até o composer e era engolido por um `catch {}` vazio, então
+            // o consultor mandava "oi" e nada acontecia (sem toast, sem motivo).
+            // Agora avisamos o motivo e re-lançamos para o composer PRESERVAR o
+            // texto digitado (não limpa o campo), permitindo reenviar.
+            logger.error("Falha ao enviar mensagem de texto:", err);
+            toast({
+              title: "Não consegui enviar a mensagem",
+              description: err instanceof Error ? err.message : "Falha no envio. Verifique a conexão do WhatsApp e tente de novo.",
+              variant: "destructive",
+            });
+            throw err;
+          }
         }}
         initialMessage={initialMessage}
         consultantId={consultantId}
@@ -607,6 +643,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             const audioDataUrl = `data:audio/ogg;base64,${base64}`;
             const result = await sendWhatsAppMessage({
               instanceName, phone, mediaCategory: "audio", mediaUrl: audioDataUrl, isWhapi,
+              customerId: customerId ?? undefined,
+              conversationStep: "consultor_manual",
             });
             if (result.status === "timeout") {
               toast({ title: "Áudio enviado (aguardando confirmação)", description: "O servidor está processando", variant: "default" });
@@ -625,6 +663,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           try {
             const result = await sendWhatsAppMessage({
               instanceName, phone, mediaCategory: "audio", mediaUrl: audioUrl, isWhapi,
+              customerId: customerId ?? undefined,
+              conversationStep: "consultor_manual",
             });
             if (result.status === "timeout") {
               toast({ title: "Áudio enviado (aguardando confirmação)", variant: "default" });
@@ -649,6 +689,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
             const result = await sendWhatsAppMessage({
               instanceName, phone, mediaCategory: category, mediaUrl, text: caption, fileName, isWhapi,
+              customerId: customerId ?? undefined,
+              conversationStep: "consultor_manual",
             });
             if (result.status === "timeout") {
               toast({ title: "Mídia enviada (aguardando confirmação)", description: "O servidor está processando", variant: "default" });

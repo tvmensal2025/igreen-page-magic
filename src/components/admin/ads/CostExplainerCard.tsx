@@ -66,7 +66,7 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
           {label}
         </div>
         <div className="flex items-baseline gap-2 mt-1">
-          <span className="text-3xl font-heading font-bold">{count}</span>
+          <span className="text-3xl ads-num font-bold">{count}</span>
           <span className="text-xs opacity-70">
             {count === 1 ? "pessoa" : "pessoas"}
           </span>
@@ -84,7 +84,7 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
   return (
     <Card className="p-5 sm:p-6 bg-gradient-to-br from-primary/8 via-background to-background border-primary/20">
       <div className="mb-5">
-        <h3 className="font-heading font-bold text-base sm:text-lg text-foreground">
+        <h3 className="ads-heading font-bold text-base sm:text-lg text-foreground">
           Quanto custa cada cliente?
         </h3>
         <p className="text-xs sm:text-sm text-muted-foreground mt-1">

@@ -11,6 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Users, UserPlus } from "lucide-react";
+import { normalizeBrazilPhone } from "@/services/messageSender";
+
+function normalizeRecipientPhone(raw: string): string | null {
+  return normalizeBrazilPhone(raw) || (raw.replace(/\D/g, "").length >= 10 ? raw.replace(/\D/g, "") : null);
+}
 
 export interface RecipientSelection {
   /** Cliente da base (quando escolhido da lista). */
@@ -70,8 +75,8 @@ export function RecipientPicker({ consultantId, value, onChange }: RecipientPick
   const syncAvulso = (name: string, phone: string) => {
     setAvulsoName(name);
     setAvulsoPhone(phone);
-    const digits = phone.replace(/\D/g, "");
-    if (name.trim() && digits.length >= 10) {
+    const digits = normalizeRecipientPhone(phone);
+    if (name.trim() && digits) {
       onChange({ customerId: null, name: name.trim(), phone: digits });
     } else {
       onChange(null);
@@ -130,13 +135,15 @@ export function RecipientPicker({ consultantId, value, onChange }: RecipientPick
                   <button
                     key={c.id}
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      const digits = normalizeRecipientPhone(c.phone_whatsapp);
+                      if (!digits) return;
                       onChange({
                         customerId: c.id,
                         name: c.name || c.phone_whatsapp,
-                        phone: c.phone_whatsapp.replace(/\D/g, ""),
-                      })
-                    }
+                        phone: digits,
+                      });
+                    }}
                     className={`w-full text-left flex items-center gap-2 p-1.5 rounded transition-colors ${
                       selected ? "bg-primary/15" : "hover:bg-secondary/50"
                     }`}
