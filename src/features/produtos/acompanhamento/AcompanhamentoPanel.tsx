@@ -87,7 +87,29 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10 text-[#1a2e1f]">
+      {/* Hero magazine 7+5 */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <div className="lg:col-span-7">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+            Acompanhamento
+          </span>
+          <h1 className="text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] font-[DM_Serif_Display,Georgia,serif]">
+            Sua performance<br />em movimento
+          </h1>
+          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+            {summary.totalActive} venda(s) ativa(s) acumulando {KWH(summary.totalPointsKwh)} no plano
+            de carreira. Ganho estimado mensal de <span className="font-semibold text-[#7d9b76]">{BRL(financial.totalEstimatedCommission)}</span>.
+          </p>
+        </div>
+        <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+          <HeroKpi kicker="Vendas Ativas" value={String(summary.totalActive)} accent="accent" />
+          <HeroKpi kicker="Pontos kWh" value={summary.totalPointsKwh.toLocaleString("pt-BR")} accent="accent" />
+          <HeroKpi kicker="Ganho/mês" value={BRL(financial.totalEstimatedCommission)} accent="gold" />
+          <HeroKpi kicker="Nível" value={career.current.label} accent="ink" />
+        </div>
+      </section>
+
       {/* Cards de desempenho */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
