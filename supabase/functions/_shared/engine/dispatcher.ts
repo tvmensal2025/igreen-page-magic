@@ -28,7 +28,7 @@ import { jsonLog } from "../audit.ts";
 import type {
   EngineAction,
   EngineResult,
-} from "../flow-engine/types.ts";
+} from "./legacy-router-types.ts";
 
 export interface DispatchContext {
   customerId: string;

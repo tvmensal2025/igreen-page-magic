@@ -1580,7 +1580,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // 🛡️ Fix 3 (2026-06-05): se o lead faz PERGUNTA em passo de captura
     // (foto da conta / doc), força o intent pra "tem_duvida" — assim o
     // bloco FAQ abaixo responde em vez de re-emitir o pedido do passo.
-    if (isCaptureStep && !ctx.buttonId && ctx.messageText && cls.intent !== "tem_duvida") {
+    if (isCaptureStep && !ctx.buttonId && ctx.messageText && (cls.intent as string) !== "tem_duvida") {
       const t = String(ctx.messageText || "").trim();
       const isQuestion = t.includes("?") || /^(quanto|como|quando|onde|qual|por que|porque|pq|o que|tem|posso|precisa|preciso|vai demorar|demora|tempo|prazo|cad[eê]|quem)\b/i.test(t);
       if (isQuestion) {

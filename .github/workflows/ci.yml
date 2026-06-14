@@ -31,23 +31,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
-      # Typecheck dos novos módulos do core (whatsapp-flow-architecture-v3).
-      # Os webhooks principais também — falha aqui é regressão de tipo.
+          deno-version: v2.x
+      # Typecheck dos módulos de produção (exclui *_test.ts e __tests__/).
       - name: Typecheck core modules
         run: |
-          deno check supabase/functions/_shared/channels/ \
-                     supabase/functions/_shared/flow-engine/ \
-                     supabase/functions/_shared/captation/ \
-                     supabase/functions/_shared/conversion/ \
-                     supabase/functions/_shared/performance/ \
-                     supabase/functions/_shared/customer-flow-state.ts \
-                     supabase/functions/_shared/customer-pause-filter.ts \
-                     supabase/functions/_shared/logger.ts \
-                     supabase/functions/_shared/human-pace.ts \
-                     supabase/functions/inbound-media-retry-cron/index.ts
+          set -euo pipefail
+          mapfile -t FILES < <(
+            find supabase/functions/_shared/channels \
+                 supabase/functions/_shared/engine \
+                 supabase/functions/_shared/captation \
+                 supabase/functions/_shared/conversion \
+                 supabase/functions/_shared/performance \
+                 -name '*.ts' ! -name '*_test.ts' ! -name '*.test.ts' ! -path '*/__tests__/*'
+            printf '%s\n' \
+              supabase/functions/_shared/customer-flow-state.ts \
+              supabase/functions/_shared/customer-pause-filter.ts \
+              supabase/functions/_shared/logger.ts \
+              supabase/functions/_shared/human-pace.ts \
+              supabase/functions/inbound-media-retry-cron/index.ts
+          )
+          deno check "${FILES[@]}"
       - name: Typecheck webhooks
         run: |
           deno check supabase/functions/evolution-webhook/index.ts \
@@ -58,14 +63,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
       - name: Run Deno tests
         run: |
           deno test --allow-env --allow-read --no-check \
             supabase/functions/_shared/channels/ \
-            supabase/functions/_shared/flow-engine/ \
+            supabase/functions/_shared/engine/ \
             supabase/functions/_shared/human-pace_test.ts \
             supabase/functions/_shared/text-hash_test.ts \
             supabase/functions/_shared/grounding_test.ts \
@@ -80,16 +85,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
       # Verifica que `v3-runner.ts` é puro: sem supabase-js, fetch,
       # Date.now, Math.random, crypto.randomUUID, setTimeout/Interval.
       # Spec: flow-engine-v3-rewrite Task 4. Design §2.1, §2.4.
       - name: Run purity lint
         run: |
           deno test --allow-read --no-check \
-            supabase/functions/_shared/flow-engine/__tests__/purity_lint_test.ts
+            supabase/functions/_shared/engine/__tests__/purity_lint_test.ts
 
   spec-format:
     name: Kiro spec format

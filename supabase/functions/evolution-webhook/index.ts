@@ -9,6 +9,8 @@
 //
 // Behavior is identical to the previous monolithic version.
 
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhone } from "../_shared/utils.ts";
 import { createEvolutionSender, parseEvolutionMessage, extractMediaUrl } from "../_shared/evolution-api.ts";

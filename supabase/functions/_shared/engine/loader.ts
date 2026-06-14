@@ -517,7 +517,7 @@ function normalizeMediaOrder(entries: unknown[]): MediaOrderEntry[] {
       // Bare string — interpret as kind hint only. media_id absent
       // means the variant builder MUST fall back to synthesis from
       // step.messageText (the renderer treats this as "skip").
-      out.push({ kind: e as MediaOrderEntry["kind"] });
+      out.push({ kind: e as MediaOrderEntry["kind"] } as MediaOrderEntry);
       continue;
     }
     if (typeof e === "object") {

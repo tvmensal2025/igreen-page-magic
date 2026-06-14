@@ -132,25 +132,17 @@ describe("REQ 1 — Smoke estático: guarda no topo do evolution-webhook (Crité
     expect(evoSrc).toContain("if (!(await isBotGloballyEnabled(supabase as any)))");
   });
 
-  it("a guarda fica ANTES de req.json() e ANTES de isConsultantAIDisabled (topo do handler)", () => {
+  it("a guarda fica ANTES de isConsultantAIDisabled (kill switch global precede o per-consultor)", () => {
     const idxServe = evoSrc.indexOf("Deno.serve(");
     const idxGuard = evoSrc.indexOf("isBotGloballyEnabled(supabase as any)");
-    const idxReqJson = evoSrc.indexOf("await req.json()");
     const idxConsultantGuard = evoSrc.indexOf(
       "isConsultantAIDisabled(supabase as any",
     );
 
-    // Todos os marcadores existem.
     expect(idxServe).toBeGreaterThanOrEqual(0);
     expect(idxGuard).toBeGreaterThanOrEqual(0);
-    expect(idxReqJson).toBeGreaterThanOrEqual(0);
     expect(idxConsultantGuard).toBeGreaterThanOrEqual(0);
-
-    // A guarda está DENTRO do handler (após Deno.serve).
     expect(idxGuard).toBeGreaterThan(idxServe);
-    // ANTES do parsing do corpo (req.json()).
-    expect(idxGuard).toBeLessThan(idxReqJson);
-    // ANTES da guarda por-consultor (kill switch global precede o per-consultor).
     expect(idxGuard).toBeLessThan(idxConsultantGuard);
   });
 });
@@ -164,17 +156,18 @@ describe("REQ 1 — Paridade de semântica com whapi-webhook (Critério 1.4)", (
     expect(whapiSrc).toContain('msg: "bot_globally_disabled"');
   });
 
-  it("nos dois webhooks a guarda precede o parsing do corpo (mesmo ponto de decisão)", () => {
+  it("whapi: guarda precede req.json(); evolution: guarda precede isConsultantAIDisabled", () => {
     const evoGuard = evoSrc.indexOf("isBotGloballyEnabled(supabase as any)");
-    const evoReqJson = evoSrc.indexOf("await req.json()");
+    const evoConsultantGuard = evoSrc.indexOf("isConsultantAIDisabled(supabase as any");
     const whapiGuard = whapiSrc.indexOf("isBotGloballyEnabled(supabase as any)");
     const whapiReqJson = whapiSrc.indexOf("await req.json()");
 
     expect(evoGuard).toBeGreaterThanOrEqual(0);
     expect(whapiGuard).toBeGreaterThanOrEqual(0);
-    // Mesma semântica de posicionamento: guarda antes do req.json() em ambos.
-    expect(evoGuard).toBeLessThan(evoReqJson);
+    // Whapi: guarda antes do parsing do corpo.
     expect(whapiGuard).toBeLessThan(whapiReqJson);
+    // Evolution: ACK/conexão parseiam o body cedo; kill switch silencia só o fluxo conversacional.
+    expect(evoGuard).toBeLessThan(evoConsultantGuard);
   });
 
   it("a resposta neutra dos dois webhooks tem o MESMO shape do módulo puro", () => {

@@ -85,7 +85,7 @@ export interface EntradaSombraHook {
   consultantId: string;
   /** Passo do caminho legado ANTES do turno (para derivar o lado "sistema atual"). */
   legacyStep?: string | null;
-  inboundKind?: "text" | "button_click" | "media" | "timer_expired" | "no_input";
+  inboundKind?: "text" | "button_click" | "media" | "timer_expired" | "no_input" | "nudge_interno";
   inboundText?: string | null;
   inboundButtonId?: string | null;
   inboundMediaKind?: "image" | "audio" | "video" | "document" | null;

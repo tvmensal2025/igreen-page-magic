@@ -24,7 +24,7 @@ import type {
   EngineStep,
   InboundEvent,
   OutboundChoice,
-} from "../flow-engine/types.ts";
+} from "./legacy-router-types.ts";
 
 // ─── Helpers determinísticos (puros) ────────────────────────────────────────
 
@@ -338,7 +338,7 @@ export function tick(
       // (timer_expired já foi tratado no passo 2.)
       if (event.kind === "no_input") {
         // Apresenta novamente.
-        const idem = makeIdemKey(config, step.id, `choice_${(step.choiceOptions ?? []).map(o => o.id).join("|")}`);
+        const idem = makeIdemKey(config, step.id, `choice_${(step.choiceOptions ?? []).map((o) => o.id).join("|")}`);
         return {
           nextState: { ...state, status: "waiting_reply" },
           actions: [{

@@ -89,7 +89,11 @@ describe("evolutionApi (proxy-based)", () => {
             byEvents: false,
             base64: true,
             enabled: true,
-            events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+            events: [
+              "MESSAGES_UPSERT",
+              "MESSAGES_UPDATE",
+              "CONNECTION_UPDATE",
+            ],
           },
         },
       });

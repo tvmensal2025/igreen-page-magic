@@ -30,6 +30,7 @@ export interface BotContext {
   isButton: boolean;
   hasImage: boolean;
   hasDocument: boolean;
+  hasAudio?: boolean;
   imageMessage: any;
   documentMessage: any;
   message: any;
