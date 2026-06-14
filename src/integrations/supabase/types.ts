@@ -2498,6 +2498,133 @@ export type Database = {
         }
         Relationships: []
       }
+      consultant_commission_settings: {
+        Row: {
+          cadastro_igreen_ids: string[]
+          consultant_id: string
+          count_mode: string
+          created_at: string
+          graduacao: string
+          updated_at: string
+        }
+        Insert: {
+          cadastro_igreen_ids?: string[]
+          consultant_id: string
+          count_mode?: string
+          created_at?: string
+          graduacao?: string
+          updated_at?: string
+        }
+        Update: {
+          cadastro_igreen_ids?: string[]
+          consultant_id?: string
+          count_mode?: string
+          created_at?: string
+          graduacao?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultant_commission_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "consultant_commission_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_commission_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_commission_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      consultant_entrada_rules: {
+        Row: {
+          ativo: boolean
+          consultant_id: string
+          created_at: string
+          dias_diferido: number
+          distribuidora: string
+          entrada_total_pct: number
+          id: string
+          min_pessoas: number
+          pct_diferido: number
+          pct_imediato: number
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          consultant_id: string
+          created_at?: string
+          dias_diferido?: number
+          distribuidora: string
+          entrada_total_pct?: number
+          id?: string
+          min_pessoas: number
+          pct_diferido?: number
+          pct_imediato?: number
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          consultant_id?: string
+          created_at?: string
+          dias_diferido?: number
+          distribuidora?: string
+          entrada_total_pct?: number
+          id?: string
+          min_pessoas?: number
+          pct_diferido?: number
+          pct_imediato?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultant_entrada_rules_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "consultant_entrada_rules_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_entrada_rules_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_entrada_rules_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
       consultant_network: {
         Row: {
           celular: string | null
@@ -2859,6 +2986,86 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "customers"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversion_phrase_catalog: {
+        Row: {
+          category: string
+          consultant_id: string | null
+          conversation_step: string | null
+          conversion_chance: number
+          created_at: string
+          id: string
+          is_system: boolean
+          message_text: string
+          next_action: string
+          priority: number
+          shortcut: string
+          temperature: Database["public"]["Enums"]["lead_temperature"] | null
+          trigger_keywords: string[]
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          consultant_id?: string | null
+          conversation_step?: string | null
+          conversion_chance?: number
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          message_text: string
+          next_action: string
+          priority?: number
+          shortcut: string
+          temperature?: Database["public"]["Enums"]["lead_temperature"] | null
+          trigger_keywords?: string[]
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          consultant_id?: string | null
+          conversation_step?: string | null
+          conversion_chance?: number
+          created_at?: string
+          id?: string
+          is_system?: boolean
+          message_text?: string
+          next_action?: string
+          priority?: number
+          shortcut?: string
+          temperature?: Database["public"]["Enums"]["lead_temperature"] | null
+          trigger_keywords?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversion_phrase_catalog_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "conversion_phrase_catalog_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversion_phrase_catalog_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversion_phrase_catalog_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
           },
         ]
       }
@@ -3337,6 +3544,7 @@ export type Database = {
           nivel_licenciado: string | null
           nome_mae: string | null
           nome_pai: string | null
+          nudge_sent_at: string | null
           numero_instalacao: string | null
           observacao: string | null
           observacao_igreen: string | null
@@ -3537,6 +3745,7 @@ export type Database = {
           nivel_licenciado?: string | null
           nome_mae?: string | null
           nome_pai?: string | null
+          nudge_sent_at?: string | null
           numero_instalacao?: string | null
           observacao?: string | null
           observacao_igreen?: string | null
@@ -3737,6 +3946,7 @@ export type Database = {
           nivel_licenciado?: string | null
           nome_mae?: string | null
           nome_pai?: string | null
+          nudge_sent_at?: string | null
           numero_instalacao?: string | null
           observacao?: string | null
           observacao_igreen?: string | null
@@ -5765,6 +5975,211 @@ export type Database = {
           },
         ]
       }
+      products: {
+        Row: {
+          brand_name: string
+          commission_rule: Json
+          created_at: string
+          family: Database["public"]["Enums"]["product_family"]
+          id: string
+          is_active: boolean
+          landing_content: Json
+          name: string
+          scoring_rule: Json
+          slug: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          brand_name: string
+          commission_rule?: Json
+          created_at?: string
+          family: Database["public"]["Enums"]["product_family"]
+          id?: string
+          is_active?: boolean
+          landing_content?: Json
+          name: string
+          scoring_rule?: Json
+          slug: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          brand_name?: string
+          commission_rule?: Json
+          created_at?: string
+          family?: Database["public"]["Enums"]["product_family"]
+          id?: string
+          is_active?: boolean
+          landing_content?: Json
+          name?: string
+          scoring_rule?: Json
+          slug?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      proposal_events: {
+        Row: {
+          actor: string
+          attachment_url: string | null
+          counter_amount: number | null
+          created_at: string
+          id: string
+          note: string | null
+          proposal_id: string
+          type: Database["public"]["Enums"]["proposal_event_type"]
+        }
+        Insert: {
+          actor?: string
+          attachment_url?: string | null
+          counter_amount?: number | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          proposal_id: string
+          type: Database["public"]["Enums"]["proposal_event_type"]
+        }
+        Update: {
+          actor?: string
+          attachment_url?: string | null
+          counter_amount?: number | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          proposal_id?: string
+          type?: Database["public"]["Enums"]["proposal_event_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_events_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposals: {
+        Row: {
+          amount: number | null
+          amount_period: string
+          consultant_id: string
+          created_at: string
+          customer_id: string | null
+          discount: number | null
+          id: string
+          line_items: Json
+          message: string | null
+          product_id: string
+          public_token: string
+          recipient_name: string | null
+          recipient_phone: string | null
+          responded_at: string | null
+          sale_id: string | null
+          sent_at: string | null
+          status: Database["public"]["Enums"]["proposal_status"]
+          updated_at: string
+          valid_until: string | null
+          viewed_at: string | null
+        }
+        Insert: {
+          amount?: number | null
+          amount_period?: string
+          consultant_id: string
+          created_at?: string
+          customer_id?: string | null
+          discount?: number | null
+          id?: string
+          line_items?: Json
+          message?: string | null
+          product_id: string
+          public_token?: string
+          recipient_name?: string | null
+          recipient_phone?: string | null
+          responded_at?: string | null
+          sale_id?: string | null
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["proposal_status"]
+          updated_at?: string
+          valid_until?: string | null
+          viewed_at?: string | null
+        }
+        Update: {
+          amount?: number | null
+          amount_period?: string
+          consultant_id?: string
+          created_at?: string
+          customer_id?: string | null
+          discount?: number | null
+          id?: string
+          line_items?: Json
+          message?: string | null
+          product_id?: string
+          public_token?: string
+          recipient_name?: string | null
+          recipient_phone?: string | null
+          responded_at?: string | null
+          sale_id?: string | null
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["proposal_status"]
+          updated_at?: string
+          valid_until?: string | null
+          viewed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposals_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "proposals_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "proposals_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reactivation_sends: {
         Row: {
           batch_id: string | null
@@ -6296,6 +6711,138 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      sale_status_history: {
+        Row: {
+          changed_by: string | null
+          created_at: string
+          from_status: Database["public"]["Enums"]["sale_status"] | null
+          id: string
+          note: string | null
+          sale_id: string
+          to_status: Database["public"]["Enums"]["sale_status"]
+        }
+        Insert: {
+          changed_by?: string | null
+          created_at?: string
+          from_status?: Database["public"]["Enums"]["sale_status"] | null
+          id?: string
+          note?: string | null
+          sale_id: string
+          to_status: Database["public"]["Enums"]["sale_status"]
+        }
+        Update: {
+          changed_by?: string | null
+          created_at?: string
+          from_status?: Database["public"]["Enums"]["sale_status"] | null
+          id?: string
+          note?: string | null
+          sale_id?: string
+          to_status?: Database["public"]["Enums"]["sale_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_status_history_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales: {
+        Row: {
+          activated_at: string | null
+          amount: number | null
+          capture_data: Json
+          closed_at: string | null
+          consultant_id: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          notes: string | null
+          points_kwh: number
+          product_id: string
+          status: Database["public"]["Enums"]["sale_status"]
+          submitted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          activated_at?: string | null
+          amount?: number | null
+          capture_data?: Json
+          closed_at?: string | null
+          consultant_id: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          notes?: string | null
+          points_kwh?: number
+          product_id: string
+          status?: Database["public"]["Enums"]["sale_status"]
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          activated_at?: string | null
+          amount?: number | null
+          capture_data?: Json
+          closed_at?: string | null
+          consultant_id?: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          notes?: string | null
+          points_kwh?: number
+          product_id?: string
+          status?: Database["public"]["Enums"]["sale_status"]
+          submitted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "sales_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "sales_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -7247,6 +7794,13 @@ export type Database = {
         Args: { p_consultant: string; p_tokens?: number }
         Returns: boolean
       }
+      count_inbound_messages: {
+        Args: { p_customer_ids: string[] }
+        Returns: {
+          cnt: number
+          customer_id: string
+        }[]
+      }
       create_empty_bot_flow_variant: {
         Args: { _consultant_id: string; _name?: string; _variant: string }
         Returns: string
@@ -7309,6 +7863,7 @@ export type Database = {
         }
         Returns: string
       }
+      expire_overdue_proposals: { Args: never; Returns: number }
       fb_emit_capi: {
         Args: {
           _consultant_id: string
@@ -7483,6 +8038,28 @@ export type Database = {
         Args: { p_hours?: number; p_instance: string }
         Returns: string
       }
+      reactivation_outcome_by_step: {
+        Args: { p_consultant_id?: string; p_since?: string }
+        Returns: {
+          abandoned: number
+          advanced: number
+          conversation_step: string
+          responded: number
+          total: number
+        }[]
+      }
+      reactivation_outcome_stats: {
+        Args: { p_consultant_id?: string; p_since?: string }
+        Returns: {
+          abandoned: number
+          advanced: number
+          failed: number
+          pending_outcome: number
+          responded: number
+          sent: number
+          total: number
+        }[]
+      }
       recompute_pos_venda_stages: { Args: never; Returns: number }
       record_risk_signal: {
         Args: {
@@ -7557,6 +8134,7 @@ export type Database = {
         Returns: string
       }
       seed_flow_d: { Args: { _consultant_id: string }; Returns: Json }
+      seed_full_objection_pack: { Args: { _flow_id: string }; Returns: number }
       seed_igreen_faq_pack: { Args: { _flow_id: string }; Returns: number }
       seed_objection_shortcut: {
         Args: {
@@ -7640,6 +8218,37 @@ export type Database = {
         | "dead"
         | "objection"
         | "rescue"
+      product_family:
+        | "energia"
+        | "placas"
+        | "telecom"
+        | "seguros"
+        | "club"
+        | "expansao"
+      proposal_event_type:
+        | "created"
+        | "sent"
+        | "viewed"
+        | "accepted"
+        | "rejected"
+        | "countered"
+        | "consultant_reply"
+        | "expired"
+      proposal_status:
+        | "draft"
+        | "sent"
+        | "viewed"
+        | "accepted"
+        | "rejected"
+        | "countered"
+        | "expired"
+      sale_status:
+        | "lead"
+        | "capturing"
+        | "submitted"
+        | "active"
+        | "rejected"
+        | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -7769,6 +8378,41 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "user", "super_admin"],
       lead_temperature: ["hot", "warm", "cold", "dead", "objection", "rescue"],
+      product_family: [
+        "energia",
+        "placas",
+        "telecom",
+        "seguros",
+        "club",
+        "expansao",
+      ],
+      proposal_event_type: [
+        "created",
+        "sent",
+        "viewed",
+        "accepted",
+        "rejected",
+        "countered",
+        "consultant_reply",
+        "expired",
+      ],
+      proposal_status: [
+        "draft",
+        "sent",
+        "viewed",
+        "accepted",
+        "rejected",
+        "countered",
+        "expired",
+      ],
+      sale_status: [
+        "lead",
+        "capturing",
+        "submitted",
+        "active",
+        "rejected",
+        "cancelled",
+      ],
     },
   },
 } as const
