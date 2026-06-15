@@ -273,19 +273,35 @@ function installDownloadsListener() {
   });
 }
 
-async function fetchAsBase64(url) {
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error(`HTTP ${res.status} em ${url}`);
-  const blob = await res.blob();
-  if (!blob || blob.size < 200) throw new Error(`Resposta vazia (${blob?.size || 0}B)`);
-  // converte sem FileReader (service worker tem)
-  const buf = new Uint8Array(await blob.arrayBuffer());
-  let bin = "";
-  const CHUNK = 0x8000;
-  for (let i = 0; i < buf.length; i += CHUNK) {
-    bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK));
-  }
-  return { b64: btoa(bin), size: blob.size };
+// Baixa XLSX a partir do contexto DA PÁGINA (MAIN world) — assim ele herda
+// cookies, Authorization headers e sessão do SPA. Service worker faria fetch
+// sem o token Bearer do app e a API responde 401.
+async function fetchAsBase64InPage(tabId, url) {
+  const r = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    args: [url],
+    func: async (u) => {
+      try {
+        const res = await fetch(u, { credentials: "include" });
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status} em ${u}` };
+        const blob = await res.blob();
+        if (!blob || blob.size < 200) return { ok: false, error: `Resposta vazia (${blob?.size || 0}B)` };
+        const b64 = await new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onloadend = () => {
+            const s = String(fr.result || "");
+            resolve(s.includes(",") ? s.split(",")[1] : "");
+          };
+          fr.readAsDataURL(blob);
+        });
+        return { ok: true, b64, size: blob.size };
+      } catch (e) { return { ok: false, error: String(e?.message || e) }; }
+    },
+  });
+  const out = r?.[0]?.result;
+  if (!out?.ok) throw new Error(out?.error || "fetch in-page falhou");
+  return { b64: out.b64, size: out.size };
 }
 
 // ===== Gerencia tabs =====
