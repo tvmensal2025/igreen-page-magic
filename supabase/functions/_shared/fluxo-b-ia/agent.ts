@@ -164,22 +164,31 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     { role: "user" as const, content: userTurn },
   ];
 
-  // 4) LLM
+  // 4) LLM — maxTokens 2048 evita truncamento em respostas mais longas
+  // (anteriormente 600 cortava no meio e parecia "IA não respondeu mais").
   const llm = await aiChatCascade({
     model: "google/gemini-3-flash-preview",
     temperature: 0.6,
-    maxTokens: 600,
+    maxTokens: 2048,
     messages,
   }).catch((e) => {
     console.error("[fluxo-b-ia] LLM error:", e?.message);
     return null;
   });
 
-  if (!llm || !llm.text) return { respondeu: false, texto: "", acoes: [] };
+  if (!llm || !llm.text) {
+    console.warn("[fluxo-b-ia] LLM returned empty text", { hasLlm: !!llm });
+    return { respondeu: false, texto: "", acoes: [] };
+  }
 
   // 5) Parse marcadores
   const { texto, acoes } = extractActions(llm.text);
-  if (!texto) return { respondeu: false, texto: "", acoes };
+  if (!texto) {
+    console.warn("[fluxo-b-ia] após remover marcadores texto ficou vazio", { acoes, raw: llm.text.slice(0, 200) });
+    return { respondeu: false, texto: "", acoes };
+  }
+
+
 
   // 6) Side-effects (skip em dryRun)
   if (!input.dryRun) {
