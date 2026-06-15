@@ -388,6 +388,8 @@ const AdminContent = () => {
                 pendingChatPhone={pendingChatPhone}
                 pendingChatMessage={pendingChatMessage}
                 onPendingChatConsumed={() => { setPendingChatPhone(null); setPendingChatMessage(undefined); }}
+                initialSubTab={pendingAiSubTab ? "agente" : undefined}
+                initialAgentSubTab={pendingAiSubTab as any}
               />
             </WhatsAppErrorBoundary>
           )}
