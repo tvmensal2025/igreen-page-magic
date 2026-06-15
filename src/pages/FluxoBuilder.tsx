@@ -18,7 +18,7 @@ import FluxoBHeaderStats from "@/components/admin/flow-builder/FluxoBHeaderStats
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
 import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
-import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard";
+// AiPreferencesCard movido para Super Admin
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import StepCoachPanel from "@/components/admin/flow-builder/StepCoachPanel";
