@@ -351,6 +351,69 @@ function textoDoInbound(inbound: InboundEvent): string {
 }
 
 /**
+ * Detecta o caso "Fluxo B IA Livre sem passos" — quando a variante do cliente
+ * é B e o flow B do consultor (ou o público de fallback) NÃO tem nenhum
+ * `bot_flow_steps` ativo. Nesse caso o Cérebro deve sair de cena: quem
+ * responde é a Vendedora V2 (`processarTurnoFluxoB`), e o engine v3 não pode
+ * ser invocado (geraria `empty_flow → paused_system`, corrompendo o estado).
+ *
+ * Fail-open: qualquer erro de leitura → `false` (segue caminho normal).
+ */
+async function variantBLivreSemPassos(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  customerId: string,
+): Promise<boolean> {
+  try {
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("flow_variant, consultant_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    const variant = String(customer?.flow_variant || "").toUpperCase();
+    if (variant !== "B") return false;
+
+    // Busca o flow B do consultor; se sync_mode=public ou não tiver, cai no público.
+    const { data: ownFlow } = await supabase
+      .from("bot_flows")
+      .select("id, sync_mode")
+      .eq("consultant_id", customer?.consultant_id)
+      .eq("variant", "B")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    let flowId = ownFlow?.id as string | undefined;
+    const ownSync = String((ownFlow as { sync_mode?: string } | null)?.sync_mode ?? "public").toLowerCase();
+    if (!ownFlow || ownSync === "public") {
+      const { data: pub } = await supabase
+        .from("bot_flows")
+        .select("id")
+        .eq("is_public", true)
+        .eq("is_active", true)
+        .eq("variant", "B")
+        .limit(1)
+        .maybeSingle();
+      if (pub?.id) flowId = pub.id;
+    }
+    if (!flowId) return true; // Sem flow B = comportamento IA Livre.
+
+    const { count } = await supabase
+      .from("bot_flow_steps")
+      .select("id", { count: "exact", head: true })
+      .eq("flow_id", flowId)
+      .eq("is_active", true);
+    return (count ?? 0) === 0;
+  } catch (e) {
+    console.warn(
+      "[cerebro/index] variantBLivreSemPassos falhou (fail-open, segue):",
+      (e as { message?: string })?.message,
+    );
+    return false;
+  }
+}
+
+/**
  * Envolve uma promessa num teto de tempo. Se `p` resolver antes do teto, devolve
  * seu valor; se rejeitar OU estourar o teto, devolve o valor seguro de
  * `aoFalhar()` (fail-open). Nunca rejeita.
