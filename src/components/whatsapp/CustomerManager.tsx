@@ -296,29 +296,23 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
               <Input placeholder="Buscar nome, telefone, CPF, e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 h-10 sm:h-11 rounded-xl bg-secondary/30 border-border/50 focus:border-primary/40 text-sm" />
             </div>
 
-            {/* Tipo produto toggle */}
-            <div className="flex flex-wrap gap-1 bg-secondary/30 rounded-lg p-1 border border-border/40 w-full sm:w-fit">
-              {([
-                ["all", "Todos", "📊"],
-                ["energia", "Energia", "⚡"],
-                ["telefonia", "Telecom", "📱"],
-                ["solar", "Conexão Solar", "☀️"],
-                ["placas", "Conexão Placas", "🔋"],
-                ["seguros", "Seguro", "🛡️"],
-              ] as const).map(([val, label, icon]) => (
-                <button
-                  key={val}
-                  onClick={() => setSelectedTipo(val as any)}
-                  className={`inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-1.5 px-3 transition-all duration-200 ${
-                    selectedTipo === val
-                      ? "bg-primary text-white shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                  }`}
-                >
-                  <span className="text-sm">{icon}</span>
-                  <span>{label}</span>
-                </button>
-              ))}
+            {/* Tipo de produto — combobox (libera espaço e fica mais limpo) */}
+            <div className="w-full sm:w-64">
+              <Combobox
+                options={[
+                  { value: "all", label: "📊 Todos" },
+                  { value: "energia", label: "⚡ Energia" },
+                  { value: "telefonia", label: "📱 Telecom" },
+                  { value: "solar", label: "☀️ Conexão Solar" },
+                  { value: "placas", label: "🔋 Conexão Placas" },
+                  { value: "seguros", label: "🛡️ Seguro" },
+                ]}
+                value={selectedTipo}
+                onChange={(v) => setSelectedTipo((v as typeof selectedTipo) ?? "all")}
+                placeholder="Tipo de produto"
+                searchPlaceholder="Buscar produto…"
+                className="h-9 rounded-xl bg-secondary/30 border-border/50 text-xs"
+              />
             </div>
           </div>
           <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">

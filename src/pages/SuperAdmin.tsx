@@ -28,6 +28,7 @@ const WorkerPhaseTimeline = lazy(() => import("@/components/superadmin/WorkerPha
 const StuckLeadsWidget = lazy(() => import("@/components/superadmin/StuckLeadsWidget").then(m => ({ default: m.StuckLeadsWidget })));
 const SystemHealthPanel = lazy(() => import("@/components/superadmin/SystemHealthPanel").then(m => ({ default: m.SystemHealthPanel })));
 const BotGlobalKillSwitch = lazy(() => import("@/components/superadmin/BotGlobalKillSwitch").then(m => ({ default: m.BotGlobalKillSwitch })));
+const DevToolsBlockToggle = lazy(() => import("@/components/superadmin/DevToolsBlockToggle").then(m => ({ default: m.DevToolsBlockToggle })));
 const ResolverStrictModeToggle = lazy(() => import("@/components/superadmin/ResolverStrictModeToggle").then(m => ({ default: m.ResolverStrictModeToggle })));
 const InfraHealthPanel = lazy(() => import("@/components/superadmin/InfraHealthPanel").then(m => ({ default: m.InfraHealthPanel })));
 const PlatformFacebookCard = lazy(() => import("@/components/admin/super/PlatformFacebookCard").then(m => ({ default: m.PlatformFacebookCard })));
@@ -368,6 +369,9 @@ const SuperAdmin = () => {
 
             {/* Kill switch global — Fase 0 auditoria de lançamento */}
             <BotGlobalKillSwitch />
+
+            {/* Bloqueio de DevTools / F12 para usuários finais */}
+            <DevToolsBlockToggle />
 
             {/* F2 — Resolver strict mode (atrás de flag, default OFF) */}
             <ResolverStrictModeToggle />

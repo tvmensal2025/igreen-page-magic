@@ -113,6 +113,10 @@ export default defineConfig({
     target: "es2020",
     minify: "esbuild",
     cssMinify: true,
+    // Nunca publicar sourcemaps em produção: eles reconstroem o código-fonte
+    // original (com nomes de variáveis, comentários e estrutura de pastas)
+    // dentro do DevTools. Sem isso, o que aparece é só o bundle minificado.
+    sourcemap: false,
     chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {

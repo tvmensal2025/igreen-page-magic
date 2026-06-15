@@ -1,6 +1,10 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { ativarHardening } from "./lib/hardening";
+
+// Camada dissuasória anti-inspeção (só em produção real; ver lib/hardening.ts).
+void ativarHardening();
 
 // Sentry é carregado de forma assíncrona para não bloquear o React.
 // Se falhar, o app continua funcionando normalmente.

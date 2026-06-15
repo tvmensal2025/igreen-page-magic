@@ -636,30 +636,30 @@ function FilterBar({
   const ORIGIN_LABEL: Record<OriginFilter, string> = {
     all: "Todas", meta_ads: "Meta Ads", whatsapp_direct: "WhatsApp", partner: "Parceiro",
   };
+  // Total de leads classificados em cada temperatura (para o "Todos").
+  const totalTemp = (Object.keys(tempCounts) as Temp[]).reduce((s, t) => s + tempCounts[t], 0);
+  // Temperatura — agora em combobox (libera espaço no topo e fica mais limpo).
+  const tempOptions: ComboboxOption[] = [
+    { value: "all", label: "Todos", hint: String(totalTemp) },
+    ...(Object.keys(TEMP_META) as Temp[]).map((t) => ({
+      value: t,
+      label: TEMP_META[t].label,
+      hint: String(tempCounts[t]),
+    })),
+  ];
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/40 bg-card/40 p-2.5">
-      {/* Temperatura */}
-      <button
-        onClick={() => setTempFilter("all")}
-        className={`rounded-md border px-2.5 py-1 text-[11px] transition ${tempFilter === "all" ? "border-primary/30 bg-primary/10 text-primary" : "border-border/40 bg-card text-muted-foreground hover:border-border"}`}
-      >
-        Todos
-      </button>
-      {(Object.keys(TEMP_META) as Temp[]).map((t) => {
-        const M = TEMP_META[t];
-        const Icon = M.icon;
-        const active = tempFilter === t;
-        return (
-          <button
-            key={t}
-            onClick={() => setTempFilter(active ? "all" : t)}
-            className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] transition ${active ? M.cls : "border-border/40 bg-card text-muted-foreground hover:border-border"}`}
-          >
-            <Icon className="h-3 w-3" /> {M.label}
-            <span className="opacity-60">({tempCounts[t]})</span>
-          </button>
-        );
-      })}
+      {/* Temperatura — combobox (substitui a fileira de botões) */}
+      <div className="w-44">
+        <Combobox
+          options={tempOptions}
+          value={tempFilter}
+          onChange={(v) => setTempFilter((v as Temp | "all") ?? "all")}
+          placeholder="Temperatura"
+          searchPlaceholder="Buscar temperatura…"
+          className="h-8"
+        />
+      </div>
 
       <div className="ml-auto flex items-center gap-2">
         {hasPartners && (
