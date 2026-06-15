@@ -24,7 +24,9 @@ import StepCoachPanel from "@/components/admin/flow-builder/StepCoachPanel";
 import FlowTourOverlay, { tourPendente } from "@/components/admin/flow-builder/FlowTourOverlay";
 import FlowHealthDialog from "@/components/admin/flow-builder/FlowHealthDialog";
 import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalleryDialog";
+import GuidedStepDialog from "@/components/admin/flow-builder/GuidedStepDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
+import { useFlowStepsCrud } from "@/components/admin/flow-builder/useFlowStepsCrud";
 import {
   Step, Variant, VARIANT_LABEL,
   parseTransitions, parseCaptures, parseFallback,
@@ -53,6 +55,11 @@ export default function FluxoBuilder() {
   const [editingVariant, setEditingVariant] = useState<Variant>("A");
   const [existingVariants, setExistingVariants] = useState<Variant[]>(["A"]);
   const [flowNames, setFlowNames] = useState<Record<string, string>>({});
+  // flow_id e sync_mode do fluxo PRÓPRIO do consultor na variante atual.
+  // Capturados no loadData (antes eram lidos e descartados). syncMode decide
+  // se a edição grava direto ('custom') ou exige "Personalizar" antes ('public').
+  const [flowId, setFlowId] = useState<string | null>(null);
+  const [syncMode, setSyncMode] = useState<"public" | "custom">("public");
   
   const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<any>("conteudo");
@@ -65,6 +72,7 @@ export default function FluxoBuilder() {
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const [guidedOpen, setGuidedOpen] = useState(false);
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
 
@@ -104,6 +112,12 @@ export default function FluxoBuilder() {
       .maybeSingle();
 
     if (flow) {
+      // Captura o flow_id próprio e o sync_mode (antes eram descartados). O
+      // hook de persistência usa ambos: o flow_id como alvo das escritas e o
+      // sync_mode para decidir se a edição é permitida ('custom') ou se o
+      // consultor precisa "Personalizar" primeiro ('public' = herdado).
+      setFlowId((flow as any).id ?? null);
+      setSyncMode(String((flow as any).sync_mode ?? "public").toLowerCase() === "custom" ? "custom" : "public");
       const mappedSteps = (flow.bot_flow_steps || []).map((s: any) => ({
         ...s,
         transitions: parseTransitions(s.transitions),
@@ -112,6 +126,8 @@ export default function FluxoBuilder() {
       })).sort((a: any, b: any) => a.position - b.position);
       setSteps(mappedSteps);
     } else {
+      setFlowId(null);
+      setSyncMode("public");
       setSteps([]);
     }
     
@@ -149,13 +165,39 @@ export default function FluxoBuilder() {
     });
   }, [steps, listQuery, typeFilter]);
 
+  // Persistência central dos passos (PR-1). Liga os handlers antes zerados ao
+  // banco, com update otimista + revert. Em sync_mode='public' a edição fica
+  // bloqueada até "Personalizar" (fork via RPC) — ver useFlowStepsCrud.
+  const crud = useFlowStepsCrud({
+    flowId,
+    syncMode,
+    consultantId: userId,
+    variant: editingVariant,
+    steps,
+    setSteps,
+    reload: () => loadData(editingVariant),
+  });
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    // Reordena de forma otimista e persiste a nova position de cada passo
+    // afetado. Só persiste quando o fluxo é editável (custom); em modo público
+    // o crud.patchStep já avisa e ignora.
     setSteps(items => {
       const oldIndex = items.findIndex(i => i.id === active.id);
       const newIndex = items.findIndex(i => i.id === over.id);
-      return arrayMove(items, oldIndex, newIndex).map((s, i) => ({ ...s, position: i + 1 }));
+      const reordered = arrayMove(items, oldIndex, newIndex).map((s, i) => ({ ...s, position: i + 1 }));
+      // Persiste apenas os passos cuja position mudou (diff contra o anterior).
+      if (!crud.readOnlyHerdado) {
+        for (const s of reordered) {
+          const before = items.find((x) => x.id === s.id);
+          if (before && before.position !== s.position) {
+            void crud.patchStep(s.id, { position: s.position });
+          }
+        }
+      }
+      return reordered;
     });
   };
 
@@ -259,6 +301,25 @@ export default function FluxoBuilder() {
             <div className="min-w-0">
               {viewMode === "lista" && (
                 <div className="space-y-4">
+                  {crud.readOnlyHerdado && (
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">Este é o modelo padrão do fluxo</p>
+                        <p className="text-xs text-muted-foreground">
+                          Para editar, criar ou remover passos, crie a sua versão personalizada. O atendimento continua funcionando normalmente enquanto isso.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="shrink-0"
+                        disabled={crud.saving}
+                        onClick={() => void crud.personalizar()}
+                      >
+                        {crud.saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Personalizar
+                      </Button>
+                    </div>
+                  )}
                   <AiPreferencesCard consultantId={userId} />
                   <StepListToolbar
                     query={listQuery}
@@ -287,17 +348,32 @@ export default function FluxoBuilder() {
                             isLast={i === filteredSteps.length - 1}
                             onSelect={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
                             onEdit={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
-                            onDelete={() => {}}
-                            onDuplicate={() => {}}
+                            onDelete={() => { void crud.deleteStep(s.id); if (inspectorId === s.id) setInspectorId(null); }}
+                            onDuplicate={() => { void crud.duplicateStep(s.id); }}
                           />
                         ))}
                       </div>
                     </SortableContext>
                   </DndContext>
-                  <Button variant="outline" className="w-full border-dashed border-2 h-12 hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary group">
-                    <Plus className="mr-2 h-4 w-4 group-hover:scale-110 transition-transform" /> 
-                    Adicionar passo ao fluxo
-                  </Button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      className="h-12 flex-1 border-dashed border-2 transition-all hover:border-primary/50 hover:bg-primary/5 text-muted-foreground hover:text-primary group"
+                      disabled={crud.saving || crud.readOnlyHerdado}
+                      onClick={() => { void crud.addStep(); }}
+                    >
+                      <Plus className="mr-2 h-4 w-4 group-hover:scale-110 transition-transform" />
+                      Adicionar passo em branco
+                    </Button>
+                    <Button
+                      className="h-12 flex-1"
+                      disabled={crud.saving || crud.readOnlyHerdado}
+                      onClick={() => setGuidedOpen(true)}
+                    >
+                      <GraduationCap className="mr-2 h-4 w-4" />
+                      Montar com a Iris
+                    </Button>
+                  </div>
 
                 </div>
               )}
@@ -311,17 +387,17 @@ export default function FluxoBuilder() {
                       consultantId={userId || ""}
                       consultantName={consultantName}
                       consultantSlug={""}
-                      flowId={null}
+                      flowId={flowId}
                       editingVariant={editingVariant}
                       mediaCounts={{}}
                       validation={validation}
-                      readOnly={isNarrow}
+                      readOnly={isNarrow || crud.readOnlyHerdado}
                       onSelectStep={setInspectorId}
                       onOpenInspector={(id) => { setInspectorId(id); setInspectorTab("conteudo"); }}
-                      onPatchStep={async () => {}}
-                      onAddStep={async () => null}
-                      onDuplicateStep={async () => {}}
-                      onDeleteStep={async () => {}}
+                      onPatchStep={(id, patch) => crud.patchStep(id, patch)}
+                      onAddStep={async () => crud.addStep()}
+                      onDuplicateStep={(id) => crud.duplicateStep(id)}
+                      onDeleteStep={(id) => crud.deleteStep(id)}
                       onAutoFixAll={async () => {}}
                     />
                   </Suspense>
@@ -357,9 +433,12 @@ export default function FluxoBuilder() {
           steps={steps}
           consultantId={userId || ""}
           variant={editingVariant}
+          flowId={flowId}
+          maxPosition={steps.reduce((m, s) => Math.max(m, s.position), 0)}
           initialTab={inspectorTab}
           onClose={() => setInspectorId(null)}
-          onPatch={() => {}}
+          onPatch={(patch) => { if (inspectorId) void crud.patchStep(inspectorId, patch); }}
+          onReload={() => loadData(editingVariant)}
         />
       )}
 
@@ -386,6 +465,13 @@ export default function FluxoBuilder() {
         onJumpToStep={(id) => { setInspectorId(id); setInspectorTab("conteudo"); setHealthOpen(false); }}
       />
       <FlowTourOverlay open={tourOpen} onClose={() => setTourOpen(false)} />
+      <GuidedStepDialog
+        open={guidedOpen}
+        onOpenChange={setGuidedOpen}
+        onCreate={(seed) => crud.addStep(seed)}
+        steps={steps}
+        consultantName={consultantName}
+      />
     </div>
   );
 }
