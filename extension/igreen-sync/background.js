@@ -441,9 +441,11 @@ async function syncOnePage(token, page, mesRef) {
 }
 
 async function runSync() {
-  const { pairingToken } = await chrome.storage.local.get(["pairingToken"]);
+  const { pairingToken, syncRunning } = await chrome.storage.local.get(["pairingToken", "syncRunning"]);
   if (!pairingToken) throw new Error("Token de pareamento nao configurado");
+  if (syncRunning) throw new Error("Já existe uma sincronização rodando em background. Aguarde terminar.");
 
+  await chrome.storage.local.set({ syncRunning: true, syncStartedAt: Date.now(), lastError: null });
   installDownloadsListener();
   await setProgress("Iniciando...");
 
@@ -453,39 +455,67 @@ async function runSync() {
   let lastClientesSize = 0, lastRedeSize = 0;
 
   try {
-    const r = await syncOnePage(pairingToken, PAGES[0], mesRef);
-    result.clientes = r.ingest;
-    lastClientesSize = r.size;
-  } catch (e) {
-    errors.push(`clientes: ${e?.message || String(e)}`);
-  }
+    try {
+      const r = await syncOnePage(pairingToken, PAGES[0], mesRef);
+      result.clientes = r.ingest;
+      lastClientesSize = r.size;
+    } catch (e) {
+      errors.push(`clientes: ${e?.message || String(e)}`);
+    }
 
+    try {
+      const r = await syncOnePage(pairingToken, PAGES[1], mesRef);
+      result.rede = r.ingest;
+      lastRedeSize = r.size;
+    } catch (e) {
+      errors.push(`rede: ${e?.message || String(e)}`);
+    }
+
+    await setProgress("Concluido");
+
+    if (!result.clientes && !result.rede) {
+      const err = new Error(
+        `Nao consegui baixar nenhum Excel.\n${errors.join("\n")}\n\nVerifique se voce esta logado em ${IGREEN_ORIGIN}.`
+      );
+      await chrome.storage.local.set({
+        lastError: err.message,
+        lastErrorAt: new Date().toISOString(),
+      });
+      notify("Falha na sincronização", errors.join(" | ") || "Verifique seu login no portal iGreen.");
+      throw err;
+    }
+
+    const status = {
+      lastSyncAt: new Date().toISOString(),
+      lastResult: result,
+      lastError: errors.length ? errors.join(" | ") : null,
+      lastClientesSize,
+      lastRedeSize,
+      lastErrorAt: errors.length ? new Date().toISOString() : null,
+    };
+    await chrome.storage.local.set(status);
+
+    const c = result.clientes, n = result.rede;
+    const partes = [];
+    if (c) partes.push(`Clientes: ${c.upserted ?? 0} atualizados`);
+    if (n) partes.push(`Rede: ${n.upserted ?? 0} atualizados`);
+    notify("Sincronização concluída", partes.join(" • ") || "Sincronização finalizada");
+    return status;
+  } finally {
+    await chrome.storage.local.set({ syncRunning: false });
+  }
+}
+
+function notify(title, message) {
   try {
-    const r = await syncOnePage(pairingToken, PAGES[1], mesRef);
-    result.rede = r.ingest;
-    lastRedeSize = r.size;
-  } catch (e) {
-    errors.push(`rede: ${e?.message || String(e)}`);
-  }
-
-  await setProgress("Concluido");
-
-  if (!result.clientes && !result.rede) {
-    throw new Error(
-      `Nao consegui baixar nenhum Excel.\n${errors.join("\n")}\n\nVerifique se voce esta logado em ${IGREEN_ORIGIN}.`
-    );
-  }
-
-  const status = {
-    lastSyncAt: new Date().toISOString(),
-    lastResult: result,
-    lastError: errors.length ? errors.join(" | ") : null,
-    lastClientesSize,
-    lastRedeSize,
-    lastErrorAt: errors.length ? new Date().toISOString() : null,
-  };
-  await chrome.storage.local.set(status);
-  return status;
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icon-128.png"),
+      title,
+      message: String(message || "").slice(0, 300),
+      priority: 1,
+    });
+  } catch (e) { console.warn("[notify]", e); }
 }
 
 // ===== Detecção de login no escritório iGreen =====
