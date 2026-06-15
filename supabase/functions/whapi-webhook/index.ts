@@ -1800,12 +1800,32 @@ Deno.serve(async (req) => {
       // sender REAL do canal (anti-ban + trio de proteção intactos). OTP
       // (interceptado no topo) e OCR/portal (despachados pelo Cérebro) intactos.
       let _cerebroRespondeu = false;
-      // Fluxo D = botões (Whapi) / lista numerada (Evolution). O Cérebro só
-      // envia texto e encerra o turno antes do motor determinístico — por isso
-      // os botões "somem" quando cerebro_ativo ou número de teste está ligado.
+      // Roteamento por variante (Etapa 2 do plano "Fluxo D + Fluxo B IA"):
+      //   D → motor determinístico de botões (engine legado). Sem IA conversacional.
+      //   B → NOVO Fluxo B IA (IA livre, FAQ + RAG, do "oi" até pedir foto da conta).
+      //   demais → fallback no cérebro legado (compatibilidade temporária).
       const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
       if (_fbVarCerebro === "D") {
-        console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+        console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
+      } else if (_fbVarCerebro === "B") {
+        try {
+          const { processarTurnoFluxoB } = await import("../_shared/fluxo-b-ia/agent.ts");
+          const r = await processarTurnoFluxoB({
+            supabase,
+            customerId: customer.id,
+            consultantId: superAdminConsultantId,
+            inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
+            inboundText: messageText ?? null,
+            inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
+            inboundMessageId: messageId ?? null,
+            telefone: phone ?? null,
+            enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+          });
+          _cerebroRespondeu = r.respondeu;
+        } catch (e: any) {
+          console.warn("[fluxo-b-ia] erro não-bloqueante:", e?.message);
+          _cerebroRespondeu = false;
+        }
       } else try {
         const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
         const r = await responderComCerebro({
@@ -1819,26 +1839,20 @@ Deno.serve(async (req) => {
           inboundMessageId: messageId ?? null,
           channel: "whapi",
           telefone: phone ?? null,
-          // Sender REAL do canal já protegido (anti-ban + dedup + lock + rate
-          // limit). Retorna false quando o guard bloqueou o envio.
           enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
         });
         _cerebroRespondeu = r.respondeu;
       } catch (e: any) {
-        // Fail-open: erro ao ligar o Cérebro nunca bloqueia o atendimento.
         console.warn("[cerebro-resposta-hook] erro não-bloqueante:", e?.message);
         _cerebroRespondeu = false;
       }
-      // GATE (Property 1 — um caminho conversacional só): quando o Cérebro é a
-      // fonte de verdade do turno (canary/on), a vendedora legada NÃO responde o
-      // mesmo turno — evita resposta dupla. Em off/dark, respondeu=false e segue
-      // o caminho atual normalmente (comportamento idêntico ao de hoje).
       if (_cerebroRespondeu) {
         return new Response(
-          JSON.stringify({ ok: true, mode: "cerebro" }),
+          JSON.stringify({ ok: true, mode: _fbVarCerebro === "B" ? "fluxo-b-ia" : "cerebro" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
+
       const result = testMode && testRunId
         ? await botRequestStore.run({ testMode: true, runId: testRunId, supabase, turn: testTurn, realServices, bypassQuietHours: testMode && headerBypassQuiet, fastClock: testMode && headerFastClock, forceOcrFail: testMode && headerForceOcrFail }, runEngine)
         : await runEngine();
