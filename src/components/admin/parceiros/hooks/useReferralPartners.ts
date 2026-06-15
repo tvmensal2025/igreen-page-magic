@@ -33,7 +33,7 @@ export function useReferralPartners() {
         .eq("is_active", true)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []) as ReferralPartner[];
+      return (data ?? []) as unknown as ReferralPartner[];
     },
   });
 

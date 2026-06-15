@@ -119,6 +119,42 @@ function injectInterceptor() {
     return origCreate.call(this, obj);
   };
 
+  // Cliques em <a href=... download> ou anchors com URL de XLSX:
+  // baixamos via fetch com cookies e prevenimos o download do Chrome,
+  // assim NADA chega ao disco do usuário.
+  document.addEventListener("click", (ev) => {
+    try {
+      const a = ev.target && ev.target.closest && ev.target.closest("a[href]");
+      if (!a) return;
+      const href = a.getAttribute("href") || "";
+      const hasDownloadAttr = a.hasAttribute("download");
+      if (!hasDownloadAttr && !isXlsxUrl(href)) return;
+      const abs = new URL(href, location.href).toString();
+      ev.preventDefault();
+      ev.stopPropagation();
+      fetch(abs, { credentials: "include" })
+        .then((r) => r.blob())
+        .then((b) => { if (isXlsxBlob(b)) setCaptured(b, "anchor:" + abs); })
+        .catch((e) => log("anchor fetch err " + e));
+    } catch (e) { log("anchor click err " + e); }
+  }, true);
+
+  // window.open com URL de XLSX
+  const origOpen = window.open;
+  window.open = function (url, ...rest) {
+    try {
+      if (typeof url === "string" && isXlsxUrl(url)) {
+        const abs = new URL(url, location.href).toString();
+        fetch(abs, { credentials: "include" })
+          .then((r) => r.blob())
+          .then((b) => { if (isXlsxBlob(b)) setCaptured(b, "window.open:" + abs); })
+          .catch((e) => log("open fetch err " + e));
+        return null;
+      }
+    } catch {}
+    return origOpen.apply(this, [url, ...rest]);
+  };
+
   return true;
 }
 
@@ -202,15 +238,35 @@ let downloadsListenerInstalled = false;
 function installDownloadsListener() {
   if (downloadsListenerInstalled) return;
   downloadsListenerInstalled = true;
+
+  // onDeterminingFilename roda ANTES de o Chrome escrever no disco.
+  // Cancelamos aqui pra garantir que o arquivo nunca apareça pro usuário.
+  if (chrome.downloads.onDeterminingFilename) {
+    chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+      try {
+        const url = item.finalUrl || item.url || "";
+        const looksXlsx = isIgreenExportUrl(url)
+          || /xlsx|excel|sheet|spreadsheet|ms-excel/i.test(item.mime || "")
+          || /\.xlsx?$/i.test(item.filename || "");
+        if (!looksXlsx) return;
+        const tabId = item.tabId ?? -1;
+        if (!downloadsByTab.has(tabId)) downloadsByTab.set(tabId, []);
+        downloadsByTab.get(tabId).push({ id: item.id, url });
+        // Cancela imediatamente e remove do histórico — nada vai pro disco.
+        chrome.downloads.cancel(item.id).catch(() => {});
+        chrome.downloads.erase({ id: item.id }).catch(() => {});
+      } catch (e) { console.warn("[downloads:determining]", e); }
+    });
+  }
+
+  // Fallback: onCreated (caso onDeterminingFilename não dispare em algum cenário)
   chrome.downloads.onCreated.addListener((item) => {
     try {
       const url = item.finalUrl || item.url || "";
       if (!isIgreenExportUrl(url) && !/xlsx|excel|sheet/i.test(item.mime || "") && !/xlsx|excel/i.test(item.filename || "")) return;
-      // tenta atribuir ao tab atualmente ativo (chrome nao da tabId direto)
       const tabId = item.tabId ?? -1;
       if (!downloadsByTab.has(tabId)) downloadsByTab.set(tabId, []);
       downloadsByTab.get(tabId).push({ id: item.id, url });
-      // cancela pra evitar arquivo no disco do usuario
       chrome.downloads.cancel(item.id).catch(() => {});
       chrome.downloads.erase({ id: item.id }).catch(() => {});
     } catch (e) { console.warn("[downloads]", e); }
