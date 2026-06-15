@@ -16,6 +16,14 @@ const STOPWORDS = new Set([
   "do", "que", "pra", "para", "com", "meu", "minha", "um", "uma", "isso",
 ]);
 
+// Gatilhos de UMA palavra que, isolados, casam contextos errados com frequência
+// (ex.: "anos" em "tenho 30 anos"; "sair" em "vou sair agora"; "data" em "que
+// data é hoje"). Não removemos da base — apenas ignoramos no match DIRETO, pra
+// não responder a intenção errada. Quando aparecem, o LLM cuida com contexto.
+const GATILHOS_GENERICOS_IGNORADOS = new Set([
+  "anos", "data", "sair", "região", "regiao", "prazo", "obra",
+]);
+
 function normalizeText(text: string): string {
   return String(text || "")
     .normalize("NFD")
@@ -38,8 +46,16 @@ function phraseMatches(phraseRaw: string, messageRaw: string): boolean {
     const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(message);
   }
-  // Frase com várias palavras: casa se aparecer contida na mensagem.
-  if (phrase.length >= 6 && message.includes(phrase)) return true;
+  // Frase com várias palavras. Gatilhos genéricos formados só por stopwords
+  // (ex.: "quem é") NÃO devem casar por conteúdo — geram falso positivo
+  // ("quem é o dono" casaria "Nunca ouvi falar"). Exige ao menos 1 palavra
+  // significativa.
+  const palavrasSignificativas = phrase.split(" ").filter((w) => w.length >= 3 && !STOPWORDS.has(w));
+  if (palavrasSignificativas.length === 0) {
+    // Só casa se a mensagem for praticamente idêntica ao gatilho.
+    return message === phrase;
+  }
+  if (phrase.length >= 8 && message.includes(phrase)) return true;
   // Mensagem curta contida na frase-gatilho (ex.: "é golpe" vs "isso é golpe?").
   return message.length <= 12 && phrase.includes(message);
 }
@@ -108,16 +124,39 @@ export async function buscarRespostaDiretaFaq(
 
     const lista = (triggers as Array<{ qa_id: string; phrase: string }>) || [];
 
-    // Prioriza o gatilho MAIS LONGO que casa (match mais específico vence).
-    let melhor: { qa_id: string; phrase: string } | null = null;
+    // Pontua cada gatilho que casa e escolhe o de MAIOR especificidade.
+    // Especificidade = nº de palavras significativas do gatilho (gatilho com
+    // mais palavras é mais específico) e, como desempate, o comprimento.
+    // Isso evita que um gatilho curto e genérico ("quem é") roube uma pergunta
+    // mais específica ("quem é o dono", que casa o gatilho "dono").
+    const candidatos: Array<{ qa_id: string; phrase: string; score: number; intent: string }> = [];
     for (const t of lista) {
-      if (!qaById.has(t.qa_id)) continue;
+      const qa = qaById.get(t.qa_id);
+      if (!qa) continue;
+      if (GATILHOS_GENERICOS_IGNORADOS.has(normalizeText(t.phrase))) continue;
       if (!phraseMatches(t.phrase, pergunta)) continue;
-      if (!melhor || normalizeText(t.phrase).length > normalizeText(melhor.phrase).length) {
-        melhor = t;
-      }
+      const norm = normalizeText(t.phrase);
+      const palavras = norm.split(" ").filter((w) => w.length >= 2 && !STOPWORDS.has(w));
+      const score = palavras.length * 100 + norm.length;
+      candidatos.push({ qa_id: t.qa_id, phrase: t.phrase, score, intent: qa.intent_name });
     }
-    if (!melhor) return null;
+    if (candidatos.length === 0) return null;
+
+    candidatos.sort((a, b) => b.score - a.score);
+    const melhor = candidatos[0];
+
+    // ─── Anti-ambiguidade ────────────────────────────────────────────────
+    // Se o melhor empata em score com outro candidato de INTENÇÃO diferente
+    // (ex.: "multa" casa "Fidelidade/multa" E "E se eu atrasar"; "quanto tempo"
+    // casa duas intenções), não há como ter certeza de qual responder. Nesse
+    // caso NÃO respondemos direto — caímos no LLM, que usa o histórico para
+    // desambiguar. Evita mandar a resposta errada com cara de oficial.
+    const empatados = candidatos.filter((c) => c.score === melhor.score);
+    const intencoesEmpatadas = new Set(empatados.map((c) => c.intent));
+    if (intencoesEmpatadas.size > 1) {
+      console.log(`[fluxo-b-ia] FAQ ambíguo (${[...intencoesEmpatadas].join(" / ")}) — caindo no LLM`);
+      return null;
+    }
 
     const qa = qaById.get(melhor.qa_id)!;
     const texto = aplicarNome(String(qa.text_response), customerName);
