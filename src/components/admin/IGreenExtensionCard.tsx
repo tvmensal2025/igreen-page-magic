@@ -172,27 +172,34 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
 
       {/* Modal: instrucoes */}
       <Dialog open={showInstructions} onOpenChange={setShowInstructions}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Como instalar a extensao</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Chrome className="h-5 w-5 text-primary" /> Instalar em 4 passos
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Passo a passo para carregar a extensão iGreen Sync no Chrome.
+            </DialogDescription>
           </DialogHeader>
-          <ol className="text-sm space-y-2 list-decimal pl-5">
-            <li>Descompacte <code>igreen-sync-extension.zip</code>.</li>
-            <li>Abra <code>chrome://extensions</code> (Chrome, Edge, Brave ou Opera).</li>
-            <li>Ative o <b>Modo desenvolvedor</b> (canto superior direito).</li>
-            <li>Clique em <b>Carregar sem compactacao</b> e selecione a pasta descompactada. Se ja tinha uma versao antiga, clique em <b>Atualizar</b> no card da extensao (icone <b>G</b> verde).</li>
-            <li>No painel aqui, clique <b>Gerar chave</b> e copie.</li>
-            <li>Clique no icone <b>G</b> verde da extensao e cole a chave no campo — ela e salva automaticamente e nao aparece mais.</li>
-            <li>Em outra aba, faca login em <code>escritorio.igreenenergy.com.br</code> e abra <b>/mapa-clientes</b> e <b>/mapa-rede</b> uma vez para conferir que a tabela carrega e o botao <b>Exportar Excel</b> aparece.</li>
-            <li>Volte na extensao e clique <b>Sincronizar agora</b>. A extensao baixa <b>primeiro o de Clientes</b> e depois o de Rede (um por vez, para evitar o aviso de varios downloads).</li>
+
+          <ol className="space-y-3 text-sm">
+            {[
+              <>Descompacte o arquivo <code className="px-1 rounded bg-muted text-xs">igreen-sync-extension.zip</code>.</>,
+              <>Abra <code className="px-1 rounded bg-muted text-xs">chrome://extensions</code> e ative o <b>Modo desenvolvedor</b>.</>,
+              <>Clique em <b>Carregar sem compactação</b> e selecione a pasta. <span className="text-muted-foreground">(Se já estava instalada, clique em ↻ Atualizar.)</span></>,
+              <>Clique no ícone <b className="text-primary">G</b> da extensão, cole a chave gerada aqui e pronto.</>,
+            ].map((step, i) => (
+              <li key={i} className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-semibold grid place-items-center">
+                  {i + 1}
+                </span>
+                <span className="pt-0.5">{step}</span>
+              </li>
+            ))}
           </ol>
-          <div className="mt-4 p-3 rounded bg-muted text-xs space-y-1">
-            <p className="font-semibold">Login e captcha do portal iGreen:</p>
-            <p>• A extensao <b>nao</b> digita usuario, senha nem resolve captcha por voce. Ela so usa a sessao do navegador onde voce ja esta logado.</p>
-            <p>• Faca login em <code>escritorio.igreenenergy.com.br</code> uma vez (resolva o captcha quando aparecer) e deixe a aba aberta.</p>
-            <p>• A extensao abre <b>/mapa-clientes</b>, espera carregar, clica <b>Exportar Excel</b>, captura o arquivo e fecha. Depois faz o mesmo com <b>/mapa-rede</b>. Um por vez, para evitar o aviso de "varios downloads".</p>
-            <p>• Os dados da <b>Rede</b> agora aparecem automaticamente na aba Rede do sistema apos cada sync.</p>
-            <p>• Sincronizacao automatica a cada 6h funciona <b>somente com o navegador aberto e logado no portal</b>.</p>
+
+          <div className="mt-2 text-xs text-muted-foreground border-l-2 border-primary/40 pl-3">
+            Mantenha uma aba logada em <code>escritorio.igreenenergy.com.br</code> aberta — a extensão usa a sua sessão pra exportar os Excel.
           </div>
         </DialogContent>
       </Dialog>

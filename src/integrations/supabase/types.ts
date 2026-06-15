@@ -1490,6 +1490,7 @@ export type Database = {
         Row: {
           bot_engine_production_mode: boolean
           bot_global_enabled: boolean
+          devtools_blocked: boolean
           fluxo_b_persona: string | null
           id: string
           minio_alert_threshold_pct: number
@@ -1502,6 +1503,7 @@ export type Database = {
         Insert: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          devtools_blocked?: boolean
           fluxo_b_persona?: string | null
           id?: string
           minio_alert_threshold_pct?: number
@@ -1514,6 +1516,7 @@ export type Database = {
         Update: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          devtools_blocked?: boolean
           fluxo_b_persona?: string | null
           id?: string
           minio_alert_threshold_pct?: number
@@ -7895,6 +7898,7 @@ export type Database = {
           uf: string
         }[]
       }
+      get_devtools_blocked: { Args: never; Returns: boolean }
       get_managed_consultant_ids: { Args: { _user: string }; Returns: string[] }
       get_platform_pnl: {
         Args: { _from?: string; _to?: string }
