@@ -61,9 +61,10 @@ const PROFILES: Array<{
 export default function AiPreferencesCard({ consultantId }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [profile, setProfile] = useState<AiProfile>("balanced");
+  const [profile, setProfile] = useState<AiProfile>("auto");
   const [provider, setProvider] = useState<AiProvider>("google");
-  const [originalProfile, setOriginalProfile] = useState<AiProfile>("balanced");
+  const [originalProfile, setOriginalProfile] = useState<AiProfile>("auto");
+
   const [originalProvider, setOriginalProvider] = useState<AiProvider>("google");
 
   useEffect(() => {
