@@ -88,6 +88,27 @@ async function executarTurno(
 ): Promise<ResultadoCerebro> {
   const { supabase, customerId, consultantId, inbound, canalCapabilities } = entrada;
 
+  // ─── Short-circuit: Fluxo B "IA Livre" (sem passos no construtor) ───────
+  // Historicamente o Fluxo B = IA 100% livre (zero `bot_flow_steps`). Quem
+  // responde é a `processarTurnoFluxoB` (chamada direto pelo webhook). O
+  // Cérebro NÃO deve passar por `runEngine` nesse caso — caso contrário o
+  // motor detecta `empty_flow` e marca `customer_flow_state.paused_system`,
+  // corrompendo o estado do cliente. Retorno neutro = nada é gravado, nada é
+  // enviado (o webhook já cuidou da resposta via Vendedora V2/IA Livre).
+  if (await variantBLivreSemPassos(supabase, customerId)) {
+    return {
+      reply: "",
+      outbound: [],
+      stateUpdate: {},
+      shouldHandoff: false,
+      decisao: {
+        passoAtualId: null,
+        proximoPassoId: null,
+        intencao: "indefinido",
+      } as DecisaoCerebro,
+    };
+  }
+
   // ─── N8 — lê o estado (onde o cliente parou) ────────────────────────────
   const estado: EstadoCerebro = await lerEstado({ supabase, customerId });
 
