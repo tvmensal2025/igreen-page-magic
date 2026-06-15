@@ -76,6 +76,8 @@ export function useConsultantForm(
         licenciada_cadastro_url: form.licenciada_cadastro_url || null,
         facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
         igreen_portal_email: form.igreen_portal_email || null,
+        assistant_name: form.assistant_name?.trim() || null,
+        gender: form.gender === "consultor" || form.gender === "consultora" ? form.gender : null,
         portal_kind: form.portal_kind === "autoconexao" ? "autoconexao" : "digital",
       };
       // Só envia a senha se o usuário digitou um valor novo (campo vem vazio do banco por segurança).
@@ -95,6 +97,8 @@ export function useConsultantForm(
           licenciada_cadastro_url: form.licenciada_cadastro_url || null,
           facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
           igreen_portal_email: form.igreen_portal_email || null,
+          assistant_name: form.assistant_name?.trim() || null,
+          gender: form.gender === "consultor" || form.gender === "consultora" ? form.gender : null,
           portal_kind: form.portal_kind === "autoconexao" ? "autoconexao" : "digital",
           ...(form.igreen_portal_password && form.igreen_portal_password.trim() ? { igreen_portal_password: form.igreen_portal_password } : {}),
           ...(photo_url ? { photo_url } : {}),

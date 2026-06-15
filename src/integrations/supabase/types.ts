@@ -2802,6 +2802,7 @@ export type Database = {
           ai_profile: string
           ai_provider_pref: string
           approved: boolean | null
+          assistant_name: string | null
           bot_engine_mode: string
           cadastro_url: string
           cerebro_ativo: string
@@ -2813,6 +2814,7 @@ export type Database = {
           flow_reliability_v2: string
           flow_step_media_order: Json
           google_analytics_id: string | null
+          gender: string | null
           id: string
           igreen_consultor_id: string | null
           igreen_id: string | null
@@ -2840,6 +2842,7 @@ export type Database = {
           ai_profile?: string
           ai_provider_pref?: string
           approved?: boolean | null
+          assistant_name?: string | null
           bot_engine_mode?: string
           cadastro_url: string
           cerebro_ativo?: string
@@ -2851,6 +2854,7 @@ export type Database = {
           flow_reliability_v2?: string
           flow_step_media_order?: Json
           google_analytics_id?: string | null
+          gender?: string | null
           id: string
           igreen_consultor_id?: string | null
           igreen_id?: string | null
@@ -2878,6 +2882,7 @@ export type Database = {
           ai_profile?: string
           ai_provider_pref?: string
           approved?: boolean | null
+          assistant_name?: string | null
           bot_engine_mode?: string
           cadastro_url?: string
           cerebro_ativo?: string
@@ -2889,6 +2894,7 @@ export type Database = {
           flow_reliability_v2?: string
           flow_step_media_order?: Json
           google_analytics_id?: string | null
+          gender?: string | null
           id?: string
           igreen_consultor_id?: string | null
           igreen_id?: string | null

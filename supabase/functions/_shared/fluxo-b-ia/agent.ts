@@ -71,6 +71,24 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
   if (!customer) return { respondeu: false, texto: "", acoes: [] };
   if (customer.bot_paused) return { respondeu: false, texto: "", acoes: [] };
 
+  // Dados do consultor para a IA se apresentar corretamente:
+  // "assistente virtual {assistant_name} do/da {representante}".
+  let assistantName = "Camila";
+  let representante = "";
+  let artigoRep = "do"; // do (consultor) | da (consultora)
+  try {
+    const { data: consultor } = await supabase
+      .from("consultants")
+      .select("name, assistant_name, gender")
+      .eq("id", consultantId)
+      .maybeSingle();
+    if (consultor) {
+      if ((consultor as any).assistant_name?.trim()) assistantName = (consultor as any).assistant_name.trim();
+      representante = (consultor as any).name?.trim() || "";
+      if (String((consultor as any).gender) === "consultora") artigoRep = "da";
+    }
+  } catch (_e) { /* usa defaults */ }
+
   // Se entrou foto da conta, sinaliza para a IA fechar com [FINALIZAR_CADASTRO]
   const billPhotoArrived = inboundKind === "media" && inboundMediaKind === "image";
 
@@ -163,8 +181,13 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
   } catch (_e) { /* keep fallback */ }
 
   // 3) Monta prompt
+  const identidade = representante
+    ? `IDENTIDADE: Você é ${assistantName}, a assistente virtual ${artigoRep} ${representante} (consultor(a) da iGreen Energy). Logo no primeiro contato, apresente-se assim: "Oi! Aqui é a ${assistantName}, assistente virtual ${artigoRep} ${representante}." Seja transparente: se o cliente perguntar se você é um robô/IA/atendente, confirme com naturalidade que é uma assistente virtual (IA) que ajuda ${artigoRep} ${representante} — NUNCA diga que é humana. Não invente que é pessoa.`
+    : `IDENTIDADE: Você é ${assistantName}, a assistente virtual da iGreen Energy. Apresente-se no primeiro contato como assistente virtual. Se perguntarem se você é robô/IA, confirme com naturalidade que é uma assistente virtual (IA) — NUNCA diga que é humana.`;
+
   const systemMessages = [
     { role: "system" as const, content: personaText },
+    { role: "system" as const, content: identidade },
   ];
 
 

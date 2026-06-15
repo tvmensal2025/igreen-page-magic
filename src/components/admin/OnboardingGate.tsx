@@ -17,7 +17,9 @@ function isComplete(form: ConsultantForm) {
     !!form.name?.trim() &&
     !!form.igreen_id?.trim() &&
     !!form.phone?.replace(/\D/g, "") &&
-    !!form.notification_phone?.replace(/\D/g, "")
+    !!form.notification_phone?.replace(/\D/g, "") &&
+    !!form.assistant_name?.trim() &&
+    (form.gender === "consultor" || form.gender === "consultora")
   );
 }
 
@@ -44,7 +46,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
             </div>
             <h2 className="text-xl font-heading font-bold text-foreground">Bem-vindo ao iGreen!</h2>
             <p className="text-sm text-muted-foreground">
-              Preencha os 4 campos abaixo para liberar o painel. Levam menos de 1 minuto.
+              Preencha os campos abaixo para liberar o painel. Levam menos de 1 minuto.
             </p>
           </div>
 
@@ -121,6 +123,41 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
               <p className="text-xs text-muted-foreground">
                 Ao salvar, seu WhatsApp principal será ativado automaticamente como destino dos anúncios do Facebook.
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ob-assistant" className="text-sm text-muted-foreground">Nome da sua assistente virtual (a IA que vai atender os clientes)</Label>
+              <Input
+                id="ob-assistant"
+                value={form.assistant_name}
+                onChange={(e) => onFormChange({ assistant_name: e.target.value })}
+                placeholder="ex: Camila"
+                className="bg-secondary border-border"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                A IA vai se apresentar assim: "Oi! Aqui é a {form.assistant_name?.trim() || "Camila"}, assistente virtual {form.gender === "consultora" ? "da" : "do"} {form.name?.trim() || "(você)"}".
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Você é consultor ou consultora?</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => onFormChange({ gender: "consultor" })}
+                  className={`h-11 rounded-xl border text-sm font-medium transition ${form.gender === "consultor" ? "border-primary bg-primary/15 text-foreground" : "border-border bg-secondary text-muted-foreground"}`}
+                >
+                  Consultor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onFormChange({ gender: "consultora" })}
+                  className={`h-11 rounded-xl border text-sm font-medium transition ${form.gender === "consultora" ? "border-primary bg-primary/15 text-foreground" : "border-border bg-secondary text-muted-foreground"}`}
+                >
+                  Consultora
+                </button>
+              </div>
             </div>
           </div>
 

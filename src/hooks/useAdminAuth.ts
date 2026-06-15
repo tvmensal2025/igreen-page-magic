@@ -7,6 +7,8 @@ const DEFAULT_CONSULTANT_FORM = {
   name: "", license: "", phone: "", notification_phone: "", cadastro_url: "", igreen_id: "",
   licenciada_cadastro_url: "", facebook_pixel_id: "", google_analytics_id: "",
   igreen_portal_email: "", igreen_portal_password: "",
+  // Nome da assistente virtual (IA) + gênero do representante (do/da).
+  assistant_name: "", gender: "" as "" | "consultor" | "consultora",
   // Portal 1 ('digital') = Playwright UI; Portal 2 ('autoconexao') = API direta.
   // Default 'digital' mantém comportamento atual; consultor opta pelo novo no painel.
   portal_kind: "digital" as "digital" | "autoconexao",
@@ -77,18 +79,20 @@ export function useAdminAuth() {
         licenciada_cadastro_url: id ? `https://expansao.igreenenergy.com.br/?id=${id}&checkout=true` : (consultant.licenciada_cadastro_url as string) || "",
         facebook_pixel_id: (consultant.facebook_pixel_id as string) || "", google_analytics_id: (consultant.google_analytics_id as string) || "",
         igreen_portal_email: (consultant.igreen_portal_email as string) || "", igreen_portal_password: "",
+        assistant_name: (consultant.assistant_name as string) || "",
+        gender: ((consultant.gender as string) === "consultora" ? "consultora" : (consultant.gender as string) === "consultor" ? "consultor" : ""),
         portal_kind: ((consultant.portal_kind as string) === "autoconexao" ? "autoconexao" : "digital"),
       });
       if (consultant.photo_url) setPhotoPreview(consultant.photo_url as string);
     };
     try {
-      const { data, error } = await supabase.from("consultants").select("id, igreen_id, approved, name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, portal_kind, photo_url").eq("id", uid).maybeSingle();
+      const { data, error } = await supabase.from("consultants").select("id, igreen_id, approved, name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, assistant_name, gender, portal_kind, photo_url").eq("id", uid).maybeSingle();
       if (isStale()) return; if (error) throw error;
       if (data) { applyConsultantData(data); return; }
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (isStale()) return; if (userError) throw userError;
       const pendingConsultant = buildPendingConsultantDefaults(uid, userData.user?.email);
-      const { data: createdData, error: createError } = await supabase.from("consultants").upsert(pendingConsultant, { onConflict: "id" }).select("id, igreen_id, approved, name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, portal_kind, photo_url").single();
+      const { data: createdData, error: createError } = await supabase.from("consultants").upsert(pendingConsultant, { onConflict: "id" }).select("id, igreen_id, approved, name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, assistant_name, gender, portal_kind, photo_url").single();
       if (isStale()) return; if (createError) throw createError;
       applyConsultantData(createdData);
     } catch (e) {
