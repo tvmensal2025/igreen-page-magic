@@ -90,7 +90,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     isWhapi,
   );
 
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>("dashboard");
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>(initialSubTab ?? "dashboard");
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [pendingMessageKey, setPendingMessageKey] = useState(0);
