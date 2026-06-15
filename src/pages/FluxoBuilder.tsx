@@ -481,6 +481,13 @@ export default function FluxoBuilder() {
         onCreate={(seed) => crud.addStep(seed)}
         steps={steps}
         consultantName={consultantName}
+        onDeleteStep={(id) => crud.deleteStep(id)}
+        onRequestMedia={(created) => {
+          // Caminho A: passo criado com slot_key → abre o inspetor já na aba
+          // de Mídias para o consultor enviar o arquivo na sequência.
+          setInspectorId(created.id);
+          setInspectorTab("midias");
+        }}
       />
     </div>
   );

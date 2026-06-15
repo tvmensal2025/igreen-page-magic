@@ -84,11 +84,12 @@ Deno.serve(async (req) => {
 
     const supabase = getAdminClient("proposal-respond");
 
-    // Carrega a proposta pelo token (com a regra de pontuação do produto).
+    // Carrega a proposta pelo token (com a regra de pontuação do produto e os
+    // dados de exibição para o aviso ao consultor).
     const { data: proposal, error } = await supabase
       .from("proposals")
       .select(
-        "id, consultant_id, product_id, customer_id, status, amount, valid_until, sale_id, products(scoring_rule)",
+        "id, consultant_id, product_id, customer_id, status, amount, amount_period, valid_until, sale_id, recipient_name, recipient_phone, products(scoring_rule, name)",
       )
       .eq("public_token", token)
       .maybeSingle();
@@ -106,6 +107,26 @@ Deno.serve(async (req) => {
       await supabase.from("proposals").update({ status: "expired" }).eq("id", proposal.id);
       return json({ error: "proposta expirada", status: "expired" }, 409);
     }
+
+    // ── Dados para o aviso ao consultor (nome, produto, valor, telefone) ──
+    const prodName =
+      (proposal as { products?: { name?: string } }).products?.name ?? "produto iGreen";
+    const cliente = (proposal.recipient_name as string | null)?.trim() || "Um cliente";
+    const fmtBRL = (n: number | null | undefined) =>
+      n != null ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : null;
+    const valorTxt = (() => {
+      const v = fmtBRL(proposal.amount as number | null);
+      if (!v) return "";
+      return proposal.amount_period === "month" ? `${v}/mês` : v;
+    })();
+    const fonePart = (() => {
+      const raw = (proposal.recipient_phone as string | null) ?? "";
+      const d = raw.replace(/\D/g, "").replace(/^55/, "");
+      if (d.length === 11) return `\n📱 (${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+      if (d.length === 10) return `\n📱 (${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+      return "";
+    })();
+    const linhaProduto = `📦 ${prodName}${valorTxt ? ` · ${valorTxt}` : ""}`;
 
     // ── ACEITAR → cria a venda (sales) ──────────────────────────────────────
     if (action === "accept") {
@@ -152,8 +173,8 @@ Deno.serve(async (req) => {
       await notifyConsultant(
         proposal.consultant_id,
         "info",
-        "Proposta aceita!",
-        "Um cliente aceitou sua proposta. A venda foi criada e está em captura no painel.",
+        "✅ Proposta ACEITA!",
+        `${cliente} aceitou sua proposta.\n${linhaProduto}${fonePart}\n\nA venda foi criada e está em captura no painel de Produtos → Pipeline.`,
       ).catch(() => {});
 
       return json({ ok: true, status: "accepted" });
@@ -171,8 +192,8 @@ Deno.serve(async (req) => {
       await notifyConsultant(
         proposal.consultant_id,
         "warning",
-        "Proposta recusada",
-        "Um cliente recusou sua proposta. Veja os detalhes no painel.",
+        "❌ Proposta recusada",
+        `${cliente} recusou sua proposta.\n${linhaProduto}${fonePart}\n\nVale um follow-up: veja os detalhes no painel de Orçamentos.`,
       ).catch(() => {});
       return json({ ok: true, status: "rejected" });
     }
@@ -190,10 +211,12 @@ Deno.serve(async (req) => {
     await notifyConsultant(
       proposal.consultant_id,
       "info",
-      "Contraproposta recebida",
-      counterAmount != null
-        ? `O cliente propôs R$ ${counterAmount.toFixed(2)}. Veja no painel para responder.`
-        : "O cliente enviou uma contraproposta. Veja no painel para responder.",
+      "📎 Proposta concorrente recebida",
+      `${cliente} respondeu com uma proposta concorrente.\n${linhaProduto}${fonePart}\n\n` +
+        (counterAmount != null ? `💰 Valor citado: ${fmtBRL(counterAmount)}\n` : "") +
+        (note ? `💬 "${note.slice(0, 200)}"\n` : "") +
+        (attachmentUrl ? `📄 Anexo enviado\n` : "") +
+        `\nResponda no painel de Orçamentos para tentar cobrir a oferta.`,
     ).catch(() => {});
 
     return json({ ok: true, status: "countered" });

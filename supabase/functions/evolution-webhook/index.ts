@@ -1260,6 +1260,18 @@ Deno.serve(async (req) => {
     // bloco 7 acima. Se a transcrição falhar, mantemos o comportamento
     // atual (handler de mídia recebe áudio bruto). Best-effort, never throws.
     if (hasAudio && fileBase64 && !messageText) {
+      // Flag global do Superadmin: quando desligada, não transcreve (cai no
+      // comportamento de áudio bruto). Default = ligada (null → trata como true).
+      let audioTranscribeOn = true;
+      try {
+        const { getGlobalAiSettings } = await import("../_shared/ai-config.ts");
+        const g = await getGlobalAiSettings(supabase);
+        if (g.audioTranscribe === false) audioTranscribeOn = false;
+      } catch (_) { /* fail-safe: mantém ligado */ }
+
+      if (!audioTranscribeOn) {
+        console.log("🔇 Transcrição de áudio desligada (ai_audio_transcribe=false) — seguindo com áudio bruto.");
+      } else {
       try {
         const mt = audioMessage?.mimetype || "audio/ogg";
         console.log(`🎙️ Transcrevendo áudio do cliente (${mt})...`);
@@ -1293,6 +1305,7 @@ Deno.serve(async (req) => {
         }
       } catch (e: any) {
         console.warn("⚠️ Transcrição falhou — seguindo com áudio bruto:", e?.message);
+      }
       }
     }
 

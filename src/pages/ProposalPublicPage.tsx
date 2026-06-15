@@ -1,19 +1,21 @@
 // =============================================================================
-// Página pública profissional do orçamento — /proposta/:token
+// Página pública do orçamento — /proposta/:token
 // =============================================================================
-// "Site de proposta" completo e convincente: hero com imagem, economia em
-// destaque, como funciona, diferenciais, parceria/credibilidade, iGreen Club,
-// prova social (depoimentos) e CTA fixo de resposta. Mantém a identidade verde
-// iGreen. NÃO acessa o banco direto: tudo passa pelas edge functions
-// (proposal-public-get / proposal-respond) via publicApi. Cada seção só
-// renderiza quando há dado, então serve a todos os produtos.
+// Conceito: a LANDING PAGE do produto (a mesma dos links públicos /conexao-*)
+// fica de FUNDO, e a PROPOSTA aparece num MODAL DE VIDRO (glassmorphism) na
+// frente. Ao fechar o modal, o cliente "cai" na landing e pode rolar para
+// conhecer tudo; um botão flutuante reabre a proposta a qualquer momento.
+//
+// Regras de negócio:
+//  - "Anexar proposta concorrente" (em vez de contraproposta) SÓ aparece em
+//    Conexão Seguros e Conexão Placas.
+//  - Não acessa o banco direto: tudo via edge functions (publicApi).
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import LoadingScreen from "@/components/LoadingScreen";
 import PageStatus from "@/components/common/PageStatus";
 import SEOHead from "@/components/SEOHead";
@@ -26,31 +28,28 @@ import {
   Loader2,
   Paperclip,
   ShieldCheck,
-  Gift,
-  Pill,
-  Film,
-  UtensilsCrossed,
-  ShoppingBag,
-  Plane,
-  Coins,
+  Sparkles,
+  X,
+  FileText,
 } from "lucide-react";
 import {
   getPublicProposal,
   respondToProposal,
-  getSlugProfile,
-  IGREEN_CLUB_BENEFITS,
-  IGREEN_CLUB_SUMMARY,
-  type ClubBenefit,
   type PublicProposalView,
   type ProposalStatus,
 } from "@/features/produtos/orcamento";
-import { useProducts } from "@/features/produtos/catalogo/hooks";
-import LazyVideo from "@/components/ui/LazyVideo";
-import { conexaoVideoUrl, conexaoPosterUrl } from "@/lib/conexaoVideos";
+import {
+  useProducts,
+  resolveLanding,
+  ProductLandingSections,
+} from "@/features/produtos/catalogo";
 
 const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const FINAL_STATUSES: ProposalStatus[] = ["accepted", "rejected", "expired"];
+
+// Produtos onde o cliente pode anexar uma proposta concorrente (negociação).
+const COMPETITOR_ATTACH_SLUGS = ["conexao-seguros", "conexao-placas"];
 
 export default function ProposalPublicPage() {
   const { token } = useParams<{ token: string }>();
@@ -59,10 +58,12 @@ export default function ProposalPublicPage() {
   const [notFound, setNotFound] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Contraproposta
-  const [counterOpen, setCounterOpen] = useState(false);
-  const [counterAmount, setCounterAmount] = useState("");
-  const [counterNote, setCounterNote] = useState("");
+  // Modal de proposta (abre por padrão; fechar revela a landing de fundo).
+  const [modalOpen, setModalOpen] = useState(true);
+
+  // Anexo de proposta concorrente (substitui a contraproposta).
+  const [competitorOpen, setCompetitorOpen] = useState(false);
+  const [competitorNote, setCompetitorNote] = useState("");
   const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -83,9 +84,6 @@ export default function ProposalPublicPage() {
     load();
   }, [load]);
 
-  // Catálogo público (leitura anônima permitida por RLS). Usado para resolver
-  // o slug do produto quando a edge function ainda não o envia (sem depender de
-  // deploy): casa pelo nome do produto retornado na proposta.
   const { data: catalogProducts = [] } = useProducts();
 
   const status = view?.proposal.status;
@@ -98,19 +96,18 @@ export default function ProposalPublicPage() {
       await respondToProposal({
         token,
         action,
-        note: action === "counter" ? counterNote.trim() || null : null,
+        note: action === "counter" ? competitorNote.trim() || null : null,
         attachmentUrl: action === "counter" ? attachmentUrl : null,
-        counterAmount:
-          action === "counter" && counterAmount ? Number(counterAmount) : null,
+        counterAmount: null,
       });
       toast.success(
         action === "accept"
           ? "Proposta aceita! O consultor foi avisado."
           : action === "reject"
             ? "Proposta recusada."
-            : "Contraproposta enviada ao consultor.",
+            : "Proposta concorrente enviada ao consultor.",
       );
-      setCounterOpen(false);
+      setCompetitorOpen(false);
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Não foi possível registrar sua resposta.");
@@ -139,6 +136,16 @@ export default function ProposalPublicPage() {
     }
   };
 
+  // Landing COMPLETA do produto (fundo). Casa pelo slug (ou nome) da proposta.
+  const landing = useMemo(() => {
+    const prod = view?.product;
+    if (!prod) return null;
+    const slug = prod.slug ?? catalogProducts.find((p) => p.name === prod.name)?.slug ?? "";
+    if (!slug) return null;
+    const dbProduct = catalogProducts.find((p) => p.slug === slug) ?? null;
+    return resolveLanding(dbProduct, slug);
+  }, [view?.product, catalogProducts]);
+
   if (loading) return <LoadingScreen />;
   if (notFound || !view) {
     return (
@@ -150,400 +157,281 @@ export default function ProposalPublicPage() {
   }
 
   const { proposal, consultant, product } = view;
+  const slug = product?.slug ?? "";
   const validUntilLabel = proposal.validUntil
     ? new Date(proposal.validUntil).toLocaleDateString("pt-BR")
     : null;
 
-  // Perfil comercial do produto. A edge function já manda o slug; se faltar,
-  // resolvemos pelo catálogo (leitura pública), casando pelo NOME do produto.
-  const resolvedSlug =
-    product?.slug ??
-    catalogProducts.find((p) => p.name === product?.name)?.slug ??
-    null;
-  const profile = resolvedSlug ? getSlugProfile(resolvedSlug) : null;
-
-  // Primeiro nome do destinatário, para personalizar o site.
   const firstName = proposal.recipientName?.trim().split(/\s+/)[0] ?? null;
-  const heroImage = profile?.heroImage ?? null;
+
+  // Economia (energia) = tem "conta de luz" OU "desconto na conta". Não basta
+  // a palavra "economia" (seguros também usa "economia de até 60%").
+  const isSavings = proposal.lineItems.some(
+    (i) => /conta de luz|conta atual/i.test(i.label),
+  );
+  const discountItem = proposal.lineItems.find((i) => /^desconto$/i.test(i.label.trim()));
+  const discountBadge =
+    isSavings && discountItem
+      ? `${discountItem.value} de desconto na conta de luz`
+      : null;
+  const savingsRangeItem = proposal.lineItems.find((i) =>
+    /economia.*m[eê]s|economia por m/i.test(i.label),
+  );
+  const yearlyItem = proposal.lineItems.find((i) => /economia.*ano|economia por ano/i.test(i.label));
+
+  const allowCompetitor = COMPETITOR_ATTACH_SLUGS.includes(slug);
 
   return (
     <>
       <SEOHead
         title={`Proposta ${product?.name ?? "iGreen"}${consultant ? ` — ${consultant.name}` : ""}`}
-        description={profile?.heroSubtitle ?? "Sua proposta personalizada iGreen Energy."}
+        description={landing?.heroSubtitle ?? "Sua proposta personalizada iGreen Energy."}
       />
-      <div className="min-h-screen bg-gradient-to-b from-[#0e8028] to-[#081c03] pb-28">
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
-          {/* ── HERO ──────────────────────────────────────────────── */}
-          {/* A imagem é um banner SEM texto sobreposto: várias imagens da
-              iGreen já têm escrita gravada, então sobrepor título causaria
-              "texto sobre texto". O título vai num painel sólido abaixo. */}
-          <section className="rounded-3xl overflow-hidden shadow-2xl bg-background">
-            {heroImage && (
-              <div className="h-44 sm:h-56 w-full">
+
+      {/* ═══ FUNDO: a landing page do produto (a mesma dos links públicos) ═══ */}
+      {landing ? (
+        <ProductLandingSections product={landing} />
+      ) : (
+        <div className="min-h-screen bg-gradient-to-b from-[#0e8028] to-[#081c03]" />
+      )}
+
+      {/* Botão flutuante para reabrir a proposta quando o modal está fechado */}
+      {!modalOpen && (
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="fixed bottom-4 inset-x-4 z-40 mx-auto max-w-md flex items-center justify-center gap-2 rounded-2xl bg-[#0e8028] hover:bg-[#0a6b22] text-white font-semibold py-3.5 shadow-2xl transition-colors"
+        >
+          <FileText className="h-5 w-5" />
+          Ver minha proposta
+        </button>
+      )}
+
+      {/* ═══ FRENTE: modal de vidro (glassmorphism) com a proposta ═══ */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+          {/* Backdrop desfocado — clicar fora fecha (cai na landing) */}
+          <div
+            className="fixed inset-0 bg-[#04140a]/70 backdrop-blur-md"
+            onClick={() => setModalOpen(false)}
+            aria-hidden="true"
+          />
+
+          {/* Cartão de vidro — cabe na tela do celular (sem scroll) */}
+          <div className="relative w-full max-w-sm max-h-[100dvh] rounded-3xl border border-white/25 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.45)] overflow-hidden flex flex-col">
+            {/* brilhos decorativos */}
+            <div className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full bg-[#3ad06a]/30 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-20 -left-16 w-56 h-56 rounded-full bg-[#0e8028]/30 blur-3xl" />
+
+            {/* Botão fechar */}
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              aria-label="Fechar proposta"
+              className="absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur flex items-center justify-center text-white transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="relative px-5 py-5 text-white overflow-y-auto">
+              {/* Cabeçalho */}
+              <div className="text-center">
                 <img
-                  src={heroImage}
-                  alt={product?.name ?? "iGreen"}
-                  className="w-full h-full object-cover"
+                  src="/images/logo-colorida-igreen.png"
+                  alt="iGreen Energy"
+                  className="h-6 mx-auto mb-2 brightness-0 invert"
                   loading="eager"
-                  onError={(e) => {
-                    (e.currentTarget.parentElement as HTMLElement | null)?.classList.add("hidden");
-                  }}
                 />
+                {product?.brandName && (
+                  <p className="text-[9px] uppercase tracking-[0.25em] text-white/70">
+                    {product.brandName}
+                  </p>
+                )}
+                <h1 className="font-heading text-lg font-bold leading-tight mt-0.5">
+                  Proposta {product?.name ?? "iGreen"}
+                </h1>
+                {firstName ? (
+                  <p className="text-xs text-white/85 mt-1">
+                    Olá <span className="font-semibold">{firstName}</span>, simulei isto para você.
+                  </p>
+                ) : (
+                  <p className="text-xs text-white/75 mt-1">Simulação personalizada iGreen.</p>
+                )}
+                {consultant && (
+                  <p className="text-[10px] text-white/65 mt-0.5">
+                    Por <span className="font-medium text-white/90">{consultant.name}</span>
+                    {consultant.igreenId ? ` · ID ${consultant.igreenId}` : ""}
+                  </p>
+                )}
               </div>
-            )}
 
+              <StatusBanner status={proposal.status} validUntilLabel={validUntilLabel} />
 
-            {/* Título em painel sólido verde (legível, sem conflito) */}
-            <div className="bg-gradient-to-br from-[#0e8028] to-[#081c03] px-6 py-6 text-white">
-              <img
-                src="/images/logo-colorida-igreen.png"
-                alt="iGreen Energy"
-                className="h-7 mb-3"
-                loading="eager"
-              />
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/80">
-                {product?.brandName}
-              </p>
-              <h1 className="font-heading text-2xl sm:text-3xl font-bold leading-tight">
-                {profile?.headline ?? product?.name}
-              </h1>
-            </div>
-
-            {/* Saudação personalizada */}
-            <div className="px-6 pt-5 pb-2 text-center">
-              {firstName ? (
-                <p className="text-sm text-foreground">
-                  Olá <span className="font-semibold">{firstName}</span>, preparei esta proposta
-                  especialmente para você.
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Uma proposta personalizada iGreen Energy.
-                </p>
-              )}
-              {consultant && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Por <span className="font-medium text-foreground">{consultant.name}</span>
-                  {consultant.igreenId ? ` · ID ${consultant.igreenId}` : ""}
-                </p>
-              )}
-            </div>
-
-            <StatusBanner status={proposal.status} validUntilLabel={validUntilLabel} />
-
-            {profile?.heroSubtitle && (
-              <p className="px-6 pb-5 text-sm text-foreground/80 text-center leading-relaxed">
-                {profile.heroSubtitle}
-              </p>
-            )}
-          </section>
-
-          {/* ── VALOR / ECONOMIA ──────────────────────────────────── */}
-          {(proposal.amount != null || proposal.lineItems.length > 0) && (
-            <section className="rounded-3xl bg-background shadow-xl p-6 space-y-4">
+              {/* Valor / economia */}
               {proposal.amount != null && proposal.amount > 0 && (
-                <div className="text-center bg-primary/5 rounded-2xl py-6 border border-primary/15">
-                  <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                    {profile?.amountLabel ?? "Valor"}
+                <div className="mt-3 rounded-2xl bg-white/10 border border-white/20 px-4 py-3.5 text-center">
+                  {discountBadge && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#3ad06a]/25 px-2.5 py-0.5 text-[10px] font-semibold mb-1.5 border border-[#7ef0a0]/30">
+                      <Sparkles className="h-3 w-3" /> {discountBadge}
+                    </span>
+                  )}
+                  <p className="text-[9px] uppercase tracking-[0.22em] text-white/70">
+                    {isSavings ? "Você economiza" : "Seu investimento"}
                   </p>
-                  <p className="text-4xl font-bold text-primary mt-1">
-                    {BRL(proposal.amount)}
-                    {proposal.amountPeriod === "month" && (
-                      <span className="text-sm font-normal text-muted-foreground">/mês</span>
-                    )}
-                  </p>
+                  {isSavings && savingsRangeItem ? (
+                    <>
+                      <p className="text-3xl font-extrabold mt-0.5 leading-none">
+                        {savingsRangeItem.value}
+                        <span className="text-xs font-medium text-white/70"> /mês</span>
+                      </p>
+                      <p className="text-[10px] text-white/65 mt-1">conforme a sua distribuidora</p>
+                    </>
+                  ) : (
+                    <p className="text-3xl font-extrabold mt-0.5 leading-none">
+                      {BRL(proposal.amount)}
+                      {proposal.amountPeriod === "month" && (
+                        <span className="text-xs font-medium text-white/70"> /mês</span>
+                      )}
+                    </p>
+                  )}
+                  {isSavings && yearlyItem && (
+                    <p className="mt-2 inline-block rounded-full bg-black/20 px-3 py-1 text-xs font-medium">
+                      {yearlyItem.value} por ano no seu bolso
+                    </p>
+                  )}
                 </div>
               )}
 
+              {/* Detalhes (compactos) */}
               {proposal.lineItems.length > 0 && (
-                <div className="space-y-2">
+                <div className="mt-3 rounded-2xl bg-white/5 border border-white/15 divide-y divide-white/10 overflow-hidden">
                   {proposal.lineItems.map((item, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start justify-between gap-3 text-sm border-b border-border/40 pb-2"
-                    >
-                      <span className="text-muted-foreground">{item.label}</span>
-                      <span className="text-foreground text-right font-medium">{item.value}</span>
+                    <div key={i} className="flex items-start justify-between gap-3 text-[13px] px-3.5 py-2">
+                      <span className="text-white/70">{item.label}</span>
+                      <span className="text-white text-right font-semibold">{item.value}</span>
                     </div>
                   ))}
                 </div>
               )}
 
-              {proposal.message && (
-                <div className="rounded-xl bg-secondary/40 p-4">
-                  <p className="text-sm text-foreground/90 whitespace-pre-wrap">{proposal.message}</p>
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* ── MÉTRICAS / CREDIBILIDADE ──────────────────────────── */}
-          {profile?.stats && profile.stats.length > 0 && (
-            <section className="grid grid-cols-3 gap-3">
-              {profile.stats.map((s, i) => (
-                <div key={i} className="rounded-2xl bg-white/10 backdrop-blur p-4 text-center">
-                  <p className="text-xl font-bold text-white">{s.value}</p>
-                  <p className="text-[10px] uppercase tracking-wide text-white/70 mt-1 leading-tight">
-                    {s.label}
-                  </p>
-                </div>
-              ))}
-            </section>
-          )}
-
-          {/* ── COMO FUNCIONA ─────────────────────────────────────── */}
-          {profile?.steps && profile.steps.length > 0 && (
-            <section className="rounded-3xl bg-background shadow-xl p-6 space-y-4">
-              <h2 className="font-heading text-lg font-bold text-foreground">Como funciona</h2>
-              <ol className="space-y-4">
-                {profile.steps.map((step, i) => (
-                  <li key={i} className="flex gap-3">
-                    <span className="shrink-0 w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold">
-                      {i + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{step.title}</p>
-                      <p className="text-xs text-muted-foreground leading-snug mt-0.5">
-                        {step.detail}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              {profile.heroVideoId ? (
-                <LazyVideo
-                  src={conexaoVideoUrl(profile.heroVideoId)}
-                  poster={conexaoPosterUrl(profile.heroVideoId)}
-                  label={`Vídeo ${product?.name ?? "iGreen"}`}
-                  className="w-full aspect-video rounded-2xl mt-2 bg-black"
-                />
-              ) : profile.video ? (
-                <video
-                  src={profile.video}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className="w-full rounded-2xl mt-2 bg-black"
-                />
-              ) : null}
-            </section>
-          )}
-
-          {/* ── DIFERENCIAIS ──────────────────────────────────────── */}
-          {profile?.highlights && profile.highlights.length > 0 && (
-            <section className="rounded-3xl bg-background shadow-xl p-6 space-y-3">
-              <h2 className="font-heading text-lg font-bold text-foreground">Por que vale a pena</h2>
-              <ul className="space-y-2.5">
-                {profile.highlights.map((h, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-foreground/90">
-                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                    <span>{h}</span>
-                  </li>
-                ))}
-              </ul>
-              {profile.partnerNote && (
-                <p className="text-[11px] text-muted-foreground italic pt-1 border-t border-border/40">
-                  {profile.partnerNote}
+              {/* Validade */}
+              {validUntilLabel && !isFinal && (
+                <p className="text-center text-[10px] text-white/70 flex items-center justify-center gap-1 mt-2.5">
+                  <Clock className="h-3 w-3" /> Válida até {validUntilLabel}
                 </p>
               )}
-            </section>
-          )}
 
-          {/* ── GALERIA ───────────────────────────────────────────── */}
-          {profile?.gallery && profile.gallery.length > 0 && (
-            <section className="grid grid-cols-2 gap-3">
-              {profile.gallery.map((src, i) => (
-                <img
-                  key={i}
-                  src={src}
-                  alt={`${product?.name ?? "iGreen"} ${i + 1}`}
-                  className="w-full h-32 object-cover rounded-2xl shadow-lg"
-                  loading="lazy"
-                />
-              ))}
-            </section>
-          )}
-
-          {/* ── iGREEN CLUB ───────────────────────────────────────── */}
-          {profile?.showClubBenefits && (
-            <section className="rounded-3xl bg-background shadow-xl p-6 space-y-3">
-              <div className="flex items-center gap-2">
-                <Gift className="h-5 w-5 text-primary" />
-                <h2 className="font-heading text-lg font-bold text-foreground">
-                  iGreen Club incluso, grátis
-                </h2>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {IGREEN_CLUB_BENEFITS.map((b) => (
-                  <div key={b.label} className="flex items-start gap-2.5">
-                    <ClubIcon icon={b.icon} />
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{b.label}</p>
-                      <p className="text-[11px] text-muted-foreground leading-snug">{b.detail}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[10px] text-muted-foreground leading-snug pt-2 border-t border-border/40">
-                {IGREEN_CLUB_SUMMARY}
-              </p>
-            </section>
-          )}
-
-          {/* ── PROVA SOCIAL (depoimentos) ────────────────────────── */}
-          {profile?.testimonials && profile.testimonials.length > 0 && (
-            <section className="rounded-3xl bg-background shadow-xl p-6 space-y-3">
-              <h2 className="font-heading text-lg font-bold text-foreground">
-                Quem já economiza com a gente
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {profile.testimonials.map((src, i) => (
-                  <video
-                    key={i}
-                    src={src}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="w-full rounded-2xl bg-black"
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* ── AÇÕES (inline, além do CTA fixo) ──────────────────── */}
-          <section className="rounded-3xl bg-background shadow-xl p-6">
-            {validUntilLabel && !isFinal && (
-              <p className="text-center text-[11px] text-muted-foreground flex items-center justify-center gap-1 mb-4">
-                <Clock className="h-3 w-3" /> Proposta válida até {validUntilLabel}
-              </p>
-            )}
-
-            {!isFinal ? (
-              <div className="space-y-3">
-                {!counterOpen ? (
-                  <>
-                    <Button
-                      className="w-full h-12 text-base gap-2"
-                      disabled={submitting}
-                      onClick={() => handleRespond("accept")}
-                    >
-                      {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
-                      Aceitar proposta
-                    </Button>
-                    <div className="flex gap-2">
+              {/* Ações */}
+              {!isFinal ? (
+                <div className="mt-3 space-y-2">
+                  {!competitorOpen ? (
+                    <>
                       <Button
-                        variant="outline"
-                        className="flex-1 gap-1.5"
+                        className="w-full h-11 text-base gap-2 bg-white text-[#0e8028] hover:bg-white/90"
                         disabled={submitting}
-                        onClick={() => setCounterOpen(true)}
+                        onClick={() => handleRespond("accept")}
                       >
-                        Fazer contraproposta
+                        {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
+                        Aceitar proposta
                       </Button>
-                      <Button
-                        variant="ghost"
-                        className="flex-1 gap-1.5 text-muted-foreground"
-                        disabled={submitting}
-                        onClick={() => handleRespond("reject")}
-                      >
-                        <XCircle className="h-4 w-4" /> Recusar
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-3 rounded-xl border border-border p-4">
-                    <p className="text-sm font-semibold text-foreground">Sua contraproposta</p>
-                    <div>
-                      <label className="text-[11px] text-muted-foreground font-medium">
-                        Valor que você propõe (opcional)
-                      </label>
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        value={counterAmount}
-                        onChange={(e) => setCounterAmount(e.target.value)}
-                        placeholder="Ex.: 45"
-                        className="h-9 text-sm mt-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] text-muted-foreground font-medium">Mensagem</label>
-                      <Textarea
-                        value={counterNote}
-                        onChange={(e) => setCounterNote(e.target.value)}
-                        placeholder="Explique sua proposta ou anexe um orçamento concorrente..."
-                        className="text-sm min-h-[70px] resize-none mt-1"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        id="counter-attach"
-                        type="file"
-                        className="hidden"
-                        onChange={handleAttach}
-                        accept="image/*,application/pdf"
-                      />
-                      <label
-                        htmlFor="counter-attach"
-                        className="inline-flex items-center gap-1.5 text-xs text-primary cursor-pointer hover:underline"
-                      >
-                        {uploading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Paperclip className="h-3.5 w-3.5" />
+                      <div className="flex gap-2">
+                        {allowCompetitor && (
+                          <Button
+                            variant="outline"
+                            className="flex-1 h-9 gap-1.5 border-white/40 bg-transparent text-white hover:bg-white/15 text-xs"
+                            disabled={submitting}
+                            onClick={() => setCompetitorOpen(true)}
+                          >
+                            <Paperclip className="h-3.5 w-3.5" /> Proposta concorrente
+                          </Button>
                         )}
-                        {attachmentUrl ? "Anexo enviado ✓" : "Anexar proposta (imagem ou PDF)"}
-                      </label>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        className="flex-1"
-                        disabled={submitting}
-                        onClick={() => setCounterOpen(false)}
+                        <Button
+                          variant="ghost"
+                          className={`h-9 gap-1.5 text-white/70 hover:bg-white/10 hover:text-white text-xs ${allowCompetitor ? "flex-1" : "w-full"}`}
+                          disabled={submitting}
+                          onClick={() => handleRespond("reject")}
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Recusar
+                        </Button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setModalOpen(false)}
+                        className="w-full text-center text-[11px] text-white/75 hover:text-white underline underline-offset-4"
                       >
-                        Cancelar
-                      </Button>
-                      <Button
-                        className="flex-1 gap-1.5"
-                        disabled={submitting || uploading}
-                        onClick={() => handleRespond("counter")}
-                      >
-                        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        Enviar contraproposta
-                      </Button>
+                        Conhecer o {product?.name ?? "produto"} antes de decidir
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-2 rounded-2xl border border-white/20 bg-white/5 p-3">
+                      <p className="text-sm font-semibold">Anexar proposta concorrente</p>
+                      <p className="text-[10px] text-white/70">
+                        Recebeu uma proposta de outra empresa? Envie que o consultor tenta cobrir.
+                      </p>
+                      <Textarea
+                        value={competitorNote}
+                        onChange={(e) => setCompetitorNote(e.target.value)}
+                        placeholder="Valores/condições da proposta concorrente..."
+                        className="text-sm min-h-[56px] resize-none bg-white/10 border-white/20 text-white placeholder:text-white/50"
+                      />
+                      <div>
+                        <input
+                          id="competitor-attach"
+                          type="file"
+                          className="hidden"
+                          onChange={handleAttach}
+                          accept="image/*,application/pdf"
+                        />
+                        <label
+                          htmlFor="competitor-attach"
+                          className="inline-flex items-center gap-1.5 text-xs text-white cursor-pointer hover:underline"
+                        >
+                          {uploading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Paperclip className="h-3.5 w-3.5" />
+                          )}
+                          {attachmentUrl ? "Anexo enviado ✓" : "Anexar imagem ou PDF"}
+                        </label>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          className="flex-1 h-9 text-white/70 hover:bg-white/10 hover:text-white"
+                          disabled={submitting}
+                          onClick={() => setCompetitorOpen(false)}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          className="flex-1 h-9 gap-1.5 bg-white text-[#0e8028] hover:bg-white/90"
+                          disabled={submitting || uploading}
+                          onClick={() => handleRespond("counter")}
+                        >
+                          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                          Enviar
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-center text-sm text-muted-foreground">
-                Esta proposta já foi finalizada. Fale com o consultor para mais informações.
+                  )}
+                </div>
+              ) : (
+                <p className="text-center text-sm text-white/80 mt-3">
+                  Esta proposta já foi finalizada. Fale com o consultor.
+                </p>
+              )}
+
+              {/* Aviso: simulação criada por consultor, não oficial */}
+              <p className="mt-3 text-center text-[10px] leading-snug text-white/60">
+                ⚡ Simulação rápida feita pelo seu consultor — valores estimados, não é
+                um documento oficial da iGreen. A condição final é confirmada no cadastro.
               </p>
-            )}
 
-            {/* Footer de confiança */}
-            <div className="mt-5 pt-4 border-t border-border flex items-center justify-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-              <span className="text-[11px] text-muted-foreground">Proposta segura iGreen Energy</span>
+              <div className="mt-2.5 pt-2.5 border-t border-white/15 flex items-center justify-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-[#7ef0a0]" />
+                <span className="text-[10px] text-white/70">Proposta segura iGreen Energy</span>
+              </div>
             </div>
-          </section>
-        </div>
-      </div>
-
-      {/* ── CTA FIXO (mobile) ───────────────────────────────────── */}
-      {!isFinal && !counterOpen && (
-        <div className="fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t border-border p-3 shadow-2xl">
-          <div className="max-w-2xl mx-auto">
-            <Button
-              className="w-full h-12 text-base gap-2"
-              disabled={submitting}
-              onClick={() => handleRespond("accept")}
-            >
-              {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
-              Aceitar proposta
-            </Button>
           </div>
         </div>
       )}
@@ -558,55 +446,35 @@ function StatusBanner({
   status: ProposalStatus;
   validUntilLabel: string | null;
 }) {
+  const base = "mt-4 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm font-medium";
   if (status === "accepted") {
     return (
-      <div className="bg-emerald-500/10 text-emerald-600 px-6 py-3 flex items-center gap-2 text-sm font-medium">
+      <div className={`${base} bg-emerald-400/20 text-emerald-100 border border-emerald-300/30`}>
         <CheckCircle2 className="h-4 w-4" /> Você aceitou esta proposta. O consultor foi avisado.
       </div>
     );
   }
   if (status === "rejected") {
     return (
-      <div className="bg-red-500/10 text-red-600 px-6 py-3 flex items-center gap-2 text-sm font-medium">
+      <div className={`${base} bg-red-400/20 text-red-100 border border-red-300/30`}>
         <XCircle className="h-4 w-4" /> Esta proposta foi recusada.
       </div>
     );
   }
   if (status === "expired") {
     return (
-      <div className="bg-zinc-500/10 text-zinc-500 px-6 py-3 flex items-center gap-2 text-sm font-medium">
+      <div className={`${base} bg-zinc-400/20 text-zinc-100 border border-zinc-300/30`}>
         <Clock className="h-4 w-4" /> Esta proposta expirou
-        {validUntilLabel ? ` em ${validUntilLabel}` : ""}. Fale com o consultor.
+        {validUntilLabel ? ` em ${validUntilLabel}` : ""}.
       </div>
     );
   }
   if (status === "countered") {
     return (
-      <div className="bg-amber-500/10 text-amber-600 px-6 py-3 flex items-center gap-2 text-sm font-medium">
-        <Clock className="h-4 w-4" /> Sua contraproposta foi enviada. Aguarde o retorno do consultor.
+      <div className={`${base} bg-amber-400/20 text-amber-100 border border-amber-300/30`}>
+        <Clock className="h-4 w-4" /> Sua proposta concorrente foi enviada. Aguarde o retorno.
       </div>
     );
   }
   return null;
-}
-
-// Ícone do benefício do iGreen Club (mapeia o tipo do catálogo para o ícone).
-function ClubIcon({ icon }: { icon: ClubBenefit["icon"] }) {
-  const cls = "h-4 w-4 text-primary shrink-0 mt-0.5";
-  switch (icon) {
-    case "pharmacy":
-      return <Pill className={cls} />;
-    case "cinema":
-      return <Film className={cls} />;
-    case "food":
-      return <UtensilsCrossed className={cls} />;
-    case "shopping":
-      return <ShoppingBag className={cls} />;
-    case "travel":
-      return <Plane className={cls} />;
-    case "cashback":
-      return <Coins className={cls} />;
-    default:
-      return <Gift className={cls} />;
-  }
 }

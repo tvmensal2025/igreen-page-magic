@@ -51,6 +51,7 @@ const PATCHABLE_COLUMNS = [
   "is_active",
   "auto_detect_doc_type",
   "layout",
+  "media_order",
 ] as const;
 
 type PatchableColumn = (typeof PATCHABLE_COLUMNS)[number];
@@ -208,6 +209,7 @@ export function useFlowStepsCrud({
         captures: seed?.captures ?? [],
         fallback: seed?.fallback ?? { mode: "repeat" },
         is_active: true,
+        ...(seed?.media_order ? { media_order: seed.media_order } : {}),
       };
       setSaving(true);
       try {

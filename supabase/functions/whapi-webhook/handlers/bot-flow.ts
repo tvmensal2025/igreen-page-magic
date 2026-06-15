@@ -637,7 +637,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     let courtesyTail = "";
 
     // 2) Orquestrador + RAG quando FAQ não casou (Fluxo D bypassa Cérebro no topo)
-    if (!answer && questionText.trim()) {
+    // KB-only (Superadmin): quando ligado, NÃO usa geração livre — só o gravado
+    // (FAQ acima). Sem match → fallback seguro + reentry. Default seguro = ligado.
+    let kbOnly = true;
+    try {
+      const { isKbOnlyMode } = await import("../../_shared/ai-decisions.ts");
+      kbOnly = await isKbOnlyMode();
+    } catch (_) { /* fail-safe: mantém ligado */ }
+
+    if (!answer && questionText.trim() && !kbOnly) {
       try {
         const { data: hist } = await supabase
           .from("conversations")

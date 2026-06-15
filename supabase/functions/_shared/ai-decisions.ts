@@ -102,6 +102,17 @@ export async function isStrictScriptMode(): Promise<boolean> {
   return (s.strict_script_mode || "false").toLowerCase() === "true";
 }
 
+/**
+ * KB-only: quando ligado (default true), a IA deve priorizar respostas gravadas
+ * (FAQ/RAG) e NÃO usar geração livre. Espelha `settings.ai_kb_only_mode` gravado
+ * pelo painel do Superadmin. Default seguro = true (prioriza o gravado).
+ */
+export async function isKbOnlyMode(): Promise<boolean> {
+  const s = await loadSettings();
+  // Ausente → true (segurança: prioriza respostas gravadas, corta custo).
+  return (s.ai_kb_only_mode ?? "true").toLowerCase() !== "false";
+}
+
 export async function getConfidenceThresholds(): Promise<{ handoff: number; execute: number }> {
   const s = await loadSettings();
   const handoff = parseFloat(s.ai_confidence_threshold_handoff || "0.5");

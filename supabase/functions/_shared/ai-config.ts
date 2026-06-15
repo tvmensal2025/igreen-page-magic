@@ -207,10 +207,77 @@ export function pickModel(
 }
 
 /**
- * Lê `consultants.ai_profile` para descobrir qual perfil aplicar.
- * Cache de 60s em memória — leituras consecutivas evitam round-trip.
+ * Configuração GLOBAL de IA definida pelo Superadmin (tabela `settings`).
+ * Estas chaves, quando presentes, têm PRECEDÊNCIA sobre o ajuste por consultor
+ * — o pedido é "configuração só do superadmin". O painel que grava é
+ * `src/components/superadmin/AIControlPanel.tsx`.
  *
- * Default 'balanced' quando coluna ausente, valor inválido ou erro.
+ * Cache de 60s em memória (igual ao de perfil). Falha de leitura → tudo null,
+ * e o caller cai no comportamento por consultor / default (fail-safe).
+ */
+export interface GlobalAiSettings {
+  profile: AiProfile | null;
+  provider: AiProvider | null;
+  kbOnly: boolean | null;
+  audioTranscribe: boolean | null;
+}
+
+const GLOBAL_SETTINGS_KEYS = [
+  "ai_profile_global",
+  "ai_provider_global",
+  "ai_kb_only_mode",
+  "ai_audio_transcribe",
+] as const;
+
+let _globalSettingsCache: { value: GlobalAiSettings; t: number } | null = null;
+const GLOBAL_TTL_MS = 60_000;
+
+function parseBool(raw: string | undefined | null): boolean | null {
+  if (raw == null) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (s === "true" || s === "1") return true;
+  if (s === "false" || s === "0") return false;
+  return null;
+}
+
+export async function getGlobalAiSettings(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+): Promise<GlobalAiSettings> {
+  if (_globalSettingsCache && Date.now() - _globalSettingsCache.t < GLOBAL_TTL_MS) {
+    return _globalSettingsCache.value;
+  }
+  const empty: GlobalAiSettings = { profile: null, provider: null, kbOnly: null, audioTranscribe: null };
+  try {
+    const { data } = await supabase
+      .from("settings")
+      .select("key,value")
+      .in("key", GLOBAL_SETTINGS_KEYS as unknown as string[]);
+    const map: Record<string, string> = {};
+    for (const r of (data || [])) map[String((r as any).key)] = String((r as any).value ?? "");
+    const rawP = String(map.ai_profile_global || "").toLowerCase();
+    const rawPr = String(map.ai_provider_global || "").toLowerCase();
+    const value: GlobalAiSettings = {
+      profile: rawP === "accuracy" || rawP === "fast" || rawP === "balanced" ? (rawP as AiProfile) : null,
+      provider: rawPr === "openai" ? "openai" : rawPr === "google" ? "google" : null,
+      kbOnly: parseBool(map.ai_kb_only_mode),
+      audioTranscribe: parseBool(map.ai_audio_transcribe),
+    };
+    _globalSettingsCache = { value, t: Date.now() };
+    return value;
+  } catch (_) {
+    return empty;
+  }
+}
+
+export function clearGlobalAiSettingsCache() {
+  _globalSettingsCache = null;
+}
+
+/**
+ * Lê o perfil de IA a aplicar. PRECEDÊNCIA: global do Superadmin
+ * (`settings.ai_profile_global`) > `consultants.ai_profile` > default 'balanced'.
+ * Cache de 60s em memória — leituras consecutivas evitam round-trip.
  */
 const _profileCache = new Map<string, { profile: AiProfile; t: number }>();
 const PROFILE_TTL_MS = 60_000;
@@ -220,6 +287,13 @@ export async function getConsultantAiProfile(
   supabase: any,
   consultantId: string,
 ): Promise<AiProfile> {
+  // 1) Global do Superadmin vence quando definido.
+  try {
+    const global = await getGlobalAiSettings(supabase);
+    if (global.profile) return global.profile;
+  } catch (_) { /* fail-safe: segue para o por-consultor */ }
+
+  // 2) Por consultor (com cache).
   const cached = _profileCache.get(consultantId);
   if (cached && Date.now() - cached.t < PROFILE_TTL_MS) return cached.profile;
   try {
@@ -251,6 +325,11 @@ export async function getConsultantAiProvider(
   supabase: any,
   consultantId: string,
 ): Promise<AiProvider> {
+  // Global do Superadmin vence quando definido.
+  try {
+    const global = await getGlobalAiSettings(supabase);
+    if (global.provider) return global.provider;
+  } catch (_) { /* fail-safe */ }
   try {
     const { data } = await supabase
       .from("consultants")

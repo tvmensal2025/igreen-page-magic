@@ -1,0 +1,200 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e9]:
+    - generic [ref=e11]:
+      - heading "DESCUBRA COMO UTILIZAR A INTERNET MAIS RÁPIDA DO BRASIL COM A MAIOR COBERTURA NACIONAL" [level=1] [ref=e12]
+      - paragraph [ref=e13]: Conheça agora a oportunidade da iGreen Telecom e como você pode ter acesso à conexão 5G de maior velocidade do Brasil com os melhores preços do mercado
+      - generic [ref=e16]:
+        - generic [ref=e17]: Seu navegador não suporta vídeos.
+        - button "Vídeo Conexão Telecom" [ref=e18] [cursor=pointer]:
+          - img [ref=e20]
+    - generic [ref=e23]:
+      - generic [ref=e24]: Somos a iGreen Telecom
+      - heading "Somos a iGreen Telecom" [level=2] [ref=e25]
+      - paragraph [ref=e26]: A operadora de internet móvel que combina tecnologia de ponta com sustentabilidade
+      - list [ref=e28]:
+        - listitem [ref=e29]:
+          - generic [ref=e30]: ✅
+          - generic [ref=e31]: 📶 Operadora 100% digital com a maior cobertura 5G do Brasil
+        - listitem [ref=e32]:
+          - generic [ref=e33]: ✅
+          - generic [ref=e34]: 💰 Planos a partir de R$ 39,90 com internet de alta velocidade
+        - listitem [ref=e35]:
+          - generic [ref=e36]: ✅
+          - generic [ref=e37]: 🌱 Cada plano gera cashback sustentável para o meio ambiente
+        - listitem [ref=e38]:
+          - generic [ref=e39]: ✅
+          - generic [ref=e40]: 📱 Gestão completa do seu plano pelo aplicativo iGreen
+        - listitem [ref=e41]:
+          - generic [ref=e42]: ✅
+          - generic [ref=e43]: 🔄 Sem fidelidade — cancele quando quiser sem multa
+        - listitem [ref=e44]:
+          - generic [ref=e45]: ✅
+          - generic [ref=e46]: 🎁 Acesso gratuito ao iGreen Club com + de 30 mil descontos
+        - listitem [ref=e47]:
+          - generic [ref=e48]: ✅
+          - generic [ref=e49]: 🤝 Suporte humanizado via WhatsApp 24 horas por dia
+    - generic [ref=e51]:
+      - heading "Conheça os Benefícios" [level=2] [ref=e52]
+      - paragraph [ref=e53]: Veja por que milhares de pessoas já escolheram a iGreen Telecom
+      - button "Conheça os Benefícios" [ref=e57] [cursor=pointer]:
+        - img [ref=e59]
+    - generic [ref=e62]:
+      - heading "Conheça Nossos Planos" [level=2] [ref=e63]
+      - paragraph [ref=e64]: Veja os planos disponíveis e escolha o ideal para você
+      - generic [ref=e65]:
+        - img "Conheça Nossos Planos 1" [ref=e66]
+        - img "Conheça Nossos Planos 2" [ref=e67]
+        - img "Conheça Nossos Planos 3" [ref=e68]
+        - img "Conheça Nossos Planos 4" [ref=e69]
+        - img "Conheça Nossos Planos 5" [ref=e70]
+        - img "Conheça Nossos Planos 6" [ref=e71]
+    - generic [ref=e73]:
+      - heading "Cashback Sustentável" [level=2] [ref=e74]
+      - paragraph [ref=e75]: Cada plano gera retorno para você e para o planeta
+      - generic [ref=e76]:
+        - generic [ref=e77]:
+          - generic [ref=e78]: ✅
+          - generic [ref=e79]: 🌍 Parte do valor do plano é investido em projetos de energia limpa
+        - generic [ref=e80]:
+          - generic [ref=e81]: ✅
+          - generic [ref=e82]: 💵 Cashback direto na sua conta todo mês
+        - generic [ref=e83]:
+          - generic [ref=e84]: ✅
+          - generic [ref=e85]: 🌳 Plantio de árvores a cada ativação de plano
+        - generic [ref=e86]:
+          - generic [ref=e87]: ✅
+          - generic [ref=e88]: ♻️ Compensação de carbono inclusa em todos os planos
+        - generic [ref=e89]:
+          - generic [ref=e90]: ✅
+          - generic [ref=e91]: 📊 Acompanhe seu impacto sustentável pelo app
+        - generic [ref=e92]:
+          - generic [ref=e93]: ✅
+          - generic [ref=e94]: 🏆 Programa de fidelidade com recompensas verdes
+    - generic [ref=e96]:
+      - heading "iGreen Club — Seu Clube de Descontos" [level=2] [ref=e97]
+      - paragraph [ref=e98]: Economize em mais de 30 mil lojas parceiras em todo o Brasil
+      - button "iGreen Club — Seu Clube de Descontos" [ref=e102] [cursor=pointer]:
+        - img [ref=e104]
+    - generic [ref=e107]:
+      - heading "Como Funciona o iGreen Club" [level=2] [ref=e108]
+      - button "Como Funciona o iGreen Club" [ref=e112] [cursor=pointer]:
+        - img [ref=e114]
+    - generic [ref=e117]:
+      - heading "Vantagens Exclusivas" [level=2] [ref=e118]
+      - paragraph [ref=e119]: Tudo o que você ganha ao ser cliente iGreen Telecom
+      - generic [ref=e120]:
+        - generic [ref=e122]: 📋 Planos flexíveis para cada necessidade
+        - generic [ref=e124]: ⚡ 5G ultra veloz com cobertura nacional
+        - generic [ref=e126]: 💬 WhatsApp ilimitado em todos os planos
+        - generic [ref=e128]: 📞 Ligações ilimitadas para qualquer operadora
+        - generic [ref=e130]: 📦 Internet acumulada — o que não usar, leva pro próximo mês
+        - generic [ref=e132]: 🎁 iGreen Club grátis com descontos em 30 mil lojas
+        - generic [ref=e134]: 🏷️ Descontos exclusivos em mais de 30 mil lojas
+        - generic [ref=e136]: 🔓 Sem fidelidade — liberdade total
+        - generic [ref=e138]: 📱 100% digital — ative pelo app em minutos
+        - generic [ref=e140]: 🤝 Suporte via WhatsApp 24h por dia
+    - generic [ref=e142]:
+      - heading "Perguntas Frequentes" [level=2] [ref=e143]
+      - paragraph [ref=e144]: Tire suas dúvidas sobre a iGreen Telecom
+      - generic [ref=e145]:
+        - generic [ref=e146]:
+          - button "Como adquirir um plano iGreen Telecom?" [ref=e147] [cursor=pointer]:
+            - generic [ref=e148]: Como adquirir um plano iGreen Telecom?
+            - img [ref=e149]
+          - paragraph [ref=e151]: Basta entrar em contato pelo WhatsApp do consultor ou baixar o aplicativo iGreen Telecom e escolher o plano ideal para você. A ativação é 100% digital.
+        - generic [ref=e152]:
+          - button "Existe fidelidade nos planos?" [ref=e153] [cursor=pointer]:
+            - generic [ref=e154]: Existe fidelidade nos planos?
+            - img [ref=e155]
+          - paragraph [ref=e157]: Não! Todos os planos são sem fidelidade. Você pode cancelar a qualquer momento sem multa.
+        - generic [ref=e158]:
+          - button "Há diferença entre os planos para clientes PJ e PF?" [ref=e159] [cursor=pointer]:
+            - generic [ref=e160]: Há diferença entre os planos para clientes PJ e PF?
+            - img [ref=e161]
+          - paragraph [ref=e163]: Os planos são os mesmos para pessoa física e jurídica. A diferença está na forma de faturamento e nota fiscal.
+        - generic [ref=e164]:
+          - button "O cliente iGreen Telecom tem direito aos benefícios do iGreen Club?" [ref=e165] [cursor=pointer]:
+            - generic [ref=e166]: O cliente iGreen Telecom tem direito aos benefícios do iGreen Club?
+            - img [ref=e167]
+          - paragraph [ref=e169]: Sim! Todo cliente iGreen Telecom recebe acesso gratuito ao iGreen Club com descontos em mais de 30 mil estabelecimentos.
+        - generic [ref=e170]:
+          - button "Existe diferença entre os planos com portabilidade e sem portabilidade?" [ref=e171] [cursor=pointer]:
+            - generic [ref=e172]: Existe diferença entre os planos com portabilidade e sem portabilidade?
+            - img [ref=e173]
+          - paragraph [ref=e175]: Os benefícios são os mesmos. A portabilidade permite manter seu número atual ao migrar para a iGreen Telecom.
+        - generic [ref=e176]:
+          - button "Como falar no suporte ao cliente?" [ref=e177] [cursor=pointer]:
+            - generic [ref=e178]: Como falar no suporte ao cliente?
+            - img [ref=e179]
+          - paragraph [ref=e181]: Nosso suporte funciona 24h pelo WhatsApp. Basta enviar uma mensagem e nossa equipe responde rapidamente.
+        - generic [ref=e182]:
+          - button "Qual aplicativo baixar para gerenciar o plano?" [ref=e183] [cursor=pointer]:
+            - generic [ref=e184]: Qual aplicativo baixar para gerenciar o plano?
+            - img [ref=e185]
+          - paragraph [ref=e187]: Baixe o app 'iGreen Telecom' disponível na Google Play Store e Apple App Store para gerenciar seu plano.
+        - generic [ref=e188]:
+          - button "O cliente pode ativar o pagamento automático e recorrente no cartão de crédito?" [ref=e189] [cursor=pointer]:
+            - generic [ref=e190]: O cliente pode ativar o pagamento automático e recorrente no cartão de crédito?
+            - img [ref=e191]
+          - paragraph [ref=e193]: Sim! Você pode configurar o pagamento automático pelo aplicativo e nunca se preocupar com vencimento.
+        - generic [ref=e194]:
+          - button "O cliente pode cancelar a qualquer momento com a iGreen Telecom?" [ref=e195] [cursor=pointer]:
+            - generic [ref=e196]: O cliente pode cancelar a qualquer momento com a iGreen Telecom?
+            - img [ref=e197]
+          - paragraph [ref=e199]: Sim, sem fidelidade e sem multa. O cancelamento pode ser feito pelo app ou pelo suporte via WhatsApp.
+  - generic [ref=e202]:
+    - button "Fechar proposta" [ref=e203] [cursor=pointer]:
+      - img [ref=e204]
+    - generic [ref=e207]:
+      - generic [ref=e208]:
+        - img "iGreen Energy" [ref=e209]
+        - paragraph [ref=e210]: iGreen Telecom
+        - heading "Proposta Conexão Telecom" [level=1] [ref=e211]
+        - paragraph [ref=e212]: Olá Pedro, preparei esta proposta especialmente para você.
+        - paragraph [ref=e213]: Por Rafael Ferreira · ID 122160
+      - generic [ref=e214]:
+        - paragraph [ref=e215]: Seu investimento
+        - paragraph [ref=e216]: R$ 59,90 /mês
+      - generic [ref=e217]:
+        - generic [ref=e218]:
+          - generic [ref=e219]: Plano
+          - generic [ref=e220]: Mega — 15GB
+        - generic [ref=e221]:
+          - generic [ref=e222]: Internet
+          - generic [ref=e223]: 10GB + 5GB na portabilidade
+        - generic [ref=e224]:
+          - generic [ref=e225]: Ligações e WhatsApp
+          - generic [ref=e226]: ilimitados
+        - generic [ref=e227]:
+          - generic [ref=e228]: Fidelidade
+          - generic [ref=e229]: sem fidelidade
+        - generic [ref=e230]:
+          - generic [ref=e231]: Bônus
+          - generic [ref=e232]: iGreen Club grátis
+      - paragraph [ref=e234]: Pedro, plano Mega 15GB com 5G, ligações e WhatsApp ilimitados. Traga seu número e ganhe +5GB grátis. Sem fidelidade.
+      - paragraph [ref=e235]:
+        - img [ref=e236]
+        - text: Proposta válida até 22/06/2026
+      - generic [ref=e239]:
+        - button "Aceitar proposta" [ref=e240] [cursor=pointer]:
+          - img
+          - text: Aceitar proposta
+        - button "Recusar" [ref=e242] [cursor=pointer]:
+          - img
+          - text: Recusar
+        - button "Quero conhecer o Conexão Telecom antes de decidir" [ref=e243] [cursor=pointer]
+      - generic [ref=e244]:
+        - img [ref=e245]
+        - generic [ref=e248]: Proposta segura iGreen Energy
+  - generic [ref=e249]:
+    - paragraph [ref=e250]:
+      - text: Cookies para melhorar sua experiência.
+      - link "Privacidade" [ref=e251] [cursor=pointer]:
+        - /url: /politica-privacidade
+      - text: .
+    - generic [ref=e252]:
+      - button "Rejeitar" [ref=e253] [cursor=pointer]
+      - button "Aceitar" [ref=e254] [cursor=pointer]

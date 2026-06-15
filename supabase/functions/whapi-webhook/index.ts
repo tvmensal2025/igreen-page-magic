@@ -1259,7 +1259,14 @@ Deno.serve(async (req) => {
       // 🧪 modo teste: usa transcript embutido no payload
       const t = (audioMessage as any)?.transcript || (parsed.message as any)?.audio?.transcript || "";
       if (t) { messageText = String(t); isFile = false; }
-    } else if (hasAudio && fileBase64) {
+    } else if (hasAudio && fileBase64 && !(await (async () => {
+      // Flag global do Superadmin: quando desligada, NÃO transcreve.
+      try {
+        const { getGlobalAiSettings } = await import("../_shared/ai-config.ts");
+        const g = await getGlobalAiSettings(supabase);
+        return g.audioTranscribe === false;
+      } catch (_) { return false; }
+    })())) {
       try {
         const mt = audioMessage?.mimetype || "audio/ogg";
         console.log(`🎙️ [whapi] Transcrevendo áudio do cliente (${mt}, ${fileBase64.length} b64 chars)...`);

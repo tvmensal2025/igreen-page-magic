@@ -114,6 +114,13 @@ export type Step = {
   is_active: boolean;
   auto_detect_doc_type?: boolean;
   /**
+   * Ordem/seleção dos tipos de mídia do passo (ex.: ["audio","text"]). Lista de
+   * kinds em minúsculas que o runtime usa para decidir QUAIS mídias enviar e em
+   * que ordem. Espelha `bot_flow_steps.media_order` (jsonb). Vazio/ausente =
+   * comportamento padrão do runtime.
+   */
+  media_order?: string[] | null;
+  /**
    * Coordenadas manuais do passo no Modo_Diagrama. `null`/`undefined` indica
    * que o passo nunca foi posicionado manualmente — o `useDiagramLayout`
    * aplica auto-layout (dagre) para esses casos. Coluna jsonb adicionada por
@@ -124,11 +131,81 @@ export type Step = {
 
 export const STEP_TYPE_OPTIONS: { value: string; label: string; emoji: string; hint: string }[] = [
   { value: "message", emoji: "💬", label: "Mensagem comum", hint: "Texto + mídia + regras (padrão)." },
+  { value: "capture_name", emoji: "🙋", label: "Pedir o nome", hint: "Pergunta o nome do cliente (texto)." },
   { value: "capture_conta", emoji: "📸", label: "Captar conta de luz", hint: "Pede a conta, faz OCR e confirma." },
   { value: "capture_documento", emoji: "🪪", label: "Captar documento", hint: "RG/CNH com auto-detecção." },
   { value: "capture_email", emoji: "📧", label: "Captar e-mail", hint: "Pede e-mail e confirma antes de seguir." },
   { value: "confirm_phone", emoji: "📱", label: "Confirmar telefone", hint: "Usa este WhatsApp ou outro?" },
   { value: "finalizar_cadastro", emoji: "🎉", label: "Finalizar cadastro", hint: "Envia ao portal, trata OTP e parabeniza." },
+];
+
+// ─── Catálogo da Iris construtora, organizado por INTENÇÃO ───────────────────
+// Em vez de pedir o `step_type` técnico, a Iris pergunta a INTENÇÃO ("falar"
+// vs "pedir informação") e deduz o tipo correto deterministicamente. Esta
+// tabela é a fonte de verdade desse mapeamento e foi validada contra o runtime
+// (manual-step-send/KNOWN_TYPES + whapi-webhook/ask_name…) e o useFlowValidation
+// (VAR_PRODUCERS) — ver .tmp/map-guided-intents.py.
+export type GuidedIntent = "falar" | "pedir";
+
+/** O que a Iris pode PEDIR ao cliente. Cada opção vira um step_type real. */
+export interface GuidedCaptureOption {
+  /** Chave de UI (não vai pro banco). */
+  key: string;
+  /** step_type real persistido (reconhecido pelo runtime). */
+  stepType: string;
+  emoji: string;
+  /** Rótulo em linguagem do consultor (sem jargão). */
+  label: string;
+  /** Frase curta explicando o que acontece. */
+  hint: string;
+  /** Variável canônica que o passo produz (para o validador). */
+  produces: string;
+  /** `true` quando pedir esse dado é opcional no fluxo (ex.: nome). */
+  optional?: boolean;
+}
+
+export const GUIDED_CAPTURE_OPTIONS: GuidedCaptureOption[] = [
+  {
+    key: "nome",
+    stepType: "capture_name",
+    emoji: "🙋",
+    label: "O nome do cliente",
+    hint: "Opcional. Se você não pedir, eu pego o nome depois pela conta ou documento. No começo da conversa uso só o primeiro nome pra falar mais próximo.",
+    produces: "nome",
+    optional: true,
+  },
+  {
+    key: "valor_conta",
+    stepType: "capture_conta",
+    emoji: "📸",
+    label: "A conta de luz (foto)",
+    hint: "Peço a foto ou PDF da conta e leio o valor automaticamente.",
+    produces: "valor_conta",
+  },
+  {
+    key: "documento",
+    stepType: "capture_documento",
+    emoji: "🪪",
+    label: "O documento (RG ou CNH)",
+    hint: "Peço a foto do documento e leio nome e CPF sozinho.",
+    produces: "nome",
+  },
+  {
+    key: "email",
+    stepType: "capture_email",
+    emoji: "📧",
+    label: "O e-mail",
+    hint: "Peço o melhor e-mail e confirmo antes de seguir.",
+    produces: "email",
+  },
+  {
+    key: "telefone",
+    stepType: "confirm_phone",
+    emoji: "📱",
+    label: "Confirmar o WhatsApp",
+    hint: "Pergunto se é neste número ou em outro.",
+    produces: "telefone",
+  },
 ];
 
 const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
@@ -275,4 +352,149 @@ export function renderVarsPreview(
     .replace(/\{\{representante\}\}/gi, rep)
     .replace(/\{\{consultor\}\}/gi, rep)
     .replace(/\{\{email\}\}/gi, "joao@email.com");
+}
+
+/**
+ * Persona fictícia ÚNICA usada no preview do construtor. Os valores são
+ * coerentes com `renderVarsPreview` (mesmo "João", mesmo telefone/valor), para
+ * que a conversa simulada bata com as variáveis renderizadas nas bolhas do bot.
+ */
+export const PREVIEW_PERSONA = {
+  nome: "João Silva",
+  primeiroNome: "João",
+  telefone: "(11) 99999-8888",
+  email: "joao@email.com",
+  cpf: "123.456.789-00",
+  valorConta: "450,00",
+} as const;
+
+/** Tipo da resposta simulada do cliente fictício no preview. */
+export type SimulatedReply =
+  | { kind: "text"; text: string }
+  | { kind: "media"; label: string }
+  | null;
+
+/**
+ * Dada a etapa, devolve a RESPOSTA que o cliente fictício daria — para o
+ * preview mostrar o vai-e-vem (bot pede → cliente responde com dado fictício).
+ * Determinístico e puro. Retorna `null` quando o passo não espera resposta do
+ * cliente (ex.: mensagem informativa sem botões).
+ */
+export function simulatedClientReply(step: Step): SimulatedReply {
+  const type = (step.step_type ?? "").toLowerCase();
+  switch (type) {
+    case "capture_name":
+      return { kind: "text", text: PREVIEW_PERSONA.nome };
+    case "capture_email":
+      return { kind: "text", text: PREVIEW_PERSONA.email };
+    case "confirm_phone":
+      return { kind: "text", text: PREVIEW_PERSONA.telefone };
+    case "capture_conta":
+      return { kind: "media", label: "📷 Foto da conta de luz" };
+    case "capture_documento":
+    case "capture_doc":
+      return { kind: "media", label: "📷 Foto do documento" };
+    default:
+      // Passo com botões: o cliente "clica" no primeiro botão.
+      if (getButtons(step).length > 0) {
+        return { kind: "text", text: getButtons(step)[0].title };
+      }
+      return null;
+  }
+}
+
+/** Bolha de confirmação que o bot manda APÓS ler um dado (ex.: OCR da conta). */
+export function botConfirmationAfter(step: Step): string | null {
+  const type = (step.step_type ?? "").toLowerCase();
+  if (type === "capture_conta") return "Li aqui: conta de R$ 450,00 ✅";
+  if (type === "capture_documento" || type === "capture_doc") return "Documento confirmado: João Silva ✅";
+  return null;
+}
+
+/**
+ * Marcos que um fluxo precisa ter para LEVAR O LEAD ATÉ O CADASTRO COMPLETO no
+ * portal iGreen. Não é o conjunto de campos do portal (PORTAL_FIELDS, no shared)
+ * — é a tradução desses campos em "passos que o consultor precisa colocar":
+ *   • conta de luz  → preenche valor, distribuidora, instalação, endereço (OCR);
+ *   • documento     → preenche nome, CPF, RG, nascimento (OCR);
+ *   • e-mail        → campo e-mail;
+ *   • telefone      → confirma WhatsApp;
+ *   • finalizar     → dispara o envio ao portal.
+ * Nome é OPCIONAL (vem do documento). Esta lista guia o painel "Cadastro 100%".
+ */
+export interface FlowMilestone {
+  key: string;
+  label: string;
+  /** step_types que satisfazem este marco. */
+  satisfiedBy: string[];
+  required: boolean;
+  /** Dica curta do que esse marco resolve. */
+  hint: string;
+}
+
+export const FLOW_MILESTONES: FlowMilestone[] = [
+  { key: "conta", label: "Conta de luz", satisfiedBy: ["capture_conta"], required: true, hint: "Valor, distribuidora, instalação e endereço (lê sozinho)." },
+  { key: "documento", label: "Documento", satisfiedBy: ["capture_documento", "capture_doc"], required: true, hint: "Nome, CPF, RG e nascimento (lê sozinho)." },
+  { key: "email", label: "E-mail", satisfiedBy: ["capture_email"], required: true, hint: "Necessário para o cadastro no portal." },
+  { key: "telefone", label: "WhatsApp confirmado", satisfiedBy: ["confirm_phone"], required: true, hint: "Confirma o número do cliente." },
+  { key: "finalizar", label: "Finalizar cadastro", satisfiedBy: ["finalizar_cadastro"], required: true, hint: "Envia tudo ao portal iGreen e trata o código (OTP)." },
+];
+
+export interface FlowCoverage {
+  milestones: { milestone: FlowMilestone; done: boolean }[];
+  doneCount: number;
+  requiredCount: number;
+  /** Percentual 0..100 considerando só os marcos obrigatórios. */
+  percent: number;
+  /** Próximo marco obrigatório que falta (para sugerir ao consultor). */
+  next: FlowMilestone | null;
+  complete: boolean;
+}
+
+/** Avalia a cobertura do cadastro a partir dos passos ativos do fluxo. */
+export function computeFlowCoverage(steps: Step[]): FlowCoverage {
+  const types = new Set(
+    steps.filter((s) => s.is_active !== false).map((s) => (s.step_type ?? "").toLowerCase()),
+  );
+  const milestones = FLOW_MILESTONES.map((m) => ({
+    milestone: m,
+    done: m.satisfiedBy.some((t) => types.has(t)),
+  }));
+  const required = milestones.filter((x) => x.milestone.required);
+  const doneCount = required.filter((x) => x.done).length;
+  const requiredCount = required.length;
+  const next = required.find((x) => !x.done)?.milestone ?? null;
+  return {
+    milestones,
+    doneCount,
+    requiredCount,
+    percent: requiredCount === 0 ? 100 : Math.round((doneCount / requiredCount) * 100),
+    next,
+    complete: doneCount === requiredCount,
+  };
+}
+
+/**
+ * Texto PADRÃO que o bot envia quando o consultor não escreve mensagem própria
+ * num passo de captura. Espelha `getReplyForStep` do runtime (Evolution/whapi),
+ * para o preview mostrar exatamente o que o cliente receberia por tipo.
+ */
+export function defaultPromptForType(stepType: string): string {
+  switch ((stepType ?? "").toLowerCase()) {
+    case "capture_name":
+      return "Qual é o seu *nome completo*?";
+    case "capture_conta":
+      return "Me manda a *foto* (ou PDF) da sua conta de luz aqui pelo WhatsApp 📄";
+    case "capture_documento":
+    case "capture_doc":
+      return "Agora me envia uma *foto do seu documento* (RG ou CNH, frente e verso) 📷";
+    case "capture_email":
+      return "📧 *Qual o seu melhor e-mail?*";
+    case "confirm_phone":
+      return "É neste mesmo número de WhatsApp que falo com você?";
+    case "finalizar_cadastro":
+      return "Tô finalizando seu cadastro, só um instante… ⏳";
+    default:
+      return "";
+  }
 }

@@ -10,6 +10,19 @@ export default defineConfig({
     hmr: {
       overlay: false,
     },
+    // Proxy de DESENVOLVIMENTO apenas. As edge functions do Supabase têm CORS
+    // restrito a igreen.cloud/localhost:8080; quando o dev sobe em outra porta
+    // (8081/8082...), o preflight falha. Encaminhar /functions-proxy pelo
+    // próprio Vite faz a chamada virar same-origin (sem CORS) e o servidor
+    // repassa ao Supabase. NÃO afeta produção (só o dev server).
+    proxy: {
+      "/functions-proxy": {
+        target: "https://zlzasfhcxcznaprrragl.supabase.co",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/functions-proxy/, "/functions/v1"),
+      },
+    },
   },
   plugins: [
     react(),

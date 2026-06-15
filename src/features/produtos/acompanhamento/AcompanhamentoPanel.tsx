@@ -99,13 +99,15 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
           </h1>
           <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
             {summary.totalActive} venda(s) ativa(s) acumulando {KWH(summary.totalPointsKwh)} no plano
-            de carreira. Ganho estimado mensal de <span className="font-semibold text-[#7d9b76]">{BRL(financial.totalEstimatedCommission)}</span>.
+            de carreira. Recorrência mensal de <span className="font-semibold text-[#7d9b76]">{BRL(financial.mrrActive)}</span>.
           </p>
         </div>
         <div className="lg:col-span-5 grid grid-cols-2 gap-3">
+          {/* Topo: a recorrência (MRR das vendas ativas) é o número que o
+              consultor quer ver primeiro — é o ganho que se repete todo mês. */}
+          <HeroKpi kicker="Recorrência/mês" value={BRL(financial.mrrActive)} accent="gold" />
           <HeroKpi kicker="Vendas Ativas" value={String(summary.totalActive)} accent="accent" />
           <HeroKpi kicker="Pontos kWh" value={summary.totalPointsKwh.toLocaleString("pt-BR")} accent="accent" />
-          <HeroKpi kicker="Ganho/mês" value={BRL(financial.totalEstimatedCommission)} accent="gold" />
           <HeroKpi kicker="Nível" value={career.current.label} accent="ink" />
         </div>
       </section>

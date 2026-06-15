@@ -21,7 +21,7 @@ export const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
   viewed: "Visualizada",
   accepted: "Aceita",
   rejected: "Recusada",
-  countered: "Contraproposta",
+  countered: "Proposta concorrente",
   expired: "Expirada",
 };
 
