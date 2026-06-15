@@ -73,20 +73,30 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
   // Se entrou foto da conta, sinaliza para a IA fechar com [FINALIZAR_CADASTRO]
   const billPhotoArrived = inboundKind === "media" && inboundMediaKind === "image";
 
-  const { data: history } = await supabase
-    .from("conversations")
-    .select("message_direction, message_text, message_type, created_at")
-    .eq("customer_id", customerId)
-    .order("created_at", { ascending: false })
-    .limit(MAX_HISTORY_TURNS * 2);
+  let historyMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  if (input.dryRun && input.clientHistory && input.clientHistory.length > 0) {
+    // Simulador admin: usa o histórico mantido localmente no painel (dryRun não grava em conversations).
+    historyMessages = input.clientHistory
+      .filter((m) => m && m.content)
+      .slice(-MAX_HISTORY_TURNS * 2)
+      .map((m) => ({ role: m.role, content: String(m.content).slice(0, 1500) }));
+  } else {
+    const { data: history } = await supabase
+      .from("conversations")
+      .select("message_direction, message_text, message_type, created_at")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_HISTORY_TURNS * 2);
 
-  const historyAsc = (history || []).reverse();
-  const historyMessages = historyAsc
-    .filter((m: any) => m?.message_text)
-    .map((m: any) => ({
-      role: m.message_direction === "outbound" ? "assistant" as const : "user" as const,
-      content: String(m.message_text).slice(0, 1500),
-    }));
+    const historyAsc = (history || []).reverse();
+    historyMessages = historyAsc
+      .filter((m: any) => m?.message_text)
+      .map((m: any) => ({
+        role: m.message_direction === "outbound" ? "assistant" as const : "user" as const,
+        content: String(m.message_text).slice(0, 1500),
+      }));
+  }
+
 
   // 2) RAG
   const ragQuery = inboundText || (billPhotoArrived ? "cliente enviou foto da conta" : "saudação inicial");
