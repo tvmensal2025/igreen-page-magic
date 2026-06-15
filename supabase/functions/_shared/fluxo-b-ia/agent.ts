@@ -32,7 +32,11 @@ export type FluxoBInput = {
   telefone?: string | null;
   enviarTexto: (texto: string) => Promise<boolean>;
   dryRun?: boolean;
+  // Em dryRun (simulador admin) o histórico não está em `conversations` ainda.
+  // O cliente envia o histórico local turno-a-turno; se presente, usamos ele.
+  clientHistory?: Array<{ role: "user" | "assistant"; content: string }>;
 };
+
 
 export type FluxoBResult = {
   respondeu: boolean;
