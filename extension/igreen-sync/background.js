@@ -363,7 +363,7 @@ async function captureFromPage(tabId, kind) {
     if (queued.length) {
       const item = queued.shift();
       try {
-        const { b64, size } = await fetchAsBase64(item.url);
+        const { b64, size } = await fetchAsBase64InPage(tabId, item.url);
         return { ok: true, b64, size, source: item.url, via: "downloads", click: cinfo, ready: readyInfo };
       } catch (e) { console.warn("[fetch fallback]", e); }
     }
