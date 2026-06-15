@@ -18,7 +18,11 @@ export default function AdminFluxoB() {
   const [loading, setLoading] = useState(true);
   const [consultants, setConsultants] = useState<Consultant[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const [tab, setTab] = useState<"persona" | "knowledge" | "simulator" | "consultor">("persona");
+  const [tab, setTab] = useState<"persona" | "knowledge" | "simulator" | "consultor">(() => {
+    if (typeof window === "undefined") return "persona";
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return (t === "knowledge" || t === "simulator" || t === "consultor" || t === "persona") ? t : "persona";
+  });
 
   useEffect(() => {
     (async () => {

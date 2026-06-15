@@ -78,16 +78,22 @@ const AdminContent = () => {
     setSidebarCollapsed(true);
     try { window.localStorage.setItem("pe:sidebar-collapsed", "1"); } catch {}
   };
+  const AI_SUB_TABS = ["atendimentos", "agente", "decisoes", "desempenho", "conhecimento"] as const;
   const [activeTab, setActiveTab] = useState<AdminTabId>(() => {
     if (typeof window !== "undefined") {
       const tab = new URLSearchParams(window.location.search).get("tab");
       if (tab === "performance" || tab === "anuncios" || tab === "central-anuncios") return "central-anuncios";
-      if (tab === "whatsapp" || tab === "agente" || tab === "historico") return "whatsapp";
+      if (tab === "whatsapp" || tab === "historico" || (tab && (AI_SUB_TABS as readonly string[]).includes(tab))) return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
       if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos") return tab as AdminTabId;
     }
     return "dashboard";
+  });
+  const [pendingAiSubTab, setPendingAiSubTab] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return tab && (AI_SUB_TABS as readonly string[]).includes(tab) ? tab : null;
   });
   const [produtosSubTab, setProdutosSubTab] = useState<ProdutosTabId>("acompanhamento");
 
@@ -100,8 +106,10 @@ const AdminContent = () => {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("phone")) {
-      params.delete("phone");
+    let mutated = false;
+    if (params.get("phone")) { params.delete("phone"); mutated = true; }
+    if (params.get("tab")) { params.delete("tab"); mutated = true; }
+    if (mutated) {
       const qs = params.toString();
       window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
     }
@@ -380,6 +388,8 @@ const AdminContent = () => {
                 pendingChatPhone={pendingChatPhone}
                 pendingChatMessage={pendingChatMessage}
                 onPendingChatConsumed={() => { setPendingChatPhone(null); setPendingChatMessage(undefined); }}
+                initialSubTab={pendingAiSubTab ? "agente" : undefined}
+                initialAgentSubTab={pendingAiSubTab as any}
               />
             </WhatsAppErrorBoundary>
           )}

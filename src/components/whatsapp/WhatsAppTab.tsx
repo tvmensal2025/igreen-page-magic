@@ -31,6 +31,8 @@ interface WhatsAppTabProps {
   pendingChatMessage?: string;
   onPendingChatConsumed?: () => void;
   customers?: any[];
+  initialSubTab?: SubTab;
+  initialAgentSubTab?: string | null;
 }
 
 type SubTab = "dashboard" | "conversas" | "agente" | "envio_massa" | "templates" | "agendamentos" | "historico";
@@ -45,7 +47,7 @@ const SUB_TABS: { key: SubTab; label: string; icon: React.ElementType }[] = [
   { key: "historico", label: "Histórico", icon: History },
 ];
 
-export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [] }: WhatsAppTabProps) {
+export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab }: WhatsAppTabProps) {
   const isMobile = useIsMobile();
   const {
     connectionStatus,
@@ -88,7 +90,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     isWhapi,
   );
 
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>("dashboard");
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>(initialSubTab ?? "dashboard");
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [pendingMessageKey, setPendingMessageKey] = useState(0);
@@ -431,7 +433,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
         {activeSubTab === "agente" && (
           <div className="p-3 overflow-auto h-full min-w-0">
             <Suspense fallback={<LazyFallback />}>
-              <AIAgentTab userId={userId} />
+              <AIAgentTab userId={userId} initialSubTab={initialAgentSubTab as any} />
             </Suspense>
           </div>
         )}
