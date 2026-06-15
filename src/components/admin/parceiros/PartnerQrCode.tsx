@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
+import { resolveQrMessage } from "./qrPhrase";
 
 interface PartnerQrCodeProps {
   open: boolean;
@@ -22,21 +23,51 @@ interface PartnerQrCodeProps {
   consultantName?: string;
   consultantIgreenId?: string;
   qrPhrase?: string | null;
+  /** Licença do consultor — slug na URL curta (`/r/{licenca}/...`). */
+  license?: string | null;
+  /** Código numérico do parceiro (gerado no banco) — vai na URL curta. */
+  shortCode?: string | null;
+}
+
+/** Domínio público do portal (mesmo usado em orçamentos/propostas). */
+const PUBLIC_BASE = "https://igreen.cloud";
+
+/**
+ * Monta o LINK CURTO com a MARCA do portal: `igreen.cloud/r/{licenca}/{short_code}`.
+ *
+ * O `short_code` é numérico e neutro (ex.: 482917) — não expõe a keyword pessoal
+ * do parceiro na URL. A rota `/r/...` no SPA redireciona pra `qr-redirect`, que
+ * resolve telefone + frase (com a keyword dentro da mensagem do WhatsApp).
+ *
+ * Sem licença ou sem código, devolve `null` (fallback pro wa.me direto).
+ */
+function buildShortLink(
+  license?: string | null,
+  shortCode?: string | null,
+): string | null {
+  const lic = (license ?? "").trim();
+  const code = (shortCode ?? "").trim();
+  if (!lic || !code) return null;
+  return `${PUBLIC_BASE}/r/${encodeURIComponent(lic)}/${encodeURIComponent(code)}`;
 }
 
 /**
- * Flyer templates ("Mutirão de Desconto na Fatura de Energia").
- * Ambos vivem em /public e são servidos via URL relativa.
- *  - a4:     853x1280  (sulfite A4)
- *  - banner: 1069x1920 (banner 504×940mm)
+ * Modelos de impressão. Cada modelo tem proporção física FIXA: a arte enviada
+ * é sempre recortada (cover) para caber exatamente no tamanho de impressão, sem
+ * distorcer e sem mudar a proporção. O PDF sai no tamanho físico real (mm).
+ *
+ *  - a4:       210×297mm   (folha sulfite, arte oficial)
+ *  - banner:   504×940mm   (banner vertical, arte oficial)
+ *  - faixa200: 2000×800mm  (2,00×0,80m, faixa horizontal — envie sua arte)
+ *  - faixa110: 1100×800mm  (1,10×0,80m, faixa horizontal — envie sua arte)
  */
-type TemplateId = "a4" | "banner";
+type TemplateId = "a4" | "banner" | "faixa200" | "faixa110";
 
 const TEMPLATES: Record<
   TemplateId,
   {
     label: string;
-    src: string;
+    src: string | null;
     qrX: number;
     qrY: number;
     qrSize: number;
@@ -44,7 +75,7 @@ const TEMPLATES: Record<
   }
 > = {
   a4: {
-    label: "Sulfite A4",
+    label: "Folha A4",
     src: "/images/mutirao-lei-14300-parceiro.jpg",
     qrX: 25,
     qrY: 91,
@@ -59,18 +90,45 @@ const TEMPLATES: Record<
     qrSize: 28,
     footerY: 99,
   },
+  faixa200: {
+    label: "Faixa 2,00×0,80m",
+    src: null,
+    qrX: 88,
+    qrY: 50,
+    qrSize: 20,
+    footerY: 90,
+  },
+  faixa110: {
+    label: "Faixa 1,10×0,80m",
+    src: null,
+    qrX: 84,
+    qrY: 52,
+    qrSize: 28,
+    footerY: 90,
+  },
 };
 const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
 
-/** Layouts travados (não-editáveis) — garantem que o impresso bate 1:1 com o preview. */
+/**
+ * Layouts com arte oficial começam travados (impresso bate 1:1 com o preview).
+ * As faixas são de upload do usuário, então começam destravadas para posicionar
+ * o QR e a faixa de rodapé livremente.
+ */
 const DEFAULT_LOCKED: Record<TemplateId, boolean> = {
   a4: true,
   banner: true,
+  faixa200: false,
+  faixa110: false,
 };
 
 /**
  * Build the wa.me URL with the partner's keyword/phrase pre-filled.
  * Phone is normalized to BR format if it doesn't already start with 55.
+ *
+ * A mensagem passa por `resolveQrMessage`: usa a frase padrão curta quando não
+ * há `qrPhrase`, ou respeita a frase do consultor (garantindo que a keyword
+ * permaneça no texto para não perder a atribuição). Isso mantém a URL enxuta
+ * inclusive para parceiros antigos com frase longa salva.
  */
 function buildWaMeUrl(
   phone: string,
@@ -79,7 +137,7 @@ function buildWaMeUrl(
 ): string {
   const digits = phone.replace(/\D/g, "");
   const normalized = digits.startsWith("55") ? digits : `55${digits}`;
-  const message = qrPhrase || keyword;
+  const message = resolveQrMessage(qrPhrase, keyword);
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
@@ -107,8 +165,11 @@ const TEMPLATE_DIMS: Record<
   TemplateId,
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
-  a4: { canvasW: 853, canvasH: 1280, pdfWmm: 210, pdfHmm: 297 }, // proporção da arte (sem corte)
-  banner: { canvasW: 1008, canvasH: 1808, pdfWmm: 504, pdfHmm: 904 },
+  a4: { canvasW: 853, canvasH: 1280, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm (retrato)
+  banner: { canvasW: 1008, canvasH: 1881, pdfWmm: 504, pdfHmm: 940 }, // 504×940mm (retrato)
+  // Faixas horizontais (landscape) — proporção física travada.
+  faixa200: { canvasW: 2000, canvasH: 800, pdfWmm: 2000, pdfHmm: 800 }, // 2,00×0,80m
+  faixa110: { canvasW: 1375, canvasH: 1000, pdfWmm: 1100, pdfHmm: 800 }, // 1,10×0,80m
 };
 const PREVIEW_W = 320;
 
@@ -147,9 +208,15 @@ export function PartnerQrCode({
   consultantName = "",
   consultantIgreenId = "",
   qrPhrase,
+  license,
+  shortCode,
 }: PartnerQrCodeProps) {
-  const phrase = qrPhrase || keyword;
-  const url = buildWaMeUrl(consultantPhone, keyword, qrPhrase);
+  // `phrase` é a mensagem que o lead vai ver no WhatsApp (exibida no card).
+  const phrase = resolveQrMessage(qrPhrase, keyword);
+  // Link curto com marca: igreen.cloud/r/{licenca}/{short_code}. Sem licença ou
+  // código (parceiro antigo sem backfill), cai no wa.me direto como fallback.
+  const shortLink = buildShortLink(license, shortCode);
+  const url = shortLink ?? buildWaMeUrl(consultantPhone, keyword, qrPhrase);
 
   // Template selecionado (Sulfite A4 ou Banner 504×940mm).
   const [templateId, setTemplateId] = useState<TemplateId>(DEFAULT_TEMPLATE_ID);
@@ -217,7 +284,7 @@ export function PartnerQrCode({
     [],
   );
 
-  const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>({ a4: false, banner: false });
+  const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>({ a4: false, banner: false, faixa200: false, faixa110: false });
   const locked = DEFAULT_LOCKED[templateId] && !unlockedMap[templateId];
 
   // Quando travado, força sempre os valores oficiais do template (ignora drift do estado).
@@ -372,7 +439,8 @@ export function PartnerQrCode({
     const canvas = await renderToCanvas();
     if (!canvas) return;
     const { pdfWmm: wmm, pdfHmm: hmm } = TEMPLATE_DIMS[templateId];
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
+    const orientation = wmm > hmm ? "landscape" : "portrait";
+    const pdf = new jsPDF({ orientation, unit: "mm", format: [wmm, hmm] });
     const imgData = canvas.toDataURL("image/png");
     pdf.addImage(imgData, "PNG", 0, 0, wmm, hmm);
     pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);
@@ -472,7 +540,7 @@ export function PartnerQrCode({
             </p>
 
             {/* Link direto do WhatsApp — alternativa ao QR para quem quer copiar/colar */}
-            <PartnerLinkCard url={url} phrase={phrase} />
+            <PartnerLinkCard url={url} phrase={phrase} isShort={!!shortLink} />
           </div>
 
           {/* Controls */}
@@ -679,7 +747,15 @@ function roundRect(
  * Cartão com o link do WhatsApp pronto pra copiar/abrir — fica ao lado do QR
  * pra atender quem prefere mandar o link no lugar de escanear o QR code.
  */
-function PartnerLinkCard({ url, phrase }: { url: string; phrase: string }) {
+function PartnerLinkCard({
+  url,
+  phrase,
+  isShort,
+}: {
+  url: string;
+  phrase: string;
+  isShort: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {
@@ -693,7 +769,7 @@ function PartnerLinkCard({ url, phrase }: { url: string; phrase: string }) {
   return (
     <div className="w-full max-w-[320px] rounded-lg border bg-card p-2.5 space-y-2">
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Link direto para WhatsApp
+        {isShort ? "Link curto para compartilhar" : "Link direto para WhatsApp"}
       </div>
       <div className="text-[11px] break-all font-mono leading-snug text-foreground/90 bg-muted/40 rounded px-2 py-1.5">
         {url}
@@ -723,8 +799,18 @@ function PartnerLinkCard({ url, phrase }: { url: string; phrase: string }) {
       </div>
       <p className="text-[10px] text-muted-foreground leading-snug">
         Cole esse link em status, story, bio do Instagram ou em qualquer
-        mensagem. Abre o WhatsApp já com a frase{" "}
-        <span className="font-medium">"{phrase}"</span>.
+        mensagem.{" "}
+        {isShort ? (
+          <>
+            Ele é curto e redireciona pro WhatsApp já com a frase{" "}
+            <span className="font-medium">"{phrase}"</span>.
+          </>
+        ) : (
+          <>
+            Abre o WhatsApp já com a frase{" "}
+            <span className="font-medium">"{phrase}"</span>.
+          </>
+        )}
       </p>
     </div>
   );

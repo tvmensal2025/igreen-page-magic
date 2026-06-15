@@ -12,12 +12,15 @@ interface ParceirosTabProps {
   consultantPhone: string;
   consultantName?: string;
   consultantIgreenId?: string;
+  /** Licença do consultor — usada para montar o link curto do redirect. */
+  license?: string | null;
 }
 
 export function ParceirosTab({
   consultantPhone,
   consultantName = "",
   consultantIgreenId = "",
+  license = "",
 }: ParceirosTabProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState<ReferralPartner | null>(
@@ -107,6 +110,8 @@ export function ParceirosTab({
           consultantName={consultantName}
           consultantIgreenId={consultantIgreenId}
           qrPhrase={qrPartner.qr_phrase}
+          license={license}
+          shortCode={qrPartner.short_code}
         />
       )}
     </>

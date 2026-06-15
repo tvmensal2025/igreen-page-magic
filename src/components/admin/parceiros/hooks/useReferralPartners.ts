@@ -9,6 +9,8 @@ export interface ReferralPartner {
   qr_phrase: string | null;
   partner_igreen_id: string | null;
   notification_phone: string | null;
+  /** Código curto numérico (gerado no banco) usado no link /r/{licenca}/{short_code}. */
+  short_code: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -48,7 +50,14 @@ export function useReferralPartners() {
 
   const create = useMutation({
     mutationFn: async (
-      input: Omit<ReferralPartner, "id" | "is_active" | "created_at">,
+      // `short_code` é gerado pelo trigger no banco (BEFORE INSERT). O client
+      // NUNCA envia esse campo — por isso ele sai do tipo de input. Assim o
+      // cadastro do parceiro continua exatamente igual (mesmos campos do form)
+      // e não quebra por causa da coluna nova.
+      input: Omit<
+        ReferralPartner,
+        "id" | "is_active" | "created_at" | "short_code"
+      >,
     ) => {
       // RLS-aware insert: WITH CHECK (consultant_id = auth.uid()) requires
       // the column to be present in the payload. Frontend resolves the

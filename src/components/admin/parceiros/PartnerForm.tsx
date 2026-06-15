@@ -15,6 +15,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
+import { buildDefaultQrPhrase } from "./qrPhrase";
 
 interface PartnerFormProps {
   open: boolean;
@@ -341,10 +342,12 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               id="partner-qr-phrase"
               value={qrPhrase}
               onChange={(e) => setQrPhrase(e.target.value)}
-              placeholder="Frase customizada para o QR code"
+              placeholder={buildDefaultQrPhrase(keywords[0] || keywordInput.trim())}
             />
             <p className="text-xs text-muted-foreground">
-              Se vazio, a primeira keyword será usada no QR code.
+              Deixe vazio para usar a frase padrão curta (mostrada acima). O link
+              do WhatsApp fica enxuto e a palavra-chave continua no texto, então a
+              atribuição do parceiro segue funcionando.
             </p>
           </div>
         </div>

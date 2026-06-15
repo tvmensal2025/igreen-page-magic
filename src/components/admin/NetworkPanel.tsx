@@ -1,9 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
-import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award, Chrome, ExternalLink, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { requestSync as requestExtSync, type SyncResult } from "@/lib/igreenExtensionBridge";
 
 interface NetworkMember {
   id: string;
@@ -519,6 +524,9 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   const [loading, setLoading] = useState(true);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncCooldown, setSyncCooldown] = useState(0);
+  const [extDialog, setExtDialog] = useState<null | "no_extension" | "no_token" | "not_logged_in" | "failed">(null);
+  const [extDialogMsg, setExtDialogMsg] = useState("");
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"tree" | "table">("tree");
   const [zoom, setZoom] = useState(0.85);
@@ -529,6 +537,32 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   const didInitialCenterRef = useRef(false);
   const [selectedMember, setSelectedMember] = useState<NetworkMember | null>(null);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const stored = localStorage.getItem("sync_cooldown_until");
+    if (stored) {
+      const remaining = Math.ceil((parseInt(stored) - Date.now()) / 1000);
+      if (remaining > 0) setSyncCooldown(remaining);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (syncCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setSyncCooldown((prev) => {
+        if (prev <= 1) { clearInterval(timer); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [syncCooldown]);
+
+  const startCooldown = () => {
+    const seconds = 30;
+    setSyncCooldown(seconds);
+    localStorage.setItem("sync_cooldown_until", String(Date.now() + seconds * 1000));
+  };
 
   const fetchMembers = useCallback(async () => {
     fetchAbortRef.current?.abort();
@@ -572,33 +606,32 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const { data: consultant } = await supabase
-        .from("consultants")
-        .select("igreen_portal_email")
-        .eq("id", consultantId)
-        .maybeSingle();
-      const email = (consultant as any)?.igreen_portal_email;
-      if (!email) {
-        toast({ title: "⚠️ Credenciais não configuradas", description: "Preencha email e senha do portal na aba Dados.", variant: "destructive" });
-        setSyncing(false);
+      const res: SyncResult = await requestExtSync();
+      if (res.ok === false) {
+        if (res.reason === "no_extension") {
+          setExtDialogMsg("Não detectamos a extensão iGreen Sync neste navegador. Instale a extensão para sincronizar seus clientes e rede com 1 clique.");
+          setExtDialog("no_extension");
+        } else if (res.reason === "no_token") {
+          setExtDialogMsg("A extensão está instalada mas ainda não foi pareada. Gere um token na aba Dados e cole na extensão.");
+          setExtDialog("no_token");
+        } else if (res.reason === "not_logged_in") {
+          setExtDialogMsg("Você precisa estar logado no escritório iGreen em outra aba deste mesmo navegador para a extensão conseguir baixar seus dados.");
+          setExtDialog("not_logged_in");
+        } else {
+          setExtDialogMsg(res.error || "Falha ao sincronizar. Tente novamente em alguns segundos.");
+          setExtDialog("failed");
+        }
         return;
       }
-      const { data, error } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { mode: "sync_network", consultant_id: consultantId },
-      });
-      if (error) throw error;
-      if (data?.success) {
-        toast({ title: "✅ Rede sincronizada!", description: `${data.total_members} licenciados encontrados.` });
-        await fetchMembers();
-      } else {
-        const desc = data?.login_status === 401 || data?.login_status === 403
-          ? "O portal iGreen recusou o login. A senha pode ter mudado — atualize na aba Dados."
-          : (data?.error || "Erro desconhecido");
-        toast({ title: "⚠️ Erro ao sincronizar rede", description: desc, variant: "destructive" });
-      }
+      startCooldown();
+      toast({ title: "✅ Rede sincronizada!", description: "Clientes e rede atualizados a partir do portal iGreen." });
+      await fetchMembers();
+      await queryClient.invalidateQueries({ queryKey: ["analytics", consultantId] });
     } catch (err) {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
-    } finally { setSyncing(false); }
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const rootMember = useMemo(() => members.find(m => m.nivel === 0), [members]);
@@ -736,12 +769,12 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
               </div>
             )}
 
-            <Button onClick={handleSync} size="sm" disabled={syncing}
+            <Button onClick={handleSync} size="sm" disabled={syncing || syncCooldown > 0}
               className="gap-1.5 rounded-xl font-semibold h-9 px-4 text-xs bg-primary/10 text-primary border border-primary/20 
                 hover:bg-primary/20 hover:border-primary/30 transition-all duration-200 shadow-sm"
               variant="outline">
               {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              {syncing ? "Sincronizando..." : "Sincronizar"}
+              {syncing ? "Sincronizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Sincronizar"}
             </Button>
           </div>
         </div>
@@ -752,8 +785,8 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
               <Network className="w-8 h-8 text-muted-foreground/30" />
             </div>
             <p className="text-sm text-muted-foreground mb-4">Nenhum licenciado encontrado.</p>
-            <Button onClick={handleSync} size="sm" disabled={syncing} className="gap-1.5 rounded-xl">
-              <RefreshCw className="w-3.5 h-3.5" /> Sincronizar agora
+            <Button onClick={handleSync} size="sm" disabled={syncing || syncCooldown > 0} className="gap-1.5 rounded-xl">
+              <RefreshCw className="w-3.5 h-3.5" /> {syncing ? "Sincronizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Sincronizar agora"}
             </Button>
           </div>
         ) : viewMode === "tree" ? (
@@ -855,6 +888,41 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
           </div>
         )}
       </div>
+
+      <Dialog open={extDialog !== null} onOpenChange={(o) => !o && setExtDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {extDialog === "not_logged_in" ? <KeyRound className="w-5 h-5 text-primary" /> : <Chrome className="w-5 h-5 text-primary" />}
+              {extDialog === "no_extension" && "Instale a extensão iGreen Sync"}
+              {extDialog === "no_token" && "Extensão sem pareamento"}
+              {extDialog === "not_logged_in" && "Faça login no escritório iGreen"}
+              {extDialog === "failed" && "Falha na sincronização"}
+            </DialogTitle>
+            <DialogDescription className="pt-2">{extDialogMsg}</DialogDescription>
+          </DialogHeader>
+          {extDialog === "not_logged_in" && (
+            <div className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/40 p-3">
+              <strong>Como resolver:</strong> abra <code>escritorio.igreenenergy.com.br</code> em outra aba, faça login (resolva o captcha se aparecer) e volte aqui para clicar em <b>Sincronizar</b> novamente.
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            {extDialog === "not_logged_in" && (
+              <Button asChild>
+                <a href="https://escritorio.igreenenergy.com.br/" target="_blank" rel="noreferrer">
+                  <ExternalLink className="w-4 h-4 mr-2" /> Abrir escritório iGreen
+                </a>
+              </Button>
+            )}
+            {(extDialog === "no_extension" || extDialog === "no_token") && (
+              <Button onClick={() => { setExtDialog(null); window.dispatchEvent(new CustomEvent("open-admin-settings")); }}>
+                <Chrome className="w-4 h-4 mr-2" /> Abrir extensão no painel
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setExtDialog(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

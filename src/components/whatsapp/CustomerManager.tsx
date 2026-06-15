@@ -1,14 +1,20 @@
 import { useState, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PaginatedList } from "@/components/ui/PaginatedList";
 import {
   UserPlus, Users, Search, Loader2, RefreshCw, Filter, Smartphone, Zap, MoreVertical,
+  Chrome, ExternalLink, KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { requestSync as requestExtSync, type SyncResult } from "@/lib/igreenExtensionBridge";
 import { getProfilePicture } from "@/services/evolutionApi";
 import { AddCustomerDialog } from "./AddCustomerDialog";
 import { CustomerListItem } from "./CustomerListItem";
@@ -38,12 +44,17 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
   const [selectedLicenciado, setSelectedLicenciado] = useState("all");
   const [selectedDistribuidora, setSelectedDistribuidora] = useState("all");
   const [selectedCidade, setSelectedCidade] = useState("all");
-  const [selectedTipo, setSelectedTipo] = useState<"all" | "energia" | "telefonia">("all");
+  const [selectedTipo, setSelectedTipo] = useState<
+    "all" | "energia" | "telefonia" | "solar" | "placas" | "seguros"
+  >("all");
   const [syncing, setSyncing] = useState(false);
   const [syncCooldown, setSyncCooldown] = useState(0);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [extDialog, setExtDialog] = useState<null | "no_extension" | "no_token" | "not_logged_in" | "failed">(null);
+  const [extDialogMsg, setExtDialogMsg] = useState("");
 
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const dealsByCustomer = useCustomerDeals(consultantId, customers);
 
   // Fetch last sync timestamp
@@ -74,35 +85,37 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
   }, [syncCooldown]);
 
   const startCooldown = () => {
-    const seconds = 60;
+    const seconds = 30;
     setSyncCooldown(seconds);
     localStorage.setItem("sync_cooldown_until", String(Date.now() + seconds * 1000));
   };
 
   async function handleSyncIgreen() {
     setSyncing(true);
-    startCooldown();
     try {
-      const { data: consultant } = await supabase.from("consultants").select("igreen_portal_email").eq("id", consultantId).maybeSingle();
-      const portalEmail = (consultant as any)?.igreen_portal_email;
-
-      if (!portalEmail) {
-        toast({ title: "⚠️ Credenciais não configuradas", description: "Preencha seu email e senha do portal iGreen na aba Dados.", variant: "destructive" });
-        setSyncing(false);
+      const res: SyncResult = await requestExtSync();
+      if (res.ok === false) {
+        if (res.reason === "no_extension") {
+          setExtDialogMsg("Não detectamos a extensão iGreen Sync neste navegador. Instale a extensão para sincronizar seus clientes e rede com 1 clique.");
+          setExtDialog("no_extension");
+        } else if (res.reason === "no_token") {
+          setExtDialogMsg("A extensão está instalada mas ainda não foi pareada. Gere um token na aba Dados e cole na extensão.");
+          setExtDialog("no_token");
+        } else if (res.reason === "not_logged_in") {
+          setExtDialogMsg("Você precisa estar logado no escritório iGreen em outra aba deste mesmo navegador para a extensão conseguir baixar seus dados.");
+          setExtDialog("not_logged_in");
+        } else {
+          setExtDialogMsg(res.error || "Falha ao sincronizar. Tente novamente em alguns segundos.");
+          setExtDialog("failed");
+        }
         return;
       }
-
-      const { data, error } = await supabase.functions.invoke("sync-igreen-customers", {
-        body: { consultant_id: consultantId },
-      });
-      if (error) throw error;
-      if (data?.success) {
-        toast({ title: "✅ Sincronização concluída!", description: `${data.processed} clientes processados, ${data.updated} atualizados.` });
-        setLastSync(data.synced_at);
-        onCustomersChange();
-      } else {
-        toast({ title: "⚠️ Problema na sincronização", description: data?.error || "Erro desconhecido", variant: "destructive" });
-      }
+      startCooldown();
+      const syncedAt = new Date().toISOString();
+      setLastSync(syncedAt);
+      toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
+      onCustomersChange();
+      await queryClient.invalidateQueries({ queryKey: ["analytics", consultantId] });
     } catch (err) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
     } finally {
@@ -283,11 +296,14 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
             </div>
 
             {/* Tipo produto toggle */}
-            <div className="inline-flex gap-1 bg-secondary/30 rounded-lg p-1 border border-border/40 w-fit">
+            <div className="flex flex-wrap gap-1 bg-secondary/30 rounded-lg p-1 border border-border/40 w-full sm:w-fit">
               {([
                 ["all", "Todos", "📊"],
                 ["energia", "Energia", "⚡"],
-                ["telefonia", "Telecom", "📱"]
+                ["telefonia", "Telecom", "📱"],
+                ["solar", "Conexão Solar", "☀️"],
+                ["placas", "Conexão Placas", "🔋"],
+                ["seguros", "Seguro", "🛡️"],
               ] as const).map(([val, label, icon]) => (
                 <button
                   key={val}
@@ -408,6 +424,41 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
         onClose={() => setEditingCustomer(null)}
         onSaved={onCustomersChange}
       />
+
+      <Dialog open={extDialog !== null} onOpenChange={(o) => !o && setExtDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {extDialog === "not_logged_in" ? <KeyRound className="w-5 h-5 text-primary" /> : <Chrome className="w-5 h-5 text-primary" />}
+              {extDialog === "no_extension" && "Instale a extensão iGreen Sync"}
+              {extDialog === "no_token" && "Extensão sem pareamento"}
+              {extDialog === "not_logged_in" && "Faça login no escritório iGreen"}
+              {extDialog === "failed" && "Falha na sincronização"}
+            </DialogTitle>
+            <DialogDescription className="pt-2">{extDialogMsg}</DialogDescription>
+          </DialogHeader>
+          {extDialog === "not_logged_in" && (
+            <div className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/40 p-3">
+              <strong>Como resolver:</strong> abra <code>escritorio.igreenenergy.com.br</code> em outra aba, faça login (resolva o captcha se aparecer) e volte aqui para clicar em <b>Sincronizar iGreen</b> novamente.
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            {extDialog === "not_logged_in" && (
+              <Button asChild>
+                <a href="https://escritorio.igreenenergy.com.br/" target="_blank" rel="noreferrer">
+                  <ExternalLink className="w-4 h-4 mr-2" /> Abrir escritório iGreen
+                </a>
+              </Button>
+            )}
+            {(extDialog === "no_extension" || extDialog === "no_token") && (
+              <Button onClick={() => { setExtDialog(null); window.dispatchEvent(new CustomEvent("open-admin-settings")); }}>
+                <Chrome className="w-4 h-4 mr-2" /> Abrir extensão no painel
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setExtDialog(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

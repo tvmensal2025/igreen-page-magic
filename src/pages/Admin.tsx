@@ -416,6 +416,7 @@ const AdminContent = () => {
               consultantPhone={form.phone || ""}
               consultantName={form.name || ""}
               consultantIgreenId={form.igreen_id || ""}
+              license={form.license || ""}
             />
           )}
 

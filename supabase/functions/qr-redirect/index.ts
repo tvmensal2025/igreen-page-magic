@@ -1,6 +1,12 @@
 // QR Redirect: redireciona QR impresso para o WhatsApp atual da instância do consultor
 // Público (sem JWT). Recebe ?l={licenca}. Sempre retorna um redirect — nunca quebra os panfletos.
+//
+// PARCEIRO (?p={partnerId}): quando presente, busca o parceiro indicador, monta
+// a frase curta com a keyword (resolveQrMessage) e usa essa frase no wa.me. Isso
+// permite um LINK CURTO (só ?l e ?p na URL) que abre o WhatsApp já com a frase
+// completa — sem carregar o texto gigante na URL que o consultor compartilha.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { resolveQrMessage } from "../_shared/qr-phrase.ts";
 
 const SITE_URL = "https://igreen.institutodossonhos.com.br";
 const DEFAULT_MESSAGE = "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
@@ -34,16 +40,37 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    // Aceita ?l=LICENCA ou path /r/LICENCA
+
+    // Identificadores do parceiro no link curto:
+    //   • code  → short_code numérico do parceiro (forma atual: /r/{licenca}/{code}
+    //             ou ?c={code}). Não expõe a keyword pessoal.
+    //   • ?k    → keyword (compatibilidade com links antigos que usavam a palavra
+    //             no path/query). Continua funcionando, mas é o fallback.
+    let codeParam = url.searchParams.get("c");
+    let keywordParam = url.searchParams.get("k");
+
+    // Aceita ?l=LICENCA, path /functions/v1/qr-redirect/LICENCA, ou o link
+    // curto com marca /r/{licenca}/{code} (o segmento vira `codeParam`).
     let licenca = url.searchParams.get("l") || url.searchParams.get("licenca");
     if (!licenca) {
       const parts = url.pathname.split("/").filter(Boolean);
-      // ex: /functions/v1/qr-redirect/LICENCA  ou  /r/LICENCA
-      licenca = parts[parts.length - 1] || null;
-      if (licenca === "qr-redirect") licenca = null;
+      const rIdx = parts.indexOf("r");
+      if (rIdx !== -1 && parts[rIdx + 1]) {
+        // /r/{licenca}/{code?}
+        licenca = parts[rIdx + 1] || null;
+        if (!codeParam && parts[rIdx + 2]) codeParam = parts[rIdx + 2];
+      } else {
+        // ex: /functions/v1/qr-redirect/LICENCA
+        licenca = parts[parts.length - 1] || null;
+        if (licenca === "qr-redirect") licenca = null;
+      }
     }
 
-    const message = url.searchParams.get("msg") || DEFAULT_MESSAGE;
+    // ?p={partnerId}: parceiro indicador. Quando presente, a frase é montada
+    // a partir da keyword/qr_phrase do parceiro (link curto). Tem prioridade
+    // sobre ?msg; sem ?p nem ?msg, cai no DEFAULT_MESSAGE (comportamento atual).
+    const partnerId = url.searchParams.get("p");
+    const msgParam = url.searchParams.get("msg");
 
     if (!licenca) {
       // Sem licença → site institucional (panfleto NUNCA quebra, sem expor número pessoal)
@@ -93,6 +120,73 @@ Deno.serve(async (req) => {
     // 4) Fallback final: landing page do consultor (sem expor número pessoal)
     if (!phone) {
       return redirectTo(`${SITE_URL}/${licenca}`);
+    }
+
+    // 5) Resolve a mensagem. Prioridade do parceiro indicador:
+    //      ?p={id} → {code} (short_code, forma atual) → ?k={keyword} (legado)
+    //    e, sem parceiro: ?msg → DEFAULT_MESSAGE.
+    // O parceiro só é usado quando pertence ao MESMO consultor da licença
+    // (evita um parceiro de outro consultor ser resolvido por uma licença
+    // qualquer). A frase é montada com a keyword do parceiro para preservar a
+    // atribuição (a keyword precisa aparecer no texto que chega no WhatsApp).
+    let message = msgParam || DEFAULT_MESSAGE;
+
+    let partner:
+      | { keywords: unknown; qr_phrase: string | null; consultant_id: string; is_active: boolean }
+      | null = null;
+
+    if (consultant?.id) {
+      const baseSelect = "keywords, qr_phrase, consultant_id, is_active";
+
+      if (partnerId) {
+        // a) Por id explícito (?p) — maior prioridade.
+        const { data } = await supabase
+          .from("referral_partners")
+          .select(baseSelect)
+          .eq("id", partnerId)
+          .maybeSingle();
+        if (data && data.consultant_id === consultant.id && data.is_active) {
+          partner = data as typeof partner;
+        }
+      }
+
+      if (!partner && codeParam) {
+        // b) Por short_code (forma atual do link curto: /r/{licenca}/{code}).
+        // Único por consultor, então filtra pelo consultor da licença.
+        const code = decodeURIComponent(codeParam).trim();
+        if (code) {
+          const { data } = await supabase
+            .from("referral_partners")
+            .select(baseSelect)
+            .eq("consultant_id", consultant.id)
+            .eq("is_active", true)
+            .eq("short_code", code)
+            .limit(1)
+            .maybeSingle();
+          if (data) partner = data as typeof partner;
+        }
+      }
+
+      if (!partner && keywordParam) {
+        // c) Legado: por keyword (links antigos com a palavra no path/query).
+        const kw = decodeURIComponent(keywordParam).trim();
+        if (kw) {
+          const { data } = await supabase
+            .from("referral_partners")
+            .select(baseSelect)
+            .eq("consultant_id", consultant.id)
+            .eq("is_active", true)
+            .contains("keywords", [kw])
+            .limit(1)
+            .maybeSingle();
+          if (data) partner = data as typeof partner;
+        }
+      }
+    }
+
+    if (partner) {
+      const keyword = Array.isArray(partner.keywords) ? (partner.keywords[0] ?? "") : "";
+      message = resolveQrMessage(partner.qr_phrase as string | null, keyword);
     }
 
     return redirectTo(buildWhatsappUrl(phone, message));
