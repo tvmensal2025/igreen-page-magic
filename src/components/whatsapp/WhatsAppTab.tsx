@@ -31,6 +31,8 @@ interface WhatsAppTabProps {
   pendingChatMessage?: string;
   onPendingChatConsumed?: () => void;
   customers?: any[];
+  initialSubTab?: SubTab;
+  initialAgentSubTab?: string | null;
 }
 
 type SubTab = "dashboard" | "conversas" | "agente" | "envio_massa" | "templates" | "agendamentos" | "historico";
