@@ -416,6 +416,11 @@ export default function FluxoBuilder() {
             </div>
 
             <aside className="space-y-4">
+              <WhatsAppPreview 
+                step={steps.find(s => s.id === inspectorId) || null} 
+                steps={steps} 
+                consultantName={consultantName} 
+              />
               <StepCoachPanel
                 step={steps.find(s => s.id === inspectorId) || null}
                 steps={steps}
@@ -427,12 +432,8 @@ export default function FluxoBuilder() {
                 onSimulateFromHere={() => setSimulatorOpen(true)}
                 onOpenHealth={() => setHealthOpen(true)}
               />
-              <WhatsAppPreview 
-                step={steps.find(s => s.id === inspectorId) || null} 
-                steps={steps} 
-                consultantName={consultantName} 
-              />
             </aside>
+
           </main>
         </div>
       </div>
