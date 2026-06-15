@@ -46,6 +46,25 @@ Deno.serve(async (req) => {
 
   const dryRun = body?.dryRun !== false; // default TRUE no simulador
 
+  // Garante que o lead de teste exista (o simulador usa um UUID fixo). Sem
+  // isso o agent retorna `respondeu:false` silenciosamente e a IA "some".
+  if (dryRun) {
+    const { data: existing } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (!existing) {
+      await supabase.from("customers").insert({
+        id: customerId,
+        consultant_id: consultantId,
+        name: "Lead Simulado",
+        phone_whatsapp: "0000000000",
+        bot_paused: false,
+      });
+    }
+  }
+
   const captured: string[] = [];
   const result = await processarTurnoFluxoB({
     supabase,
@@ -56,6 +75,7 @@ Deno.serve(async (req) => {
     inboundMediaKind: body?.inboundMediaKind ?? null,
     inboundMessageId: body?.inboundMessageId ?? null,
     telefone: body?.telefone ?? null,
+    clientHistory: Array.isArray(body?.clientHistory) ? body.clientHistory : undefined,
     enviarTexto: async (texto) => {
       captured.push(texto);
       return true;
@@ -65,6 +85,7 @@ Deno.serve(async (req) => {
     console.error("[fluxo-b-ai] processarTurno error:", e?.message);
     return null;
   });
+
 
   if (!result) return json({ ok: false, error: "processing_failed" }, 500);
 
