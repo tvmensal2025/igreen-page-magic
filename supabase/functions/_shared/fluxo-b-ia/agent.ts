@@ -17,6 +17,7 @@
 import { aiChatCascade } from "../ai-gateway.ts";
 import { lookupKnowledge } from "../knowledge-lookup.ts";
 import { FLUXO_B_PERSONA } from "./persona.ts";
+import { buscarRespostaDiretaFaq } from "./faq-direct.ts";
 
 const MAX_HISTORY_TURNS = 20;
 
@@ -72,6 +73,51 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
 
   // Se entrou foto da conta, sinaliza para a IA fechar com [FINALIZAR_CADASTRO]
   const billPhotoArrived = inboundKind === "media" && inboundMediaKind === "image";
+
+  // ─── Resposta DIRETA do FAQ (sem LLM) ─────────────────────────────────
+  // Se a mensagem de texto do cliente casa com uma intenção/gatilho do FAQ,
+  // respondemos com o texto EXATO da base — sem chamar o LLM. Economiza custo
+  // e garante congruência (resposta sempre oficial). Só para texto puro: foto,
+  // botões e abertura seguem pelo LLM (que controla os marcadores de avanço).
+  if (inboundKind === "text" && !billPhotoArrived) {
+    const direta = await buscarRespostaDiretaFaq(
+      supabase, consultantId, inboundText, customer.name ?? null,
+    ).catch(() => null);
+    if (direta) {
+      console.log(`[fluxo-b-ia] resposta DIRETA do FAQ (sem LLM) intent="${direta.intentName}" trigger="${direta.triggerMatched}"`);
+      if (!input.dryRun) {
+        await supabase.from("customers").update({
+          last_bot_reply_at: new Date().toISOString(),
+          last_bot_interaction_at: new Date().toISOString(),
+        }).eq("id", customerId);
+
+        if (inboundText) {
+          await supabase.from("conversations").insert({
+            customer_id: customerId,
+            message_direction: "inbound",
+            message_text: inboundText,
+            message_type: inboundKind || "text",
+            external_message_id: input.inboundMessageId || null,
+          });
+        }
+        const enviado = await input.enviarTexto(direta.texto).catch(() => false);
+        if (!enviado) return { respondeu: false, texto: direta.texto, acoes: [] };
+        await supabase.from("conversations").insert({
+          customer_id: customerId,
+          message_direction: "outbound",
+          message_text: direta.texto,
+          message_type: "text",
+        });
+      }
+      return {
+        respondeu: true,
+        texto: direta.texto,
+        acoes: [],
+        modelUsed: "faq-direct",
+        rag: { source: "bot_flow_qa", confidence: 1 },
+      };
+    }
+  }
 
   let historyMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
   if (input.dryRun && input.clientHistory && input.clientHistory.length > 0) {
