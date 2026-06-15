@@ -1,104 +1,105 @@
+# Plano: Fluxo D (botões) + Fluxo B (IA livre)
+
 ## Objetivo
+Reduzir o produto a duas estratégias de atendimento:
+- **Fluxo D** — atual, máquina de estados com botões. Inalterado.
+- **Fluxo B (NOVO)** — IA conduz do "oi" até o fechamento. Usa FAQ + base de conhecimento. Quando detecta intenção de fechar, pede foto da conta de luz, dispara OCR e finaliza no Portal2.
 
-Limpar 100% dos dados de teste e cravar como regra estrutural (no banco, não só no código) a separação:
-
-- **Lead** = vem do WhatsApp → entra no Kanban CRM, passa pelo bot.
-- **Cliente** = vem da extensão Chrome ou worker do portal iGreen → entra no Kanban **Pós-Venda**, e agora precisa ser **autorizado** pelo consultor antes de avançar.
-
-Manter apenas o super admin `rafael.ids@icloud.com`.
+Toggle de roteamento: **distribuição igualitária round-robin** entre todas as variants ativas do consultor. 2 ativas = 50/50; se um dia surgir uma 3ª, vira 33/33/33.
 
 ---
 
-## 1. Wipe da base (migration única, transação)
+## Etapa 1 — Limpeza de fluxos (migration de dados)
 
-Apaga em ordem de dependências:
+Hoje existem 12 `bot_flows` (variants A, B, C, D, E, F, G) e 133 `bot_flow_steps`, vários órfãos de consultores já apagados.
 
-```text
-proposal_events → proposals → sales → sale_status_history
-crm_auto_message_log → customer_auto_message_log → outbound_message_log
-scheduled_messages → pending_outbound_media → inbound_media_retry → inbound_media_failures
-bot_messages → bot_flow_audit_log → engine_logs
-ai_decisions → ai_costs → ai_usage_log → ai_agent_logs → ai_slot_dispatch_log
-lead_insights → customer_memory → customer_tags → customer_processing_lock
-conversations → customer_flow_state → crm_deals → crm_page_events
-portal2_audit_traces → worker_phase_logs
-webhook_message_dedup → webhook_rate_limit → ctwa_clid_mapping
-capture_* (diagnostics, field_events, field_suggestions, scoreboard, achievements)
-campaign_match_log → bulk_campaign_targets → bulk_campaigns
-customers   ← por último
-_deleted_customers_backup
-```
+Manter apenas:
+- `Fluxo Whapi (botões)` — variant D, Rafael — **referência do D**
+- `Fluxo Padrão (B - sem audio)` — variant B, Rafael — **será reaproveitado como shell do novo B IA** (mas os `bot_flow_steps` dele serão apagados porque o novo B não usa steps)
 
-Depois: apagar todos os `consultants` exceto `rafael.ids@icloud.com` e suas dependências (`consultant_*`, `network_members` cuja `referrer_consultant_id` deixou de existir, `whatsapp_instances`, `facebook_connections`, `igreen_extension_tokens`, `user_roles` órfãos).
+Apagar:
+- Todos os `bot_flows` com `variant IN ('A','C','E','F','G')`
+- Todos os `bot_flows` de consultores que não existem mais (953f…, 81fe…, f08b…)
+- `bot_flow_steps`, `bot_step_transitions`, `bot_flow_qa*` órfãos
+- `flow_variants` (legado A/B do rollout antigo) e `flow_router_rules` (3 regras de roteamento por palavra-chave que não fazem mais sentido)
+- `rollout_config` zerado / desativado
 
-Não toco em: `app_settings`, `rollout_config`, `kanban_stages`, `products`, `holidays`, `ai_knowledge_sections`, `message_templates`, `flow_router_rules`, `bot_flows`, `bot_flow_steps`, `flow_variants`, `voice_*`, `audio_library`, `ai_media_library`, `pos_venda_default_media`, `ad_*`, `platform_*`.
+## Etapa 2 — Novo roteador igualitário
 
----
+Substituir o rollout canary 5% por um roteador determinístico:
+- Função SQL `pick_flow_variant(consultant_id, customer_phone)` que lista as variants ativas do consultor e usa `hash(phone) mod N` para escolher uma — garante distribuição igualitária estável (mesmo lead sempre cai na mesma).
+- Webhook do WhatsApp (`whapi-webhook`) chama essa função no primeiro turno do lead novo e grava `customer.flow_variant`.
+- Turnos seguintes apenas leem `customer.flow_variant` e despacham para o handler correto.
 
-## 2. Regra eterna no banco (migration 2)
+## Etapa 3 — Reconstrução do Fluxo B (IA livre)
 
-Hoje a função `igreen-ingest-customers` grava `customer_origin = 'igreen_extension'`, mas TODOS os filtros do app esperam `'igreen_sync'` → bug que faz cliente da extensão virar lead.
+Substituir o conteúdo de `supabase/functions/_shared/cerebro/` (que hoje mistura lógica de máquina de estado) por uma engine de IA pura específica para B:
 
-Correções estruturais:
+**Novo módulo** `supabase/functions/_shared/fluxo-b/`:
+- `agent.ts` — loop principal com AI SDK (`streamText` + `tool` + `stopWhen(stepCountIs(50))`), modelo `google/gemini-3-flash-preview` via Lovable AI Gateway.
+- `prompt.ts` — system prompt da vendedora iGreen (persona, regras, objetivo de fechar com foto da conta).
+- `tools.ts` — tools que o modelo pode chamar:
+  - `buscar_conhecimento(query)` → RAG em `ai_knowledge_sections` (27 entries, embeddings já existentes via `embed-knowledge`).
+  - `registrar_dados_lead(nome?, cidade?, conta_media?)` → grava em `customers`.
+  - `solicitar_foto_conta()` → marca `customer.aguardando_foto=true` e envia mensagem pedindo a foto.
+  - `processar_foto_conta(media_id)` → chama OCR existente, extrai dados, devolve para o modelo.
+  - `finalizar_cadastro(payload)` → chama Portal2 (fluxo já existente) e envia link de confirmação.
+  - `transferir_humano(motivo)` → marca handoff e pinga consultor.
 
-- **CHECK constraint** em `customers.customer_origin` permitindo só: `whatsapp_lead`, `manual`, `igreen_sync`. Default `whatsapp_lead`, NOT NULL.
-- **Trigger imutável** `enforce_customer_origin_lock`: bloqueia `UPDATE` que mude `customer_origin` de `igreen_sync` ↔ qualquer lead. Origem é definida na criação e nunca muda.
-- **Trigger já existente** `prevent_non_lead_deals` em `crm_deals` (bloqueia card de igreen_sync no Kanban CRM) — mantido e validado.
-- **Novo trigger** `enforce_lead_phone_source`: ao inserir customer com `customer_origin in (whatsapp_lead, manual)`, recusa se já existe registro com mesmo `phone_whatsapp` e `customer_origin = igreen_sync` (evita duplicar como lead alguém que já é cliente).
-- **Comment SQL** nas colunas + arquivo `mem/features/customer-origin-separation.md` atualizado com a regra "NUNCA REMOVER".
+**Edge function** `fluxo-b-ai/index.ts` reescrita como entrypoint real (não mais wrapper do cérebro), recebendo turnos do `whapi-webhook` e devolvendo as mensagens a enviar.
 
----
+**Memória de conversa**: usa `conversations` + `bot_messages` já existentes; cada turno reenvia o histórico completo para o modelo.
 
-## 3. Corrigir ingestão da extensão
+## Etapa 4 — Painel do Fluxo B (frontend)
 
-Em `supabase/functions/igreen-ingest-customers/index.ts`:
+`FluxoBEditor` deixa de ser editor de steps e vira **Painel de IA**:
+- Aba **Persona**: textarea da persona/regras (salvo em `ai_agent_config` do consultor).
+- Aba **Conhecimento**: lista das 27 seções de `ai_knowledge_sections`, com botão de re-embed.
+- Aba **Fechamento**: regras (quando pedir foto, modelo do link Portal2, mensagem pós-cadastro).
+- Aba **Simulador**: chat de teste que chama `fluxo-b-ai` com `dryRun=true`.
 
-- trocar `customer_origin: "igreen_extension"` → `"igreen_sync"`
-- adicionar campo `pos_venda_stage: 'pending_authorization'` no insert/upsert.
+## Etapa 5 — Toggle de variants no painel do consultor
 
-Mesma coisa em `igreen-ingest-xlsx` (já está correto) e `sync-igreen-customers` (já está correto) — só normalizar para garantir.
+Na tela de configuração do consultor, lista checkbox simples:
+- ☑ Fluxo D (botões)
+- ☑ Fluxo B (IA livre)
 
----
+Marcar/desmarcar liga/desliga `bot_flows.is_active`. O roteador da Etapa 2 lê isso em tempo real.
 
-## 4. Kanban Pós-Venda: nova coluna "Aguardando autorização"
-
-- Migration: estender enum/CHECK de `customers.pos_venda_stage` para incluir `pending_authorization`. Atualizar função `compute_pos_venda_stage` para devolver `pending_authorization` quando `pos_venda_authorized_at IS NULL` (nova coluna timestamp).
-- Adicionar coluna `customers.pos_venda_authorized_at TIMESTAMPTZ NULL` e `pos_venda_authorized_by UUID NULL`.
-- Cliente novo da extensão entra em `pending_authorization` automaticamente (default + função recalc respeita autorização).
-- `src/components/whatsapp/PosVendaKanban.tsx`: adicionar coluna como primeira; menu de contexto "Autorizar cliente" preenche `pos_venda_authorized_at = now()`, marca `pos_venda_manual = false`, e dispara `recompute_pos_venda_stages` para aquele cliente cair na coluna real (Aprovado/Reprovado/D30…).
-- Após autorizar, fluxos de pós-venda (cron `pos-venda-bucket-cron`, mensagens automáticas, etc.) começam a agir. Antes disso ficam silenciosos.
-
----
-
-## 5. Guard no whapi-webhook
-
-Antes de criar lead ao receber WhatsApp, verificar se já existe customer com mesmo `phone_whatsapp` e `customer_origin = igreen_sync` → se sim, NÃO cria lead nem `crm_deal`; só registra `conversation`/log marcando "mensagem de cliente da carteira" (visível para o consultor responder, mas fora do funil de captação). Já está parcialmente no código — vou validar e fechar o gate.
+## Etapa 6 — Fluxo D intocado
+Nenhuma mudança em `_shared/cerebro` específico do D, em `flow-d-health-cron`, `flow-d-stuck-watchdog` nem nos steps existentes do "Fluxo Whapi (botões)".
 
 ---
 
-## 6. Memória e documentação
+## Detalhes técnicos
 
-- Criar `mem://index.md` com regra Core: "Extensão Chrome/portal iGreen = `igreen_sync` (cliente, Kanban Pós-Venda). WhatsApp = `whatsapp_lead` (CRM). NUNCA misturar. NUNCA remover triggers de origem."
-- Atualizar `mem/features/customer-origin-separation.md` e `mem/crm/pos-venda-kanban.md` com a etapa de autorização.
-- Não criar arquivo TODO/reminder (regra do usuário).
+**Tabelas alteradas**
+- `customers`: adicionar `aguardando_foto boolean default false` e (se ainda não existir) `flow_variant text`.
+- Nenhuma RLS nova (reaproveita as existentes do `customers`).
+
+**Tabelas limpas (DELETE, não DROP)**
+- `bot_flows`, `bot_flow_steps`, `bot_step_transitions`, `bot_flow_qa`, `bot_flow_qa_media`, `bot_flow_qa_triggers`, `flow_variants`, `flow_router_rules`.
+
+**Edge functions**
+- Reescrever: `fluxo-b-ai`.
+- Novas: nenhuma (reaproveita `embed-knowledge`, OCR existente, Portal2 existente).
+- Apagar candidatas (a confirmar caso a caso na execução): `flow-engine-rollout-cron`, `flow-engine-v3-rollout-cron`, `flow-spreadsheet-review`, `flow-from-template`, `flow-step-suggest`, `flow-ai-rewrite` — só fazem sentido no mundo multi-variant que vai sumir. Confirmo antes de remover.
+
+**Modelo / custo**
+- `google/gemini-3-flash-preview` (default Lovable AI).
+- Tools curtas, schemas minúsculos para evitar "too many states" do Gemini.
+- `stopWhen(stepCountIs(50))` no loop de tools.
+
+**Regras de segurança a manter**
+- Cliente nunca vem da extensão pelo Fluxo B (regra atual mantida): leads do WhatsApp → CRM → Fluxo B/D; extensão → pós-venda com "Aguardando autorização".
 
 ---
 
 ## Ordem de execução
-
-1. Migration #1: wipe (transação).
-2. Migration #2: CHECK + triggers de origem + nova coluna `pending_authorization` + colunas `pos_venda_authorized_*` + atualização de `compute_pos_venda_stage`.
-3. Editar `igreen-ingest-customers/index.ts` (auto-deploy).
-4. Editar `PosVendaKanban.tsx` (nova coluna + ação Autorizar).
-5. Atualizar guard em `whapi-webhook` (verificação rápida).
-6. Atualizar memórias.
-7. Smoke-test: `psql` para confirmar counts zerados; simular insert lead com phone já igreen_sync (deve falhar); simular insert extensão (deve cair em `pending_authorization`).
-
----
-
-## Riscos
-
-- Operação destrutiva e irreversível. Confirmação no botão "Implementar plano" é o ponto de não retorno. Vou rodar o wipe em uma única transação para garantir atomicidade.
-- Pode existir consultor de teste com dados que o `rafael.ids` queira manter — confirmar que **só** ele permanece.  
-  
-EXCLUIR APENAS DADOS NADA DE REGRAS OU CODIGO, SAO APENAS CLIENTES DE TESTE
+1. Migration: schema (`aguardando_foto`, função `pick_flow_variant`).
+2. Migration de dados: wipe dos flows extras.
+3. Reescrever `_shared/fluxo-b/*` + `fluxo-b-ai/index.ts`.
+4. Atualizar `whapi-webhook` para usar `pick_flow_variant` e despachar B vs D.
+5. Refazer `FluxoBEditor` no frontend.
+6. Adicionar checkbox de variants no painel do consultor.
+7. Testar end-to-end: lead novo → 50% cai em D, 50% em B → no B, IA conversa → pede foto → OCR → Portal2.
