@@ -47,7 +47,7 @@ const SUB_TABS: { key: SubTab; label: string; icon: React.ElementType }[] = [
   { key: "historico", label: "Histórico", icon: History },
 ];
 
-export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [] }: WhatsAppTabProps) {
+export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab }: WhatsAppTabProps) {
   const isMobile = useIsMobile();
   const {
     connectionStatus,
