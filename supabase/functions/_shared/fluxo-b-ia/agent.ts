@@ -88,10 +88,25 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
   const ragQuery = inboundText || (billPhotoArrived ? "cliente enviou foto da conta" : "saudação inicial");
   const rag = await lookupKnowledge({ supabase, question: ragQuery, consultantId }).catch(() => null);
 
+  // Persona: tenta carregar a versão editável de app_settings; cai pro arquivo se vazia.
+  let personaText = FLUXO_B_PERSONA;
+  try {
+    const { data: appCfg } = await supabase
+      .from("app_settings")
+      .select("fluxo_b_persona")
+      .eq("id", "global")
+      .maybeSingle();
+    const editable = (appCfg as any)?.fluxo_b_persona;
+    if (editable && typeof editable === "string" && editable.trim().length > 50) {
+      personaText = editable;
+    }
+  } catch (_e) { /* keep fallback */ }
+
   // 3) Monta prompt
   const systemMessages = [
-    { role: "system" as const, content: FLUXO_B_PERSONA },
+    { role: "system" as const, content: personaText },
   ];
+
 
   if (rag?.found && rag.text) {
     systemMessages.push({
