@@ -433,7 +433,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
         {activeSubTab === "agente" && (
           <div className="p-3 overflow-auto h-full min-w-0">
             <Suspense fallback={<LazyFallback />}>
-              <AIAgentTab userId={userId} />
+              <AIAgentTab userId={userId} initialSubTab={initialAgentSubTab as any} />
             </Suspense>
           </div>
         )}
