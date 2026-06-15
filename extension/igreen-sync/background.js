@@ -273,19 +273,35 @@ function installDownloadsListener() {
   });
 }
 
-async function fetchAsBase64(url) {
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error(`HTTP ${res.status} em ${url}`);
-  const blob = await res.blob();
-  if (!blob || blob.size < 200) throw new Error(`Resposta vazia (${blob?.size || 0}B)`);
-  // converte sem FileReader (service worker tem)
-  const buf = new Uint8Array(await blob.arrayBuffer());
-  let bin = "";
-  const CHUNK = 0x8000;
-  for (let i = 0; i < buf.length; i += CHUNK) {
-    bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK));
-  }
-  return { b64: btoa(bin), size: blob.size };
+// Baixa XLSX a partir do contexto DA PÁGINA (MAIN world) — assim ele herda
+// cookies, Authorization headers e sessão do SPA. Service worker faria fetch
+// sem o token Bearer do app e a API responde 401.
+async function fetchAsBase64InPage(tabId, url) {
+  const r = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    args: [url],
+    func: async (u) => {
+      try {
+        const res = await fetch(u, { credentials: "include" });
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status} em ${u}` };
+        const blob = await res.blob();
+        if (!blob || blob.size < 200) return { ok: false, error: `Resposta vazia (${blob?.size || 0}B)` };
+        const b64 = await new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onloadend = () => {
+            const s = String(fr.result || "");
+            resolve(s.includes(",") ? s.split(",")[1] : "");
+          };
+          fr.readAsDataURL(blob);
+        });
+        return { ok: true, b64, size: blob.size };
+      } catch (e) { return { ok: false, error: String(e?.message || e) }; }
+    },
+  });
+  const out = r?.[0]?.result;
+  if (!out?.ok) throw new Error(out?.error || "fetch in-page falhou");
+  return { b64: out.b64, size: out.size };
 }
 
 // ===== Gerencia tabs =====
@@ -347,7 +363,7 @@ async function captureFromPage(tabId, kind) {
     if (queued.length) {
       const item = queued.shift();
       try {
-        const { b64, size } = await fetchAsBase64(item.url);
+        const { b64, size } = await fetchAsBase64InPage(tabId, item.url);
         return { ok: true, b64, size, source: item.url, via: "downloads", click: cinfo, ready: readyInfo };
       } catch (e) { console.warn("[fetch fallback]", e); }
     }
@@ -425,9 +441,11 @@ async function syncOnePage(token, page, mesRef) {
 }
 
 async function runSync() {
-  const { pairingToken } = await chrome.storage.local.get(["pairingToken"]);
+  const { pairingToken, syncRunning } = await chrome.storage.local.get(["pairingToken", "syncRunning"]);
   if (!pairingToken) throw new Error("Token de pareamento nao configurado");
+  if (syncRunning) throw new Error("Já existe uma sincronização rodando em background. Aguarde terminar.");
 
+  await chrome.storage.local.set({ syncRunning: true, syncStartedAt: Date.now(), lastError: null });
   installDownloadsListener();
   await setProgress("Iniciando...");
 
@@ -437,39 +455,67 @@ async function runSync() {
   let lastClientesSize = 0, lastRedeSize = 0;
 
   try {
-    const r = await syncOnePage(pairingToken, PAGES[0], mesRef);
-    result.clientes = r.ingest;
-    lastClientesSize = r.size;
-  } catch (e) {
-    errors.push(`clientes: ${e?.message || String(e)}`);
-  }
+    try {
+      const r = await syncOnePage(pairingToken, PAGES[0], mesRef);
+      result.clientes = r.ingest;
+      lastClientesSize = r.size;
+    } catch (e) {
+      errors.push(`clientes: ${e?.message || String(e)}`);
+    }
 
+    try {
+      const r = await syncOnePage(pairingToken, PAGES[1], mesRef);
+      result.rede = r.ingest;
+      lastRedeSize = r.size;
+    } catch (e) {
+      errors.push(`rede: ${e?.message || String(e)}`);
+    }
+
+    await setProgress("Concluido");
+
+    if (!result.clientes && !result.rede) {
+      const err = new Error(
+        `Nao consegui baixar nenhum Excel.\n${errors.join("\n")}\n\nVerifique se voce esta logado em ${IGREEN_ORIGIN}.`
+      );
+      await chrome.storage.local.set({
+        lastError: err.message,
+        lastErrorAt: new Date().toISOString(),
+      });
+      notify("Falha na sincronização", errors.join(" | ") || "Verifique seu login no portal iGreen.");
+      throw err;
+    }
+
+    const status = {
+      lastSyncAt: new Date().toISOString(),
+      lastResult: result,
+      lastError: errors.length ? errors.join(" | ") : null,
+      lastClientesSize,
+      lastRedeSize,
+      lastErrorAt: errors.length ? new Date().toISOString() : null,
+    };
+    await chrome.storage.local.set(status);
+
+    const c = result.clientes, n = result.rede;
+    const partes = [];
+    if (c) partes.push(`Clientes: ${c.upserted ?? 0} atualizados`);
+    if (n) partes.push(`Rede: ${n.upserted ?? 0} atualizados`);
+    notify("Sincronização concluída", partes.join(" • ") || "Sincronização finalizada");
+    return status;
+  } finally {
+    await chrome.storage.local.set({ syncRunning: false });
+  }
+}
+
+function notify(title, message) {
   try {
-    const r = await syncOnePage(pairingToken, PAGES[1], mesRef);
-    result.rede = r.ingest;
-    lastRedeSize = r.size;
-  } catch (e) {
-    errors.push(`rede: ${e?.message || String(e)}`);
-  }
-
-  await setProgress("Concluido");
-
-  if (!result.clientes && !result.rede) {
-    throw new Error(
-      `Nao consegui baixar nenhum Excel.\n${errors.join("\n")}\n\nVerifique se voce esta logado em ${IGREEN_ORIGIN}.`
-    );
-  }
-
-  const status = {
-    lastSyncAt: new Date().toISOString(),
-    lastResult: result,
-    lastError: errors.length ? errors.join(" | ") : null,
-    lastClientesSize,
-    lastRedeSize,
-    lastErrorAt: errors.length ? new Date().toISOString() : null,
-  };
-  await chrome.storage.local.set(status);
-  return status;
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icon-128.png"),
+      title,
+      message: String(message || "").slice(0, 300),
+      priority: 1,
+    });
+  } catch (e) { console.warn("[notify]", e); }
 }
 
 // ===== Detecção de login no escritório iGreen =====
