@@ -75,9 +75,10 @@ export default function AiPreferencesCard({ consultantId }: Props) {
         .select("ai_profile, ai_provider_pref" as any)
         .eq("id", consultantId)
         .maybeSingle();
-      const p = String((data as any)?.ai_profile || "balanced") as AiProfile;
+      const p = String((data as any)?.ai_profile || "auto") as AiProfile;
       const pr = String((data as any)?.ai_provider_pref || "google") as AiProvider;
-      const safeP = (["accuracy", "balanced", "fast"] as const).includes(p) ? p : "balanced";
+      const safeP: AiProfile = (["auto", "accuracy", "balanced", "fast"] as const).includes(p as any) ? p : "auto";
+
       const safePr = (["google", "openai"] as const).includes(pr) ? pr : "google";
       setProfile(safeP);
       setProvider(safePr);
