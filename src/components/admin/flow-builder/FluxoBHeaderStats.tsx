@@ -96,7 +96,14 @@ export default function FluxoBHeaderStats({ consultantId, onEditPersona }: Props
           variant="ghost"
           size="sm"
           className="h-5 px-1.5 text-[10px] gap-1"
-          onClick={onEditPersona}
+          onClick={() => {
+            const target = document.querySelector('[data-fluxo-b-editor]') as HTMLElement | null;
+            if (onEditPersona && target) {
+              onEditPersona();
+            } else {
+              navigate("/admin/fluxo-b?tab=persona");
+            }
+          }}
         >
           <Pencil className="h-2.5 w-2.5" />
           Persona
