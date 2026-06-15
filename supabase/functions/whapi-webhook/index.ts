@@ -1812,48 +1812,116 @@ Deno.serve(async (req) => {
       //   B → NOVO Fluxo B IA (IA livre, FAQ + RAG, do "oi" até pedir foto da conta).
       //   demais → fallback no cérebro legado (compatibilidade temporária).
       const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
-      if (_fbVarCerebro === "D") {
-        console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
-      } else if (_fbVarCerebro === "B") {
+
+      // Executa UM turno do caminho conversacional (Fluxo B IA ou Cérebro
+      // legado) com os dados de inbound fornecidos. Extraído numa função para
+      // poder ser REUTILIZADO ao drenar a rajada (pending_inbound) — sem isso a
+      // 2ª mensagem de uma rajada ("oi" seguido de "quero saber mais") ficava
+      // presa na fila e o bot parecia mudo no meio do cadastro.
+      const runConversacionalTurn = async (inb: {
+        text: string | null;
+        isButton: boolean;
+        buttonId: string | null;
+        hasImage: boolean;
+        hasDocument: boolean;
+        hasAudio: boolean;
+        messageId: string | null;
+      }): Promise<boolean> => {
+        const inboundKind = inb.isButton
+          ? "button_click"
+          : (inb.hasImage || inb.hasDocument || inb.hasAudio ? "media" : "text");
+        const inboundMediaKind = inb.hasAudio
+          ? "audio"
+          : inb.hasImage ? "image" : inb.hasDocument ? "document" : null;
+        if (_fbVarCerebro === "B") {
+          try {
+            const { processarTurnoFluxoB } = await import("../_shared/fluxo-b-ia/agent.ts");
+            const r = await processarTurnoFluxoB({
+              supabase,
+              customerId: customer.id,
+              consultantId: superAdminConsultantId,
+              inboundKind,
+              inboundText: inb.text ?? null,
+              inboundMediaKind,
+              inboundMessageId: inb.messageId ?? null,
+              telefone: phone ?? null,
+              enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+            });
+            return r.respondeu;
+          } catch (e: any) {
+            console.warn("[fluxo-b-ia] erro não-bloqueante:", e?.message);
+            return false;
+          }
+        }
         try {
-          const { processarTurnoFluxoB } = await import("../_shared/fluxo-b-ia/agent.ts");
-          const r = await processarTurnoFluxoB({
+          const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
+          const r = await responderComCerebro({
             supabase,
             customerId: customer.id,
             consultantId: superAdminConsultantId,
-            inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
-            inboundText: messageText ?? null,
-            inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
-            inboundMessageId: messageId ?? null,
+            inboundKind,
+            inboundText: inb.text ?? null,
+            inboundButtonId: inb.buttonId ?? null,
+            inboundMediaKind,
+            inboundMessageId: inb.messageId ?? null,
+            channel: "whapi",
             telefone: phone ?? null,
             enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
           });
-          _cerebroRespondeu = r.respondeu;
+          return r.respondeu;
         } catch (e: any) {
-          console.warn("[fluxo-b-ia] erro não-bloqueante:", e?.message);
-          _cerebroRespondeu = false;
+          console.warn("[cerebro-resposta-hook] erro não-bloqueante:", e?.message);
+          return false;
         }
-      } else try {
-        const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
-        const r = await responderComCerebro({
-          supabase,
-          customerId: customer.id,
-          consultantId: superAdminConsultantId,
-          inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
-          inboundText: messageText ?? null,
-          inboundButtonId: buttonId ?? null,
-          inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
-          inboundMessageId: messageId ?? null,
-          channel: "whapi",
-          telefone: phone ?? null,
-          enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+      };
+
+      if (_fbVarCerebro === "D") {
+        console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
+      } else {
+        _cerebroRespondeu = await runConversacionalTurn({
+          text: messageText ?? null,
+          isButton,
+          buttonId: buttonId ?? null,
+          hasImage,
+          hasDocument,
+          hasAudio,
+          messageId: messageId ?? null,
         });
-        _cerebroRespondeu = r.respondeu;
-      } catch (e: any) {
-        console.warn("[cerebro-resposta-hook] erro não-bloqueante:", e?.message);
-        _cerebroRespondeu = false;
       }
       if (_cerebroRespondeu) {
+        // 📥 Drena a rajada ANTES de soltar o lock (mesma proteção do caminho
+        // legado em applyTurnResult). Sem isso a 2ª mensagem da rajada ficava
+        // presa em pending_inbound e o bot silenciava no meio do cadastro.
+        try {
+          const { drainPendingInboundTurns } = await import("../_shared/bot/pending-inbound.ts");
+          const drained = await drainPendingInboundTurns(supabase, customer.id, async (replay) => {
+            // Re-fetch do customer pra refletir o estado gravado pelo turno anterior.
+            try {
+              const { data: fresh } = await supabase.from("customers").select("*").eq("id", customer.id).maybeSingle();
+              if (fresh) customer = fresh;
+            } catch (_) { /* mantém customer atual */ }
+            console.log(`[pending-drain fluxo-b] replay customer=${customer.id} text="${String(replay.messageText).slice(0, 80)}"`);
+            // O claim só distingue mídia genérica (isFile) de botão/texto; tratamos
+            // mídia como imagem (foto da conta), o caso de longe mais comum.
+            const replayIsMedia = replay.isFile && !replay.isButton;
+            await runConversacionalTurn({
+              text: replay.messageText || null,
+              isButton: replay.isButton,
+              buttonId: replay.buttonId,
+              hasImage: replayIsMedia,
+              hasDocument: false,
+              hasAudio: false,
+              messageId: replay.messageId,
+            });
+          });
+          if (drained > 0) console.log(`[pending-drain fluxo-b] ${drained} turn(s) customer=${customer.id}`);
+        } catch (e) {
+          console.warn("[pending-drain fluxo-b] falhou:", (e as Error).message);
+        }
+
+        // 🔓 Libera o lock (o early-return pulava o release lá embaixo).
+        try { await supabase.rpc("release_customer_processing_lock", { _customer_id: customer.id }); } catch (_) {}
+
         return new Response(
           JSON.stringify({ ok: true, mode: _fbVarCerebro === "B" ? "fluxo-b-ia" : "cerebro" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
