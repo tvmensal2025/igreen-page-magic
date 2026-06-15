@@ -330,7 +330,9 @@ export default function FluxoBuilder() {
                       </Button>
                     </div>
                   )}
-                  <AiPreferencesCard consultantId={userId} />
+                  {/* Preferências de IA movidas para Super Admin → /super-admin (AIControlPanel).
+                      O perfil padrão é "auto" (precisão alta + custo baixo, escolhe modelo conforme pergunta). */}
+
                   <StepListToolbar
                     query={listQuery}
                     onQueryChange={setListQuery}
