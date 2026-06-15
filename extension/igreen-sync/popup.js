@@ -16,28 +16,23 @@ function pickMotivation() {
 
 function fmt(n) { return typeof n === "number" ? n.toLocaleString("pt-BR") : (n ?? "-"); }
 
-function maskToken(token) {
-  if (!token) return "••••••••";
-  const head = token.slice(0, 6);
-  return `${head}${"•".repeat(Math.max(8, Math.min(20, token.length - 6)))}`;
-}
-
 function setBadge(kind, text) {
   const b = $("badge");
   b.className = `status-badge ${kind}`;
   $("badgeText").textContent = text;
 }
 
-function showTokenSaved(token) {
+// Mostra estado "pareado" — nunca exibe o token, só confirma que está salvo.
+function showTokenSaved() {
   $("tokenSaved").classList.remove("hidden");
   $("tokenEmpty").classList.add("hidden");
-  $("tokenPreview").textContent = maskToken(token);
 }
 
-function showTokenEmpty(prefill = "") {
+// Mostra estado "colar chave" — campo vazio, escondido por padrão.
+function showTokenEmpty() {
   $("tokenSaved").classList.add("hidden");
   $("tokenEmpty").classList.remove("hidden");
-  $("tokenInput").value = prefill;
+  $("tokenInput").value = "";
   $("tokenInput").focus();
 }
 
@@ -47,7 +42,7 @@ async function refresh() {
   ]);
   const token = s.pairingToken || "";
   if (token) {
-    showTokenSaved(token);
+    showTokenSaved();
     if (s.lastError && !s.lastSyncAt) setBadge("err", "Erro no último sync");
     else if (s.lastSyncAt) setBadge(s.lastError ? "warn" : "ok", s.lastError ? "Sincronizado com avisos" : "Pareado e atualizado");
     else setBadge("ok", "Pareado");
@@ -72,20 +67,35 @@ async function refresh() {
   $("status").textContent = txt;
 }
 
-// Token actions
-$("saveToken").addEventListener("click", async () => {
-  const t = $("tokenInput").value.trim();
+// Salva o token automaticamente assim que for colado/digitado.
+// Limpa o campo na hora para que a chave nunca fique visível na tela.
+async function autoSaveToken(value) {
+  const t = (value || "").trim();
   if (!t) return;
   await chrome.storage.local.set({ pairingToken: t });
-  refresh();
+  $("tokenInput").value = "";
+  $("status").textContent = "Chave salva. Pronto para sincronizar.";
+  await refresh();
+}
+
+// Ao colar: salva imediatamente (caminho principal de pareamento).
+$("tokenInput").addEventListener("paste", (e) => {
+  const pasted = (e.clipboardData || window.clipboardData)?.getData("text") || "";
+  if (pasted.trim()) {
+    e.preventDefault();
+    autoSaveToken(pasted);
+  }
 });
-$("cancelToken").addEventListener("click", async () => {
-  const { pairingToken } = await chrome.storage.local.get(["pairingToken"]);
-  if (pairingToken) showTokenSaved(pairingToken);
+
+// Ao digitar manualmente e sair do campo (ou apertar Enter): salva também.
+$("tokenInput").addEventListener("blur", (e) => autoSaveToken(e.target.value));
+$("tokenInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); autoSaveToken(e.target.value); }
 });
-$("changeToken").addEventListener("click", () => showTokenEmpty());
+
+// Desconectar: remove a chave salva.
 $("removeToken").addEventListener("click", async () => {
-  if (!confirm("Remover o token? A extensão deixará de sincronizar até você pareá-la novamente.")) return;
+  if (!confirm("Desconectar a extensão? Ela deixará de sincronizar até você colar a chave novamente.")) return;
   await chrome.storage.local.remove(["pairingToken"]);
   refresh();
 });
@@ -99,12 +109,13 @@ async function pollProgress() {
 $("sync").addEventListener("click", async () => {
   const { pairingToken } = await chrome.storage.local.get(["pairingToken"]);
   if (!pairingToken) {
-    $("status").textContent = "Cole o token de pareamento antes de sincronizar.";
+    $("status").textContent = "Cole a chave do painel antes de sincronizar.";
     showTokenEmpty();
     return;
   }
   $("sync").disabled = true;
   $("syncText").textContent = "Sincronizando...";
+  $("syncIcon").classList.add("spin");
   setBadge("busy", "Sincronizando");
   $("motivation").textContent = pickMotivation();
   $("status").textContent = "Iniciando sincronização... (Clientes → Rede, um por vez)";
@@ -114,6 +125,7 @@ $("sync").addEventListener("click", async () => {
     clearInterval(progressTimer); progressTimer = null;
     $("sync").disabled = false;
     $("syncText").textContent = "Sincronizar agora";
+    $("syncIcon").classList.remove("spin");
     if (!resp?.ok) $("status").textContent = `Erro: ${resp?.error || "desconhecido"}`;
     await refresh();
   });

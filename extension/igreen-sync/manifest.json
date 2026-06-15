@@ -14,7 +14,11 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "iGreen Sync"
+    "default_title": "iGreen Sync",
+    "default_icon": {
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
@@ -34,7 +38,7 @@
     }
   ],
   "icons": {
-    "48": "icon.png",
-    "128": "icon.png"
+    "48": "icon-48.png",
+    "128": "icon-128.png"
   }
 }

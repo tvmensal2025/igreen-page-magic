@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -367,22 +368,22 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
           </div>
         </div>
 
-        {/* Clickable Status Filters */}
-        <div className="flex gap-2 px-4 sm:px-5 pb-3 sm:pb-4 overflow-x-auto no-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
-          {filterButtons.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setStatusFilter(f.key)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all border shrink-0 ${
-                statusFilter === f.key
-                  ? "border-primary/50 bg-primary/10 text-foreground shadow-sm"
-                  : "border-border bg-secondary/30 hover:bg-secondary/60 text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <span className={`text-base font-bold tabular-nums ${statusFilter === f.key ? "text-primary" : f.color}`}>{f.count}</span>
-              <span>{f.label}</span>
-            </button>
-          ))}
+        {/* Status filter — combobox com busca (substitui a fileira de botões) */}
+        <div className="px-4 sm:px-5 pb-3 sm:pb-4">
+          <div className="w-full sm:w-72">
+            <Combobox
+              options={filterButtons.map((f) => ({
+                value: f.key,
+                label: f.label,
+                hint: String(f.count),
+              }))}
+              value={statusFilter}
+              onChange={(v) => setStatusFilter((v as StatusFilter) ?? "all")}
+              placeholder="Filtrar por status"
+              searchPlaceholder="Buscar status…"
+              className="h-9"
+            />
+          </div>
         </div>
 
         {/* List with pagination */}

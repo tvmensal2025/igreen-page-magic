@@ -8,6 +8,7 @@
 // O componente também exporta `ready` para o pai (wizard) bloquear o
 // botão Publicar caso esteja faltando alguma coisa.
 
+import { useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, ExternalLink } from "lucide-react";
@@ -44,11 +45,15 @@ function CheckRow({ check }: { check: CtwaCheck }) {
 export function CtwaPreflightCard({ consultantId, onReadyChange, compact }: Props) {
   const { loading, ready, bot, facebook, pixel, waba, refresh } = useCtwaPreflight(consultantId);
 
-  // Notifica o pai sempre que mudar.
-  if (onReadyChange) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useEffectOnReady(ready, onReadyChange);
-  }
+  // Notifica o pai sempre que `ready` mudar de valor.
+  // Guardamos o callback num ref para NÃO depender da sua referência no
+  // efeito — senão, um callback recriado a cada render do pai (ex.: arrow
+  // inline) dispararia o efeito em loop infinito ("Maximum update depth").
+  const onReadyChangeRef = useRef(onReadyChange);
+  onReadyChangeRef.current = onReadyChange;
+  useEffect(() => {
+    onReadyChangeRef.current?.(ready);
+  }, [ready]);
 
   return (
     <Card className={`p-4 border-2 ${ready ? "border-primary/40 bg-primary/5" : "border-warning/40 bg-warning/5"}`}>
@@ -91,12 +96,4 @@ export function CtwaPreflightCard({ consultantId, onReadyChange, compact }: Prop
       )}
     </Card>
   );
-}
-
-// Hook utilitário pra disparar callback quando `ready` mudar.
-import { useEffect } from "react";
-function useEffectOnReady(ready: boolean, cb: (r: boolean) => void) {
-  useEffect(() => {
-    cb(ready);
-  }, [ready, cb]);
 }

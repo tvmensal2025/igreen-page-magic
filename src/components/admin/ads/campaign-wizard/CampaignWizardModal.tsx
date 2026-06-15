@@ -114,14 +114,23 @@ export function CampaignWizardModal({ open, onClose, consultantId, onCreated }: 
     } else if (step === 4) {
       goTo(5);
     } else if (step === 5) {
+      // Pré-checagem CTWA: super admin pula; demais precisam estar prontos.
+      // Em vez de deixar o botão "morto", explicamos o que falta.
+      if (!isSuperAdmin && !state.ctwaReady) {
+        return toast({
+          title: "Falta concluir a pré-checagem",
+          description: "Revise os itens em amarelo/vermelho no topo (bot, Facebook, WhatsApp Business) e toque em 'Reverificar' antes de publicar.",
+          variant: "destructive",
+        });
+      }
       await publish.submit();
     }
   }
 
-  // Bloqueia o botão final quando faltam pré-requisitos.
+  // Bloqueia o botão final apenas enquanto a pré-checagem está rodando.
+  // (A exigência do CTWA pronto é validada no goNext, com aviso claro.)
   const canAdvance = !state.copyLoading
-    && !(state.step === 5 && state.preflightLoading)
-    && !(state.step === 5 && !state.ctwaReady && !isSuperAdmin);
+    && !(state.step === 5 && state.preflightLoading);
 
   const renderStep = () => {
     switch (state.step) {

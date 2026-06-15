@@ -6,15 +6,13 @@
 <style>
   :root {
     --bg: #0b1220;
-    --bg-2: #111a2e;
     --card: #16223a;
+    --card-2: #1a2a47;
     --border: #1f2d4d;
     --text: #f1f5f9;
     --muted: #94a3b8;
     --primary: #22c55e;
-    --primary-2: #15803d;
     --danger: #ef4444;
-    --warning: #f59e0b;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -46,8 +44,8 @@
     background: radial-gradient(circle, rgba(255,255,255,0.15), transparent 70%);
   }
   .logo {
-    width: 40px; height: 40px; border-radius: 10px;
-    background: #fff; padding: 4px;
+    width: 42px; height: 42px; border-radius: 11px;
+    background: #fff; padding: 3px; object-fit: contain;
     box-shadow: 0 6px 20px rgba(0,0,0,0.25);
   }
   .header h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.2px; }
@@ -74,7 +72,14 @@
     box-shadow: 0 0 8px currentColor;
   }
 
-  /* TOKEN CARD */
+  .motivation {
+    font-size: 11px; color: #86efac; font-style: italic; text-align: center;
+    padding: 8px 10px; background: rgba(34,197,94,0.08);
+    border-radius: 8px; min-height: 14px;
+    border: 1px dashed rgba(34,197,94,0.25);
+  }
+
+  /* CARD */
   .card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -83,32 +88,38 @@
   }
   .card .label {
     font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
-    color: var(--muted); font-weight: 600; margin-bottom: 6px;
+    color: var(--muted); font-weight: 600; margin-bottom: 8px;
   }
-  .token-mask {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    font-family: "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12px; color: #e2e8f0;
-    background: #0a1224; border: 1px solid var(--border);
-    border-radius: 8px; padding: 8px 10px;
-  }
-  .token-actions { display: flex; gap: 6px; margin-top: 8px; }
-  .btn-mini {
-    flex: 1; padding: 6px 8px; border-radius: 6px;
-    background: transparent; color: var(--muted);
-    border: 1px solid var(--border);
-    font-size: 11px; cursor: pointer; transition: all 0.15s;
-  }
-  .btn-mini:hover { color: var(--text); border-color: #2a3b5e; background: #1a2a4a; }
-  .btn-mini.danger:hover { color: #fca5a5; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.08); }
 
+  /* Estado: pareado (sem mostrar token) */
+  .paired {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .paired .check {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    background: rgba(34,197,94,0.15); color: #86efac;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; border: 1px solid rgba(34,197,94,0.4);
+  }
+  .paired .info { flex: 1; min-width: 0; }
+  .paired .info .title { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+  .paired .info .sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .link-btn {
+    background: none; border: none; padding: 0; cursor: pointer;
+    font-size: 11px; color: var(--muted); text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .link-btn:hover { color: #fca5a5; }
+
+  /* Estado: colar token */
   input[type=password], input[type=text] {
-    width: 100%; padding: 9px 10px;
+    width: 100%; padding: 10px 11px;
     border-radius: 8px; border: 1px solid var(--border);
     background: #0a1224; color: var(--text);
     font-size: 12px; font-family: inherit;
   }
   input:focus { outline: none; border-color: var(--primary); }
+  .hint { font-size: 10px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
 
   /* SYNC BUTTON */
   .btn-primary {
@@ -122,6 +133,8 @@
   }
   .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(22,163,74,0.35); }
   .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+  #syncIcon.spin { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   /* AUTO TOGGLE */
   .switch-row {
@@ -150,12 +163,6 @@
     font-size: 11px; color: #cbd5e1; line-height: 1.5;
     white-space: pre-wrap; max-height: 110px; overflow: auto;
   }
-  .motivation {
-    font-size: 11px; color: #86efac; font-style: italic; text-align: center;
-    padding: 8px 10px; background: rgba(34,197,94,0.08);
-    border-radius: 8px; min-height: 14px;
-    border: 1px dashed rgba(34,197,94,0.25);
-  }
   .footer-link {
     font-size: 11px; color: var(--muted); text-align: center;
     text-decoration: none; display: block; padding: 4px;
@@ -166,7 +173,7 @@
 </head>
 <body>
   <div class="header">
-    <img class="logo" src="icon.png" alt="iGreen" />
+    <img class="logo" src="icon-128.png" alt="iGreen" />
     <div style="position:relative; z-index:1;">
       <h1>iGreen Sync</h1>
       <p>Sincronizando energia limpa</p>
@@ -178,29 +185,25 @@
 
     <div class="motivation" id="motivation">Cada sync acende um novo cliente solar.</div>
 
-    <!-- Token card: 2 estados -->
+    <!-- Card de pareamento: 2 estados -->
     <div class="card">
-      <div class="label">Token de pareamento</div>
-
-      <!-- Estado: token salvo (mascarado) -->
+      <!-- Estado: pareado (NÃO mostra o token) -->
       <div id="tokenSaved" class="hidden">
-        <div class="token-mask">
-          <span id="tokenPreview">••••••••</span>
-          <span style="font-size:10px; color: var(--muted);">salvo</span>
-        </div>
-        <div class="token-actions">
-          <button class="btn-mini" id="changeToken">Trocar token</button>
-          <button class="btn-mini danger" id="removeToken">Remover</button>
+        <div class="paired">
+          <div class="check">✓</div>
+          <div class="info">
+            <div class="title">Extensão pareada</div>
+            <div class="sub">Sua chave está salva e protegida.</div>
+          </div>
+          <button class="link-btn" id="removeToken">Desconectar</button>
         </div>
       </div>
 
       <!-- Estado: sem token / colando -->
       <div id="tokenEmpty" class="hidden">
-        <input id="tokenInput" type="password" placeholder="cole o token gerado no painel" autocomplete="off" />
-        <div class="token-actions">
-          <button class="btn-mini" id="saveToken" style="flex:2;">Salvar token</button>
-          <button class="btn-mini" id="cancelToken">Cancelar</button>
-        </div>
+        <div class="label">Conectar com o painel</div>
+        <input id="tokenInput" type="password" placeholder="cole aqui a chave do painel" autocomplete="off" />
+        <div class="hint">Cole a chave gerada no painel. Ela é salva sozinha e não aparece mais.</div>
       </div>
     </div>
 

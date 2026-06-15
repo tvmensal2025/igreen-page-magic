@@ -674,17 +674,19 @@ function FilterBar({
             />
           </div>
         )}
-        {/* Origem */}
-        <div className="flex gap-1">
-          {(Object.keys(ORIGIN_LABEL) as OriginFilter[]).map((o) => (
-            <button
-              key={o}
-              onClick={() => setOriginFilter(o)}
-              className={`rounded-md border px-2 py-1 text-[11px] transition ${originFilter === o ? "border-primary/30 bg-primary/10 text-primary" : "border-border/40 bg-card text-muted-foreground hover:border-border"}`}
-            >
-              {ORIGIN_LABEL[o]}
-            </button>
-          ))}
+        {/* Origem — combobox (substitui a fileira de botões) */}
+        <div className="w-40">
+          <Combobox
+            options={(Object.keys(ORIGIN_LABEL) as OriginFilter[]).map((o) => ({
+              value: o,
+              label: ORIGIN_LABEL[o],
+            }))}
+            value={originFilter}
+            onChange={(v) => setOriginFilter((v as OriginFilter) ?? "all")}
+            placeholder="Origem"
+            searchPlaceholder="Buscar origem…"
+            className="h-8"
+          />
         </div>
         <div className="relative">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
