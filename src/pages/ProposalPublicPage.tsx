@@ -186,9 +186,13 @@ export default function ProposalPublicPage() {
                   alt={product?.name ?? "iGreen"}
                   className="w-full h-full object-cover"
                   loading="eager"
+                  onError={(e) => {
+                    (e.currentTarget.parentElement as HTMLElement | null)?.classList.add("hidden");
+                  }}
                 />
               </div>
             )}
+
 
             {/* Título em painel sólido verde (legível, sem conflito) */}
             <div className="bg-gradient-to-br from-[#0e8028] to-[#081c03] px-6 py-6 text-white">

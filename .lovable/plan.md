@@ -1,83 +1,46 @@
-# Redesign — Admin · Produtos & Vendas
+# Métricas úteis no header do Fluxo B (IA Livre)
 
-## Estética travada (não negociar nesta entrega)
+## Problema
+No `/admin/fluxos`, quando a variante selecionada é **B (IA Livre)**, o header mostra `0 passos` — informação inútil, porque o Fluxo B não roda no motor de passos. Quem dirige a conversa é o super prompt + a base de conhecimento (RAG).
 
-**Paleta Sage & Cream**
-- `#f5f0e8` background · `#dce5d4` surface · `#a8c0a0` mid · `#7d9b76` accent verde · `#1a2e1f` ink · `#c9a84c` gold (premium/KPI destaque)
+## O que vai mudar
+Apenas o **header da página de fluxos**, dentro de `src/pages/FluxoBuilder.tsx` (linhas ~207-220, onde fica o `Badge "{steps.length} passos"`).
 
-**Tipografia**
-- DM Serif Display → manchetes editoriais (h1/h2 do hero, nomes de cliente em cards)
-- Fira Sans 300/400/500/600 → toda a UI, números, tabelas, botões
+Comportamento por variante:
 
-**Linguagem visual**
-- Cantos retos (`rounded-none` nos CTAs e blocos KPI; `rounded` discreto só em inputs/avatares)
-- Borda fina `border-[#a8c0a0]/30`, divisores sublinhados em vez de cartões com sombra pesada
-- Sombras só `shadow-sm`; profundidade vem da hierarquia tipográfica
-- Acento dourado `#c9a84c` reservado para 1 KPI "premium" por hero (não pulverizar)
+- **Fluxo D (e outras com passos)**: mantém o badge atual `X passos`.
+- **Fluxo B (IA Livre)**: substitui por um conjunto de 3 indicadores compactos + 2 atalhos:
+  - `IA Livre` (badge identificador, sem contagem de passos)
+  - `Prompt: N chars` — tamanho do super prompt salvo no consultor (`consultants.ai_persona_fluxo_b`)
+  - `RAG: N trechos` — contagem em `ai_knowledge_sections` ativos
+  - Botão `Editar persona` → rola para o card do Super Prompt já existente abaixo
+  - Botão `Conhecimento` → navega para `/admin?tab=conhecimento`
 
----
-
-## Escopo (somente UI/presentation)
-
-Não mexer em rotas, hooks de dados, schemas Supabase, edge functions ou contratos de API. Reaproveitar 100% dos hooks existentes (`useSales`, `useProducts`, `useUpdateSaleStatus`, `useProposals`, etc.).
-
-### Arquivos a alterar
-
-1. **`src/features/produtos/theme.ts`** (novo) — tokens Sage como CSS variables (`--pv-bg`, `--pv-surface`, `--pv-mid`, `--pv-accent`, `--pv-ink`, `--pv-gold`) + carregamento das fontes Google via `<link>` injetado uma vez.
-
-2. **`src/features/produtos/ProdutosModule.tsx`**
-   - Trocar `<TabsList>` shadcn por nav editorial inline (links com underline `border-b-2 border-[#7d9b76]` na ativa)
-   - Aplicar `bg-[#f5f0e8]` no wrapper e injetar fontes
-   - Topbar do módulo: nav à esquerda + slot do `OrcamentoButton` à direita (mesma linha, alinhamento `items-end`)
-
-3. **`src/features/produtos/orcamento/OrcamentoButton.tsx`** — restilizar para CTA Sage (`bg-[#7d9b76]` → hover `#1a2e1f`, retangular, "NOVO ORÇAMENTO" maiúsculo com tracking).
-
-4. **`src/features/produtos/crm/SalesPipelineBoard.tsx`** — referência direta do protótipo:
-   - Hero magazine `grid-cols-12` (col-span-7 manchete + parágrafo / col-span-5 grid 2×2 de KPIs)
-   - KPIs: Ganho Estimado (gold), Ciclo Médio (sparkline SVG), Propostas Ativas, Conversão. Valores derivados de `sales` agregados.
-   - Colunas com header `border-b border-[#a8c0a0]` + nome maiúsculo + valor total em `text-[#7d9b76]`
-   - **Cards ricos**: kicker (família do produto), tempo na etapa, nome do cliente em Fira Medium, kWh/mês + valor lado a lado, footer com status-dot (cor por urgência) + próxima ação. Última coluna "Ativo" em cartão escuro `bg-[#1a2e1f]` com número em gold.
-
-5. **`src/features/produtos/catalogo/ProductCatalogTable.tsx`**
-   - Hero magazine reduzido (col-span-7/5) com KPIs: Produtos Ativos, Famílias, Maior Pontuação, Comissão Média
-   - Donut Recharts por família (substitui lista plana)
-   - Agrupar produtos por `family` em seções colapsáveis com cabeçalho serif
-   - Campo de busca + chips de filtro por família no topo da listagem
-
-6. **`src/features/produtos/acompanhamento/*`** (painel principal)
-   - Hero magazine + 4 KPIs (Vendas no mês, kWh total, Comissão prevista, Vendas ativas)
-   - 2 gráficos Recharts lado a lado: AreaChart (vendas ao longo do tempo) + BarChart horizontal (top 5 produtos)
-   - Tabela compacta abaixo, mesma linguagem dos cards do pipeline
-
-7. **`src/features/produtos/orcamento/ProposalsPanel.tsx`**
-   - Hero + KPIs (Orçamentos abertos, Taxa de aceite, Ticket médio, Vencendo hoje)
-   - Card destaque "última proposta enviada" (col-span-7) + grid de cards menores ao lado
-   - Sparkline de aceites nos últimos 7 dias no KPI principal
-
-8. **`src/features/produtos/orcamento/OrcamentoBuilderSheet.tsx`** (modal Novo Orçamento) — refazer com layout sidebar+conteúdo:
-   - Sidebar esquerda `bg-[#dce5d4]` com 3 passos numerados (Cliente → Técnico → Finalizar) e estado ativo
-   - Header com título serif "Configurar Orçamento" + subtítulo
-   - Form em grid 2-col com labels uppercase tracking-widest, inputs `bg-white border-[#a8c0a0]/20 rounded-xl`
-   - Painel de **prévia em tempo real** (lado direito ou rodapé) recalculando economia/valor enquanto digita
-   - Footer: "Cancelar" texto + "Próximo Passo" `bg-[#1a2e1f]` rounded-xl
-
----
+Se o prompt estiver vazio ou o RAG zerado, o indicador fica **âmbar** com tooltip explicando o que falta — assim o usuário vê de relance se a IA está pronta pra operar.
 
 ## Detalhes técnicos
 
-- **Recharts** já está no projeto (usado em outras telas) — só importar. Se faltar, `bun add recharts`.
-- **Fontes** via `<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Fira+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">` injetado por `theme.ts` em `useEffect` (1 vez, idempotente).
-- **Tokens** ficam locais ao módulo (`theme.ts` injeta as CSS vars em `:root` com prefixo `--pv-*`), não tocando no design system global do app (admin segue tema escuro nas outras áreas).
-- **Animações**: `transition-colors duration-300` em hovers; `transition-all` no CTA; sem framer-motion adicional (pesado e fora do escopo).
-- **Drag-and-drop do kanban**: mantém a implementação atual (`onDragStart/onDrop`), só restila os cards.
+Arquivos:
+- `src/pages/FluxoBuilder.tsx` — render condicional do header por `editingVariant`.
+- Novo componente: `src/components/admin/flow-builder/FluxoBHeaderStats.tsx` — encapsula as 3 métricas + atalhos, faz 2 selects leves (prompt do consultor logado e `count` do RAG).
 
-## Fora do escopo
+Dados (sem migrations, sem mudar edge functions):
+- `consultants.ai_persona_fluxo_b` (já existe, usado pelo `FluxoBEditor`).
+- `ai_knowledge_sections` filtrando ativos (`select id, count: 'exact', head: true`).
 
-- Lógica de negócio (cálculo de comissão, fluxo de venda, status transitions)
-- Tema dark global do admin (este módulo fica "claro" como ilha editorial, igual ao protótipo)
-- Mobile-first refinado (ajusta com `md:`/`lg:` mas alvo principal é desktop 1440px do protótipo)
-- Edição do catálogo (continua read-only conforme RLS atual)
+Sem alteração no Fluxo D, no roteador de variantes, no `fluxo-b-ai` ou no painel `/admin?tab=fluxo-b`.
 
-## Validação ao final
+## Diagrama do header
 
-Build limpa, abrir `/admin` → Produtos & Vendas, verificar cada uma das 4 sub-abas + abrir modal Novo Orçamento, conferir que dados reais (vendas, produtos, propostas) renderizam no novo layout sem regressão de funcionalidade.
+```text
+Variante D                                 Variante B (IA Livre)
+┌──────────────────────────┐   →    ┌──────────────────────────────────────────────┐
+│ [D] Fluxo Botões · 12pa. │        │ [B] IA Livre · Prompt 1.8k · RAG 14 trechos │
+└──────────────────────────┘        │            [Editar persona] [Conhecimento]   │
+                                    └──────────────────────────────────────────────┘
+```
+
+## Fora de escopo
+- Mudar a aba `/admin?tab=fluxo-b` (Painel da IA).
+- Toggle de distribuição por consultor (já feito).
+- Qualquer lógica do agente / RAG / edge function.

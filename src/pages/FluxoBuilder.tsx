@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/sortable";
 
 import StepTimelineItem from "@/components/admin/flow-builder/StepTimelineItem";
+import FluxoBHeaderStats from "@/components/admin/flow-builder/FluxoBHeaderStats";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
 import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
@@ -255,9 +256,18 @@ export default function FluxoBuilder() {
                     </span>
                     <span>{flowNames[editingVariant] || VARIANT_LABEL[editingVariant]}</span>
                   </h2>
-                  <Badge variant="outline" className="text-[9px] py-0 h-4 border-border/40 font-medium">
-                    {steps.length} passos
-                  </Badge>
+                  {editingVariant === "B" && userId ? (
+                    <FluxoBHeaderStats
+                      consultantId={userId}
+                      onEditPersona={() => {
+                        document.querySelector('[data-fluxo-b-editor]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                    />
+                  ) : (
+                    <Badge variant="outline" className="text-[9px] py-0 h-4 border-border/40 font-medium">
+                      {steps.length} passos
+                    </Badge>
+                  )}
                 </div>
               </div>
 
