@@ -1,56 +1,46 @@
-# Plano — Painel da IA + Toggle de Variante
+# Métricas úteis no header do Fluxo B (IA Livre)
 
-Dois entregáveis frontend, sem mexer em lógica de bot/edge.
+## Problema
+No `/admin/fluxos`, quando a variante selecionada é **B (IA Livre)**, o header mostra `0 passos` — informação inútil, porque o Fluxo B não roda no motor de passos. Quem dirige a conversa é o super prompt + a base de conhecimento (RAG).
 
----
+## O que vai mudar
+Apenas o **header da página de fluxos**, dentro de `src/pages/FluxoBuilder.tsx` (linhas ~207-220, onde fica o `Badge "{steps.length} passos"`).
 
-## 1. Painel da IA (`/admin?tab=fluxo-b`)
+Comportamento por variante:
 
-Reescrever `src/pages/AdminFluxoB.tsx` (hoje editor de passos estilo Fluxo D) como painel com 3 abas usando `Tabs` shadcn.
+- **Fluxo D (e outras com passos)**: mantém o badge atual `X passos`.
+- **Fluxo B (IA Livre)**: substitui por um conjunto de 3 indicadores compactos + 2 atalhos:
+  - `IA Livre` (badge identificador, sem contagem de passos)
+  - `Prompt: N chars` — tamanho do super prompt salvo no consultor (`consultants.ai_persona_fluxo_b`)
+  - `RAG: N trechos` — contagem em `ai_knowledge_sections` ativos
+  - Botão `Editar persona` → rola para o card do Super Prompt já existente abaixo
+  - Botão `Conhecimento` → navega para `/admin?tab=conhecimento`
 
-### Aba 1 — Persona
-- Editor de texto livre (Textarea grande) com a persona da IA: nome, tom, regras, objetivos, marcadores `[PEDIR_FOTO_CONTA]` / `[FINALIZAR_CADASTRO]`.
-- Persistir em `app_settings` (chave `fluxo_b_persona`) — não em arquivo, para editar sem deploy.
-- Edge `fluxo-b-ai` passa a ler `app_settings.fluxo_b_persona` em runtime, com fallback para o `persona.ts` atual.
-- Botão "Salvar" + "Restaurar padrão".
-
-### Aba 2 — Conhecimento (RAG)
-- CRUD da tabela existente `ai_knowledge_sections` (título, conteúdo, tags, ativo).
-- Lista + busca + editor inline + botão "Testar busca" (campo de pergunta → mostra top-3 trechos com score).
-- Já existe `src/pages/AdminKnowledge.tsx` — verificar se reaproveitamos como subcomponente ou se duplicamos escopo (provavelmente embutir como `<KnowledgePanel scope="fluxo-b" />`).
-
-### Aba 3 — Simulador
-- Chat simples (input + histórico) que chama `POST /fluxo-b-ai` com `dryRun: true` e um `leadId` de teste fixo (o `11111111-...` do Rafael).
-- Mostra: resposta da IA, marcadores detectados, trechos de conhecimento usados, custo/tokens.
-- Botão "Resetar conversa de teste".
-
----
-
-## 2. Toggle de Variante no Painel do Consultor
-
-Em `src/pages/ConsultantPage.tsx`, adicionar card "Distribuição de Fluxo":
-- 3 opções (RadioGroup): **Só Fluxo D (botões)**, **Só Fluxo B (IA)**, **Ambos (A/B 50/50)**.
-- Lê/grava `consultants.active_variants` (array `text[]` já usado pelo roteador `assign_flow_variant`).
-  - Só D → `['D']`
-  - Só B → `['B']`
-  - Ambos → `['B','D']`
-- Mostrar contador atual (quantos leads em cada variante nos últimos 7 dias) via `customers.flow_variant`.
-
----
+Se o prompt estiver vazio ou o RAG zerado, o indicador fica **âmbar** com tooltip explicando o que falta — assim o usuário vê de relance se a IA está pronta pra operar.
 
 ## Detalhes técnicos
 
-- Schema: nenhuma migration nova. Reutilizar `app_settings`, `ai_knowledge_sections`, `consultants.active_variants`, `customers.flow_variant`.
-- Edge `fluxo-b-ai`: pequena alteração para ler persona do `app_settings` (fallback no arquivo).
-- Componentes shadcn: `Tabs`, `Textarea`, `RadioGroup`, `Card`, `Button`, `Input`, `Badge`.
-- Sem alteração no Fluxo D, no webhook, ou no roteador.
+Arquivos:
+- `src/pages/FluxoBuilder.tsx` — render condicional do header por `editingVariant`.
+- Novo componente: `src/components/admin/flow-builder/FluxoBHeaderStats.tsx` — encapsula as 3 métricas + atalhos, faz 2 selects leves (prompt do consultor logado e `count` do RAG).
 
----
+Dados (sem migrations, sem mudar edge functions):
+- `consultants.ai_persona_fluxo_b` (já existe, usado pelo `FluxoBEditor`).
+- `ai_knowledge_sections` filtrando ativos (`select id, count: 'exact', head: true`).
 
-## Ordem de execução
-1. Painel IA — Aba Persona (+ ajuste no edge para ler `app_settings`).
-2. Painel IA — Aba Conhecimento.
-3. Painel IA — Aba Simulador.
-4. Toggle de variante no `ConsultantPage`.
+Sem alteração no Fluxo D, no roteador de variantes, no `fluxo-b-ai` ou no painel `/admin?tab=fluxo-b`.
 
-Cada passo é testável isoladamente no preview.
+## Diagrama do header
+
+```text
+Variante D                                 Variante B (IA Livre)
+┌──────────────────────────┐   →    ┌──────────────────────────────────────────────┐
+│ [D] Fluxo Botões · 12pa. │        │ [B] IA Livre · Prompt 1.8k · RAG 14 trechos │
+└──────────────────────────┘        │            [Editar persona] [Conhecimento]   │
+                                    └──────────────────────────────────────────────┘
+```
+
+## Fora de escopo
+- Mudar a aba `/admin?tab=fluxo-b` (Painel da IA).
+- Toggle de distribuição por consultor (já feito).
+- Qualquer lógica do agente / RAG / edge function.
