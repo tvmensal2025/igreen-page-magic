@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/sortable";
 
 import StepTimelineItem from "@/components/admin/flow-builder/StepTimelineItem";
+import FluxoBHeaderStats from "@/components/admin/flow-builder/FluxoBHeaderStats";
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
 import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
