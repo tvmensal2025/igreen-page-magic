@@ -12,7 +12,7 @@ interface Props {
   consultantId: string | null;
 }
 
-type AiProfile = "accuracy" | "balanced" | "fast";
+type AiProfile = "auto" | "accuracy" | "balanced" | "fast";
 type AiProvider = "google" | "openai";
 
 const PROFILES: Array<{
@@ -24,18 +24,26 @@ const PROFILES: Array<{
   color: string;
 }> = [
   {
+    v: "auto",
+    label: "Automático (recomendado)",
+    models: "Roteamento inteligente",
+    sub: "Pergunta simples → modelo barato. Pergunta complexa → modelo preciso. Padrão para reduzir custo mantendo qualidade.",
+    icon: Sparkles,
+    color: "text-primary",
+  },
+  {
     v: "accuracy",
     label: "Precisão máxima",
     models: "Gemini 3.1 Pro / GPT-5.5",
     sub: "Respostas mais inteligentes. Custo maior, latência ~2-3s.",
     icon: Target,
-    color: "text-primary",
+    color: "text-info",
   },
   {
     v: "balanced",
     label: "Equilibrado",
     models: "Gemini 3.5 Flash / GPT-5",
-    sub: "Padrão recomendado. Latência ~1-2s.",
+    sub: "Latência ~1-2s.",
     icon: Sparkles,
     color: "text-info",
   },
@@ -43,18 +51,20 @@ const PROFILES: Array<{
     v: "fast",
     label: "Rápido e barato",
     models: "Gemini 2.5 Flash-Lite",
-    sub: "Latência <1s. Para volume alto e dúvidas simples.",
+    sub: "Latência <1s. Volume alto e dúvidas simples.",
     icon: Zap,
     color: "text-warning",
   },
 ];
 
+
 export default function AiPreferencesCard({ consultantId }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [profile, setProfile] = useState<AiProfile>("balanced");
+  const [profile, setProfile] = useState<AiProfile>("auto");
   const [provider, setProvider] = useState<AiProvider>("google");
-  const [originalProfile, setOriginalProfile] = useState<AiProfile>("balanced");
+  const [originalProfile, setOriginalProfile] = useState<AiProfile>("auto");
+
   const [originalProvider, setOriginalProvider] = useState<AiProvider>("google");
 
   useEffect(() => {
@@ -66,9 +76,10 @@ export default function AiPreferencesCard({ consultantId }: Props) {
         .select("ai_profile, ai_provider_pref" as any)
         .eq("id", consultantId)
         .maybeSingle();
-      const p = String((data as any)?.ai_profile || "balanced") as AiProfile;
+      const p = String((data as any)?.ai_profile || "auto") as AiProfile;
       const pr = String((data as any)?.ai_provider_pref || "google") as AiProvider;
-      const safeP = (["accuracy", "balanced", "fast"] as const).includes(p) ? p : "balanced";
+      const safeP: AiProfile = (["auto", "accuracy", "balanced", "fast"] as const).includes(p as any) ? p : "auto";
+
       const safePr = (["google", "openai"] as const).includes(pr) ? pr : "google";
       setProfile(safeP);
       setProvider(safePr);

@@ -35,6 +35,10 @@ export default function SimulatorPanel({ consultantId }: Props) {
   async function send() {
     const text = input.trim();
     if (!text || sending) return;
+    // Histórico local que a IA vai ver — inclui só user/assistant trocados ATÉ AGORA
+    // (sem a msg nova). Em dryRun a edge não grava em `conversations`, então
+    // precisamos mandar o histórico junto, senão a IA esquece a cada turno.
+    const clientHistory = msgs.map((m) => ({ role: m.role, content: m.text }));
     setMsgs((m) => [...m, { role: "user", text }]);
     setInput("");
     setSending(true);
@@ -46,10 +50,19 @@ export default function SimulatorPanel({ consultantId }: Props) {
           inboundText: text,
           inboundKind: "text",
           dryRun: true,
+          clientHistory,
         },
       });
       if (error) throw error;
-      const replyText = (data?.sent && data.sent[0]) || data?.texto || "(sem resposta)";
+      const replyText = (data?.sent && data.sent[0]) || data?.texto;
+      if (!replyText) {
+        toast({
+          title: "IA não respondeu",
+          description: "Verifique os logs da função fluxo-b-ai. Pode ser modelo indisponível, persona vazia, ou créditos esgotados.",
+          variant: "destructive",
+        });
+        return;
+      }
       setMsgs((m) => [...m, {
         role: "assistant",
         text: replyText,
@@ -64,6 +77,7 @@ export default function SimulatorPanel({ consultantId }: Props) {
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }
+
 
   async function reset() {
     // limpa histórico de conversations do lead de teste para começar do zero

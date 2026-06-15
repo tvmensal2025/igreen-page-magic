@@ -18,7 +18,7 @@ import FluxoBHeaderStats from "@/components/admin/flow-builder/FluxoBHeaderStats
 import StepInspector from "@/components/admin/flow-builder/StepInspector";
 import StepListToolbar from "@/components/admin/flow-builder/StepListToolbar";
 import WhatsAppPreview from "@/components/admin/flow-builder/WhatsAppPreview";
-import AiPreferencesCard from "@/components/admin/flow-builder/AiPreferencesCard";
+// AiPreferencesCard movido para Super Admin
 import VariantDistributionBar from "@/components/admin/flow-builder/VariantDistributionBar";
 import FlowSimulator from "@/components/admin/flow-builder/FlowSimulator";
 import StepCoachPanel from "@/components/admin/flow-builder/StepCoachPanel";
@@ -330,7 +330,9 @@ export default function FluxoBuilder() {
                       </Button>
                     </div>
                   )}
-                  <AiPreferencesCard consultantId={userId} />
+                  {/* Preferências de IA movidas para Super Admin → /super-admin (AIControlPanel).
+                      O perfil padrão é "auto" (precisão alta + custo baixo, escolhe modelo conforme pergunta). */}
+
                   <StepListToolbar
                     query={listQuery}
                     onQueryChange={setListQuery}
@@ -416,6 +418,11 @@ export default function FluxoBuilder() {
             </div>
 
             <aside className="space-y-4">
+              <WhatsAppPreview 
+                step={steps.find(s => s.id === inspectorId) || null} 
+                steps={steps} 
+                consultantName={consultantName} 
+              />
               <StepCoachPanel
                 step={steps.find(s => s.id === inspectorId) || null}
                 steps={steps}
@@ -427,12 +434,8 @@ export default function FluxoBuilder() {
                 onSimulateFromHere={() => setSimulatorOpen(true)}
                 onOpenHealth={() => setHealthOpen(true)}
               />
-              <WhatsAppPreview 
-                step={steps.find(s => s.id === inspectorId) || null} 
-                steps={steps} 
-                consultantName={consultantName} 
-              />
             </aside>
+
           </main>
         </div>
       </div>

@@ -32,7 +32,11 @@ export type FluxoBInput = {
   telefone?: string | null;
   enviarTexto: (texto: string) => Promise<boolean>;
   dryRun?: boolean;
+  // Em dryRun (simulador admin) o histórico não está em `conversations` ainda.
+  // O cliente envia o histórico local turno-a-turno; se presente, usamos ele.
+  clientHistory?: Array<{ role: "user" | "assistant"; content: string }>;
 };
+
 
 export type FluxoBResult = {
   respondeu: boolean;
@@ -69,20 +73,30 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
   // Se entrou foto da conta, sinaliza para a IA fechar com [FINALIZAR_CADASTRO]
   const billPhotoArrived = inboundKind === "media" && inboundMediaKind === "image";
 
-  const { data: history } = await supabase
-    .from("conversations")
-    .select("message_direction, message_text, message_type, created_at")
-    .eq("customer_id", customerId)
-    .order("created_at", { ascending: false })
-    .limit(MAX_HISTORY_TURNS * 2);
+  let historyMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  if (input.dryRun && input.clientHistory && input.clientHistory.length > 0) {
+    // Simulador admin: usa o histórico mantido localmente no painel (dryRun não grava em conversations).
+    historyMessages = input.clientHistory
+      .filter((m) => m && m.content)
+      .slice(-MAX_HISTORY_TURNS * 2)
+      .map((m) => ({ role: m.role, content: String(m.content).slice(0, 1500) }));
+  } else {
+    const { data: history } = await supabase
+      .from("conversations")
+      .select("message_direction, message_text, message_type, created_at")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_HISTORY_TURNS * 2);
 
-  const historyAsc = (history || []).reverse();
-  const historyMessages = historyAsc
-    .filter((m: any) => m?.message_text)
-    .map((m: any) => ({
-      role: m.message_direction === "outbound" ? "assistant" as const : "user" as const,
-      content: String(m.message_text).slice(0, 1500),
-    }));
+    const historyAsc = (history || []).reverse();
+    historyMessages = historyAsc
+      .filter((m: any) => m?.message_text)
+      .map((m: any) => ({
+        role: m.message_direction === "outbound" ? "assistant" as const : "user" as const,
+        content: String(m.message_text).slice(0, 1500),
+      }));
+  }
+
 
   // 2) RAG
   const ragQuery = inboundText || (billPhotoArrived ? "cliente enviou foto da conta" : "saudação inicial");
@@ -150,22 +164,31 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     { role: "user" as const, content: userTurn },
   ];
 
-  // 4) LLM
+  // 4) LLM — maxTokens 2048 evita truncamento em respostas mais longas
+  // (anteriormente 600 cortava no meio e parecia "IA não respondeu mais").
   const llm = await aiChatCascade({
     model: "google/gemini-3-flash-preview",
     temperature: 0.6,
-    maxTokens: 600,
+    maxTokens: 2048,
     messages,
   }).catch((e) => {
     console.error("[fluxo-b-ia] LLM error:", e?.message);
     return null;
   });
 
-  if (!llm || !llm.text) return { respondeu: false, texto: "", acoes: [] };
+  if (!llm || !llm.text) {
+    console.warn("[fluxo-b-ia] LLM returned empty text", { hasLlm: !!llm });
+    return { respondeu: false, texto: "", acoes: [] };
+  }
 
   // 5) Parse marcadores
   const { texto, acoes } = extractActions(llm.text);
-  if (!texto) return { respondeu: false, texto: "", acoes };
+  if (!texto) {
+    console.warn("[fluxo-b-ia] após remover marcadores texto ficou vazio", { acoes, raw: llm.text.slice(0, 200) });
+    return { respondeu: false, texto: "", acoes };
+  }
+
+
 
   // 6) Side-effects (skip em dryRun)
   if (!input.dryRun) {
