@@ -15,9 +15,10 @@ const AdminKnowledge = lazy(() => import("@/pages/AdminKnowledge"));
 type SubTab = "atendimentos" | "agente" | "decisoes" | "desempenho" | "conhecimento";
 type AgenteSub = "audios" | "midias" | "roteiro";
 
-export function AIAgentTab({ userId }: { userId: string }) {
+export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialSubTab?: SubTab | null }) {
   const { toast } = useToast();
-  const [sub, setSub] = useState<SubTab>("atendimentos");
+  const [sub, setSub] = useState<SubTab>(initialSubTab ?? "atendimentos");
+  useEffect(() => { if (initialSubTab) setSub(initialSubTab); }, [initialSubTab]);
   const [agenteSub, setAgenteSub] = useState<AgenteSub>("audios");
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [personaName, setPersonaName] = useState<string>("Camila");
