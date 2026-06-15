@@ -39,11 +39,13 @@ function showTokenEmpty() {
 async function refresh() {
   const s = await chrome.storage.local.get([
     "pairingToken", "autoSync", "lastSyncAt", "lastResult", "lastError", "lastErrorAt",
+    "syncRunning", "syncProgress",
   ]);
   const token = s.pairingToken || "";
   if (token) {
     showTokenSaved();
-    if (s.lastError && !s.lastSyncAt) setBadge("err", "Erro no último sync");
+    if (s.syncRunning) setBadge("busy", "Sincronizando em background");
+    else if (s.lastError && !s.lastSyncAt) setBadge("err", "Erro no último sync");
     else if (s.lastSyncAt) setBadge(s.lastError ? "warn" : "ok", s.lastError ? "Sincronizado com avisos" : "Pareado e atualizado");
     else setBadge("ok", "Pareado");
   } else {
@@ -53,7 +55,9 @@ async function refresh() {
   $("auto").checked = !!s.autoSync;
 
   let txt = "Aguardando primeira sincronização.";
-  if (s.lastError && !s.lastSyncAt) {
+  if (s.syncRunning) {
+    txt = `${s.syncProgress?.step || "Sincronizando..."}\n\nPode fechar esta janela — o sync continua em background. Você receberá uma notificação quando terminar.`;
+  } else if (s.lastError && !s.lastSyncAt) {
     txt = `Erro em ${new Date(s.lastErrorAt || Date.now()).toLocaleString()}\n${s.lastError}`;
   } else if (s.lastSyncAt) {
     const r = s.lastResult || {};
@@ -65,6 +69,12 @@ async function refresh() {
     txt = parts.join("\n");
   }
   $("status").textContent = txt;
+
+  // Botão fica desabilitado enquanto há sync rodando no background
+  $("sync").disabled = !!s.syncRunning;
+  $("syncText").textContent = s.syncRunning ? "Sincronizando..." : "Sincronizar agora";
+  if (s.syncRunning) $("syncIcon").classList.add("spin");
+  else $("syncIcon").classList.remove("spin");
 }
 
 // Salva o token automaticamente assim que for colado/digitado.
