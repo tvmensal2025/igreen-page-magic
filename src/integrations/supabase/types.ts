@@ -1490,6 +1490,7 @@ export type Database = {
         Row: {
           bot_engine_production_mode: boolean
           bot_global_enabled: boolean
+          fluxo_b_persona: string | null
           id: string
           minio_alert_threshold_pct: number
           resolver_strict_mode: boolean
@@ -1501,6 +1502,7 @@ export type Database = {
         Insert: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          fluxo_b_persona?: string | null
           id?: string
           minio_alert_threshold_pct?: number
           resolver_strict_mode?: boolean
@@ -1512,6 +1514,7 @@ export type Database = {
         Update: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          fluxo_b_persona?: string | null
           id?: string
           minio_alert_threshold_pct?: number
           resolver_strict_mode?: boolean
