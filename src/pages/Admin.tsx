@@ -106,8 +106,10 @@ const AdminContent = () => {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("phone")) {
-      params.delete("phone");
+    let mutated = false;
+    if (params.get("phone")) { params.delete("phone"); mutated = true; }
+    if (params.get("tab")) { params.delete("tab"); mutated = true; }
+    if (mutated) {
       const qs = params.toString();
       window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
     }
