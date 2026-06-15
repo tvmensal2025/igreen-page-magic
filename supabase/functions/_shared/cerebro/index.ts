@@ -88,6 +88,27 @@ async function executarTurno(
 ): Promise<ResultadoCerebro> {
   const { supabase, customerId, consultantId, inbound, canalCapabilities } = entrada;
 
+  // ─── Short-circuit: Fluxo B "IA Livre" (sem passos no construtor) ───────
+  // Historicamente o Fluxo B = IA 100% livre (zero `bot_flow_steps`). Quem
+  // responde é a `processarTurnoFluxoB` (chamada direto pelo webhook). O
+  // Cérebro NÃO deve passar por `runEngine` nesse caso — caso contrário o
+  // motor detecta `empty_flow` e marca `customer_flow_state.paused_system`,
+  // corrompendo o estado do cliente. Retorno neutro = nada é gravado, nada é
+  // enviado (o webhook já cuidou da resposta via Vendedora V2/IA Livre).
+  if (await variantBLivreSemPassos(supabase, customerId)) {
+    return {
+      reply: "",
+      outbound: [],
+      stateUpdate: {},
+      shouldHandoff: false,
+      decisao: {
+        passoAtualId: null,
+        proximoPassoId: null,
+        intencao: "indefinido",
+      } as DecisaoCerebro,
+    };
+  }
+
   // ─── N8 — lê o estado (onde o cliente parou) ────────────────────────────
   const estado: EstadoCerebro = await lerEstado({ supabase, customerId });
 
@@ -327,6 +348,69 @@ function textoDoInbound(inbound: InboundEvent): string {
   if (inbound.kind === "button_click") return inbound.rawText ?? "";
   if (inbound.kind === "number_reply") return inbound.raw;
   return "";
+}
+
+/**
+ * Detecta o caso "Fluxo B IA Livre sem passos" — quando a variante do cliente
+ * é B e o flow B do consultor (ou o público de fallback) NÃO tem nenhum
+ * `bot_flow_steps` ativo. Nesse caso o Cérebro deve sair de cena: quem
+ * responde é a Vendedora V2 (`processarTurnoFluxoB`), e o engine v3 não pode
+ * ser invocado (geraria `empty_flow → paused_system`, corrompendo o estado).
+ *
+ * Fail-open: qualquer erro de leitura → `false` (segue caminho normal).
+ */
+async function variantBLivreSemPassos(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  customerId: string,
+): Promise<boolean> {
+  try {
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("flow_variant, consultant_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    const variant = String(customer?.flow_variant || "").toUpperCase();
+    if (variant !== "B") return false;
+
+    // Busca o flow B do consultor; se sync_mode=public ou não tiver, cai no público.
+    const { data: ownFlow } = await supabase
+      .from("bot_flows")
+      .select("id, sync_mode")
+      .eq("consultant_id", customer?.consultant_id)
+      .eq("variant", "B")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    let flowId = ownFlow?.id as string | undefined;
+    const ownSync = String((ownFlow as { sync_mode?: string } | null)?.sync_mode ?? "public").toLowerCase();
+    if (!ownFlow || ownSync === "public") {
+      const { data: pub } = await supabase
+        .from("bot_flows")
+        .select("id")
+        .eq("is_public", true)
+        .eq("is_active", true)
+        .eq("variant", "B")
+        .limit(1)
+        .maybeSingle();
+      if (pub?.id) flowId = pub.id;
+    }
+    if (!flowId) return true; // Sem flow B = comportamento IA Livre.
+
+    const { count } = await supabase
+      .from("bot_flow_steps")
+      .select("id", { count: "exact", head: true })
+      .eq("flow_id", flowId)
+      .eq("is_active", true);
+    return (count ?? 0) === 0;
+  } catch (e) {
+    console.warn(
+      "[cerebro/index] variantBLivreSemPassos falhou (fail-open, segue):",
+      (e as { message?: string })?.message,
+    );
+    return false;
+  }
 }
 
 /**
