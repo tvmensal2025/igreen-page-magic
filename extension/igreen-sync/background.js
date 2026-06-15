@@ -119,6 +119,42 @@ function injectInterceptor() {
     return origCreate.call(this, obj);
   };
 
+  // Cliques em <a href=... download> ou anchors com URL de XLSX:
+  // baixamos via fetch com cookies e prevenimos o download do Chrome,
+  // assim NADA chega ao disco do usuário.
+  document.addEventListener("click", (ev) => {
+    try {
+      const a = ev.target && ev.target.closest && ev.target.closest("a[href]");
+      if (!a) return;
+      const href = a.getAttribute("href") || "";
+      const hasDownloadAttr = a.hasAttribute("download");
+      if (!hasDownloadAttr && !isXlsxUrl(href)) return;
+      const abs = new URL(href, location.href).toString();
+      ev.preventDefault();
+      ev.stopPropagation();
+      fetch(abs, { credentials: "include" })
+        .then((r) => r.blob())
+        .then((b) => { if (isXlsxBlob(b)) setCaptured(b, "anchor:" + abs); })
+        .catch((e) => log("anchor fetch err " + e));
+    } catch (e) { log("anchor click err " + e); }
+  }, true);
+
+  // window.open com URL de XLSX
+  const origOpen = window.open;
+  window.open = function (url, ...rest) {
+    try {
+      if (typeof url === "string" && isXlsxUrl(url)) {
+        const abs = new URL(url, location.href).toString();
+        fetch(abs, { credentials: "include" })
+          .then((r) => r.blob())
+          .then((b) => { if (isXlsxBlob(b)) setCaptured(b, "window.open:" + abs); })
+          .catch((e) => log("open fetch err " + e));
+        return null;
+      }
+    } catch {}
+    return origOpen.apply(this, [url, ...rest]);
+  };
+
   return true;
 }
 
