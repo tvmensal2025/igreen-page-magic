@@ -112,38 +112,49 @@ $("removeToken").addEventListener("click", async () => {
 
 let progressTimer = null;
 async function pollProgress() {
-  const { syncProgress } = await chrome.storage.local.get(["syncProgress"]);
-  if (syncProgress?.step) $("status").textContent = `${syncProgress.step}`;
+  await refresh();
 }
 
 $("sync").addEventListener("click", async () => {
-  const { pairingToken } = await chrome.storage.local.get(["pairingToken"]);
+  const { pairingToken, syncRunning } = await chrome.storage.local.get(["pairingToken", "syncRunning"]);
   if (!pairingToken) {
     $("status").textContent = "Cole a chave do painel antes de sincronizar.";
     showTokenEmpty();
     return;
   }
+  if (syncRunning) return; // já tem um rodando
+
   $("sync").disabled = true;
   $("syncText").textContent = "Sincronizando...";
   $("syncIcon").classList.add("spin");
-  setBadge("busy", "Sincronizando");
+  setBadge("busy", "Sincronizando em background");
   $("motivation").textContent = pickMotivation();
-  $("status").textContent = "Iniciando sincronização... (Clientes → Rede, um por vez)";
+  $("status").textContent = "Iniciando... pode fechar esta janela, o sync continua no background.";
   await chrome.storage.local.set({ syncProgress: { step: "Iniciando...", at: Date.now() } });
-  progressTimer = setInterval(pollProgress, 800);
-  chrome.runtime.sendMessage({ type: "SYNC_NOW" }, async (resp) => {
-    clearInterval(progressTimer); progressTimer = null;
-    $("sync").disabled = false;
-    $("syncText").textContent = "Sincronizar agora";
-    $("syncIcon").classList.remove("spin");
-    if (!resp?.ok) $("status").textContent = `Erro: ${resp?.error || "desconhecido"}`;
-    await refresh();
-  });
+
+  // Fire-and-forget — não bloqueia callback. Mesmo se o popup fechar,
+  // runSync continua no service worker até terminar e dispara notificação.
+  chrome.runtime.sendMessage({ type: "SYNC_NOW" }).catch(() => {});
+  if (!progressTimer) progressTimer = setInterval(pollProgress, 1000);
 });
 
 $("auto").addEventListener("change", (e) => {
   chrome.runtime.sendMessage({ type: "SET_AUTO", enabled: e.target.checked });
 });
 
+// Listener: storage muda quando o SW termina ou progride
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.syncRunning || changes.syncProgress || changes.lastSyncAt || changes.lastError) {
+    refresh();
+    if (changes.syncRunning && changes.syncRunning.newValue === false && progressTimer) {
+      clearInterval(progressTimer); progressTimer = null;
+    }
+  }
+});
+
 $("motivation").textContent = pickMotivation();
-refresh();
+refresh().then(async () => {
+  // Se reabriu o popup no meio de um sync, retoma o polling
+  const { syncRunning } = await chrome.storage.local.get(["syncRunning"]);
+  if (syncRunning && !progressTimer) progressTimer = setInterval(pollProgress, 1000);
+});
