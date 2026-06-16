@@ -642,31 +642,34 @@ export function AudioStudio({ userId }: { userId: string }) {
     a.play(); setPlaying(true);
   };
 
-  const handleDownload = () => {
-    if (!audioBlob) return;
-    const filename = `${kind}_${cidade.trim().toLowerCase().replace(/\s+/g, "_") || "audio"}.mp3`;
-    downloadBlob(audioBlob, filename);
-    toast({ title: "✅ Áudio baixado!" });
+  // Pequena pausa entre múltiplos saves do navegador (alguns bloqueiam downloads
+  // simultâneos). Disparamos as duas versões em sequência.
+  const triggerDualDownload = async (semBlob: Blob, comBlob: Blob | null) => {
+    const slug = cidade.trim().toLowerCase().replace(/\s+/g, "_") || "audio";
+    downloadBlob(semBlob, `${kind}_${slug}_sem-vinheta.mp3`);
+    if (comBlob) {
+      await new Promise((r) => setTimeout(r, 400));
+      downloadBlob(comBlob, `${kind}_${slug}_com-vinheta.mp3`);
+    }
   };
 
-  const handleDownloadComVinheta = async () => {
+  const handleDownload = async () => {
     if (!audioBlob) return;
     try {
-      // Reaproveita a versão com vinheta já gerada; só monta de novo se faltar.
-      let mp3Blob = audioBlobVinheta;
-      if (!mp3Blob) {
-        toast({ title: "Montando áudio com vinheta…" });
-        mp3Blob = await montarComVinheta(audioBlob);
+      let comBlob = audioBlobVinheta;
+      if (!comBlob) {
+        toast({ title: "Montando versão com vinheta…" });
+        comBlob = await montarComVinheta(audioBlob);
+        if (comBlob) setAudioBlobVinheta(comBlob);
       }
-      if (!mp3Blob) {
-        toast({ title: "Vinheta indisponível no momento", variant: "destructive" });
-        return;
-      }
-      const filename = `${kind}_vinheta_${cidade.trim().toLowerCase().replace(/\s+/g, "_") || "audio"}.mp3`;
-      downloadBlob(mp3Blob, filename);
-      toast({ title: "✅ Áudio com vinheta baixado!" });
+      await triggerDualDownload(audioBlob, comBlob);
+      toast({
+        title: comBlob
+          ? "✅ Baixados: com e sem vinheta"
+          : "✅ Áudio baixado (vinheta indisponível)",
+      });
     } catch {
-      toast({ title: "Erro ao montar áudio com vinheta", variant: "destructive" });
+      toast({ title: "Erro ao baixar os áudios", variant: "destructive" });
     }
   };
 
