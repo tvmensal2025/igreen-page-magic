@@ -387,9 +387,10 @@ interface SaleCardProps {
   product?: Product;
   dark: boolean;
   onDragStart: () => void;
+  onOpenAcompanhamento?: () => void;
 }
 
-function SaleCard({ sale, product, dark, onDragStart }: SaleCardProps) {
+function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: SaleCardProps) {
   const familyLabel = product ? PRODUCT_FAMILY_LABEL[product.family] : "Produto";
   const action = NEXT_ACTION[sale.status];
   const daysAgo = Math.floor((Date.now() - new Date(sale.updatedAt).getTime()) / 86400000);
