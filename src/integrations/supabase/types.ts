@@ -35,6 +35,39 @@ export type Database = {
         }
         Relationships: []
       }
+      academy_notes: {
+        Row: {
+          consultant_id: string
+          content: string
+          created_at: string
+          id: string
+          materials: Json
+          note_date: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          consultant_id: string
+          content?: string
+          created_at?: string
+          id?: string
+          materials?: Json
+          note_date?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          consultant_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          materials?: Json
+          note_date?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ad_account_managers: {
         Row: {
           consultant_id: string
