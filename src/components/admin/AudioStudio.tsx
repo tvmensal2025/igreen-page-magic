@@ -642,236 +642,242 @@ export function AudioStudio({ userId }: { userId: string }) {
     a.play(); setPlaying(true);
   };
 
-  const handleDownload = () => {
-    if (!audioBlob) return;
-    const filename = `${kind}_${cidade.trim().toLowerCase().replace(/\s+/g, "_") || "audio"}.mp3`;
-    downloadBlob(audioBlob, filename);
-    toast({ title: "✅ Áudio baixado!" });
+  // Pequena pausa entre múltiplos saves do navegador (alguns bloqueiam downloads
+  // simultâneos). Disparamos as duas versões em sequência.
+  const triggerDualDownload = async (semBlob: Blob, comBlob: Blob | null) => {
+    const slug = cidade.trim().toLowerCase().replace(/\s+/g, "_") || "audio";
+    downloadBlob(semBlob, `${kind}_${slug}_sem-vinheta.mp3`);
+    if (comBlob) {
+      await new Promise((r) => setTimeout(r, 400));
+      downloadBlob(comBlob, `${kind}_${slug}_com-vinheta.mp3`);
+    }
   };
 
-  const handleDownloadComVinheta = async () => {
+  const handleDownload = async () => {
     if (!audioBlob) return;
     try {
-      // Reaproveita a versão com vinheta já gerada; só monta de novo se faltar.
-      let mp3Blob = audioBlobVinheta;
-      if (!mp3Blob) {
-        toast({ title: "Montando áudio com vinheta…" });
-        mp3Blob = await montarComVinheta(audioBlob);
+      let comBlob = audioBlobVinheta;
+      if (!comBlob) {
+        toast({ title: "Montando versão com vinheta…" });
+        comBlob = await montarComVinheta(audioBlob);
+        if (comBlob) setAudioBlobVinheta(comBlob);
       }
-      if (!mp3Blob) {
-        toast({ title: "Vinheta indisponível no momento", variant: "destructive" });
-        return;
-      }
-      const filename = `${kind}_vinheta_${cidade.trim().toLowerCase().replace(/\s+/g, "_") || "audio"}.mp3`;
-      downloadBlob(mp3Blob, filename);
-      toast({ title: "✅ Áudio com vinheta baixado!" });
+      await triggerDualDownload(audioBlob, comBlob);
+      toast({
+        title: comBlob
+          ? "✅ Baixados: com e sem vinheta"
+          : "✅ Áudio baixado (vinheta indisponível)",
+      });
     } catch {
-      toast({ title: "Erro ao montar áudio com vinheta", variant: "destructive" });
+      toast({ title: "Erro ao baixar os áudios", variant: "destructive" });
     }
   };
 
   const kindLabel = kind === "mutirao" ? "Mutirão" : "Comércio";
 
   return (
-    <div className="min-h-full pb-10">
-      {/* Header */}
-      <div className="flex items-center gap-3 pb-4 border-b border-border mb-5">
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0 ring-1 ring-primary/15">
-          <Volume2 className="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-foreground leading-tight">Estúdio de Áudio</h2>
-          <p className="text-xs text-muted-foreground">Gere e reaproveite áudios por cidade · salvo com e sem vinheta</p>
-        </div>
-      </div>
-
-      {/* Tabs Mutirão / Comércio */}
-      <div className="max-w-lg mx-auto grid grid-cols-2 gap-2 mb-5 p-1 bg-muted/40 rounded-2xl">
-        <button
-          onClick={() => setKind("mutirao")}
-          className={`h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${kind === "mutirao" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
-        >
-          <Megaphone className="w-4 h-4" /> Mutirão
-        </button>
-        <button
-          onClick={() => setKind("comercio")}
-          className={`h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${kind === "comercio" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
-        >
-          <Store className="w-4 h-4" /> Comércio
-        </button>
-      </div>
-
-      <div className="grid lg:grid-cols-[1fr_340px] gap-4 max-w-5xl mx-auto">
-        {/* ─── Coluna do formulário ─────────────────────────────────────── */}
-        <div className="space-y-3 max-w-lg w-full mx-auto lg:mx-0">
-          {/* Auto-correção */}
-          <div className="flex items-center justify-between bg-card rounded-xl border border-border/40 px-3 py-2.5">
-            <div>
-              <p className="text-sm font-semibold">Correção automática</p>
-              <p className="text-[10px] text-muted-foreground">Acentos e abreviações</p>
-            </div>
-            <button onClick={() => setAutoCorrecao(!autoCorrecao)}
-              className={`relative w-11 h-6 rounded-full transition-all duration-300 ${autoCorrecao ? "bg-primary" : "bg-muted"}`}>
-              <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all duration-300 ${autoCorrecao ? "left-[21px]" : "left-0.5"}`} />
-            </button>
+    <div
+      className="min-h-full pb-12"
+      style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
+    >
+      {/* ─── Header tipo "console" ─────────────────────────────────────── */}
+      <header className="relative overflow-hidden rounded-3xl border border-border/50 bg-card mb-6 shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+        <div className="relative flex items-center gap-4 p-5 sm:p-6">
+          <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
+            <Volume2 className="w-6 h-6 text-primary" />
           </div>
-
-          {/* Nome do comércio (só comércio) */}
-          {kind === "comercio" && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                <Store className="w-3 h-3" /> Nome do comércio
-              </label>
-              <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="Ex: Padaria Central" className="bg-card border-border/50 h-11 text-base" />
-            </div>
-          )}
-
-          {/* Cidade */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> Cidade
-            </label>
-            <Input value={cidade} onChange={(e) => setCidade(e.target.value)} placeholder="Ex: Cabreúva" className="bg-card border-border/50 h-11 text-base" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-0.5">
+              iGreen · Studio
+            </p>
+            <h1
+              className="text-2xl sm:text-3xl font-bold text-foreground leading-tight tracking-tight"
+              style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontStretch: "95%" }}
+            >
+              Estúdio de Áudio
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              Gere, ouça e distribua áudios por cidade — toda geração já fica salva com e sem vinheta.
+            </p>
           </div>
+          <div className="hidden md:flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Voz Diego
+            </span>
+            <span className="px-2.5 py-1 rounded-full bg-muted/40 border border-border/40">
+              ElevenLabs · Multilingual v2
+            </span>
+          </div>
+        </div>
 
-          {/* Rua + Nº */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-              <Navigation className="w-3 h-3" /> {kind === "mutirao" ? "Rua / Local" : "Endereço do comércio"}
-            </label>
-            <div className="flex gap-2">
-              <Input value={rua} onChange={(e) => setRua(e.target.value)} placeholder="Ex: Av. das Nações" className="bg-card border-border/50 h-11 text-base flex-1" />
-              <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Nº" inputMode="numeric" className="bg-card border-border/50 h-11 text-base w-16 text-center" />
-            </div>
-            {rua.trim() && (
-              <p className="text-[10px] text-primary font-medium">
-                → {autoCorrecao ? corrigirAcentos(expandirEndereco(rua)) : expandirEndereco(rua)}
-                {numero.trim() ? `, nº ${numeroEnderecoExtenso(numero)}` : ""}
-              </p>
+        <div className="relative border-t border-border/50 px-3 sm:px-4 pt-3 pb-3 flex gap-2">
+          {([
+            { id: "mutirao", label: "Mutirão", icon: Megaphone },
+            { id: "comercio", label: "Comércio", icon: Store },
+          ] as { id: Kind; label: string; icon: typeof Megaphone }[]).map((t) => {
+            const Icon = t.icon;
+            const active = kind === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setKind(t.id)}
+                className={`flex-1 sm:flex-none sm:min-w-[160px] h-11 px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
+                  active
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                    : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/30"
+                }`}
+              >
+                <Icon className="w-4 h-4" /> {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </header>
+
+      {/* ─── Layout split-screen ────────────────────────────────────── */}
+      <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-5">
+        {/* ═══ LADO ESQUERDO — formulário ═══ */}
+        <section className="space-y-3">
+          <SectionTitle icon={Navigation} label="Roteiro" hint="Preencha os dados do anúncio" />
+
+          <div className="bg-card rounded-2xl border border-border/50 p-4 space-y-3 shadow-sm">
+            {kind === "comercio" && (
+              <Field icon={Store} label="Nome do comércio">
+                <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="Ex: Padaria Central" className="bg-background border-border/60 h-11 text-base" />
+              </Field>
             )}
-          </div>
-
-          {/* Bairro */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> Bairro (opcional)
-            </label>
-            <Input value={bairro} onChange={(e) => setBairro(e.target.value)} placeholder="Ex: Centro, Jardim América..." className="bg-card border-border/50 h-11 text-base" />
-          </div>
-
-          {/* Referência — só mutirão */}
-          {kind === "mutirao" && (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                <MapPin className="w-3 h-3" /> Ponto de referência
-              </label>
+            <Field icon={MapPin} label="Cidade">
+              <Input value={cidade} onChange={(e) => setCidade(e.target.value)} placeholder="Ex: Cabreúva" className="bg-background border-border/60 h-11 text-base" />
+            </Field>
+            <Field icon={Navigation} label={kind === "mutirao" ? "Rua / local" : "Endereço do comércio"}>
               <div className="flex gap-2">
-                {(["proximo", "em_frente"] as RefTipo[]).map((v) => (
-                  <button key={v} onClick={() => setRefTipo(v)}
-                    className={`flex-1 h-10 rounded-xl text-xs font-semibold transition-all ${refTipo === v ? "bg-primary text-primary-foreground" : "bg-card border border-border/50 text-muted-foreground"}`}>
-                    {v === "proximo" ? "Próximo ao" : "Em frente ao"}
-                  </button>
-                ))}
+                <Input value={rua} onChange={(e) => setRua(e.target.value)} placeholder="Ex: Av. das Nações" className="bg-background border-border/60 h-11 text-base flex-1" />
+                <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Nº" inputMode="numeric" className="bg-background border-border/60 h-11 text-base w-20 text-center font-mono" />
               </div>
-              <Input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: Mercado Municipal..." className="bg-card border-border/50 h-11 text-base" />
+              {rua.trim() && (
+                <p className="text-[11px] text-primary font-medium mt-1.5">
+                  → {autoCorrecao ? corrigirAcentos(expandirEndereco(rua)) : expandirEndereco(rua)}
+                  {numero.trim() ? `, nº ${numeroEnderecoExtenso(numero)}` : ""}
+                </p>
+              )}
+            </Field>
+            <Field icon={MapPin} label="Bairro (opcional)">
+              <Input value={bairro} onChange={(e) => setBairro(e.target.value)} placeholder="Ex: Centro, Jardim América..." className="bg-background border-border/60 h-11 text-base" />
+            </Field>
+            {kind === "mutirao" && (
+              <Field icon={MapPin} label="Ponto de referência">
+                <div className="flex gap-2 mb-2">
+                  {(["proximo", "em_frente"] as RefTipo[]).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setRefTipo(v)}
+                      className={`flex-1 h-10 rounded-xl text-xs font-semibold transition-all ${
+                        refTipo === v
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {v === "proximo" ? "Próximo ao" : "Em frente ao"}
+                    </button>
+                  ))}
+                </div>
+                <Input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: Mercado Municipal..." className="bg-background border-border/60 h-11 text-base" />
+              </Field>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { label: "Início", value: horaInicio, set: setHoraInicio, ph: "8" },
+                { label: "Fim", value: horaFim, set: setHoraFim, ph: "18" },
+              ] as const).map((f) => (
+                <Field key={f.label} icon={Clock} label={f.label}>
+                  <Input
+                    value={f.value}
+                    onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
+                    placeholder={f.ph}
+                    inputMode="numeric"
+                    className="bg-background border-border/60 h-11 text-base font-mono text-center"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">→ {horarioExtenso(f.value || f.ph)}</p>
+                </Field>
+              ))}
             </div>
-          )}
-
-          {/* Horários */}
-          <div className="grid grid-cols-2 gap-2">
-            {([
-              { label: "Início", value: horaInicio, set: setHoraInicio },
-              { label: "Fim",    value: horaFim,    set: setHoraFim },
-            ] as const).map((f) => (
-              <div key={f.label} className="space-y-1">
-                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> {f.label}
-                </label>
-                <Input value={f.value} onChange={(e) => (f.set as (v: string) => void)(e.target.value)} placeholder={f.label === "Início" ? "8" : "18"} inputMode="numeric" className="bg-card border-border/50 h-11 text-base" />
-                <p className="text-[10px] text-muted-foreground">→ {horarioExtenso(f.value || (f.label === "Início" ? "8" : "18"))}</p>
+            <div className="flex items-center justify-between pt-2 border-t border-border/40">
+              <div>
+                <p className="text-xs font-semibold text-foreground">Correção automática</p>
+                <p className="text-[10px] text-muted-foreground">Acentos e abreviações</p>
               </div>
-            ))}
+              <Toggle on={autoCorrecao} onChange={() => setAutoCorrecao(!autoCorrecao)} />
+            </div>
           </div>
 
-          {/* Preview */}
-          <div className="relative rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/[0.07] via-card to-card p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-6 h-6 rounded-lg bg-primary/15 flex items-center justify-center">
-                <Volume2 className="w-3.5 h-3.5 text-primary" />
-              </span>
-              <p className="text-[11px] font-bold text-foreground uppercase tracking-wider">Roteiro do áudio</p>
-              <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">{textoPreview.length} caract.</span>
-            </div>
-            <p className="text-[13px] text-foreground/90 leading-relaxed italic">"{textoPreview}"</p>
-          </div>
-
-          {/* Sorteio — só mutirão */}
           {kind === "mutirao" && (
-            <div className="bg-card rounded-xl border border-border/40 p-3 space-y-3">
+            <div className="bg-card rounded-2xl border border-border/50 p-4 space-y-3 shadow-sm">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Gift className="w-4 h-4 text-primary" />
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                    <Gift className="w-4 h-4 text-primary" />
+                  </span>
                   <div>
-                    <p className="text-sm font-semibold">Sorteio / Incentivo</p>
-                    <p className="text-[10px] text-muted-foreground">Adiciona no final do áudio</p>
+                    <p className="text-sm font-semibold text-foreground">Sorteio / Incentivo</p>
+                    <p className="text-[10px] text-muted-foreground">Adicionado no final do áudio</p>
                   </div>
                 </div>
-                <button onClick={() => setSorteioAtivo(!sorteioAtivo)}
-                  className={`relative w-11 h-6 rounded-full transition-all duration-300 ${sorteioAtivo ? "bg-primary" : "bg-muted"}`}>
-                  <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all duration-300 ${sorteioAtivo ? "left-[21px]" : "left-0.5"}`} />
-                </button>
+                <Toggle on={sorteioAtivo} onChange={() => setSorteioAtivo(!sorteioAtivo)} />
               </div>
 
               {sorteioAtivo && (
-                <div className="space-y-3 animate-in fade-in">
-                  <div className="grid grid-cols-2 gap-1.5">
+                <div className="space-y-3 animate-in fade-in pt-2 border-t border-border/40">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {([
                       { id: "dinheiro", label: "Dinheiro" },
-                      { id: "vale",     label: "Vale-compras" },
-                      { id: "cesta",    label: "Cesta básica" },
-                      { id: "custom",   label: "Personalizado" },
+                      { id: "vale", label: "Vale" },
+                      { id: "cesta", label: "Cesta" },
+                      { id: "custom", label: "Custom" },
                     ] as { id: SorteioTipo; label: string }[]).map((opt) => (
-                      <button key={opt.id} onClick={() => setSorteioTipo(opt.id)}
-                        className={`h-9 rounded-lg text-xs font-semibold transition-all ${sorteioTipo === opt.id ? "bg-primary text-primary-foreground" : "bg-muted/40 border border-border/40 text-muted-foreground"}`}>
+                      <button
+                        key={opt.id}
+                        onClick={() => setSorteioTipo(opt.id)}
+                        className={`h-9 rounded-lg text-xs font-semibold transition-all ${
+                          sorteioTipo === opt.id
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted/30 border border-border/40 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
                         {opt.label}
                       </button>
                     ))}
                   </div>
-
                   {sorteioTipo === "dinheiro" && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Valor em reais</label>
-                      <Input value={sorteioValor} onChange={(e) => setSorteioValor(e.target.value)} placeholder="Ex: 200" inputMode="numeric" className="bg-background border-border/50 h-11 text-base" />
-                    </div>
+                    <Field label="Valor em reais">
+                      <Input value={sorteioValor} onChange={(e) => setSorteioValor(e.target.value)} placeholder="Ex: 200" inputMode="numeric" className="bg-background border-border/60 h-11 text-base" />
+                    </Field>
                   )}
                   {sorteioTipo === "vale" && (
-                    <div className="space-y-2">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Valor em reais</label>
-                        <Input value={sorteioValor} onChange={(e) => setSorteioValor(e.target.value)} placeholder="Ex: 100" inputMode="numeric" className="bg-background border-border/50 h-11 text-base" />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Mercado / Local</label>
-                        <Input value={sorteioLocal} onChange={(e) => setSorteioLocal(e.target.value)} placeholder="Ex: Mercado Barateiro" className="bg-background border-border/50 h-11 text-base" />
-                      </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Valor (R$)">
+                        <Input value={sorteioValor} onChange={(e) => setSorteioValor(e.target.value)} placeholder="100" inputMode="numeric" className="bg-background border-border/60 h-11 text-base" />
+                      </Field>
+                      <Field label="Mercado / local">
+                        <Input value={sorteioLocal} onChange={(e) => setSorteioLocal(e.target.value)} placeholder="Mercado Barateiro" className="bg-background border-border/60 h-11 text-base" />
+                      </Field>
                     </div>
                   )}
                   {sorteioTipo === "cesta" && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Descrição (opcional)</label>
-                      <Input value={sorteioDescricao} onChange={(e) => setSorteioDescricao(e.target.value)} placeholder="Ex: com 10 itens essenciais" className="bg-background border-border/50 h-11 text-base" />
-                    </div>
+                    <Field label="Descrição (opcional)">
+                      <Input value={sorteioDescricao} onChange={(e) => setSorteioDescricao(e.target.value)} placeholder="Ex: com 10 itens essenciais" className="bg-background border-border/60 h-11 text-base" />
+                    </Field>
                   )}
                   {sorteioTipo === "custom" && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Texto personalizado</label>
-                      <Textarea value={sorteioCustom} onChange={(e) => setSorteioCustom(e.target.value)} placeholder="Escreva exatamente o que a IA deve falar no final…" className="bg-background border-border/50 text-sm min-h-20" />
-                    </div>
+                    <Field label="Texto personalizado">
+                      <Textarea value={sorteioCustom} onChange={(e) => setSorteioCustom(e.target.value)} placeholder="Escreva exatamente o que a IA deve falar no final…" className="bg-background border-border/60 text-sm min-h-20" />
+                    </Field>
                   )}
                   {sorteioTexto && (
-                    <div className="bg-primary/5 rounded-lg border border-primary/20 p-2.5">
-                      <p className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1">Trecho final do áudio</p>
-                      <p className="text-xs text-foreground/80 leading-relaxed">{sorteioTexto}</p>
+                    <div className="bg-primary/5 rounded-xl border border-primary/20 p-3">
+                      <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-1.5">Será adicionado no final</p>
+                      <p className="text-xs text-foreground/85 leading-relaxed">{sorteioTexto}</p>
                     </div>
                   )}
                 </div>
@@ -879,275 +885,394 @@ export function AudioStudio({ userId }: { userId: string }) {
             </div>
           )}
 
-          {/* Botão Gerar */}
-          <Button onClick={handleGenerate} disabled={generating} className="w-full h-14 text-base font-bold rounded-2xl gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow" style={{ background: "var(--gradient-green, var(--pe-emerald, #22c55e))" }}>
-            {generating
-              ? <><Loader2 className="w-5 h-5 animate-spin" /> Gerando áudio…</>
-              : <><Volume2 className="w-5 h-5" /> Gerar Áudio de {kindLabel}</>}
+          <div className="bg-card rounded-2xl border border-border/50 p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Volume2 className="w-3.5 h-3.5 text-primary" />
+              </span>
+              <p className="text-[11px] font-bold text-foreground uppercase tracking-[0.14em]">Roteiro</p>
+              <span className="ml-auto text-[10px] text-muted-foreground tabular-nums font-mono">
+                {textoPreview.length} car.
+              </span>
+            </div>
+            <p className="text-[13px] text-foreground/85 leading-relaxed italic">"{textoPreview}"</p>
+          </div>
+
+          <Button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="w-full h-14 text-base font-bold rounded-2xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25"
+          >
+            {generating ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> Gerando áudio…</>
+            ) : (
+              <><Volume2 className="w-5 h-5" /> Gerar áudio de {kindLabel}</>
+            )}
           </Button>
+        </section>
 
-          {/* Player */}
-          {audioUrl && (
-            <div className="rounded-2xl border border-primary/20 bg-gradient-to-b from-primary/[0.06] to-card p-4 space-y-4 animate-in fade-in shadow-sm">
-              <div className="flex items-center gap-3">
-                <button onClick={togglePlay}
-                  className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all shrink-0 ${playing ? "bg-primary text-primary-foreground shadow-lg scale-105" : "bg-primary/10 text-primary hover:bg-primary/20"}`}>
-                  {playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold truncate">{kindLabel} — {cidade || "cidade"}</p>
-                  <p className="text-[11px] text-muted-foreground">Voz Diego · prévia sem vinheta</p>
-                </div>
-                <button onClick={stopAudio} className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/50 shrink-0" title="Recomeçar">
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </div>
+        {/* ═══ LADO DIREITO — player + biblioteca ═══ */}
+        <section className="space-y-3 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
+          <SectionTitle icon={Play} label="Player" hint="Ouça, baixe e envie" />
 
-              {/* Versão SEM vinheta */}
-              <div className="rounded-xl border border-border/50 bg-card/60 p-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    <Volume2 className="w-3.5 h-3.5" /> Sem vinheta
-                  </span>
+          <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+            {audioUrl ? (
+              <div className="p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={togglePlay}
+                    className={`w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                      playing
+                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30 scale-105"
+                        : "bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20"
+                    }`}
+                  >
+                    {playing ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-0.5" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className="text-base font-bold truncate text-foreground"
+                      style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}
+                    >
+                      {kindLabel} — {cidade || "cidade"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Voz Diego · prévia sem vinheta
+                    </p>
+                    <div className="flex gap-1.5 mt-1.5">
+                      <Badge>sem vinheta</Badge>
+                      {(audioBlobVinheta || lastPublicUrlVinheta) && <Badge tone="primary">com vinheta</Badge>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={stopAudio}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/50 hover:text-foreground shrink-0"
+                    title="Recomeçar"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
                 </div>
+
+                {/* DOWNLOAD UNIFICADO — sempre baixa as 2 versões */}
+                <Button
+                  onClick={handleDownload}
+                  className="w-full h-12 font-semibold rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  <Download className="w-4 h-4" />
+                  Baixar áudio (com e sem vinheta)
+                </Button>
+
                 <div className="grid grid-cols-2 gap-2">
-                  <Button onClick={handleDownload} className="h-10 font-semibold text-xs rounded-xl gap-1">
-                    <Download className="w-4 h-4" /> Baixar
-                  </Button>
                   {lastPublicUrl ? (
                     <AudioWhatsAppPopover
                       audioUrl={lastPublicUrl}
                       label={`${kindLabel} — ${cidade || "cidade"}`}
                       trigger={
-                        <Button variant="outline" className="h-10 text-xs gap-1 rounded-xl w-full">
-                          <Send className="w-4 h-4" /> WhatsApp
+                        <Button variant="outline" className="h-10 text-xs gap-1.5 rounded-xl w-full">
+                          <Send className="w-3.5 h-3.5" /> WhatsApp (sem)
                         </Button>
                       }
                     />
                   ) : (
-                    <Button variant="outline" disabled className="h-10 text-xs gap-1 rounded-xl">
-                      <Send className="w-4 h-4" /> WhatsApp
+                    <Button variant="outline" disabled className="h-10 text-xs gap-1.5 rounded-xl">
+                      <Send className="w-3.5 h-3.5" /> WhatsApp (sem)
                     </Button>
                   )}
-                </div>
-              </div>
-
-              {/* Versão COM vinheta */}
-              <div className="rounded-xl border border-primary/30 bg-primary/[0.04] p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary">
-                    <Music className="w-3.5 h-3.5" /> Com vinheta
-                  </span>
-                  {!audioBlobVinheta && !lastPublicUrlVinheta && (
-                    <span className="text-[10px] text-muted-foreground">indisponível</span>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    onClick={handleDownloadComVinheta}
-                    disabled={!audioBlobVinheta && !lastPublicUrlVinheta}
-                    variant="secondary"
-                    className="h-10 font-semibold text-xs rounded-xl gap-1"
-                  >
-                    <Download className="w-4 h-4" /> Baixar
-                  </Button>
                   {lastPublicUrlVinheta ? (
                     <AudioWhatsAppPopover
                       audioUrl={lastPublicUrlVinheta}
                       label={`${kindLabel} — ${cidade || "cidade"} (com vinheta)`}
                       trigger={
-                        <Button variant="outline" className="h-10 text-xs gap-1 rounded-xl w-full">
-                          <Send className="w-4 h-4" /> WhatsApp
+                        <Button variant="outline" className="h-10 text-xs gap-1.5 rounded-xl w-full border-primary/40 text-primary hover:bg-primary/10">
+                          <Music className="w-3.5 h-3.5" /> WhatsApp (com)
                         </Button>
                       }
                     />
                   ) : (
-                    <Button variant="outline" disabled className="h-10 text-xs gap-1 rounded-xl">
-                      <Send className="w-4 h-4" /> WhatsApp
+                    <Button variant="outline" disabled className="h-10 text-xs gap-1.5 rounded-xl">
+                      <Music className="w-3.5 h-3.5" /> WhatsApp (com)
                     </Button>
                   )}
                 </div>
-              </div>
 
-              {lastRowId && (
-                <Button
-                  onClick={publishCurrent}
-                  disabled={lastIsPublic}
-                  variant={lastIsPublic ? "secondary" : "default"}
-                  className="w-full h-10 text-xs gap-2 rounded-xl"
-                >
-                  {lastIsPublic ? <><Globe2 className="w-4 h-4" /> Publicado na biblioteca</> : <><Upload className="w-4 h-4" /> Publicar para outros consultores</>}
-                </Button>
-              )}
-
-              <Button variant="ghost" onClick={handleGenerate} disabled={generating} className="w-full h-9 text-xs text-muted-foreground gap-1">
-                <RotateCcw className="w-3 h-3" /> Gerar novamente
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* ─── Coluna do histórico / biblioteca ─────────────────────────── */}
-        <aside className="bg-card rounded-2xl border border-border/40 p-4 h-fit lg:sticky lg:top-4 space-y-3 shadow-sm">
-          <div className="flex items-center gap-2 pb-1">
-            <span className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
-              <History className="w-4 h-4 text-primary" />
-            </span>
-            <div>
-              <p className="text-sm font-bold leading-tight">Biblioteca</p>
-              <p className="text-[10px] text-muted-foreground">Áudios prontos para reaproveitar</p>
-            </div>
-          </div>
-          <div className={`grid ${isSuperAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
-            <button
-              onClick={() => setLibTab("mine")}
-              className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "mine" ? "bg-primary text-primary-foreground" : "bg-muted/40 border border-border/40 text-muted-foreground"}`}
-            >
-              <History className="w-3.5 h-3.5" /> Meus
-            </button>
-            <button
-              onClick={() => setLibTab("public")}
-              className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "public" ? "bg-primary text-primary-foreground" : "bg-muted/40 border border-border/40 text-muted-foreground"}`}
-            >
-              <Globe2 className="w-3.5 h-3.5" /> Pública
-            </button>
-            {isSuperAdmin && (
-              <button
-                onClick={() => setLibTab("all")}
-                className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${libTab === "all" ? "bg-primary text-primary-foreground" : "bg-warning/15 border border-warning/30 text-warning dark:text-warning"}`}
-                title="Visível apenas para super admin"
-              >
-                <Globe2 className="w-3.5 h-3.5" /> Todos
-              </button>
-            )}
-          </div>
-
-          {(libTab === "public" || libTab === "all") && (
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                value={librarySearch}
-                onChange={(e) => setLibrarySearch(e.target.value)}
-                placeholder="Buscar por cidade..."
-                className="h-9 pl-8 text-xs bg-background border-border/50"
-              />
-            </div>
-          )}
-
-          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-            {loadingLib && <p className="text-[11px] text-muted-foreground text-center py-4">Carregando…</p>}
-            {!loadingLib && libTab === "mine" && myAudios.length === 0 && (
-              <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio de {kindLabel.toLowerCase()} ainda</p>
-            )}
-            {!loadingLib && libTab === "public" && publicAudios.length === 0 && (
-              <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio publicado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</p>
-            )}
-            {!loadingLib && libTab === "all" && allAudios.length === 0 && (
-              <p className="text-[11px] text-muted-foreground text-center py-4">Nenhum áudio gerado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</p>
-            )}
-
-            {(libTab === "mine" ? myAudios : libTab === "public" ? publicAudios : allAudios).map((row) => {
-              const isOpen = expandedRowId === row.id;
-              const rowLabel = `${row.kind === "comercio" ? "Comércio" : "Mutirão"} — ${row.city || "cidade"}`;
-              return (
-              <div key={row.id} className="rounded-xl border border-border/40 bg-background/40 p-3 space-y-2 hover:border-primary/30 hover:bg-primary/[0.02] transition-colors">
-                <div className="flex items-start gap-2.5">
-                  <button
-                    onClick={() => {
-                      setExpandedRowId(isOpen ? null : row.id);
-                      if (!isOpen) {
-                        supabase.rpc("audio_library_increment_play", { _id: row.id }).then(() => {});
-                      }
-                    }}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all ${isOpen ? "bg-primary text-primary-foreground shadow" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
-                    title={isOpen ? "Recolher" : "Tocar"}
+                {lastRowId && (
+                  <Button
+                    onClick={publishCurrent}
+                    disabled={lastIsPublic}
+                    variant={lastIsPublic ? "secondary" : "default"}
+                    className="w-full h-10 text-xs gap-2 rounded-xl"
                   >
-                    {isOpen ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold truncate flex items-center gap-1">
-                      {row.city || "—"}
-                      {row.audio_url_vinheta && <span title="Tem versão com vinheta"><Music className="inline w-3 h-3 text-primary" /></span>}
-                      {row.is_public && libTab === "mine" && <Globe2 className="inline w-3 h-3 text-primary" />}
-                      {!row.is_public && libTab === "mine" && <Lock className="inline w-3 h-3 text-muted-foreground" />}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      {row.kind === "comercio" && row.place_name ? `${row.place_name} · ` : ""}
-                      {row.street || "—"} · {row.time_slot}
-                    </p>
-                    {libTab === "public" && row.play_count > 0 && (
-                      <p className="text-[10px] text-primary font-medium">▶ {row.play_count}× reaproveitado</p>
+                    {lastIsPublic ? (
+                      <><Globe2 className="w-3.5 h-3.5" /> Publicado na biblioteca</>
+                    ) : (
+                      <><Upload className="w-3.5 h-3.5" /> Publicar para outros consultores</>
                     )}
-                  </div>
-                </div>
-
-                {isOpen && (
-                  <div className="space-y-1.5">
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Sem vinheta</p>
-                    <audio
-                      src={row.audio_url}
-                      controls
-                      autoPlay
-                      preload="metadata"
-                      className="w-full h-9"
-                    />
-                    {row.audio_url_vinheta && (
-                      <>
-                        <p className="text-[9px] font-bold uppercase tracking-wider text-primary">Com vinheta</p>
-                        <audio
-                          src={row.audio_url_vinheta}
-                          controls
-                          preload="metadata"
-                          className="w-full h-9"
-                        />
-                      </>
-                    )}
-                  </div>
+                  </Button>
                 )}
 
-                <div className="flex gap-1 flex-wrap">
-                  <AudioWhatsAppPopover
-                    audioUrl={row.audio_url}
-                    label={rowLabel}
-                    trigger={
-                      <button className="flex-1 h-7 rounded-md bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-semibold flex items-center justify-center gap-1">
-                        <Send className="w-3 h-3" /> WhatsApp
-                      </button>
-                    }
-                  />
-                  {row.audio_url_vinheta && (
-                    <AudioWhatsAppPopover
-                      audioUrl={row.audio_url_vinheta}
-                      label={`${rowLabel} (com vinheta)`}
-                      trigger={
-                        <button className="flex-1 h-7 rounded-md bg-primary/15 hover:bg-primary/25 text-primary text-[10px] font-semibold flex items-center justify-center gap-1" title="Enviar versão com vinheta">
-                          <Music className="w-3 h-3" /> Vinheta
-                        </button>
-                      }
-                    />
-                  )}
-                  <button onClick={() => copyRowUrl(row)} className="h-7 px-2 rounded-md bg-muted/50 hover:bg-muted text-[10px] font-medium flex items-center justify-center gap-1" title="Copiar link">
-                    <Copy className="w-3 h-3" />
-                  </button>
-                  {libTab === "mine" && (
-                    <>
-                      <button onClick={() => togglePublishRow(row)} title={row.is_public ? "Despublicar" : "Publicar"}
-                        className="h-7 px-2 rounded-md bg-muted/50 hover:bg-muted text-[10px] font-medium flex items-center justify-center">
-                        {row.is_public ? <Lock className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
-                      </button>
-                      <button onClick={() => deleteRow(row)} title="Apagar"
-                        className="h-7 px-2 rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive text-[10px] flex items-center justify-center">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </>
-                  )}
-                </div>
+                <button
+                  onClick={handleGenerate}
+                  disabled={generating}
+                  className="w-full text-[11px] text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 pt-1"
+                >
+                  <RotateCcw className="w-3 h-3" /> Gerar novamente
+                </button>
               </div>
-              );
-            })}
+            ) : (
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-muted/30 border border-border/50 flex items-center justify-center mx-auto mb-3">
+                  <Volume2 className="w-7 h-7 text-muted-foreground/50" />
+                </div>
+                <p className="text-sm font-semibold text-foreground">Nenhum áudio gerado ainda</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Preencha os dados ao lado e clique em <span className="text-primary font-medium">Gerar áudio</span>.
+                </p>
+              </div>
+            )}
           </div>
-        </aside>
+
+          <SectionTitle icon={History} label="Biblioteca" hint="Áudios prontos para reaproveitar" />
+          <div className="bg-card rounded-2xl border border-border/50 p-3 sm:p-4 shadow-sm space-y-3">
+            <div className={`grid ${isSuperAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
+              <LibTabBtn active={libTab === "mine"} onClick={() => setLibTab("mine")} icon={History}>Meus</LibTabBtn>
+              <LibTabBtn active={libTab === "public"} onClick={() => setLibTab("public")} icon={Globe2}>Pública</LibTabBtn>
+              {isSuperAdmin && (
+                <LibTabBtn active={libTab === "all"} onClick={() => setLibTab("all")} icon={Globe2} warning>Todos</LibTabBtn>
+              )}
+            </div>
+
+            {(libTab === "public" || libTab === "all") && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  value={librarySearch}
+                  onChange={(e) => setLibrarySearch(e.target.value)}
+                  placeholder="Buscar por cidade…"
+                  className="h-10 pl-9 text-sm bg-background border-border/60"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1 -mr-1">
+              {loadingLib && <p className="text-xs text-muted-foreground text-center py-6">Carregando…</p>}
+              {!loadingLib && libTab === "mine" && myAudios.length === 0 && (
+                <EmptyLib>Nenhum áudio de {kindLabel.toLowerCase()} ainda</EmptyLib>
+              )}
+              {!loadingLib && libTab === "public" && publicAudios.length === 0 && (
+                <EmptyLib>Nenhum áudio publicado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</EmptyLib>
+              )}
+              {!loadingLib && libTab === "all" && allAudios.length === 0 && (
+                <EmptyLib>Nenhum áudio gerado{librarySearch.trim() ? ` para "${librarySearch}"` : ""}</EmptyLib>
+              )}
+
+              {(libTab === "mine" ? myAudios : libTab === "public" ? publicAudios : allAudios).map((row) => {
+                const isOpen = expandedRowId === row.id;
+                const rowLabel = `${row.kind === "comercio" ? "Comércio" : "Mutirão"} — ${row.city || "cidade"}`;
+                return (
+                  <div
+                    key={row.id}
+                    className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2 hover:border-primary/40 hover:bg-primary/[0.03] transition-colors"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <button
+                        onClick={() => {
+                          setExpandedRowId(isOpen ? null : row.id);
+                          if (!isOpen) {
+                            supabase.rpc("audio_library_increment_play", { _id: row.id }).then(() => {});
+                          }
+                        }}
+                        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                          isOpen
+                            ? "bg-primary text-primary-foreground shadow"
+                            : "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20"
+                        }`}
+                        title={isOpen ? "Recolher" : "Tocar"}
+                      >
+                        {isOpen ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-foreground truncate flex items-center gap-1.5">
+                          {row.city || "—"}
+                          {row.audio_url_vinheta && (
+                            <Music className="inline w-3 h-3 text-primary shrink-0" />
+                          )}
+                          {row.is_public && libTab === "mine" && <Globe2 className="inline w-3 h-3 text-primary shrink-0" />}
+                          {!row.is_public && libTab === "mine" && <Lock className="inline w-3 h-3 text-muted-foreground shrink-0" />}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                          {row.kind === "comercio" && row.place_name ? `${row.place_name} · ` : ""}
+                          {row.street || "—"} · {row.time_slot}
+                        </p>
+                        {libTab === "public" && row.play_count > 0 && (
+                          <p className="text-[10px] text-primary font-medium mt-0.5">
+                            ▶ {row.play_count}× reaproveitado
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {isOpen && (
+                      <div className="space-y-2 pt-1">
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Sem vinheta</p>
+                          <audio src={row.audio_url} controls autoPlay preload="metadata" className="w-full h-9" />
+                        </div>
+                        {row.audio_url_vinheta && (
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-primary mb-1">Com vinheta</p>
+                            <audio src={row.audio_url_vinheta} controls preload="metadata" className="w-full h-9" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-1.5 flex-wrap">
+                      <AudioWhatsAppPopover
+                        audioUrl={row.audio_url}
+                        label={rowLabel}
+                        trigger={
+                          <button className="flex-1 h-8 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold flex items-center justify-center gap-1.5">
+                            <Send className="w-3 h-3" /> WhatsApp
+                          </button>
+                        }
+                      />
+                      {row.audio_url_vinheta && (
+                        <AudioWhatsAppPopover
+                          audioUrl={row.audio_url_vinheta}
+                          label={`${rowLabel} (com vinheta)`}
+                          trigger={
+                            <button className="flex-1 h-8 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary text-[11px] font-semibold flex items-center justify-center gap-1.5" title="Enviar versão com vinheta">
+                              <Music className="w-3 h-3" /> Vinheta
+                            </button>
+                          }
+                        />
+                      )}
+                      <button
+                        onClick={() => copyRowUrl(row)}
+                        className="h-8 px-2.5 rounded-lg bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground text-[11px] flex items-center justify-center"
+                        title="Copiar link"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                      {libTab === "mine" && (
+                        <>
+                          <button
+                            onClick={() => togglePublishRow(row)}
+                            title={row.is_public ? "Despublicar" : "Publicar"}
+                            className="h-8 px-2.5 rounded-lg bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground text-[11px] flex items-center justify-center"
+                          >
+                            {row.is_public ? <Lock className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
+                          </button>
+                          <button
+                            onClick={() => deleteRow(row)}
+                            title="Apagar"
+                            className="h-8 px-2.5 rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive text-[11px] flex items-center justify-center"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
       </div>
+    </div>
+  );
+}
+
+// ───────── Sub-componentes visuais locais ─────────
+
+function SectionTitle({
+  icon: Icon, label, hint,
+}: { icon: typeof Volume2; label: string; hint?: string }) {
+  return (
+    <div className="flex items-center gap-2 px-1">
+      <span className="w-1 h-5 rounded-full bg-primary" />
+      <Icon className="w-3.5 h-3.5 text-primary" />
+      <p
+        className="text-xs font-bold uppercase tracking-[0.16em] text-foreground"
+        style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}
+      >
+        {label}
+      </p>
+      {hint && <span className="text-[10px] text-muted-foreground ml-1">· {hint}</span>}
+    </div>
+  );
+}
+
+function Field({
+  icon: Icon, label, children,
+}: { icon?: typeof Volume2; label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.12em] flex items-center gap-1.5">
+        {Icon && <Icon className="w-3 h-3" />} {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
+  return (
+    <button
+      onClick={onChange}
+      className={`relative w-11 h-6 rounded-full transition-all duration-300 shrink-0 ${
+        on ? "bg-primary" : "bg-muted"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 size-5 rounded-full bg-background shadow transition-all duration-300 ${
+          on ? "left-[21px]" : "left-0.5"
+        }`}
+      />
+    </button>
+  );
+}
+
+function Badge({
+  children, tone = "muted",
+}: { children: React.ReactNode; tone?: "muted" | "primary" }) {
+  return (
+    <span
+      className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+        tone === "primary"
+          ? "bg-primary/15 text-primary border border-primary/25"
+          : "bg-muted/50 text-muted-foreground border border-border/50"
+      }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function LibTabBtn({
+  active, onClick, icon: Icon, warning, children,
+}: { active: boolean; onClick: () => void; icon: typeof Volume2; warning?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+        active
+          ? "bg-primary text-primary-foreground shadow shadow-primary/20"
+          : warning
+            ? "bg-warning/10 border border-warning/30 text-warning hover:bg-warning/15"
+            : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/30"
+      }`}
+    >
+      <Icon className="w-3.5 h-3.5" /> {children}
+    </button>
+  );
+}
+
+function EmptyLib({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-center py-6">
+      <p className="text-xs text-muted-foreground">{children}</p>
     </div>
   );
 }
