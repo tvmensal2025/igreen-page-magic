@@ -377,7 +377,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
       {loading ? (
         <div className="text-center py-12 text-sm text-muted-foreground">Carregando…</div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
+        <div className="grid min-w-0 max-w-full grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 overflow-hidden">
           {STAGES.map((stage) => (
             <div
               key={stage.key}
@@ -393,16 +393,16 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
               className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] min-w-0 overflow-hidden shadow-sm"
             >
               <div className={`h-1 w-full ${stage.bar}`} />
-              <div className="px-3 py-2.5 border-b border-border/40 flex items-center justify-between">
-                <Badge variant="secondary" className={`text-[10px] font-semibold ${stage.badge} border`}>
+              <div className="px-3 py-2.5 border-b border-border/40 flex min-w-0 items-center justify-between gap-2 overflow-hidden">
+                <Badge variant="secondary" className={`text-[10px] font-semibold ${stage.badge} border min-w-0 max-w-full truncate`}>
                   {stage.label}
                 </Badge>
                 <span className="text-[12px] font-bold text-foreground bg-muted/60 px-2 py-0.5 rounded-full min-w-[24px] text-center">
                   {grouped[stage.key].length}
                 </span>
               </div>
-              <ScrollArea className="flex-1">
-                <div className="p-2 space-y-1.5">
+              <ScrollArea className="flex-1 min-w-0 max-w-full overflow-hidden">
+                <div className="p-2 space-y-1.5 min-w-0 max-w-full overflow-hidden">
                   {grouped[stage.key].map((c) => {
                     const days = daysSince(c.portal_submitted_at);
                     const isOwner = c.consultant_id === consultantId;
@@ -465,7 +465,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                           </p>
                         )}
                         {c.portal_submitted_at && (
-                          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-1 min-w-0 max-w-full overflow-hidden">
                             <Calendar className="w-2.5 h-2.5" />
                             {days != null ? `há ${days}d` : "-"} · {format(new Date(c.portal_submitted_at), "dd/MM/yy", { locale: ptBR })}
                           </p>
