@@ -184,6 +184,19 @@ html {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  .kanban-safe-scroll [data-radix-scroll-area-viewport] {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .kanban-safe-scroll [data-radix-scroll-area-viewport] > div {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
 }
 
 @layer components {
