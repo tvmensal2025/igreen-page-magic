@@ -8279,6 +8279,35 @@ export type Database = {
         }
         Returns: boolean
       }
+      update_sale_status_with_note: {
+        Args: {
+          p_note?: string
+          p_sale_id: string
+          p_status: Database["public"]["Enums"]["sale_status"]
+        }
+        Returns: {
+          activated_at: string | null
+          amount_cents: number | null
+          capture_data: Json
+          closed_at: string | null
+          consultant_id: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          notes: string | null
+          points_kwh: number
+          product_id: string
+          status: Database["public"]["Enums"]["sale_status"]
+          submitted_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sales"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       use_flow_template: {
         Args: {
           _consultant_id: string
@@ -8322,11 +8351,7 @@ export type Database = {
         | "rejected"
         | "countered"
         | "expired"
-      sale_status:
-        | "interesse"
-        | "negociando"
-        | "fechado"
-        | "perdido"
+      sale_status: "interesse" | "negociando" | "fechado" | "perdido"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -8483,12 +8508,7 @@ export const Constants = {
         "countered",
         "expired",
       ],
-      sale_status: [
-        "interesse",
-        "negociando",
-        "fechado",
-        "perdido",
-      ],
+      sale_status: ["interesse", "negociando", "fechado", "perdido"],
     },
   },
 } as const
