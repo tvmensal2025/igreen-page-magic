@@ -11,6 +11,7 @@ import type { ExamResult } from "@/hooks/useAcademyProgress";
 import { AcademyCatalog, buildFlatList, type FlatLesson } from "./AcademyCatalog";
 import { AcademyPlayer } from "./AcademyPlayer";
 import { AcademyQuizModal } from "./AcademyQuizModal";
+import { AcademyNotesFab } from "./AcademyNotesFab";
 import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 const thumbHi = (yt: string) => `https://i.ytimg.com/vi/${yt}/maxresdefault.jpg`;
@@ -84,6 +85,7 @@ export function AcademyTab() {
             onPass={handleQuizPass}
           />
         )}
+        <AcademyNotesFab />
       </>
     );
   }
@@ -246,6 +248,8 @@ export function AcademyTab() {
           onPass={handleQuizPass}
         />
       )}
+
+      <AcademyNotesFab />
     </div>
   );
 }

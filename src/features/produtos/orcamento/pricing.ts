@@ -19,6 +19,11 @@ import {
   resolveCommercialConfig,
   type CommercialPlan,
 } from "./catalog";
+import {
+  PAYMENT_METHOD_LABEL,
+  type PaymentOption,
+  type ProposalLineItem,
+} from "./types";
 
 export interface QuoteAmount {
   /** Valor principal exibido na proposta (R$). */
@@ -44,8 +49,6 @@ export interface PlanPricingInput {
   plan?: CommercialPlan;
   /** Valor do projeto à vista (placas). */
   projectAmount?: number;
-  /** Nº de parcelas de financiamento (placas). 0/undefined = à vista. */
-  installments?: number;
   /** Conta de luz atual do cliente (energia). */
   currentBill?: number;
   /** Desconto aplicado (energia). Fração 0..1. Default usa o meio da faixa. */
@@ -88,15 +91,9 @@ export function computeQuoteAmount(input: PlanPricingInput): QuoteAmount {
       const details: QuoteDetail[] = [
         { label: "Valor do projeto", value: BRL(round2(total)) },
       ];
-      if (input.installments && input.installments > 1 && total > 0) {
-        const parcela = round2(total / input.installments);
-        details.push({
-          label: "Financiamento",
-          value: `${input.installments}x de ${BRL(parcela)}`,
-        });
-      } else {
-        details.push({ label: "Pagamento", value: "À vista" });
-      }
+      // O detalhamento de pagamento (à vista, cartão, financiamento) é montado
+      // separadamente pelas formas de pagamento que o consultor digita no
+      // builder (paymentOptionsToLineItems), então não duplicamos aqui.
       return {
         amount: round2(total),
         period: "once",
@@ -144,4 +141,49 @@ export function computeQuoteAmount(input: PlanPricingInput): QuoteAmount {
     default:
       return { amount: 0, period: "month", label: config.amountLabel, details: [] };
   }
+}
+
+// ===========================================================================
+// Formas de pagamento → line items
+// ===========================================================================
+// Converte as opções de pagamento digitadas pelo consultor (à vista, cartão,
+// financiamento) em itens de proposta (kind: "payment"). A página pública lê
+// esses itens e os exibe num bloco dedicado, separado dos detalhes comuns.
+export function paymentOptionsToLineItems(options: PaymentOption[]): ProposalLineItem[] {
+  return options
+    .filter((opt) => isPaymentOptionValid(opt))
+    .map((opt) => {
+      const label = PAYMENT_METHOD_LABEL[opt.method];
+      let value: string;
+      if (opt.method === "cash") {
+        value = opt.total ? BRL(round2(opt.total)) : "À vista";
+      } else {
+        const n = opt.installments ?? 0;
+        const parcela = opt.installmentValue ? BRL(round2(opt.installmentValue)) : "";
+        value = n > 0 && parcela ? `${n}x de ${parcela}` : parcela || `${n}x`;
+      }
+      return {
+        label,
+        value,
+        kind: "payment" as const,
+        method: opt.method,
+        bank: opt.bank ?? null,
+        installments: opt.installments ?? null,
+        installmentValue: opt.installmentValue ?? null,
+        interest: opt.interest ?? null,
+        highlight: opt.highlight ?? false,
+      };
+    });
+}
+
+/** Uma opção de pagamento é válida quando tem dados mínimos para exibir. */
+export function isPaymentOptionValid(opt: PaymentOption): boolean {
+  if (opt.method === "cash") return !!opt.total && opt.total > 0;
+  // cartão/financiamento: precisa de parcelas e valor da parcela.
+  return (
+    !!opt.installments &&
+    opt.installments > 0 &&
+    !!opt.installmentValue &&
+    opt.installmentValue > 0
+  );
 }

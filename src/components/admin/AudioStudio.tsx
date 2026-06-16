@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useUserRole } from "@/hooks/useUserRole";
 import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@/lib/audioProcessing";
 import { AudioWhatsAppPopover } from "./AudioWhatsAppPopover";
@@ -280,6 +281,7 @@ interface AudioRow {
 // ─── Componente principal ────────────────────────────────────────────────────
 export function AudioStudio({ userId }: { userId: string }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const { isSuperAdmin } = useUserRole(userId);
 
   // Tab variante
@@ -588,7 +590,13 @@ export function AudioStudio({ userId }: { userId: string }) {
   };
 
   const deleteRow = async (row: AudioRow) => {
-    if (!confirm(`Apagar o áudio de ${row.city}?`)) return;
+    const ok = await confirm({
+      title: `Apagar o áudio de ${row.city}?`,
+      description: "Esta ação não pode ser desfeita.",
+      confirmText: "Apagar",
+      tone: "danger",
+    });
+    if (!ok) return;
     const { error } = await supabase.from("audio_library").delete().eq("id", row.id);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
     toast({ title: "Áudio apagado" });

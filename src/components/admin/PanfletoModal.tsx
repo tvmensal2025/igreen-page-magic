@@ -72,6 +72,10 @@ const TEMPLATES: Record<Format, TemplateCfg> = {
 };
 
 const PREVIEW_W = 380;
+// Altura máxima do preview para caber numa tela de notebook sem scroll.
+// O Banner 504×940mm é alto e, calculado só pela largura, estouraria a tela;
+// então reduzimos proporcionalmente até esse teto.
+const PREVIEW_MAX_H = 440;
 
 function formatBrPhone(raw?: string): string {
   if (!raw) return "";
@@ -148,9 +152,16 @@ export function PanfletoModal({
   const effFooterY = template.footerY;
 
   const previewAspect = template.canvasH / template.canvasW;
-  const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
+  let previewW = PREVIEW_W;
+  let previewH = PREVIEW_W * previewAspect;
+  if (previewH > PREVIEW_MAX_H) {
+    previewH = PREVIEW_MAX_H;
+    previewW = previewH / previewAspect;
+  }
+  const PREVIEW_W_EFF = Math.round(previewW);
+  const PREVIEW_H = Math.round(previewH);
 
-  const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W;
+  const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W_EFF;
   const qrPadPreview = qrCorePxPreview * 0.06;
   const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
   const footerHPreview = Math.max(14, PREVIEW_H * (template.footerH / 100));
@@ -307,7 +318,7 @@ export function PanfletoModal({
             <div
               className="relative overflow-hidden rounded-xl border bg-primary shadow-sm"
               style={{
-                width: PREVIEW_W,
+                width: PREVIEW_W_EFF,
                 height: PREVIEW_H,
                 backgroundImage: `url(${template.bg})`,
                 backgroundSize: "cover",

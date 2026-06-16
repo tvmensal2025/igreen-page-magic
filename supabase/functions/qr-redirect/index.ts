@@ -82,12 +82,26 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // 1) Busca consultor pela licença
-    const { data: consultant } = await supabase
+    // 1) Busca consultor pelo identificador do primeiro segmento.
+    //    Forma ATUAL (neutra): {igreen_id} numérico — não expõe o nome do
+    //    consultor na URL (ex.: igreen.cloud/r/122160/954364).
+    //    Forma LEGADA: {license} (slug com nome, ex.: rafael-ferreira).
+    //    Tenta license primeiro (preserva 100% dos links antigos); se não achar
+    //    e o identificador for só dígitos, resolve por igreen_id.
+    let { data: consultant } = await supabase
       .from("consultants")
       .select("id, phone")
       .eq("license", licenca)
       .maybeSingle();
+
+    if (!consultant?.id && /^\d+$/.test(licenca)) {
+      const { data: byIgreenId } = await supabase
+        .from("consultants")
+        .select("id, phone")
+        .eq("igreen_id", licenca)
+        .maybeSingle();
+      if (byIgreenId?.id) consultant = byIgreenId;
+    }
 
     let phone: string | null = null;
 
@@ -117,9 +131,11 @@ Deno.serve(async (req) => {
       }).then(() => {});
     }
 
-    // 4) Fallback final: landing page do consultor (sem expor número pessoal)
+    // 4) Fallback final: landing page do consultor (sem expor número pessoal).
+    //    Se o identificador veio como igreen_id numérico, a landing por slug não
+    //    resolveria — cai no site institucional base.
     if (!phone) {
-      return redirectTo(`${SITE_URL}/${licenca}`);
+      return redirectTo(/^\d+$/.test(licenca) ? SITE_URL : `${SITE_URL}/${licenca}`);
     }
 
     // 5) Resolve a mensagem. Prioridade do parceiro indicador:

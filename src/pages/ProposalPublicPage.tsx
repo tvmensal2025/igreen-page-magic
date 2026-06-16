@@ -31,6 +31,9 @@ import {
   Sparkles,
   X,
   FileText,
+  CreditCard,
+  Wallet,
+  Landmark,
 } from "lucide-react";
 import {
   getPublicProposal,
@@ -38,6 +41,7 @@ import {
   type PublicProposalView,
   type ProposalStatus,
 } from "@/features/produtos/orcamento";
+import { PAYMENT_METHOD_LABEL, type ProposalLineItem } from "@/features/produtos/orcamento";
 import {
   useProducts,
   resolveLanding,
@@ -181,6 +185,11 @@ export default function ProposalPublicPage() {
 
   const allowCompetitor = COMPETITOR_ATTACH_SLUGS.includes(slug);
 
+  // Separa as formas de pagamento (kind: "payment") dos detalhes comuns, para
+  // renderizar o pagamento num bloco dedicado (cartão, parcelas, juros, banco).
+  const paymentItems = proposal.lineItems.filter((i) => i.kind === "payment");
+  const detailItems = proposal.lineItems.filter((i) => i.kind !== "payment");
+
   return (
     <>
       <SEOHead
@@ -209,16 +218,18 @@ export default function ProposalPublicPage() {
 
       {/* ═══ FRENTE: modal de vidro (glassmorphism) com a proposta ═══ */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
-          {/* Backdrop desfocado — clicar fora fecha (cai na landing) */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          {/* Backdrop leve — deixa a landing aparecer atrás do vidro flutuante.
+              Clicar fora fecha (o cliente "cai" na landing). */}
           <div
-            className="fixed inset-0 bg-[#04140a]/70 backdrop-blur-md"
+            className="fixed inset-0 bg-[#04140a]/40 backdrop-blur-sm"
             onClick={() => setModalOpen(false)}
             aria-hidden="true"
           />
 
-          {/* Cartão de vidro — cabe na tela do celular (sem scroll) */}
-          <div className="relative w-full max-w-sm max-h-[100dvh] rounded-3xl border border-white/25 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.45)] overflow-hidden flex flex-col">
+          {/* Cartão de vidro flutuante — margens deixam a landing visível ao
+              redor; rola por dentro se o conteúdo passar da altura da tela. */}
+          <div className="relative w-full max-w-sm max-h-[88dvh] rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_20px_70px_rgba(0,0,0,0.55)] overflow-hidden flex flex-col ring-1 ring-white/10">
             {/* brilhos decorativos */}
             <div className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full bg-[#3ad06a]/30 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-20 -left-16 w-56 h-56 rounded-full bg-[#0e8028]/30 blur-3xl" />
@@ -303,9 +314,9 @@ export default function ProposalPublicPage() {
               )}
 
               {/* Detalhes (compactos) */}
-              {proposal.lineItems.length > 0 && (
+              {detailItems.length > 0 && (
                 <div className="mt-3 rounded-2xl bg-white/5 border border-white/15 divide-y divide-white/10 overflow-hidden">
-                  {proposal.lineItems.map((item, i) => (
+                  {detailItems.map((item, i) => (
                     <div key={i} className="flex items-start justify-between gap-3 text-[13px] px-3.5 py-2">
                       <span className="text-white/70">{item.label}</span>
                       <span className="text-white text-right font-semibold">{item.value}</span>
@@ -313,6 +324,9 @@ export default function ProposalPublicPage() {
                   ))}
                 </div>
               )}
+
+              {/* Formas de pagamento (Placas): à vista, cartão, financiamento */}
+              {paymentItems.length > 0 && <PaymentBlock items={paymentItems} />}
 
               {/* Validade */}
               {validUntilLabel && !isFinal && (
@@ -477,4 +491,59 @@ function StatusBanner({
     );
   }
   return null;
+}
+
+// ===========================================================================
+// Bloco de formas de pagamento (Placas) — cartões de vidro com destaque
+// ===========================================================================
+function PaymentBlock({ items }: { items: ProposalLineItem[] }) {
+  const iconFor = (method?: string) => {
+    if (method === "cash") return <Wallet className="h-4 w-4" />;
+    if (method === "card") return <CreditCard className="h-4 w-4" />;
+    return <Landmark className="h-4 w-4" />;
+  };
+
+  return (
+    <div className="mt-3">
+      <p className="text-[9px] uppercase tracking-[0.22em] text-white/60 mb-1.5 px-1">
+        Formas de pagamento
+      </p>
+      <div className="space-y-2">
+        {items.map((item, i) => {
+          const title = item.method ? PAYMENT_METHOD_LABEL[item.method] : item.label;
+          return (
+            <div
+              key={i}
+              className={`rounded-2xl border px-3.5 py-2.5 ${
+                item.highlight
+                  ? "border-[#7ef0a0]/50 bg-[#3ad06a]/15"
+                  : "border-white/15 bg-white/5"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-white/85 text-[13px] font-medium">
+                  {iconFor(item.method)}
+                  {title}
+                  {item.highlight && (
+                    <span className="rounded-full bg-[#3ad06a]/30 px-2 py-0.5 text-[9px] font-semibold border border-[#7ef0a0]/30">
+                      recomendado
+                    </span>
+                  )}
+                </span>
+                <span className="text-white text-right font-bold text-[15px] leading-tight">
+                  {item.value}
+                </span>
+              </div>
+              {(item.bank || item.interest) && (
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-6 text-[10px] text-white/55">
+                  {item.bank && <span>🏦 {item.bank}</span>}
+                  {item.interest && <span>📈 {item.interest}</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

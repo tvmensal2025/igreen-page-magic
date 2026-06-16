@@ -33,22 +33,29 @@ interface PartnerQrCodeProps {
 const PUBLIC_BASE = "https://igreen.cloud";
 
 /**
- * Monta o LINK CURTO com a MARCA do portal: `igreen.cloud/r/{licenca}/{short_code}`.
+ * Monta o LINK CURTO com a MARCA do portal: `igreen.cloud/r/{ref}/{short_code}`.
  *
- * O `short_code` é numérico e neutro (ex.: 482917) — não expõe a keyword pessoal
- * do parceiro na URL. A rota `/r/...` no SPA redireciona pra `qr-redirect`, que
- * resolve telefone + frase (com a keyword dentro da mensagem do WhatsApp).
+ * `ref` é, de preferência, o **ID iGreen do consultor** (numérico e neutro,
+ * ex.: 122160) — não expõe o nome do consultor na URL. Quando o consultor não
+ * tem `igreen_id` cadastrado, cai na licença (slug). O `short_code` é numérico
+ * e neutro (ex.: 482917) — não expõe a keyword pessoal do parceiro.
  *
- * Sem licença ou sem código, devolve `null` (fallback pro wa.me direto).
+ * A rota `/r/...` no SPA redireciona pra `qr-redirect`, que resolve o consultor
+ * por igreen_id (numérico) ou por licença (slug, legado), monta telefone +
+ * frase (com a keyword dentro da mensagem do WhatsApp).
+ *
+ * Sem identificador ou sem código, devolve `null` (fallback pro wa.me direto).
  */
 function buildShortLink(
   license?: string | null,
   shortCode?: string | null,
+  consultantIgreenId?: string | null,
 ): string | null {
-  const lic = (license ?? "").trim();
+  // Prioriza o ID iGreen numérico (neutro); senão, usa a licença (slug).
+  const ref = (consultantIgreenId ?? "").trim() || (license ?? "").trim();
   const code = (shortCode ?? "").trim();
-  if (!lic || !code) return null;
-  return `${PUBLIC_BASE}/r/${encodeURIComponent(lic)}/${encodeURIComponent(code)}`;
+  if (!ref || !code) return null;
+  return `${PUBLIC_BASE}/r/${encodeURIComponent(ref)}/${encodeURIComponent(code)}`;
 }
 
 /**
@@ -61,7 +68,20 @@ function buildShortLink(
  *  - faixa200: 2000×800mm  (2,00×0,80m, faixa horizontal — envie sua arte)
  *  - faixa110: 1100×800mm  (1,10×0,80m, faixa horizontal — envie sua arte)
  */
-type TemplateId = "a4" | "banner" | "faixa200" | "faixa110";
+type TemplateId =
+  | "a4"
+  | "banner"
+  | "banner60x90"
+  | "banner80x120"
+  | "banner90x120"
+  | "banner100x150"
+  | "rollup80x200"
+  | "faixa200"
+  | "faixa110"
+  | "faixa100x70"
+  | "faixa300x100"
+  | "story"
+  | "post";
 
 const TEMPLATES: Record<
   TemplateId,
@@ -90,6 +110,48 @@ const TEMPLATES: Record<
     qrSize: 28,
     footerY: 99,
   },
+  // ---- Banners verticais (envie sua arte) ----
+  banner60x90: {
+    label: "Banner 60×90cm",
+    src: null,
+    qrX: 50,
+    qrY: 80,
+    qrSize: 28,
+    footerY: 95,
+  },
+  banner80x120: {
+    label: "Banner 80×120cm",
+    src: null,
+    qrX: 50,
+    qrY: 80,
+    qrSize: 26,
+    footerY: 95,
+  },
+  banner90x120: {
+    label: "Banner 90×120cm",
+    src: null,
+    qrX: 50,
+    qrY: 78,
+    qrSize: 28,
+    footerY: 94,
+  },
+  banner100x150: {
+    label: "Banner 100×150cm",
+    src: null,
+    qrX: 50,
+    qrY: 80,
+    qrSize: 26,
+    footerY: 95,
+  },
+  rollup80x200: {
+    label: "Roll-up 80×200cm",
+    src: null,
+    qrX: 50,
+    qrY: 75,
+    qrSize: 24,
+    footerY: 93,
+  },
+  // ---- Faixas horizontais (envie sua arte) ----
   faixa200: {
     label: "Faixa 2,00×0,80m",
     src: null,
@@ -106,6 +168,39 @@ const TEMPLATES: Record<
     qrSize: 28,
     footerY: 90,
   },
+  faixa100x70: {
+    label: "Faixa 1,00×0,70m",
+    src: null,
+    qrX: 80,
+    qrY: 50,
+    qrSize: 30,
+    footerY: 92,
+  },
+  faixa300x100: {
+    label: "Faixa 3,00×1,00m",
+    src: null,
+    qrX: 90,
+    qrY: 50,
+    qrSize: 16,
+    footerY: 92,
+  },
+  // ---- Digitais (story / post — envie sua arte) ----
+  story: {
+    label: "Story / Status 9:16",
+    src: null,
+    qrX: 50,
+    qrY: 78,
+    qrSize: 26,
+    footerY: 95,
+  },
+  post: {
+    label: "Post Instagram 1:1",
+    src: null,
+    qrX: 50,
+    qrY: 70,
+    qrSize: 32,
+    footerY: 93,
+  },
 };
 const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
 
@@ -117,8 +212,17 @@ const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
 const DEFAULT_LOCKED: Record<TemplateId, boolean> = {
   a4: true,
   banner: true,
+  banner60x90: false,
+  banner80x120: false,
+  banner90x120: false,
+  banner100x150: false,
+  rollup80x200: false,
   faixa200: false,
   faixa110: false,
+  faixa100x70: false,
+  faixa300x100: false,
+  story: false,
+  post: false,
 };
 
 /**
@@ -167,11 +271,25 @@ const TEMPLATE_DIMS: Record<
 > = {
   a4: { canvasW: 853, canvasH: 1280, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm (retrato)
   banner: { canvasW: 1008, canvasH: 1881, pdfWmm: 504, pdfHmm: 940 }, // 504×940mm (retrato)
-  // Faixas horizontais (landscape) — proporção física travada.
+  // Banners verticais (proporção física travada; canvas escalado ~1.18px/mm).
+  banner60x90: { canvasW: 708, canvasH: 1063, pdfWmm: 600, pdfHmm: 900 }, // 60×90cm
+  banner80x120: { canvasW: 945, canvasH: 1417, pdfWmm: 800, pdfHmm: 1200 }, // 80×120cm
+  banner90x120: { canvasW: 1063, canvasH: 1417, pdfWmm: 900, pdfHmm: 1200 }, // 90×120cm
+  banner100x150: { canvasW: 1181, canvasH: 1772, pdfWmm: 1000, pdfHmm: 1500 }, // 100×150cm
+  rollup80x200: { canvasW: 945, canvasH: 2362, pdfWmm: 800, pdfHmm: 2000 }, // 80×200cm
+  // Faixas horizontais (landscape).
   faixa200: { canvasW: 2000, canvasH: 800, pdfWmm: 2000, pdfHmm: 800 }, // 2,00×0,80m
   faixa110: { canvasW: 1375, canvasH: 1000, pdfWmm: 1100, pdfHmm: 800 }, // 1,10×0,80m
+  faixa100x70: { canvasW: 1181, canvasH: 827, pdfWmm: 1000, pdfHmm: 700 }, // 1,00×0,70m
+  faixa300x100: { canvasW: 2362, canvasH: 787, pdfWmm: 3000, pdfHmm: 1000 }, // 3,00×1,00m
+  // Digitais (px reais; PDF em mm só pra manter o fluxo — uso real é o PNG).
+  story: { canvasW: 1080, canvasH: 1920, pdfWmm: 108, pdfHmm: 192 }, // 1080×1920px (9:16)
+  post: { canvasW: 1080, canvasH: 1080, pdfWmm: 108, pdfHmm: 108 }, // 1080×1080px (1:1)
 };
 const PREVIEW_W = 320;
+// Altura máxima do preview para caber em telas de notebook sem scroll.
+// Templates muito altos (ex.: Banner 504×940mm) são reduzidos até esse teto.
+const PREVIEW_MAX_H = 440;
 
 function drawImageCover(
   ctx: CanvasRenderingContext2D,
@@ -213,9 +331,10 @@ export function PartnerQrCode({
 }: PartnerQrCodeProps) {
   // `phrase` é a mensagem que o lead vai ver no WhatsApp (exibida no card).
   const phrase = resolveQrMessage(qrPhrase, keyword);
-  // Link curto com marca: igreen.cloud/r/{licenca}/{short_code}. Sem licença ou
+  // Link curto com marca: igreen.cloud/r/{ref}/{short_code}, onde ref é o ID
+  // iGreen do consultor (neutro) ou a licença (fallback). Sem identificador ou
   // código (parceiro antigo sem backfill), cai no wa.me direto como fallback.
-  const shortLink = buildShortLink(license, shortCode);
+  const shortLink = buildShortLink(license, shortCode, consultantIgreenId);
   const url = shortLink ?? buildWaMeUrl(consultantPhone, keyword, qrPhrase);
 
   // Template selecionado (Sulfite A4 ou Banner 504×940mm).
@@ -284,7 +403,12 @@ export function PartnerQrCode({
     [],
   );
 
-  const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>({ a4: false, banner: false, faixa200: false, faixa110: false });
+  const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>(
+    () =>
+      Object.fromEntries(
+        (Object.keys(TEMPLATES) as TemplateId[]).map((id) => [id, false]),
+      ) as Record<TemplateId, boolean>,
+  );
   const locked = DEFAULT_LOCKED[templateId] && !unlockedMap[templateId];
 
   // Quando travado, força sempre os valores oficiais do template (ignora drift do estado).
@@ -446,13 +570,23 @@ export function PartnerQrCode({
     pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);
   };
 
-  // Preview com proporção real do template (largura fixa, altura calculada).
+  // Preview com proporção real do template, mas limitado por largura E altura
+  // para caber numa tela de notebook sem scroll. Templates altos (ex.: Banner
+  // 504×940mm) seriam grandes demais se calculássemos só pela largura, então
+  // reduzimos proporcionalmente até respeitar a altura máxima.
   const previewAspect =
     TEMPLATE_DIMS[templateId].canvasH / TEMPLATE_DIMS[templateId].canvasW;
-  const PREVIEW_H = Math.round(PREVIEW_W * previewAspect);
+  let previewW = PREVIEW_W;
+  let previewH = PREVIEW_W * previewAspect;
+  if (previewH > PREVIEW_MAX_H) {
+    previewH = PREVIEW_MAX_H;
+    previewW = previewH / previewAspect;
+  }
+  const PREVIEW_W_EFF = Math.round(previewW);
+  const PREVIEW_H = Math.round(previewH);
 
   // Preview-space sizes (percentages → pixels).
-  const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W;
+  const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W_EFF;
   const qrPadPreview = qrCorePxPreview * 0.06;
   const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
   const footerHPreview = PREVIEW_H * 0.03;
@@ -469,7 +603,7 @@ export function PartnerQrCode({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>QR Code — {partnerName}</DialogTitle>
         </DialogHeader>
@@ -483,7 +617,7 @@ export function PartnerQrCode({
               aria-label="Editor do flyer. Arraste o QR ou a faixa de rodapé. Use os controles para ajuste fino."
               className="relative overflow-hidden rounded-xl border bg-primary shadow-sm"
               style={{
-                width: PREVIEW_W,
+                width: PREVIEW_W_EFF,
                 height: PREVIEW_H,
                 backgroundImage: bgImage ? `url(${bgImage})` : undefined,
                   backgroundSize: "cover",

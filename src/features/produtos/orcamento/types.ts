@@ -36,9 +36,65 @@ export type ProposalEventType =
   | "expired";
 
 // Linha de detalhamento do orçamento (montada pelo catálogo comercial).
+// Pode ser uma linha simples (label/value) OU uma forma de pagamento
+// estruturada (kind: "payment"), usada em produtos com financiamento (Placas).
+// As formas de pagamento são guardadas aqui dentro de propósito: o `line_items`
+// já trafega pela edge function pública e já chega na página, então não exige
+// migration nem novo deploy. A página pública separa os itens de pagamento dos
+// detalhes comuns e os renderiza num bloco dedicado.
 export interface ProposalLineItem {
   label: string;
   value: string;
+  /** Marca este item como uma forma de pagamento (renderiza em bloco próprio). */
+  kind?: "payment";
+  /** Tipo da forma de pagamento. */
+  method?: PaymentMethod;
+  /** Banco/financeira (apenas financiamento). */
+  bank?: string | null;
+  /** Número de parcelas (cartão ou financiamento). */
+  installments?: number | null;
+  /** Valor de cada parcela em R$ (consultor digita). */
+  installmentValue?: number | null;
+  /** Juros informado pelo consultor (texto livre, ex.: "1,99% a.m."). */
+  interest?: string | null;
+  /** Marca a opção como recomendada/destaque. */
+  highlight?: boolean;
+}
+
+// Forma de pagamento de uma proposta com financiamento (Placas).
+export type PaymentMethod = "cash" | "card" | "financing";
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  cash: "À vista",
+  card: "Cartão de crédito",
+  financing: "Financiamento",
+};
+
+// Bancos/financeiras principais para o consultor escolher (financiamento solar).
+export const FINANCING_BANKS = [
+  "BV Financeira",
+  "Santander",
+  "Sol Agora",
+  "Banco do Brasil",
+  "Caixa",
+  "Sicredi",
+  "Sicoob",
+  "Bradesco",
+  "Itaú",
+  "Banco Inter",
+  "Outro",
+] as const;
+
+// Forma de pagamento estruturada (entrada no builder, antes de virar lineItem).
+export interface PaymentOption {
+  method: PaymentMethod;
+  /** À vista: valor total. Cartão/financiamento: opcional (informativo). */
+  total?: number | null;
+  bank?: string | null;
+  installments?: number | null;
+  installmentValue?: number | null;
+  interest?: string | null;
+  highlight?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { supabase } from "@/integrations/supabase/client";
 
 interface TokenRow {
@@ -30,6 +31,7 @@ async function sha256Hex(input: string): Promise<string> {
 
 export function IGreenExtensionCard({ userId }: { userId: string }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -70,7 +72,14 @@ export function IGreenExtensionCard({ userId }: { userId: string }) {
   };
 
   const removeToken = async (id: string, prefix: string) => {
-    if (!confirm(`Excluir a chave ${prefix}…?\nEsta ação é permanente e a extensão ligada a esta chave deixará de funcionar imediatamente.`)) return;
+    const ok = await confirm({
+      title: `Excluir a chave ${prefix}…?`,
+      description:
+        "Esta ação é permanente e a extensão ligada a esta chave deixará de funcionar imediatamente.",
+      confirmText: "Excluir chave",
+      tone: "danger",
+    });
+    if (!ok) return;
     const { error } = await supabase
       .from("igreen_extension_tokens")
       .delete()

@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Copy, Send, Check, X } from "lucide-react";
+import { Loader2, Copy, Send, Check, X, Plus } from "lucide-react";
 import { useProducts } from "../catalogo/hooks";
 import { PRODUCT_FAMILY_LABEL } from "../catalogo/types";
 import {
@@ -30,8 +30,14 @@ import {
   getSlugProfile,
   IGREEN_CLUB_BENEFITS,
 } from "./catalog";
-import { computeQuoteAmount } from "./pricing";
+import { computeQuoteAmount, paymentOptionsToLineItems } from "./pricing";
 import { useCreateProposal } from "./hooks";
+import {
+  FINANCING_BANKS,
+  PAYMENT_METHOD_LABEL,
+  type PaymentMethod,
+  type PaymentOption,
+} from "./types";
 import { RecipientPicker, type RecipientSelection } from "./components/RecipientPicker";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { pvSerif, pvBody, usePvFonts } from "../theme";
@@ -69,12 +75,15 @@ export function OrcamentoBuilderSheet({
   const [recipient, setRecipient] = useState<RecipientSelection | null>(null);
   const [planId, setPlanId] = useState<string>("");
   const [projectAmount, setProjectAmount] = useState<string>("");
-  const [installments, setInstallments] = useState<string>("");
   const [currentBill, setCurrentBill] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [validForDays, setValidForDays] = useState<string>("7");
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Formas de pagamento (apenas project_once / Placas): consultor digita
+  // à vista, cartão e/ou financiamento (banco, parcelas, valor, juros).
+  const [payments, setPayments] = useState<PaymentOption[]>([]);
 
   // Só os produtos vendáveis por orçamento (allowlist por slug). Os demais
   // continuam no catálogo/banco, mas não aparecem no seletor do builder.
@@ -97,14 +106,15 @@ export function OrcamentoBuilderSheet({
       slug: product.slug,
       plan,
       projectAmount: projectAmount ? Number(projectAmount) : undefined,
-      installments: installments ? Number(installments) : undefined,
       currentBill: currentBill ? Number(currentBill) : undefined,
     });
-  }, [product, config, plan, projectAmount, installments, currentBill]);
+  }, [product, config, plan, projectAmount, currentBill]);
 
   // Mercado livre (Conexão Livre) não tem valor fechado — o envio é permitido
   // sem amount > 0, porque a proposta vende a solução, não um preço exato.
   const isMarketFree = config?.pricingMode === "market_free";
+  // Placas (venda do sistema): habilita o editor de formas de pagamento.
+  const isProjectOnce = config?.pricingMode === "project_once";
 
   const currentStep = !product ? 1 : !recipient ? 2 : 3;
 
@@ -113,11 +123,11 @@ export function OrcamentoBuilderSheet({
     setRecipient(null);
     setPlanId("");
     setProjectAmount("");
-    setInstallments("");
     setCurrentBill("");
     setMessage("");
     setValidForDays("7");
     setCreatedLink(null);
+    setPayments([]);
   };
 
   const canSubmit =
@@ -131,6 +141,10 @@ export function OrcamentoBuilderSheet({
     if (!product || !recipient || !quote) return;
     setSubmitting(true);
     try {
+      // Detalhes do cálculo + formas de pagamento (Placas) num só line_items.
+      const paymentItems = isProjectOnce ? paymentOptionsToLineItems(payments) : [];
+      const lineItems = [...quote.details, ...paymentItems];
+
       const proposal = await createProposal.mutateAsync({
         consultantId,
         productId: product.id,
@@ -139,7 +153,7 @@ export function OrcamentoBuilderSheet({
         recipientPhone: recipient.phone,
         amount: quote.amount,
         amountPeriod: quote.period,
-        lineItems: quote.details,
+        lineItems,
         message: message.trim() || null,
         validForDays: Number(validForDays) || 7,
       });
@@ -164,10 +178,27 @@ export function OrcamentoBuilderSheet({
       toast({ title: "WhatsApp não conectado", variant: "destructive" });
       return;
     }
+
+    // Resumo das formas de pagamento (Placas) na mensagem do WhatsApp.
+    const validPayments = isProjectOnce ? paymentOptionsToLineItems(payments) : [];
+    const paymentSummary =
+      validPayments.length > 0
+        ? `\n💳 Formas de pagamento:\n` +
+          validPayments
+            .map((p) => {
+              const title = p.method ? PAYMENT_METHOD_LABEL[p.method] : p.label;
+              const extra = p.bank ? ` (${p.bank})` : "";
+              return `• ${title}: ${p.value}${extra}`;
+            })
+            .join("\n") +
+          "\n"
+        : "";
+
     const text =
       `Olá ${recipient.name}! 👋\n\n` +
       `Preparei um orçamento de *${product.name}* para você.\n` +
       `${quote ? `${quote.label}: *${BRL(quote.amount)}*${quote.period === "month" ? "/mês" : ""}\n` : ""}` +
+      `${paymentSummary}` +
       `\nVeja os detalhes e responda por aqui:\n${createdLink}`;
 
     const result = await sendWhatsAppMessage({
@@ -360,28 +391,24 @@ export function OrcamentoBuilderSheet({
                   )}
 
                   {config?.pricingMode === "project_once" && (
-                    <div className="grid grid-cols-2 gap-3">
+                    <>
                       <Field label="Valor do projeto">
                         <Input
                           type="number"
                           inputMode="numeric"
                           value={projectAmount}
                           onChange={(e) => setProjectAmount(e.target.value)}
-                          placeholder="Ex.: 18000"
+                          placeholder="Ex.: 30426,66"
                           className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none"
                         />
                       </Field>
-                      <Field label="Parcelas">
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          value={installments}
-                          onChange={(e) => setInstallments(e.target.value)}
-                          placeholder="Ex.: 60"
-                          className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none"
-                        />
-                      </Field>
-                    </div>
+
+                      <PaymentEditor
+                        projectAmount={projectAmount ? Number(projectAmount) : 0}
+                        payments={payments}
+                        onChange={setPayments}
+                      />
+                    </>
                   )}
 
                   {config?.pricingMode === "savings_estimate" && (
@@ -477,6 +504,27 @@ export function OrcamentoBuilderSheet({
                                 ))}
                               </ul>
                             )}
+                            {isProjectOnce && payments.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-white/10">
+                                <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50 mb-1.5">
+                                  Formas de pagamento
+                                </p>
+                                <ul className="space-y-1.5">
+                                  {paymentOptionsToLineItems(payments).map((p, i) => (
+                                    <li
+                                      key={i}
+                                      className="flex justify-between gap-2 text-[11px] text-[#f5f0e8]/70"
+                                    >
+                                      <span>
+                                        {p.method ? PAYMENT_METHOD_LABEL[p.method] : p.label}
+                                        {p.bank ? ` · ${p.bank}` : ""}
+                                      </span>
+                                      <span className="text-[#c9a84c] text-right">{p.value}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <p className="text-xs text-[#f5f0e8]/40 italic pt-3 border-t border-white/10">
@@ -519,6 +567,168 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {label}
       </label>
       {children}
+    </div>
+  );
+}
+
+// ===========================================================================
+// Editor de formas de pagamento (Placas)
+// ===========================================================================
+// O consultor adiciona quantas opções quiser: à vista, cartão (Nx) e
+// financiamento (banco + Nx + valor da parcela + juros). Tudo digitado por ele
+// — nada é calculado automaticamente, para refletir a simulação real do banco.
+function PaymentEditor({
+  projectAmount,
+  payments,
+  onChange,
+}: {
+  projectAmount: number;
+  payments: PaymentOption[];
+  onChange: (next: PaymentOption[]) => void;
+}) {
+  const addOption = (method: PaymentMethod) => {
+    const base: PaymentOption = {
+      method,
+      total: method === "cash" ? (projectAmount || null) : null,
+      bank: method === "financing" ? FINANCING_BANKS[0] : null,
+      installments: method === "cash" ? null : 12,
+      installmentValue: null,
+      interest: null,
+      highlight: false,
+    };
+    onChange([...payments, base]);
+  };
+
+  const update = (idx: number, patch: Partial<PaymentOption>) => {
+    onChange(payments.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
+  };
+
+  const remove = (idx: number) => {
+    onChange(payments.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#1a2e1f]/60 block">
+          Formas de pagamento
+        </label>
+        <div className="flex gap-1.5">
+          {(["cash", "card", "financing"] as PaymentMethod[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => addOption(m)}
+              className="inline-flex items-center gap-1 bg-white border border-[#a8c0a0]/50 text-[#1a2e1f] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider hover:bg-[#dce5d4] transition-colors"
+            >
+              <Plus className="h-3 w-3" /> {PAYMENT_METHOD_LABEL[m]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {payments.length === 0 ? (
+        <p className="text-[11px] text-[#1a2e1f]/50 italic">
+          Adicione à vista, cartão ou financiamento. Você digita banco, parcelas, valor e juros.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {payments.map((opt, idx) => (
+            <div key={idx} className="bg-white border border-[#a8c0a0]/40 p-3 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#7d9b76]">
+                  {PAYMENT_METHOD_LABEL[opt.method]}
+                </span>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-[10px] text-[#1a2e1f]/60 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={opt.highlight ?? false}
+                      onChange={(e) => update(idx, { highlight: e.target.checked })}
+                      className="accent-[#7d9b76]"
+                    />
+                    Destaque
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => remove(idx)}
+                    className="text-[#1a2e1f]/40 hover:text-red-600 transition-colors"
+                    aria-label="Remover forma de pagamento"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {opt.method === "cash" ? (
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  value={opt.total ?? ""}
+                  onChange={(e) =>
+                    update(idx, { total: e.target.value ? Number(e.target.value) : null })
+                  }
+                  placeholder="Valor à vista (ex.: 28900)"
+                  className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                />
+              ) : (
+                <div className="space-y-2">
+                  {opt.method === "financing" && (
+                    <Select
+                      value={opt.bank ?? ""}
+                      onValueChange={(v) => update(idx, { bank: v })}
+                    >
+                      <SelectTrigger className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none">
+                        <SelectValue placeholder="Banco / financeira" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FINANCING_BANKS.map((b) => (
+                          <SelectItem key={b} value={b} className="text-sm">
+                            {b}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      value={opt.installments ?? ""}
+                      onChange={(e) =>
+                        update(idx, {
+                          installments: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      placeholder="Parcelas (ex.: 60)"
+                      className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                    />
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      value={opt.installmentValue ?? ""}
+                      onChange={(e) =>
+                        update(idx, {
+                          installmentValue: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      placeholder="Valor da parcela"
+                      className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                    />
+                  </div>
+                  <Input
+                    type="text"
+                    value={opt.interest ?? ""}
+                    onChange={(e) => update(idx, { interest: e.target.value || null })}
+                    placeholder="Juros (ex.: 1,99% a.m.) — opcional"
+                    className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
