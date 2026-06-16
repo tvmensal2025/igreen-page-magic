@@ -43,7 +43,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
       onDragStart={() => onDragStart(deal.id)}
       className={`p-3 cursor-grab active:cursor-grabbing rounded-xl bg-card border hover:shadow-sm transition-all group w-full max-w-full min-w-0 overflow-hidden ${isTest ? "border-dashed border-muted-foreground/30 opacity-70 grayscale" : "border-border/50 hover:border-primary/25"}`}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 mt-0.5 shrink-0 group-hover:text-muted-foreground transition-colors" />
         <div className="flex-1 min-w-0">
           {(deal as any).customer_name && (
@@ -57,9 +57,9 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
             </div>
           )}
           {/* Badges de origem em linha própria — evita comprimir/cortar o nome */}
-          <div className="flex items-center gap-1 flex-wrap mb-0.5">
+          <div className="flex min-w-0 max-w-full items-center gap-1 flex-wrap mb-0.5 overflow-hidden">
             <span
-              className={`text-[8px] px-1 py-0.5 rounded border font-semibold ${originBadge.cls}`}
+              className={`text-[8px] px-1 py-0.5 rounded border font-semibold shrink-0 ${originBadge.cls}`}
               title={originBadge.title}
             >
               {originBadge.label}
@@ -70,7 +70,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
               </span>
             )}
           </div>
-          <span className="text-[10px] text-muted-foreground truncate block sensitive-phone">
+          <span className="text-[10px] text-muted-foreground truncate block sensitive-phone min-w-0 max-w-full">
             {deal.remote_jid?.split("@")[0] || "Sem contato"}
           </span>
           <div className={`mt-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9px] font-medium min-w-0 max-w-full ${stepTone}`}
@@ -79,7 +79,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
             <Footprints className="h-2.5 w-2.5 shrink-0" />
             {stepInfo
               ? (
-                <span className="flex items-baseline gap-1 min-w-0">
+                <span className="flex flex-1 items-baseline gap-1 min-w-0 overflow-hidden">
                   <span className="shrink-0">{stepInfo.number}{stepInfo.total ? `/${stepInfo.total}` : ""} ·</span>
                   <span className="truncate min-w-0">{stepInfo.label}</span>
                 </span>
