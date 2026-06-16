@@ -154,6 +154,38 @@ Deno.serve(async (req) => {
     } = parsed;
     let { messageText, isFile, isButton, buttonId, messageId } = parsed;
 
+    // ─── Aprovação de cadastro por "SIM" do super admin ────────────────
+    // Se o super admin responder "SIM" (ou "SIM <nome>") no WhatsApp, aprova
+    // o cadastro de consultor pendente sem precisar abrir o painel. A guarda
+    // de telefone (allowlist do super admin) está dentro do helper, então um
+    // lead qualquer que mande "sim" NÃO dispara aprovação.
+    try {
+      const senderPhone = normalizePhone(String(remoteJid).replace("@s.whatsapp.net", "")).replace(/\D/g, "");
+      const { parseApprovalCommand, handleSuperAdminApproval } = await import("../_shared/superadmin-approval.ts");
+      if (messageText && parseApprovalCommand(messageText)) {
+        const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
+        const whapiBaseUrl = settings.whapi_api_url || "https://gate.whapi.cloud";
+        const approvalSender = createWhapiSender(whapiToken, whapiBaseUrl);
+        const res = await handleSuperAdminApproval({
+          supabase: supabase as any,
+          superAdminConsultantId,
+          senderPhone,
+          messageText,
+          sender: approvalSender,
+          remoteJid,
+        });
+        if (res.handled) {
+          console.log(`[whapi-webhook] aprovação super admin tratada (approved=${res.approvedConsultantId ?? "—"})`);
+          return new Response(JSON.stringify({ ok: true, msg: "superadmin_approval", approved: res.approvedConsultantId ?? null }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    } catch (e) {
+      console.error("⚠️ Falha na aprovação por SIM do super admin:", (e as Error).message);
+      // Fail-open: segue o fluxo normal se algo der errado.
+    }
+
     // Helper: limpa emojis/símbolos do pushName e pega o primeiro nome válido
     const cleanPushName = (raw: string | null | undefined): string | null => {
       if (!raw) return null;
