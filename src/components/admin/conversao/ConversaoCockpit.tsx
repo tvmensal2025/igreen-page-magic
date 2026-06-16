@@ -443,12 +443,13 @@ export function ConversaoCockpit({ consultantId }: Props) {
   }, [selectedIds, rows, exitSelectMode, fetchRows]);
 
   return (
-    <Tabs defaultValue="fila" className="space-y-5">
-      <TabsList>
-        <TabsTrigger value="fila" className="gap-1.5"><ListOrdered className="h-4 w-4" /> Fila de leads</TabsTrigger>
-        <TabsTrigger value="frases" className="gap-1.5"><MessageSquareText className="h-4 w-4" /> Frases</TabsTrigger>
-        <TabsTrigger value="resultados" className="gap-1.5"><TrendingUp className="h-4 w-4" /> Resultados</TabsTrigger>
-        <TabsTrigger value="config" className="gap-1.5"><Settings2 className="h-4 w-4" /> Configurar</TabsTrigger>
+    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-5">
+      <ViewSwitcher value={activeView} onChange={setActiveView} />
+      <TabsList className="sr-only">
+        <TabsTrigger value="fila">Fila</TabsTrigger>
+        <TabsTrigger value="frases">Frases</TabsTrigger>
+        <TabsTrigger value="resultados">Resultados</TabsTrigger>
+        <TabsTrigger value="config">Configurar</TabsTrigger>
       </TabsList>
 
       <TabsContent value="fila" className="space-y-5">
