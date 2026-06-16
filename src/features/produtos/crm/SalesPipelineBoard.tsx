@@ -16,7 +16,16 @@
 // =============================================================================
 
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { ListChecks, Plus, Settings2 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { SaleStagePanel, StageTemplateAdmin } from "@/features/produtos/esteira";
+import { useUserRole } from "@/hooks/useUserRole";
 import {
   Select,
   SelectContent,
