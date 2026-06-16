@@ -82,6 +82,10 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
   const [lossReason, setLossReason] = useState("");
   // Controla o diálogo de registro manual de venda (Requisito 3).
   const [registrarOpen, setRegistrarOpen] = useState(false);
+  // Esteira de acompanhamento (pós-venda) e admin do modelo de etapas.
+  const [stagePanelSale, setStagePanelSale] = useState<Sale | null>(null);
+  const [templateAdminOpen, setTemplateAdminOpen] = useState(false);
+  const { isAdmin } = useUserRole(consultantId);
   const { toast } = useToast();
 
   const { data: products = [] } = useProducts();
