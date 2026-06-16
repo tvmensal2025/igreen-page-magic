@@ -1660,6 +1660,8 @@ export type Database = {
       bot_flow_qa: {
         Row: {
           created_at: string
+          embedding: string | null
+          embedding_updated_at: string | null
           flow_id: string
           id: string
           intent_name: string
@@ -1672,6 +1674,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           flow_id: string
           id?: string
           intent_name?: string
@@ -1684,6 +1688,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          embedding?: string | null
+          embedding_updated_at?: string | null
           flow_id?: string
           id?: string
           intent_name?: string
@@ -2846,8 +2852,8 @@ export type Database = {
           flow_engine_v3: string
           flow_reliability_v2: string
           flow_step_media_order: Json
-          google_analytics_id: string | null
           gender: string | null
+          google_analytics_id: string | null
           id: string
           igreen_consultor_id: string | null
           igreen_id: string | null
@@ -2886,8 +2892,8 @@ export type Database = {
           flow_engine_v3?: string
           flow_reliability_v2?: string
           flow_step_media_order?: Json
-          google_analytics_id?: string | null
           gender?: string | null
+          google_analytics_id?: string | null
           id: string
           igreen_consultor_id?: string | null
           igreen_id?: string | null
@@ -2926,8 +2932,8 @@ export type Database = {
           flow_engine_v3?: string
           flow_reliability_v2?: string
           flow_step_media_order?: Json
-          google_analytics_id?: string | null
           gender?: string | null
+          google_analytics_id?: string | null
           id?: string
           igreen_consultor_id?: string | null
           igreen_id?: string | null
@@ -6375,6 +6381,7 @@ export type Database = {
           notification_phone: string | null
           partner_igreen_id: string | null
           qr_phrase: string | null
+          short_code: string | null
           updated_at: string
         }
         Insert: {
@@ -6388,6 +6395,7 @@ export type Database = {
           notification_phone?: string | null
           partner_igreen_id?: string | null
           qr_phrase?: string | null
+          short_code?: string | null
           updated_at?: string
         }
         Update: {
@@ -6401,6 +6409,7 @@ export type Database = {
           notification_phone?: string | null
           partner_igreen_id?: string | null
           qr_phrase?: string | null
+          short_code?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -7797,6 +7806,17 @@ export type Database = {
         Args: { _id: string }
         Returns: undefined
       }
+      bump_ai_cost: {
+        Args: {
+          p_consultant_id: string
+          p_input_tokens: number
+          p_model: string
+          p_output_tokens: number
+          p_phase: string
+          p_usd: number
+        }
+        Returns: undefined
+      }
       can_access_remote_support_topic: {
         Args: { _topic: string }
         Returns: boolean
@@ -7928,6 +7948,7 @@ export type Database = {
       }
       fork_message_template: { Args: { _origin_id: string }; Returns: string }
       fork_public_ai_media: { Args: { _media_id: string }; Returns: string }
+      gen_partner_short_code: { Args: { p_len?: number }; Returns: string }
       get_coverage_summary: {
         Args: never
         Returns: {
@@ -8063,6 +8084,19 @@ export type Database = {
           id: string
           similarity: number
           title: string
+        }[]
+      }
+      match_knowledge_all: {
+        Args: {
+          p_consultant_id: string
+          p_match_count?: number
+          p_query_embedding: string
+        }
+        Returns: {
+          conteudo: string
+          fonte: string
+          similarity: number
+          titulo: string
         }[]
       }
       match_winning: {
