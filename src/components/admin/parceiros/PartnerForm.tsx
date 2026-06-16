@@ -161,10 +161,10 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-hidden p-0 gap-0">
+        <DialogHeader className="px-5 py-3 border-b">
           <div className="flex items-center justify-between gap-2 pr-6">
-            <DialogTitle>
+            <DialogTitle className="text-base">
               {isEdit ? "Editar Parceiro" : "Novo Parceiro Indicador"}
             </DialogTitle>
             {isEdit && onDelete && (
@@ -173,7 +173,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 variant="ghost"
                 size="sm"
                 onClick={handleDelete}
-                className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                 title="Excluir parceiro"
               >
                 <Trash2 className="h-4 w-4" />
@@ -182,7 +182,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           </div>
         </DialogHeader>
 
-        <div className="space-y-3 py-1">
+        <div className="px-5 py-4 space-y-4 overflow-y-auto">
           {isEdit && keywords.length === 0 && !qrPhrase.trim() && (
             <div className="flex items-start gap-2 p-2 rounded-md bg-destructive/10 border border-destructive/30 text-destructive text-[11px]">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -192,79 +192,94 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="partner-nome" className="text-xs">Nome *</Label>
-              <Input
-                id="partner-nome"
-                value={nome}
-                onChange={(e) => {
-                  setNome(e.target.value);
-                  if (errors.nome) setErrors((prev) => ({ ...prev, nome: undefined }));
-                }}
-                placeholder="Nome do parceiro"
-                className="h-8 text-sm"
-              />
-              {errors.nome && (
-                <p className="text-[11px] text-destructive">{errors.nome}</p>
-              )}
-            </div>
+          {/* Section: Identificação */}
+          <section className="space-y-2.5">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Identificação
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="partner-nome" className="text-xs">Nome *</Label>
+                <Input
+                  id="partner-nome"
+                  value={nome}
+                  onChange={(e) => {
+                    setNome(e.target.value);
+                    if (errors.nome) setErrors((prev) => ({ ...prev, nome: undefined }));
+                  }}
+                  placeholder="Nome do parceiro"
+                  className="h-9"
+                />
+                {errors.nome && <p className="text-[11px] text-destructive">{errors.nome}</p>}
+              </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="partner-cli" className="text-xs">
-                CLI (ID iGreen) {isConsultorParceiro ? "(opc)" : "*"}
-              </Label>
-              <Input
-                id="partner-cli"
-                value={cli}
-                onChange={(e) => {
-                  setCli(e.target.value);
-                  if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
-                }}
-                placeholder="ID iGreen"
-                className="h-8 text-sm"
-              />
-              {errors.cli && (
-                <p className="text-[11px] text-destructive">{errors.cli}</p>
-              )}
-            </div>
-          </div>
+              <div className="space-y-1">
+                <Label htmlFor="partner-cli" className="text-xs">
+                  CLI (ID iGreen) {isConsultorParceiro ? "(opcional)" : "*"}
+                </Label>
+                <Input
+                  id="partner-cli"
+                  value={cli}
+                  onChange={(e) => {
+                    setCli(e.target.value);
+                    if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
+                  }}
+                  placeholder="ID iGreen"
+                  className="h-9"
+                />
+                {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
+              </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="partner-igreen-id" className="text-xs">ID iGreen consultor parceiro (opc)</Label>
-              <Input
-                id="partner-igreen-id"
-                value={partnerIgreenId}
-                onChange={(e) => setPartnerIgreenId(e.target.value)}
-                placeholder="Ex: 123456"
-                className="h-8 text-sm"
-              />
-              <p className="text-[10px] text-muted-foreground leading-tight">
-                Cadastro vai no nome de outro consultor. Deixe vazio para indicador comum.
-              </p>
-            </div>
+              <div className="space-y-1">
+                <Label htmlFor="partner-igreen-id" className="text-xs">
+                  ID consultor parceiro <span className="text-muted-foreground">(opcional)</span>
+                </Label>
+                <Input
+                  id="partner-igreen-id"
+                  value={partnerIgreenId}
+                  onChange={(e) => setPartnerIgreenId(e.target.value)}
+                  placeholder="Ex: 123456"
+                  className="h-9"
+                />
+              </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="partner-notify" className="text-xs">Aviso WhatsApp (opc)</Label>
-              <Input
-                id="partner-notify"
-                value={notificationPhone}
-                onChange={(e) => setNotificationPhone(e.target.value)}
-                placeholder="Ex: 11999998888"
-                className="h-8 text-sm"
-              />
-              <p className="text-[10px] text-muted-foreground leading-tight">
-                Número que recebe aviso quando um lead chega por este parceiro.
-              </p>
+              <div className="space-y-1">
+                <Label htmlFor="partner-notify" className="text-xs">
+                  Aviso WhatsApp <span className="text-muted-foreground">(opcional)</span>
+                </Label>
+                <Input
+                  id="partner-notify"
+                  value={notificationPhone}
+                  onChange={(e) => setNotificationPhone(e.target.value)}
+                  placeholder="Ex: 11999998888"
+                  className="h-9"
+                />
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs">Palavras-chave</Label>
-              <div className="flex gap-1">
-                <Button type="button" variant="secondary" onClick={addKeyword} size="sm" className="h-6 px-2 text-[11px]">
+          {/* Section: Atribuição */}
+          <section className="space-y-2.5 pt-3 border-t">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Atribuição de leads
+            </h3>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Palavras-chave</Label>
+                {keywords.length > 0 && (
+                  <span className="text-[10px] text-muted-foreground">{keywords.length} adicionada(s)</span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={keywordInput}
+                  onChange={(e) => setKeywordInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Digite e pressione Enter"
+                  className="flex-1 h-9"
+                />
+                <Button type="button" variant="secondary" onClick={addKeyword} size="sm" className="h-9 px-3">
                   Adicionar
                 </Button>
                 <Button
@@ -273,92 +288,80 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   onClick={generateExample}
                   size="sm"
                   disabled={aiLoading}
-                  className="h-6 px-2 text-[11px] gap-1 border-primary/40 text-primary hover:bg-primary/10"
-                  title="Gerar exemplo de mensagem com IA"
+                  className="h-9 px-3 gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                  title="Gerar exemplo com IA"
                 >
                   {aiLoading ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Sparkles className="h-3 w-3" />
+                    <Sparkles className="h-3.5 w-3.5" />
                   )}
                   IA
                 </Button>
               </div>
+              {keywords.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {keywords.map((kw) => (
+                    <Badge key={kw} variant="secondary" className="gap-1 text-[11px] h-6 px-2">
+                      {kw}
+                      <button
+                        type="button"
+                        onClick={() => removeKeyword(kw)}
+                        className="ml-0.5 hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {aiExample && (
+                <div className="p-2 rounded-md bg-primary/5 border border-primary/20 space-y-1 mt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-primary/80 flex items-center gap-1">
+                      <Sparkles className="h-3 w-3" /> Exemplo IA
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={generateExample}
+                      disabled={aiLoading}
+                      className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-primary"
+                    >
+                      {aiLoading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-foreground/90 leading-snug italic">"{aiExample}"</p>
+                </div>
+              )}
             </div>
-            <div className="flex gap-2">
+
+            <div className="space-y-1">
+              <Label htmlFor="partner-qr-phrase" className="text-xs">
+                Frase QR Code <span className="text-muted-foreground">(opcional)</span>
+              </Label>
               <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Digite e pressione Enter"
-                className="flex-1 h-8 text-sm"
+                id="partner-qr-phrase"
+                value={qrPhrase}
+                onChange={(e) => setQrPhrase(e.target.value)}
+                placeholder={buildDefaultQrPhrase(keywords[0] || keywordInput.trim())}
+                className="h-9"
               />
             </div>
-            {keywords.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {keywords.map((kw) => (
-                  <Badge key={kw} variant="secondary" className="gap-1 text-[11px] h-5 px-1.5">
-                    {kw}
-                    <button
-                      type="button"
-                      onClick={() => removeKeyword(kw)}
-                      className="ml-0.5 hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-
-            {aiExample && (
-              <div className="mt-1 p-2 rounded-md bg-primary/5 border border-primary/20 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-wider font-semibold text-primary/80 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" /> Exemplo IA
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={generateExample}
-                    disabled={aiLoading}
-                    className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-primary"
-                  >
-                    {aiLoading ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3 w-3" />
-                    )}
-                  </Button>
-                </div>
-                <p className="text-[11px] text-foreground/90 leading-snug italic">
-                  "{aiExample}"
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="partner-qr-phrase" className="text-xs">Frase QR Code (opc)</Label>
-            <Input
-              id="partner-qr-phrase"
-              value={qrPhrase}
-              onChange={(e) => setQrPhrase(e.target.value)}
-              placeholder={buildDefaultQrPhrase(keywords[0] || keywordInput.trim())}
-              className="h-8 text-sm"
-            />
-            <p className="text-[10px] text-muted-foreground leading-tight">
-              Deixe vazio para usar a frase padrão. O link fica enxuto e a atribuição funciona normalmente.
-            </p>
-          </div>
+          </section>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+        <DialogFooter className="px-5 py-3 border-t bg-muted/30 sm:space-x-2">
+          <Button variant="outline" onClick={onClose} size="sm">
             Cancelar
           </Button>
-          <Button onClick={handleSubmit}>
+          <Button onClick={handleSubmit} size="sm">
             {isEdit ? "Salvar" : "Criar Parceiro"}
           </Button>
         </DialogFooter>
