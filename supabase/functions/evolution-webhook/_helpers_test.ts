@@ -35,8 +35,13 @@ Deno.test("classifyDisconnect: 515 restartRequired é transitório (reconecta)",
   assertEquals(classifyDisconnect(515), "transient");
 });
 
-Deno.test("classifyDisconnect: 0 / ausente é transitório (default seguro p/ reconexão)", () => {
-  assertEquals(classifyDisconnect(0), "transient");
+Deno.test("classifyDisconnect: 0 EXPLÍCITO é fatal (possível ban silencioso)", () => {
+  // Regra de segurança: código 0 ('fechou e o servidor não disse porquê')
+  // costuma ser ban silencioso — reconectar acelera o banimento.
+  assertEquals(classifyDisconnect(0), "fatal");
+});
+
+Deno.test("classifyDisconnect: ausente (null/undefined) é transitório (glitch de rede)", () => {
   assertEquals(classifyDisconnect(null), "transient");
   assertEquals(classifyDisconnect(undefined), "transient");
 });

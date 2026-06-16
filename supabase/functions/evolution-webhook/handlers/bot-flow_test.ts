@@ -79,45 +79,45 @@ function withFakeSetTimeout<T>(fn: (recorded: number[]) => Promise<T>): Promise<
   });
 }
 
-Deno.test("sleepForMedia(audio, 5) → ~5000ms", async () => {
+Deno.test("sleepForMedia(audio, 5) → cadência fixa 5000ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", 5);
     assertEquals(rec[0], 5000);
   });
 });
 
-Deno.test("sleepForMedia(audio, 9999) → cap 120000ms", async () => {
+Deno.test("sleepForMedia(audio, 9999) → cadência fixa 5000ms (ignora duração)", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", 9999);
-    assertEquals(rec[0], 120_000);
+    assertEquals(rec[0], 5000);
   });
 });
 
-Deno.test("sleepForMedia(audio, undefined) → default 90000ms", async () => {
+Deno.test("sleepForMedia(audio, undefined) → cadência fixa 5000ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", undefined);
-    assertEquals(rec[0], 90_000);
+    assertEquals(rec[0], 5000);
   });
 });
 
-Deno.test("sleepForMedia(video, 2) → 2000ms", async () => {
+Deno.test("sleepForMedia(video, 2) → cadência fixa 3000ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("video", 2);
-    assertEquals(rec[0], 2000);
+    assertEquals(rec[0], 3000);
   });
 });
 
-Deno.test("sleepForMedia(video, 9999) → cap 90000ms", async () => {
+Deno.test("sleepForMedia(video, 9999) → cadência fixa 3000ms (ignora duração)", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("video", 9999);
-    assertEquals(rec[0], 90_000);
+    assertEquals(rec[0], 3000);
   });
 });
 
-Deno.test("sleepForMedia(other) → fallback 1500ms", async () => {
+Deno.test("sleepForMedia(other) → fallback 1000ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("image", 0);
-    assertEquals(rec[0], 1500);
+    assertEquals(rec[0], 1000);
   });
 });
 
@@ -181,7 +181,7 @@ Deno.test({
 // checkin_pos_video — valida regex de afirmativa/negativa usadas no case
 // (replicadas idênticas — ver bot-flow.ts linha ~1030)
 // ─────────────────────────────────────────────────────────────────────
-const RE_AFFIRM = /^(sim|ss+|s|deu|entendi|entendido|claro|ok|okay|beleza|blz|certo|positivo|isso|🆗|👌|👍|✅|com\s*certeza|perfeito|bacana|massa|legal|joia|tranquilo)\b/i;
+const RE_AFFIRM = /(^(sim|ss+|s|deu|entendi|entendido|claro|ok|okay|beleza|blz|certo|positivo|isso|com\s*certeza|perfeito|bacana|massa|legal|joia|tranquilo)\b|^[\s]*(🆗|👌|👍|✅))/iu;
 const RE_NEG = /^(n[aã]o|nn|n|nada|n[aã]o\s*entendi|n[aã]o\s*muito|mais\s*ou\s*menos|m[ãa]is\s*menos|confuso)\b/i;
 
 Deno.test("checkin: 'sim entendi' é AFIRMATIVO", () => {

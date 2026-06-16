@@ -3074,7 +3074,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const txt = String(messageText || "").trim().toLowerCase();
       const first = ((customer as any).name || "").split(/\s+/)[0];
       const v = first ? `${first}, ` : "";
-      const RE_AFFIRM = /^(sim|ss+|s|deu|entendi|entendido|claro|ok|okay|beleza|blz|certo|positivo|isso|🆗|👌|👍|✅|com\s*certeza|perfeito|bacana|massa|legal|joia|tranquilo)\b/i;
+      const RE_AFFIRM = /(^(sim|ss+|s|deu|entendi|entendido|claro|ok|okay|beleza|blz|certo|positivo|isso|com\s*certeza|perfeito|bacana|massa|legal|joia|tranquilo)\b|^[\s]*(🆗|👌|👍|✅))/iu;
       const RE_NEG = /^(n[aã]o|nn|n|nada|n[aã]o\s*entendi|n[aã]o\s*muito|mais\s*ou\s*menos|m[ãa]is\s*menos|confuso)\b/i;
       if (RE_AFFIRM.test(txt)) {
         reply = `Boa! ${v}me conta uma coisa: quanto vem em média na sua conta de luz? Assim eu já te calculo quanto dá pra economizar 💡`;
