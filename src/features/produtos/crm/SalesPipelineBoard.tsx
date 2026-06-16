@@ -337,6 +337,39 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
         open={registrarOpen}
         onOpenChange={setRegistrarOpen}
       />
+
+      {/* Esteira de acompanhamento da venda fechada */}
+      <Sheet open={stagePanelSale !== null} onOpenChange={(open) => !open && setStagePanelSale(null)}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto bg-pv-bg">
+          <SheetHeader>
+            <SheetTitle>Acompanhamento da venda</SheetTitle>
+            <SheetDescription>
+              Cheque cada etapa pós-fechamento, anexe documentos e registre
+              observações internas.
+            </SheetDescription>
+          </SheetHeader>
+          {stagePanelSale && (
+            <div className="mt-6">
+              <SaleStagePanel saleId={stagePanelSale.id} />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Admin do modelo de etapas (somente admin/superadmin) */}
+      <Sheet open={templateAdminOpen} onOpenChange={setTemplateAdminOpen}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto bg-pv-bg">
+          <SheetHeader>
+            <SheetTitle>Etapas da esteira</SheetTitle>
+            <SheetDescription>
+              Configure as etapas que aparecem em toda venda fechada.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <StageTemplateAdmin />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
