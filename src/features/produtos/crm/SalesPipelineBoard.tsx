@@ -421,11 +421,25 @@ function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: Sa
             <span className="text-xs font-semibold text-pv-gold">{fmtCents(sale.amountCents)}</span>
           )}
         </div>
-        <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-pv-accent" />
-          <span className="text-[10px] text-white/50 uppercase tracking-tighter italic">
-            {action.label}
-          </span>
+        <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-pv-accent" />
+            <span className="text-[10px] text-white/50 uppercase tracking-tighter italic">
+              {action.label}
+            </span>
+          </div>
+          {onOpenAcompanhamento && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAcompanhamento();
+              }}
+              className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-pv-gold hover:text-white transition-colors"
+            >
+              <ListChecks className="h-3 w-3" /> Acompanhar
+            </button>
+          )}
         </div>
       </div>
     );
