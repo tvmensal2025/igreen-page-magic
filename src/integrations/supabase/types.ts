@@ -8043,6 +8043,10 @@ export type Database = {
         }
         Returns: string
       }
+      ensure_sale_stage_progress: {
+        Args: { p_sale_id: string }
+        Returns: undefined
+      }
       expire_overdue_proposals: { Args: never; Returns: number }
       fb_emit_capi: {
         Args: {
