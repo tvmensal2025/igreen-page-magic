@@ -6768,6 +6768,121 @@ export type Database = {
           },
         ]
       }
+      sale_stage_attachments: {
+        Row: {
+          created_at: string
+          file_name: string
+          id: string
+          mime: string
+          sale_stage_id: string
+          size_bytes: number
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          id?: string
+          mime: string
+          sale_stage_id: string
+          size_bytes: number
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          id?: string
+          mime?: string
+          sale_stage_id?: string
+          size_bytes?: number
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_stage_attachments_sale_stage_id_fkey"
+            columns: ["sale_stage_id"]
+            isOneToOne: false
+            referencedRelation: "sale_stage_progress"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sale_stage_progress: {
+        Row: {
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          id: string
+          name_snapshot: string
+          note: string | null
+          sale_id: string
+          status: Database["public"]["Enums"]["sale_stage_status"]
+          template_position: number
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          name_snapshot: string
+          note?: string | null
+          sale_id: string
+          status?: Database["public"]["Enums"]["sale_stage_status"]
+          template_position: number
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          name_snapshot?: string
+          note?: string | null
+          sale_id?: string
+          status?: Database["public"]["Enums"]["sale_stage_status"]
+          template_position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_stage_progress_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sale_stage_templates: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          position: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sale_status_history: {
         Row: {
           changed_by: string | null
@@ -8351,6 +8466,7 @@ export type Database = {
         | "rejected"
         | "countered"
         | "expired"
+      sale_stage_status: "pendente" | "concluido"
       sale_status: "interesse" | "negociando" | "fechado" | "perdido"
     }
     CompositeTypes: {
@@ -8508,6 +8624,7 @@ export const Constants = {
         "countered",
         "expired",
       ],
+      sale_stage_status: ["pendente", "concluido"],
       sale_status: ["interesse", "negociando", "fechado", "perdido"],
     },
   },
