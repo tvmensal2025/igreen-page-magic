@@ -96,6 +96,10 @@ async function executarTurno(
   // corrompendo o estado do cliente. Retorno neutro = nada é gravado, nada é
   // enviado (o webhook já cuidou da resposta via Vendedora V2/IA Livre).
   if (await variantBLivreSemPassos(supabase, customerId)) {
+    console.log(
+      "[cerebro/index] bypass: variant-B IA Livre (sem passos no construtor)",
+      { customerId, consultantId },
+    );
     return {
       reply: "",
       outbound: [],
