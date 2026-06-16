@@ -27,9 +27,13 @@ export interface SummaryInput {
 
 export async function maybeUpdateSummary(input: SummaryInput): Promise<void> {
   try {
-    if (typeof input.inboundTurnCount === "number" && input.inboundTurnCount > 0
-        && input.inboundTurnCount % SUMMARY_EVERY !== 0) {
-      return;
+    // Dispara quando o contador é múltiplo de SUMMARY_EVERY OU quando já passou
+    // do limiar e ainda não existe resumo (cobre casos em que turnos foram
+    // respondidos por outro caminho e o contador "pulou" o múltiplo exato).
+    if (typeof input.inboundTurnCount === "number" && input.inboundTurnCount > 0) {
+      const isMultiple = input.inboundTurnCount % SUMMARY_EVERY === 0;
+      const firstAfterThreshold = !input.previousSummary && input.inboundTurnCount >= SUMMARY_EVERY;
+      if (!isMultiple && !firstAfterThreshold) return;
     }
     if (!input.history || input.history.length < 200) return;
 
