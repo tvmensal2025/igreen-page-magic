@@ -287,38 +287,52 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
           </div>
         </div>
 
-        {/* Search & Filters */}
-        <div className="px-4 sm:px-5 pt-3 sm:pt-4 pb-2 sm:pb-3 space-y-2">
-          <div className="space-y-3">
-            {/* Search bar */}
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
-              <Input placeholder="Buscar nome, telefone, CPF, e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 h-10 sm:h-11 rounded-xl bg-secondary/30 border-border/50 focus:border-primary/40 text-sm" />
-            </div>
-
-            {/* Tipo de produto — combobox (libera espaço e fica mais limpo) */}
-            <div className="w-full sm:w-64">
-              <Combobox
-                options={[
-                  { value: "all", label: "📊 Todos" },
-                  { value: "energia", label: "⚡ Energia" },
-                  { value: "telefonia", label: "📱 Telecom" },
-                  { value: "solar", label: "☀️ Conexão Solar" },
-                  { value: "placas", label: "🔋 Conexão Placas" },
-                  { value: "seguros", label: "🛡️ Seguro" },
-                ]}
-                value={selectedTipo}
-                onChange={(v) => setSelectedTipo((v as typeof selectedTipo) ?? "all")}
-                placeholder="Tipo de produto"
-                searchPlaceholder="Buscar produto…"
-                className="h-9 rounded-xl bg-secondary/30 border-border/50 text-xs"
-              />
-            </div>
+        {/* Search & Filters — barra única consolidada */}
+        <div className="px-4 sm:px-5 pt-3 sm:pt-4 pb-3 sm:pb-4 space-y-2.5">
+          {/* Search bar */}
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+            <Input
+              placeholder="Buscar nome, telefone, CPF, e-mail..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 h-10 sm:h-11 rounded-xl bg-secondary/30 border-border/50 focus:border-primary/40 text-sm"
+            />
           </div>
-          <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">
+
+          {/* Linha única de 5 filtros */}
+          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            <Combobox
+              options={[
+                { value: "all", label: "📊 Todos os produtos" },
+                { value: "energia", label: "⚡ Energia" },
+                { value: "telefonia", label: "📱 Telecom" },
+                { value: "solar", label: "☀️ Conexão Solar" },
+                { value: "placas", label: "🔋 Conexão Placas" },
+                { value: "seguros", label: "🛡️ Seguro" },
+              ]}
+              value={selectedTipo}
+              onChange={(v) => setSelectedTipo((v as typeof selectedTipo) ?? "all")}
+              placeholder="Produto"
+              searchPlaceholder="Buscar produto…"
+              className="h-9 rounded-xl bg-secondary/30 border-border/50 text-xs"
+            />
+
+            <Combobox
+              options={filterButtons.map((f) => ({
+                value: f.key,
+                label: f.label,
+                hint: String(f.count),
+              }))}
+              value={statusFilter}
+              onChange={(v) => setStatusFilter((v as StatusFilter) ?? "all")}
+              placeholder="Status"
+              searchPlaceholder="Buscar status…"
+              className="h-9 rounded-xl bg-secondary/30 border-border/50 text-xs"
+            />
 
             <Select value={selectedLicenciado} onValueChange={setSelectedLicenciado}>
-              <SelectTrigger className="h-8 sm:h-9 rounded-xl bg-secondary/30 border-border/50 text-xs">
+              <SelectTrigger className="h-9 rounded-xl bg-secondary/30 border-border/50 text-xs">
                 <div className="flex items-center gap-1.5 truncate">
                   <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   <SelectValue placeholder="Licenciado" />
@@ -331,8 +345,9 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
                 ))}
               </SelectContent>
             </Select>
+
             <Select value={selectedDistribuidora} onValueChange={setSelectedDistribuidora}>
-              <SelectTrigger className="h-8 sm:h-9 rounded-xl bg-secondary/30 border-border/50 text-xs">
+              <SelectTrigger className="h-9 rounded-xl bg-secondary/30 border-border/50 text-xs">
                 <div className="flex items-center gap-1.5 truncate">
                   <Zap className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   <SelectValue placeholder="Distribuidora" />
@@ -345,8 +360,9 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
                 ))}
               </SelectContent>
             </Select>
+
             <Select value={selectedCidade} onValueChange={setSelectedCidade}>
-              <SelectTrigger className="h-9 sm:h-9 rounded-xl bg-secondary/30 border-border/50 text-xs">
+              <SelectTrigger className="h-9 rounded-xl bg-secondary/30 border-border/50 text-xs col-span-2 sm:col-span-1">
                 <div className="flex items-center gap-1.5 truncate">
                   <Smartphone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   <SelectValue placeholder="Cidade/UF" />
@@ -360,24 +376,27 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
               </SelectContent>
             </Select>
           </div>
-        </div>
 
-        {/* Status filter — combobox com busca (substitui a fileira de botões) */}
-        <div className="px-4 sm:px-5 pb-3 sm:pb-4">
-          <div className="w-full sm:w-72">
-            <Combobox
-              options={filterButtons.map((f) => ({
-                value: f.key,
-                label: f.label,
-                hint: String(f.count),
-              }))}
-              value={statusFilter}
-              onChange={(v) => setStatusFilter((v as StatusFilter) ?? "all")}
-              placeholder="Filtrar por status"
-              searchPlaceholder="Buscar status…"
-              className="h-9"
-            />
-          </div>
+          {/* Limpar filtros — só aparece quando há filtro ativo */}
+          {(search || statusFilter !== "all" || selectedTipo !== "all" || selectedLicenciado !== "all" || selectedDistribuidora !== "all" || selectedCidade !== "all") && (
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setSelectedTipo("all");
+                  setSelectedLicenciado("all");
+                  setSelectedDistribuidora("all");
+                  setSelectedCidade("all");
+                }}
+              >
+                Limpar filtros
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* List with pagination */}
