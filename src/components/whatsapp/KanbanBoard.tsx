@@ -263,7 +263,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       </div>
 
       {/* Kanban columns */}
-      <div className="flex-1 min-h-0 flex gap-2 overflow-x-auto pb-2 items-stretch" data-resize-scope style={{ "--kanban-col-w": "248px" } as React.CSSProperties}>
+      <div className="flex-1 min-h-0 min-w-0 max-w-full flex gap-2 overflow-x-auto overflow-y-hidden pb-2 items-stretch" data-resize-scope style={{ "--kanban-col-w": "248px" } as React.CSSProperties}>
         <DragResizer storageKey="kanban-col" cssVar="kanban-col-w" defaultPx={248} minPx={200} maxPx={480} />
         {stages.map((s) => (
           <KanbanColumn key={s.id} stage={s} deals={deals} searchQuery={searchQuery} stepFilter={stepFilter} customStepMap={customStepMap} onDrop={handleDrop} onDragStart={setDraggedId} onEditDeal={openEditDeal} onDeleteDeal={setDeletingDealId} onReclassify={reclassifyAsReal} onView={setViewTarget} />
