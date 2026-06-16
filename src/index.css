@@ -55,8 +55,18 @@ html {
     --info: 221 83% 53%;              /* #2563EB */
     --info-foreground: 0 0% 100%;
 
-    --radius: 0.75rem;
+    /* ── Paleta local do módulo Produtos/Vendas (Sage & Cream) ──
+       Tokens travados: mesmos valores do antigo theme.ts (objeto PV).
+       Usados só dentro do módulo de produtos — não afetam o tema global. */
+    --pv-bg: 37 39% 94%;              /* #f5f0e8 creme (fundo) */
+    --pv-surface: 92 25% 86%;         /* #dce5d4 superfície */
+    --pv-mid: 105 20% 69%;            /* #a8c0a0 verde médio */
+    --pv-accent: 109 16% 54%;         /* #7d9b76 verde-sálvia (CTA) */
+    --pv-ink: 135 28% 14%;            /* #1a2e1f verde-escuro (texto) */
+    --pv-gold: 44 54% 54%;            /* #c9a84c dourado (destaque) */
+    --pv-gold-ink: 42 61% 30%;        /* #7a5f1e dourado escuro (texto sobre gold) */
 
+    --radius: 0.75rem;
     --gradient-green: linear-gradient(135deg, hsl(152, 100%, 33%), hsl(150, 100%, 28%));
     --gradient-green-vibrant: linear-gradient(135deg, hsl(152, 100%, 36%), hsl(150, 100%, 30%));
     --gradient-dark: linear-gradient(180deg, hsl(152, 16%, 97%), hsl(150, 14%, 94%));
@@ -1096,4 +1106,34 @@ html {
 .ads-wizard-scope .ads-select-card.is-active {
   border-color: hsl(var(--ads-emerald));
   background: hsl(var(--accent));
+}
+
+/* ═══════════════ Escopo do módulo Produtos/Vendas (Sage & Cream) ═══════════════
+   O módulo é uma "ilha clara" (fundo creme), mas componentes globais como
+   Input, Button(outline) e Select leem os tokens shadcn (--background, --input,
+   --foreground...). No tema escuro do app esses tokens ficam escuros, gerando
+   texto escuro sobre fundo escuro (ilegível) dentro do painel claro.
+
+   Aqui redefinimos os tokens shadcn DENTRO do escopo .pv-scope para a paleta
+   Sage clara. Assim qualquer componente global renderiza legível dentro do
+   módulo, independente do tema global (claro/escuro). Mesma estratégia já usada
+   pelo escopo .ads-central-2026. */
+.pv-scope {
+  --background: var(--pv-bg);
+  --foreground: var(--pv-ink);
+  --card: 0 0% 100%;
+  --card-foreground: var(--pv-ink);
+  --popover: 0 0% 100%;
+  --popover-foreground: var(--pv-ink);
+  --primary: var(--pv-accent);
+  --primary-foreground: 0 0% 100%;
+  --secondary: var(--pv-surface);
+  --secondary-foreground: var(--pv-ink);
+  --muted: var(--pv-surface);
+  --muted-foreground: 135 12% 35%;
+  --accent: var(--pv-surface);
+  --accent-foreground: var(--pv-ink);
+  --border: var(--pv-mid);
+  --input: var(--pv-mid);
+  --ring: var(--pv-accent);
 }

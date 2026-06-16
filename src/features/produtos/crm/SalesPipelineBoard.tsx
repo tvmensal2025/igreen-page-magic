@@ -167,20 +167,20 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
       {/* Hero magazine 7+5 */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
         <div className="lg:col-span-7">
-          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-pv-accent mb-3 block">
             Pipeline de Vendas
           </span>
-          <h1 className={`text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] ${pvSerif}`}>
+          <h1 className={`text-5xl md:text-7xl text-pv-ink leading-[1.05] ${pvSerif}`}>
             Pipeline de <br />Performance
           </h1>
-          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+          <p className="mt-5 text-base text-pv-ink/70 max-w-md leading-relaxed">
             Acompanhe suas propostas até o aceite. {sales.length} negócio(s) no
             funil — {salesByStage.fechado.length} já fechado(s).
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <div className="max-w-[260px] flex-1 min-w-[200px]">
               <Select value={productFilter} onValueChange={setProductFilter}>
-                <SelectTrigger className="h-9 text-xs rounded-none bg-white border-[#a8c0a0]/40">
+                <SelectTrigger className="h-9 text-xs rounded-none bg-white border-pv-mid/40">
                   <SelectValue placeholder="Filtrar por produto" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[320px]">
@@ -197,7 +197,7 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
             <button
               type="button"
               onClick={() => setRegistrarOpen(true)}
-              className="inline-flex items-center gap-1.5 bg-[#1a2e1f] hover:bg-[#7d9b76] text-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors"
+              className="inline-flex items-center gap-1.5 bg-pv-ink hover:bg-pv-accent text-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors"
             >
               <Plus className="h-3.5 w-3.5" /> Registrar venda
             </button>
@@ -244,20 +244,20 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
               onDrop={() => handleDrop(stage)}
               className="space-y-3 min-h-[200px]"
             >
-              <div className="flex items-center justify-between border-b border-[#a8c0a0] pb-2">
-                <h3 className="uppercase text-[10px] tracking-[0.2em] font-bold text-[#1a2e1f]">
+              <div className="flex items-center justify-between border-b border-pv-mid pb-2">
+                <h3 className="uppercase text-[10px] tracking-[0.2em] font-bold text-pv-ink">
                   {SALE_STATUS_LABEL[stage]} ({items.length})
                 </h3>
-                <span className={`text-[10px] font-medium ${isHighlight ? "text-[#c9a84c]" : "text-[#7d9b76]"}`}>
+                <span className={`text-[10px] font-medium ${isHighlight ? "text-pv-gold" : "text-pv-accent"}`}>
                   {fmtCents(totalColCents)}
                 </span>
               </div>
 
               {isLoading && (
-                <p className="text-[10px] text-[#1a2e1f]/40 text-center py-6">Carregando...</p>
+                <p className="text-[10px] text-pv-ink/40 text-center py-6">Carregando...</p>
               )}
               {!isLoading && items.length === 0 && (
-                <p className="text-[10px] text-[#1a2e1f]/40 text-center py-6 italic">
+                <p className="text-[10px] text-pv-ink/40 text-center py-6 italic">
                   Arraste cards aqui
                 </p>
               )}
@@ -326,18 +326,18 @@ interface KpiBlockProps {
 
 function KpiBlock({ kicker, value, accent, bar, sparkline }: KpiBlockProps) {
   const borderColor =
-    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
-  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+    accent === "gold" ? "border-pv-gold" : accent === "ink" ? "border-pv-ink" : "border-pv-accent";
+  const bg = accent === "gold" ? "bg-pv-surface" : "bg-white/60";
   return (
     <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
-      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+      <span className="text-[10px] uppercase tracking-[0.18em] text-pv-ink/60 font-semibold">
         {kicker}
       </span>
       <div>
-        <div className={`text-3xl font-light text-[#1a2e1f] mt-1 ${pvSerif}`}>{value}</div>
+        <div className={`text-3xl font-light text-pv-ink mt-1 ${pvSerif}`}>{value}</div>
         {bar !== undefined && (
-          <div className="mt-2 h-1 w-full bg-[#a8c0a0]/30 overflow-hidden">
-            <div className="h-full bg-[#c9a84c]" style={{ width: `${Math.round(bar * 100)}%` }} />
+          <div className="mt-2 h-1 w-full bg-pv-mid/30 overflow-hidden">
+            <div className="h-full bg-pv-gold" style={{ width: `${Math.round(bar * 100)}%` }} />
           </div>
         )}
         {sparkline && (
@@ -345,7 +345,7 @@ function KpiBlock({ kicker, value, accent, bar, sparkline }: KpiBlockProps) {
             <path
               d="M0,15 Q25,5 50,15 T100,5"
               fill="none"
-              stroke="#7d9b76"
+              stroke="hsl(var(--pv-accent))"
               strokeWidth="2"
             />
           </svg>
@@ -374,27 +374,27 @@ function SaleCard({ sale, product, dark, onDragStart }: SaleCardProps) {
       <div
         draggable
         onDragStart={onDragStart}
-        className="bg-[#1a2e1f] p-4 border border-[#1a2e1f] shadow-lg cursor-grab active:cursor-grabbing"
+        className="bg-pv-ink p-4 border border-pv-ink shadow-lg cursor-grab active:cursor-grabbing"
       >
         <div className="flex justify-between items-start">
-          <span className="text-[10px] font-semibold text-[#c9a84c] uppercase tracking-wider">
+          <span className="text-[10px] font-semibold text-pv-gold uppercase tracking-wider">
             {familyLabel}
           </span>
           <span className="text-[9px] text-white/40 italic">{timeLabel}</span>
         </div>
-        <h4 className={`text-base mt-2 text-[#f5f0e8] font-medium leading-tight`}>
+        <h4 className={`text-base mt-2 text-pv-bg font-medium leading-tight`}>
           {product?.name ?? "Produto"}
         </h4>
         <div className="mt-3 flex items-center justify-between">
           {sale.pointsKwh > 0 && (
-            <span className="text-xs text-[#f5f0e8]/60">{KWH(sale.pointsKwh)}</span>
+            <span className="text-xs text-pv-bg/60">{KWH(sale.pointsKwh)}</span>
           )}
           {sale.amountCents !== null && (
-            <span className="text-xs font-semibold text-[#c9a84c]">{fmtCents(sale.amountCents)}</span>
+            <span className="text-xs font-semibold text-pv-gold">{fmtCents(sale.amountCents)}</span>
           )}
         </div>
         <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#7d9b76]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-pv-accent" />
           <span className="text-[10px] text-white/50 uppercase tracking-tighter italic">
             {action.label}
           </span>
@@ -407,31 +407,31 @@ function SaleCard({ sale, product, dark, onDragStart }: SaleCardProps) {
     <div
       draggable
       onDragStart={onDragStart}
-      className="group bg-white p-4 border border-[#dce5d4] hover:border-[#7d9b76] hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
+      className="group bg-white p-4 border border-pv-surface hover:border-pv-accent hover:shadow-sm transition-all cursor-grab active:cursor-grabbing"
     >
       <div className="flex justify-between items-start">
-        <span className="text-[10px] font-semibold text-[#7d9b76] uppercase tracking-wider">
+        <span className="text-[10px] font-semibold text-pv-accent uppercase tracking-wider">
           {familyLabel}
         </span>
-        <span className="text-[9px] text-[#1a2e1f]/40">{timeLabel}</span>
+        <span className="text-[9px] text-pv-ink/40">{timeLabel}</span>
       </div>
-      <h4 className="text-base mt-1.5 text-[#1a2e1f] font-medium leading-tight">
+      <h4 className="text-base mt-1.5 text-pv-ink font-medium leading-tight">
         {product?.name ?? "Produto"}
       </h4>
       <div className="mt-3 flex items-center justify-between">
-        <div className="text-xs text-[#1a2e1f]/70">
+        <div className="text-xs text-pv-ink/70">
           {sale.pointsKwh > 0 ? KWH(sale.pointsKwh) : "—"}
         </div>
-        <div className="text-xs font-semibold text-[#1a2e1f]">
+        <div className="text-xs font-semibold text-pv-ink">
           {fmtCents(sale.amountCents)}
         </div>
       </div>
-      <div className="mt-3 pt-3 border-t border-[#f5f0e8] flex items-center gap-1.5">
+      <div className="mt-3 pt-3 border-t border-pv-bg flex items-center gap-1.5">
         <span className={`w-1.5 h-1.5 rounded-full ${action.dot}`} />
-        <span className="text-[10px] text-[#1a2e1f]/60">{action.label}</span>
+        <span className="text-[10px] text-pv-ink/60">{action.label}</span>
       </div>
       {sale.notes && (
-        <p className="mt-2 text-[10px] text-[#1a2e1f]/50 line-clamp-2 italic">{sale.notes}</p>
+        <p className="mt-2 text-[10px] text-pv-ink/50 line-clamp-2 italic">{sale.notes}</p>
       )}
     </div>
   );

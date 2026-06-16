@@ -20,7 +20,7 @@ export function OrcamentoButton({ consultantId, instanceName, isWhapi }: Orcamen
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 bg-[#7d9b76] hover:bg-[#1a2e1f] text-white px-5 py-2.5 rounded-none text-xs font-semibold tracking-[0.18em] uppercase shadow-sm transition-colors duration-300 self-start md:self-auto"
+        className="inline-flex items-center gap-2 bg-pv-accent hover:bg-pv-ink text-white px-5 py-2.5 rounded-none text-xs font-semibold tracking-[0.18em] uppercase shadow-sm transition-colors duration-300 self-start md:self-auto"
         aria-label="Novo orçamento"
       >
         <span>Novo orçamento</span>

@@ -112,7 +112,7 @@ export function ProductCatalogTable() {
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin h-8 w-8 border-4 border-[#7d9b76] border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-pv-accent border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -122,13 +122,13 @@ export function ProductCatalogTable() {
       {/* Hero magazine 7+5 */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
         <div className="lg:col-span-7">
-          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-pv-accent mb-3 block">
             Catálogo iGreen
           </span>
-          <h1 className={`text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] ${pvSerif}`}>
+          <h1 className={`text-5xl md:text-7xl text-pv-ink leading-[1.05] ${pvSerif}`}>
             Produtos &<br />Famílias
           </h1>
-          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+          <p className="mt-5 text-base text-pv-ink/70 max-w-md leading-relaxed">
             {products.length} produto(s) no catálogo distribuídos em {kpis.familias} família(s).
             Pontuação e comissão lado a lado para o consultor saber como cada item rende.
           </p>
@@ -148,12 +148,12 @@ export function ProductCatalogTable() {
       {/* Busca + chips */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#1a2e1f]/40" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-pv-ink/40" />
           <Input
             placeholder="Buscar produto ou marca..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 pl-9 text-xs rounded-none bg-white border-[#a8c0a0]/40 focus-visible:ring-[#7d9b76]"
+            className="h-9 pl-9 text-xs rounded-none bg-white border-pv-mid/40 focus-visible:ring-pv-accent"
           />
         </div>
         <div className="flex flex-wrap gap-2">
@@ -176,18 +176,18 @@ export function ProductCatalogTable() {
 
       {/* Grupos por família */}
       {byFamily.length === 0 ? (
-        <p className="text-xs text-[#1a2e1f]/50 text-center py-8 italic">
+        <p className="text-xs text-pv-ink/50 text-center py-8 italic">
           Nenhum produto encontrado.
         </p>
       ) : (
         <div className="space-y-10">
           {byFamily.map(([family, items]) => (
             <section key={family} className="space-y-4">
-              <div className="flex items-end justify-between border-b border-[#a8c0a0]/40 pb-2">
-                <h2 className={`text-3xl text-[#1a2e1f] ${pvSerif}`}>
+              <div className="flex items-end justify-between border-b border-pv-mid/40 pb-2">
+                <h2 className={`text-3xl text-pv-ink ${pvSerif}`}>
                   {PRODUCT_FAMILY_LABEL[family]}
                 </h2>
-                <span className="text-[10px] uppercase tracking-widest text-[#1a2e1f]/50 font-semibold">
+                <span className="text-[10px] uppercase tracking-widest text-pv-ink/50 font-semibold">
                   {items.length} produto(s)
                 </span>
               </div>
@@ -195,35 +195,35 @@ export function ProductCatalogTable() {
                 {items.map((p) => (
                   <div
                     key={p.id}
-                    className="bg-white p-5 border border-[#dce5d4] hover:border-[#7d9b76] transition-colors group"
+                    className="bg-white p-5 border border-pv-surface hover:border-pv-accent transition-colors group"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className={`text-lg text-[#1a2e1f] leading-tight ${pvSerif}`}>
+                        <p className={`text-lg text-pv-ink leading-tight ${pvSerif}`}>
                           {p.name}
                         </p>
-                        <p className="text-[10px] text-[#1a2e1f]/50 uppercase tracking-wider mt-0.5">
+                        <p className="text-[10px] text-pv-ink/50 uppercase tracking-wider mt-0.5">
                           {p.brandName}
                         </p>
                       </div>
                       {!p.isActive && (
-                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-[#f5f0e8] border border-[#dce5d4] text-[#1a2e1f]/50">
+                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-pv-bg border border-pv-surface text-pv-ink/50">
                           inativo
                         </span>
                       )}
                     </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3 pt-3 border-t border-[#f5f0e8]">
+                    <div className="mt-4 grid grid-cols-2 gap-3 pt-3 border-t border-pv-bg">
                       <div>
-                        <p className="text-[9px] uppercase tracking-widest text-[#1a2e1f]/50 font-semibold">
+                        <p className="text-[9px] uppercase tracking-widest text-pv-ink/50 font-semibold">
                           Pontuação
                         </p>
-                        <p className="text-xs text-[#1a2e1f] mt-1">{describeScoring(p.scoringRule)}</p>
+                        <p className="text-xs text-pv-ink mt-1">{describeScoring(p.scoringRule)}</p>
                       </div>
                       <div>
-                        <p className="text-[9px] uppercase tracking-widest text-[#1a2e1f]/50 font-semibold">
+                        <p className="text-[9px] uppercase tracking-widest text-pv-ink/50 font-semibold">
                           Comissão
                         </p>
-                        <p className="text-xs text-[#1a2e1f] mt-1">{describeCommission(p.commissionRule)}</p>
+                        <p className="text-xs text-pv-ink mt-1">{describeCommission(p.commissionRule)}</p>
                       </div>
                     </div>
                   </div>
@@ -249,14 +249,14 @@ function KpiBlock({
   accent: "gold" | "accent" | "ink";
 }) {
   const borderColor =
-    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
-  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+    accent === "gold" ? "border-pv-gold" : accent === "ink" ? "border-pv-ink" : "border-pv-accent";
+  const bg = accent === "gold" ? "bg-pv-surface" : "bg-white/60";
   return (
     <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
-      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+      <span className="text-[10px] uppercase tracking-[0.18em] text-pv-ink/60 font-semibold">
         {kicker}
       </span>
-      <div className={`text-3xl font-light text-[#1a2e1f] mt-1 ${pvSerif}`}>{value}</div>
+      <div className={`text-3xl font-light text-pv-ink mt-1 ${pvSerif}`}>{value}</div>
     </div>
   );
 }
@@ -278,8 +278,8 @@ function FilterChip({
       onClick={onClick}
       className={`text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 border transition-colors ${
         active
-          ? "bg-[#1a2e1f] text-white border-[#1a2e1f]"
-          : "bg-white text-[#1a2e1f]/70 border-[#dce5d4] hover:border-[#7d9b76]"
+          ? "bg-pv-ink text-white border-pv-ink"
+          : "bg-white text-pv-ink/70 border-pv-surface hover:border-pv-accent"
       }`}
       style={active && color ? { backgroundColor: color, borderColor: color } : undefined}
     >
@@ -301,9 +301,9 @@ function FamilyDonut({
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
   return (
-    <div className="bg-white border border-[#dce5d4] p-6 flex flex-col md:flex-row items-center gap-8">
+    <div className="bg-white border border-pv-surface p-6 flex flex-col md:flex-row items-center gap-8">
       <svg viewBox="0 0 160 160" className="w-32 h-32 -rotate-90">
-        <circle cx="80" cy="80" r={radius} fill="none" stroke="#f5f0e8" strokeWidth="22" />
+        <circle cx="80" cy="80" r={radius} fill="none" stroke="hsl(var(--pv-bg))" strokeWidth="22" />
         {entries.map(([fam, count]) => {
           const pct = count / total;
           const length = circumference * pct;
@@ -333,10 +333,10 @@ function FamilyDonut({
               style={{ backgroundColor: FAMILY_COLOR[fam] }}
             />
             <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-wider text-[#1a2e1f]/60 font-semibold truncate">
+              <p className="text-[10px] uppercase tracking-wider text-pv-ink/60 font-semibold truncate">
                 {PRODUCT_FAMILY_LABEL[fam]}
               </p>
-              <p className="text-xs text-[#1a2e1f] font-medium">{count} produto(s)</p>
+              <p className="text-xs text-pv-ink font-medium">{count} produto(s)</p>
             </div>
           </div>
         ))}

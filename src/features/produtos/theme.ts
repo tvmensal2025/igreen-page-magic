@@ -8,13 +8,17 @@
 
 import { useEffect } from "react";
 
+// Tokens da paleta. Os valores reais ficam em CSS (index.css: --pv-*), e estas
+// constantes apontam para essas variáveis — fonte única, sem hex duplicado.
+// Use as classes Tailwind (bg-pv-accent, text-pv-ink...) sempre que possível;
+// estas constantes servem para casos que precisam de cor inline (SVG/style).
 export const PV = {
-  bg: "#f5f0e8",
-  surface: "#dce5d4",
-  mid: "#a8c0a0",
-  accent: "#7d9b76",
-  ink: "#1a2e1f",
-  gold: "#c9a84c",
+  bg: "hsl(var(--pv-bg))",
+  surface: "hsl(var(--pv-surface))",
+  mid: "hsl(var(--pv-mid))",
+  accent: "hsl(var(--pv-accent))",
+  ink: "hsl(var(--pv-ink))",
+  gold: "hsl(var(--pv-gold))",
   white: "#ffffff",
 } as const;
 

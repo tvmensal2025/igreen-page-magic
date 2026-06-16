@@ -51,11 +51,11 @@ export function ProdutosModule({
   };
 
   return (
-    <div className={`min-h-full w-full bg-[#f5f0e8] text-[#1a2e1f] ${pvBody}`}>
+    <div className={`pv-scope min-h-full w-full bg-pv-bg text-pv-ink ${pvBody}`}>
       <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 space-y-8">
         {/* Topbar editorial */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-[#a8c0a0]/30 pb-4 gap-4">
-          <nav className="flex gap-6 sm:gap-8 text-sm font-medium text-[#1a2e1f]/60 overflow-x-auto">
+        <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-pv-mid/30 pb-4 gap-4">
+          <nav className="flex gap-6 sm:gap-8 text-sm font-medium text-pv-ink/60 overflow-x-auto">
             {TABS.map(({ id, label, icon: Icon }) => {
               const active = tab === id;
               return (
@@ -65,8 +65,8 @@ export function ProdutosModule({
                   onClick={() => change(id)}
                   className={`pb-2 flex items-center gap-1.5 whitespace-nowrap transition-colors duration-200 ${
                     active
-                      ? "text-[#1a2e1f] border-b-2 border-[#7d9b76]"
-                      : "hover:text-[#1a2e1f]"
+                      ? "text-pv-ink border-b-2 border-pv-accent"
+                      : "hover:text-pv-ink"
                   }`}
                 >
                   <Icon className="h-3.5 w-3.5" />

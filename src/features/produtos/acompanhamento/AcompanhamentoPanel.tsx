@@ -85,19 +85,19 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
   }
 
   return (
-    <div className="space-y-10 text-[#1a2e1f]">
+    <div className="space-y-10 text-pv-ink">
       {/* Hero magazine 7+5 */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
         <div className="lg:col-span-7">
-          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-pv-accent mb-3 block">
             Acompanhamento
           </span>
-          <h1 className="text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] font-[DM_Serif_Display,Georgia,serif]">
+          <h1 className="text-5xl md:text-7xl text-pv-ink leading-[1.05] font-[DM_Serif_Display,Georgia,serif]">
             Sua performance<br />em movimento
           </h1>
-          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+          <p className="mt-5 text-base text-pv-ink/70 max-w-md leading-relaxed">
             {summary.totalClosed} negócio(s) fechado(s) acumulando {KWH(summary.totalPointsKwh)} no plano
-            de carreira. Valor total fechado de <span className="font-semibold text-[#7d9b76]">{formatBRLFromCents(financial.totalFechado)}</span>.
+            de carreira. Valor total fechado de <span className="font-semibold text-pv-accent">{formatBRLFromCents(financial.totalFechado)}</span>.
           </p>
         </div>
         <div className="lg:col-span-5 grid grid-cols-2 gap-3">
@@ -349,14 +349,14 @@ function HeroKpi({
   accent: "gold" | "accent" | "ink";
 }) {
   const borderColor =
-    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
-  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+    accent === "gold" ? "border-pv-gold" : accent === "ink" ? "border-pv-ink" : "border-pv-accent";
+  const bg = accent === "gold" ? "bg-pv-surface" : "bg-white/60";
   return (
     <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
-      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+      <span className="text-[10px] uppercase tracking-[0.18em] text-pv-ink/60 font-semibold">
         {kicker}
       </span>
-      <div className="text-2xl font-light text-[#1a2e1f] mt-1 font-[DM_Serif_Display,Georgia,serif]">
+      <div className="text-2xl font-light text-pv-ink mt-1 font-[DM_Serif_Display,Georgia,serif]">
         {value}
       </div>
     </div>

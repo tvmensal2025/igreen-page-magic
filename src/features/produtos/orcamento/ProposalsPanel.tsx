@@ -49,13 +49,13 @@ const PENDING: ProposalStatus[] = ["sent", "viewed", "countered"];
 const CLOSED: ProposalStatus[] = ["rejected", "expired", "draft"];
 
 const STATUS_COLOR: Record<ProposalStatus, string> = {
-  draft: "bg-[#f5f0e8] text-[#1a2e1f]/60 border-[#dce5d4]",
-  sent: "bg-[#dce5d4] text-[#1a2e1f] border-[#a8c0a0]",
-  viewed: "bg-[#a8c0a0]/30 text-[#1a2e1f] border-[#a8c0a0]",
-  accepted: "bg-[#7d9b76] text-white border-[#7d9b76]",
+  draft: "bg-pv-bg text-pv-ink/60 border-pv-surface",
+  sent: "bg-pv-surface text-pv-ink border-pv-mid",
+  viewed: "bg-pv-mid/30 text-pv-ink border-pv-mid",
+  accepted: "bg-pv-accent text-white border-pv-accent",
   rejected: "bg-red-100 text-red-700 border-red-200",
-  countered: "bg-[#c9a84c]/20 text-[#7a5f1e] border-[#c9a84c]/40",
-  expired: "bg-[#f5f0e8] text-[#1a2e1f]/40 border-[#dce5d4]",
+  countered: "bg-pv-gold/20 text-pv-gold-ink border-pv-gold/40",
+  expired: "bg-pv-bg text-pv-ink/40 border-pv-surface",
 };
 
 const PUBLIC_BASE = "https://igreen.cloud";
@@ -135,7 +135,7 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin h-8 w-8 border-4 border-[#7d9b76] border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-pv-accent border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -145,16 +145,16 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
       {/* Hero magazine 7+5 */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
         <div className="lg:col-span-7">
-          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7d9b76] mb-3 block">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-pv-accent mb-3 block">
             Orçamentos
           </span>
-          <h1 className={`text-5xl md:text-7xl text-[#1a2e1f] leading-[1.05] ${pvSerif}`}>
+          <h1 className={`text-5xl md:text-7xl text-pv-ink leading-[1.05] ${pvSerif}`}>
             Propostas em<br />andamento
           </h1>
-          <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
+          <p className="mt-5 text-base text-pv-ink/70 max-w-md leading-relaxed">
             {proposals.length} orçamento(s) emitido(s), {kpis.abertos} aguardando resposta
             {kpis.expiringSoon > 0 && (
-              <> — <span className="text-[#c9a84c] font-semibold">{kpis.expiringSoon} vencendo em até 2 dias</span></>
+              <> — <span className="text-pv-gold font-semibold">{kpis.expiringSoon} vencendo em até 2 dias</span></>
             )}
             .
           </p>
@@ -183,8 +183,8 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
             onClick={() => setFilter(key)}
             className={`text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 border transition-colors ${
               filter === key
-                ? "bg-[#1a2e1f] text-white border-[#1a2e1f]"
-                : "bg-white text-[#1a2e1f]/70 border-[#dce5d4] hover:border-[#7d9b76]"
+                ? "bg-pv-ink text-white border-pv-ink"
+                : "bg-white text-pv-ink/70 border-pv-surface hover:border-pv-accent"
             }`}
           >
             {label}
@@ -193,7 +193,7 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-xs text-[#1a2e1f]/50 text-center py-12 italic">
+        <p className="text-xs text-pv-ink/50 text-center py-12 italic">
           {proposals.length === 0
             ? "Nenhum orçamento criado ainda. Use o botão Novo orçamento no topo."
             : "Nenhum orçamento neste filtro."}
@@ -227,14 +227,14 @@ function KpiBlock({
   accent: "gold" | "accent" | "ink";
 }) {
   const borderColor =
-    accent === "gold" ? "border-[#c9a84c]" : accent === "ink" ? "border-[#1a2e1f]" : "border-[#7d9b76]";
-  const bg = accent === "gold" ? "bg-[#dce5d4]" : "bg-white/60";
+    accent === "gold" ? "border-pv-gold" : accent === "ink" ? "border-pv-ink" : "border-pv-accent";
+  const bg = accent === "gold" ? "bg-pv-surface" : "bg-white/60";
   return (
     <div className={`${bg} p-5 border-l-4 ${borderColor} min-h-[110px] flex flex-col justify-between`}>
-      <span className="text-[10px] uppercase tracking-[0.18em] text-[#1a2e1f]/60 font-semibold">
+      <span className="text-[10px] uppercase tracking-[0.18em] text-pv-ink/60 font-semibold">
         {kicker}
       </span>
-      <div className={`text-2xl font-light text-[#1a2e1f] mt-1 ${pvSerif}`}>{value}</div>
+      <div className={`text-2xl font-light text-pv-ink mt-1 ${pvSerif}`}>{value}</div>
     </div>
   );
 }
@@ -360,7 +360,7 @@ function ProposalCard({
   return (
     <>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <div className="bg-white border border-[#dce5d4] hover:border-[#7d9b76] transition-colors p-5">
+        <div className="bg-white border border-pv-surface hover:border-pv-accent transition-colors p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -372,24 +372,24 @@ function ProposalCard({
                 {validityLabel && (
                   <span
                     className={`text-[10px] font-medium ${
-                      validityUrgent ? "text-[#c9a84c]" : "text-[#1a2e1f]/50"
+                      validityUrgent ? "text-pv-gold" : "text-pv-ink/50"
                     }`}
                   >
                     {validityLabel}
                   </span>
                 )}
               </div>
-              <h4 className={`text-xl text-[#1a2e1f] mt-2 leading-tight ${pvSerif}`}>
+              <h4 className={`text-xl text-pv-ink mt-2 leading-tight ${pvSerif}`}>
                 {recipientLabel}
               </h4>
-              <p className="text-xs text-[#1a2e1f]/60 mt-1">
-                {productName} · <span className="text-[#1a2e1f] font-semibold">{amountLabel}</span>
+              <p className="text-xs text-pv-ink/60 mt-1">
+                {productName} · <span className="text-pv-ink font-semibold">{amountLabel}</span>
               </p>
             </div>
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                className="text-[#1a2e1f]/40 hover:text-[#1a2e1f] p-1"
+                className="text-pv-ink/40 hover:text-pv-ink p-1"
                 title="Ver histórico"
               >
                 <ChevronDown
@@ -399,7 +399,7 @@ function ProposalCard({
             </CollapsibleTrigger>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-[#f5f0e8] flex items-center justify-between flex-wrap gap-2">
+          <div className="mt-4 pt-3 border-t border-pv-bg flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-1">
               <IconBtn onClick={handleCopy} title="Copiar link">
                 <Copy className="h-3.5 w-3.5" />
@@ -422,29 +422,29 @@ function ProposalCard({
             </div>
           </div>
 
-          <CollapsibleContent className="mt-4 pt-4 border-t border-[#f5f0e8]">
+          <CollapsibleContent className="mt-4 pt-4 border-t border-pv-bg">
             {eventsLoading ? (
               <div className="flex justify-center py-3">
-                <Loader2 className="h-4 w-4 animate-spin text-[#1a2e1f]/40" />
+                <Loader2 className="h-4 w-4 animate-spin text-pv-ink/40" />
               </div>
             ) : events.length === 0 ? (
-              <p className="text-[10px] text-[#1a2e1f]/50 italic">Sem eventos registrados.</p>
+              <p className="text-[10px] text-pv-ink/50 italic">Sem eventos registrados.</p>
             ) : (
-              <div className="space-y-2 border-l-2 border-[#a8c0a0]/40 pl-3">
+              <div className="space-y-2 border-l-2 border-pv-mid/40 pl-3">
                 {events.map((ev, i) => (
                   <div key={i} className="text-[11px]">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold uppercase tracking-wider text-[#1a2e1f] text-[10px]">
+                      <span className="font-bold uppercase tracking-wider text-pv-ink text-[10px]">
                         {ev.type.replace("_", " ")}
                       </span>
-                      <span className="text-[#1a2e1f]/50">
+                      <span className="text-pv-ink/50">
                         {new Date(ev.createdAt).toLocaleString("pt-BR")}
                       </span>
                     </div>
                     {ev.counterAmountCents !== null && (
-                      <p className="text-[#1a2e1f]/70">Valor: {BRL(ev.counterAmountCents)}</p>
+                      <p className="text-pv-ink/70">Valor: {BRL(ev.counterAmountCents)}</p>
                     )}
-                    {ev.note && <p className="text-[#1a2e1f]/70 italic">{ev.note}</p>}
+                    {ev.note && <p className="text-pv-ink/70 italic">{ev.note}</p>}
                   </div>
                 ))}
               </div>
@@ -485,7 +485,7 @@ function ProposalCard({
             <button
               type="button"
               onClick={() => setReplyOpen(false)}
-              className="px-4 py-2 text-xs uppercase tracking-widest text-[#1a2e1f]/60 hover:text-[#1a2e1f]"
+              className="px-4 py-2 text-xs uppercase tracking-widest text-pv-ink/60 hover:text-pv-ink"
             >
               Cancelar
             </button>
@@ -493,7 +493,7 @@ function ProposalCard({
               type="button"
               onClick={handleReply}
               disabled={replyToCounter.isPending}
-              className="inline-flex items-center gap-2 bg-[#1a2e1f] hover:bg-[#7d9b76] text-white px-5 py-2.5 text-xs font-semibold uppercase tracking-widest transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 bg-pv-ink hover:bg-pv-accent text-white px-5 py-2.5 text-xs font-semibold uppercase tracking-widest transition-colors disabled:opacity-50"
             >
               {replyToCounter.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Enviar resposta
@@ -527,7 +527,7 @@ function IconBtn({
       className={`h-7 w-7 inline-flex items-center justify-center border transition-colors ${
         danger
           ? "border-red-200 text-red-500 hover:bg-red-50"
-          : "border-[#dce5d4] text-[#1a2e1f]/70 hover:border-[#7d9b76] hover:text-[#1a2e1f]"
+          : "border-pv-surface text-pv-ink/70 hover:border-pv-accent hover:text-pv-ink"
       } disabled:opacity-40`}
     >
       {children}

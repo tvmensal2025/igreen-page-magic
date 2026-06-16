@@ -341,7 +341,7 @@ export function RegistrarVendaDialog({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#1a2e1f]/60 block">
+      <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-ink/60 block">
         {label}
       </label>
       {children}

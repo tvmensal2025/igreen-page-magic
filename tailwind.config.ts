@@ -49,6 +49,16 @@ export default {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
         },
+        // Paleta local do módulo Produtos/Vendas (Sage & Cream)
+        pv: {
+          bg: "hsl(var(--pv-bg) / <alpha-value>)",
+          surface: "hsl(var(--pv-surface) / <alpha-value>)",
+          mid: "hsl(var(--pv-mid) / <alpha-value>)",
+          accent: "hsl(var(--pv-accent) / <alpha-value>)",
+          ink: "hsl(var(--pv-ink) / <alpha-value>)",
+          gold: "hsl(var(--pv-gold) / <alpha-value>)",
+          "gold-ink": "hsl(var(--pv-gold-ink) / <alpha-value>)",
+        },
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",

@@ -258,16 +258,16 @@ export function OrcamentoBuilderSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className={`w-full sm:max-w-3xl p-0 bg-[#f5f0e8] border-l border-[#a8c0a0]/30 text-[#1a2e1f] ${pvBody}`}
+        className={`pv-scope w-full sm:max-w-3xl p-0 bg-pv-bg border-l border-pv-mid/30 text-pv-ink ${pvBody}`}
       >
         <div className="flex flex-col md:flex-row h-full">
           {/* Sidebar steps */}
-          <aside className="md:w-56 bg-[#dce5d4] p-6 md:p-8 md:flex flex-col gap-8 hidden">
+          <aside className="md:w-56 bg-pv-surface p-6 md:p-8 md:flex flex-col gap-8 hidden">
             <div>
-              <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#7d9b76]">
+              <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-pv-accent">
                 iGreen
               </span>
-              <p className={`text-2xl text-[#1a2e1f] leading-tight mt-1 ${pvSerif}`}>
+              <p className={`text-2xl text-pv-ink leading-tight mt-1 ${pvSerif}`}>
                 Novo<br />Orçamento
               </p>
             </div>
@@ -285,22 +285,22 @@ export function OrcamentoBuilderSheet({
                     <span
                       className={`w-7 h-7 rounded-full border flex items-center justify-center text-[11px] font-bold ${
                         done
-                          ? "bg-[#7d9b76] border-[#7d9b76] text-white"
+                          ? "bg-pv-accent border-pv-accent text-white"
                           : active
-                          ? "bg-[#1a2e1f] border-[#1a2e1f] text-white"
-                          : "bg-transparent border-[#1a2e1f]"
+                          ? "bg-pv-ink border-pv-ink text-white"
+                          : "bg-transparent border-pv-ink"
                       }`}
                     >
                       {done ? <Check className="h-3.5 w-3.5" /> : step.id}
                     </span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-[#1a2e1f]">
+                    <span className="text-xs font-bold uppercase tracking-wider text-pv-ink">
                       {step.label}
                     </span>
                   </li>
                 );
               })}
             </ol>
-            <div className="mt-auto text-[10px] text-[#1a2e1f]/50 leading-relaxed">
+            <div className="mt-auto text-[10px] text-pv-ink/50 leading-relaxed">
               A venda só é criada quando o cliente aceita o orçamento na página pública.
             </div>
           </aside>
@@ -309,20 +309,20 @@ export function OrcamentoBuilderSheet({
           <div className="flex-1 overflow-y-auto p-6 md:p-10">
             <div className="flex items-start justify-between mb-8">
               <div>
-                <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#7d9b76] block mb-2">
+                <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-pv-accent block mb-2">
                   Configurar
                 </span>
-                <h2 className={`text-3xl md:text-4xl text-[#1a2e1f] ${pvSerif}`}>
+                <h2 className={`text-3xl md:text-4xl text-pv-ink ${pvSerif}`}>
                   Novo orçamento
                 </h2>
-                <p className="text-sm text-[#1a2e1f]/60 mt-2 max-w-md">
+                <p className="text-sm text-pv-ink/60 mt-2 max-w-md">
                   Monte uma proposta profissional e envie por link único.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="text-[#1a2e1f]/40 hover:text-[#1a2e1f] transition-colors"
+                className="text-pv-ink/40 hover:text-pv-ink transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -330,27 +330,27 @@ export function OrcamentoBuilderSheet({
 
             {createdLink ? (
               <div className="space-y-5">
-                <div className="bg-white border-l-4 border-[#7d9b76] p-5">
-                  <div className="flex items-center gap-2 text-[#7d9b76]">
+                <div className="bg-white border-l-4 border-pv-accent p-5">
+                  <div className="flex items-center gap-2 text-pv-accent">
                     <Check className="h-4 w-4" />
                     <span className="text-xs font-bold uppercase tracking-widest">
                       Orçamento criado
                     </span>
                   </div>
-                  <p className="text-xs text-[#1a2e1f]/70 mt-3 break-all">{createdLink}</p>
+                  <p className="text-xs text-pv-ink/70 mt-3 break-all">{createdLink}</p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button
                     type="button"
                     onClick={handleCopy}
-                    className="flex-1 inline-flex items-center justify-center gap-2 bg-white border border-[#a8c0a0]/40 text-[#1a2e1f] px-5 py-3 text-xs font-semibold uppercase tracking-widest hover:bg-[#dce5d4] transition-colors"
+                    className="flex-1 inline-flex items-center justify-center gap-2 bg-white border border-pv-mid/40 text-pv-ink px-5 py-3 text-xs font-semibold uppercase tracking-widest hover:bg-pv-surface transition-colors"
                   >
                     <Copy className="h-4 w-4" /> Copiar link
                   </button>
                   <button
                     type="button"
                     onClick={handleSendWhatsApp}
-                    className="flex-1 inline-flex items-center justify-center gap-2 bg-[#1a2e1f] hover:bg-[#7d9b76] text-white px-5 py-3 text-xs font-semibold uppercase tracking-widest transition-colors"
+                    className="flex-1 inline-flex items-center justify-center gap-2 bg-pv-ink hover:bg-pv-accent text-white px-5 py-3 text-xs font-semibold uppercase tracking-widest transition-colors"
                   >
                     <Send className="h-4 w-4" /> Enviar no WhatsApp
                   </button>
@@ -358,7 +358,7 @@ export function OrcamentoBuilderSheet({
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="w-full text-xs text-[#1a2e1f]/60 hover:text-[#1a2e1f] underline underline-offset-4 py-2"
+                  className="w-full text-xs text-pv-ink/60 hover:text-pv-ink underline underline-offset-4 py-2"
                 >
                   Criar outro orçamento
                 </button>
@@ -369,7 +369,7 @@ export function OrcamentoBuilderSheet({
                 <div className="lg:col-span-3 space-y-5">
                   <Field label="Produto">
                     <Select value={productId} onValueChange={(v) => { setProductId(v); setPlanId(""); }}>
-                      <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none">
+                      <SelectTrigger className="h-10 text-sm bg-white border-pv-mid/40 rounded-none">
                         <SelectValue placeholder="Escolha o produto" />
                       </SelectTrigger>
                       <SelectContent>
@@ -381,7 +381,7 @@ export function OrcamentoBuilderSheet({
                       </SelectContent>
                     </Select>
                     {config && (
-                      <p className="text-[11px] text-[#1a2e1f]/60 italic mt-1.5">
+                      <p className="text-[11px] text-pv-ink/60 italic mt-1.5">
                         {config.commercialNote}
                       </p>
                     )}
@@ -400,7 +400,7 @@ export function OrcamentoBuilderSheet({
                   {config?.pricingMode === "plan_monthly" && config.plans.length > 0 && (
                     <Field label="Plano">
                       <Select value={planId} onValueChange={setPlanId}>
-                        <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none">
+                        <SelectTrigger className="h-10 text-sm bg-white border-pv-mid/40 rounded-none">
                           <SelectValue placeholder="Escolha o plano" />
                         </SelectTrigger>
                         <SelectContent>
@@ -422,7 +422,7 @@ export function OrcamentoBuilderSheet({
                         value={portabilidade ? "com" : "sem"}
                         onValueChange={(v) => setPortabilidade(v === "com")}
                       >
-                        <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none w-full">
+                        <SelectTrigger className="h-10 text-sm bg-white border-pv-mid/40 rounded-none w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -446,7 +446,7 @@ export function OrcamentoBuilderSheet({
                           value={projectAmount}
                           onChange={(e) => setProjectAmount(e.target.value)}
                           placeholder="Ex.: 30426,66"
-                          className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none"
+                          className="h-10 text-sm bg-white border-pv-mid/40 rounded-none"
                         />
                       </Field>
 
@@ -466,7 +466,7 @@ export function OrcamentoBuilderSheet({
                         value={currentBill}
                         onChange={(e) => setCurrentBill(e.target.value)}
                         placeholder="Ex.: 350"
-                        className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none"
+                        className="h-10 text-sm bg-white border-pv-mid/40 rounded-none"
                       />
                     </Field>
                   )}
@@ -476,13 +476,13 @@ export function OrcamentoBuilderSheet({
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Uma mensagem pessoal..."
-                      className="text-sm min-h-[70px] resize-none bg-white border-[#a8c0a0]/40 rounded-none"
+                      className="text-sm min-h-[70px] resize-none bg-white border-pv-mid/40 rounded-none"
                     />
                   </Field>
 
                   <Field label="Validade">
                     <Select value={validForDays} onValueChange={setValidForDays}>
-                      <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none w-full">
+                      <SelectTrigger className="h-10 text-sm bg-white border-pv-mid/40 rounded-none w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -497,42 +497,42 @@ export function OrcamentoBuilderSheet({
 
                 {/* Prévia em tempo real */}
                 <aside className="lg:col-span-2 lg:sticky lg:top-0 self-start">
-                  <div className="bg-[#1a2e1f] text-[#f5f0e8] p-6 space-y-4">
-                    <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#c9a84c]">
+                  <div className="bg-pv-ink text-pv-bg p-6 space-y-4">
+                    <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-pv-gold">
                       Prévia
                     </span>
                     {product ? (
                       <>
                         <h3 className={`text-2xl leading-tight ${pvSerif}`}>{product.name}</h3>
-                        <p className="text-[11px] uppercase tracking-wider text-[#f5f0e8]/60">
+                        <p className="text-[11px] uppercase tracking-wider text-pv-bg/60">
                           {PRODUCT_FAMILY_LABEL[product.family]}
                         </p>
                         {recipient && (
                           <div className="pt-3 border-t border-white/10">
-                            <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50">
+                            <p className="text-[10px] uppercase tracking-widest text-pv-bg/50">
                               Para
                             </p>
                             <p className="text-sm font-medium mt-0.5">{recipient.name}</p>
-                            <p className="text-[11px] text-[#f5f0e8]/60">{recipient.phone}</p>
+                            <p className="text-[11px] text-pv-bg/60">{recipient.phone}</p>
                           </div>
                         )}
                         {quote && (isMarketFree || quote.amountCents > 0) ? (
                           <div className="pt-3 border-t border-white/10">
-                            <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50">
+                            <p className="text-[10px] uppercase tracking-widest text-pv-bg/50">
                               {quote.label}
                             </p>
                             {isMarketFree ? (
-                              <p className={`text-3xl text-[#c9a84c] mt-1 ${pvSerif}`}>
+                              <p className={`text-3xl text-pv-gold mt-1 ${pvSerif}`}>
                                 até 30%
-                                <span className="text-xs font-normal text-[#f5f0e8]/60 ml-1">
+                                <span className="text-xs font-normal text-pv-bg/60 ml-1">
                                   de economia
                                 </span>
                               </p>
                             ) : (
-                              <p className={`text-3xl text-[#c9a84c] mt-1 ${pvSerif}`}>
+                              <p className={`text-3xl text-pv-gold mt-1 ${pvSerif}`}>
                                 {BRL(quote.amountCents)}
                                 {quote.period === "month" && (
-                                  <span className="text-xs font-normal text-[#f5f0e8]/60 ml-1">
+                                  <span className="text-xs font-normal text-pv-bg/60 ml-1">
                                     /mês
                                   </span>
                                 )}
@@ -543,30 +543,30 @@ export function OrcamentoBuilderSheet({
                                 {quote.details.map((d, i) => (
                                   <li
                                     key={i}
-                                    className="flex justify-between gap-2 text-[11px] text-[#f5f0e8]/70"
+                                    className="flex justify-between gap-2 text-[11px] text-pv-bg/70"
                                   >
                                     <span>{d.label}</span>
-                                    <span className="text-[#f5f0e8] text-right">{d.value}</span>
+                                    <span className="text-pv-bg text-right">{d.value}</span>
                                   </li>
                                 ))}
                               </ul>
                             )}
                             {isProjectOnce && payments.length > 0 && (
                               <div className="mt-3 pt-3 border-t border-white/10">
-                                <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50 mb-1.5">
+                                <p className="text-[10px] uppercase tracking-widest text-pv-bg/50 mb-1.5">
                                   Formas de pagamento
                                 </p>
                                 <ul className="space-y-1.5">
                                   {paymentOptionsToLineItems(paymentsToCents(payments)).map((p, i) => (
                                     <li
                                       key={i}
-                                      className="flex justify-between gap-2 text-[11px] text-[#f5f0e8]/70"
+                                      className="flex justify-between gap-2 text-[11px] text-pv-bg/70"
                                     >
                                       <span>
                                         {p.method ? PAYMENT_METHOD_LABEL[p.method] : p.label}
                                         {p.bank ? ` · ${p.bank}` : ""}
                                       </span>
-                                      <span className="text-[#c9a84c] text-right">{p.value}</span>
+                                      <span className="text-pv-gold text-right">{p.value}</span>
                                     </li>
                                   ))}
                                 </ul>
@@ -574,7 +574,7 @@ export function OrcamentoBuilderSheet({
                             )}
                           </div>
                         ) : (
-                          <p className="text-xs text-[#f5f0e8]/40 italic pt-3 border-t border-white/10">
+                          <p className="text-xs text-pv-bg/40 italic pt-3 border-t border-white/10">
                             {isMarketFree
                               ? "Mercado livre: a proposta vende a solução (até 30%), sem valor fechado."
                               : "Preencha os valores para ver a prévia."}
@@ -582,7 +582,7 @@ export function OrcamentoBuilderSheet({
                         )}
                       </>
                     ) : (
-                      <p className="text-xs text-[#f5f0e8]/40 italic">
+                      <p className="text-xs text-pv-bg/40 italic">
                         Escolha um produto para começar.
                       </p>
                     )}
@@ -592,7 +592,7 @@ export function OrcamentoBuilderSheet({
                     type="button"
                     disabled={!canSubmit}
                     onClick={handleCreate}
-                    className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-[#7d9b76] hover:bg-[#1a2e1f] disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
+                    className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-pv-accent hover:bg-pv-ink disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                     {submitting ? "Criando..." : "Criar orçamento"}
@@ -610,7 +610,7 @@ export function OrcamentoBuilderSheet({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#1a2e1f]/60 block">
+      <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-ink/60 block">
         {label}
       </label>
       {children}
@@ -657,7 +657,7 @@ function PaymentEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#1a2e1f]/60 block">
+        <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-ink/60 block">
           Formas de pagamento
         </label>
         <div className="flex gap-1.5">
@@ -666,7 +666,7 @@ function PaymentEditor({
               key={m}
               type="button"
               onClick={() => addOption(m)}
-              className="inline-flex items-center gap-1 bg-white border border-[#a8c0a0]/50 text-[#1a2e1f] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider hover:bg-[#dce5d4] transition-colors"
+              className="inline-flex items-center gap-1 bg-white border border-pv-mid/50 text-pv-ink px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider hover:bg-pv-surface transition-colors"
             >
               <Plus className="h-3 w-3" /> {PAYMENT_METHOD_LABEL[m]}
             </button>
@@ -675,31 +675,31 @@ function PaymentEditor({
       </div>
 
       {payments.length === 0 ? (
-        <p className="text-[11px] text-[#1a2e1f]/50 italic">
+        <p className="text-[11px] text-pv-ink/50 italic">
           Adicione à vista, cartão ou financiamento. Você digita banco, parcelas, valor e juros.
         </p>
       ) : (
         <div className="space-y-3">
           {payments.map((opt, idx) => (
-            <div key={idx} className="bg-white border border-[#a8c0a0]/40 p-3 space-y-2.5">
+            <div key={idx} className="bg-white border border-pv-mid/40 p-3 space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#7d9b76]">
+                <span className="text-xs font-bold uppercase tracking-wider text-pv-accent">
                   {PAYMENT_METHOD_LABEL[opt.method]}
                 </span>
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1 text-[10px] text-[#1a2e1f]/60 cursor-pointer">
+                  <label className="flex items-center gap-1 text-[10px] text-pv-ink/60 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={opt.highlight ?? false}
                       onChange={(e) => update(idx, { highlight: e.target.checked })}
-                      className="accent-[#7d9b76]"
+                      className="accent-pv-accent"
                     />
                     Destaque
                   </label>
                   <button
                     type="button"
                     onClick={() => remove(idx)}
-                    className="text-[#1a2e1f]/40 hover:text-red-600 transition-colors"
+                    className="text-pv-ink/40 hover:text-red-600 transition-colors"
                     aria-label="Remover forma de pagamento"
                   >
                     <X className="h-4 w-4" />
@@ -716,7 +716,7 @@ function PaymentEditor({
                     update(idx, { total: e.target.value ? Number(e.target.value) : null })
                   }
                   placeholder="Valor à vista (ex.: 28900)"
-                  className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                  className="h-9 text-sm bg-pv-bg border-pv-mid/40 rounded-none"
                 />
               ) : (
                 <div className="space-y-2">
@@ -725,7 +725,7 @@ function PaymentEditor({
                       value={opt.bank ?? ""}
                       onValueChange={(v) => update(idx, { bank: v })}
                     >
-                      <SelectTrigger className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none">
+                      <SelectTrigger className="h-9 text-sm bg-pv-bg border-pv-mid/40 rounded-none">
                         <SelectValue placeholder="Banco / financeira" />
                       </SelectTrigger>
                       <SelectContent>
@@ -748,7 +748,7 @@ function PaymentEditor({
                         })
                       }
                       placeholder="Parcelas (ex.: 60)"
-                      className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                      className="h-9 text-sm bg-pv-bg border-pv-mid/40 rounded-none"
                     />
                     <Input
                       type="number"
@@ -760,7 +760,7 @@ function PaymentEditor({
                         })
                       }
                       placeholder="Valor da parcela"
-                      className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                      className="h-9 text-sm bg-pv-bg border-pv-mid/40 rounded-none"
                     />
                   </div>
                   <Input
@@ -768,7 +768,7 @@ function PaymentEditor({
                     value={opt.interest ?? ""}
                     onChange={(e) => update(idx, { interest: e.target.value || null })}
                     placeholder="Juros (ex.: 1,99% a.m.) — opcional"
-                    className="h-9 text-sm bg-[#f5f0e8] border-[#a8c0a0]/40 rounded-none"
+                    className="h-9 text-sm bg-pv-bg border-pv-mid/40 rounded-none"
                   />
                 </div>
               )}
