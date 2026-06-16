@@ -16,7 +16,16 @@
 // =============================================================================
 
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { ListChecks, Plus, Settings2 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { SaleStagePanel, StageTemplateAdmin } from "@/features/produtos/esteira";
+import { useUserRole } from "@/hooks/useUserRole";
 import {
   Select,
   SelectContent,
@@ -73,6 +82,10 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
   const [lossReason, setLossReason] = useState("");
   // Controla o diálogo de registro manual de venda (Requisito 3).
   const [registrarOpen, setRegistrarOpen] = useState(false);
+  // Esteira de acompanhamento (pós-venda) e admin do modelo de etapas.
+  const [stagePanelSale, setStagePanelSale] = useState<Sale | null>(null);
+  const [templateAdminOpen, setTemplateAdminOpen] = useState(false);
+  const { isAdmin } = useUserRole(consultantId);
   const { toast } = useToast();
 
   const { data: products = [] } = useProducts();
@@ -201,6 +214,17 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
             >
               <Plus className="h-3.5 w-3.5" /> Registrar venda
             </button>
+            {/* Admin do modelo de etapas (somente admin/superadmin) */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setTemplateAdminOpen(true)}
+                className="inline-flex items-center gap-1.5 border border-pv-ink/30 hover:border-pv-accent text-pv-ink px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors"
+                title="Configurar etapas da esteira"
+              >
+                <Settings2 className="h-3.5 w-3.5" /> Etapas
+              </button>
+            )}
           </div>
         </div>
 
@@ -269,6 +293,9 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
                   product={productById.get(sale.productId)}
                   dark={isHighlight}
                   onDragStart={() => setDraggedId(sale.id)}
+                  onOpenAcompanhamento={
+                    sale.status === "fechado" ? () => setStagePanelSale(sale) : undefined
+                  }
                 />
               ))}
             </div>
@@ -310,6 +337,39 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
         open={registrarOpen}
         onOpenChange={setRegistrarOpen}
       />
+
+      {/* Esteira de acompanhamento da venda fechada */}
+      <Sheet open={stagePanelSale !== null} onOpenChange={(open) => !open && setStagePanelSale(null)}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto bg-pv-bg">
+          <SheetHeader>
+            <SheetTitle>Acompanhamento da venda</SheetTitle>
+            <SheetDescription>
+              Cheque cada etapa pós-fechamento, anexe documentos e registre
+              observações internas.
+            </SheetDescription>
+          </SheetHeader>
+          {stagePanelSale && (
+            <div className="mt-6">
+              <SaleStagePanel saleId={stagePanelSale.id} />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Admin do modelo de etapas (somente admin/superadmin) */}
+      <Sheet open={templateAdminOpen} onOpenChange={setTemplateAdminOpen}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto bg-pv-bg">
+          <SheetHeader>
+            <SheetTitle>Etapas da esteira</SheetTitle>
+            <SheetDescription>
+              Configure as etapas que aparecem em toda venda fechada.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <StageTemplateAdmin />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -360,9 +420,10 @@ interface SaleCardProps {
   product?: Product;
   dark: boolean;
   onDragStart: () => void;
+  onOpenAcompanhamento?: () => void;
 }
 
-function SaleCard({ sale, product, dark, onDragStart }: SaleCardProps) {
+function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: SaleCardProps) {
   const familyLabel = product ? PRODUCT_FAMILY_LABEL[product.family] : "Produto";
   const action = NEXT_ACTION[sale.status];
   const daysAgo = Math.floor((Date.now() - new Date(sale.updatedAt).getTime()) / 86400000);
@@ -393,11 +454,25 @@ function SaleCard({ sale, product, dark, onDragStart }: SaleCardProps) {
             <span className="text-xs font-semibold text-pv-gold">{fmtCents(sale.amountCents)}</span>
           )}
         </div>
-        <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-pv-accent" />
-          <span className="text-[10px] text-white/50 uppercase tracking-tighter italic">
-            {action.label}
-          </span>
+        <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-pv-accent" />
+            <span className="text-[10px] text-white/50 uppercase tracking-tighter italic">
+              {action.label}
+            </span>
+          </div>
+          {onOpenAcompanhamento && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAcompanhamento();
+              }}
+              className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-pv-gold hover:text-white transition-colors"
+            >
+              <ListChecks className="h-3 w-3" /> Acompanhar
+            </button>
+          )}
         </div>
       </div>
     );
