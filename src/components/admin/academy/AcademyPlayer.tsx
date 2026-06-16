@@ -113,6 +113,8 @@ export function AcademyPlayer({
     mountRef.current.innerHTML = '<div id="yt-player-inner"></div>';
     const make = () => {
       playerRef.current = new window.YT.Player("yt-player-inner", {
+        width: "100%",
+        height: "100%",
         videoId,
         playerVars: {
           autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1,
@@ -256,11 +258,11 @@ export function AcademyPlayer({
       </header>
 
       {/* ====== SCROLL CONTAINER ====== */}
-      <div className="relative z-10 flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-10">
+      <div className="relative z-10 flex-1 min-h-0 overflow-y-auto">
+        <div className="w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-10">
 
           {/* ====== MOLDURA CINEMA ====== */}
-          <div className="relative group">
+          <div className="relative group mx-auto w-full max-w-[1120px] min-w-0">
             {/* glow externo */}
             <div
               aria-hidden
@@ -279,7 +281,10 @@ export function AcademyPlayer({
               }}
             >
               <div className="relative w-full" style={{ aspectRatio: "16/9" }}>
-                <div ref={mountRef} className="absolute inset-0 w-full h-full" />
+                <div
+                  ref={mountRef}
+                  className="absolute inset-0 w-full h-full [&_div]:w-full [&_div]:h-full [&_iframe]:block [&_iframe]:w-full [&_iframe]:h-full"
+                />
               </div>
               {/* faixa inferior com gradiente sutil */}
               <div
