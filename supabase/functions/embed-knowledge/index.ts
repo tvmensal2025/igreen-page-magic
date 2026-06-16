@@ -67,39 +67,39 @@ Deno.serve(async (req) => {
 
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const table = body?.table || "ai_knowledge_sections";
-    if (table !== "ai_knowledge_sections" && table !== "ai_winning_conversations") {
+    if (table !== "ai_knowledge_sections" && table !== "ai_winning_conversations" && table !== "bot_flow_qa") {
       return json({ error: "invalid table" }, 400);
     }
+
+    const textFor = (row: any): string => {
+      if (table === "ai_knowledge_sections") return `${row.title || ""}\n${row.content || ""}`;
+      if (table === "bot_flow_qa") return `${row.intent_name || ""}\n${row.text_response || ""}`;
+      return `${row.etapa || ""}\n${row.snippet || ""}`;
+    };
+    const touchesUpdatedAt = table === "ai_knowledge_sections" || table === "bot_flow_qa";
 
     if (body?.id) {
       const { data: row } = await supabase.from(table).select("*").eq("id", body.id).maybeSingle();
       if (!row) return json({ error: "row not found" }, 404);
-      const text = table === "ai_knowledge_sections"
-        ? `${row.title || ""}\n${row.content || ""}`
-        : `${row.etapa || ""}\n${row.snippet || ""}`;
-      const vec = await embed(text);
+      const vec = await embed(textFor(row));
       const upd: any = { embedding: vec };
-      if (table === "ai_knowledge_sections") upd.embedding_updated_at = new Date().toISOString();
+      if (touchesUpdatedAt) upd.embedding_updated_at = new Date().toISOString();
       await supabase.from(table).update(upd).eq("id", row.id);
       return json({ ok: true, id: row.id, dims: vec.length });
     }
 
-    // Backfill (até 50 sem embedding)
-    const { data: rows } = await supabase
-      .from(table)
-      .select("*")
-      .is("embedding", null)
-      .limit(50);
+    // Backfill (até 50 sem embedding). Para bot_flow_qa, só os que têm resposta.
+    let q = supabase.from(table).select("*").is("embedding", null).limit(50);
+    if (table === "bot_flow_qa") q = q.not("text_response", "is", null).eq("is_opening", false);
+    const { data: rows } = await q;
     const results: any[] = [];
     for (const row of (rows || []) as any[]) {
       try {
-        const text = table === "ai_knowledge_sections"
-          ? `${row.title || ""}\n${row.content || ""}`
-          : `${row.etapa || ""}\n${row.snippet || ""}`;
+        const text = textFor(row);
         if (!text.trim()) continue;
         const vec = await embed(text);
         const upd: any = { embedding: vec };
-        if (table === "ai_knowledge_sections") upd.embedding_updated_at = new Date().toISOString();
+        if (touchesUpdatedAt) upd.embedding_updated_at = new Date().toISOString();
         await supabase.from(table).update(upd).eq("id", row.id);
         results.push({ id: row.id, ok: true });
       } catch (e) {

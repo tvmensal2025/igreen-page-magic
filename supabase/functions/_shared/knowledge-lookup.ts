@@ -77,19 +77,19 @@ async function semanticLookup(
   const vec = await embedQuestion(question);
   if (!vec) return null;
   try {
-    const { data, error } = await supabase.rpc("match_knowledge", {
+    const { data, error } = await supabase.rpc("match_knowledge_all", {
       p_consultant_id: consultantId ?? null,
       p_query_embedding: vec,
-      p_match_count: 3,
+      p_match_count: 4,
     });
     if (error || !Array.isArray(data) || data.length === 0) return null;
-    const top = (data as Array<{ title: string; content: string; similarity: number }>)
+    const top = (data as Array<{ titulo: string; conteudo: string; similarity: number }>)
       .filter((r) => Number(r.similarity) >= SEMANTIC_MIN_SIMILARITY);
     if (top.length === 0) return null;
     // Junta os melhores trechos (até ~1500 chars) pra dar contexto rico ao LLM.
     let text = "";
     for (const r of top) {
-      const bloco = `${r.title ? r.title + "\n" : ""}${r.content || ""}`.trim();
+      const bloco = `${r.titulo ? r.titulo + "\n" : ""}${r.conteudo || ""}`.trim();
       if (!bloco) continue;
       if (text.length + bloco.length > 1500) break;
       text += (text ? "\n\n" : "") + bloco;

@@ -18,6 +18,8 @@ import { aiChatCascade } from "../ai-gateway.ts";
 import { lookupKnowledge } from "../knowledge-lookup.ts";
 import { FLUXO_B_PERSONA } from "./persona.ts";
 import { buscarRespostaDiretaFaq } from "./faq-direct.ts";
+import { trackAIUsage } from "../ai-cost-tracker.ts";
+import { maybeUpdateSummary } from "../ai-summary.ts";
 
 const MAX_HISTORY_TURNS = 20;
 
@@ -64,7 +66,7 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
   // 1) Customer + histórico
   const { data: customer } = await supabase
     .from("customers")
-    .select("id, name, phone_whatsapp, bill_requested_at, electricity_bill_photo_url, bot_paused")
+    .select("id, name, phone_whatsapp, bill_requested_at, electricity_bill_photo_url, bot_paused, conversation_summary, address_state, electricity_bill_value")
     .eq("id", customerId)
     .maybeSingle();
 
@@ -190,6 +192,15 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     { role: "system" as const, content: identidade },
   ];
 
+  // Memória persistente: injeta o resumo da conversa (gerado a cada ~6 turnos).
+  // Ajuda em conversas longas ou retomadas, sem depender só das últimas 20 msgs.
+  if (customer.conversation_summary && String(customer.conversation_summary).trim()) {
+    systemMessages.push({
+      role: "system" as const,
+      content: `RESUMO DA CONVERSA ATÉ AGORA (memória — use para não repetir perguntas e manter o contexto):\n${customer.conversation_summary}`,
+    });
+  }
+
 
   if (rag?.found && rag.text) {
     systemMessages.push({
@@ -244,6 +255,21 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     console.error("[fluxo-b-ia] LLM error:", e?.message);
     return null;
   });
+
+  // Registra uso/custo por consultor (best-effort) — alimenta o painel de gastos.
+  if (!input.dryRun && llm) {
+    const u = llm.raw?.usage || {};
+    void trackAIUsage({
+      supabase,
+      consultantId,
+      model: llm.modelUsed || "google/gemini-3-flash-preview",
+      phase: "orchestrator",
+      usage: {
+        input: Number(u.prompt_tokens || 0),
+        output: Number(u.completion_tokens || 0),
+      },
+    });
+  }
 
   if (!llm || !llm.text) {
     console.warn("[fluxo-b-ia] LLM returned empty text", { hasLlm: !!llm });
@@ -301,6 +327,25 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
       message_text: texto,
       message_type: "text",
     });
+
+    // 8) Memória: atualiza o resumo da conversa a cada ~6 turnos do lead.
+    // Fire-and-forget — não bloqueia a resposta. Conta os turnos inbound do
+    // histórico + 1 (o turno atual).
+    try {
+      const inboundCount = historyMessages.filter((m) => m.role === "user").length + 1;
+      const historicoFmt = [...historyMessages, { role: "user" as const, content: userTurn }, { role: "assistant" as const, content: texto }]
+        .map((m) => `${m.role === "user" ? "Lead" : "Camila"}: ${m.content}`)
+        .join("\n");
+      void maybeUpdateSummary({
+        supabase,
+        customerId,
+        consultantId,
+        history: historicoFmt,
+        customer,
+        inboundTurnCount: inboundCount,
+        previousSummary: customer.conversation_summary || null,
+      });
+    } catch (_e) { /* best-effort */ }
   }
 
   return {
