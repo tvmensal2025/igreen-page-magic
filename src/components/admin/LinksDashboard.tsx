@@ -151,7 +151,7 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
             <BigCard icon={<Eye />} value={metrics.totalViews} label="Visitas" sub={`em ${periodLabel}`} color="from-primary/20 to-primary/5" iconColor="text-primary" />
             <BigCard icon={<MessageCircle />} value={metrics.whatsappClicks} label="Cliques WhatsApp" sub="quiseram falar" color="from-[#25D366]/20 to-[#25D366]/5" iconColor="text-[#25D366]" />
             <BigCard icon={<UserPlus />} value={metrics.cadastroClicks} label="Cliques Cadastro" sub="foram se cadastrar" color="from-blue-500/20 to-blue-500/5" iconColor="text-blue-500" />
-            <BigCard icon={<MousePointerClick />} value={`${metrics.conversao}%`} label="Conversão" sub="visitas que agiram" color="from-amber-500/20 to-amber-500/5" iconColor="text-amber-500" />
+            <BigCard icon={<MousePointerClick />} value={`${metrics.conversao}%`} label="Conversão" sub="visitas que agiram" color="from-warning/20 to-warning/5" iconColor="text-warning" />
           </div>
 
           {/* ─── Visitas por dia ─── */}

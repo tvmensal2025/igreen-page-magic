@@ -59,7 +59,7 @@ export default function FluxoBHeaderStats({ consultantId, onEditPersona }: Props
             <Badge
               variant="outline"
               className={`text-[9px] py-0 h-4 font-medium gap-1 ${
-                promptEmpty ? "border-amber-500/50 bg-amber-500/10 text-amber-600" : "border-border/40"
+                promptEmpty ? "border-warning/50 bg-warning/10 text-warning" : "border-border/40"
               }`}
             >
               {promptEmpty && <AlertTriangle className="h-2.5 w-2.5" />}
@@ -78,7 +78,7 @@ export default function FluxoBHeaderStats({ consultantId, onEditPersona }: Props
             <Badge
               variant="outline"
               className={`text-[9px] py-0 h-4 font-medium gap-1 ${
-                ragEmpty ? "border-amber-500/50 bg-amber-500/10 text-amber-600" : "border-border/40"
+                ragEmpty ? "border-warning/50 bg-warning/10 text-warning" : "border-border/40"
               }`}
             >
               {ragEmpty && <AlertTriangle className="h-2.5 w-2.5" />}

@@ -103,7 +103,7 @@ primeiro, depois edge function e front. Validar com `npx tsc --noEmit` e
     `captura/schemas.ts` quando aplicável. Baixa prioridade.
   - _Requisitos: 7.2_
 
-- [-] 14. Verificação e deploy
+- [x] 14. Verificação e deploy
   - Rodar `npx tsc --noEmit`, `npx vite build` (exit 0) e os testes unitários do
     módulo; corrigir o que aparecer.
   - Commit + push e disparar deploy da edge `proposal-respond` via GitHub Actions

@@ -240,8 +240,8 @@ function EntradasSection({
     <section>
       <p className="text-xs uppercase tracking-wide text-muted-foreground">Como o lead chega aqui</p>
       {entradas.length === 0 ? (
-        <div className="mt-1 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+        <div className="mt-1 flex items-start gap-1.5 rounded-md border border-warning/30 bg-warning/5 p-2 text-xs">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
           <span>
             {step.position === 1
               ? "Este é o ponto de partida — o lead começa por aqui."
@@ -425,8 +425,8 @@ function DiagnosticoSection({
     return (
       <section>
         <p className="text-xs uppercase tracking-wide text-muted-foreground">Como está este passo</p>
-        <div className="mt-1 flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+        <div className="mt-1 flex items-center gap-1.5 rounded-md border border-success/30 bg-success/5 p-2 text-xs">
+          <CheckCircle2 className="h-3.5 w-3.5 text-success" />
           <span>Tudo certo aqui. Pode seguir.</span>
         </div>
       </section>
@@ -446,11 +446,11 @@ function DiagnosticoSection({
             <li
               key={w.id}
               className={`rounded-md border p-2 text-xs ${
-                isError ? "border-destructive/30 bg-destructive/5" : "border-amber-500/30 bg-amber-500/5"
+                isError ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5"
               }`}
             >
               <div className="flex items-start gap-1.5">
-                <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${isError ? "text-destructive" : "text-amber-600"}`} />
+                <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${isError ? "text-destructive" : "text-warning"}`} />
                 <div className="flex-1">
                   <p className="font-medium">{voz.titulo}</p>
                   <p className="mt-0.5 text-muted-foreground">{voz.detalhe}</p>

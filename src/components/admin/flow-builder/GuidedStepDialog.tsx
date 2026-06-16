@@ -474,7 +474,7 @@ export default function GuidedStepDialog({
                         {done ? (
                           <Badge variant="secondary" className="text-[10px]">já tem</Badge>
                         ) : (
-                          <Badge variant="outline" className="border-amber-500/50 text-[10px] text-amber-600">falta</Badge>
+                          <Badge variant="outline" className="border-warning/50 text-[10px] text-warning">falta</Badge>
                         )}
                       </p>
                       <p className="text-xs text-muted-foreground">{milestone.hint}</p>
@@ -502,7 +502,7 @@ export default function GuidedStepDialog({
                 <span>Fluxo completo: o último passo <strong>envia o cadastro ao portal iGreen</strong> automaticamente.</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+              <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
                 <span className="text-base">⚠️</span>
                 <span>
                   Ainda falta <strong>{coverage.requiredCount - coverage.doneCount}</strong>{" "}

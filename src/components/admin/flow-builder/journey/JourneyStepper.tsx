@@ -37,9 +37,9 @@ export default function JourneyStepper({ stages, focoId, onFocus }: Props) {
                   ativo
                     ? "border-primary bg-primary text-primary-foreground scale-110"
                     : stage.status === "feito"
-                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-600"
+                      ? "border-success/50 bg-success/10 text-success"
                       : stage.status === "em_andamento"
-                        ? "border-amber-500/50 bg-amber-500/10 text-amber-600"
+                        ? "border-warning/50 bg-warning/10 text-warning"
                         : "border-border text-muted-foreground hover:border-primary/50"
                 }`}
               >
