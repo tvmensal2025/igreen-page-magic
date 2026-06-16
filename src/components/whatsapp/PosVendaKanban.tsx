@@ -411,7 +411,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                         key={c.id}
                         draggable={isOwner || c.assigned_consultant_id === consultantId}
                         onDragStart={() => setDragId(c.id)}
-                        className="relative bg-background border border-border/50 rounded-lg p-2.5 pl-3 space-y-1.5 cursor-grab active:cursor-grabbing hover:border-primary/40 hover:shadow-md transition-all"
+                        className="relative bg-background border border-border/50 rounded-lg p-2.5 pl-3 space-y-1.5 cursor-grab active:cursor-grabbing hover:border-primary/40 hover:shadow-md transition-all min-w-0 max-w-full overflow-hidden"
                       >
                         <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r ${stage.dot}`} />
                         <div className="flex items-start justify-between gap-1">
