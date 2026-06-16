@@ -293,6 +293,9 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
                   product={productById.get(sale.productId)}
                   dark={isHighlight}
                   onDragStart={() => setDraggedId(sale.id)}
+                  onOpenAcompanhamento={
+                    sale.status === "fechado" ? () => setStagePanelSale(sale) : undefined
+                  }
                 />
               ))}
             </div>
