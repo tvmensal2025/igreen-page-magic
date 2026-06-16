@@ -351,6 +351,17 @@ function textoDoInbound(inbound: InboundEvent): string {
 }
 
 /**
+ * Cache em memória do resultado "este consultor tem flow B sem passos?".
+ * Chave: `consultantId || "__none__"` · Valor: boolean + timestamp.
+ *
+ * TTL curto (60s): se o Super Admin popular passos no construtor de B, em
+ * até 1 minuto o Cérebro volta a roteirizar normalmente. Cache só evita a
+ * rajada de 3 queries por turno em variant B (centenas de clientes).
+ */
+const _variantBLivreCache = new Map<string, { livre: boolean; t: number }>();
+const VARIANT_B_LIVRE_TTL_MS = 60_000;
+
+/**
  * Detecta o caso "Fluxo B IA Livre sem passos" — quando a variante do cliente
  * é B e o flow B do consultor (ou o público de fallback) NÃO tem nenhum
  * `bot_flow_steps` ativo. Nesse caso o Cérebro deve sair de cena: quem
@@ -358,6 +369,9 @@ function textoDoInbound(inbound: InboundEvent): string {
  * ser invocado (geraria `empty_flow → paused_system`, corrompendo o estado).
  *
  * Fail-open: qualquer erro de leitura → `false` (segue caminho normal).
+ *
+ * Performance: o lookup de `customers` (variant + consultant_id) é por id;
+ * o lookup de `bot_flows`/`bot_flow_steps` por consultor é CACHEADO 60s.
  */
 async function variantBLivreSemPassos(
   // deno-lint-ignore no-explicit-any
@@ -373,37 +387,15 @@ async function variantBLivreSemPassos(
     const variant = String(customer?.flow_variant || "").toUpperCase();
     if (variant !== "B") return false;
 
-    // Busca o flow B do consultor; se sync_mode=public ou não tiver, cai no público.
-    const { data: ownFlow } = await supabase
-      .from("bot_flows")
-      .select("id, sync_mode")
-      .eq("consultant_id", customer?.consultant_id)
-      .eq("variant", "B")
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    let flowId = ownFlow?.id as string | undefined;
-    const ownSync = String((ownFlow as { sync_mode?: string } | null)?.sync_mode ?? "public").toLowerCase();
-    if (!ownFlow || ownSync === "public") {
-      const { data: pub } = await supabase
-        .from("bot_flows")
-        .select("id")
-        .eq("is_public", true)
-        .eq("is_active", true)
-        .eq("variant", "B")
-        .limit(1)
-        .maybeSingle();
-      if (pub?.id) flowId = pub.id;
+    const cacheKey = String(customer?.consultant_id || "__none__");
+    const cached = _variantBLivreCache.get(cacheKey);
+    if (cached && Date.now() - cached.t < VARIANT_B_LIVRE_TTL_MS) {
+      return cached.livre;
     }
-    if (!flowId) return true; // Sem flow B = comportamento IA Livre.
 
-    const { count } = await supabase
-      .from("bot_flow_steps")
-      .select("id", { count: "exact", head: true })
-      .eq("flow_id", flowId)
-      .eq("is_active", true);
-    return (count ?? 0) === 0;
+    const livre = await checarFlowBVazio(supabase, customer?.consultant_id ?? null);
+    _variantBLivreCache.set(cacheKey, { livre, t: Date.now() });
+    return livre;
   } catch (e) {
     console.warn(
       "[cerebro/index] variantBLivreSemPassos falhou (fail-open, segue):",
@@ -412,6 +404,50 @@ async function variantBLivreSemPassos(
     return false;
   }
 }
+
+/** Lookup real do flow B do consultor (com fallback público) + contagem de passos. */
+async function checarFlowBVazio(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  consultantId: string | null,
+): Promise<boolean> {
+  const { data: ownFlow } = await supabase
+    .from("bot_flows")
+    .select("id, sync_mode")
+    .eq("consultant_id", consultantId)
+    .eq("variant", "B")
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  let flowId = ownFlow?.id as string | undefined;
+  const ownSync = String((ownFlow as { sync_mode?: string } | null)?.sync_mode ?? "public").toLowerCase();
+  if (!ownFlow || ownSync === "public") {
+    const { data: pub } = await supabase
+      .from("bot_flows")
+      .select("id")
+      .eq("is_public", true)
+      .eq("is_active", true)
+      .eq("variant", "B")
+      .limit(1)
+      .maybeSingle();
+    if (pub?.id) flowId = pub.id;
+  }
+  if (!flowId) return true; // Sem flow B = comportamento IA Livre.
+
+  const { count } = await supabase
+    .from("bot_flow_steps")
+    .select("id", { count: "exact", head: true })
+    .eq("flow_id", flowId)
+    .eq("is_active", true);
+  return (count ?? 0) === 0;
+}
+
+/** Limpa o cache (testes). */
+export function _limparCacheVariantBLivre(): void {
+  _variantBLivreCache.clear();
+}
+
 
 /**
  * Envolve uma promessa num teto de tempo. Se `p` resolver antes do teto, devolve
