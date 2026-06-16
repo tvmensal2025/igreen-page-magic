@@ -401,7 +401,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                   {grouped[stage.key].length}
                 </span>
               </div>
-              <ScrollArea className="flex-1 min-w-0 max-w-full overflow-hidden">
+              <ScrollArea className="kanban-safe-scroll flex-1 min-w-0 max-w-full overflow-hidden">
                 <div className="p-2 space-y-1.5 min-w-0 max-w-full overflow-hidden">
                   {grouped[stage.key].map((c) => {
                     const days = daysSince(c.portal_submitted_at);

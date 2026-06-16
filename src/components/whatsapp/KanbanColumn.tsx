@@ -69,7 +69,7 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
       </div>
 
       {/* Cards */}
-      <ScrollArea className="flex-1 min-h-0 min-w-0 max-w-full overflow-hidden">
+      <ScrollArea className="kanban-safe-scroll flex-1 min-h-0 min-w-0 max-w-full overflow-hidden">
         <div className="w-full min-w-0 max-w-full overflow-hidden p-2 space-y-1.5">
           {stageDeals.map((deal) => (
             <KanbanDealCard
