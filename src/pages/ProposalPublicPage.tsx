@@ -42,13 +42,14 @@ import {
   type ProposalStatus,
 } from "@/features/produtos/orcamento";
 import { PAYMENT_METHOD_LABEL, type ProposalLineItem } from "@/features/produtos/orcamento";
+import { formatBRLFromCents } from "@/features/produtos/lib/money";
 import {
   useProducts,
   resolveLanding,
   ProductLandingSections,
 } from "@/features/produtos/catalogo";
 
-const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const BRL = (cents: number) => formatBRLFromCents(cents);
 
 const FINAL_STATUSES: ProposalStatus[] = ["accepted", "rejected", "expired"];
 
@@ -279,7 +280,7 @@ export default function ProposalPublicPage() {
               <StatusBanner status={proposal.status} validUntilLabel={validUntilLabel} />
 
               {/* Valor / economia */}
-              {proposal.amount != null && proposal.amount > 0 && (
+              {proposal.amountCents != null && proposal.amountCents > 0 && (
                 <div className="mt-3 rounded-2xl bg-white/10 border border-white/20 px-4 py-3.5 text-center">
                   {discountBadge && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-[#3ad06a]/25 px-2.5 py-0.5 text-[10px] font-semibold mb-1.5 border border-[#7ef0a0]/30">
@@ -299,7 +300,7 @@ export default function ProposalPublicPage() {
                     </>
                   ) : (
                     <p className="text-3xl font-extrabold mt-0.5 leading-none">
-                      {BRL(proposal.amount)}
+                      {BRL(proposal.amountCents)}
                       {proposal.amountPeriod === "month" && (
                         <span className="text-xs font-medium text-white/70"> /mês</span>
                       )}
@@ -463,14 +464,14 @@ function StatusBanner({
   const base = "mt-4 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm font-medium";
   if (status === "accepted") {
     return (
-      <div className={`${base} bg-emerald-400/20 text-emerald-100 border border-emerald-300/30`}>
+      <div className={`${base} bg-success/20 text-success-foreground border border-success/30`}>
         <CheckCircle2 className="h-4 w-4" /> Você aceitou esta proposta. O consultor foi avisado.
       </div>
     );
   }
   if (status === "rejected") {
     return (
-      <div className={`${base} bg-red-400/20 text-red-100 border border-red-300/30`}>
+      <div className={`${base} bg-destructive/20 text-destructive-foreground border border-destructive/30`}>
         <XCircle className="h-4 w-4" /> Esta proposta foi recusada.
       </div>
     );
@@ -485,7 +486,7 @@ function StatusBanner({
   }
   if (status === "countered") {
     return (
-      <div className={`${base} bg-amber-400/20 text-amber-100 border border-amber-300/30`}>
+      <div className={`${base} bg-warning/20 text-warning-foreground border border-warning/30`}>
         <Clock className="h-4 w-4" /> Sua proposta concorrente foi enviada. Aguarde o retorno.
       </div>
     );

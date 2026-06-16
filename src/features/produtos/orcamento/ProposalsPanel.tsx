@@ -41,6 +41,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { pvSerif } from "../theme";
+import { formatBRLFromCents, reaisToCents, centsToReais } from "../lib/money";
 
 type StatusFilter = "all" | "pending" | "accepted" | "closed";
 
@@ -58,8 +59,8 @@ const STATUS_COLOR: Record<ProposalStatus, string> = {
 };
 
 const PUBLIC_BASE = "https://igreen.cloud";
-const BRL = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// Formata centavos (inteiro) como moeda BRL na camada de apresentação.
+const BRL = (cents: number) => formatBRLFromCents(cents);
 
 interface ProposalsPanelProps {
   consultantId: string;
@@ -84,9 +85,9 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
   const kpis = useMemo(() => {
     const pending = proposals.filter((p) => PENDING.includes(p.status));
     const accepted = proposals.filter((p) => p.status === "accepted");
-    const totalPending = pending.reduce((acc, p) => acc + (p.amount ?? 0), 0);
+    const totalPending = pending.reduce((acc, p) => acc + (p.amountCents ?? 0), 0);
     const ticketAvg = proposals.length
-      ? proposals.reduce((acc, p) => acc + (p.amount ?? 0), 0) / proposals.length
+      ? proposals.reduce((acc, p) => acc + (p.amountCents ?? 0), 0) / proposals.length
       : 0;
     const totalDecided = accepted.length + proposals.filter((p) => p.status === "rejected").length;
     const acceptRate = totalDecided > 0 ? Math.round((accepted.length / totalDecided) * 100) : 0;
@@ -258,7 +259,10 @@ function ProposalCard({
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
-  const [replyAmount, setReplyAmount] = useState(String(proposal.amount ?? ""));
+  // Campo de novo valor exibido em reais (o consultor digita em reais).
+  const [replyAmount, setReplyAmount] = useState(
+    proposal.amountCents != null ? String(centsToReais(proposal.amountCents)) : "",
+  );
   const [replyNote, setReplyNote] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -270,8 +274,8 @@ function ProposalCard({
   const link = `${PUBLIC_BASE}/proposta/${proposal.publicToken}`;
   const recipientLabel = proposal.recipientName || proposal.recipientPhone || "Destinatário";
 
-  const amountLabel = proposal.amount
-    ? `${BRL(proposal.amount)}${proposal.amountPeriod === "month" ? "/mês" : ""}`
+  const amountLabel = proposal.amountCents
+    ? `${BRL(proposal.amountCents)}${proposal.amountPeriod === "month" ? "/mês" : ""}`
     : "—";
 
   const daysLeft = proposal.validUntil
@@ -306,7 +310,7 @@ function ProposalCard({
     const text =
       `Olá ${proposal.recipientName || ""}! 👋\n\n` +
       `Segue o orçamento de *${productName}*:\n` +
-      `${proposal.amount ? `Valor: *${amountLabel}*\n` : ""}` +
+      `${proposal.amountCents ? `Valor: *${amountLabel}*\n` : ""}` +
       `\nVeja os detalhes e responda por aqui:\n${link}`;
     const result = await sendWhatsAppMessage({
       instanceName,
@@ -330,15 +334,16 @@ function ProposalCard({
   };
 
   const handleReply = async () => {
-    const amount = Number(replyAmount);
-    if (!amount || amount <= 0) {
+    const reais = Number(replyAmount);
+    if (!reais || reais <= 0) {
       toast({ title: "Informe um valor válido", variant: "destructive" });
       return;
     }
     try {
       await replyToCounter.mutateAsync({
         proposalId: proposal.id,
-        patch: { amount, note: replyNote.trim() || null },
+        // Consultor digita em reais → convertemos para centavos ao salvar.
+        patch: { amountCents: reaisToCents(reais), note: replyNote.trim() || null },
       });
       toast({ title: "Contraproposta enviada!" });
       setReplyOpen(false);
@@ -436,8 +441,8 @@ function ProposalCard({
                         {new Date(ev.createdAt).toLocaleString("pt-BR")}
                       </span>
                     </div>
-                    {ev.counterAmount !== null && (
-                      <p className="text-[#1a2e1f]/70">Valor: {BRL(ev.counterAmount)}</p>
+                    {ev.counterAmountCents !== null && (
+                      <p className="text-[#1a2e1f]/70">Valor: {BRL(ev.counterAmountCents)}</p>
                     )}
                     {ev.note && <p className="text-[#1a2e1f]/70 italic">{ev.note}</p>}
                   </div>

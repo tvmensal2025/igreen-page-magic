@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { CaptureData, CreateSaleInput, Sale, SaleRow, SaleStatus } from "./types";
 
 const SELECT_COLUMNS =
-  "id, consultant_id, product_id, customer_id, status, amount, points_kwh, capture_data, notes, submitted_at, activated_at, closed_at, created_at, updated_at";
+  "id, consultant_id, product_id, customer_id, status, amount_cents, points_kwh, capture_data, notes, submitted_at, activated_at, closed_at, created_at, updated_at";
 
 function asCaptureData(value: unknown): CaptureData {
   if (value && typeof value === "object") {
@@ -26,7 +26,8 @@ export function mapSaleRow(row: SaleRow): Sale {
     productId: row.product_id,
     customerId: row.customer_id,
     status: row.status,
-    amount: row.amount === null ? null : Number(row.amount),
+    // Valor em centavos (inteiro). Coluna `amount_cents` no banco.
+    amountCents: row.amount_cents === null ? null : Number(row.amount_cents),
     pointsKwh: Number(row.points_kwh ?? 0),
     captureData: asCaptureData(row.capture_data),
     notes: row.notes,
@@ -72,8 +73,8 @@ export async function createSale(
       consultant_id: input.consultantId,
       product_id: input.productId,
       customer_id: input.customerId ?? null,
-      status: input.status ?? "lead",
-      amount: input.amount ?? null,
+      status: input.status ?? "interesse",
+      amount_cents: input.amountCents ?? null,
       points_kwh: input.pointsKwh ?? 0,
       capture_data: input.captureData ?? {},
       notes: input.notes ?? null,
@@ -85,8 +86,37 @@ export async function createSale(
   return mapSaleRow(data as unknown as SaleRow);
 }
 
-/** Atualiza o status de uma venda (o trigger registra o histórico). */
-export async function updateSaleStatus(saleId: string, status: SaleStatus): Promise<Sale> {
+/**
+ * Atualiza o status de uma venda (move no pipeline).
+ *
+ * Quando um `note` (motivo) é informado — tipicamente ao mover para `perdido` —,
+ * usamos a função RPC `update_sale_status_with_note`. Essa função roda como
+ * SECURITY DEFINER e, numa única transação, troca o status (disparando o
+ * trigger que registra o histórico e carimba `closed_at`) e grava o motivo em
+ * `sale_status_history.note`. Isso evita condição de corrida e respeita a RLS,
+ * que não deixa o consultor escrever direto no histórico.
+ *
+ * Sem `note`, mantemos o UPDATE simples na tabela `sales` (o trigger continua
+ * registrando o histórico normalmente).
+ */
+export async function updateSaleStatus(
+  saleId: string,
+  status: SaleStatus,
+  note?: string | null,
+): Promise<Sale> {
+  // Caminho com motivo: grava a note no histórico via RPC.
+  if (note && note.trim().length > 0) {
+    const { data, error } = await supabase.rpc("update_sale_status_with_note" as never, {
+      p_sale_id: saleId,
+      p_status: status,
+      p_note: note.trim(),
+    } as never);
+
+    if (error) throw error;
+    return mapSaleRow(data as unknown as SaleRow);
+  }
+
+  // Caminho simples: apenas troca o status (trigger registra o histórico).
   const { data, error } = await supabase
     .from("sales" as never)
     .update({ status } as never)
@@ -102,14 +132,14 @@ export async function updateSaleStatus(saleId: string, status: SaleStatus): Prom
 export async function updateSale(
   saleId: string,
   patch: Partial<{
-    amount: number | null;
+    amountCents: number | null;
     pointsKwh: number;
     captureData: CaptureData;
     notes: string | null;
   }>,
 ): Promise<Sale> {
   const dbPatch: Record<string, unknown> = {};
-  if (patch.amount !== undefined) dbPatch.amount = patch.amount;
+  if (patch.amountCents !== undefined) dbPatch.amount_cents = patch.amountCents;
   if (patch.pointsKwh !== undefined) dbPatch.points_kwh = patch.pointsKwh;
   if (patch.captureData !== undefined) dbPatch.capture_data = patch.captureData;
   if (patch.notes !== undefined) dbPatch.notes = patch.notes;

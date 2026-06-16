@@ -3,3 +3,4 @@
 // =============================================================================
 
 export * from "./SalesPipelineBoard";
+export * from "./RegistrarVendaDialog";

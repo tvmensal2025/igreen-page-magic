@@ -60,7 +60,7 @@ export function useReplyToCounter(consultantId: string | undefined) {
       patch,
     }: {
       proposalId: string;
-      patch: { amount?: number; message?: string | null; note?: string | null };
+      patch: { amountCents?: number; message?: string | null; note?: string | null };
     }) => consultantReplyToCounter(proposalId, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [PROPOSALS_KEY, consultantId] });

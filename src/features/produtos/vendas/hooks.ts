@@ -46,12 +46,24 @@ export function useCreateSale(consultantId: string | undefined) {
   });
 }
 
-/** Atualiza o status de uma venda (move no pipeline). */
+/**
+ * Atualiza o status de uma venda (move no pipeline).
+ *
+ * Aceita um `note` opcional (motivo) — usado ao mover para `perdido`. Quando
+ * informado, o motivo é gravado em `sale_status_history.note` (ver `api.ts`).
+ */
 export function useUpdateSaleStatus(consultantId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ saleId, status }: { saleId: string; status: SaleStatus }) =>
-      updateSaleStatus(saleId, status),
+    mutationFn: ({
+      saleId,
+      status,
+      note,
+    }: {
+      saleId: string;
+      status: SaleStatus;
+      note?: string | null;
+    }) => updateSaleStatus(saleId, status, note),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [SALES_KEY, consultantId] });
     },

@@ -72,9 +72,10 @@ Deno.serve(async (req) => {
     const action = String(body.action ?? "").trim() as Action;
     const note = body.note ? String(body.note).slice(0, 2000) : null;
     const attachmentUrl = body.attachment_url ? String(body.attachment_url) : null;
-    const counterAmount =
+    // Valor da contraproposta em CENTAVOS inteiros (o front já envia em centavos).
+    const counterAmountCents =
       body.counter_amount != null && Number.isFinite(Number(body.counter_amount))
-        ? Number(body.counter_amount)
+        ? Math.round(Number(body.counter_amount))
         : null;
 
     if (!token) return json({ error: "token obrigatório" }, 400);
@@ -89,7 +90,7 @@ Deno.serve(async (req) => {
     const { data: proposal, error } = await supabase
       .from("proposals")
       .select(
-        "id, consultant_id, product_id, customer_id, status, amount, amount_period, valid_until, sale_id, recipient_name, recipient_phone, products(scoring_rule, name)",
+        "id, consultant_id, product_id, customer_id, status, amount_cents, amount_period, valid_until, sale_id, recipient_name, recipient_phone, products(scoring_rule, name)",
       )
       .eq("public_token", token)
       .maybeSingle();
@@ -112,10 +113,13 @@ Deno.serve(async (req) => {
     const prodName =
       (proposal as { products?: { name?: string } }).products?.name ?? "produto iGreen";
     const cliente = (proposal.recipient_name as string | null)?.trim() || "Um cliente";
-    const fmtBRL = (n: number | null | undefined) =>
-      n != null ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : null;
+    // Formata um valor em CENTAVOS inteiros para reais (R$).
+    const fmtBRLFromCents = (cents: number | null | undefined) =>
+      cents != null
+        ? (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+        : null;
     const valorTxt = (() => {
-      const v = fmtBRL(proposal.amount as number | null);
+      const v = fmtBRLFromCents(proposal.amount_cents as number | null);
       if (!v) return "";
       return proposal.amount_period === "month" ? `${v}/mês` : v;
     })();
@@ -147,8 +151,8 @@ Deno.serve(async (req) => {
             consultant_id: proposal.consultant_id,
             product_id: proposal.product_id,
             customer_id: proposal.customer_id,
-            status: "capturing",
-            amount: proposal.amount,
+            status: "fechado",
+            amount_cents: proposal.amount_cents,
             points_kwh: points,
             notes: "Criada a partir de proposta aceita pelo cliente.",
           })
@@ -174,7 +178,7 @@ Deno.serve(async (req) => {
         proposal.consultant_id,
         "info",
         "✅ Proposta ACEITA!",
-        `${cliente} aceitou sua proposta.\n${linhaProduto}${fonePart}\n\nA venda foi criada e está em captura no painel de Produtos → Pipeline.`,
+        `${cliente} aceitou sua proposta.\n${linhaProduto}${fonePart}\n\nO negócio foi marcado como FECHADO no painel de Produtos → Pipeline.\n\n⚠️ Próximo passo: faça o cadastro oficial do cliente no sistema da empresa iGreen. O acompanhamento aqui termina no aceite — o contrato, a ativação e o pagamento são feitos lá.`,
       ).catch(() => {});
 
       return json({ ok: true, status: "accepted" });
@@ -206,14 +210,14 @@ Deno.serve(async (req) => {
       actor: "recipient",
       note,
       attachment_url: attachmentUrl,
-      counter_amount: counterAmount,
+      counter_amount_cents: counterAmountCents,
     });
     await notifyConsultant(
       proposal.consultant_id,
       "info",
       "📎 Proposta concorrente recebida",
       `${cliente} respondeu com uma proposta concorrente.\n${linhaProduto}${fonePart}\n\n` +
-        (counterAmount != null ? `💰 Valor citado: ${fmtBRL(counterAmount)}\n` : "") +
+        (counterAmountCents != null ? `💰 Valor citado: ${fmtBRLFromCents(counterAmountCents)}\n` : "") +
         (note ? `💬 "${note.slice(0, 200)}"\n` : "") +
         (attachmentUrl ? `📄 Anexo enviado\n` : "") +
         `\nResponda no painel de Orçamentos para tentar cobrir a oferta.`,

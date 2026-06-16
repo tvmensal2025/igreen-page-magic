@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     const { data: proposal, error } = await supabase
       .from("proposals")
       .select(
-        "id, public_token, consultant_id, product_id, status, amount, amount_period, discount, line_items, message, valid_until, sent_at, viewed_at, responded_at, recipient_name",
+        "id, public_token, consultant_id, product_id, status, amount_cents, amount_period, discount_cents, line_items, message, valid_until, sent_at, viewed_at, responded_at, recipient_name",
       )
       .eq("public_token", token)
       .maybeSingle();
@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     // Eventos visíveis ao destinatário (rodadas de negociação, sem dados internos).
     const { data: events } = await supabase
       .from("proposal_events")
-      .select("type, actor, note, counter_amount, attachment_url, created_at")
+      .select("type, actor, note, counter_amount_cents, attachment_url, created_at")
       .eq("proposal_id", proposal.id)
       .order("created_at", { ascending: true });
 
@@ -88,9 +88,9 @@ Deno.serve(async (req) => {
       proposal: {
         token: proposal.public_token,
         status: proposal.status,
-        amount: proposal.amount,
+        amountCents: proposal.amount_cents,
         amountPeriod: proposal.amount_period,
-        discount: proposal.discount,
+        discountCents: proposal.discount_cents,
         lineItems: proposal.line_items,
         message: proposal.message,
         validUntil: proposal.valid_until,

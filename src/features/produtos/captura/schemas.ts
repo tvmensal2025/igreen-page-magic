@@ -74,3 +74,59 @@ export const CAPTURE_SCHEMA_BY_FAMILY: Partial<Record<ProductFamily, z.ZodTypeAn
 export function hasCaptureForm(family: ProductFamily): boolean {
   return family in CAPTURE_SCHEMA_BY_FAMILY;
 }
+
+// ─── Validação leve de captura por família (Requisito 7.2) ──────────────────
+// Usada no ponto de entrada de venda manual (RegistrarVendaDialog) como guarda
+// antes de salvar. É propositalmente leve: só valida quando a família tem
+// schema E quando há dados de captura para validar. Famílias sem schema
+// (energia/club/expansao) ou captura vazia passam direto (ok), porque a
+// captura dessas famílias acontece por outro fluxo (OCR/portal/WhatsApp).
+
+/** Resultado da validação de captura. Em caso de erro (`ok: false`), traz uma
+ * mensagem amigável em pt-BR (juntando as mensagens dos campos inválidos). */
+export interface CaptureValidationResult {
+  ok: boolean;
+  /** Dados normalizados pelo Zod quando a validação passa. */
+  data?: unknown;
+  /** Mensagem de erro amigável (pt-BR) quando a validação falha. */
+  message?: string;
+}
+
+/** Considera "vazio" quando não há nenhum campo preenchido. Evita bloquear o
+ * fluxo manual atual, que não coleta captura por família. */
+function isEmptyCapture(captureData: unknown): boolean {
+  if (captureData == null) return true;
+  if (typeof captureData !== "object") return false;
+  return Object.keys(captureData as Record<string, unknown>).length === 0;
+}
+
+/**
+ * Valida `capture_data` contra o schema Zod da família, quando aplicável.
+ *
+ * - Família sem schema (energia/club/expansao) → ok (sem captura própria).
+ * - Captura vazia/ausente → ok (nada a validar; venda manual pode não capturar).
+ * - Caso contrário → roda o schema Zod e devolve os dados já normalizados ou
+ *   uma mensagem de erro amigável em pt-BR.
+ */
+export function validateCaptureForFamily(
+  family: ProductFamily,
+  captureData: unknown,
+): CaptureValidationResult {
+  const schema = CAPTURE_SCHEMA_BY_FAMILY[family];
+  if (!schema) return { ok: true, data: captureData };
+  if (isEmptyCapture(captureData)) return { ok: true, data: captureData };
+
+  const result = schema.safeParse(captureData);
+  if (result.success) return { ok: true, data: result.data };
+
+  // Junta as mensagens de cada campo inválido numa frase única em pt-BR.
+  const message = result.error.issues
+    .map((issue) => issue.message)
+    .filter((m, i, arr) => arr.indexOf(m) === i) // remove duplicadas
+    .join(" · ");
+
+  return {
+    ok: false,
+    message: message || "Dados de captura inválidos para esta família.",
+  };
+}

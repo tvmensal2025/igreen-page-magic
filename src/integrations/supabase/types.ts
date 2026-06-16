@@ -6075,7 +6075,7 @@ export type Database = {
         Row: {
           actor: string
           attachment_url: string | null
-          counter_amount: number | null
+          counter_amount_cents: number | null
           created_at: string
           id: string
           note: string | null
@@ -6085,7 +6085,7 @@ export type Database = {
         Insert: {
           actor?: string
           attachment_url?: string | null
-          counter_amount?: number | null
+          counter_amount_cents?: number | null
           created_at?: string
           id?: string
           note?: string | null
@@ -6095,7 +6095,7 @@ export type Database = {
         Update: {
           actor?: string
           attachment_url?: string | null
-          counter_amount?: number | null
+          counter_amount_cents?: number | null
           created_at?: string
           id?: string
           note?: string | null
@@ -6114,12 +6114,12 @@ export type Database = {
       }
       proposals: {
         Row: {
-          amount: number | null
+          amount_cents: number | null
           amount_period: string
           consultant_id: string
           created_at: string
           customer_id: string | null
-          discount: number | null
+          discount_cents: number | null
           id: string
           line_items: Json
           message: string | null
@@ -6136,12 +6136,12 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
-          amount?: number | null
+          amount_cents?: number | null
           amount_period?: string
           consultant_id: string
           created_at?: string
           customer_id?: string | null
-          discount?: number | null
+          discount_cents?: number | null
           id?: string
           line_items?: Json
           message?: string | null
@@ -6158,12 +6158,12 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
-          amount?: number | null
+          amount_cents?: number | null
           amount_period?: string
           consultant_id?: string
           created_at?: string
           customer_id?: string | null
-          discount?: number | null
+          discount_cents?: number | null
           id?: string
           line_items?: Json
           message?: string | null
@@ -6809,7 +6809,7 @@ export type Database = {
       sales: {
         Row: {
           activated_at: string | null
-          amount: number | null
+          amount_cents: number | null
           capture_data: Json
           closed_at: string | null
           consultant_id: string
@@ -6825,7 +6825,7 @@ export type Database = {
         }
         Insert: {
           activated_at?: string | null
-          amount?: number | null
+          amount_cents?: number | null
           capture_data?: Json
           closed_at?: string | null
           consultant_id: string
@@ -6841,7 +6841,7 @@ export type Database = {
         }
         Update: {
           activated_at?: string | null
-          amount?: number | null
+          amount_cents?: number | null
           capture_data?: Json
           closed_at?: string | null
           consultant_id?: string
@@ -8323,12 +8323,10 @@ export type Database = {
         | "countered"
         | "expired"
       sale_status:
-        | "lead"
-        | "capturing"
-        | "submitted"
-        | "active"
-        | "rejected"
-        | "cancelled"
+        | "interesse"
+        | "negociando"
+        | "fechado"
+        | "perdido"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -8486,12 +8484,10 @@ export const Constants = {
         "expired",
       ],
       sale_status: [
-        "lead",
-        "capturing",
-        "submitted",
-        "active",
-        "rejected",
-        "cancelled",
+        "interesse",
+        "negociando",
+        "fechado",
+        "perdido",
       ],
     },
   },

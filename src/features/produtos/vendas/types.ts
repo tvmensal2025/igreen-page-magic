@@ -6,31 +6,23 @@
 // com pipeline próprio, pontos kWh-equivalente e dados de captura por família.
 // =============================================================================
 
-export type SaleStatus =
-  | "lead"
-  | "capturing"
-  | "submitted"
-  | "active"
-  | "rejected"
-  | "cancelled";
+// Funil simplificado: vai apenas até o aceite (Fechado). As etapas de
+// cadastro oficial/pós-venda saíram do escopo (ver requisito 1).
+export type SaleStatus = "interesse" | "negociando" | "fechado" | "perdido";
 
 export const SALE_STATUS_LABEL: Record<SaleStatus, string> = {
-  lead: "Interesse",
-  capturing: "Em captura",
-  submitted: "Enviada",
-  active: "Ativa",
-  rejected: "Reprovada",
-  cancelled: "Cancelada",
+  interesse: "Interesse",
+  negociando: "Negociando",
+  fechado: "Fechado",
+  perdido: "Perdido",
 };
 
 // Ordem canônica do pipeline (para boards e progressão).
 export const SALE_STATUS_ORDER: SaleStatus[] = [
-  "lead",
-  "capturing",
-  "submitted",
-  "active",
-  "rejected",
-  "cancelled",
+  "interesse",
+  "negociando",
+  "fechado",
+  "perdido",
 ];
 
 // ---------------------------------------------------------------------------
@@ -73,7 +65,8 @@ export interface Sale {
   productId: string;
   customerId: string | null;
   status: SaleStatus;
-  amount: number | null;
+  // Valor da venda em centavos (inteiro). Convertido para reais só na UI.
+  amountCents: number | null;
   pointsKwh: number;
   captureData: CaptureData;
   notes: string | null;
@@ -91,7 +84,8 @@ export interface SaleRow {
   product_id: string;
   customer_id: string | null;
   status: SaleStatus;
-  amount: number | null;
+  // Valor da venda em centavos (inteiro). Coluna `amount_cents` no banco.
+  amount_cents: number | null;
   points_kwh: number;
   capture_data: unknown;
   notes: string | null;
@@ -108,7 +102,8 @@ export interface CreateSaleInput {
   productId: string;
   customerId?: string | null;
   status?: SaleStatus;
-  amount?: number | null;
+  // Valor da venda em centavos (inteiro).
+  amountCents?: number | null;
   captureData?: CaptureData;
   notes?: string | null;
 }

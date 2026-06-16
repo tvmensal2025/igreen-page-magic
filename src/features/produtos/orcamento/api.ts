@@ -16,7 +16,7 @@ import type {
 } from "./types";
 
 const SELECT_COLUMNS =
-  "id, public_token, consultant_id, product_id, customer_id, recipient_name, recipient_phone, status, amount, amount_period, discount, line_items, message, valid_until, sent_at, viewed_at, responded_at, sale_id, created_at, updated_at";
+  "id, public_token, consultant_id, product_id, customer_id, recipient_name, recipient_phone, status, amount_cents, amount_period, discount_cents, line_items, message, valid_until, sent_at, viewed_at, responded_at, sale_id, created_at, updated_at";
 
 function asLineItems(value: unknown): ProposalLineItem[] {
   if (Array.isArray(value)) return value as ProposalLineItem[];
@@ -34,9 +34,10 @@ export function mapProposalRow(row: ProposalRow): Proposal {
     recipientName: row.recipient_name,
     recipientPhone: row.recipient_phone,
     status: row.status,
-    amount: row.amount === null ? null : Number(row.amount),
+    // Valores em centavos (inteiro). Colunas `amount_cents`/`discount_cents`.
+    amountCents: row.amount_cents === null ? null : Number(row.amount_cents),
     amountPeriod: row.amount_period,
-    discount: row.discount === null ? null : Number(row.discount),
+    discountCents: row.discount_cents === null ? null : Number(row.discount_cents),
     lineItems: asLineItems(row.line_items),
     message: row.message,
     validUntil: row.valid_until,
@@ -119,9 +120,9 @@ export async function createProposal(input: CreateProposalInput): Promise<Propos
       recipient_name: input.recipientName ?? null,
       recipient_phone: input.recipientPhone ?? null,
       status: "sent",
-      amount: input.amount,
+      amount_cents: input.amountCents,
       amount_period: input.amountPeriod,
-      discount: input.discount ?? null,
+      discount_cents: input.discountCents ?? null,
       line_items: input.lineItems,
       message: input.message ?? null,
       valid_until: validUntil,
@@ -151,7 +152,7 @@ export async function createProposal(input: CreateProposalInput): Promise<Propos
 export async function fetchProposalEvents(proposalId: string): Promise<ProposalEvent[]> {
   const { data, error } = await supabase
     .from("proposal_events" as never)
-    .select("type, actor, note, counter_amount, attachment_url, created_at")
+    .select("type, actor, note, counter_amount_cents, attachment_url, created_at")
     .eq("proposal_id", proposalId)
     .order("created_at", { ascending: true });
 
@@ -160,14 +161,15 @@ export async function fetchProposalEvents(proposalId: string): Promise<ProposalE
     type: ProposalEvent["type"];
     actor: ProposalEvent["actor"];
     note: string | null;
-    counter_amount: number | null;
+    counter_amount_cents: number | null;
     attachment_url: string | null;
     created_at: string;
   }>) || []).map((e) => ({
     type: e.type,
     actor: e.actor,
     note: e.note,
-    counterAmount: e.counter_amount === null ? null : Number(e.counter_amount),
+    // Valor da contraproposta em centavos (inteiro). Coluna `counter_amount_cents`.
+    counterAmountCents: e.counter_amount_cents === null ? null : Number(e.counter_amount_cents),
     attachmentUrl: e.attachment_url,
     createdAt: e.created_at,
   }));
@@ -176,10 +178,10 @@ export async function fetchProposalEvents(proposalId: string): Promise<ProposalE
 /** Consultor responde a uma contraproposta (nova rodada) ou cancela. */
 export async function consultantReplyToCounter(
   proposalId: string,
-  patch: { amount?: number; message?: string | null; note?: string | null },
+  patch: { amountCents?: number; message?: string | null; note?: string | null },
 ): Promise<void> {
   const dbPatch: Record<string, unknown> = { status: "sent" };
-  if (patch.amount !== undefined) dbPatch.amount = patch.amount;
+  if (patch.amountCents !== undefined) dbPatch.amount_cents = patch.amountCents;
   if (patch.message !== undefined) dbPatch.message = patch.message;
 
   const { error } = await supabase

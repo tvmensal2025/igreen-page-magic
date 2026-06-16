@@ -40,6 +40,7 @@ import {
 } from "./types";
 import { RecipientPicker, type RecipientSelection } from "./components/RecipientPicker";
 import { sendWhatsAppMessage } from "@/services/messageSender";
+import { formatBRLFromCents, reaisToCents } from "../lib/money";
 import { pvSerif, pvBody, usePvFonts } from "../theme";
 
 interface OrcamentoBuilderSheetProps {
@@ -50,8 +51,20 @@ interface OrcamentoBuilderSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// Formata centavos (inteiro) como moeda BRL na camada de apresentação.
+const BRL = (cents: number) => formatBRLFromCents(cents);
 const PUBLIC_BASE = "https://igreen.cloud";
+
+// Converte as formas de pagamento digitadas em reais para centavos antes de
+// montar os line items (paymentOptionsToLineItems espera valores em centavos).
+function paymentsToCents(options: PaymentOption[]): PaymentOption[] {
+  return options.map((opt) => ({
+    ...opt,
+    total: opt.total != null ? reaisToCents(opt.total) : opt.total,
+    installmentValue:
+      opt.installmentValue != null ? reaisToCents(opt.installmentValue) : opt.installmentValue,
+  }));
+}
 
 const STEPS = [
   { id: 1, label: "Produto" },
@@ -74,6 +87,8 @@ export function OrcamentoBuilderSheet({
   const [productId, setProductId] = useState<string>("");
   const [recipient, setRecipient] = useState<RecipientSelection | null>(null);
   const [planId, setPlanId] = useState<string>("");
+  // Telecom: cliente faz portabilidade do número? (true por padrão — ganha +5GB).
+  const [portabilidade, setPortabilidade] = useState<boolean>(true);
   const [projectAmount, setProjectAmount] = useState<string>("");
   const [currentBill, setCurrentBill] = useState<string>("");
   const [message, setMessage] = useState<string>("");
@@ -105,10 +120,13 @@ export function OrcamentoBuilderSheet({
       family: product.family,
       slug: product.slug,
       plan,
-      projectAmount: projectAmount ? Number(projectAmount) : undefined,
-      currentBill: currentBill ? Number(currentBill) : undefined,
+      // Telecom: passa a portabilidade para escolher o preço correto.
+      portabilidade: product.family === "telecom" ? portabilidade : undefined,
+      // Entradas digitadas em reais → centavos para o cálculo.
+      projectAmountCents: projectAmount ? reaisToCents(Number(projectAmount)) : undefined,
+      currentBillCents: currentBill ? reaisToCents(Number(currentBill)) : undefined,
     });
-  }, [product, config, plan, projectAmount, currentBill]);
+  }, [product, config, plan, portabilidade, projectAmount, currentBill]);
 
   // Mercado livre (Conexão Livre) não tem valor fechado — o envio é permitido
   // sem amount > 0, porque a proposta vende a solução, não um preço exato.
@@ -122,6 +140,7 @@ export function OrcamentoBuilderSheet({
     setProductId("");
     setRecipient(null);
     setPlanId("");
+    setPortabilidade(true);
     setProjectAmount("");
     setCurrentBill("");
     setMessage("");
@@ -134,7 +153,7 @@ export function OrcamentoBuilderSheet({
     !!product &&
     !!recipient &&
     !!quote &&
-    (isMarketFree || quote.amount > 0) &&
+    (isMarketFree || quote.amountCents > 0) &&
     !submitting;
 
   const handleCreate = async () => {
@@ -142,7 +161,10 @@ export function OrcamentoBuilderSheet({
     setSubmitting(true);
     try {
       // Detalhes do cálculo + formas de pagamento (Placas) num só line_items.
-      const paymentItems = isProjectOnce ? paymentOptionsToLineItems(payments) : [];
+      // As formas de pagamento são digitadas em reais → convertemos para centavos.
+      const paymentItems = isProjectOnce
+        ? paymentOptionsToLineItems(paymentsToCents(payments))
+        : [];
       const lineItems = [...quote.details, ...paymentItems];
 
       const proposal = await createProposal.mutateAsync({
@@ -151,7 +173,7 @@ export function OrcamentoBuilderSheet({
         customerId: recipient.customerId ?? null,
         recipientName: recipient.name,
         recipientPhone: recipient.phone,
-        amount: quote.amount,
+        amountCents: quote.amountCents,
         amountPeriod: quote.period,
         lineItems,
         message: message.trim() || null,
@@ -180,7 +202,9 @@ export function OrcamentoBuilderSheet({
     }
 
     // Resumo das formas de pagamento (Placas) na mensagem do WhatsApp.
-    const validPayments = isProjectOnce ? paymentOptionsToLineItems(payments) : [];
+    const validPayments = isProjectOnce
+      ? paymentOptionsToLineItems(paymentsToCents(payments))
+      : [];
     const paymentSummary =
       validPayments.length > 0
         ? `\n💳 Formas de pagamento:\n` +
@@ -197,7 +221,7 @@ export function OrcamentoBuilderSheet({
     const text =
       `Olá ${recipient.name}! 👋\n\n` +
       `Preparei um orçamento de *${product.name}* para você.\n` +
-      `${quote ? `${quote.label}: *${BRL(quote.amount)}*${quote.period === "month" ? "/mês" : ""}\n` : ""}` +
+      `${quote ? `${quote.label}: *${BRL(quote.amountCents)}*${quote.period === "month" ? "/mês" : ""}\n` : ""}` +
       `${paymentSummary}` +
       `\nVeja os detalhes e responda por aqui:\n${createdLink}`;
 
@@ -390,6 +414,29 @@ export function OrcamentoBuilderSheet({
                     </Field>
                   )}
 
+                  {/* Telecom: com/sem portabilidade. Com portabilidade o cliente
+                      ganha +5GB; sem portabilidade usa o preço alternativo do plano. */}
+                  {product?.family === "telecom" && config?.pricingMode === "plan_monthly" && (
+                    <Field label="Portabilidade do número">
+                      <Select
+                        value={portabilidade ? "com" : "sem"}
+                        onValueChange={(v) => setPortabilidade(v === "com")}
+                      >
+                        <SelectTrigger className="h-10 text-sm bg-white border-[#a8c0a0]/40 rounded-none w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="com" className="text-sm">
+                            Com portabilidade (+5GB)
+                          </SelectItem>
+                          <SelectItem value="sem" className="text-sm">
+                            Sem portabilidade
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
+
                   {config?.pricingMode === "project_once" && (
                     <>
                       <Field label="Valor do projeto">
@@ -469,7 +516,7 @@ export function OrcamentoBuilderSheet({
                             <p className="text-[11px] text-[#f5f0e8]/60">{recipient.phone}</p>
                           </div>
                         )}
-                        {quote && (isMarketFree || quote.amount > 0) ? (
+                        {quote && (isMarketFree || quote.amountCents > 0) ? (
                           <div className="pt-3 border-t border-white/10">
                             <p className="text-[10px] uppercase tracking-widest text-[#f5f0e8]/50">
                               {quote.label}
@@ -483,7 +530,7 @@ export function OrcamentoBuilderSheet({
                               </p>
                             ) : (
                               <p className={`text-3xl text-[#c9a84c] mt-1 ${pvSerif}`}>
-                                {BRL(quote.amount)}
+                                {BRL(quote.amountCents)}
                                 {quote.period === "month" && (
                                   <span className="text-xs font-normal text-[#f5f0e8]/60 ml-1">
                                     /mês
@@ -510,7 +557,7 @@ export function OrcamentoBuilderSheet({
                                   Formas de pagamento
                                 </p>
                                 <ul className="space-y-1.5">
-                                  {paymentOptionsToLineItems(payments).map((p, i) => (
+                                  {paymentOptionsToLineItems(paymentsToCents(payments)).map((p, i) => (
                                     <li
                                       key={i}
                                       className="flex justify-between gap-2 text-[11px] text-[#f5f0e8]/70"

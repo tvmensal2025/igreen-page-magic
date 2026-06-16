@@ -1,12 +1,22 @@
 // =============================================================================
 // CRM Multiproduto — Pipeline de Vendas (Magazine 7+5 redesign)
 // =============================================================================
-// Board kanban Sage & Cream com hero editorial (manchete serif + 4 KPIs) e
+// Board kanban Sage & Cream com hero editorial (manchete serif + KPIs) e
 // colunas com cards ricos (kicker da família, tempo na etapa, valor, kWh,
-// status-dot, próxima ação). Coluna "Ativo" em cartão escuro com gold.
+// status-dot, próxima ação).
+//
+// Funil de venda única (Requisito 1): 4 etapas até o aceite —
+// Interesse, Negociando, Fechado e Perdido. A coluna "destaque" (cartão
+// escuro/gold) é a de FECHADO (cliente aceitou; fim do acompanhamento aqui).
+// Sem MRR/recorrência. Valores sempre em centavos, exibidos via
+// `formatBRLFromCents` (ver lib/money.ts).
+//
+// Ao mover um card para "Perdido", pedimos um motivo (texto livre, opcional)
+// que é gravado em `sale_status_history.note` (ver vendas/api.ts).
 // =============================================================================
 
 import { useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -14,27 +24,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useProducts } from "../catalogo/hooks";
 import { PRODUCT_FAMILY_LABEL, type Product } from "../catalogo/types";
 import { useSales, useUpdateSaleStatus } from "../vendas/hooks";
 import { SALE_STATUS_LABEL, type Sale, type SaleStatus } from "../vendas/types";
+import { formatBRLFromCents } from "../lib/money";
+import { RegistrarVendaDialog } from "./RegistrarVendaDialog";
 import { pvSerif } from "../theme";
 
-const PIPELINE_STAGES: SaleStatus[] = ["lead", "capturing", "submitted", "active"];
+// Etapas exibidas no board, na ordem do funil (venda única, até o aceite).
+const PIPELINE_STAGES: SaleStatus[] = ["interesse", "negociando", "fechado", "perdido"];
 
-const BRL = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+// Exibe valor em centavos como moeda. "—" quando não há valor.
+const fmtCents = (cents: number | null) =>
+  cents !== null && cents > 0 ? formatBRLFromCents(cents) : "—";
 
 const KWH = (n: number) => `${n.toLocaleString("pt-BR")} kWh`;
 
+// Próxima ação sugerida por etapa (texto + cor do status-dot).
 const NEXT_ACTION: Record<SaleStatus, { label: string; dot: string }> = {
-  lead: { label: "Qualificar consumo", dot: "bg-orange-400" },
-  capturing: { label: "Aguardando fatura", dot: "bg-blue-400" },
-  submitted: { label: "Aguardando análise", dot: "bg-sky-400" },
-  active: { label: "Contrato ativo", dot: "bg-emerald-500" },
-  rejected: { label: "Reprovada", dot: "bg-red-400" },
-  cancelled: { label: "Cancelada", dot: "bg-zinc-400" },
+  interesse: { label: "Qualificar interesse", dot: "bg-orange-400" },
+  negociando: { label: "Em negociação", dot: "bg-sky-400" },
+  fechado: { label: "Cliente aceitou", dot: "bg-emerald-500" },
+  perdido: { label: "Negócio perdido", dot: "bg-red-400" },
 };
 
 interface SalesPipelineBoardProps {
@@ -44,6 +67,12 @@ interface SalesPipelineBoardProps {
 export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
   const [productFilter, setProductFilter] = useState<string>("all");
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  // Estado do diálogo de motivo de perda: guarda a venda que está sendo movida
+  // para "perdido" e o texto do motivo até o consultor confirmar.
+  const [lossDialog, setLossDialog] = useState<{ sale: Sale } | null>(null);
+  const [lossReason, setLossReason] = useState("");
+  // Controla o diálogo de registro manual de venda (Requisito 3).
+  const [registrarOpen, setRegistrarOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: products = [] } = useProducts();
@@ -61,42 +90,42 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
 
   const salesByStage = useMemo(() => {
     const grouped: Record<SaleStatus, Sale[]> = {
-      lead: [], capturing: [], submitted: [], active: [], rejected: [], cancelled: [],
+      interesse: [], negociando: [], fechado: [], perdido: [],
     };
     for (const s of sales) grouped[s.status].push(s);
     return grouped;
   }, [sales]);
 
-  // KPIs editoriais
+  // KPIs editoriais (venda única, sem MRR). Valores em centavos.
   const kpis = useMemo(() => {
-    const activeSales = salesByStage.active;
-    const totalAtivo = activeSales.reduce((acc, s) => acc + (s.amount ?? 0), 0);
-    const ganhoEstimado = sales.reduce((acc, s) => acc + (s.amount ?? 0), 0);
-    const propostasAtivas = sales.length - activeSales.length;
-    const totalFechadoOuRejeitado = activeSales.length + salesByStage.rejected.length;
-    const conversao = totalFechadoOuRejeitado > 0
-      ? Math.round((activeSales.length / totalFechadoOuRejeitado) * 100)
+    const fechadas = salesByStage.fechado;
+    // Total fechado: soma do valor das vendas em "fechado" (em centavos).
+    const totalFechadoCents = fechadas.reduce((acc, s) => acc + (s.amountCents ?? 0), 0);
+    // Pipeline em aberto: interesse + negociando (ainda não aceito nem perdido).
+    const emAberto = salesByStage.interesse.length + salesByStage.negociando.length;
+    // Conversão: fechadas sobre o que teve desfecho (fechadas + perdidas).
+    const comDesfecho = fechadas.length + salesByStage.perdido.length;
+    const conversao = comDesfecho > 0
+      ? Math.round((fechadas.length / comDesfecho) * 100)
       : 0;
-    // Ciclo médio (dias) = ativatedAt - createdAt das ativas
-    const cycles = activeSales
+    // Ciclo médio (dias) = closedAt - createdAt das fechadas.
+    const cycles = fechadas
       .map((s) => {
-        if (!s.activatedAt) return null;
-        return (new Date(s.activatedAt).getTime() - new Date(s.createdAt).getTime()) / 86400000;
+        if (!s.closedAt) return null;
+        return (new Date(s.closedAt).getTime() - new Date(s.createdAt).getTime()) / 86400000;
       })
       .filter((d): d is number => d !== null && d >= 0);
     const cicloMedio = cycles.length > 0
       ? Math.round(cycles.reduce((a, b) => a + b, 0) / cycles.length)
       : 0;
-    return { totalAtivo, ganhoEstimado, propostasAtivas, conversao, cicloMedio };
-  }, [sales, salesByStage]);
+    return { totalFechadoCents, emAberto, conversao, cicloMedio };
+  }, [salesByStage]);
 
-  const handleDrop = async (stage: SaleStatus) => {
-    if (!draggedId) return;
-    const sale = sales.find((s) => s.id === draggedId);
-    setDraggedId(null);
-    if (!sale || sale.status === stage) return;
+  // Move uma venda para a etapa de destino (sem motivo). Usado pelo drop direto
+  // e, internamente, como base do fluxo de perda.
+  const moveSale = async (sale: Sale, stage: SaleStatus, note?: string) => {
     try {
-      await updateStatus.mutateAsync({ saleId: sale.id, status: stage });
+      await updateStatus.mutateAsync({ saleId: sale.id, status: stage, note });
       toast({ title: `Venda movida para "${SALE_STATUS_LABEL[stage]}"` });
     } catch (err) {
       toast({
@@ -105,6 +134,32 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
         variant: "destructive",
       });
     }
+  };
+
+  const handleDrop = (stage: SaleStatus) => {
+    if (!draggedId) return;
+    const sale = sales.find((s) => s.id === draggedId);
+    setDraggedId(null);
+    if (!sale || sale.status === stage) return;
+
+    // Ao mover para "perdido", abrimos o diálogo para capturar o motivo
+    // (texto livre, opcional) antes de efetivar a mudança.
+    if (stage === "perdido") {
+      setLossReason("");
+      setLossDialog({ sale });
+      return;
+    }
+
+    void moveSale(sale, stage);
+  };
+
+  // Confirma a perda gravando o motivo (se houver) no histórico.
+  const confirmLoss = async () => {
+    if (!lossDialog) return;
+    const { sale } = lossDialog;
+    setLossDialog(null);
+    await moveSale(sale, "perdido", lossReason.trim() || undefined);
+    setLossReason("");
   };
 
   return (
@@ -119,32 +174,42 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
             Pipeline de <br />Performance
           </h1>
           <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
-            Gerencie suas conversões e fluxo de propostas em tempo real. {sales.length} venda(s)
-            no funil — {salesByStage.active.length} já ativa(s).
+            Acompanhe suas propostas até o aceite. {sales.length} negócio(s) no
+            funil — {salesByStage.fechado.length} já fechado(s).
           </p>
-          <div className="mt-5 max-w-[260px]">
-            <Select value={productFilter} onValueChange={setProductFilter}>
-              <SelectTrigger className="h-9 text-xs rounded-none bg-white border-[#a8c0a0]/40">
-                <SelectValue placeholder="Filtrar por produto" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[320px]">
-                <SelectItem value="all" className="text-xs">Todos os produtos</SelectItem>
-                {products.map((p) => (
-                  <SelectItem key={p.id} value={p.id} className="text-xs">
-                    {p.name} · {PRODUCT_FAMILY_LABEL[p.family]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <div className="max-w-[260px] flex-1 min-w-[200px]">
+              <Select value={productFilter} onValueChange={setProductFilter}>
+                <SelectTrigger className="h-9 text-xs rounded-none bg-white border-[#a8c0a0]/40">
+                  <SelectValue placeholder="Filtrar por produto" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[320px]">
+                  <SelectItem value="all" className="text-xs">Todos os produtos</SelectItem>
+                  {products.map((p) => (
+                    <SelectItem key={p.id} value={p.id} className="text-xs">
+                      {p.name} · {PRODUCT_FAMILY_LABEL[p.family]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Registro manual de venda (Requisito 3) */}
+            <button
+              type="button"
+              onClick={() => setRegistrarOpen(true)}
+              className="inline-flex items-center gap-1.5 bg-[#1a2e1f] hover:bg-[#7d9b76] text-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" /> Registrar venda
+            </button>
           </div>
         </div>
 
         <div className="lg:col-span-5 grid grid-cols-2 gap-3">
           <KpiBlock
-            kicker="Ganho Estimado"
-            value={BRL(kpis.ganhoEstimado)}
+            kicker="Total Fechado"
+            value={fmtCents(kpis.totalFechadoCents)}
             accent="gold"
-            bar={Math.min(1, kpis.ganhoEstimado / Math.max(kpis.ganhoEstimado, 50000))}
+            bar={Math.min(1, kpis.totalFechadoCents / Math.max(kpis.totalFechadoCents, 5000000))}
           />
           <KpiBlock
             kicker="Ciclo Médio"
@@ -153,8 +218,8 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
             sparkline
           />
           <KpiBlock
-            kicker="Propostas Ativas"
-            value={String(kpis.propostasAtivas)}
+            kicker="Em Aberto"
+            value={String(kpis.emAberto)}
             accent="accent"
           />
           <KpiBlock
@@ -169,8 +234,9 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {PIPELINE_STAGES.map((stage) => {
           const items = salesByStage[stage];
-          const totalCol = items.reduce((acc, s) => acc + (s.amount ?? 0), 0);
-          const isActive = stage === "active";
+          const totalColCents = items.reduce((acc, s) => acc + (s.amountCents ?? 0), 0);
+          // "Fechado" é a coluna de destaque (cartão escuro/gold).
+          const isHighlight = stage === "fechado";
           return (
             <div
               key={stage}
@@ -182,8 +248,8 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
                 <h3 className="uppercase text-[10px] tracking-[0.2em] font-bold text-[#1a2e1f]">
                   {SALE_STATUS_LABEL[stage]} ({items.length})
                 </h3>
-                <span className={`text-[10px] font-medium ${isActive ? "text-[#c9a84c]" : "text-[#7d9b76]"}`}>
-                  {totalCol > 0 ? BRL(totalCol) : "—"}
+                <span className={`text-[10px] font-medium ${isHighlight ? "text-[#c9a84c]" : "text-[#7d9b76]"}`}>
+                  {fmtCents(totalColCents)}
                 </span>
               </div>
 
@@ -201,7 +267,7 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
                   key={sale.id}
                   sale={sale}
                   product={productById.get(sale.productId)}
-                  dark={isActive}
+                  dark={isHighlight}
                   onDragStart={() => setDraggedId(sale.id)}
                 />
               ))}
@@ -209,6 +275,41 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
           );
         })}
       </div>
+
+      {/* Diálogo de motivo de perda (texto livre, opcional) */}
+      <Dialog open={lossDialog !== null} onOpenChange={(open) => !open && setLossDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Marcar como perdido</DialogTitle>
+            <DialogDescription>
+              Se quiser, registre o motivo da perda. É opcional e fica no
+              histórico do negócio para consulta futura.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={lossReason}
+            onChange={(e) => setLossReason(e.target.value)}
+            placeholder="Ex.: cliente achou caro, fechou com concorrente, sem retorno..."
+            rows={4}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLossDialog(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void confirmLoss()} disabled={updateStatus.isPending}>
+              Confirmar perda
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de registro manual de venda (Requisito 3) */}
+      <RegistrarVendaDialog
+        consultantId={consultantId}
+        open={registrarOpen}
+        onOpenChange={setRegistrarOpen}
+      />
     </div>
   );
 }
@@ -288,8 +389,8 @@ function SaleCard({ sale, product, dark, onDragStart }: SaleCardProps) {
           {sale.pointsKwh > 0 && (
             <span className="text-xs text-[#f5f0e8]/60">{KWH(sale.pointsKwh)}</span>
           )}
-          {sale.amount !== null && (
-            <span className="text-xs font-semibold text-[#c9a84c]">{BRL(sale.amount)}</span>
+          {sale.amountCents !== null && (
+            <span className="text-xs font-semibold text-[#c9a84c]">{fmtCents(sale.amountCents)}</span>
           )}
         </div>
         <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-1.5">
@@ -322,7 +423,7 @@ function SaleCard({ sale, product, dark, onDragStart }: SaleCardProps) {
           {sale.pointsKwh > 0 ? KWH(sale.pointsKwh) : "—"}
         </div>
         <div className="text-xs font-semibold text-[#1a2e1f]">
-          {sale.amount !== null ? BRL(sale.amount) : "—"}
+          {fmtCents(sale.amountCents)}
         </div>
       </div>
       <div className="mt-3 pt-3 border-t border-[#f5f0e8] flex items-center gap-1.5">

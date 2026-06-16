@@ -10,21 +10,24 @@
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrendingUp, Zap, Wallet, Award, Repeat, Receipt, Clock, Leaf, HandCoins, Hourglass, AlertTriangle } from "lucide-react";
+import { TrendingUp, Zap, Wallet, Award, Repeat, Clock, Leaf, HandCoins, Hourglass, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useProducts } from "../catalogo/hooks";
 import { useProposals } from "../orcamento/hooks";
 import { useSales } from "../vendas/hooks";
-import { summarizeSales, computeFinancialMetrics, formatPipelineLabel } from "./aggregate";
+import { summarizeSales, computeFinancialMetrics } from "./aggregate";
 import { computeCareerProgress } from "./careerPlan";
 import { useGreenSettings, useEntradaRules, useValidatedCustomers } from "./greenHooks";
 import { computeGreenGains, graduacaoDisplay, careerBonusPercent } from "./greenCommission";
 import { EntradaRulesDialog } from "./EntradaRulesDialog";
 import { loadLocalGreenSettings } from "./greenData";
+import { formatBRLFromCents } from "../lib/money";
 
 interface AcompanhamentoPanelProps {
   consultantId: string;
 }
 
+// BRL: usado pelos ganhos Conexão Green e plano de carreira, que trabalham em
+// reais (outro módulo). As métricas de venda usam formatBRLFromCents (centavos).
 const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const KWH = (n: number) => `${n.toLocaleString("pt-BR")} kWh`;
 
@@ -73,11 +76,6 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
   );
   const career = useMemo(() => computeCareerProgress(summary.totalPointsKwh), [summary.totalPointsKwh]);
 
-  const pipelineDisplay = useMemo(
-    () => formatPipelineLabel(financial, BRL),
-    [financial],
-  );
-
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -98,15 +96,15 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
             Sua performance<br />em movimento
           </h1>
           <p className="mt-5 text-base text-[#1a2e1f]/70 max-w-md leading-relaxed">
-            {summary.totalActive} venda(s) ativa(s) acumulando {KWH(summary.totalPointsKwh)} no plano
-            de carreira. Recorrência mensal de <span className="font-semibold text-[#7d9b76]">{BRL(financial.mrrActive)}</span>.
+            {summary.totalClosed} negócio(s) fechado(s) acumulando {KWH(summary.totalPointsKwh)} no plano
+            de carreira. Valor total fechado de <span className="font-semibold text-[#7d9b76]">{formatBRLFromCents(financial.totalFechado)}</span>.
           </p>
         </div>
         <div className="lg:col-span-5 grid grid-cols-2 gap-3">
-          {/* Topo: a recorrência (MRR das vendas ativas) é o número que o
-              consultor quer ver primeiro — é o ganho que se repete todo mês. */}
-          <HeroKpi kicker="Recorrência/mês" value={BRL(financial.mrrActive)} accent="gold" />
-          <HeroKpi kicker="Vendas Ativas" value={String(summary.totalActive)} accent="accent" />
+          {/* Topo: o total fechado é o número que o consultor quer ver primeiro —
+              é o valor dos negócios que já bateram o martelo (venda única). */}
+          <HeroKpi kicker="Total fechado" value={formatBRLFromCents(financial.totalFechado)} accent="gold" />
+          <HeroKpi kicker="Negócios fechados" value={String(summary.totalClosed)} accent="accent" />
           <HeroKpi kicker="Pontos kWh" value={summary.totalPointsKwh.toLocaleString("pt-BR")} accent="accent" />
           <HeroKpi kicker="Nível" value={career.current.label} accent="ink" />
         </div>
@@ -115,9 +113,9 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
       {/* Cards de desempenho */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
-          icon={<TrendingUp className="h-4 w-4" />}
-          label="Vendas ativas"
-          value={`${summary.totalActive}`}
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          label="Negócios fechados"
+          value={`${summary.totalClosed}`}
           hint={`${summary.totalSales} no total`}
         />
         <SummaryCard
@@ -133,49 +131,39 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
           hint={career.next ? `Próximo: ${career.next.label}` : "Nível máximo"}
         />
         <SummaryCard
-          icon={<Wallet className="h-4 w-4" />}
-          label="Ganho estimado/mês"
-          value={BRL(financial.totalEstimatedCommission)}
-          hint="somente vendas ativas · oficial no portal iGreen"
-        />
-      </div>
-
-      {/* Cards financeiros */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard
-          icon={<Repeat className="h-4 w-4" />}
-          label="Recorrência ativa (MRR)"
-          value={BRL(financial.mrrActive)}
-          hint="somente vendas com status ativo"
-        />
-        <SummaryCard
-          icon={<Receipt className="h-4 w-4" />}
-          label="Vendas únicas ativas"
-          value={BRL(financial.oneTimeActive)}
-          hint="placas e projetos já ativos"
-        />
-        <SummaryCard
-          icon={<Clock className="h-4 w-4" />}
-          label="Pipeline em orçamentos"
-          value={pipelineDisplay.value}
-          hint={pipelineDisplay.hint}
-        />
-        <SummaryCard
           icon={<TrendingUp className="h-4 w-4" />}
           label="Propostas aceitas"
           value={`${financial.proposalsAccepted}`}
-          hint={
-            financial.salesCapturing > 0
-              ? `${financial.salesCapturing} em captura (ainda fora do MRR)`
-              : "orçamentos convertidos"
-          }
+          hint="orçamentos convertidos em fechamento"
+        />
+      </div>
+
+      {/* Cards financeiros — venda única (sem recorrência/MRR) */}
+      <div className="grid gap-3 sm:grid-cols-1 lg:grid-cols-3">
+        <SummaryCard
+          icon={<Wallet className="h-4 w-4" />}
+          label="Total fechado"
+          value={formatBRLFromCents(financial.totalFechado)}
+          hint="soma dos negócios já fechados"
+        />
+        <SummaryCard
+          icon={<HandCoins className="h-4 w-4" />}
+          label="Comissão estimada"
+          value={formatBRLFromCents(financial.totalEstimatedCommission)}
+          hint="estimativa local · oficial no portal iGreen"
+        />
+        <SummaryCard
+          icon={<Clock className="h-4 w-4" />}
+          label="Pipeline em aberto"
+          value={formatBRLFromCents(financial.pipelineValue)}
+          hint={`${financial.proposalsPending} orçamento(s) aguardando resposta`}
         />
       </div>
 
       <p className="text-[10px] text-muted-foreground -mt-2">
-        MRR, ganho e vendas únicas consideram apenas vendas com status ativo. Orçamentos aceitos
-        entram em captura no pipeline até serem ativados. Valores estimados localmente — a comissão
-        oficial é sempre a do portal iGreen.
+        Total fechado e comissão consideram apenas negócios com status Fechado (cliente aceitou). O
+        pipeline soma os orçamentos que ainda aguardam resposta. A comissão é uma estimativa
+        calculada localmente — o valor oficial é sempre o do portal iGreen.
       </p>
 
       {/* Ganhos Conexão Green — entrada + recorrente + carteira */}
@@ -309,17 +297,17 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-foreground truncate">{row.productName}</p>
                   <p className="text-[10px] text-muted-foreground">
-                    {row.activeCount} ativa(s) · {row.totalCount} no total
+                    {row.closedCount} fechado(s) · {row.totalCount} no total
                   </p>
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
                   <div className="text-right">
                     <p className="text-[10px] text-muted-foreground">Pontos</p>
-                    <p className="text-xs font-medium text-emerald-400">{KWH(row.pointsKwh)}</p>
+                    <p className="text-xs font-medium text-success">{KWH(row.pointsKwh)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] text-muted-foreground">Comissão est.</p>
-                    <p className="text-xs font-medium text-foreground">{BRL(row.estimatedCommission)}</p>
+                    <p className="text-xs font-medium text-foreground">{formatBRLFromCents(row.estimatedCommission)}</p>
                   </div>
                 </div>
               </div>

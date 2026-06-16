@@ -1,9 +1,11 @@
 // =============================================================================
 // Acompanhamento — Testes de agregação e plano de carreira
 // =============================================================================
+// Venda única: valores monetários em CENTAVOS; "fechado" é o status final.
+// =============================================================================
 
 import { describe, it, expect } from "vitest";
-import { estimateCommission, summarizeSales, inferRevenuePeriod, computeFinancialMetrics, formatPipelineLabel } from "../aggregate";
+import { estimateCommission, summarizeSales, computeFinancialMetrics } from "../aggregate";
 import { computeCareerProgress, CAREER_TIERS } from "../careerPlan";
 import type { Product } from "../../catalogo/types";
 import type { Proposal } from "../../orcamento/types";
@@ -33,8 +35,9 @@ function makeSale(over: Partial<Sale> = {}): Sale {
     consultantId: "c1",
     productId: "p1",
     customerId: null,
-    status: "active",
-    amount: 500,
+    status: "fechado",
+    // Valor em centavos (R$ 500,00 = 50000).
+    amountCents: 50000,
     pointsKwh: 500,
     captureData: {},
     notes: null,
@@ -57,9 +60,10 @@ function makeProposal(over: Partial<Proposal> = {}): Proposal {
     recipientName: "João",
     recipientPhone: "11999999999",
     status: "sent",
-    amount: 100,
+    // Valor em centavos (R$ 100,00 = 10000).
+    amountCents: 10000,
     amountPeriod: "month",
-    discount: null,
+    discountCents: null,
     lineItems: [],
     message: null,
     validUntil: null,
@@ -73,102 +77,80 @@ function makeProposal(over: Partial<Proposal> = {}): Proposal {
   };
 }
 
-describe("inferRevenuePeriod", () => {
-  it("energia/telecom/seguros/club são mensais", () => {
-    expect(inferRevenuePeriod(makeProduct({ family: "energia" }))).toBe("month");
-    expect(inferRevenuePeriod(makeProduct({ family: "telecom" }))).toBe("month");
-    expect(inferRevenuePeriod(makeProduct({ family: "seguros" }))).toBe("month");
-    expect(inferRevenuePeriod(makeProduct({ family: "club" }))).toBe("month");
-  });
-
-  it("placas é venda única", () => {
-    expect(inferRevenuePeriod(makeProduct({ family: "placas" }))).toBe("once");
-  });
-
-  it("expansao retorna null", () => {
-    expect(inferRevenuePeriod(makeProduct({ family: "expansao" }))).toBeNull();
-  });
-});
-
 describe("computeFinancialMetrics", () => {
-  it("soma MRR e vendas únicas apenas de vendas ativas", () => {
+  it("soma o valor das vendas fechadas em centavos", () => {
     const green = makeProduct({ id: "g", family: "energia" });
     const placas = makeProduct({ id: "pl", family: "placas" });
     const sales = [
-      makeSale({ id: "1", productId: "g", status: "active", amount: 500 }),
-      makeSale({ id: "2", productId: "pl", status: "active", amount: 15000 }),
-      makeSale({ id: "3", productId: "g", status: "lead", amount: 300 }),
+      // R$ 500,00 fechado
+      makeSale({ id: "1", productId: "g", status: "fechado", amountCents: 50000 }),
+      // R$ 15.000,00 fechado
+      makeSale({ id: "2", productId: "pl", status: "fechado", amountCents: 1500000 }),
+      // negociando não entra no total fechado
+      makeSale({ id: "3", productId: "g", status: "negociando", amountCents: 30000 }),
     ];
     const metrics = computeFinancialMetrics(sales, [green, placas]);
-    expect(metrics.mrrActive).toBe(500);
-    expect(metrics.oneTimeActive).toBe(15000);
+    expect(metrics.totalFechado).toBe(1550000);
   });
 
-  it("conta pipeline de propostas pendentes por periodicidade", () => {
+  it("soma o pipeline das propostas pendentes em centavos", () => {
     const product = makeProduct();
     const proposals = [
-      makeProposal({ id: "a", status: "sent", amount: 59.9, amountPeriod: "month" }),
-      makeProposal({ id: "b", status: "countered", amount: 12000, amountPeriod: "once" }),
-      makeProposal({ id: "c", status: "accepted", amount: 100, amountPeriod: "month" }),
-      makeProposal({ id: "d", status: "rejected", amount: 50, amountPeriod: "month" }),
+      // R$ 59,90 pendente
+      makeProposal({ id: "a", status: "sent", amountCents: 5990 }),
+      // R$ 12.000,00 pendente (contraposta)
+      makeProposal({ id: "b", status: "countered", amountCents: 1200000 }),
+      // aceita: conta em proposalsAccepted, não no pipeline
+      makeProposal({ id: "c", status: "accepted", amountCents: 10000 }),
+      // recusada: não entra em nada
+      makeProposal({ id: "d", status: "rejected", amountCents: 5000 }),
     ];
     const metrics = computeFinancialMetrics([], [product], proposals);
-    expect(metrics.pipelineMrr).toBe(59.9);
-    expect(metrics.pipelineOneTime).toBe(12000);
+    expect(metrics.pipelineValue).toBe(1205990);
     expect(metrics.proposalsPending).toBe(2);
     expect(metrics.proposalsAccepted).toBe(1);
   });
 
-  it("conta vendas em captura separadamente do MRR", () => {
+  it("ignora vendas não fechadas no total fechado", () => {
     const product = makeProduct();
     const sales = [
-      makeSale({ id: "1", status: "active", amount: 500 }),
-      makeSale({ id: "2", status: "capturing", amount: 300 }),
+      makeSale({ id: "1", status: "fechado", amountCents: 50000 }),
+      makeSale({ id: "2", status: "negociando", amountCents: 30000 }),
+      makeSale({ id: "3", status: "interesse", amountCents: 20000 }),
+      makeSale({ id: "4", status: "perdido", amountCents: 10000 }),
     ];
     const metrics = computeFinancialMetrics(sales, [product]);
-    expect(metrics.mrrActive).toBe(500);
-    expect(metrics.salesCapturing).toBe(1);
-  });
-});
-
-describe("formatPipelineLabel", () => {
-  const brl = (n: number) => `R$${n}`;
-
-  it("separa recorrente e valor único", () => {
-    const label = formatPipelineLabel(
-      { pipelineMrr: 59.9, pipelineOneTime: 12000, proposalsPending: 2 },
-      brl,
-    );
-    expect(label.value).toBe("R$59.9/mês + R$12000 único");
-    expect(label.hint).toBe("2 aguardando resposta");
-  });
-
-  it("mostra zero formatado quando pipeline vazio", () => {
-    const label = formatPipelineLabel(
-      { pipelineMrr: 0, pipelineOneTime: 0, proposalsPending: 0 },
-      brl,
-    );
-    expect(label.value).toBe("R$0");
+    expect(metrics.totalFechado).toBe(50000);
   });
 });
 
 describe("estimateCommission", () => {
-  it("recurring_percent: aplica % sobre o valor da venda", () => {
+  it("recurring_percent: aplica % sobre o valor da venda (centavos)", () => {
+    // 4% de R$ 500,00 (50000 centavos) = R$ 20,00 (2000 centavos)
     expect(
-      estimateCommission({ type: "recurring_percent", max_percent: 4 }, makeSale({ amount: 500 })),
-    ).toBe(20);
+      estimateCommission({ type: "recurring_percent", max_percent: 4 }, makeSale({ amountCents: 50000 })),
+    ).toBe(2000);
   });
 
-  it("fixed: retorna comissão de geração própria (telecom)", () => {
+  it("royalties_percent: aplica % sobre o valor da venda (centavos)", () => {
+    // 10% de R$ 1.000,00 (100000 centavos) = R$ 100,00 (10000 centavos)
     expect(
-      estimateCommission({ type: "fixed", own: 7 }, makeSale({ amount: 54.9 })),
-    ).toBe(7);
+      estimateCommission({ type: "royalties_percent", max_percent: 10 }, makeSale({ amountCents: 100000 })),
+    ).toBe(10000);
   });
 
-  it("recruitment: retorna bônus direto", () => {
+  it("fixed: retorna comissão de geração própria em centavos (telecom)", () => {
+    // own = R$ 7,00 → 700 centavos
+    expect(
+      estimateCommission({ type: "fixed", own: 7 }, makeSale({ amountCents: 5490 })),
+    ).toBe(700);
+  });
+
+  it("recruitment: retorna bônus direto em centavos", () => {
+    // direct_bonus = R$ 300,00 → 30000 centavos
     expect(
       estimateCommission({ type: "recruitment", direct_bonus: 300 }, makeSale()),
-    ).toBe(300);
+    ).toBe(30000);
   });
 
   it("per_policy / none: retornam 0", () => {
@@ -178,17 +160,18 @@ describe("estimateCommission", () => {
 });
 
 describe("summarizeSales", () => {
-  it("soma pontos e comissão apenas de vendas ativas", () => {
+  it("soma pontos e comissão (centavos) apenas de vendas fechadas", () => {
     const product = makeProduct();
     const sales = [
-      makeSale({ id: "a", status: "active", amount: 500, pointsKwh: 500 }),
-      makeSale({ id: "b", status: "lead", amount: 500, pointsKwh: 500 }),
+      makeSale({ id: "a", status: "fechado", amountCents: 50000, pointsKwh: 500 }),
+      makeSale({ id: "b", status: "interesse", amountCents: 50000, pointsKwh: 500 }),
     ];
     const summary = summarizeSales(sales, [product]);
-    expect(summary.totalActive).toBe(1);
+    expect(summary.totalClosed).toBe(1);
     expect(summary.totalSales).toBe(2);
     expect(summary.totalPointsKwh).toBe(500);
-    expect(summary.totalEstimatedCommission).toBe(20);
+    // 4% de R$ 500,00 = R$ 20,00 = 2000 centavos
+    expect(summary.totalEstimatedCommission).toBe(2000);
   });
 
   it("agrupa por produto e ordena por pontos desc", () => {
@@ -200,8 +183,8 @@ describe("summarizeSales", () => {
       commissionRule: { type: "fixed", own: 7 },
     });
     const sales = [
-      makeSale({ id: "1", productId: "t", status: "active", amount: 54.9, pointsKwh: 200 }),
-      makeSale({ id: "2", productId: "g", status: "active", amount: 500, pointsKwh: 500 }),
+      makeSale({ id: "1", productId: "t", status: "fechado", amountCents: 5490, pointsKwh: 200 }),
+      makeSale({ id: "2", productId: "g", status: "fechado", amountCents: 50000, pointsKwh: 500 }),
     ];
     const summary = summarizeSales(sales, [green, telecom]);
     expect(summary.byProduct[0].productId).toBe("g");

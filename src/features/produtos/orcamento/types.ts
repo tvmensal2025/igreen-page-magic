@@ -109,9 +109,11 @@ export interface Proposal {
   recipientName: string | null;
   recipientPhone: string | null;
   status: ProposalStatus;
-  amount: number | null;
+  // Valor do orçamento em centavos (inteiro). Convertido para reais só na UI.
+  amountCents: number | null;
   amountPeriod: "month" | "once";
-  discount: number | null;
+  // Desconto em centavos (inteiro).
+  discountCents: number | null;
   lineItems: ProposalLineItem[];
   message: string | null;
   validUntil: string | null;
@@ -133,9 +135,11 @@ export interface ProposalRow {
   recipient_name: string | null;
   recipient_phone: string | null;
   status: ProposalStatus;
-  amount: number | null;
+  // Valor do orçamento em centavos (inteiro). Coluna `amount_cents` no banco.
+  amount_cents: number | null;
   amount_period: "month" | "once";
-  discount: number | null;
+  // Desconto em centavos (inteiro). Coluna `discount_cents` no banco.
+  discount_cents: number | null;
   line_items: unknown;
   message: string | null;
   valid_until: string | null;
@@ -151,7 +155,8 @@ export interface ProposalEvent {
   type: ProposalEventType;
   actor: "consultant" | "recipient" | "system";
   note: string | null;
-  counterAmount: number | null;
+  // Valor da contraproposta em centavos (inteiro).
+  counterAmountCents: number | null;
   attachmentUrl: string | null;
   createdAt: string;
 }
@@ -163,9 +168,11 @@ export interface CreateProposalInput {
   customerId?: string | null;
   recipientName?: string | null;
   recipientPhone?: string | null;
-  amount: number;
+  // Valor do orçamento em centavos (inteiro).
+  amountCents: number;
   amountPeriod: "month" | "once";
-  discount?: number | null;
+  // Desconto em centavos (inteiro).
+  discountCents?: number | null;
   lineItems: ProposalLineItem[];
   message?: string | null;
   /** Dias até expirar (prazo). */
@@ -179,9 +186,11 @@ export interface PublicProposalView {
   proposal: {
     token: string;
     status: ProposalStatus;
-    amount: number | null;
+    // Valor do orçamento em centavos (inteiro).
+    amountCents: number | null;
     amountPeriod: "month" | "once";
-    discount: number | null;
+    // Desconto em centavos (inteiro).
+    discountCents: number | null;
     lineItems: ProposalLineItem[];
     message: string | null;
     validUntil: string | null;

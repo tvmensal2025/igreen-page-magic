@@ -51,7 +51,7 @@ export interface CommercialPlan {
   id: string;
   /** Nome exibido. */
   label: string;
-  /** Mensalidade de referência (R$). Para placas é o valor à vista do projeto. */
+  /** Mensalidade de referência em centavos (inteiro). Ex.: 5490 = R$ 54,90. */
   price: number;
   /** Periodicidade do preço. */
   period: "month" | "once";
@@ -66,14 +66,17 @@ export interface CommercialPlan {
 //   - plan_monthly: mensalidade do plano escolhido (telecom, seguros, club)
 //   - project_once: valor único do projeto (placas), com financiamento opcional
 //   - savings_estimate: estimativa de economia sobre a conta de luz (energia)
-//   - market_free: mercado livre de energia (até 30%, sem valor exato — foco
-//                  na solução e na parceria Comerc + iGreen)
+//   - market_free:      mercado livre de energia (até 30%, sem valor exato —
+//                       foco na solução e na parceria Comerc + iGreen)
+//   - none:             produto não orçável (ex.: Expansão) — sem planos e sem
+//                       valor calculado; o builder não oferece orçamento.
 // ---------------------------------------------------------------------------
 export type PricingMode =
   | "plan_monthly"
   | "project_once"
   | "savings_estimate"
-  | "market_free";
+  | "market_free"
+  | "none";
 
 export interface FamilyCommercialConfig {
   family: ProductFamily;
@@ -93,62 +96,62 @@ const TELECOM_PLANS: CommercialPlan[] = [
   {
     id: "start",
     label: "Start — 11GB",
-    price: 54.9,
+    price: 5490,
     period: "month",
     highlights: [
       "6GB + 5GB na portabilidade",
       "Ligações e WhatsApp ilimitados",
       "Internet acumulada + iGreen Club grátis",
     ],
-    meta: { dados: "11GB", semPortabilidade: 59.9 },
+    meta: { dados: "11GB", semPortabilidade: 5990 },
   },
   {
     id: "mega",
     label: "Mega — 15GB",
-    price: 59.9,
+    price: 5990,
     period: "month",
     highlights: [
       "10GB + 5GB na portabilidade",
       "Ligações e WhatsApp ilimitados",
       "Internet acumulada + iGreen Club grátis",
     ],
-    meta: { dados: "15GB", semPortabilidade: 64.9 },
+    meta: { dados: "15GB", semPortabilidade: 6490 },
   },
   {
     id: "giga",
     label: "Giga — 20GB",
-    price: 69.9,
+    price: 6990,
     period: "month",
     highlights: [
       "15GB + 5GB na portabilidade",
       "Ligações e WhatsApp ilimitados",
       "Internet acumulada + iGreen Club grátis",
     ],
-    meta: { dados: "20GB", semPortabilidade: 74.9 },
+    meta: { dados: "20GB", semPortabilidade: 7490 },
   },
   {
     id: "ultra",
     label: "Ultra — 28GB",
-    price: 79.9,
+    price: 7990,
     period: "month",
     highlights: [
       "23GB + 5GB na portabilidade",
       "Ligações e WhatsApp ilimitados",
       "Internet acumulada + iGreen Club grátis",
     ],
-    meta: { dados: "28GB", semPortabilidade: 84.9 },
+    meta: { dados: "28GB", semPortabilidade: 8490 },
   },
   {
     id: "infinity",
     label: "Infinity — 50GB",
-    price: 99.9,
+    price: 9990,
     period: "month",
     highlights: [
       "45GB + 5GB na portabilidade",
       "Ligações e WhatsApp ilimitados",
       "Internet acumulada + iGreen Club grátis",
     ],
-    meta: { dados: "50GB", semPortabilidade: 104.9 },
+    meta: { dados: "50GB", semPortabilidade: 10490 },
   },
 ];
 
@@ -157,7 +160,7 @@ const SEGUROS_PLANS: CommercialPlan[] = [
   {
     id: "basic",
     label: "Basic",
-    price: 99,
+    price: 9900,
     period: "month",
     highlights: [
       "Roubo, furto e assistência 24h",
@@ -168,7 +171,7 @@ const SEGUROS_PLANS: CommercialPlan[] = [
   {
     id: "premium",
     label: "Premium",
-    price: 149,
+    price: 14900,
     period: "month",
     highlights: [
       "Tudo do Basic + colisão, incêndio e vidros",
@@ -179,7 +182,7 @@ const SEGUROS_PLANS: CommercialPlan[] = [
   {
     id: "infinite",
     label: "Infinite",
-    price: 199,
+    price: 19900,
     period: "month",
     highlights: [
       "Tudo do Premium + cobertura a terceiros",
@@ -194,7 +197,7 @@ const CLUB_PLANS: CommercialPlan[] = [
   {
     id: "club-pf",
     label: "iGreen Club",
-    price: 29.9,
+    price: 2990,
     period: "month",
     highlights: [
       "Descontos em +30 mil lojas",
@@ -248,7 +251,7 @@ export const FAMILY_COMMERCIAL: Record<ProductFamily, FamilyCommercialConfig> = 
   },
   expansao: {
     family: "expansao",
-    pricingMode: "plan_monthly",
+    pricingMode: "none",
     amountLabel: "Investimento",
     plans: [],
     commercialNote:
