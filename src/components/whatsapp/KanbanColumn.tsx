@@ -45,8 +45,8 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
 
   return (
     <div
-      style={{ width: "var(--kanban-col-w, 248px)" }}
-      className="shrink-0 h-full min-h-0 flex flex-col bg-card/40 rounded-xl border border-border/50 shadow-sm overflow-hidden transition-colors hover:border-border/60"
+      style={{ width: "var(--kanban-col-w, 248px)", maxWidth: "calc(100vw - 2rem)" }}
+      className="shrink-0 h-full min-h-0 min-w-0 flex flex-col bg-card/40 rounded-xl border border-border/50 shadow-sm overflow-hidden transition-colors hover:border-border/60"
       onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary/30", "bg-primary/[0.03]"); }}
       onDragLeave={(e) => { e.currentTarget.classList.remove("border-primary/30", "bg-primary/[0.03]"); }}
       onDrop={(e) => { e.currentTarget.classList.remove("border-primary/30", "bg-primary/[0.03]"); onDrop(stage.stage_key); }}
@@ -54,9 +54,9 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
       {/* Barra colorida no topo (padrão Clientes ativos) */}
       <div className={`h-1 w-full ${stage.color}`} />
       {/* Column Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/40">
-        <div className="flex items-center gap-2 min-w-0">
-          <Badge variant="secondary" className={`text-[10px] font-semibold ${stage.color} border truncate max-w-[140px]`}>
+      <div className="flex min-w-0 items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40 overflow-hidden">
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+          <Badge variant="secondary" className={`text-[10px] font-semibold ${stage.color} border max-w-full min-w-0 truncate`}>
             {stage.label}
           </Badge>
           {stage.auto_message_enabled && stage.auto_message_text && (
@@ -69,8 +69,8 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
       </div>
 
       {/* Cards */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="p-2 space-y-1.5">
+      <ScrollArea className="kanban-safe-scroll flex-1 min-h-0 min-w-0 max-w-full overflow-hidden">
+        <div className="w-full min-w-0 max-w-full overflow-hidden p-2 space-y-1.5">
           {stageDeals.map((deal) => (
             <KanbanDealCard
               key={deal.id}
