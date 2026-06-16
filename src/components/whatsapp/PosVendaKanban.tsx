@@ -390,7 +390,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                 else moveTo(c, stage.key);
                 setDragId(null);
               }}
-              className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] overflow-hidden shadow-sm"
+              className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] min-w-0 overflow-hidden shadow-sm"
             >
               <div className={`h-1 w-full ${stage.bar}`} />
               <div className="px-3 py-2.5 border-b border-border/40 flex items-center justify-between">
@@ -411,15 +411,15 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                         key={c.id}
                         draggable={isOwner || c.assigned_consultant_id === consultantId}
                         onDragStart={() => setDragId(c.id)}
-                        className="relative bg-background border border-border/50 rounded-lg p-2.5 pl-3 space-y-1.5 cursor-grab active:cursor-grabbing hover:border-primary/40 hover:shadow-md transition-all"
+                        className="relative bg-background border border-border/50 rounded-lg p-2.5 pl-3 space-y-1.5 cursor-grab active:cursor-grabbing hover:border-primary/40 hover:shadow-md transition-all min-w-0 max-w-full overflow-hidden"
                       >
                         <span className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r ${stage.dot}`} />
                         <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-semibold truncate text-foreground">{c.name || "Sem nome"}</p>
-                            <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
-                              <Phone className="w-2.5 h-2.5" />
-                              {c.phone_whatsapp}
+                            <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
+                              <Phone className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">{c.phone_whatsapp}</span>
                             </p>
                           </div>
                           <div className="flex items-center gap-0.5 shrink-0">

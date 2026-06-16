@@ -41,7 +41,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
     <div
       draggable
       onDragStart={() => onDragStart(deal.id)}
-      className={`p-3 cursor-grab active:cursor-grabbing rounded-xl bg-card border hover:shadow-sm transition-all group ${isTest ? "border-dashed border-muted-foreground/30 opacity-70 grayscale" : "border-border/50 hover:border-primary/25"}`}
+      className={`p-3 cursor-grab active:cursor-grabbing rounded-xl bg-card border hover:shadow-sm transition-all group w-full max-w-full min-w-0 overflow-hidden ${isTest ? "border-dashed border-muted-foreground/30 opacity-70 grayscale" : "border-border/50 hover:border-primary/25"}`}
     >
       <div className="flex items-start gap-2">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 mt-0.5 shrink-0 group-hover:text-muted-foreground transition-colors" />
@@ -101,7 +101,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
             </p>
           )}
           {deal.notes && (
-            <p className="text-[10px] text-muted-foreground/70 truncate mt-1 italic">{deal.notes}</p>
+            <p className="text-[10px] text-muted-foreground/70 truncate mt-1 italic max-w-full">{deal.notes}</p>
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
