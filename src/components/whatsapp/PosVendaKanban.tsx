@@ -417,9 +417,9 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                         <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-semibold truncate text-foreground">{c.name || "Sem nome"}</p>
-                            <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
-                              <Phone className="w-2.5 h-2.5" />
-                              {c.phone_whatsapp}
+                            <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
+                              <Phone className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">{c.phone_whatsapp}</span>
                             </p>
                           </div>
                           <div className="flex items-center gap-0.5 shrink-0">
