@@ -106,6 +106,7 @@ export function ConversaoCockpit({ consultantId }: Props) {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSending, setBatchSending] = useState<{ done: number; total: number } | null>(null);
+  const [activeView, setActiveView] = useState<string>("fila");
   const [searchParams] = useSearchParams();
   const { partners } = useReferralPartners();
   // Dispara a classificação sob demanda uma única vez por consultor ao abrir a
@@ -443,12 +444,13 @@ export function ConversaoCockpit({ consultantId }: Props) {
   }, [selectedIds, rows, exitSelectMode, fetchRows]);
 
   return (
-    <Tabs defaultValue="fila" className="space-y-5">
-      <TabsList>
-        <TabsTrigger value="fila" className="gap-1.5"><ListOrdered className="h-4 w-4" /> Fila de leads</TabsTrigger>
-        <TabsTrigger value="frases" className="gap-1.5"><MessageSquareText className="h-4 w-4" /> Frases</TabsTrigger>
-        <TabsTrigger value="resultados" className="gap-1.5"><TrendingUp className="h-4 w-4" /> Resultados</TabsTrigger>
-        <TabsTrigger value="config" className="gap-1.5"><Settings2 className="h-4 w-4" /> Configurar</TabsTrigger>
+    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-5">
+      <ViewSwitcher value={activeView} onChange={setActiveView} />
+      <TabsList className="sr-only">
+        <TabsTrigger value="fila">Fila</TabsTrigger>
+        <TabsTrigger value="frases">Frases</TabsTrigger>
+        <TabsTrigger value="resultados">Resultados</TabsTrigger>
+        <TabsTrigger value="config">Configurar</TabsTrigger>
       </TabsList>
 
       <TabsContent value="fila" className="space-y-5">
@@ -867,6 +869,50 @@ function EmptyState({ unclassified, onClassifyAll }: { unclassified: number; onC
         </Button>
       )}
     </Card>
+  );
+}
+
+const VIEW_META: Record<string, { label: string; desc: string; icon: any }> = {
+  fila:       { label: "Fila de leads", desc: "Leads ordenados por potencial",  icon: ListOrdered },
+  frases:     { label: "Frases",        desc: "Mensagens sugeridas por etapa",  icon: MessageSquareText },
+  resultados: { label: "Resultados",    desc: "Métricas e desempenho",          icon: TrendingUp },
+  config:     { label: "Configurar",    desc: "Ajustes do cockpit",             icon: Settings2 },
+};
+
+function ViewSwitcher({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const current = VIEW_META[value] ?? VIEW_META.fila;
+  const CurrentIcon = current.icon;
+  const options: ComboboxOption[] = Object.entries(VIEW_META).map(([k, m]) => ({
+    value: k,
+    label: m.label,
+    hint: m.desc,
+  }));
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card via-card to-card/60 p-4 shadow-sm">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl"
+      />
+      <div className="relative flex flex-wrap items-center gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
+          <CurrentIcon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-base font-semibold text-foreground">{current.label}</h2>
+          <p className="truncate text-xs text-muted-foreground">{current.desc}</p>
+        </div>
+        <div className="w-full sm:w-64">
+          <Combobox
+            options={options}
+            value={value}
+            onChange={(v) => onChange((v as string) ?? "fila")}
+            placeholder="Selecionar visão"
+            searchPlaceholder="Buscar visão…"
+            className="h-9"
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
