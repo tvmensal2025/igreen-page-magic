@@ -377,7 +377,7 @@ const VARIANT_B_LIVRE_TTL_MS = 60_000;
  * Performance: o lookup de `customers` (variant + consultant_id) é por id;
  * o lookup de `bot_flows`/`bot_flow_steps` por consultor é CACHEADO 60s.
  */
-async function variantBLivreSemPassos(
+export async function variantBLivreSemPassos(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   customerId: string,
