@@ -390,7 +390,7 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
                 else moveTo(c, stage.key);
                 setDragId(null);
               }}
-              className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] overflow-hidden shadow-sm"
+              className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] min-w-0 overflow-hidden shadow-sm"
             >
               <div className={`h-1 w-full ${stage.bar}`} />
               <div className="px-3 py-2.5 border-b border-border/40 flex items-center justify-between">
