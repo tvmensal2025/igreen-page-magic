@@ -25,6 +25,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 import type { PartnerAnalytics } from "./hooks/usePartnerAnalytics";
 
@@ -44,6 +45,18 @@ export function PartnerRankingTable({
   onQrCode,
 }: Props) {
   const [query, setQuery] = useState("");
+  const confirm = useConfirm();
+  const handleDeleteClick = async (partner: ReferralPartner) => {
+    const ok = await confirm({
+      title: "Excluir parceiro?",
+      description: `O parceiro "${partner.nome}" será removido e deixará de receber atribuição de novos leads. Esta ação não pode ser desfeita pela interface.`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (ok) onDelete(partner.id);
+  };
+
 
   const rows = useMemo(() => {
     const aMap = new Map(analytics.map((a) => [a.partner_id, a]));
@@ -210,7 +223,7 @@ export function PartnerRankingTable({
                             <Pencil className="h-4 w-4 mr-2" /> Editar
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => onDelete(partner.id)}
+                            onClick={() => handleDeleteClick(partner)}
                             className="text-destructive focus:text-destructive"
                           >
                             <Trash2 className="h-4 w-4 mr-2" /> Excluir

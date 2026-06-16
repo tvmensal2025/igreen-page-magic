@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pencil, Trash2, QrCode } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 
 interface PartnerListProps {
@@ -27,6 +28,17 @@ export function PartnerList({
   onQrCode,
   isLoading,
 }: PartnerListProps) {
+  const confirm = useConfirm();
+  const handleDeleteClick = async (partner: ReferralPartner) => {
+    const ok = await confirm({
+      title: "Excluir parceiro?",
+      description: `O parceiro "${partner.nome}" será removido e deixará de receber atribuição de novos leads. Esta ação não pode ser desfeita pela interface.`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (ok) onDelete(partner.id);
+  };
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -97,7 +109,7 @@ export function PartnerList({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => onDelete(partner.id)}
+                  onClick={() => handleDeleteClick(partner)}
                   title="Excluir"
                   className="text-destructive hover:text-destructive"
                 >
