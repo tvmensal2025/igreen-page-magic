@@ -214,6 +214,17 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
             >
               <Plus className="h-3.5 w-3.5" /> Registrar venda
             </button>
+            {/* Admin do modelo de etapas (somente admin/superadmin) */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setTemplateAdminOpen(true)}
+                className="inline-flex items-center gap-1.5 border border-pv-ink/30 hover:border-pv-accent text-pv-ink px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors"
+                title="Configurar etapas da esteira"
+              >
+                <Settings2 className="h-3.5 w-3.5" /> Etapas
+              </button>
+            )}
           </div>
         </div>
 
