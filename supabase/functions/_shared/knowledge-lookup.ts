@@ -43,6 +43,64 @@ function tokenScore(queryRaw: string, haystackRaw: string): number {
   return hits / queryTokens.length;
 }
 
+// Gera o embedding da pergunta via Lovable AI Gateway (mesmo modelo do
+// embed-knowledge: gemini-embedding-001, 1536 dims). Retorna null em qualquer
+// falha — o caller cai na busca por palavra-chave (fail-open).
+const EMBED_GATEWAY = "https://ai.gateway.lovable.dev/v1/embeddings";
+async function embedQuestion(text: string): Promise<number[] | null> {
+  try {
+    const key = Deno.env.get("LOVABLE_API_KEY");
+    if (!key) return null;
+    const res = await fetch(EMBED_GATEWAY, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "google/gemini-embedding-001", input: text.slice(0, 2000), dimensions: 1536 }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const v = data?.data?.[0]?.embedding;
+    return Array.isArray(v) ? v : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+// Busca semântica: embedding da pergunta + match_knowledge (cosine). Retorna os
+// trechos mais próximos acima do limiar de similaridade. Null em falha.
+const SEMANTIC_MIN_SIMILARITY = 0.55;
+async function semanticLookup(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  question: string,
+  consultantId: string | null | undefined,
+): Promise<{ text: string; confidence: number } | null> {
+  const vec = await embedQuestion(question);
+  if (!vec) return null;
+  try {
+    const { data, error } = await supabase.rpc("match_knowledge", {
+      p_consultant_id: consultantId ?? null,
+      p_query_embedding: vec,
+      p_match_count: 3,
+    });
+    if (error || !Array.isArray(data) || data.length === 0) return null;
+    const top = (data as Array<{ title: string; content: string; similarity: number }>)
+      .filter((r) => Number(r.similarity) >= SEMANTIC_MIN_SIMILARITY);
+    if (top.length === 0) return null;
+    // Junta os melhores trechos (até ~1500 chars) pra dar contexto rico ao LLM.
+    let text = "";
+    for (const r of top) {
+      const bloco = `${r.title ? r.title + "\n" : ""}${r.content || ""}`.trim();
+      if (!bloco) continue;
+      if (text.length + bloco.length > 1500) break;
+      text += (text ? "\n\n" : "") + bloco;
+    }
+    if (!text.trim()) return null;
+    return { text, confidence: Number(top[0].similarity) };
+  } catch (_e) {
+    return null;
+  }
+}
+
 export async function lookupKnowledge(opts: {
   supabase: any;
   question: string;
@@ -82,6 +140,15 @@ export async function lookupKnowledge(opts: {
         }
       }
     }
+  }
+
+  // ─── Busca SEMÂNTICA (embeddings) ─────────────────────────────────────
+  // Antes do fallback por palavra-chave: entende a pergunta pelo significado,
+  // não pelas palavras exatas. Ex.: "vou gastar mais no fim das contas?" casa
+  // a seção de cobrança mesmo sem repetir os termos cadastrados.
+  const semantic = await semanticLookup(opts.supabase, question, opts.consultantId);
+  if (semantic) {
+    return { found: true, text: semantic.text, source: "ai_knowledge_sections", confidence: semantic.confidence };
   }
 
   const { data: sections } = await opts.supabase
