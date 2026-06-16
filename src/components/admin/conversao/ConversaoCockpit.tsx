@@ -872,4 +872,48 @@ function EmptyState({ unclassified, onClassifyAll }: { unclassified: number; onC
   );
 }
 
+const VIEW_META: Record<string, { label: string; desc: string; icon: any }> = {
+  fila:       { label: "Fila de leads", desc: "Leads ordenados por potencial",  icon: ListOrdered },
+  frases:     { label: "Frases",        desc: "Mensagens sugeridas por etapa",  icon: MessageSquareText },
+  resultados: { label: "Resultados",    desc: "Métricas e desempenho",          icon: TrendingUp },
+  config:     { label: "Configurar",    desc: "Ajustes do cockpit",             icon: Settings2 },
+};
+
+function ViewSwitcher({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const current = VIEW_META[value] ?? VIEW_META.fila;
+  const CurrentIcon = current.icon;
+  const options: ComboboxOption[] = Object.entries(VIEW_META).map(([k, m]) => ({
+    value: k,
+    label: m.label,
+    hint: m.desc,
+  }));
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card via-card to-card/60 p-4 shadow-sm">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl"
+      />
+      <div className="relative flex flex-wrap items-center gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
+          <CurrentIcon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-base font-semibold text-foreground">{current.label}</h2>
+          <p className="truncate text-xs text-muted-foreground">{current.desc}</p>
+        </div>
+        <div className="w-full sm:w-64">
+          <Combobox
+            options={options}
+            value={value}
+            onChange={(v) => onChange((v as string) ?? "fila")}
+            placeholder="Selecionar visão"
+            searchPlaceholder="Buscar visão…"
+            className="h-9"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default ConversaoCockpit;
