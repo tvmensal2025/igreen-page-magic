@@ -101,7 +101,7 @@ export function KanbanDealCard({ deal, stepInfo, onDragStart, onEdit, onDelete, 
             </p>
           )}
           {deal.notes && (
-            <p className="text-[10px] text-muted-foreground/70 truncate mt-1 italic">{deal.notes}</p>
+            <p className="text-[10px] text-muted-foreground/70 truncate mt-1 italic max-w-full">{deal.notes}</p>
           )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
