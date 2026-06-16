@@ -18,6 +18,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 import { geminiGenerate, GeminiQuotaExhausted } from "../_shared/gemini.ts";
+import { lookupKnowledge } from "../_shared/knowledge-lookup.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import {
   checkPreconditions,
@@ -130,7 +131,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function sanitizeHumanReply(text: string, step: string, input: string): string {
   const msg = (text || "").trim().replace(/🤖/g, "").trim();
-  const forbidden = /(assistente\s+(virtual|digital)?|bot\b|rob[oô]|sistema|como posso ajudar|fico (à|a) disposição)/i;
+  // "assistente virtual" agora é PERMITIDO (a IA deve ser transparente).
+  // Bloqueia só clichês robóticos / termos frios que soam de bot ruim.
+  const forbidden = /(\bbot\b|sistema autom[aá]tico|como posso ajudar|fico (à|a) disposição|atendimento digital)/i;
   const shortGreeting = /^(oi|ol[aá]|opa|bom dia|boa tarde|boa noite|tudo bem|eai|e aí)[!?.\s]*$/i.test((input || "").trim());
   if (!msg || forbidden.test(msg) || msg.length > 280) {
     if (shortGreeting || step === "welcome" || step === "menu_inicial") return "oii 😊 vc é de qual cidade?";
@@ -178,6 +181,16 @@ Deno.serve(async (req) => {
     }
 
     const consultantId = customer.consultant_id;
+
+    // Identidade da assistente: nome configurado pelo consultor + do/da.
+    const { data: _consultorRow } = await supabase
+      .from("consultants")
+      .select("name, assistant_name, gender")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const assistantName = (_consultorRow as any)?.assistant_name?.trim() || "Camila";
+    const representanteNome = (_consultorRow as any)?.name?.trim() || "";
+    const artigoRep = String((_consultorRow as any)?.gender) === "consultora" ? "da" : "do";
 
     // 3) Carregar config do agente. PRIORIDADE: config explícita do consultor.
     // Se o consultor desligou (enabled=false), respeitamos — não caímos no global.
@@ -371,6 +384,17 @@ Deno.serve(async (req) => {
       .order("consultant_id", { ascending: false, nullsFirst: true })
       .order("position");
 
+    // 6a) Pergunta diferente / fora do roteiro: busca SEMÂNTICA + palavra-chave
+    // (FAQ + seções) pela mensagem do cliente. O trecho mais relevante entra no
+    // topo do CONHECIMENTO, ajudando a IA a responder pergunta específica.
+    let conhecimentoFocado = "";
+    try {
+      const kb = await lookupKnowledge({ supabase, question: String(user_input || ""), consultantId });
+      if (kb.found && kb.text) {
+        conhecimentoFocado = `### RESPOSTA MAIS RELEVANTE PARA A PERGUNTA ATUAL\n${kb.text}\n\n`;
+      }
+    } catch (_e) { /* fail-open: segue só com o conhecimento geral */ }
+
     // 6b) Slots de áudio (Camila)
     const { data: slotsRaw } = await supabase
       .from("ai_agent_slots")
@@ -381,22 +405,26 @@ Deno.serve(async (req) => {
     const validSlotKeys = new Set(slots.map((s: any) => s.slot_key));
 
     // 7) Montar prompt
-    const persona = config.persona_name || "Rafael";
+    const persona = assistantName;
     const tone = config.tone || "humano, breve, cordial";
     const stepPromptMap = (config.step_prompts || {}) as Record<string, string>;
     const stepGuide = stepPromptMap[stepBefore] || "";
     const handoffRules = (config.handoff_rules || {}) as Record<string, any>;
 
-    const systemPrompt = `Você é ${persona}, atendente da iGreen Energy. Tom: ${tone}.
-NUNCA revele que é IA/bot. Fale curto, natural, com gírias leves brasileiras quando apropriado. Sem emojis robóticos ("🤖"), sem "Sou seu assistente virtual".
-Não use: "assistente", "assistente virtual", "bot", "sistema", "como posso ajudar", "fico à disposição", "atendimento digital".
+    const identidadeLinha = representanteNome
+      ? `Você é ${persona}, a assistente virtual ${artigoRep} ${representanteNome} (consultor(a) da iGreen Energy).`
+      : `Você é ${persona}, a assistente virtual da iGreen Energy.`;
+
+    const systemPrompt = `${identidadeLinha} Tom: ${tone}.
+TRANSPARÊNCIA: você é uma assistente virtual (IA). Se o cliente perguntar se é robô/IA/atendente, confirme com naturalidade que é uma assistente virtual que ajuda ${representanteNome ? artigoRep + " " + representanteNome : "o time"} — NUNCA diga que é uma pessoa humana.
+Fale curto, natural, com gírias leves brasileiras quando apropriado. Sem emojis robóticos ("🤖"). No primeiro contato, pode se apresentar como "${persona}".
 Se o lead mandar só "oi"/"olá"/cumprimento curto, não explique a empresa: responda como pessoa e faça UMA pergunta simples, tipo "oii 😊 vc é de qual cidade?".
 Não despeje explicação no começo. Primeiro conecte, depois qualifique.
 
 REGRAS DURAS:
 - Siga rigorosamente a ETAPA ATUAL: "${stepBefore}". Não pule etapas sem condição satisfeita.
 - Se já existe áudio/vídeo na biblioteca para essa etapa/intenção, PREFIRA enviar a mídia (mais humano que texto).
-- NUNCA invente preço, prazo, comissão, link. Use só o conhecimento abaixo.
+- NUNCA invente preço, prazo, comissão, link, número de clientes/estados, CNPJ ou datas. Use SÓ o conhecimento abaixo; se não estiver lá, diga que confirma e faça handoff.
 - Se cliente: pedir humano, ofender, perguntar algo fora do escopo, ou após 3 falhas de entendimento → handoff=true.
 - Para avançar para "cadastro_portal" o cliente precisa ter aceitado a proposta e ter conta de luz + documento enviados.
 
@@ -408,7 +436,7 @@ ${stepGuide ? `Guia da etapa: ${stepGuide}` : ""}
 REGRAS DE HANDOFF: ${JSON.stringify(handoffRules)}
 
 CONHECIMENTO iGREEN:
-${(knowledge || []).map((k: any) => `## ${k.title}\n${k.content}`).join("\n\n").slice(0, 4000)}
+${conhecimentoFocado}${(knowledge || []).map((k: any) => `## ${k.title}\n${k.content}`).join("\n\n").slice(0, 4000)}
 
 DADOS DO CLIENTE:
 ${JSON.stringify({

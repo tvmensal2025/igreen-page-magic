@@ -36,7 +36,7 @@ function defaultWelcome(name: string, useButtons: boolean): { text: string; opts
     { id: "humano", title: "👤 Falar com consultor" },
   ];
   const baseTxt =
-    "Olá! 👋 Aqui é a *Camila*, assistente do *{{representante}}*.\n\n" +
+    "Olá! 👋 Sou a assistente virtual do(a) *{{representante}}*.\n\n" +
     "Posso te ajudar a *economizar até 20% na conta de luz* todo mês — sem obra, sem instalação, sem fidelidade.\n\n" +
     "Como prefere começar?";
   return {
