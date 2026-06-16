@@ -182,116 +182,122 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           </div>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-3 py-1">
           {isEdit && keywords.length === 0 && !qrPhrase.trim() && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <div>
-                Este parceiro <strong>não consegue atribuir clientes interessados</strong> — sem palavra-chave e sem frase de QR. Adicione pelo menos uma keyword abaixo para que o sistema reconheça quando um cliente interessado mencionar este parceiro no WhatsApp.
-              </div>
+            <div className="flex items-start gap-2 p-2 rounded-md bg-destructive/10 border border-destructive/30 text-destructive text-[11px]">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                Sem palavra-chave ou frase QR este parceiro <strong>não atribui leads</strong>.
+              </span>
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="partner-nome">Nome *</Label>
-            <Input
-              id="partner-nome"
-              value={nome}
-              onChange={(e) => {
-                setNome(e.target.value);
-                if (errors.nome) setErrors((prev) => ({ ...prev, nome: undefined }));
-              }}
-              placeholder="Nome do parceiro"
-            />
-            {errors.nome && (
-              <p className="text-sm text-destructive">{errors.nome}</p>
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="partner-nome" className="text-xs">Nome *</Label>
+              <Input
+                id="partner-nome"
+                value={nome}
+                onChange={(e) => {
+                  setNome(e.target.value);
+                  if (errors.nome) setErrors((prev) => ({ ...prev, nome: undefined }));
+                }}
+                placeholder="Nome do parceiro"
+                className="h-8 text-sm"
+              />
+              {errors.nome && (
+                <p className="text-[11px] text-destructive">{errors.nome}</p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="partner-cli" className="text-xs">
+                CLI (ID iGreen) {isConsultorParceiro ? "(opc)" : "*"}
+              </Label>
+              <Input
+                id="partner-cli"
+                value={cli}
+                onChange={(e) => {
+                  setCli(e.target.value);
+                  if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
+                }}
+                placeholder="ID iGreen"
+                className="h-8 text-sm"
+              />
+              {errors.cli && (
+                <p className="text-[11px] text-destructive">{errors.cli}</p>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="partner-cli">
-              CLI (ID iGreen) {isConsultorParceiro ? "(opcional)" : "*"}
-            </Label>
-            <Input
-              id="partner-cli"
-              value={cli}
-              onChange={(e) => {
-                setCli(e.target.value);
-                if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
-              }}
-              placeholder="ID do cliente no portal iGreen"
-            />
-            {errors.cli && (
-              <p className="text-sm text-destructive">{errors.cli}</p>
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="partner-igreen-id" className="text-xs">ID iGreen consultor parceiro (opc)</Label>
+              <Input
+                id="partner-igreen-id"
+                value={partnerIgreenId}
+                onChange={(e) => setPartnerIgreenId(e.target.value)}
+                placeholder="Ex: 123456"
+                className="h-8 text-sm"
+              />
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Cadastro vai no nome de outro consultor. Deixe vazio para indicador comum.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="partner-notify" className="text-xs">Aviso WhatsApp (opc)</Label>
+              <Input
+                id="partner-notify"
+                value={notificationPhone}
+                onChange={(e) => setNotificationPhone(e.target.value)}
+                placeholder="Ex: 11999998888"
+                className="h-8 text-sm"
+              />
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Número que recebe aviso quando um lead chega por este parceiro.
+              </p>
+            </div>
           </div>
 
-          <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
-            <Label htmlFor="partner-igreen-id">
-              ID iGreen do consultor parceiro (opcional)
-            </Label>
-            <Input
-              id="partner-igreen-id"
-              value={partnerIgreenId}
-              onChange={(e) => setPartnerIgreenId(e.target.value)}
-              placeholder="Ex: 123456"
-            />
-            <p className="text-[11px] text-muted-foreground leading-snug">
-              Preencha <strong>só</strong> quando o cadastro deve ir no nome de
-              outro consultor (consultor parceiro). Nesse caso o cliente é
-              cadastrado com o ID dele. Deixe vazio para parceiro indicador
-              comum (usa o seu cadastro).
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="partner-notify">Número para aviso (WhatsApp)</Label>
-            <Input
-              id="partner-notify"
-              value={notificationPhone}
-              onChange={(e) => setNotificationPhone(e.target.value)}
-              placeholder="Ex: 11999998888"
-            />
-            <p className="text-[11px] text-muted-foreground leading-snug">
-              Quando um cliente chegar por este parceiro, este número também
-              recebe um aviso no WhatsApp. Deixe vazio para não avisar.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Palavras-chave</Label>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Palavras-chave</Label>
+              <div className="flex gap-1">
+                <Button type="button" variant="secondary" onClick={addKeyword} size="sm" className="h-6 px-2 text-[11px]">
+                  Adicionar
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={generateExample}
+                  size="sm"
+                  disabled={aiLoading}
+                  className="h-6 px-2 text-[11px] gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                  title="Gerar exemplo de mensagem com IA"
+                >
+                  {aiLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3" />
+                  )}
+                  IA
+                </Button>
+              </div>
+            </div>
             <div className="flex gap-2">
               <Input
                 value={keywordInput}
                 onChange={(e) => setKeywordInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Digite e pressione Enter"
-                className="flex-1"
+                className="flex-1 h-8 text-sm"
               />
-              <Button type="button" variant="secondary" onClick={addKeyword} size="sm">
-                Adicionar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={generateExample}
-                size="sm"
-                disabled={aiLoading}
-                className="gap-1 border-primary/40 text-primary hover:bg-primary/10"
-                title="Gerar exemplo de mensagem do cliente interessado com IA"
-              >
-                {aiLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5" />
-                )}
-                IA
-              </Button>
             </div>
             {keywords.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
+              <div className="flex flex-wrap gap-1 mt-1">
                 {keywords.map((kw) => (
-                  <Badge key={kw} variant="secondary" className="gap-1">
+                  <Badge key={kw} variant="secondary" className="gap-1 text-[11px] h-5 px-1.5">
                     {kw}
                     <button
                       type="button"
@@ -306,10 +312,10 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
             )}
 
             {aiExample && (
-              <div className="mt-2 p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+              <div className="mt-1 p-2 rounded-md bg-primary/5 border border-primary/20 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-wider font-semibold text-primary/80 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" /> Exemplo de mensagem do cliente interessado
+                    <Sparkles className="h-3 w-3" /> Exemplo IA
                   </span>
                   <Button
                     type="button"
@@ -317,7 +323,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     size="sm"
                     onClick={generateExample}
                     disabled={aiLoading}
-                    className="h-6 px-2 text-xs text-muted-foreground hover:text-primary"
+                    className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-primary"
                   >
                     {aiLoading ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -326,28 +332,24 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     )}
                   </Button>
                 </div>
-                <p className="text-xs text-foreground/90 leading-relaxed italic">
+                <p className="text-[11px] text-foreground/90 leading-snug italic">
                   "{aiExample}"
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  Se o cliente interessado escrever assim no WhatsApp, este parceiro será atribuído automaticamente.
                 </p>
               </div>
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="partner-qr-phrase">Frase QR Code (opcional)</Label>
+          <div className="space-y-1">
+            <Label htmlFor="partner-qr-phrase" className="text-xs">Frase QR Code (opc)</Label>
             <Input
               id="partner-qr-phrase"
               value={qrPhrase}
               onChange={(e) => setQrPhrase(e.target.value)}
               placeholder={buildDefaultQrPhrase(keywords[0] || keywordInput.trim())}
+              className="h-8 text-sm"
             />
-            <p className="text-xs text-muted-foreground">
-              Deixe vazio para usar a frase padrão curta (mostrada acima). O link
-              do WhatsApp fica enxuto e a palavra-chave continua no texto, então a
-              atribuição do parceiro segue funcionando.
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              Deixe vazio para usar a frase padrão. O link fica enxuto e a atribuição funciona normalmente.
             </p>
           </div>
         </div>
