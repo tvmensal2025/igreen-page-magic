@@ -262,7 +262,7 @@ export function AcademyPlayer({
         <div className="w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-10">
 
           {/* ====== MOLDURA CINEMA ====== */}
-          <div className="relative group mx-auto w-full max-w-[min(100%,calc((100dvh-17rem)*16/9))] min-w-0">
+          <div className="relative group mx-auto w-full max-w-[1120px] min-w-0">
             {/* glow externo */}
             <div
               aria-hidden
