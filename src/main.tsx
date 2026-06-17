@@ -148,10 +148,18 @@ if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
   let reloadingForSW = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (reloadingForSW) return;
-    reloadingForSW = true;
-    console.info("[PWA] novo Service Worker assumiu — recarregando");
-    window.location.reload();
+    const doReload = () => {
+      if (isUserBusyTyping()) {
+        setTimeout(doReload, 15_000);
+        return;
+      }
+      reloadingForSW = true;
+      console.info("[PWA] novo Service Worker assumiu — recarregando");
+      window.location.reload();
+    };
+    doReload();
   });
+
 
   import("virtual:pwa-register")
     .then(({ registerSW }) => {
