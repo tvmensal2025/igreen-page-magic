@@ -17,8 +17,10 @@ import { PartnerFunnelChart } from "./PartnerFunnelChart";
 import { PartnerOriginDonut } from "./PartnerOriginDonut";
 import { PartnerRankingTable } from "./PartnerRankingTable";
 import { PartnerQuickCard } from "./PartnerQuickCard";
+import { PartnerPodium } from "./PartnerPodium";
 import { usePartnerAnalytics } from "./hooks/usePartnerAnalytics";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
+
 
 interface Props {
   partners: ReferralPartner[];
@@ -162,8 +164,12 @@ export function PartnerDashboard({
       </Dialog>
 
 
+      {/* Pódio Top 3 — quem mais indicou nos últimos 30 dias */}
+      <PartnerPodium partners={partners} analytics={analytics} />
+
       {/* KPIs */}
       <PartnerKpiRow analytics={analytics} activeCount={partners.length} />
+
 
       {/* Charts grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
