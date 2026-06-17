@@ -37,12 +37,13 @@ interface DadosTabProps {
 export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChange, onSave, userId }: DadosTabProps) {
   const { toast } = useToast();
 
-  // ─── Nome da IA (persona_name de ai_agent_config) ─────────────────────
-  // O consultor escolhe como sua IA se chama (default "Camila"). Esse nome
-  // aparece em todo lugar que antes era hardcoded "Camila".
-  const [personaName, setPersonaName] = useState<string>("Camila");
+  // ─── Nome da IA (consultants.assistant_name) ──────────────────────────
+  // Fonte ÚNICA usada por toda a plataforma (edge functions, fluxos, alertas).
+  // O onboarding grava aqui; aqui o consultor pode trocar a qualquer momento.
+  const [personaName, setPersonaName] = useState<string>("");
   const [personaLoading, setPersonaLoading] = useState<boolean>(true);
   const [personaSaving, setPersonaSaving] = useState<boolean>(false);
+
 
   // ─── Graduação Green (consultant_commission_settings) ──────────────────
   const { data: greenSettings } = useGreenSettings(userId);
@@ -109,13 +110,25 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
     let cancelled = false;
     (async () => {
       if (!userId) return;
-      const { data } = await supabase
-        .from("ai_agent_config")
-        .select("persona_name")
-        .eq("consultant_id", userId)
+      // Lê assistant_name diretamente da tabela consultants (fonte única).
+      // Migração transparente: se estiver vazio mas houver persona_name em
+      // ai_agent_config (legado), usa esse valor como inicial.
+      const { data: c } = await supabase
+        .from("consultants")
+        .select("assistant_name")
+        .eq("id", userId)
         .maybeSingle();
+      let nm = (c as any)?.assistant_name?.trim() || "";
+      if (!nm) {
+        const { data: legacy } = await supabase
+          .from("ai_agent_config")
+          .select("persona_name")
+          .eq("consultant_id", userId)
+          .maybeSingle();
+        nm = (legacy as any)?.persona_name?.trim() || "";
+      }
       if (cancelled) return;
-      if (data && (data as any).persona_name) setPersonaName((data as any).persona_name);
+      if (nm) setPersonaName(nm);
       setPersonaLoading(false);
     })();
     return () => { cancelled = true; };
@@ -123,18 +136,30 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
 
   const savePersonaName = async () => {
     if (!userId) return;
-    const trimmed = personaName.trim() || "Camila";
+    const trimmed = personaName.trim();
+    if (!trimmed) {
+      toast({ title: "Digite um nome", description: "Sua IA precisa de um nome.", variant: "destructive" });
+      return;
+    }
     setPersonaSaving(true);
     try {
+      // Grava em consultants.assistant_name — fonte única usada pelas edges.
+      const { error } = await supabase
+        .from("consultants")
+        .update({ assistant_name: trimmed })
+        .eq("id", userId);
+      if (error) throw error;
+      // Mantém ai_agent_config.persona_name sincronizado (compat legado).
       const { data: existing } = await supabase
         .from("ai_agent_config")
         .select("id")
         .eq("consultant_id", userId)
         .maybeSingle();
-      const { error } = existing?.id
-        ? await supabase.from("ai_agent_config").update({ persona_name: trimmed }).eq("id", existing.id)
-        : await supabase.from("ai_agent_config").insert({ consultant_id: userId, persona_name: trimmed, enabled: true });
-      if (error) throw error;
+      if (existing?.id) {
+        await supabase.from("ai_agent_config").update({ persona_name: trimmed }).eq("id", existing.id);
+      } else {
+        await supabase.from("ai_agent_config").insert({ consultant_id: userId, persona_name: trimmed, enabled: true });
+      }
       setPersonaName(trimmed);
       toast({ title: "✅ Nome da IA salvo", description: `Sua IA agora se chama "${trimmed}".`, duration: 1800 });
     } catch (e: any) {
@@ -143,6 +168,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       setPersonaSaving(false);
     }
   };
+
 
 
   // Auto-save do portal_kind quando o consultor clica no radio.
@@ -305,7 +331,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               onChange={(e) => setPersonaName(e.target.value.slice(0, 20))}
               onBlur={savePersonaName}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
-              placeholder="Ex: Camila, Ana, Bia..."
+              placeholder="Como sua IA se chama?"
               className="bg-secondary border-border"
               disabled={personaLoading || personaSaving}
               maxLength={20}
@@ -322,8 +348,9 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Salvo automaticamente ao sair do campo. Default: Camila.
+            Salvo ao sair do campo. Esse nome aparece em todas as conversas com seus leads.
           </p>
+
         </div>
       </div>
 
