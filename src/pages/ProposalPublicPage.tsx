@@ -214,11 +214,15 @@ export default function ProposalPublicPage() {
       />
 
       {/* ═══ FUNDO: a landing page do produto (a mesma dos links públicos) ═══ */}
-      {landing ? (
-        <ProductLandingSections product={landing} />
-      ) : (
-        <div className="min-h-screen bg-gradient-to-b from-[#0e8028] to-[#081c03]" />
-      )}
+      {/* Lazy-load: só baixa o bundle pesado da landing quando o modal fecha. */}
+      <Suspense fallback={<div className="min-h-screen bg-gradient-to-b from-[#0e8028] to-[#081c03]" />}>
+        {!modalOpen && landing ? (
+          <ProductLandingSections product={landing} />
+        ) : (
+          <div className="min-h-screen bg-gradient-to-b from-[#0e8028] to-[#081c03]" />
+        )}
+      </Suspense>
+
 
       {/* Botão flutuante para reabrir a proposta quando o modal está fechado */}
       {!modalOpen && (
