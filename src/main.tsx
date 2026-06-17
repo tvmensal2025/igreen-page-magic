@@ -38,12 +38,32 @@ createRoot(document.getElementById("root")!).render(<App />);
 // (deploy novo, SW serviu HTML antigo), o app trava em tela branca e o
 // usuário só consegue voltar abrindo aba anônima. Aqui detectamos esse
 // caso, limpamos caches + SW e recarregamos UMA ÚNICA VEZ por sessão.
+function isUserBusyTyping(): boolean {
+  try {
+    const el = document.activeElement as HTMLElement | null;
+    if (!el) return false;
+    const tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (el.isContentEditable) return true;
+    // Qualquer diálogo/modal aberto também adia o reload
+    if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')) return true;
+    return false;
+  } catch { return false; }
+}
+
 async function nukeAndReload(reason: string) {
   const flag = "__sw_recovered__";
+  // Não interrompe o usuário no meio de um formulário/modal
+  if (isUserBusyTyping()) {
+    console.info("[recovery] usuário ocupado, adiando reload:", reason);
+    setTimeout(() => { void nukeAndReload(reason); }, 15_000);
+    return;
+  }
   try {
     if (sessionStorage.getItem(flag)) return; // evita loop infinito
     sessionStorage.setItem(flag, "1");
   } catch { /* sessionStorage pode estar bloqueado */ }
+
   console.warn("[recovery] limpando caches + SW. Motivo:", reason);
   try {
     if ("caches" in window) {
