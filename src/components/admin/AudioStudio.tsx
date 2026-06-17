@@ -86,12 +86,20 @@ async function getCachedTTS(text: string): Promise<Blob | null> {
   if (cacheMap.has(hash)) return cacheMap.get(hash)!;
   const local = await idbGet(hash);
   if (local) { cacheMap.set(hash, local); return local; }
+  // Cache miss no bucket é esperado (objeto ainda não existe). Usamos a API
+  // pública via fetch para evitar que o SDK logue erros no console.
   try {
-    const { data, error } = await supabase.storage.from(TTS_BUCKET).download(`${hash}.mp3`);
-    if (!error && data && data.size > 0) {
-      cacheMap.set(hash, data);
-      await idbSet(hash, data);
-      return data;
+    const { data: pub } = supabase.storage.from(TTS_BUCKET).getPublicUrl(`${hash}.mp3`);
+    if (pub?.publicUrl) {
+      const r = await fetch(pub.publicUrl, { cache: "no-store" });
+      if (r.ok) {
+        const blob = await r.blob();
+        if (blob.size > 0) {
+          cacheMap.set(hash, blob);
+          await idbSet(hash, blob);
+          return blob;
+        }
+      }
     }
   } catch {}
   return null;
