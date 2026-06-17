@@ -108,7 +108,23 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       if (error) throw error;
       const text = (data as any)?.example as string | undefined;
       if (!text) throw new Error("Resposta vazia da IA");
+      // Joga a frase direto no campo editável e mantém o preview por baixo.
+      setQrPhrase(text);
       setAiExample(text);
+      // Auto-save se for edição (parceiro já existe e tem nome/cli válidos).
+      if (partner && nome.trim() && (isConsultorParceiro || cli.trim())) {
+        onSave({
+          nome: nome.trim(),
+          cli: cli.trim() || null,
+          keywords,
+          qr_phrase: text,
+          partner_igreen_id: partnerIgreenId.trim() || null,
+          notification_phone: notificationPhone.trim() || null,
+        });
+        toast({ title: "✨ Frase gerada e salva", description: "Edite no campo abaixo se quiser ajustar.", duration: 2200 });
+      } else {
+        toast({ title: "✨ Frase gerada", description: "Revise no campo abaixo e clique em Criar.", duration: 2200 });
+      }
     } catch (e: any) {
       const msg = e?.message || "Falha ao gerar exemplo";
       if (msg.includes("429"))
@@ -121,6 +137,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setAiLoading(false);
     }
   };
+
 
   const handleSubmit = () => {
     const newErrors: { nome?: string; cli?: string } = {};
