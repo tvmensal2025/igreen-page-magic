@@ -269,7 +269,7 @@ const TEMPLATE_DIMS: Record<
   TemplateId,
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
-  a4: { canvasW: 853, canvasH: 1280, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm (retrato)
+  a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm — canvas na proporção EXATA da folha (0,707): fundo cobre tudo, sem barra lateral nem distorção
   banner: { canvasW: 1008, canvasH: 1881, pdfWmm: 504, pdfHmm: 940 }, // 504×940mm (retrato)
   // Banners verticais (proporção física travada; canvas escalado ~1.18px/mm).
   banner60x90: { canvasW: 708, canvasH: 1063, pdfWmm: 600, pdfHmm: 900 }, // 60×90cm
@@ -565,6 +565,8 @@ export function PartnerQrCode({
     const { pdfWmm: wmm, pdfHmm: hmm } = TEMPLATE_DIMS[templateId];
     const orientation = wmm > hmm ? "landscape" : "portrait";
     const pdf = new jsPDF({ orientation, unit: "mm", format: [wmm, hmm] });
+    // O canvas de cada template já tem a proporção física EXATA do papel, então
+    // a arte preenche a página inteira sem esticar e sem barras (borda do lado).
     const imgData = canvas.toDataURL("image/png");
     pdf.addImage(imgData, "PNG", 0, 0, wmm, hmm);
     pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);

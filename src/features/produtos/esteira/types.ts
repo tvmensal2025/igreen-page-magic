@@ -27,6 +27,7 @@ export interface TemplateRow {
   position: number;
   name: string;
   is_active: boolean;
+  product_family: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +62,7 @@ export interface StageTemplate {
   position: number;
   name: string;
   isActive: boolean;
+  productFamily: string | null;
 }
 
 export interface SaleStage {

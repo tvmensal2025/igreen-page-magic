@@ -23,6 +23,7 @@ function mapTemplate(row: TemplateRow): StageTemplate {
     position: row.position,
     name: row.name,
     isActive: row.is_active,
+    productFamily: row.product_family,
   };
 }
 function mapStage(row: StageProgressRow): SaleStage {
@@ -54,17 +55,18 @@ function mapAttachment(row: AttachmentRow): StageAttachment {
 export async function fetchTemplate(): Promise<StageTemplate[]> {
   const { data, error } = await supabase
     .from("sale_stage_templates" as never)
-    .select("id, position, name, is_active, created_at, updated_at")
+    .select("id, position, name, is_active, product_family, created_at, updated_at")
+    .order("product_family", { ascending: true })
     .order("position", { ascending: true });
   if (error) throw error;
   return ((data as unknown as TemplateRow[]) || []).map(mapTemplate);
 }
 
-export async function addStage(name: string, position: number): Promise<StageTemplate> {
+export async function addStage(name: string, position: number, productFamily?: string | null): Promise<StageTemplate> {
   const { data, error } = await supabase
     .from("sale_stage_templates" as never)
-    .insert({ name: name.trim(), position, is_active: true } as never)
-    .select("id, position, name, is_active, created_at, updated_at")
+    .insert({ name: name.trim(), position, is_active: true, product_family: productFamily ?? null } as never)
+    .select("id, position, name, is_active, product_family, created_at, updated_at")
     .single();
   if (error) throw error;
   return mapTemplate(data as unknown as TemplateRow);

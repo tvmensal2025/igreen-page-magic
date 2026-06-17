@@ -14,7 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox } from "lucide-react";
 
 import { toast } from "sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
@@ -30,6 +30,8 @@ interface Pending {
   pos_venda_pending_stage: string;
   consultant_id: string;
   assigned_consultant_id: string | null;
+  registered_by_igreen_id: string | null;
+  registered_by_name: string | null;
 }
 
 interface Props {
@@ -39,7 +41,10 @@ interface Props {
   openSignal?: number;
 }
 
-type ActionKind = "approve" | "review" | "snooze" | "invalidate" | "missing_signature";
+type ActionKind = "approve" | "review" | "snooze" | "invalidate" | "missing_signature" | "defer_devolutiva" | "reject_pending";
+
+/** Estágio pendente usado para "estacionar" devolutivas fora da fila principal. */
+const DEVOLUTIVA_ABERTA = "devolutiva_aberta";
 
 export default function PendingApprovalDialog({ consultantId, onResolved, openSignal }: Props) {
   const [open, setOpen] = useState(false);
@@ -51,29 +56,69 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   const [confirmBulk, setConfirmBulk] = useState(false);
   /** Cliente aguardando informe da fatura antes de aprovar. */
   const [billPrompt, setBillPrompt] = useState<Pending | null>(null);
-  // Escopo: "mine" = meus clientes / "all" = toda a rede (validar de outros consultores)
-  const [scope, setScope] = useState<"mine" | "all">("mine");
+  // Filtro por licenciado: "mine" (padrão, só meus), "all" (toda rede), ou igreen_id específico
+  const [ownerFilter, setOwnerFilter] = useState<string>("mine");
+  // Aba interna: "fila" = pendências normais / "devolutivas" = devolutivas em aberto (estacionadas)
+  const [view, setView] = useState<"fila" | "devolutivas">("fila");
+  // igreen_id do consultor logado (para filtrar por registrados por ele)
+  const [myIgreenId, setMyIgreenId] = useState<string | null>(null);
+  // Lista de licenciados da rede (para o seletor de filtro)
+  const [registrants, setRegistrants] = useState<{ id: string; name: string }[]>([]);
 
   async function load() {
     setLoading(true);
     const nowIso = new Date().toISOString();
     let query = supabase
       .from("customers")
-      .select("id,name,phone_whatsapp,electricity_bill_value,andamento_igreen,pos_venda_pending_stage,consultant_id,assigned_consultant_id,pending_snoozed_until,pos_venda_invalid")
+      .select("id,name,phone_whatsapp,electricity_bill_value,andamento_igreen,pos_venda_pending_stage,consultant_id,assigned_consultant_id,pending_snoozed_until,pos_venda_invalid,registered_by_igreen_id,registered_by_name")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_invalid", false)
-      .not("pos_venda_pending_stage", "is", null);
-    // No escopo "meus", filtra pelos clientes do consultor; no escopo "all" traz toda a rede visível
-    if (scope === "mine") {
-      query = query.or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
+      .not("pos_venda_pending_stage", "is", null)
+      .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
+
+    // Filtro por licenciado
+    if (ownerFilter === "mine") {
+      if (myIgreenId) {
+        query = query.eq("registered_by_igreen_id", myIgreenId);
+      }
+      // se não tem myIgreenId ainda, mostra todos (até carregar)
+    } else if (ownerFilter !== "all") {
+      // igreen_id específico de outro licenciado
+      query = query.eq("registered_by_igreen_id", ownerFilter);
     }
+
     query = query.or(`pending_snoozed_until.is.null,pending_snoozed_until.lt.${nowIso}`);
     const { data, error } = await query;
     setLoading(false);
     if (error) { console.error(error); return; }
     const list = (data || []) as Pending[];
     setItems(list);
-    if (list.length > 0) setOpen(true);
+    // Só abre sozinho se houver pendência na fila principal (devolutivas em
+    // aberto ficam estacionadas e não forçam a abertura do modal).
+    const temFilaPrincipal = list.some((p) => p.pos_venda_pending_stage !== DEVOLUTIVA_ABERTA);
+    if (temFilaPrincipal) setOpen(true);
+  }
+
+  async function loadMyIgreenId() {
+    const { data } = await supabase.from("consultants").select("igreen_id").eq("id", consultantId).maybeSingle();
+    if (data?.igreen_id) setMyIgreenId(String(data.igreen_id));
+  }
+
+  async function loadRegistrants() {
+    const { data } = await supabase
+      .from("customers")
+      .select("registered_by_igreen_id,registered_by_name")
+      .eq("customer_origin", "igreen_sync")
+      .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`)
+      .not("registered_by_igreen_id", "is", null)
+      .not("pos_venda_pending_stage", "is", null)
+      .limit(2000);
+    const map = new Map<string, string>();
+    for (const r of (data as any) || []) {
+      const id = String(r.registered_by_igreen_id);
+      if (!map.has(id)) map.set(id, r.registered_by_name || `iGreen ${id}`);
+    }
+    setRegistrants(Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)));
   }
 
   async function checkConfig() {
@@ -84,7 +129,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     setHasConfig((count || 0) > 0);
   }
 
-  useEffect(() => { load(); checkConfig(); /* eslint-disable-next-line */ }, [consultantId, scope]);
+  useEffect(() => { load(); checkConfig(); /* eslint-disable-next-line */ }, [consultantId, ownerFilter, myIgreenId]);
+  useEffect(() => { loadMyIgreenId(); loadRegistrants(); /* eslint-disable-next-line */ }, [consultantId]);
 
   // Abertura manual via botão externo ("Validar clientes")
   useEffect(() => {
@@ -104,6 +150,17 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     // eslint-disable-next-line
   }, [consultantId]);
 
+  // Itens da fila principal (exclui devolutivas em aberto, que ficam estacionadas)
+  const filaItems = useMemo(
+    () => items.filter((it) => it.pos_venda_pending_stage !== DEVOLUTIVA_ABERTA),
+    [items],
+  );
+  // Devolutivas em aberto: lista separada, acessível pelo botão no topo
+  const devolutivasAbertas = useMemo(
+    () => items.filter((it) => it.pos_venda_pending_stage === DEVOLUTIVA_ABERTA),
+    [items],
+  );
+
   const grouped = useMemo(() => {
     const g: Record<string, Pending[]> = {
       aprovado: [],
@@ -111,12 +168,12 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
       reprovado: [],
       devolutiva: [],
     };
-    for (const it of items) {
+    for (const it of filaItems) {
       const k = it.pos_venda_pending_stage || "aprovado";
       (g[k] ||= []).push(it);
     }
     return g;
-  }, [items]);
+  }, [filaItems]);
 
   async function act(customerId: string, action: ActionKind) {
     const { data, error } = await supabase.rpc("confirm_pending_classification" as any, { _customer_id: customerId, _action: action });
@@ -130,6 +187,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
       review: "Mantido em Espera",
       invalidate: "Cliente marcado como inválido",
       missing_signature: "Marcado como falta assinatura — permanece em espera.",
+      defer_devolutiva: "Devolutiva em aberto — guardado na lista para resolver depois.",
+      reject_pending: "Reclassificado como reprovado.",
     }[action];
     toast.success(msg);
     onResolved?.();
@@ -232,28 +291,42 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
             </DialogDescription>
 
 
-            {/* Escopo: meus clientes ou toda a rede (validar de outros consultores) */}
+            {/* Filtro por licenciado */}
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40">
                 <button
                   type="button"
-                  onClick={() => setScope("mine")}
+                  onClick={() => setOwnerFilter("mine")}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    scope === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                    ownerFilter === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   Meus clientes
                 </button>
                 <button
                   type="button"
-                  onClick={() => setScope("all")}
+                  onClick={() => setOwnerFilter("all")}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    scope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                    ownerFilter === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   Toda a rede
                 </button>
               </div>
+              {registrants.length > 1 && ownerFilter !== "mine" && (
+                <select
+                  value={ownerFilter === "all" ? "all" : ownerFilter}
+                  onChange={(e) => setOwnerFilter(e.target.value)}
+                  className="h-8 px-2 text-xs rounded-md border border-border bg-background text-foreground"
+                >
+                  <option value="all">Todos os licenciados</option>
+                  {registrants.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} {r.id === myIgreenId ? "(eu)" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
               {hasConfig === false && (
                 <Button
                   size="sm"
@@ -265,15 +338,106 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                   Configurar mensagens primeiro
                 </Button>
               )}
+
+              {/* Alterna entre a fila normal e as devolutivas estacionadas */}
+              {view === "fila" ? (
+                devolutivasAbertas.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2 border-warning/50 text-warning hover:bg-warning/10 ml-auto"
+                    onClick={() => setView("devolutivas")}
+                  >
+                    <Inbox className="w-3.5 h-3.5" />
+                    Devolutivas em aberto ({devolutivasAbertas.length})
+                  </Button>
+                )
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 ml-auto"
+                  onClick={() => setView("fila")}
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Voltar para a fila
+                </Button>
+              )}
             </div>
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
             {loading ? (
               <div className="text-center py-12 text-sm text-muted-foreground">Carregando…</div>
-            ) : items.length === 0 ? (
+            ) : view === "devolutivas" ? (
+              /* ===== Lista de devolutivas em aberto (estacionadas) ===== */
+              devolutivasAbertas.length === 0 ? (
+                <div className="text-center py-12 text-sm text-muted-foreground">
+                  Nenhuma devolutiva em aberto.
+                </div>
+              ) : (
+                <div className="border rounded-xl overflow-hidden bg-warning/10 border-warning/20">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-background/40 font-medium text-sm text-warning">
+                    <PauseCircle className="w-4 h-4" />
+                    <span>{devolutivasAbertas.length} devolutiva(s) em aberto — resolva quando puder</span>
+                  </div>
+                  <div className="divide-y divide-border/30 bg-background/40">
+                    {devolutivasAbertas.map((c) => {
+                      const noPhone = isPlaceholderPhone(c.phone_whatsapp);
+                      const tone = avatarTone(c.id);
+                      return (
+                        <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                          <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${tone}`}>
+                            {initialsFrom(c.name)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate text-foreground">{c.name || "Sem nome"}</p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              {noPhone ? (
+                                <Badge variant="outline" className="text-[10px] gap-1 border-warning/40 text-warning">
+                                  <PhoneOff className="w-2.5 h-2.5" />
+                                  Sem WhatsApp
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Phone className="w-3 h-3" />
+                                  {formatPhoneBR(c.phone_whatsapp)}
+                                </span>
+                              )}
+                              {c.andamento_igreen && (
+                                <Badge variant="outline" className="text-[10px] py-0">{c.andamento_igreen}</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button size="sm" variant="default" className="h-9 px-3 font-semibold" onClick={() => handleApproveClick(c)}>
+                                    Resolver e validar
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Devolutiva resolvida — aprovar e iniciar fluxo</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button size="sm" variant="outline" className="h-9 px-3 border-border/60" onClick={() => act(c.id, "review")}>
+                                    Rever
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Voltar para a fila de classificação</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )
+            ) : filaItems.length === 0 ? (
               <div className="text-center py-12 text-sm text-muted-foreground">
-                {scope === "all"
+                {ownerFilter === "all"
                   ? "Nenhum cliente aguardando confirmação na rede."
                   : "Nenhum cliente aguardando sua confirmação."}
               </div>
@@ -369,6 +533,56 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                     </TooltipTrigger>
                                     <TooltipContent>Mantém em espera até o cliente assinar no iGreen</TooltipContent>
                                   </Tooltip>
+                                )}
+
+                                {sec.key === "devolutiva" && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-9 px-2.5 text-xs border-warning/50 text-warning hover:bg-warning/10"
+                                        onClick={() => act(c.id, "defer_devolutiva")}
+                                      >
+                                        <PauseCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
+                                        Devolutiva em aberto
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Guarda numa lista separada e some da fila até você resolver</TooltipContent>
+                                  </Tooltip>
+                                )}
+
+                                {sec.key === "aprovado" && (
+                                  <>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-9 px-2.5 text-xs border-warning/50 text-warning hover:bg-warning/10"
+                                          onClick={() => act(c.id, "defer_devolutiva")}
+                                        >
+                                          <PauseCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
+                                          Devolutiva
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Na verdade é devolutiva — guarda na lista separada</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-9 px-2.5 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+                                          onClick={() => act(c.id, "reject_pending")}
+                                        >
+                                          <XCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
+                                          Reprovado
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Na verdade é reprovado — reclassificar</TooltipContent>
+                                    </Tooltip>
+                                  </>
                                 )}
 
                                 <Tooltip>

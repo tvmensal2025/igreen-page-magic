@@ -21,6 +21,7 @@ import { computeGreenGains, graduacaoDisplay, careerBonusPercent } from "./green
 import { EntradaRulesDialog } from "./EntradaRulesDialog";
 import { loadLocalGreenSettings } from "./greenData";
 import { formatBRLFromCents } from "../lib/money";
+import { VendasEmAndamentoPanel } from "./VendasEmAndamentoPanel";
 
 interface AcompanhamentoPanelProps {
   consultantId: string;
@@ -86,6 +87,19 @@ export function AcompanhamentoPanel({ consultantId }: AcompanhamentoPanelProps) 
 
   return (
     <div className="space-y-10 text-pv-ink">
+      {/* Vendas em andamento (Placas, Solar, Seguros, Telecom) */}
+      <section className="rounded-xl border border-border/60 p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-pv-accent">
+            Vendas em Andamento
+          </span>
+          <span className="text-[10px] text-pv-ink/40">
+            Placas · Solar · Seguros · Telecom
+          </span>
+        </div>
+        <VendasEmAndamentoPanel consultantId={consultantId} />
+      </section>
+
       {/* Hero magazine 7+5 */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
         <div className="lg:col-span-7">

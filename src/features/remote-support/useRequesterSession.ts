@@ -187,13 +187,47 @@ export function useRequesterSession(userId: string | null | undefined) {
     ch
       .on("broadcast", { event: "new_code" }, ({ payload }) => {
         if (!payload?.code) return;
-        setCode(payload.code as string);
-        setCodeExpiresAt(new Date(payload.rotates_at as string).getTime());
+        const incomingExpiresAt = new Date(payload.rotates_at as string).getTime();
+        // Ignora broadcast atrasado com código já invalidado: só aplica se for
+        // mais novo que o código que já temos em tela. Evita sobrescrever um
+        // código válido (buscado pelo fallback) por um antigo que chegou tarde.
+        setCodeExpiresAt(prev => {
+          if (prev !== null && incomingExpiresAt <= prev) return prev;
+          setCode(payload.code as string);
+          return incomingExpiresAt;
+        });
       })
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
   }, [session?.id]);
+
+  // -------------------------------------------------------------------------
+  // Fallback robusto do código (resolve "código inválido" no suporte remoto)
+  // -------------------------------------------------------------------------
+  // O broadcast `new_code` é entregue só para quem já está inscrito no canal
+  // no instante do envio. Como o operador (super admin) costuma aceitar antes
+  // de o consultor terminar de se inscrever no canal `support:<id>:code`, a
+  // mensagem se perde e o consultor fica sem código para ditar — gerando o erro
+  // "código inválido" na verificação. Para garantir confiabilidade, ao entrar
+  // em `pending_code` sem código, buscamos um código fresco diretamente pela
+  // resposta HTTP do rotate-code (que devolve o código em texto puro). Damos
+  // uma janela curta para o broadcast chegar antes, evitando rotação à toa.
+  useEffect(() => {
+    if (session?.id == null || session.status !== "pending_code" || code) return;
+
+    const t = setTimeout(async () => {
+      try {
+        const r = await rotateCode(session.id);
+        setCode(r.code);
+        setCodeExpiresAt(new Date(r.rotates_at).getTime());
+      } catch (e) {
+        console.warn("[remote-support] fallback de código falhou:", e);
+      }
+    }, 600);
+
+    return () => clearTimeout(t);
+  }, [session?.id, session?.status, code]);
 
   // -------------------------------------------------------------------------
   // Auto-rotação do código a cada ~60s enquanto pending

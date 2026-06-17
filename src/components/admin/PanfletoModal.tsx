@@ -24,11 +24,13 @@ interface PanfletoModalProps {
 
 const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
 
-// ============ Dimensões nativas ============
-const A4_W = 853;
+// ============ Dimensões nativas (na proporção física EXATA do papel) ============
+// A4 = 210×297mm (0,707) · Banner = 504×940mm (0,536). Manter a proporção do
+// canvas igual à do papel garante impressão sem barra lateral e sem esticar o QR.
+const A4_W = 905;
 const A4_H = 1280;
 const BANNER_W = 1008;
-const BANNER_H = 1808;
+const BANNER_H = 1881;
 
 // ============ Templates (defaults em % do canvas — TRAVADOS) ============
 type TemplateCfg = {
@@ -279,17 +281,10 @@ export function PanfletoModal({
       if (!canvas) return;
       const { pdfWmm: wmm, pdfHmm: hmm } = template;
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [wmm, hmm] });
-      pdf.setFillColor("#0d3b1f");
-      pdf.rect(0, 0, wmm, hmm, "F");
-      const cw = canvas.width;
-      const ch = canvas.height;
-      const scale = Math.min(wmm / cw, hmm / ch);
-      const drawW = cw * scale;
-      const drawH = ch * scale;
-      const dx = (wmm - drawW) / 2;
-      const dy = (hmm - drawH) / 2;
+      // O canvas já está na proporção física EXATA do papel, então a arte
+      // preenche a página inteira sem esticar e sem barra verde nas laterais.
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
-      pdf.addImage(imgData, "JPEG", dx, dy, drawW, drawH);
+      pdf.addImage(imgData, "JPEG", 0, 0, wmm, hmm);
       const name = format === "a4" ? "panfleto-a4-210x297" : "banner-504x940";
       pdf.save(`${name}-igreen-${licenca}.pdf`);
       toast({ title: "✅ PDF baixado!" });

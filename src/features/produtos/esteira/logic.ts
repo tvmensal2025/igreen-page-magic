@@ -19,6 +19,7 @@ export function isValidStageName(name: string): boolean {
 export function appendStage(
   current: StageTemplate[],
   name: string,
+  productFamily?: string | null,
 ): StageTemplate[] {
   const normalized = normalizePositions(current);
   return [
@@ -28,6 +29,7 @@ export function appendStage(
       position: normalized.length,
       name: name.trim(),
       isActive: true,
+      productFamily: productFamily ?? null,
     },
   ];
 }

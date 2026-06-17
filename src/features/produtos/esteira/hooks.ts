@@ -47,8 +47,8 @@ export function useStageAttachments(stageId: string | undefined) {
 export function useAddStage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, position }: { name: string; position: number }) =>
-      addStage(name, position),
+    mutationFn: ({ name, position, productFamily }: { name: string; position: number; productFamily?: string | null }) =>
+      addStage(name, position, productFamily),
     onSuccess: () => qc.invalidateQueries({ queryKey: TEMPLATE_KEY }),
   });
 }

@@ -63,10 +63,12 @@ import type { Etapa, PerfilOutput, PlannerOutput } from "./comum/types.ts";
 // trava determinística roda sempre; o crítico de IA só nestas etapas.
 const ETAPAS_RICAS = new Set<Etapa>(["simulacao", "consideracao", "finalizando"]);
 
-// Limite duro de tamanho da mensagem ao cliente (mesmo teto da Vendedora_Atual).
-const LIMITE_CARACTERES = 600;
-// Limite duro de linhas não-vazias (mesmo teto da Vendedora_Atual).
-const LIMITE_LINHAS = 4;
+// Limite duro de tamanho da mensagem ao cliente. Reduzido de 600 → 450 para
+// direcionar a IA a respostas mais OBJETIVAS e curtas (sem proibir — é só um
+// teto de segurança; o tom/objetividade vêm do prompt do Escritor).
+const LIMITE_CARACTERES = 450;
+// Limite duro de linhas não-vazias. Reduzido de 4 → 3 pela mesma razão.
+const LIMITE_LINHAS = 3;
 
 /**
  * Perfil neutro usado quando o Guarda não recebe um `PerfilOutput` rico.
@@ -170,18 +172,69 @@ function normalizarTexto(bruto: string): string {
   }
   s = mantidas.join("\n").trim();
 
-  // Corta no limite de caracteres, preferindo terminar numa pontuação.
+  // Corte de tamanho: NUNCA corta no meio de uma frase. Se o texto passar do
+  // limite, recuamos até o fim da última frase completa (. ? ! …) que couber.
+  // Se nenhuma frase inteira couber dentro do limite, mantemos a PRIMEIRA frase
+  // completa inteira (mesmo que ela passe um pouco do limite) — é melhor enviar
+  // uma frase ligeiramente maior do que entregar texto cortado pela metade.
+  // Sem nenhuma pontuação de fim de frase, preserva o texto como está.
   if (s.length > LIMITE_CARACTERES) {
-    const corte = s.slice(0, LIMITE_CARACTERES);
-    const parada = Math.max(
-      corte.lastIndexOf("."),
-      corte.lastIndexOf("?"),
-      corte.lastIndexOf("!"),
-    );
-    s = parada > 200 ? corte.slice(0, parada + 1) : corte;
+    s = cortarEmFraseCompleta(s, LIMITE_CARACTERES);
   }
 
   return s.trim();
+}
+
+/**
+ * Corta `texto` respeitando fronteiras de frase: o resultado SEMPRE termina numa
+ * frase completa (pontuação final `.`/`?`/`!`/`…`) ou no próprio texto inteiro.
+ * Nunca devolve uma frase pela metade.
+ *
+ * Estratégia:
+ *   1. Procura a última pontuação de fim de frase ANTES do limite → corta ali.
+ *   2. Se não houver nenhuma antes do limite, pega a PRIMEIRA frase completa do
+ *      texto (mesmo que ultrapasse o limite) — frase inteira é melhor que cortada.
+ *   3. Sem nenhuma pontuação de fim de frase, devolve o texto original intacto.
+ */
+function cortarEmFraseCompleta(texto: string, limite: number): string {
+  const s = String(texto || "");
+  if (s.length <= limite) return s;
+
+  // Regex de fim de frase: pontuação seguida de espaço/quebra ou fim do texto.
+  // Inclui reticências unicode (…) e a sequência "...".
+  const RE_FIM_FRASE = /([.!?…]|\.\.\.)(?=\s|$)/g;
+  const cortes: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = RE_FIM_FRASE.exec(s)) !== null) {
+    // índice do último caractere da pontuação (inclusivo).
+    cortes.push(m.index + m[0].length);
+  }
+  if (cortes.length === 0) {
+    // Sem pontuação de fim de frase: não há como cortar sem partir a frase.
+    return s;
+  }
+
+  // 1) Última fronteira de frase que cabe dentro do limite.
+  let melhor = -1;
+  for (const c of cortes) {
+    if (c <= limite) melhor = c;
+    else break;
+  }
+  if (melhor > 0) return s.slice(0, melhor).trim();
+
+  // 2) Nenhuma frase cabe no limite "macio" → mantém a primeira frase inteira,
+  //    desde que ela não estoure o TETO ESTRUTURAL da Vendedora_Atual (600),
+  //    que rejeitaria a mensagem como "longa" e a impediria de sair. Frase
+  //    completa é melhor que cortada, mas nunca a ponto de bloquear o envio.
+  const TETO_ESTRUTURAL = 600;
+  if (cortes[0] <= TETO_ESTRUTURAL) return s.slice(0, cortes[0]).trim();
+
+  // 3) Caso extremo: primeira "frase" maior que o teto estrutural (texto sem
+  //    pontuação natural). Corta no último espaço antes do limite para ao menos
+  //    não partir uma PALAVRA no meio; se não houver espaço, corta no limite.
+  const ate = s.slice(0, limite);
+  const ultimoEspaco = ate.lastIndexOf(" ");
+  return (ultimoEspaco > 0 ? ate.slice(0, ultimoEspaco) : ate).trim();
 }
 
 // ─── Tarefa 6.2 — Bloqueios detalhados (Requisito 9.1, 9.2, 9.3, 9.5, 9.6) ───

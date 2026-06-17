@@ -47,10 +47,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useProducts } from "../catalogo/hooks";
 import { PRODUCT_FAMILY_LABEL, type Product } from "../catalogo/types";
 import { useSales, useUpdateSaleStatus } from "../vendas/hooks";
+import { useProposals } from "../orcamento/hooks";
 import { SALE_STATUS_LABEL, type Sale, type SaleStatus } from "../vendas/types";
+import type { Proposal } from "../orcamento/types";
 import { formatBRLFromCents } from "../lib/money";
 import { RegistrarVendaDialog } from "./RegistrarVendaDialog";
 import { pvSerif } from "../theme";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 // Etapas exibidas no board, na ordem do funil (venda única, até o aceite).
 const PIPELINE_STAGES: SaleStatus[] = ["interesse", "negociando", "fechado", "perdido"];
@@ -94,6 +98,42 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
     productId: productFilter === "all" ? undefined : productFilter,
   });
   const updateStatus = useUpdateSaleStatus(consultantId);
+  const { data: proposals = [] } = useProposals(consultantId);
+
+  // Buscar nomes dos clientes referenciados pelas vendas.
+  const customerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of sales) {
+      if (s.customerId) ids.add(s.customerId);
+    }
+    return [...ids];
+  }, [sales]);
+
+  const { data: customersMap = new Map<string, string>() } = useQuery({
+    queryKey: ["pipeline-customers", customerIds.join(",")],
+    queryFn: async () => {
+      if (customerIds.length === 0) return new Map<string, string>();
+      const { data } = await supabase
+        .from("customers")
+        .select("id, name")
+        .in("id", customerIds);
+      const map = new Map<string, string>();
+      for (const c of (data || []) as Array<{ id: string; name: string | null }>) {
+        if (c.name) map.set(c.id, c.name);
+      }
+      return map;
+    },
+    enabled: customerIds.length > 0,
+  });
+
+  // Mapa sale_id → proposta (para mostrar origem no card).
+  const proposalBySaleId = useMemo(() => {
+    const map = new Map<string, Proposal>();
+    for (const p of proposals) {
+      if (p.saleId) map.set(p.saleId, p);
+    }
+    return map;
+  }, [proposals]);
 
   const productById = useMemo(() => {
     const map = new Map<string, Product>();
@@ -292,6 +332,8 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
                   sale={sale}
                   product={productById.get(sale.productId)}
                   dark={isHighlight}
+                  customerName={sale.customerId ? customersMap.get(sale.customerId) ?? null : null}
+                  originProposal={proposalBySaleId.get(sale.id) ?? null}
                   onDragStart={() => setDraggedId(sale.id)}
                   onOpenAcompanhamento={
                     sale.status === "fechado" ? () => setStagePanelSale(sale) : undefined
@@ -419,16 +461,20 @@ interface SaleCardProps {
   sale: Sale;
   product?: Product;
   dark: boolean;
+  customerName: string | null;
+  originProposal: Proposal | null;
   onDragStart: () => void;
   onOpenAcompanhamento?: () => void;
 }
 
-function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: SaleCardProps) {
+function SaleCard({ sale, product, dark, customerName, originProposal, onDragStart, onOpenAcompanhamento }: SaleCardProps) {
   const familyLabel = product ? PRODUCT_FAMILY_LABEL[product.family] : "Produto";
   const action = NEXT_ACTION[sale.status];
   const daysAgo = Math.floor((Date.now() - new Date(sale.updatedAt).getTime()) / 86400000);
   const timeLabel =
     daysAgo === 0 ? "hoje" : daysAgo === 1 ? "ontem" : `${daysAgo}d atrás`;
+  // Nome a exibir: prioriza customer, senão pega recipientName da proposta de origem.
+  const displayName = customerName || originProposal?.recipientName || null;
 
   if (dark) {
     return (
@@ -446,6 +492,9 @@ function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: Sa
         <h4 className={`text-base mt-2 text-pv-bg font-medium leading-tight`}>
           {product?.name ?? "Produto"}
         </h4>
+        {displayName && (
+          <p className="text-[11px] text-white/60 mt-0.5 truncate">{displayName}</p>
+        )}
         <div className="mt-3 flex items-center justify-between">
           {sale.pointsKwh > 0 && (
             <span className="text-xs text-pv-bg/60">{KWH(sale.pointsKwh)}</span>
@@ -474,6 +523,11 @@ function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: Sa
             </button>
           )}
         </div>
+        {originProposal && (
+          <p className="mt-2 text-[9px] text-white/30 italic truncate">
+            Via orçamento · {originProposal.recipientPhone ?? ""}
+          </p>
+        )}
       </div>
     );
   }
@@ -493,6 +547,9 @@ function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: Sa
       <h4 className="text-base mt-1.5 text-pv-ink font-medium leading-tight">
         {product?.name ?? "Produto"}
       </h4>
+      {displayName && (
+        <p className="text-[11px] text-pv-ink/60 mt-0.5 truncate">{displayName}</p>
+      )}
       <div className="mt-3 flex items-center justify-between">
         <div className="text-xs text-pv-ink/70">
           {sale.pointsKwh > 0 ? KWH(sale.pointsKwh) : "—"}
@@ -507,6 +564,11 @@ function SaleCard({ sale, product, dark, onDragStart, onOpenAcompanhamento }: Sa
       </div>
       {sale.notes && (
         <p className="mt-2 text-[10px] text-pv-ink/50 line-clamp-2 italic">{sale.notes}</p>
+      )}
+      {originProposal && (
+        <p className="mt-1 text-[9px] text-pv-ink/40 italic truncate">
+          Via orçamento · {originProposal.recipientPhone ?? ""}
+        </p>
       )}
     </div>
   );

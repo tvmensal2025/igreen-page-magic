@@ -1,9 +1,37 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { writeFileSync } from "fs";
 import { VitePWA } from "vite-plugin-pwa";
 
+// ID único deste build (timestamp). É embutido no bundle (__BUILD_ID__) e
+// também gravado em /version.json. O app compara os dois em runtime para
+// detectar quando há uma versão nova publicada e forçar a limpeza de cache.
+const BUILD_ID = Date.now().toString();
+
+// Plugin minúsculo: grava dist/version.json ao final do build.
+function emitVersionJson() {
+  return {
+    name: "emit-version-json",
+    apply: "build" as const,
+    closeBundle() {
+      try {
+        writeFileSync(
+          path.resolve(__dirname, "dist/version.json"),
+          JSON.stringify({ buildId: BUILD_ID }),
+        );
+      } catch (e) {
+        console.warn("[emit-version-json] falhou:", e);
+      }
+    },
+  };
+}
+
 export default defineConfig({
+  define: {
+    // Disponível em todo o código do app como string literal.
+    __BUILD_ID__: JSON.stringify(BUILD_ID),
+  },
   server: {
     host: "0.0.0.0",
     port: 8080,
@@ -26,6 +54,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    emitVersionJson(),
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: null, // registramos manualmente em main.tsx (com guards)
@@ -54,7 +83,7 @@ export default defineConfig({
           /^\/r\//, // link curto de parceiro: deixa o redirect 302 do Cloudflare agir (nunca servir o app do cache)
         ],
         // Não tente precachear o manifest manual nem assets gigantes.
-        globIgnores: ["**/manifest.json", "**/sw.js"],
+        globIgnores: ["**/manifest.json", "**/sw.js", "**/version.json"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
           {
@@ -73,6 +102,12 @@ export default defineConfig({
           {
             // Supabase / edge functions / WhatsApp media — NUNCA cachear.
             urlPattern: /^https:\/\/[^/]*supabase\.(co|in)\//i,
+            handler: "NetworkOnly",
+          },
+          {
+            // version.json — sempre rede. É o gatilho do version gate; cachear
+            // aqui anularia a detecção de nova versão.
+            urlPattern: ({ url }) => url.pathname === "/version.json",
             handler: "NetworkOnly",
           },
           {

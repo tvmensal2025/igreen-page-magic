@@ -81,6 +81,24 @@ window.addEventListener("unhandledrejection", (e) => {
   }
 });
 
+// ─── Version gate: força atualização mesmo com cache teimoso ───────────────
+// Mesmo com o Service Worker em auto-update, alguns navegadores/CDN seguram
+// um index.html antigo ou um SW que não troca, deixando o usuário "preso" numa
+// versão velha. Para cobrir isso, comparamos o ID embutido neste bundle
+// (__BUILD_ID__) com o publicado em /version.json (servido sempre da rede).
+// Se forem diferentes, há um deploy novo: limpamos caches + SW e recarregamos
+// uma única vez (nukeAndReload já tem trava anti-loop por sessão).
+async function checkVersionGate() {
+  try {
+    const res = await fetch(`/version.json?_=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const { buildId } = await res.json();
+    if (buildId && typeof buildId === "string" && buildId !== __BUILD_ID__) {
+      await nukeAndReload(`version-gate:${__BUILD_ID__}->${buildId}`);
+    }
+  } catch { /* offline ou version.json ausente: ignora silenciosamente */ }
+}
+
 // ─── PWA: registro de Service Worker com guards de iframe/preview ──────────
 // Service worker quebra o preview do Lovable (cacheia builds velhos).
 // Só registramos em produção real (domínio publicado / igreen.cloud).
@@ -127,8 +145,14 @@ if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
         onRegisteredSW(_swUrl, r) {
           if (!r) return;
           // Checa por atualização a cada 60s enquanto a aba estiver aberta.
-          const poll = () => r.update().catch(() => {});
+          const poll = () => {
+            r.update().catch(() => {});
+            void checkVersionGate();
+          };
           setInterval(poll, 60_000);
+          // Checagem imediata ao registrar — pega usuário que abriu já com
+          // bundle antigo em cache.
+          void checkVersionGate();
           // E sempre que a aba volta a ficar visível (usuário trocou de
           // aba/celular e voltou), checa imediatamente — pega deploys
           // feitos enquanto a aba estava em background.

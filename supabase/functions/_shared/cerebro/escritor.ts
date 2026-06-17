@@ -343,7 +343,12 @@ function montarPromptSistema(entrada: EntradaEscritor): string {
     [
       "# Regras da escrita",
       "- Escreva APENAS a mensagem que vai ao cliente, em português do Brasil comercial.",
-      "- Curto: no máximo 3 linhas. Use *negrito assim* quando precisar (nunca **assim**).",
+      "- Seja OBJETIVA e direta: vá ao ponto, no máximo 2 a 3 linhas curtas.",
+      "- SEMPRE termine a mensagem com a frase completa e pontuação final.",
+      "  Nunca pare no meio de uma frase nem deixe a ideia pela metade.",
+      "- Uma ideia por mensagem e UMA pergunta por vez. Nada de parágrafos longos,",
+      "  listas, nem repetir o que já foi dito. Menos é mais.",
+      "- Use *negrito assim* só quando precisar destacar (nunca **assim**).",
       "- Não invente dados, valores, prazos nem promessas. Se não souber, não afirme.",
       "- Não escolha nem anuncie próximos passos do cadastro: só trate o passo atual.",
       "- Não exponha termos técnicos, códigos, erros ou nada de bastidor.",

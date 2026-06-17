@@ -1,11 +1,18 @@
 // =============================================================================
-// Esteira — Admin do Modelo de Etapas
+// Esteira — Admin do Modelo de Etapas (agrupado por família)
 // =============================================================================
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   useAddStage,
@@ -18,6 +25,20 @@ import {
 import { isValidStageName } from "./logic";
 import type { StageTemplate } from "./types";
 
+const FAMILY_OPTIONS = [
+  { value: "placas", label: "Placas Solares" },
+  { value: "energia", label: "Energia (Solar)" },
+  { value: "telecom", label: "Telecom" },
+  { value: "seguros", label: "Seguros" },
+] as const;
+
+const FAMILY_LABEL: Record<string, string> = {
+  placas: "Placas Solares",
+  energia: "Energia (Solar)",
+  telecom: "Telecom",
+  seguros: "Seguros",
+};
+
 export function StageTemplateAdmin() {
   const { data: stages = [], isLoading } = useStageTemplate();
   const seed = useSeedDefaultTemplate();
@@ -25,14 +46,34 @@ export function StageTemplateAdmin() {
   const reorder = useReorderStages();
   const { toast } = useToast();
   const [newName, setNewName] = useState("");
+  const [newFamily, setNewFamily] = useState<string>("placas");
+
+  // Agrupar por família.
+  const grouped = useMemo(() => {
+    const map = new Map<string, StageTemplate[]>();
+    for (const s of stages) {
+      const key = s.productFamily ?? "__generic";
+      const list = map.get(key) ?? [];
+      list.push(s);
+      map.set(key, list);
+    }
+    // Ordenar cada grupo por position.
+    for (const [, list] of map) {
+      list.sort((a, b) => a.position - b.position);
+    }
+    return map;
+  }, [stages]);
 
   const handleAdd = async () => {
     if (!isValidStageName(newName)) {
       toast({ title: "Nome inválido", description: "Use 1 a 80 caracteres.", variant: "destructive" });
       return;
     }
+    // Conta quantas etapas já existem nessa família para definir a position.
+    const familyStages = grouped.get(newFamily) ?? [];
+    const nextPosition = familyStages.length;
     try {
-      await add.mutateAsync({ name: newName, position: stages.length });
+      await add.mutateAsync({ name: newName, position: nextPosition, productFamily: newFamily });
       setNewName("");
     } catch (err) {
       toast({
@@ -43,8 +84,9 @@ export function StageTemplateAdmin() {
     }
   };
 
-  const move = async (id: string, dir: -1 | 1) => {
-    const ordered = [...stages].sort((a, b) => a.position - b.position);
+  const move = async (id: string, dir: -1 | 1, family: string) => {
+    const familyStages = grouped.get(family) ?? [];
+    const ordered = [...familyStages].sort((a, b) => a.position - b.position);
     const idx = ordered.findIndex((s) => s.id === id);
     const swap = idx + dir;
     if (idx < 0 || swap < 0 || swap >= ordered.length) return;
@@ -65,11 +107,11 @@ export function StageTemplateAdmin() {
   if (isLoading) return <p className="text-xs text-pv-ink/40">Carregando...</p>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {stages.length === 0 && (
         <div className="border border-dashed border-pv-mid/50 p-4 text-center">
           <p className="text-sm text-pv-ink/70 mb-2">
-            Nenhuma etapa cadastrada. Inicialize com o modelo padrão (4 etapas).
+            Nenhuma etapa cadastrada. Inicialize com o modelo padrão.
           </p>
           <Button
             size="sm"
@@ -81,22 +123,56 @@ export function StageTemplateAdmin() {
         </div>
       )}
 
-      <ul className="space-y-2">
-        {stages.map((s) => (
-          <TemplateRowItem key={s.id} stage={s} onMove={move} />
-        ))}
-      </ul>
+      {/* Agrupado por família */}
+      {FAMILY_OPTIONS.map(({ value: familyKey, label: familyLabel }) => {
+        const familyStages = grouped.get(familyKey) ?? [];
+        if (familyStages.length === 0) return null;
+        return (
+          <section key={familyKey} className="space-y-2">
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-accent">
+              {familyLabel}
+            </h4>
+            <ul className="space-y-1.5">
+              {familyStages.map((s) => (
+                <TemplateRowItem
+                  key={s.id}
+                  stage={s}
+                  onMove={(id, dir) => move(id, dir, familyKey)}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
 
-      <div className="flex items-center gap-2 border-t border-pv-mid/30 pt-3">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="Nova etapa..."
-          className="h-9 text-sm"
-        />
-        <Button onClick={() => void handleAdd()} disabled={add.isPending} size="sm">
-          <Plus className="h-4 w-4 mr-1" /> Adicionar
-        </Button>
+      {/* Adicionar nova etapa */}
+      <div className="border-t border-pv-mid/30 pt-4 space-y-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-pv-ink/60">
+          Adicionar etapa
+        </p>
+        <div className="flex items-center gap-2">
+          <Select value={newFamily} onValueChange={setNewFamily}>
+            <SelectTrigger className="h-9 text-xs w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FAMILY_OPTIONS.map((f) => (
+                <SelectItem key={f.value} value={f.value} className="text-xs">
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Nome da etapa..."
+            className="h-9 text-sm flex-1"
+          />
+          <Button onClick={() => void handleAdd()} disabled={add.isPending} size="sm">
+            <Plus className="h-4 w-4 mr-1" /> Adicionar
+          </Button>
+        </div>
       </div>
     </div>
   );
