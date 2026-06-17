@@ -231,16 +231,29 @@ export async function notifyNewLead(
     console.log(`[notify-new-lead] skip dedup-db lead=${lead.id}`);
     return false;
   }
+  // Nome configurado da IA pelo consultor (sem fallback "Camila").
+  let assistantName = "Sua IA";
+  try {
+    const admin = adminClient();
+    const { data: c } = await admin
+      .from("consultants")
+      .select("assistant_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const nm = (c as any)?.assistant_name?.trim();
+    if (nm) assistantName = nm;
+  } catch (_e) { /* usa default */ }
   const text =
     `🎉 *NOVO LEAD CHEGOU!*\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `👤 *Nome:* ${lead.name?.trim() || "(sem nome ainda)"}\n` +
     `📱 *WhatsApp:* ${formatPhoneBR(lead.phone_whatsapp)}\n` +
     `🕐 *Entrou em:* ${nowBRT()}\n\n` +
-    `🤖 A IA Camila já iniciou o atendimento.\n` +
+    `🤖 ${assistantName} já iniciou o atendimento.\n` +
     `Acompanhe no painel do CRM.`;
   return sendRawToAlertNumber(consultantId, text);
 }
+
 
 export async function notifyHandoff(
   consultantId: string,

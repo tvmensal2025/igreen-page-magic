@@ -45,6 +45,18 @@ export function ProdutosModule({
     setTab(initialTab);
   }, [initialTab]);
 
+  // Após gerar+enviar uma proposta, troca pra aba de Acompanhamento para o
+  // consultor ver imediatamente o status do envio.
+  useEffect(() => {
+    const handler = () => {
+      setTab("acompanhamento");
+      onTabChange?.("acompanhamento");
+    };
+    window.addEventListener("produtos:proposta-enviada", handler);
+    return () => window.removeEventListener("produtos:proposta-enviada", handler);
+  }, [onTabChange]);
+
+
   const change = (next: ProdutosTabId) => {
     setTab(next);
     onTabChange?.(next);

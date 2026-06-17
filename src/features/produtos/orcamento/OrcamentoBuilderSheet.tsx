@@ -156,12 +156,11 @@ export function OrcamentoBuilderSheet({
     (isMarketFree || quote.amountCents > 0) &&
     !submitting;
 
-  const handleCreate = async () => {
-    if (!product || !recipient || !quote) return;
+  const handleCreate = async (): Promise<string | null> => {
+    if (!product || !recipient || !quote) return null;
     setSubmitting(true);
     try {
       // Detalhes do cálculo + formas de pagamento (Placas) num só line_items.
-      // As formas de pagamento são digitadas em reais → convertemos para centavos.
       const paymentItems = isProjectOnce
         ? paymentOptionsToLineItems(paymentsToCents(payments))
         : [];
@@ -182,26 +181,26 @@ export function OrcamentoBuilderSheet({
 
       const link = `${PUBLIC_BASE}/proposta/${proposal.publicToken}`;
       setCreatedLink(link);
-      toast({ title: "Orçamento criado!", description: "Link profissional gerado." });
+      return link;
     } catch (err) {
       toast({
         title: "Erro ao criar orçamento",
         description: err instanceof Error ? err.message : "Falha desconhecida",
         variant: "destructive",
       });
+      return null;
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleSendWhatsApp = async () => {
-    if (!createdLink || !recipient || !product) return;
+  const sendViaWhatsApp = async (link: string) => {
+    if (!recipient || !product) return false;
     if (!instanceName) {
       toast({ title: "WhatsApp não conectado", variant: "destructive" });
-      return;
+      return false;
     }
 
-    // Resumo das formas de pagamento (Placas) na mensagem do WhatsApp.
     const validPayments = isProjectOnce
       ? paymentOptionsToLineItems(paymentsToCents(payments))
       : [];
@@ -223,7 +222,7 @@ export function OrcamentoBuilderSheet({
       `Preparei um orçamento de *${product.name}* para você.\n` +
       `${quote ? `${quote.label}: *${BRL(quote.amountCents)}*${quote.period === "month" ? "/mês" : ""}\n` : ""}` +
       `${paymentSummary}` +
-      `\nVeja os detalhes e responda por aqui:\n${createdLink}`;
+      `\nVeja os detalhes e responda por aqui:\n${link}`;
 
     const result = await sendWhatsAppMessage({
       instanceName,
@@ -236,15 +235,39 @@ export function OrcamentoBuilderSheet({
     });
 
     if (result.status === "sent" || result.status === "pending") {
-      toast({ title: "Orçamento enviado no WhatsApp!" });
+      return true;
+    }
+    toast({
+      title: "Não foi possível enviar",
+      description: result.error || "Tente copiar o link e enviar manualmente.",
+      variant: "destructive",
+    });
+    return false;
+  };
+
+  // Fluxo combinado em UM CLIQUE: cria a proposta e já manda no WhatsApp.
+  // Depois fecha o sheet e dispara evento para o módulo trocar pra aba
+  // "Acompanhamento" com a nova proposta destacada.
+  const handleCreateAndSend = async () => {
+    const link = await handleCreate();
+    if (!link) return;
+    const ok = await sendViaWhatsApp(link);
+    if (ok) {
+      toast({ title: "✅ Orçamento enviado!", description: "Acompanhe na aba Acompanhamento." });
+      window.dispatchEvent(new CustomEvent("produtos:proposta-enviada", { detail: { link } }));
       onOpenChange(false);
       resetForm();
-    } else {
-      toast({
-        title: "Não foi possível enviar",
-        description: result.error || "Tente copiar o link e enviar manualmente.",
-        variant: "destructive",
-      });
+    }
+  };
+
+  const handleSendWhatsApp = async () => {
+    if (!createdLink) return;
+    const ok = await sendViaWhatsApp(createdLink);
+    if (ok) {
+      toast({ title: "Orçamento enviado no WhatsApp!" });
+      window.dispatchEvent(new CustomEvent("produtos:proposta-enviada", { detail: { link: createdLink } }));
+      onOpenChange(false);
+      resetForm();
     }
   };
 
@@ -253,6 +276,7 @@ export function OrcamentoBuilderSheet({
     navigator.clipboard.writeText(createdLink);
     toast({ title: "Link copiado!" });
   };
+
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -588,16 +612,42 @@ export function OrcamentoBuilderSheet({
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={!canSubmit}
-                    onClick={handleCreate}
-                    className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-pv-accent hover:bg-pv-ink disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
-                  >
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {submitting ? "Criando..." : "Criar orçamento"}
-                  </button>
+                  {/* CTA combinado: cria + envia no WhatsApp num clique só.
+                      Se o WhatsApp não estiver conectado, cai no modo legado
+                      (só cria o link e mostra Copiar/Enviar separados). */}
+                  {instanceName ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!canSubmit}
+                        onClick={handleCreateAndSend}
+                        className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-pv-accent hover:bg-pv-ink disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
+                      >
+                        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        {submitting ? "Enviando..." : "Gerar e enviar no WhatsApp"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canSubmit}
+                        onClick={handleCreate}
+                        className="w-full mt-2 text-[11px] text-pv-ink/60 hover:text-pv-ink underline underline-offset-4 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Só gerar link (não enviar)
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!canSubmit}
+                      onClick={handleCreate}
+                      className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-pv-accent hover:bg-pv-ink disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
+                    >
+                      {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {submitting ? "Criando..." : "Criar orçamento"}
+                    </button>
+                  )}
                 </aside>
+
               </div>
             )}
           </div>

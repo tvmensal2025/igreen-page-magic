@@ -1,38 +1,71 @@
-# Auditoria — Parceiros, Áudio (TTS) e Evolution
+## Plano — 4 frentes
 
-## 1) Criação de Parceiros — OK
-Verificado em `src/components/admin/parceiros/hooks/useReferralPartners.ts` e `PartnerForm.tsx`:
-- Sanitização de entrada (trim, dedup de keywords, campos vazios → null).
-- Validação de sessão antes do insert (mensagem clara se sem login).
-- Retry leve (3x, 120ms) para colisão de `short_code` (unique).
-- Mensagens de erro humanas no toast.
-- CLI opcional quando há `partner_igreen_id` (consultor parceiro).
+### 1) Nome da IA (assistant_name) — parar de aparecer "Camila"
 
-Status: criar parceiro não deve mais falhar silenciosamente.
+O onboarding e a aba Dados já salvam `consultants.assistant_name`, mas alguns pontos ainda gravam/usam "Camila" como fallback. Trocar para usar sempre o nome do consultor.
 
-## 2) Áudio / bucket `tts-cache` — OK
-- Edge function `supabase/functions/ensure-tts-bucket/index.ts` testada agora: HTTP 200, `{ ok: true, created: false }` → bucket já existe.
-- Query em `storage.buckets`: `tts-cache` presente, `public=true`, `file_size_limit=10485760`.
-- `AudioStudio.tsx` usa `fetch` + `getPublicUrl` com `cache: "no-store"` para não poluir console com 400/404 esperados de cache miss; fallback para ElevenLabs via `tts-proxy` segue funcionando.
+**Backend (edge functions):**
 
-Os erros 400 que apareciam (`tts-cache/v6_*.mp3`) eram cache miss legítimos quando o bucket ainda não existia. Agora retornam 404 silencioso e o áudio é regenerado via `tts-proxy`.
+- `supabase/functions/_shared/notify-consultant.ts` (linha 240): mensagem "🤖 A IA Camila já iniciou…" — buscar `assistant_name` do consultor e interpolar.
+- `supabase/functions/_shared/fluxo-b-ia/agent.ts` (linha 337): no histórico passado pro LLM, trocar `"Camila"` fixo por `assistantName` já resolvido na linha 78.
+- `supabase/functions/ai-agent-router/index.ts` (linha 191): manter `assistant_name` mas trocar fallback `"Camila"` por `"Assistente"` (só usado se o consultor não definiu nada).
+- `supabase/functions/_shared/fluxo-b-ia/agent.ts` (linha 78): mesmo fallback → `"Assistente"`.
 
-## 3) Evolution — sem mudanças nesta rodada
-Não houve alteração no fluxo Evolution. Os erros 403 do `pps.whatsapp.net` no console são **avatars do WhatsApp** servidos pela Meta com URL temporária assinada — expiram em horas, é normal e não afeta o sistema (são fotos de perfil dos leads). Não há ação útil do nosso lado além de cachear/ocultar quando 403.
+**Frontend (aba Dados):**
 
-## 4) Ruídos remanescentes no console (não bloqueantes)
-- `QuotaExceededError` no `workbox`/`sw-app.js`: storage do Service Worker cheio (cache de PWA). Não impede uso. Solução futura: limpar cache antigo em `public/sw.js` (`caches.delete`) com TTL — fora do escopo desta rodada.
-- React Router v7 `startTransition` warning: aviso informativo, não é bug.
+- `src/components/admin/DadosTab.tsx`: trocar default state `"Camila"` por string vazia e placeholder `"Como sua IA se chama?"`; salvar exatamente o que o usuário digitou (nunca sobrescrever para Camila).
 
-## Melhorias opcionais a propor
+**Comentários e textos visuais com "Camila"** (página interna, não enviada ao lead): manter — referem-se ao nome do fluxo histórico, não à identidade da IA do consultor.
 
-a) **Auto-chamar `ensure-tts-bucket` no boot do AudioStudio** (uma vez por sessão) para autorreparar caso alguém apague o bucket no painel.
+### 2) Frase IA do parceiro — preencher direto e salvar
 
-b) **Esconder avatares com 403** no UI (onError → fallback iniciais), removendo o ruído visual.
+Hoje (`PartnerForm.tsx`, função `generateExample`) a IA mostra o texto num card de preview separado e o usuário precisa copiar manualmente para a frase.
 
-c) **Limpeza do cache do SW** para parar `QuotaExceededError` (incrementar versão do cache e remover antigos).
+Mudar para:
 
-Nenhuma das três é necessária agora — o sistema está funcional. Posso aplicar a/b/c se você confirmar.
+- Quando a IA responder, **jogar o texto direto no campo "Frase QR Code"** (`qrPhrase`), deixando-o editável.
+- Se for edição de parceiro existente, disparar `onSave` automaticamente após gerar (auto-save).
+- Se for criação de novo parceiro, apenas preencher o campo (precisa de nome/CLI pra salvar) e mostrar um toast "Frase gerada — revise e clique Criar".
+- Remover o card "Exemplo IA" duplicado; manter botão de regerar ao lado do campo.
 
-## Veredito
-Parceiros: 100%. TTS bucket: 100%. Evolution: sem mudanças (não foi tocado). Ruídos restantes são cosméticos. Aprovar este plano apenas se quiser que eu aplique as melhorias opcionais a/b/c — caso contrário, está tudo em ordem.
+### 3) Proposta lenta no celular do cliente
+
+`src/pages/ProposalPublicPage.tsx` (550 linhas) hoje:
+
+- Carrega `useProducts()` (catálogo inteiro) antes de mostrar a proposta.
+- Importa `ProductLandingSections` no bundle inicial (landing pesada de fundo).
+- Modal abre só depois do `getPublicProposal` + catálogo resolver.
+
+Otimizações:
+
+- **Renderizar a proposta assim que `getPublicProposal` retornar** (não esperar `useProducts`).
+- **Lazy-load** de `ProductLandingSections` + `ProductCatalog` via `React.lazy` + `Suspense` (a landing de fundo só importa quando o modal fecha).
+- Adicionar `<SEOHead>` com `<link rel="preconnect">` para o domínio do Supabase + skeleton imediato (sem `<LoadingScreen/>` cheio que bloqueia).
+- Marcar imagens da landing com `loading="lazy"` e `fetchpriority="low"`; logo/avatar do consultor com `fetchpriority="high"`.
+- No `getPublicProposal` (edge), devolver só o essencial primeiro; mover dados de landing pra segunda chamada (se ainda não estiver assim — confirmar no `publicApi.ts`).
+
+Meta: First Contentful Paint do modal < 1.5s em 4G.
+
+### 4) Página do vendedor de Produtos — auditoria + simplificação
+
+**Auditoria de bugs** em `src/features/produtos/`:
+
+- `OrcamentoBuilderSheet.tsx` (sheet de gerar orçamento): revisar erros silenciosos no `useCreateProposal`, validação de centavos, envio WhatsApp.
+- `ProposalsPanel.tsx`: revisar filtros, status, refresh após criar.
+- `AcompanhamentoPanel.tsx`: confirmar contagens vs realidade no DB.
+- `RecipientPicker.tsx`: dedup de leads e busca rápida.
+
+&nbsp;
+
+### Ordem de execução
+
+1. Itens 1 e 2 (rápidos, baixo risco).
+2. Item 3 (proposta mobile) — fazer lazy-load + medir.
+3. Item 4 (auditoria 
+
+### Detalhes técnicos
+
+- Sem migration nova: `assistant_name` e `consultants` já existem.
+- Edge functions afetadas serão redeployadas automaticamente.
+- Sem mudança de RLS.
+- Testes: rodar `vitest` nos `__tests__` de `produtos/` após mudanças no builder.

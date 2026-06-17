@@ -188,7 +188,7 @@ Deno.serve(async (req) => {
       .select("name, assistant_name, gender")
       .eq("id", consultantId)
       .maybeSingle();
-    const assistantName = (_consultorRow as any)?.assistant_name?.trim() || "Camila";
+    const assistantName = (_consultorRow as any)?.assistant_name?.trim() || "Assistente";
     const representanteNome = (_consultorRow as any)?.name?.trim() || "";
     const artigoRep = String((_consultorRow as any)?.gender) === "consultora" ? "da" : "do";
 
