@@ -89,9 +89,11 @@ Deno.serve(async (req) => {
     const msgParam = url.searchParams.get("msg");
 
     if (!licenca) {
+      if (wantsJson) return jsonResponse({ error: "missing_license" });
       // Sem licença → site institucional (panfleto NUNCA quebra, sem expor número pessoal)
       return redirectTo(SITE_URL);
     }
+
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -151,8 +153,10 @@ Deno.serve(async (req) => {
     //    Se o identificador veio como igreen_id numérico, a landing por slug não
     //    resolveria — cai no site institucional base.
     if (!phone) {
+      if (wantsJson) return jsonResponse({ error: "no_phone" });
       return redirectTo(/^\d+$/.test(licenca) ? SITE_URL : `${SITE_URL}/${licenca}`);
     }
+
 
     // 5) Resolve a mensagem. Prioridade do parceiro indicador:
     //      ?p={id} → {code} (short_code, forma atual) → ?k={keyword} (legado)
@@ -221,7 +225,11 @@ Deno.serve(async (req) => {
       message = resolveQrMessage(partner.qr_phrase as string | null, keyword);
     }
 
+    const digits = phone.replace(/\D/g, "");
+    const normalizedPhone = digits.startsWith("55") ? digits : `55${digits}`;
+    if (wantsJson) return jsonResponse({ phone: normalizedPhone, message });
     return redirectTo(buildWhatsappUrl(phone, message));
+
   } catch (e) {
     console.error("[qr-redirect] error:", e);
     return redirectTo(SITE_URL);
