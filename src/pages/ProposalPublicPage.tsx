@@ -12,11 +12,10 @@
 //  - Não acessa o banco direto: tudo via edge functions (publicApi).
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import LoadingScreen from "@/components/LoadingScreen";
 import PageStatus from "@/components/common/PageStatus";
 import SEOHead from "@/components/SEOHead";
 import { uploadMedia } from "@/services/minioUpload";
@@ -43,11 +42,14 @@ import {
 } from "@/features/produtos/orcamento";
 import { PAYMENT_METHOD_LABEL, type ProposalLineItem } from "@/features/produtos/orcamento";
 import { formatBRLFromCents } from "@/features/produtos/lib/money";
-import {
-  useProducts,
-  resolveLanding,
-  ProductLandingSections,
-} from "@/features/produtos/catalogo";
+import { useProducts, resolveLanding } from "@/features/produtos/catalogo";
+
+// Landing pesada (vídeo, imagens, seções) — só carrega quando o cliente
+// fecha o modal para "cair" na landing. Mantém o FCP do modal rápido.
+const ProductLandingSections = lazy(() =>
+  import("@/features/produtos/catalogo").then((m) => ({ default: m.ProductLandingSections })),
+);
+
 
 const BRL = (cents: number) => formatBRLFromCents(cents);
 
@@ -151,7 +153,19 @@ export default function ProposalPublicPage() {
     return resolveLanding(dbProduct, slug);
   }, [view?.product, catalogProducts]);
 
-  if (loading) return <LoadingScreen />;
+  // Skeleton leve em vez do LoadingScreen pesado — FCP imediato no celular.
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0e8028] to-[#081c03] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-3xl border border-white/20 bg-white/10 backdrop-blur-xl p-6 space-y-3 animate-pulse">
+          <div className="h-5 w-2/3 bg-white/30 rounded" />
+          <div className="h-4 w-full bg-white/20 rounded" />
+          <div className="h-4 w-5/6 bg-white/20 rounded" />
+          <div className="h-10 w-full bg-white/25 rounded-xl mt-4" />
+        </div>
+      </div>
+    );
+  }
   if (notFound || !view) {
     return (
       <PageStatus
@@ -160,6 +174,7 @@ export default function ProposalPublicPage() {
       />
     );
   }
+
 
   const { proposal, consultant, product } = view;
   const slug = product?.slug ?? "";
