@@ -51,6 +51,7 @@ export default defineConfig({
           /^\/api/,
           /^\/functions/,
           /^\/reset/, // rota de recuperação manual nunca pode vir do cache
+          /^\/r\//, // link curto de parceiro: deixa o redirect 302 do Cloudflare agir (nunca servir o app do cache)
         ],
         // Não tente precachear o manifest manual nem assets gigantes.
         globIgnores: ["**/manifest.json", "**/sw.js"],
