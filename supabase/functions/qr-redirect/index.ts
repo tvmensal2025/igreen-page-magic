@@ -52,6 +52,10 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
+    // ?json=1 → devolve { phone, message } sem redirect (usado pela página
+    // intermediária no SPA que mostra os botões "WhatsApp" e "WhatsApp Business").
+    const wantsJson = url.searchParams.get("json") === "1";
+
 
     // Identificadores do parceiro no link curto:
     //   • code  → short_code numérico do parceiro (forma atual: /r/{licenca}/{code}
