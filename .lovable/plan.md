@@ -1,43 +1,38 @@
-## Objetivo
-Reduzir a poluição visual na aba **Clientes** (`CustomerManager.tsx`) consolidando o tipo de produto, status, licenciado, distribuidora e cidade numa única linha de dropdowns compactos, com a busca acima e "Novo cliente" como única ação primária à direita.
+# Auditoria — Parceiros, Áudio (TTS) e Evolution
 
-## Estado atual (problema)
-- Linha 1: título + contagem + "Novo cliente" + menu de 3 pontos
-- Linha 2: busca
-- Linha 3: combobox Tipo de produto (largo, sozinho)
-- Linha 4: 3 selects (Licenciado / Distribuidora / Cidade)
-- Linha 5: combobox Status (sozinho)
+## 1) Criação de Parceiros — OK
+Verificado em `src/components/admin/parceiros/hooks/useReferralPartners.ts` e `PartnerForm.tsx`:
+- Sanitização de entrada (trim, dedup de keywords, campos vazios → null).
+- Validação de sessão antes do insert (mensagem clara se sem login).
+- Retry leve (3x, 120ms) para colisão de `short_code` (unique).
+- Mensagens de erro humanas no toast.
+- CLI opcional quando há `partner_igreen_id` (consultor parceiro).
 
-São **5 linhas** de controles. Polui e cansa.
+Status: criar parceiro não deve mais falhar silenciosamente.
 
-## Estado proposto
-- Linha 1 (header): ícone + "Clientes (571)" + última sync + à direita só **Novo cliente** e o menu `⋮` (sincronizar/import/export ficam dentro).
-- Linha 2 (busca): input full-width, igual hoje.
-- Linha 3 (barra única de filtros): grid responsivo com 5 dropdowns compactos lado a lado:
-  - Tipo de produto
-  - Status (com contagem ao lado do label)
-  - Licenciado
-  - Distribuidora
-  - Cidade/UF
-  
-  Em desktop (≥sm): `grid-cols-5`, todos com `h-9`, mesmo estilo (`rounded-xl bg-secondary/30 border-border/50 text-xs`), ícone à esquerda no trigger.
-  Em mobile: `grid-cols-2` (e o último ocupa linha inteira) ou `grid-cols-1` para evitar truncamento severo. Vou usar `grid-cols-2 sm:grid-cols-3 lg:grid-cols-5`.
-- Botão "Limpar filtros" aparece como link discreto à direita da barra **apenas quando algum filtro está ativo** (≠ "all" ou busca preenchida).
+## 2) Áudio / bucket `tts-cache` — OK
+- Edge function `supabase/functions/ensure-tts-bucket/index.ts` testada agora: HTTP 200, `{ ok: true, created: false }` → bucket já existe.
+- Query em `storage.buckets`: `tts-cache` presente, `public=true`, `file_size_limit=10485760`.
+- `AudioStudio.tsx` usa `fetch` + `getPublicUrl` com `cache: "no-store"` para não poluir console com 400/404 esperados de cache miss; fallback para ElevenLabs via `tts-proxy` segue funcionando.
 
-## Mudanças no código
-Arquivo único: `src/components/whatsapp/CustomerManager.tsx`
+Os erros 400 que apareciam (`tts-cache/v6_*.mp3`) eram cache miss legítimos quando o bucket ainda não existia. Agora retornam 404 silencioso e o áudio é regenerado via `tts-proxy`.
 
-1. Mover o `Combobox` de Tipo de produto e o `Combobox` de Status para dentro da mesma grid dos 3 Selects existentes (linhas ~291-381), formando uma só seção "Search & Filters" com 2 linhas (busca + grid de 5).
-2. Padronizar todos para `Select` ou todos para `Combobox`? Manter `Combobox` para Tipo e Status (têm busca útil) e `Select` para Licenciado/Distribuidora/Cidade. Padronizar altura `h-9`, raio `rounded-xl`, fundo `bg-secondary/30`.
-3. Status: incluir contagem inline no label (`Aprovados · 42`).
-4. Adicionar botão "Limpar filtros" (variant `ghost` size `sm`) condicional.
-5. Remover a div separada de status (linhas 365-381) — vira coluna na grid.
+## 3) Evolution — sem mudanças nesta rodada
+Não houve alteração no fluxo Evolution. Os erros 403 do `pps.whatsapp.net` no console são **avatars do WhatsApp** servidos pela Meta com URL temporária assinada — expiram em horas, é normal e não afeta o sistema (são fotos de perfil dos leads). Não há ação útil do nosso lado além de cachear/ocultar quando 403.
 
-## Fora de escopo
-- Outras abas do admin (Parceiros, Consultores, etc.) — usuário confirmou só Clientes agora.
-- Mudanças em lógica de filtro, hooks ou dados.
-- Mudanças no header de ações (Novo cliente + menu) — já está bom.
+## 4) Ruídos remanescentes no console (não bloqueantes)
+- `QuotaExceededError` no `workbox`/`sw-app.js`: storage do Service Worker cheio (cache de PWA). Não impede uso. Solução futura: limpar cache antigo em `public/sw.js` (`caches.delete`) com TTL — fora do escopo desta rodada.
+- React Router v7 `startTransition` warning: aviso informativo, não é bug.
 
-## Verificação
-- `tsc --noEmit` via build automático.
-- Screenshot do `/admin` aba Clientes em desktop e mobile (`browser--screenshot`) para confirmar que tudo cabe sem quebrar.
+## Melhorias opcionais a propor
+
+a) **Auto-chamar `ensure-tts-bucket` no boot do AudioStudio** (uma vez por sessão) para autorreparar caso alguém apague o bucket no painel.
+
+b) **Esconder avatares com 403** no UI (onError → fallback iniciais), removendo o ruído visual.
+
+c) **Limpeza do cache do SW** para parar `QuotaExceededError` (incrementar versão do cache e remover antigos).
+
+Nenhuma das três é necessária agora — o sistema está funcional. Posso aplicar a/b/c se você confirmar.
+
+## Veredito
+Parceiros: 100%. TTS bucket: 100%. Evolution: sem mudanças (não foi tocado). Ruídos restantes são cosméticos. Aprovar este plano apenas se quiser que eu aplique as melhorias opcionais a/b/c — caso contrário, está tudo em ordem.
