@@ -572,6 +572,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     isButton,
     hasImage,
     hasDocument,
+    hasAudio,
     imageMessage,
     documentMessage,
     message,
@@ -3002,6 +3003,39 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       updates.portal2_status = "needs_human";
       reply = "Recebi seu cadastro aqui! Esse caso específico vou encaminhar para um de nossos consultores finalizar com você — em breve alguém te chama por aqui 👍";
       return { reply, updates };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 📸 REDIRECT DE FOTO/PDF EM PASSO NÃO-CADASTRO (cadastro completo na IA livre)
+  // Se o lead manda foto/PDF (não áudio) enquanto está num passo conversacional
+  // inicial (welcome/qualificacao/etc.) e ainda não temos a conta, tratamos como
+  // a CONTA DE LUZ e roteamos para "aguardando_conta" — assim o OCR real roda
+  // e o pipeline determinístico segue até o portal. Sem isso, o case "welcome"
+  // só mandava a saudação e IGNORAVA a foto (a IA livre "engolia" o arquivo).
+  // Áudio nunca entra aqui: vira transcrição/texto e segue como mensagem comum.
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    // Passos iniciais/conversacionais onde uma foto deve ser tratada como a
+    // CONTA DE LUZ. NÃO inclui passos de coleta de documento/edição — lá a foto
+    // já tem dono (aguardando_doc_auto, etc.) e o switch trata corretamente.
+    const _PHOTO_REDIRECT_STEPS = new Set<string>([
+      "welcome", "menu_inicial", "pos_video", "checkin_pos_video",
+      "qualificacao", "apresentacao", "objecoes", "duvidas_pos_club",
+      "pitch_conexao_club", "aguardando_humano",
+    ]);
+    const _docAlreadyOcr = !!(customer as any).cpf || !!(customer as any).rg ||
+      !!(customer as any).document_uploaded;
+    if (
+      (isFile || hasImage || hasDocument) &&
+      !hasAudio &&
+      _PHOTO_REDIRECT_STEPS.has(step) &&
+      !(customer as any).electricity_bill_photo_url &&
+      !_docAlreadyOcr
+    ) {
+      console.log(`[bot-flow] 📸 foto recebida em step="${step}" → redirecionando para aguardando_conta (OCR)`);
+      step = "aguardando_conta";
+      (customer as any).conversation_step = "aguardando_conta";
     }
   }
 

@@ -1082,8 +1082,25 @@ RESPONDA APENAS com o JSON do schema. reply_text deve ser CURTO (1-3 frases). Se
     const hasDoc = !!customer.cpf && (!!customer.rg || !!customer.birth_date);
     if (user_input_kind === "image_caption" || user_input_kind === "document") {
       if (["welcome", "qualificacao", "apresentacao"].includes(updates.conversation_step || stepBefore)) {
-        updates.conversation_step = "coleta_conta";
+        // 📸 FIX (cadastro completo na IA livre): a foto recebida vira a CONTA
+        // DE LUZ e o turno é entregue ao pipeline determinístico REAL
+        // ("aguardando_conta" → OCR → confirma → doc → e-mail → telefone →
+        // portal). Antes ia para "coleta_conta", um passo FANTASMA que nenhum
+        // handler processa — a IA "engolia" a foto e o cadastro travava.
+        updates.conversation_step = "aguardando_conta";
       }
+    }
+    // 🔁 PONTE DE PASSOS-FANTASMA → PIPELINE REAL: se o LLM decidiu avançar para
+    // um passo de coleta que não existe na máquina determinística, traduz para o
+    // passo REAL equivalente, para que o cadastro siga até o fim.
+    const _ghostToReal: Record<string, string> = {
+      coleta_conta: "aguardando_conta",
+      coleta_doc: "ask_tipo_documento",
+      coleta_dados: "ask_name",
+    };
+    const _proposedStep = updates.conversation_step || stepBefore;
+    if (_ghostToReal[_proposedStep]) {
+      updates.conversation_step = _ghostToReal[_proposedStep];
     }
     if (hasBill && hasDoc && !["cadastro_portal", "aguardando_otp", "aguardando_facial", "complete", "handoff_humano"].includes(updates.conversation_step || stepBefore)) {
       updates.conversation_step = "cadastro_portal";

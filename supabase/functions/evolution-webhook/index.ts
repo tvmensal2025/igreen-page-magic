@@ -1478,6 +1478,13 @@ Deno.serve(async (req) => {
       aiCfg?.enabled === true &&
       CONVERSATIONAL_STEPS.has(currentStep) &&
       !(currentStep === "aguardando_conta" && isFile) &&
+      // 📸 FIX (cadastro completo na IA livre): QUALQUER mídia (foto/PDF/doc)
+      // — não só em aguardando_conta — NUNCA é entregue à IA livre, que só
+      // conversa e "engole" o arquivo sem rodar OCR. Toda mídia cai no
+      // pipeline determinístico (bot-flow → OCR real → confirma → pede doc →
+      // OCR doc → e-mail → telefone → portal). Áudio é exceção: vira
+      // transcrição/texto e segue na IA livre normalmente.
+      !((isFile || hasImage || hasDocument) && !hasAudio) &&
       !(consultantHasOpeningStep && isOpeningTurn);
 
     if (consultantHasOpeningStep && isOpeningTurn) {
