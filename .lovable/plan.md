@@ -1,71 +1,84 @@
-## Plano — 4 frentes
+## Resumo dos problemas
+1. Modal de ID (pós-liberação) fecha sozinho — precisa travar até salvar.
+2. Campo de ID não deve mais aparecer no cadastro inicial do cliente.
+3. Forçar atualização para todos os usuários (cache trava versões antigas).
+4. Link do QR Code de parceiro deve abrir tanto WhatsApp normal quanto Business.
+5. Algumas propostas não têm botão X para excluir — padronizar exclusão em todas.
+6. Lentidão geral (envio msg, fluxo, recebimento, UI) — auditoria + otimizações.
+7. Dashboard com pódio Top 3 (estilo palco) por nº de indicações.
 
-### 1) Nome da IA (assistant_name) — parar de aparecer "Camila"
+---
 
-O onboarding e a aba Dados já salvam `consultants.assistant_name`, mas alguns pontos ainda gravam/usam "Camila" como fallback. Trocar para usar sempre o nome do consultor.
+## 1. Modal de ID — travar fechamento + remover do cadastro
 
-**Backend (edge functions):**
+**Arquivos a investigar/editar:**
+- `src/components/admin/parceiros/` e `src/features/produtos/vendas/orcamento/captura/` (referências hardcoded encontradas em análise anterior).
+- Localizar o `Dialog` que pede ID pós-liberação.
 
-- `supabase/functions/_shared/notify-consultant.ts` (linha 240): mensagem "🤖 A IA Camila já iniciou…" — buscar `assistant_name` do consultor e interpolar.
-- `supabase/functions/_shared/fluxo-b-ia/agent.ts` (linha 337): no histórico passado pro LLM, trocar `"Camila"` fixo por `assistantName` já resolvido na linha 78.
-- `supabase/functions/ai-agent-router/index.ts` (linha 191): manter `assistant_name` mas trocar fallback `"Camila"` por `"Assistente"` (só usado se o consultor não definiu nada).
-- `supabase/functions/_shared/fluxo-b-ia/agent.ts` (linha 78): mesmo fallback → `"Assistente"`.
+**Mudanças:**
+- `Dialog`: adicionar `onPointerDownOutside={(e) => e.preventDefault()}` e `onEscapeKeyDown={(e) => e.preventDefault()}`, esconder o botão "X" do `DialogContent` enquanto o campo ID estiver vazio/inválido.
+- Botão "Salvar" só habilita quando ID preenchido e validado.
+- Cadastro inicial: remover o input de ID (e seu schema de validação) — o ID passa a ser pedido somente nesse modal pós-liberação.
 
-**Frontend (aba Dados):**
+## 2. Forçar atualização (auto-reload silencioso)
 
-- `src/components/admin/DadosTab.tsx`: trocar default state `"Camila"` por string vazia e placeholder `"Como sua IA se chama?"`; salvar exatamente o que o usuário digitou (nunca sobrescrever para Camila).
+**Estratégia:**
+- Em `public/sw.js`: incrementar `CACHE_VERSION`, e no `activate` chamar `clients.claim()` + `caches.delete(old)`.
+- No `main.tsx`: ao registrar SW, escutar `controllerchange` → `window.location.reload()` silencioso.
+- Adicionar `<meta name="build-id">` no `index.html` lido por um pequeno `useEffect` que faz polling a cada 5 min em `/version.json` (gerado no build). Se mudou → `caches.delete()` + reload.
+- Sem toast (silencioso, conforme escolha).
 
-**Comentários e textos visuais com "Camila"** (página interna, não enviada ao lead): manter — referem-se ao nome do fluxo histórico, não à identidade da IA do consultor.
+## 3. Link do parceiro abre WhatsApp + WhatsApp Business
 
-### 2) Frase IA do parceiro — preencher direto e salvar
+**Arquivo:** `src/pages/PartnerRedirectPage.tsx` e geração do link em `useReferralPartners.ts`.
 
-Hoje (`PartnerForm.tsx`, função `generateExample`) a IA mostra o texto num card de preview separado e o usuário precisa copiar manualmente para a frase.
+**Estratégia:**
+- Hoje o link usa `https://wa.me/...` que abre só o app padrão.
+- Mudar para uma página intermediária que mostra 2 botões grandes: "Abrir no WhatsApp" e "Abrir no WhatsApp Business", usando os schemes:
+  - WhatsApp: `whatsapp://send?phone=...&text=...`
+  - Business: `whatsapp-business://send?phone=...&text=...` (Android) ou fallback `wa.me`.
+- Mobile detection: se único app instalado, redireciona direto; senão mostra escolha.
 
-Mudar para:
+## 4. Excluir propostas — botão X em todas
 
-- Quando a IA responder, **jogar o texto direto no campo "Frase QR Code"** (`qrPhrase`), deixando-o editável.
-- Se for edição de parceiro existente, disparar `onSave` automaticamente após gerar (auto-save).
-- Se for criação de novo parceiro, apenas preencher o campo (precisa de nome/CLI pra salvar) e mostrar um toast "Frase gerada — revise e clique Criar".
-- Remover o card "Exemplo IA" duplicado; manter botão de regerar ao lado do campo.
+**Arquivos:** `src/features/produtos/orcamento/`, `ProposalsPanel.tsx`, `AcompanhamentoPanel.tsx`, listagens em outras abas.
 
-### 3) Proposta lenta no celular do cliente
+**Estratégia:**
+- Auditar todos os cards/linhas de proposta e garantir que cada um tenha o botão X com `AlertDialog` de confirmação.
+- Centralizar em um componente `ProposalDeleteButton` reutilizável (chama `deleteProposal(id)` + invalida queries).
+- Garantir RLS já permite delete (verificar policy de `proposals`).
 
-`src/pages/ProposalPublicPage.tsx` (550 linhas) hoje:
+## 5. Performance — auditoria geral
 
-- Carrega `useProducts()` (catálogo inteiro) antes de mostrar a proposta.
-- Importa `ProductLandingSections` no bundle inicial (landing pesada de fundo).
-- Modal abre só depois do `getPublicProposal` + catálogo resolver.
+**Diagnóstico (em ordem):**
+1. Rodar `supabase--slow_queries` para identificar queries pesadas.
+2. Rodar `browser--performance_profile` na rota `/admin` para Web Vitals e long tasks.
+3. Listar bundle splits em `vite.config.ts` e checar tamanhos.
 
-Otimizações:
+**Otimizações previstas:**
+- **Webhook recebimento**: revisar `supabase/functions/_shared/fluxo-b-ia/` — async/await sequenciais que poderiam ser paralelos; remover writes desnecessários a `customer_processing_lock`.
+- **Envio msg**: revisar `src/lib/whatsapp/send.ts` e `templateSender.ts` — eliminar re-fetches; usar `Promise.all`.
+- **UI**: adicionar `React.memo` em listas grandes (Kanban, ProposalsPanel), trocar `useEffect` que rebuscam tudo por subscriptions já existentes, lazy-load de rotas pesadas em `App.tsx`.
+- **Queries**: adicionar índices nos campos mais filtrados (a definir após slow_queries).
+- **React Query**: aumentar `staleTime` global para 30s, evitar refetch on focus em listas estáticas.
 
-- **Renderizar a proposta assim que `getPublicProposal` retornar** (não esperar `useProducts`).
-- **Lazy-load** de `ProductLandingSections` + `ProductCatalog` via `React.lazy` + `Suspense` (a landing de fundo só importa quando o modal fecha).
-- Adicionar `<SEOHead>` com `<link rel="preconnect">` para o domínio do Supabase + skeleton imediato (sem `<LoadingScreen/>` cheio que bloqueia).
-- Marcar imagens da landing com `loading="lazy"` e `fetchpriority="low"`; logo/avatar do consultor com `fetchpriority="high"`.
-- No `getPublicProposal` (edge), devolver só o essencial primeiro; mover dados de landing pra segunda chamada (se ainda não estiver assim — confirmar no `publicApi.ts`).
+## 6. Dashboard — Pódio Top 3 (palco) por nº de indicações
 
-Meta: First Contentful Paint do modal < 1.5s em 4G.
+**Arquivo:** `src/components/admin/parceiros/PartnerDashboard.tsx` (ou dashboard principal admin — confirmar onde encaixar).
 
-### 4) Página do vendedor de Produtos — auditoria + simplificação
+**Estratégia:**
+- Novo componente `ReferralPodium.tsx`: 3 colunas com alturas diferentes (2º à esquerda média, 1º central alta, 3º direita baixa), avatar + nome + nº indicações + medalha emoji 🥇🥈🥉.
+- Animação de entrada (`framer-motion` ou CSS keyframes).
+- Query: `select consultant_id, count(*) from network_members group by consultant_id order by count desc limit 3` (ajustar tabela conforme schema real de "indicações").
 
-**Auditoria de bugs** em `src/features/produtos/`:
+---
 
-- `OrcamentoBuilderSheet.tsx` (sheet de gerar orçamento): revisar erros silenciosos no `useCreateProposal`, validação de centavos, envio WhatsApp.
-- `ProposalsPanel.tsx`: revisar filtros, status, refresh após criar.
-- `AcompanhamentoPanel.tsx`: confirmar contagens vs realidade no DB.
-- `RecipientPicker.tsx`: dedup de leads e busca rápida.
+## Ordem de execução proposta
+1. Modal ID + remoção do cadastro (rápido, alto impacto UX).
+2. Botão excluir em todas as propostas (rápido).
+3. Service Worker + auto-reload silencioso (deploy garante todos atualizarem).
+4. Página intermediária WhatsApp normal/Business.
+5. Pódio Top 3 no dashboard.
+6. Auditoria de performance (diagnóstico → otimizações pontuais).
 
-&nbsp;
-
-### Ordem de execução
-
-1. Itens 1 e 2 (rápidos, baixo risco).
-2. Item 3 (proposta mobile) — fazer lazy-load + medir.
-3. Item 4 (auditoria 
-
-### Detalhes técnicos
-
-- Sem migration nova: `assistant_name` e `consultants` já existem.
-- Edge functions afetadas serão redeployadas automaticamente.
-- Sem mudança de RLS.
-- Testes: rodar `vitest` nos `__tests__` de `produtos/` após mudanças no builder.
+Confirma essa ordem? Posso começar.

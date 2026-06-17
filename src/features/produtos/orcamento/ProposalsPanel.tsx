@@ -116,8 +116,7 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
   }, [proposals, filter]);
 
   const handleDelete = async (proposal: Proposal) => {
-    if (!["draft", "sent", "expired"].includes(proposal.status)) {
-      toast({ title: "Não é possível excluir", description: "Propostas respondidas não podem ser removidas.", variant: "destructive" });
+    if (!window.confirm(`Excluir o orçamento de ${proposal.recipientName || "destinatário"}?\n\nEssa ação não pode ser desfeita.`)) {
       return;
     }
     try {
@@ -131,6 +130,7 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
       });
     }
   };
+
 
   if (isLoading) {
     return (
@@ -414,11 +414,10 @@ function ProposalCard({
                   <MessageSquare className="h-3.5 w-3.5" />
                 </IconBtn>
               )}
-              {["draft", "sent", "expired"].includes(proposal.status) && (
-                <IconBtn onClick={onDelete} title="Excluir" danger>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </IconBtn>
-              )}
+              <IconBtn onClick={onDelete} title="Excluir" danger>
+                <Trash2 className="h-3.5 w-3.5" />
+              </IconBtn>
+
             </div>
           </div>
 

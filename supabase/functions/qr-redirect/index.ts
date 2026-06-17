@@ -33,13 +33,29 @@ function redirectTo(url: string) {
   });
 }
 
+function jsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 Deno.serve(async (req) => {
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
     const url = new URL(req.url);
+    // ?json=1 → devolve { phone, message } sem redirect (usado pela página
+    // intermediária no SPA que mostra os botões "WhatsApp" e "WhatsApp Business").
+    const wantsJson = url.searchParams.get("json") === "1";
+
 
     // Identificadores do parceiro no link curto:
     //   • code  → short_code numérico do parceiro (forma atual: /r/{licenca}/{code}
@@ -73,9 +89,11 @@ Deno.serve(async (req) => {
     const msgParam = url.searchParams.get("msg");
 
     if (!licenca) {
+      if (wantsJson) return jsonResponse({ error: "missing_license" });
       // Sem licença → site institucional (panfleto NUNCA quebra, sem expor número pessoal)
       return redirectTo(SITE_URL);
     }
+
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -135,8 +153,10 @@ Deno.serve(async (req) => {
     //    Se o identificador veio como igreen_id numérico, a landing por slug não
     //    resolveria — cai no site institucional base.
     if (!phone) {
+      if (wantsJson) return jsonResponse({ error: "no_phone" });
       return redirectTo(/^\d+$/.test(licenca) ? SITE_URL : `${SITE_URL}/${licenca}`);
     }
+
 
     // 5) Resolve a mensagem. Prioridade do parceiro indicador:
     //      ?p={id} → {code} (short_code, forma atual) → ?k={keyword} (legado)
@@ -205,7 +225,11 @@ Deno.serve(async (req) => {
       message = resolveQrMessage(partner.qr_phrase as string | null, keyword);
     }
 
+    const digits = phone.replace(/\D/g, "");
+    const normalizedPhone = digits.startsWith("55") ? digits : `55${digits}`;
+    if (wantsJson) return jsonResponse({ phone: normalizedPhone, message });
     return redirectTo(buildWhatsappUrl(phone, message));
+
   } catch (e) {
     console.error("[qr-redirect] error:", e);
     return redirectTo(SITE_URL);
