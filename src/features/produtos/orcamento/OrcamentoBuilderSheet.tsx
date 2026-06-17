@@ -612,16 +612,42 @@ export function OrcamentoBuilderSheet({
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={!canSubmit}
-                    onClick={handleCreate}
-                    className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-pv-accent hover:bg-pv-ink disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
-                  >
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {submitting ? "Criando..." : "Criar orçamento"}
-                  </button>
+                  {/* CTA combinado: cria + envia no WhatsApp num clique só.
+                      Se o WhatsApp não estiver conectado, cai no modo legado
+                      (só cria o link e mostra Copiar/Enviar separados). */}
+                  {instanceName ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!canSubmit}
+                        onClick={handleCreateAndSend}
+                        className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-pv-accent hover:bg-pv-ink disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
+                      >
+                        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        {submitting ? "Enviando..." : "Gerar e enviar no WhatsApp"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canSubmit}
+                        onClick={handleCreate}
+                        className="w-full mt-2 text-[11px] text-pv-ink/60 hover:text-pv-ink underline underline-offset-4 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Só gerar link (não enviar)
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!canSubmit}
+                      onClick={handleCreate}
+                      className="w-full mt-4 inline-flex items-center justify-center gap-2 bg-pv-accent hover:bg-pv-ink disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors"
+                    >
+                      {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {submitting ? "Criando..." : "Criar orçamento"}
+                    </button>
+                  )}
                 </aside>
+
               </div>
             )}
           </div>
