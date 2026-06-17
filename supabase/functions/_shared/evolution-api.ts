@@ -429,6 +429,36 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     return ok;
   }
 
+  // Baixa a mídia uma vez e converte para base64 (chunked, sem estourar a
+  // pilha). Usado como fallback quando o envio por URL falha — alguns
+  // ambientes Evolution/Baileys não conseguem baixar a URL (storage privado,
+  // CDN com rate-limit, etc.), mas aceitam o base64 inline. Mesma estratégia
+  // do whapi-api.ts (paridade Evolution × Whapi).
+  async function downloadAsBase64(
+    url: string,
+    fallbackMime: string,
+  ): Promise<{ b64: string; mime: string } | null> {
+    try {
+      const res = await fetchWithTimeout(url, { method: "GET", timeout: 30_000 });
+      if (!res.ok) {
+        console.warn(`⚠️ [evolution:sendMedia] download da mídia falhou (${res.status})`);
+        return null;
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const mime = res.headers.get("content-type") || fallbackMime;
+      let bin = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      console.log(`📥 [evolution:sendMedia] mídia baixada p/ base64 (${bytes.byteLength} bytes, ${mime})`);
+      return { b64: btoa(bin), mime };
+    } catch (e: any) {
+      console.warn(`⚠️ [evolution:sendMedia] download p/ base64 falhou: ${e?.message || e}`);
+      return null;
+    }
+  }
+
   async function sendMedia(
     remoteJid: string,
     mediaUrl: string,
@@ -444,42 +474,54 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     return withIdempotency("send_media", idempotency, async () => {
       // Evolution API espera apenas o número, sem sufixo JID
       const number = toEvolutionNumber(remoteJid);
-      try {
-        const res = await fetchWithTimeout(`${baseUrl}/message/sendMedia/${instanceName}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "apikey": apiKey,
-          },
-          body: JSON.stringify({
-            number,
-            mediatype,
-            mimetype: mediatype === "video" ? "video/mp4" : mediatype === "image" ? "image/jpeg" : "application/pdf",
-            caption,
-            media: mediaUrl,
-            fileName: mediatype === "video" ? "video.mp4" : mediatype === "image" ? "image.jpg" : "document.pdf",
-          }),
-          timeout: 120_000,
-        });
+      const mimetype = mediatype === "video" ? "video/mp4" : mediatype === "image" ? "image/jpeg" : "application/pdf";
+      const fileName = mediatype === "video" ? "video.mp4" : mediatype === "image" ? "image.jpg" : "document.pdf";
 
-        if (!res.ok) {
-          const errorText = await res.text();
-          logStructured("error", "evolution_send_media_failed", {
-            instance: instanceName,
-            status: res.status,
-            error: errorText.substring(0, 200),
+      // Presença "digitando…" antes de imagem/vídeo/doc (paridade com Whapi —
+      // dá aparência humana). Cosmético: não falha o envio se der erro.
+      try { await sendPresence(remoteJid, "composing", 1500); } catch (_) { /* noop */ }
+
+      // Tentativa de envio (aceita `media` como URL ou base64).
+      const attempt = async (media: string): Promise<{ ok: boolean; status: number; body: string }> => {
+        try {
+          const res = await fetchWithTimeout(`${baseUrl}/message/sendMedia/${instanceName}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "apikey": apiKey },
+            body: JSON.stringify({ number, mediatype, mimetype, caption, media, fileName }),
+            timeout: 120_000,
           });
-          return false;
+          if (res.ok) return { ok: true, status: res.status, body: "" };
+          return { ok: false, status: res.status, body: (await res.text()).substring(0, 200) };
+        } catch (error: any) {
+          return { ok: false, status: 0, body: error?.message || String(error) };
         }
+      };
 
-        return true;
-      } catch (error: any) {
-        logStructured("error", "evolution_send_media_exception", {
-          instance: instanceName,
-          error: error?.message,
+      // 1ª tentativa: URL (rápido quando funciona).
+      const first = await attempt(mediaUrl);
+      if (first.ok) return true;
+      logStructured("warn", "evolution_send_media_url_failed", {
+        instance: instanceName, status: first.status, mediatype, error: first.body,
+      });
+
+      // 2ª tentativa (fallback): baixa e manda base64. Cobre o caso em que a
+      // Evolution não consegue acessar a URL da mídia. Paridade com o Whapi.
+      const dl = await downloadAsBase64(mediaUrl, mimetype);
+      if (dl) {
+        const second = await attempt(`data:${dl.mime};base64,${dl.b64}`);
+        if (second.ok) {
+          console.log(`✅ [evolution:sendMedia] ok via base64 fallback (${mediatype})`);
+          return true;
+        }
+        logStructured("error", "evolution_send_media_failed", {
+          instance: instanceName, status: second.status, mediatype, error: second.body, via: "base64",
         });
-        return false;
+      } else {
+        logStructured("error", "evolution_send_media_failed", {
+          instance: instanceName, status: first.status, mediatype, error: first.body, via: "url_only",
+        });
       }
+      return false;
     });
   }
 
@@ -490,23 +532,50 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
   ): Promise<boolean> {
     return withIdempotency("send_audio", idempotency, async () => {
       const number = toEvolutionNumber(remoteJid);
-      try {
-        const res = await fetchWithTimeout(`${baseUrl}/message/sendWhatsAppAudio/${instanceName}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": apiKey },
-          body: JSON.stringify({ number, audio: audioUrl, encoding: true }),
-          timeout: 120_000,
-        });
-        if (!res.ok) {
-          const errorText = await res.text();
-          logStructured("error", "evolution_send_audio_failed", { instance: instanceName, status: res.status, error: errorText.substring(0, 200) });
-          return false;
+
+      // Presença "gravando…" antes do áudio (paridade com Whapi). Cosmético.
+      try { await sendPresence(remoteJid, "recording", 2000); } catch (_) { /* noop */ }
+
+      const attempt = async (audio: string): Promise<{ ok: boolean; status: number; body: string }> => {
+        try {
+          const res = await fetchWithTimeout(`${baseUrl}/message/sendWhatsAppAudio/${instanceName}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "apikey": apiKey },
+            body: JSON.stringify({ number, audio, encoding: true }),
+            timeout: 120_000,
+          });
+          if (res.ok) return { ok: true, status: res.status, body: "" };
+          return { ok: false, status: res.status, body: (await res.text()).substring(0, 200) };
+        } catch (error: any) {
+          return { ok: false, status: 0, body: error?.message || String(error) };
         }
-        return true;
-      } catch (error: any) {
-        logStructured("error", "evolution_send_audio_exception", { instance: instanceName, error: error?.message });
-        return false;
+      };
+
+      // 1ª tentativa: URL.
+      const first = await attempt(audioUrl);
+      if (first.ok) return true;
+      logStructured("warn", "evolution_send_audio_url_failed", {
+        instance: instanceName, status: first.status, error: first.body,
+      });
+
+      // 2ª tentativa (fallback): base64. Paridade com o Whapi (áudio é o item
+      // que mais falha por URL — voice note exige container aceito).
+      const dl = await downloadAsBase64(audioUrl, "audio/ogg; codecs=opus");
+      if (dl) {
+        const second = await attempt(`data:${dl.mime};base64,${dl.b64}`);
+        if (second.ok) {
+          console.log(`✅ [evolution:sendAudio] ok via base64 fallback`);
+          return true;
+        }
+        logStructured("error", "evolution_send_audio_failed", {
+          instance: instanceName, status: second.status, error: second.body, via: "base64",
+        });
+      } else {
+        logStructured("error", "evolution_send_audio_failed", {
+          instance: instanceName, status: first.status, error: first.body, via: "url_only",
+        });
       }
+      return false;
     });
   }
 

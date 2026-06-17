@@ -194,17 +194,26 @@ Deno.serve(async (req) => {
         }
         confirmSender = createWhapiSender(whapiToken);
       } else {
+        // 🐛 CORREÇÃO: antes este atalho lia da tabela `evolution_instances`
+        // (que NÃO existe no banco) com colunas inexistentes — sempre dava
+        // `no_instance` para consultor Evolution, mesmo conectado. Agora usa
+        // a MESMA fonte do envio principal: tabela `whatsapp_instances` +
+        // EVOLUTION_API_URL / EVOLUTION_API_KEY do ambiente.
         const { data: instRow } = await supabase
-          .from("evolution_instances").select("instance_name, evolution_api_url, evolution_api_key, status")
-          .eq("consultant_id", body.consultantId).eq("status", "connected")
-          .order("updated_at", { ascending: false }).limit(1).maybeSingle();
-        if (!instRow) {
+          .from("whatsapp_instances").select("instance_name, status")
+          .eq("consultant_id", body.consultantId)
+          .maybeSingle();
+        const instanceName = (instRow as any)?.instance_name;
+        if (!instanceName) {
           return json({ code: "no_instance", error: "no_instance", message: "Nenhuma instância WhatsApp conectada." }, 400);
         }
-        const evolutionUrl = (instRow as any).evolution_api_url || settings.evolution_api_url || Deno.env.get("EVOLUTION_API_URL") || "";
-        const evolutionKey = (instRow as any).evolution_api_key || settings.evolution_api_key || Deno.env.get("EVOLUTION_API_KEY") || "";
+        const evolutionUrl = Deno.env.get("EVOLUTION_API_URL") || "";
+        const evolutionKey = Deno.env.get("EVOLUTION_API_KEY") || "";
+        if (!evolutionUrl || !evolutionKey) {
+          return json({ code: "evolution_not_configured", error: "evolution_not_configured", message: "Evolution API não configurada no servidor. Avise o admin." }, 500);
+        }
         const { createEvolutionSender } = await import("../_shared/evolution-api.ts");
-        confirmSender = createEvolutionSender(evolutionUrl, evolutionKey, (instRow as any).instance_name);
+        confirmSender = createEvolutionSender(evolutionUrl, evolutionKey, instanceName);
       }
 
       // Monta o template (mesmo formato do bot-flow.ts buildConfirmacaoConta / Doc).
@@ -982,6 +991,12 @@ Deno.serve(async (req) => {
         } else {
           delay = 1500;
         }
+        // 🐛 BUG CORRIGIDO: o delay era calculado mas NUNCA aplicado (faltava o
+        // await). Sem a pausa, áudio/imagem/vídeo/texto saíam todos no mesmo
+        // instante em rajada — a Whapi/WhatsApp descartava ou desordenava as
+        // mensagens, e o consultor via "não foi" / chegou bagunçado. Agora
+        // espera o tempo proporcional antes de mandar o próximo item.
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
 
