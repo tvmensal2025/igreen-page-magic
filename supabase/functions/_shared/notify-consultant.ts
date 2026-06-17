@@ -234,7 +234,7 @@ export async function notifyNewLead(
   // Nome configurado da IA pelo consultor (sem fallback "Camila").
   let assistantName = "Sua IA";
   try {
-    const admin = getServiceClient();
+    const admin = adminClient();
     const { data: c } = await admin
       .from("consultants")
       .select("assistant_name")

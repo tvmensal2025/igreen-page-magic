@@ -75,7 +75,7 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
 
   // Dados do consultor para a IA se apresentar corretamente:
   // "assistente virtual {assistant_name} do/da {representante}".
-  let assistantName = "Camila";
+  let assistantName = "Assistente";
   let representante = "";
   let artigoRep = "do"; // do (consultor) | da (consultora)
   try {
@@ -334,7 +334,7 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     try {
       const inboundCount = historyMessages.filter((m) => m.role === "user").length + 1;
       const historicoFmt = [...historyMessages, { role: "user" as const, content: userTurn }, { role: "assistant" as const, content: texto }]
-        .map((m) => `${m.role === "user" ? "Lead" : "Camila"}: ${m.content}`)
+        .map((m) => `${m.role === "user" ? "Lead" : assistantName}: ${m.content}`)
         .join("\n");
       void maybeUpdateSummary({
         supabase,
