@@ -84,8 +84,13 @@ export default function ApproveBillValueDialog({ customer, open, onOpenChange, o
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
-      <DialogContent className="max-w-sm">
+    <Dialog open={open} onOpenChange={(o) => { if (!saving && !o) return; onOpenChange(o); }}>
+      <DialogContent
+        className="max-w-sm"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Zap className="w-4 h-4 text-primary" />
@@ -96,6 +101,7 @@ export default function ApproveBillValueDialog({ customer, open, onOpenChange, o
               ? <>Informe o valor mensal da conta de <strong>{customer.name}</strong> para concluir a aprovação e calcular a comissão.</>
               : "Informe o valor mensal da conta para concluir a aprovação."}
           </DialogDescription>
+
         </DialogHeader>
         <div className="space-y-2 py-1">
           <Label htmlFor="bill-value" className="text-xs text-muted-foreground">Valor (R$)</Label>
