@@ -42,21 +42,28 @@ export function ParceirosTab({
       update.mutate(
         { id: editingPartner.id, ...data },
         {
-          onSuccess: () =>
-            toast({ title: "Parceiro atualizado com sucesso!" }),
-          onError: () =>
+          onSuccess: () => {
+            toast({ title: "Parceiro atualizado com sucesso!" });
+            handleCloseForm();
+          },
+          onError: (err: any) =>
             toast({
               title: "Erro ao atualizar parceiro",
+              description: err?.message || "Tente novamente.",
               variant: "destructive",
             }),
         },
       );
     } else {
       create.mutate(data, {
-        onSuccess: () => toast({ title: "Parceiro criado com sucesso!" }),
-        onError: () =>
+        onSuccess: () => {
+          toast({ title: "Parceiro criado com sucesso!" });
+          handleCloseForm();
+        },
+        onError: (err: any) =>
           toast({
             title: "Erro ao criar parceiro",
+            description: err?.message || "Tente novamente.",
             variant: "destructive",
           }),
       });
