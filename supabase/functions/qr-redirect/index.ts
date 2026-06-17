@@ -33,7 +33,19 @@ function redirectTo(url: string) {
   });
 }
 
+function jsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 Deno.serve(async (req) => {
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
