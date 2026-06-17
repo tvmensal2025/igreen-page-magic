@@ -142,7 +142,6 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       partner_igreen_id: partnerIgreenId.trim() || null,
       notification_phone: notificationPhone.trim() || null,
     });
-    onClose();
   };
 
   const handleDelete = async () => {
