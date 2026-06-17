@@ -27,7 +27,7 @@ const Auth = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [igreenId, setIgreenId] = useState("");
+  const igreenId = "";
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -176,13 +176,8 @@ const Auth = () => {
                     placeholder="(11) 99999-9999" required maxLength={20}
                     className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="igreenId" className="text-sm font-medium text-foreground">ID iGreen (opcional)</Label>
-                  <Input id="igreenId" type="text" value={igreenId} onChange={(e) => setIgreenId(e.target.value)}
-                    placeholder="Seu código de consultor iGreen" maxLength={40}
-                    className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
-                </div>
               </>
+
             )}
 
             <div className="space-y-2">
