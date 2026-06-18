@@ -33,8 +33,12 @@ interface ResolvedWorker {
 /**
  * Resolve qual worker atende o customer baseado no `portal_kind` do consultor dele.
  * Retorna `null` se config insuficiente.
+ *
+ * Exportada para que o caminho de OTP (submit-otp e os intercepts dos webhooks)
+ * envie o código ao worker CORRETO (Portal 2 = autoconexao) em vez de assumir
+ * sempre o Portal 1.
  */
-async function resolveWorker(supabase: any, customerId: string): Promise<ResolvedWorker | null> {
+export async function resolveWorker(supabase: any, customerId: string): Promise<ResolvedWorker | null> {
   // Carrega settings + portal_kind do consultor do customer numa query só
   const [{ data: settingsRows }, { data: customer }] = await Promise.all([
     supabase.from("settings").select("*"),

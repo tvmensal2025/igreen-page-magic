@@ -124,6 +124,21 @@ export function summarizeSales(sales: Sale[], products: Product[]): SalesSummary
   };
 }
 
+/** Filtra vendas por produto (ou retorna todas quando `all`). */
+export function filterSalesByProduct(sales: Sale[], productId: string | "all"): Sale[] {
+  if (productId === "all") return sales;
+  return sales.filter((s) => s.productId === productId);
+}
+
+/** Filtra propostas por produto (ou retorna todas quando `all`). */
+export function filterProposalsByProduct(
+  proposals: Proposal[],
+  productId: string | "all",
+): Proposal[] {
+  if (productId === "all") return proposals;
+  return proposals.filter((p) => p.productId === productId);
+}
+
 /** Resume valor fechado, pipeline de orçamentos e comissão estimada (em centavos). */
 export function computeFinancialMetrics(
   sales: Sale[],

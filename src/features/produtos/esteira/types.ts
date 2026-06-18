@@ -19,6 +19,14 @@ export const DEFAULT_TEMPLATE_STAGES = [
   "Contrato enviado",
 ];
 
+/** Etapas padrão por família de produto (espelha o seed SQL). */
+export const DEFAULT_TEMPLATE_BY_FAMILY: Record<string, readonly string[]> = {
+  placas: DEFAULT_TEMPLATE_STAGES,
+  energia: ["Documento assinado", "Cadastro na distribuidora", "Primeira fatura com desconto"],
+  telecom: ["Portabilidade solicitada", "Chip ativado", "Primeira recarga confirmada"],
+  seguros: ["Vistoria realizada", "Apólice emitida", "Kit boas-vindas enviado"],
+};
+
 export type StageStatus = "pendente" | "concluido";
 
 // Linhas cruas (snake_case) -----------------------------------------------------

@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createSale,
   deleteSale,
+  fetchSaleStatusHistory,
   fetchSales,
   updateSale,
   updateSaleStatus,
@@ -100,5 +101,14 @@ export function useDeleteSale(consultantId: string | undefined) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [SALES_KEY, consultantId] });
     },
+  });
+}
+
+/** Histórico de etapas de uma venda no pipeline. */
+export function useSaleStatusHistory(saleId: string | undefined) {
+  return useQuery({
+    queryKey: [SALES_KEY, "history", saleId],
+    queryFn: () => fetchSaleStatusHistory(saleId as string),
+    enabled: !!saleId,
   });
 }

@@ -3,14 +3,32 @@
  * Trilhas → módulos, cada módulo é uma "fileira" horizontal de pôsteres de aula
  * com scroll lateral e cards que crescem no hover. Tema: iGreen oficial (dark).
  */
-import { useState, useRef } from "react";
-import { ChevronLeft, ChevronRight, BookOpen, Award, ClipboardList, Search, Check } from "lucide-react";
+import { useState, useRef, useMemo } from "react";
+import {
+  ChevronLeft, ChevronRight, BookOpen, Award, ClipboardList, Search, Check,
+  Lock, Play, Clock,
+} from "lucide-react";
 import { CATALOG, QUIZZES, type AcademyTrack, type AcademyModule } from "@/data/academyCatalog";
 import type { LessonProgress, ExamResult } from "@/hooks/useAcademyProgress";
 import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 function thumb(yt: string) {
   return `https://i.ytimg.com/vi/${yt}/mqdefault.jpg`;
+}
+function thumbHi(yt: string) {
+  return `https://i.ytimg.com/vi/${yt}/hqdefault.jpg`;
+}
+
+function trackProgress(cat: AcademyTrack, getLessonProg: (yt: string) => LessonProgress) {
+  let done = 0;
+  let total = 0;
+  for (const mod of cat.modules) {
+    for (const l of mod.lessons) {
+      total++;
+      if (getLessonProg(l.yt).done) done++;
+    }
+  }
+  return { done, total, pct: total ? Math.round(done / total * 100) : 0 };
 }
 
 /* ---- build flat list (igual ao JS original) ---- */
@@ -61,14 +79,192 @@ interface Props {
   onOpenQuiz:     (key: string) => void;
 }
 
+/* ---- visão geral das trilhas (cards clicáveis) ---- */
+function TrackOverview({
+  getLessonProg,
+  onScrollTo,
+}: {
+  getLessonProg: (yt: string) => LessonProgress;
+  onScrollTo: (id: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      {CATALOG.map(cat => {
+        const { done, total, pct } = trackProgress(cat, getLessonProg);
+        const cover = cat.modules[0]?.lessons[0]?.yt;
+        const complete = pct === 100;
+        return (
+          <button
+            key={cat.id}
+            onClick={() => onScrollTo(cat.id)}
+            className="group relative overflow-hidden rounded-xl text-left transition-all duration-200
+                       hover:scale-[1.02] hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{ outlineColor: AC.primary }}
+          >
+            <div className="relative aspect-[16/10] overflow-hidden" style={{ background: "#000" }}>
+              {cover && (
+                <img
+                  src={thumbHi(cover)}
+                  alt=""
+                  loading="lazy"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+              )}
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: [
+                    `linear-gradient(135deg, ${cat.color}55 0%, transparent 55%)`,
+                    `linear-gradient(180deg, transparent 30%, ${AC.bg}ee 100%)`,
+                  ].join(", "),
+                }}
+              />
+              {complete && (
+                <div
+                  className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ background: AC.primary }}
+                >
+                  <Check className="w-3.5 h-3.5" style={{ color: "#fff" }} strokeWidth={3} />
+                </div>
+              )}
+              <div className="absolute bottom-0 left-0 right-0 p-3">
+                <p
+                  className="text-[9px] font-bold uppercase tracking-[0.2em] mb-0.5"
+                  style={{ color: cat.color, fontFamily: AC_FONT_DISPLAY }}
+                >
+                  Trilha
+                </p>
+                <p
+                  className="text-sm font-bold leading-tight line-clamp-2"
+                  style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY, textShadow: "0 1px 6px rgba(0,0,0,.8)" }}
+                >
+                  {cat.title}
+                </p>
+              </div>
+            </div>
+            <div
+              className="px-3 py-2.5 space-y-1.5"
+              style={{ background: AC.surface, border: `1px solid ${AC.border}`, borderTop: "none" }}
+            >
+              <p className="text-[10px] line-clamp-1" style={{ color: AC.textMute }}>{cat.tagline}</p>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: AC.surface2 }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${pct}%`, background: cat.color }}
+                  />
+                </div>
+                <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color: AC.textDim }}>
+                  {done}/{total}
+                </span>
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---- fileira "Continuar assistindo" ---- */
+function ContinueWatchingRow({
+  flatList, getLessonProg, onOpenLesson,
+}: {
+  flatList: FlatLesson[];
+  getLessonProg: (yt: string) => LessonProgress;
+  onOpenLesson: (gi: number) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const items = useMemo(
+    () => flatList
+      .filter(l => { const p = getLessonProg(l.yt); return p.pct > 0 && !p.done; })
+      .sort((a, b) => getLessonProg(b.yt).pct - getLessonProg(a.yt).pct)
+      .slice(0, 12),
+    [flatList, getLessonProg],
+  );
+  if (!items.length) return null;
+
+  const scrollBy = (dir: number) => scrollRef.current?.scrollBy({ left: dir * 300, behavior: "smooth" });
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Clock className="w-4 h-4" style={{ color: AC.primary }} />
+        <h3 className="text-base font-bold" style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY }}>
+          Continuar assistindo
+        </h3>
+        <span className="text-[11px] ml-1" style={{ color: AC.textMute }}>
+          {items.length} aula{items.length !== 1 ? "s" : ""} em andamento
+        </span>
+      </div>
+      <div className="group/row relative">
+        <button
+          onClick={() => scrollBy(-1)}
+          aria-label="Anterior"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full
+                     flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
+          style={{ background: "rgba(17,17,17,0.9)", border: `1px solid ${AC.border}`, color: AC.text }}
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <div ref={scrollRef} className="flex gap-3 overflow-x-auto no-scrollbar pb-1" style={{ scrollSnapType: "x mandatory" }}>
+          {items.map(l => {
+            const prog = getLessonProg(l.yt);
+            return (
+              <button
+                key={l.yt}
+                onClick={() => onOpenLesson(l.globalIndex)}
+                className="group/item relative flex-none w-52 sm:w-60 overflow-hidden rounded-lg text-left
+                           transition-all duration-200 hover:scale-[1.04] focus-visible:outline-2"
+                style={{ scrollSnapAlign: "start", outlineColor: AC.primary }}
+              >
+                <div className="relative aspect-video overflow-hidden rounded-lg" style={{ background: "#000" }}>
+                  <img src={thumb(l.yt)} alt={l.title} loading="lazy"
+                       className="w-full h-full object-cover transition-transform duration-500 group-hover/item:scale-105" />
+                  <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, transparent 40%, ${AC.bg}f0 100%)` }} />
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: AC.primary }}>
+                      <Play className="w-4 h-4 ml-0.5" style={{ fill: "#fff", color: "#fff" }} />
+                    </div>
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: "rgba(0,0,0,.5)" }}>
+                    <div className="h-full" style={{ width: `${prog.pct}%`, background: AC.primary }} />
+                  </div>
+                  <p className="absolute left-2.5 right-2.5 bottom-2 text-xs font-semibold leading-snug line-clamp-2"
+                     style={{ color: AC.text, textShadow: "0 1px 4px rgba(0,0,0,.9)" }}>
+                    {l.title}
+                  </p>
+                </div>
+                <p className="text-[10px] mt-1.5 truncate" style={{ color: AC.textMute }}>
+                  {l.catTitle} · {prog.pct}% assistido
+                </p>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => scrollBy(1)}
+          aria-label="Próximo"
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full
+                     flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
+          style={{ background: "rgba(17,17,17,0.9)", border: `1px solid ${AC.border}`, color: AC.text }}
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+    </section>
+  );
+}
+
 /* ---- pôster individual (estilo Netflix card) ---- */
 function LessonCard({
-  lesson, num, prog, onOpen,
+  lesson, num, prog, onOpen, accent,
 }: {
   lesson: { title: string; yt: string };
   num:    number;
   prog:   LessonProgress;
   onOpen: () => void;
+  accent?: string;
 }) {
   return (
     <button
@@ -76,7 +272,7 @@ function LessonCard({
       className="group/card relative flex-none w-40 sm:w-48 overflow-hidden text-left rounded-md
                  transition-all duration-200 ease-out hover:scale-[1.06] hover:z-10
                  focus-visible:outline-2 focus-visible:outline-offset-2"
-      style={{ scrollSnapAlign: "start", outlineColor: AC.primary }}
+      style={{ scrollSnapAlign: "start", outlineColor: accent ?? AC.primary }}
     >
       {/* thumbnail */}
       <div className="relative aspect-video overflow-hidden rounded-md" style={{ background: "#000" }}>
@@ -118,7 +314,7 @@ function LessonCard({
         {/* progress bar (em andamento) */}
         {prog.pct > 0 && !prog.done && (
           <div className="absolute bottom-0 left-0 right-0 h-[3px]" style={{ background: "rgba(0,0,0,.5)" }}>
-            <div className="h-full" style={{ width: `${prog.pct}%`, background: AC.primary }} />
+            <div className="h-full" style={{ width: `${prog.pct}%`, background: accent ?? AC.primary }} />
           </div>
         )}
 
@@ -209,32 +405,58 @@ function ModuleRow({
                 lesson={l}
                 num={li + 1}
                 prog={prog}
+                accent={cat.color}
                 onOpen={() => onOpenLesson(gi >= 0 ? gi : 0)}
               />
             );
           })}
 
           {/* card de prova ao fim da fileira */}
-          {hasQuiz && (
-            <button
-              onClick={() => onOpenQuiz(quizKey)}
-              className="group/card relative flex-none w-40 sm:w-48 aspect-video rounded-md overflow-hidden
-                         flex flex-col items-center justify-center gap-2 transition-all duration-200 hover:scale-[1.06]"
-              style={{
-                scrollSnapAlign: "start",
-                background: exam?.passed ? AC.primarySoft : "rgba(255,255,255,0.04)",
-                border: `1px ${exam?.passed ? "solid" : "dashed"} ${exam?.passed ? AC.primary : AC.border}`,
-              }}
-            >
-              {exam?.passed
-                ? <Award className="w-7 h-7" style={{ color: AC.primary }} />
-                : <ClipboardList className="w-7 h-7" style={{ color: AC.textDim }} />}
-              <span className="text-[11px] font-bold uppercase tracking-wider px-2 text-center"
-                    style={{ color: exam?.passed ? AC.primary : AC.textDim, fontFamily: AC_FONT_DISPLAY }}>
-                {exam?.passed ? `Aprovado · ${exam.score}%` : "Fazer prova"}
-              </span>
-            </button>
-          )}
+          {hasQuiz && (() => {
+            const unlocked = allDone || exam?.passed;
+            return (
+              <button
+                onClick={() => unlocked ? onOpenQuiz(quizKey) : undefined}
+                disabled={!unlocked}
+                title={unlocked ? undefined : "Conclua todas as aulas do módulo para liberar a prova"}
+                className="group/card relative flex-none w-40 sm:w-48 aspect-video rounded-md overflow-hidden
+                           flex flex-col items-center justify-center gap-2 transition-all duration-200
+                           disabled:cursor-not-allowed"
+                style={{
+                  scrollSnapAlign: "start",
+                  background: exam?.passed
+                    ? AC.primarySoft
+                    : unlocked
+                    ? "rgba(255,255,255,0.04)"
+                    : "rgba(255,255,255,0.02)",
+                  border: `1px ${exam?.passed ? "solid" : "dashed"} ${
+                    exam?.passed ? AC.primary : unlocked ? AC.border : "rgba(255,255,255,0.06)"
+                  }`,
+                }}
+                onMouseEnter={e => { if (unlocked && !exam?.passed) e.currentTarget.style.transform = "scale(1.06)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = ""; }}
+              >
+                {exam?.passed
+                  ? <Award className="w-7 h-7" style={{ color: AC.primary }} />
+                  : unlocked
+                  ? <ClipboardList className="w-7 h-7" style={{ color: AC.textDim }} />
+                  : <Lock className="w-7 h-7" style={{ color: AC.textMute }} />}
+                <span
+                  className="text-[11px] font-bold uppercase tracking-wider px-2 text-center leading-snug"
+                  style={{
+                    color: exam?.passed ? AC.primary : unlocked ? AC.textDim : AC.textMute,
+                    fontFamily: AC_FONT_DISPLAY,
+                  }}
+                >
+                  {exam?.passed
+                    ? `Aprovado · ${exam.score}%`
+                    : unlocked
+                    ? "Fazer prova"
+                    : `Assista ${done}/${total} aulas`}
+                </span>
+              </button>
+            );
+          })()}
         </div>
 
         {/* seta direita */}
@@ -268,8 +490,26 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
 
   let lastSection = "oficial";
 
+  const scrollToTrack = (id: string) => {
+    document.getElementById(`track-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="space-y-7" style={{ color: AC.text }}>
+      {/* visão geral das trilhas */}
+      {searchResults === null && (
+        <TrackOverview getLessonProg={getLessonProg} onScrollTo={scrollToTrack} />
+      )}
+
+      {/* continuar assistindo */}
+      {searchResults === null && (
+        <ContinueWatchingRow
+          flatList={flatList}
+          getLessonProg={getLessonProg}
+          onOpenLesson={onOpenLesson}
+        />
+      )}
+
       {/* busca */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: AC.primary }} />
@@ -353,34 +593,90 @@ export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson,
         }
 
         const totalAulas = cat.modules.reduce((s, m) => s + m.lessons.length, 0);
+        const { done: trackDone, pct: trackPct } = trackProgress(cat, getLessonProg);
+        const coverYt = cat.modules[0]?.lessons[0]?.yt;
 
         return (
           <div key={cat.id} className="space-y-4">
             {divider}
-            <section className="space-y-4">
-              {/* cabeçalho da trilha */}
-              <div className="flex items-end justify-between gap-3 pb-1"
-                   style={{ borderBottom: `1px solid ${AC.border}` }}>
-                <div>
-                  <p className="text-[9px] font-bold tracking-[0.3em] uppercase"
-                     style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
-                    Trilha
-                  </p>
-                  <h3 className="text-lg sm:text-xl font-bold leading-tight mt-0.5"
-                      style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY }}>
-                    {cat.title}
-                  </h3>
-                  <p className="text-[11px] mt-0.5" style={{ color: AC.textMute }}>
-                    {cat.modules.length} módulo{cat.modules.length !== 1 ? "s" : ""} · {totalAulas} aulas
-                    {cat.extra && (
-                      <span className="ml-2 text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded"
-                            style={{ background: AC.primarySoft, color: AC.primary }}>
-                        Externo
+            <section id={`track-${cat.id}`} className="space-y-4 scroll-mt-6">
+              {/* cabeçalho da trilha — banner com cor da trilha */}
+              <div
+                className="relative overflow-hidden rounded-xl"
+                style={{ border: `1px solid ${AC.border}` }}
+              >
+                {coverYt && (
+                  <img
+                    src={thumbHi(coverYt)}
+                    alt=""
+                    aria-hidden
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover opacity-30"
+                  />
+                )}
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: [
+                      `linear-gradient(90deg, ${AC.bg}f5 0%, ${AC.bg}cc 55%, transparent 100%)`,
+                      `linear-gradient(135deg, ${cat.color}33 0%, transparent 60%)`,
+                    ].join(", "),
+                  }}
+                />
+                <div className="relative flex items-end justify-between gap-4 p-4 sm:p-5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ background: cat.color, boxShadow: `0 0 8px ${cat.color}` }}
+                      />
+                      <p
+                        className="text-[9px] font-bold tracking-[0.3em] uppercase"
+                        style={{ color: cat.color, fontFamily: AC_FONT_DISPLAY }}
+                      >
+                        Trilha
+                      </p>
+                    </div>
+                    <h3
+                      className="text-xl sm:text-2xl font-bold leading-tight"
+                      style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY }}
+                    >
+                      {cat.title}
+                    </h3>
+                    <p className="text-sm mt-1 max-w-lg" style={{ color: AC.textDim }}>
+                      {cat.tagline}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px]" style={{ color: AC.textMute }}>
+                      <span>{cat.modules.length} módulo{cat.modules.length !== 1 ? "s" : ""}</span>
+                      <span>·</span>
+                      <span>{totalAulas} aulas</span>
+                      <span>·</span>
+                      <span style={{ color: trackPct === 100 ? cat.color : AC.textDim }}>
+                        {trackDone}/{totalAulas} concluídas
                       </span>
-                    )}
-                  </p>
+                      {cat.extra && (
+                        <span
+                          className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded"
+                          style={{ background: AC.primarySoft, color: AC.primary }}
+                        >
+                          Externo
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 max-w-xs flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: AC.surface2 }}>
+                        <div
+                          className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${trackPct}%`, background: cat.color }}
+                        />
+                      </div>
+                      <span className="text-[11px] font-bold tabular-nums" style={{ color: cat.color }}>
+                        {trackPct}%
+                      </span>
+                    </div>
+                  </div>
+                  <BookOpen className="w-5 h-5 shrink-0 hidden sm:block" style={{ color: cat.color }} />
                 </div>
-                <BookOpen className="w-4 h-4 shrink-0 mb-1" style={{ color: AC.primary }} />
               </div>
 
               {/* fileiras dos módulos */}

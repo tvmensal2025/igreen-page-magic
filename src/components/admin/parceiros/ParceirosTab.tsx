@@ -107,20 +107,18 @@ export function ParceirosTab({
         onDelete={handleDelete}
       />
 
-      {qrPartner && (
-        <PartnerQrCode
-          open={!!qrPartner}
-          onClose={() => setQrPartner(null)}
-          partnerName={qrPartner.nome}
-          keyword={qrPartner.keywords?.[0] || ""}
-          consultantPhone={consultantPhone}
-          consultantName={consultantName}
-          consultantIgreenId={consultantIgreenId}
-          qrPhrase={qrPartner.qr_phrase}
-          license={license}
-          shortCode={qrPartner.short_code}
-        />
-      )}
+      <PartnerQrCode
+        open={!!qrPartner}
+        onClose={() => setQrPartner(null)}
+        partnerName={qrPartner?.nome ?? ""}
+        keyword={qrPartner?.keywords?.[0] ?? ""}
+        consultantPhone={consultantPhone}
+        consultantName={consultantName}
+        consultantIgreenId={consultantIgreenId}
+        qrPhrase={qrPartner?.qr_phrase}
+        license={license}
+        shortCode={qrPartner?.short_code}
+      />
     </>
   );
 }

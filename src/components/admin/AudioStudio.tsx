@@ -420,21 +420,39 @@ export function AudioStudio({ userId }: { userId: string }) {
     return blob;
   };
 
+  // Cache da vinheta em memória — evita refetch a cada geração/download.
+  const vinhetaCacheRef = useRef<Blob | null>(null);
+
+  const fetchVinhetaBlob = async (): Promise<Blob | null> => {
+    if (vinhetaCacheRef.current) return vinhetaCacheRef.current;
+    const vinhetaRes = await fetch("/audio/vinheta_tenda.mp3");
+    if (!vinhetaRes.ok) {
+      console.warn("[AudioStudio] Vinheta indisponível:", vinhetaRes.status, vinhetaRes.statusText);
+      return null;
+    }
+    const vinhetaBlob = await vinhetaRes.blob();
+    if (!vinhetaBlob || vinhetaBlob.size === 0) {
+      console.warn("[AudioStudio] Vinheta vazia ou inválida");
+      return null;
+    }
+    vinhetaCacheRef.current = vinhetaBlob;
+    return vinhetaBlob;
+  };
+
   // Monta o áudio com a vinheta no início. Se a vinheta não estiver disponível
   // (arquivo ausente no servidor), devolve null — o fluxo segue só com a versão
   // sem vinheta, sem quebrar a geração.
   const montarComVinheta = async (baseBlob: Blob): Promise<Blob | null> => {
     try {
-      const vinhetaRes = await fetch("/audio/vinheta_tenda.mp3");
-      if (!vinhetaRes.ok) return null;
-      const vinhetaBlob = await vinhetaRes.blob();
-      if (!vinhetaBlob || vinhetaBlob.size === 0) return null;
+      const vinhetaBlob = await fetchVinhetaBlob();
+      if (!vinhetaBlob) return null;
       const [vinhetaBuf, audioBuf] = await Promise.all([
         decodeAudioBlob(vinhetaBlob), decodeAudioBlob(baseBlob),
       ]);
       const merged = concatWithCrossfade([vinhetaBuf, audioBuf], 100);
       return await encodeMp3(merged, 192);
-    } catch {
+    } catch (e) {
+      console.warn("[AudioStudio] Erro ao montar áudio com vinheta:", e);
       return null;
     }
   };
@@ -472,6 +490,72 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   useEffect(() => { loadLibrary(); }, [loadLibrary]);
 
+  // ─── Reaproveitamento por hash (dedup do roteiro completo) ─────────────────
+  // Aplica um áudio já existente no player, sem gastar token nem remontar MP3.
+  const applyReusedRow = async (row: AudioRow): Promise<boolean> => {
+    const r = await fetch(row.audio_url);
+    if (!r.ok) return false;
+    const blob = await r.blob();
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioBlob(blob);
+    setAudioUrl(URL.createObjectURL(blob));
+    setAudioBlobVinheta(null);
+    setLastRowId(row.consultant_id === userId ? row.id : null);
+    setLastIsPublic(row.is_public);
+    setLastPublicUrl(row.audio_url);
+    setLastPublicUrlVinheta(row.audio_url_vinheta);
+    return true;
+  };
+
+  // Se o roteiro EXATO (mesmo hash) já existe, reaproveita o MP3 pronto.
+  // 1º procura no histórico do próprio consultor; 2º em áudios públicos.
+  const tryReuseExisting = async (fullHash: string): Promise<boolean> => {
+    try {
+      const own = await supabase
+        .from("audio_library").select("*")
+        .eq("consultant_id", userId).eq("kind", kind).eq("audio_hash", fullHash)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (own.data) {
+        const ok = await applyReusedRow(own.data as AudioRow);
+        if (ok) {
+          toast({ title: "♻️ Áudio reaproveitado — zero tokens!", description: "Roteiro idêntico já estava no seu histórico." });
+          return true;
+        }
+      }
+
+      const pub = await supabase
+        .from("audio_library").select("*")
+        .eq("is_public", true).eq("kind", kind).eq("audio_hash", fullHash)
+        .order("play_count", { ascending: false }).limit(1).maybeSingle();
+      if (pub.data) {
+        const src = pub.data as AudioRow;
+        // Grava no histórico do consultor reusando o MP3 já existente (0 token, 0 upload).
+        const { data: inserted } = await supabase.from("audio_library").insert({
+          consultant_id: userId,
+          kind,
+          city: cidadeP,
+          street: ruaP,
+          time_slot: `${horaInicio}h-${horaFim}h`,
+          place_name: placeP,
+          script_text: textoPreview,
+          audio_url: src.audio_url,
+          audio_url_vinheta: src.audio_url_vinheta,
+          audio_hash: fullHash,
+          is_public: false,
+        }).select("*").single();
+        const ok = await applyReusedRow((inserted as AudioRow) || src);
+        if (ok) {
+          toast({ title: "♻️ Áudio reaproveitado — zero tokens!", description: "Roteiro idêntico já existia na biblioteca pública." });
+          loadLibrary();
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
   // ─── Geração principal + persistência ─────────────────────────────────────
   const handleGenerate = async () => {
     if (!cidade.trim()) { toast({ title: "Preencha o nome da cidade", variant: "destructive" }); return; }
@@ -481,6 +565,9 @@ export function AudioStudio({ userId }: { userId: string }) {
     setGenerating(true);
     stopAudio();
     try {
+      // Dedup: roteiro EXATO já existe? reaproveita o MP3 pronto (0 token, 0 remontagem).
+      if (await tryReuseExisting(hashText(textoPreview))) return;
+
       let textos: string[];
       if (kind === "mutirao") {
         const trecho1 = `Atenção, moradores e comerciantes de ${cidadeP} e região!`;
@@ -517,7 +604,10 @@ export function AudioStudio({ userId }: { userId: string }) {
       toast({
         title: vinhetaBlob
           ? "✅ Áudio salvo com e sem vinheta!"
-          : "✅ Áudio gerado e salvo no seu histórico!",
+          : "✅ Áudio gerado (sem vinheta)",
+        description: vinhetaBlob
+          ? undefined
+          : "Arquivo de vinheta não encontrado — apenas a versão sem vinheta foi salva.",
       });
       loadLibrary();
     } catch (e: any) {

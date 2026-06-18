@@ -107,3 +107,24 @@ export interface CreateSaleInput {
   captureData?: CaptureData;
   notes?: string | null;
 }
+
+/** Entrada do histórico de mudanças de status (auditoria do pipeline). */
+export interface SaleStatusHistoryEntry {
+  id: string;
+  saleId: string;
+  fromStatus: SaleStatus | null;
+  toStatus: SaleStatus;
+  note: string | null;
+  changedBy: string | null;
+  createdAt: string;
+}
+
+export interface SaleStatusHistoryRow {
+  id: string;
+  sale_id: string;
+  from_status: SaleStatus | null;
+  to_status: SaleStatus;
+  note: string | null;
+  changed_by: string | null;
+  created_at: string;
+}

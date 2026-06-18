@@ -4,6 +4,7 @@
 // Extracted verbatim from index.ts.
 
 import { fetchWithTimeout } from "../../_shared/utils.ts";
+import { resolveWorker } from "../../_shared/portal-worker.ts";
 import type { SupabaseClient, EvolutionSender } from "./types.ts";
 
 export interface OtpInterceptArgs {
@@ -66,10 +67,11 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
     })
     .eq("id", otpCustomer.id);
 
-  // Aceita ambos os nomes de env (WORKER_PORTAL_URL e PORTAL_WORKER_URL)
-  // para garantir notificação imediata ao worker, sem depender do polling.
-  const workerUrl = Deno.env.get("WORKER_PORTAL_URL") || Deno.env.get("PORTAL_WORKER_URL");
-  const workerSecret = Deno.env.get("WORKER_SECRET");
+  // Roteia o OTP pelo worker do portal_kind do consultor (Portal 2 = autoconexao).
+  // Fallback defensivo para os envs do Portal 1 se a resolução falhar.
+  const resolvedOtpWorker = await resolveWorker(supabase, otpCustomer.id).catch(() => null);
+  const workerUrl = resolvedOtpWorker?.url || Deno.env.get("WORKER_PORTAL_URL") || Deno.env.get("PORTAL_WORKER_URL");
+  const workerSecret = resolvedOtpWorker?.secret || Deno.env.get("WORKER_SECRET");
   if (workerUrl) {
     try {
       await fetchWithTimeout(`${workerUrl}/confirm-otp`, {

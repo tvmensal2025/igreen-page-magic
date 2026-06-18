@@ -25,7 +25,6 @@ const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCo
 const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => ({ default: m.DashboardTab })));
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
 const IGreenExtensionCard = lazy(() => import("@/components/admin/IGreenExtensionCard").then(m => ({ default: m.IGreenExtensionCard })));
-const AICostCard = lazy(() => import("@/components/admin/AICostCard").then(m => ({ default: m.AICostCard })));
 const BonusTiersAdminCard = lazy(() => import("@/components/admin/BonusTiersAdminCard").then(m => ({ default: m.BonusTiersAdminCard })));
 const LinksTab = lazy(() => import("@/components/admin/LinksTab").then(m => ({ default: m.LinksTab })));
 
@@ -97,6 +96,7 @@ const AdminContent = () => {
     return tab && (AI_SUB_TABS as readonly string[]).includes(tab) ? tab : null;
   });
   const [produtosSubTab, setProdutosSubTab] = useState<ProdutosTabId>("acompanhamento");
+  const [posVendaHighlightId, setPosVendaHighlightId] = useState<string | null>(null);
 
   const [pendingChatPhone, setPendingChatPhone] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -240,7 +240,7 @@ const AdminContent = () => {
     "crm-clientes": { title: "Clientes ativos", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
     "conversao": { title: "Conversão", subtitle: "Análise de funil e gargalos" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
-    "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, faturamento, pipeline de vendas e acompanhamento de ganhos" },
+    "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, pipeline, ganhos e faturas Green" },
     "captacao": { title: "Captação", subtitle: "Novos clientes interessados e originação" },
     "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
     "rede": { title: "Rede", subtitle: "Sua estrutura e hierarquia" },
@@ -359,7 +359,11 @@ const AdminContent = () => {
 
           {userId && activeTab === "crm-clientes" && (
             <div className="flex-1 min-h-0 overflow-y-auto px-1">
-              <PosVendaKanban consultantId={userId} />
+              <PosVendaKanban
+                consultantId={userId}
+                initialCustomerId={posVendaHighlightId}
+                onInitialCustomerConsumed={() => setPosVendaHighlightId(null)}
+              />
             </div>
           )}
 
@@ -410,6 +414,11 @@ const AdminContent = () => {
               instanceName={instanceName}
               isWhapi={isWhapi}
               onTabChange={setProdutosSubTab}
+              onOpenPosVenda={(customerId) => {
+                setPosVendaHighlightId(customerId);
+                setActiveTab("crm-clientes");
+              }}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           )}
 
@@ -458,7 +467,6 @@ const AdminContent = () => {
           <div className="mt-6 space-y-6">
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
             <Suspense fallback={null}>
-              {userId && <AICostCard userId={userId} />}
               {userId && <IGreenExtensionCard userId={userId} />}
               <BonusTiersAdminCard />
             </Suspense>
@@ -467,20 +475,18 @@ const AdminContent = () => {
       </Sheet>
 
       {/* QR Code Modal (link pessoal) — usa o mesmo PanfletoModal */}
-      {qrPanfleto && (
-        <Suspense fallback={null}>
-          <PanfletoModal
-            open={!!qrPanfleto}
-            onClose={() => setQrPanfleto(null)}
-            licenca={slug}
-            nomeConsultor={form.name || ""}
-            telefoneConsultor={form.phone || ""}
-            igreenId={form.igreen_id || ""}
-            shareUrl={qrPanfleto.url}
-            title={`QR Code — ${qrPanfleto.label}`}
-          />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <PanfletoModal
+          open={!!qrPanfleto}
+          onClose={() => setQrPanfleto(null)}
+          licenca={slug}
+          nomeConsultor={form.name || ""}
+          telefoneConsultor={form.phone || ""}
+          igreenId={form.igreen_id || ""}
+          shareUrl={qrPanfleto?.url}
+          title={qrPanfleto ? `QR Code — ${qrPanfleto.label}` : undefined}
+        />
+      </Suspense>
 
       {/* AI Chat Panel */}
       {aiChatOpen && (
@@ -490,18 +496,16 @@ const AdminContent = () => {
       )}
 
       {/* Panfleto Modal */}
-      {panfletoOpen && (
-        <Suspense fallback={null}>
-          <PanfletoModal
-            open={panfletoOpen}
-            onClose={() => setPanfletoOpen(false)}
-            licenca={slug}
-            nomeConsultor={form.name || ""}
-            telefoneConsultor={form.phone || ""}
-            igreenId={form.igreen_id || ""}
-          />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <PanfletoModal
+          open={panfletoOpen}
+          onClose={() => setPanfletoOpen(false)}
+          licenca={slug}
+          nomeConsultor={form.name || ""}
+          telefoneConsultor={form.phone || ""}
+          igreenId={form.igreen_id || ""}
+        />
+      </Suspense>
 
       
     </div>

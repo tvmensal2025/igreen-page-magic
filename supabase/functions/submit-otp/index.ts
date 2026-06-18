@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveWorker } from "../_shared/portal-worker.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,8 +61,11 @@ Deno.serve(async (req) => {
     const settings: Record<string, string> = {};
     settingsRows?.forEach((s: any) => { settings[s.key] = s.value; });
 
-    const portalWorkerUrl = (settings.portal_worker_url || Deno.env.get("PORTAL_WORKER_URL") || "").replace(/\/$/, "");
-    const workerSecret = settings.worker_secret || Deno.env.get("WORKER_SECRET") || "";
+    // Resolve o worker pelo portal_kind do consultor (Portal 2 = autoconexao).
+    // Fallback defensivo: se a resolução falhar, mantém o comportamento antigo (Portal 1).
+    const resolved = await resolveWorker(supabase, customer_id).catch(() => null);
+    const portalWorkerUrl = (resolved?.url || settings.portal_worker_url || Deno.env.get("PORTAL_WORKER_URL") || "").replace(/\/$/, "");
+    const workerSecret = resolved?.secret || settings.worker_secret || Deno.env.get("WORKER_SECRET") || "";
 
     if (!portalWorkerUrl || !workerSecret) {
       console.warn("⚠️ Worker URL ou Secret não configurados. OTP salvo, worker precisa fazer polling.");

@@ -12,6 +12,8 @@ import {
   computeGreenGains,
   estimateBillValue,
   isDirectCustomer,
+  graduacaoRank,
+  resolveGraduacao,
   DEFAULT_TARIFA_KWH,
   type EntradaRule,
   type GreenCustomerInput,
@@ -76,6 +78,19 @@ describe("careerBonusPercent", () => {
     expect(careerBonusPercent("EXECUTIVO")).toBe(0.8);
     expect(careerBonusPercent("acionista")).toBe(1.8);
     expect(careerBonusPercent("desconhecido")).toBe(0);
+  });
+});
+
+describe("resolveGraduacao", () => {
+  it("escolhe a graduação mais alta entre fontes", () => {
+    expect(resolveGraduacao("licenciado", "Gestor")).toBe("gestor");
+    expect(resolveGraduacao("senior", "gestor", "licenciado")).toBe("gestor");
+    expect(resolveGraduacao(null, undefined, "executivo")).toBe("executivo");
+  });
+
+  it("graduacaoRank ordena a escada", () => {
+    expect(graduacaoRank("licenciado")).toBeLessThan(graduacaoRank("gestor"));
+    expect(graduacaoRank("Gestor")).toBe(graduacaoRank("gestor"));
   });
 });
 

@@ -111,15 +111,10 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
           last_bot_interaction_at: new Date().toISOString(),
         }).eq("id", customerId);
 
-        if (inboundText) {
-          await supabase.from("conversations").insert({
-            customer_id: customerId,
-            message_direction: "inbound",
-            message_text: inboundText,
-            message_type: inboundKind || "text",
-            external_message_id: input.inboundMessageId || null,
-          });
-        }
+        // Inbound NÃO é gravado aqui: o webhook (whapi-webhook/index.ts) já
+        // registra o inbound na entrada, antes de chamar este handler. Gravar de
+        // novo causava linhas duplicadas em `conversations` (mesmo
+        // external_message_id, ~5s de diferença = latência do LLM).
         const enviado = await input.enviarTexto(direta.texto).catch(() => false);
         if (!enviado) return { respondeu: false, texto: direta.texto, acoes: [] };
         await supabase.from("conversations").insert({
@@ -228,6 +223,21 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     });
   }
 
+  // Gate anti "foto pedida cedo demais": no PRIMEIRO contato e sem sinal claro de
+  // interesse, instrui a IA a NÃO pedir a foto ainda — primeiro entende/explica.
+  // Reforço por prompt (não suprime marcador à força) para não quebrar a coerência
+  // do texto. Mensagens com interesse explícito ("quero", "como funciona", etc.)
+  // passam normalmente e podem pedir a foto já.
+  const _turnosCliente = historyMessages.filter((m) => m.role === "user").length;
+  const _temSinalInteresse = /\b(quero|como\s+(funciona|fa[çc]o)|economi|saber\s+mais|vamos|simul|interesse|quanto|desconto|aderir|cadastr|reduzir|barat|vantagem|benef[íi]cio)/i
+    .test(String(inboundText || ""));
+  if (!billPhotoArrived && !customer.bill_requested_at && _turnosCliente <= 1 && !_temSinalInteresse) {
+    systemMessages.push({
+      role: "system" as const,
+      content: `PRIMEIRO CONTATO: ainda NÃO peça a foto da conta de luz neste turno. Primeiro entenda o interesse do cliente e explique brevemente o benefício. NÃO emita [PEDIR_FOTO_CONTA] agora — só quando ele demonstrar interesse.`,
+    });
+  }
+
   const userTurn = inboundText
     ? inboundText
     : billPhotoArrived
@@ -306,16 +316,10 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
 
     await supabase.from("customers").update(updates).eq("id", customerId);
 
-    // Grava inbound (se houver texto novo) e outbound em conversations.
-    if (inboundText) {
-      await supabase.from("conversations").insert({
-        customer_id: customerId,
-        message_direction: "inbound",
-        message_text: inboundText,
-        message_type: inboundKind || "text",
-        external_message_id: input.inboundMessageId || null,
-      });
-    }
+    // Inbound NÃO é gravado aqui: o webhook (whapi-webhook/index.ts) já registra
+    // o inbound na entrada, antes de chamar este handler. Gravar de novo causava
+    // linhas duplicadas em `conversations` (mesmo external_message_id, ~5s de
+    // diferença = latência do LLM). Aqui só gravamos o outbound.
 
     // 7) Envia para o cliente
     const enviado = await input.enviarTexto(texto).catch(() => false);

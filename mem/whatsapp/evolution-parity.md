@@ -6,19 +6,25 @@ type: feature
 
 # Paridade Evolution ↔ Whapi (qualquer consultor)
 
+> **Unificação parcial (jun/2026):** `state-machine`, `step-namespace`, `types`, `intent-classifier` e `templates` foram consolidados em `_shared/bot/` com shims nos webhooks. Iniciativa **encerrada na Etapa 3a** — detalhes antes/depois em [`docs/auditoria/17-unificacao-webhooks-whapi-evolution.md`](../../docs/auditoria/17-unificacao-webhooks-whapi-evolution.md). *Não confundir com Fase 1 Segurança, Fase 3 Portal 2 ou auditoria geral 01–16.*
+
 ## Arquitetura final
 
 - **whapi-webhook**: SOMENTE super-admin (`settings.superadmin_consultant_id`). Endpoint único, token único.
 - **evolution-webhook**: TODOS os outros consultores. Identifica instância por `body.instance` em `whatsapp_instances`.
 - Frontend (`useWhatsApp`/`useChats`/`useMessages`) já roteia: `isWhapi=true` só quando `consultantId === settings.superadmin_consultant_id`.
 
-## Módulos compartilhados (espelhados verbatim de whapi → evolution)
+## Módulos compartilhados
 
-- `handlers/bot-flow.ts` — 4217 linhas. Resolver de `bot_flow_steps` (UUID/`flow:<id>`/`passo_<ts>`), `dispatchStepFromFlow` (ordem text→audio→video→image), transitions por `trigger_phrases`, anti-rep `last_custom_prompt_at` (10 min), `matchQA` (FAQ), `notifyHandoff` (pergunta fora do FAQ pausa bot).
-- `handlers/conversational/` — runConversationalFlow + intent-classifier + rules-engine + state-machine + templates (motor novo do `bot_flow_steps`).
-- `handlers/step-namespace.ts` — `routeEngine`, `stripPrefix`, `normalizeOutgoing` (prefixo `flow:` vs cru).
+**Unificados em `_shared/bot/` (fonte única + shim):** `conversational-state-machine`, `step-namespace`, `handler-types`, `intent-classifier`, `conversational-templates`.
 
-Trocar apenas a camada de envio: `ctx.sender` = `createEvolutionSender` para Evolution; `createWhapiSender` para Whapi. Tudo o mais é idêntico.
+**Ainda espelhados (dois arquivos físicos):**
+
+- `handlers/bot-flow.ts` — motor `sys`, OCR, portal, steps UUID custom.
+- `handlers/conversational/index.ts` — `runConversationalFlow`, FAQ, handoff, envio em cascata.
+- `index.ts` — orquestrador do webhook (parse, dedupe, Cérebro, engine v3).
+
+Trocar apenas a camada de envio: `ctx.sender` = `createEvolutionSender` para Evolution; Whapi sender para super-admin. Lógica de negócio deve manter paridade manual nos arquivos ainda duplicados.
 
 ## index.ts (evolution-webhook) — features obrigatórias
 

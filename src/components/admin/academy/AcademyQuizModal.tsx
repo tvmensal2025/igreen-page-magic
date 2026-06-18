@@ -4,7 +4,7 @@
  * Tema: iGreen oficial (modo escuro) — ver ./theme.ts
  */
 import { useCallback, useEffect, useState } from "react";
-import { X, RefreshCw, CheckCircle } from "lucide-react";
+import { X, RefreshCw, CheckCircle, Award } from "lucide-react";
 import { CATALOG, QUIZZES, PASS_SCORE, type QuizQuestion } from "@/data/academyCatalog";
 import type { ExamResult } from "@/hooks/useAcademyProgress";
 import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
@@ -284,37 +284,63 @@ function AcademyQuizModalInner({ quiz, quizKey, onClose, onPass, lastResult }: I
 
           {/* ===== RESULTADO ===== */}
           {screen === "result" && result && (
-            <div className="text-center space-y-5">
-              <div className="text-5xl">{result.passed ? "🏆" : "↻"}</div>
-              <div className="flex items-center justify-center gap-3">
-                <span className="h-px w-8" style={{ background: result.passed ? AC.primary : AC.danger }} />
-                <span
-                  className="text-[10px] font-semibold uppercase"
-                  style={{ color: result.passed ? AC.primary : AC.danger, letterSpacing: "0.32em" }}
-                >
-                  {result.passed ? "Aprovado" : "Quase lá"}
-                </span>
-                <span className="h-px w-8" style={{ background: result.passed ? AC.primary : AC.danger }} />
+            <div className="text-center space-y-6">
+              {/* anel de score */}
+              <div className="relative mx-auto w-36 h-36">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8" />
+                  <circle
+                    cx="60" cy="60" r="52" fill="none"
+                    stroke={result.passed ? AC.primary : AC.danger}
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={`${result.score * 3.27} 327`}
+                    style={{ transition: "stroke-dasharray 1s ease-out" }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-4xl mb-0.5">{result.passed ? "🏆" : "📚"}</span>
+                  <span
+                    className="text-3xl font-bold tabular-nums"
+                    style={{
+                      fontFamily: AC_FONT_DISPLAY,
+                      color: result.passed ? AC.primary : AC.danger,
+                    }}
+                  >
+                    {result.score}%
+                  </span>
+                </div>
               </div>
 
-              <p
-                className="text-6xl tracking-tight"
-                style={{
-                  fontFamily: AC_FONT_DISPLAY,
-                  fontWeight: 700,
-                  color: result.passed ? AC.primary : AC.danger,
-                }}
-              >
-                {result.score}%
-              </p>
+              <div>
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <span className="h-px w-8" style={{ background: result.passed ? AC.primary : AC.danger }} />
+                  <span
+                    className="text-[10px] font-semibold uppercase"
+                    style={{ color: result.passed ? AC.primary : AC.danger, letterSpacing: "0.32em" }}
+                  >
+                    {result.passed ? "Aprovado" : "Quase lá"}
+                  </span>
+                  <span className="h-px w-8" style={{ background: result.passed ? AC.primary : AC.danger }} />
+                </div>
 
-              <p className="text-sm" style={{ color: AC.textDim }}>
-                {result.passed
-                  ? `Você acertou ${result.acertos} de ${questions.length}. Parabéns!`
-                  : `Você acertou ${result.acertos} de ${questions.length}. Precisa de ${PASS_SCORE}% — revise o módulo e tente de novo.`}
-              </p>
+                <p className="text-sm leading-relaxed" style={{ color: AC.textDim }}>
+                  {result.passed
+                    ? `Você acertou ${result.acertos} de ${questions.length}. Parabéns — selo de conhecimento liberado!`
+                    : `Você acertou ${result.acertos} de ${questions.length}. Precisa de ${PASS_SCORE}% — revise as aulas e tente de novo.`}
+                </p>
 
-              <div className="flex gap-3 pt-2">
+                {result.passed && (
+                  <div
+                    className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold"
+                    style={{ background: AC.primarySoft, color: AC.primary, border: `1px solid ${AC.borderHi}` }}
+                  >
+                    <Award className="w-3.5 h-3.5" /> +1 prova no seu nível
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-1">
                 <button
                   onClick={startQuiz}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-colors"

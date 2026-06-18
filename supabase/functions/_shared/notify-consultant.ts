@@ -286,6 +286,43 @@ export async function notifyHandoff(
   return sendRawToAlertNumber(consultantId, text);
 }
 
+// ─── Aviso: cliente respondeu enquanto o HUMANO está no atendimento ────────
+// Quando o bot está pausado por handoff humano (assigned_human_id) e o cliente
+// manda uma nova mensagem, o webhook só registra e fica em silêncio (correto —
+// o robô não atropela o atendimento). O risco é o consultor não perceber a
+// resposta e o lead esfriar. Aqui mandamos um ping discreto pro consultor.
+//
+// Dedup só em memória (janela 10 min): evita spam a cada mensagem da rajada sem
+// exigir nova coluna no banco. Como o isolate recicla, no pior caso o consultor
+// recebe um lembrete a mais — aceitável e melhor que perder o lead.
+export async function notifyClientReplyWhilePaused(
+  consultantId: string,
+  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; conversation_step?: string | null; is_sandbox?: boolean | null },
+  lastMessage: string,
+): Promise<boolean> {
+  try {
+    if (!consultantId) return false;
+    if (lead?.is_sandbox) return false;
+    const memKey = `pausedreply:${consultantId}:${lead.id || lead.phone_whatsapp || ""}`;
+    if (!shouldSend(memKey, 10 * 60_000)) return false;
+    const stepHuman = String(lead.conversation_step || "")
+      .replace(/^(ask_|aguardando_|editing_|flow:)/, "")
+      .replace(/_/g, " ") || "atendimento";
+    const text =
+      `💬 *CLIENTE RESPONDEU*\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
+      `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n` +
+      `📍 *Etapa:* ${stepHuman}\n\n` +
+      `💬 *Mensagem:*\n"${String(lastMessage || "").slice(0, 300)}"\n\n` +
+      `🤖 O bot está pausado (você assumiu). Responda no CRM.`;
+    return sendRawToAlertNumber(consultantId, text);
+  } catch (e) {
+    console.warn("[notify-paused-reply] erro:", (e as Error).message);
+    return false;
+  }
+}
+
 // ─── Aviso ao PARCEIRO indicador / consultor parceiro ──────────────────────
 // Quando um lead é atribuído a um parceiro (referral_partner_id) e esse
 // parceiro tem notification_phone configurado, avisa o número dele que um

@@ -12,7 +12,18 @@ import { Label } from "@/components/ui/label";
 import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
+import {
+  drawFlyerFooter,
+  clampFooterBand,
+  previewFooterFontSize,
+} from "@/components/admin/flyerFooter";
 import { resolveQrMessage } from "./qrPhrase";
+import {
+  templatePlaceholderArt,
+  templateSizeHint,
+  drawFlyerPlaceholderBackground,
+} from "@/components/admin/flyerPlaceholder";
+import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 
 interface PartnerQrCodeProps {
   open: boolean;
@@ -64,7 +75,7 @@ function buildShortLink(
  * distorcer e sem mudar a proporção. O PDF sai no tamanho físico real (mm).
  *
  *  - a4:       210×297mm   (folha sulfite, arte oficial)
- *  - banner:   504×940mm   (banner vertical, arte oficial)
+ *  - banner:   504×904mm   (banner 360imprimir / gráfica360)
  *  - faixa200: 2000×800mm  (2,00×0,80m, faixa horizontal — envie sua arte)
  *  - faixa110: 1100×800mm  (1,10×0,80m, faixa horizontal — envie sua arte)
  */
@@ -92,23 +103,29 @@ const TEMPLATES: Record<
     qrY: number;
     qrSize: number;
     footerY: number;
+    /** Altura da faixa de rodapé (% da altura do canvas). */
+    footerH?: number;
   }
 > = {
   a4: {
     label: "Folha A4",
-    src: "/images/mutirao-lei-14300-parceiro.jpg",
+    src: "/images/banner-a4.jpg",
+    // Calibrado no preview (travado — bate 1:1 com impressão).
     qrX: 25,
     qrY: 91,
-    qrSize: 18,
+    qrSize: 16,
     footerY: 99,
+    footerH: 2.6,
   },
   banner: {
-    label: "Banner 504×940mm",
-    src: "/images/banner-lei-14300-base.jpg",
-    qrX: 22,
-    qrY: 87,
-    qrSize: 28,
-    footerY: 99,
+    label: "Banner 504×904mm",
+    src: "/images/banner-504x904.jpg",
+    // Calibrado no preview (travado — bate 1:1 com impressão).
+    qrX: 15,
+    qrY: 89,
+    qrSize: 23,
+    footerY: 100,
+    footerH: 3,
   },
   // ---- Banners verticais (envie sua arte) ----
   banner60x90: {
@@ -270,7 +287,7 @@ const TEMPLATE_DIMS: Record<
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
   a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm — canvas na proporção EXATA da folha (0,707): fundo cobre tudo, sem barra lateral nem distorção
-  banner: { canvasW: 1008, canvasH: 1881, pdfWmm: 504, pdfHmm: 940 }, // 504×940mm (retrato)
+  banner: { canvasW: 1008, canvasH: 1808, pdfWmm: 504, pdfHmm: 904 }, // 504×904mm (360imprimir)
   // Banners verticais (proporção física travada; canvas escalado ~1.18px/mm).
   banner60x90: { canvasW: 708, canvasH: 1063, pdfWmm: 600, pdfHmm: 900 }, // 60×90cm
   banner80x120: { canvasW: 945, canvasH: 1417, pdfWmm: 800, pdfHmm: 1200 }, // 80×120cm
@@ -287,9 +304,40 @@ const TEMPLATE_DIMS: Record<
   post: { canvasW: 1080, canvasH: 1080, pdfWmm: 108, pdfHmm: 108 }, // 1080×1080px (1:1)
 };
 const PREVIEW_W = 320;
-// Altura máxima do preview para caber em telas de notebook sem scroll.
-// Templates muito altos (ex.: Banner 504×940mm) são reduzidos até esse teto.
 const PREVIEW_MAX_H = 440;
+/** Margem branca interna + moldura fina ao redor do QR (preview, px). */
+const QR_QUIET_PX = 2;
+const QR_BORDER_PX = 1;
+
+/** Desenha QR com faixa branca fina + contorno escuro para leitura limpa na arte. */
+function drawQrWithThinFrame(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cx: number,
+  cy: number,
+  qrPx: number,
+) {
+  const quiet = Math.max(4, Math.round(qrPx * 0.012));
+  const border = Math.max(2, Math.round(qrPx * 0.004));
+  const dx = cx - qrPx / 2;
+  const dy = cy - qrPx / 2;
+  const outerX = dx - quiet;
+  const outerY = dy - quiet;
+  const outerW = qrPx + quiet * 2;
+  const outerH = qrPx + quiet * 2;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(outerX, outerY, outerW, outerH);
+  ctx.drawImage(img, dx, dy, qrPx, qrPx);
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = border;
+  ctx.strokeRect(
+    outerX + border / 2,
+    outerY + border / 2,
+    outerW - border,
+    outerH - border,
+  );
+}
 
 function drawImageCover(
   ctx: CanvasRenderingContext2D,
@@ -337,7 +385,7 @@ export function PartnerQrCode({
   const shortLink = buildShortLink(license, shortCode, consultantIgreenId);
   const url = shortLink ?? buildWaMeUrl(consultantPhone, keyword, qrPhrase);
 
-  // Template selecionado (Sulfite A4 ou Banner 504×940mm).
+  // Template selecionado (Sulfite A4 ou Banner 504×904mm).
   const [templateId, setTemplateId] = useState<TemplateId>(DEFAULT_TEMPLATE_ID);
   const template = TEMPLATES[templateId];
 
@@ -360,6 +408,13 @@ export function PartnerQrCode({
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>(
+    () =>
+      Object.fromEntries(
+        (Object.keys(TEMPLATES) as TemplateId[]).map((id) => [id, false]),
+      ) as Record<TemplateId, boolean>,
+  );
+
   // Reset (background + posições) sempre que o modal abre ou o template muda.
   useEffect(() => {
     if (!open) return;
@@ -370,6 +425,9 @@ export function PartnerQrCode({
     setQrSize(t.qrSize);
     setFooterY(t.footerY);
     setShowFooter(true);
+    if (DEFAULT_LOCKED[templateId]) {
+      setUnlockedMap((m) => ({ ...m, [templateId]: false }));
+    }
   }, [open, templateId]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -403,12 +461,6 @@ export function PartnerQrCode({
     [],
   );
 
-  const [unlockedMap, setUnlockedMap] = useState<Record<TemplateId, boolean>>(
-    () =>
-      Object.fromEntries(
-        (Object.keys(TEMPLATES) as TemplateId[]).map((id) => [id, false]),
-      ) as Record<TemplateId, boolean>,
-  );
   const locked = DEFAULT_LOCKED[templateId] && !unlockedMap[templateId];
 
   // Quando travado, força sempre os valores oficiais do template (ignora drift do estado).
@@ -473,7 +525,7 @@ export function PartnerQrCode({
     ctx.fillStyle = "#0a3d2c";
     ctx.fillRect(0, 0, CW, CH);
 
-    // 2. Arte de fundo (cover — sem barras; igual ao preview/PDF).
+    // 2. Arte de fundo ou placeholder (embaçado + tamanho).
     if (bgImage) {
       await new Promise<void>((resolve) => {
         const img = new Image();
@@ -485,9 +537,25 @@ export function PartnerQrCode({
         img.onerror = () => resolve();
         img.src = bgImage;
       });
+    } else {
+      const digital = templateId === "story" || templateId === "post";
+      const sizeLabel = templateSizeHint(
+        dims.pdfWmm,
+        dims.pdfHmm,
+        dims.canvasW,
+        dims.canvasH,
+        digital,
+      );
+      await drawFlyerPlaceholderBackground(
+        ctx,
+        CW,
+        CH,
+        templatePlaceholderArt(dims.canvasW, dims.canvasH),
+        sizeLabel,
+      );
     }
 
-    // 3. QR com cartão branco.
+    // 3. QR com moldura fina (faixa branca + contorno escuro).
     const svgData = new XMLSerializer().serializeToString(svgElement);
     const svgUrl =
       "data:image/svg+xml;base64," +
@@ -498,53 +566,29 @@ export function PartnerQrCode({
         const qrPx = (effQrSize / 100) * CW;
         const cx = (effQrX / 100) * CW;
         const cy = (effQrY / 100) * CH;
-        const dx = cx - qrPx / 2;
-        const dy = cy - qrPx / 2;
-        const pad = qrPx * 0.06;
-        ctx.fillStyle = "#ffffff";
-        roundRect(ctx, dx - pad, dy - pad, qrPx + pad * 2, qrPx + pad * 2, qrPx * 0.04);
-        ctx.fill();
-        ctx.drawImage(img, dx, dy, qrPx, qrPx);
+        drawQrWithThinFrame(ctx, img, cx, cy, qrPx);
         resolve();
       };
       img.onerror = () => resolve();
       img.src = svgUrl;
     });
 
-    // 4. Faixa de rodapé.
+    // 4. Faixa de rodapé (clamp + 2 linhas se nome longo).
     if (effShowFooter) {
-      const bandHeight = CH * 0.03;
-      const bandY = (effFooterY / 100) * CH - bandHeight / 2;
-      ctx.fillStyle = "#0a3d2c";
-      ctx.fillRect(0, bandY, CW, bandHeight);
-
       const footerLeft = consultantName
         ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
         : "";
       const footerRight = consultantPhone
         ? `WHATSAPP: ${formatPhoneDisplay(consultantPhone)}`
         : "";
-
-      ctx.fillStyle = "#fff200";
-      ctx.textBaseline = "middle";
-      const cyText = bandY + bandHeight / 2;
-      const sidePad = CW * 0.025;
-      const gap = CW * 0.02;
-      const available = CW - sidePad * 2 - gap;
-      // Auto-shrink pra caber nome+id+telefone sem cortar
-      let fSize = Math.round(bandHeight * 0.36);
-      while (fSize > 8) {
-        ctx.font = `700 ${fSize}px sans-serif`;
-        const wL = footerLeft ? ctx.measureText(footerLeft).width : 0;
-        const wR = footerRight ? ctx.measureText(footerRight).width : 0;
-        if (wL + wR <= available) break;
-        fSize -= 1;
-      }
-      ctx.font = `700 ${fSize}px sans-serif`;
-      ctx.textAlign = "left";
-      if (footerLeft) ctx.fillText(footerLeft, sidePad, cyText);
-      ctx.textAlign = "right";
-      if (footerRight) ctx.fillText(footerRight, CW - sidePad, cyText);
+      drawFlyerFooter(ctx, {
+        canvasW: CW,
+        canvasH: CH,
+        footerYPercent: effFooterY,
+        footerHPercent: template.footerH ?? 2.8,
+        footerLeft,
+        footerRight,
+      });
     }
 
     return canvas;
@@ -572,28 +616,19 @@ export function PartnerQrCode({
     pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);
   };
 
-  // Preview com proporção real do template, mas limitado por largura E altura
-  // para caber numa tela de notebook sem scroll. Templates altos (ex.: Banner
-  // 504×940mm) seriam grandes demais se calculássemos só pela largura, então
-  // reduzimos proporcionalmente até respeitar a altura máxima.
-  const previewAspect =
-    TEMPLATE_DIMS[templateId].canvasH / TEMPLATE_DIMS[templateId].canvasW;
-  let previewW = PREVIEW_W;
-  let previewH = PREVIEW_W * previewAspect;
-  if (previewH > PREVIEW_MAX_H) {
-    previewH = PREVIEW_MAX_H;
-    previewW = previewH / previewAspect;
-  }
-  const PREVIEW_W_EFF = Math.round(previewW);
-  const PREVIEW_H = Math.round(previewH);
+  // Preview na tela (responsivo). Export PNG/PDF usa TEMPLATE_DIMS — tamanhos fixos.
+  const dims = TEMPLATE_DIMS[templateId];
+  const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
+    dims.canvasW,
+    dims.canvasH,
+    PREVIEW_W,
+    PREVIEW_MAX_H,
+  );
 
   // Preview-space sizes (percentages → pixels).
   const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W_EFF;
-  const qrPadPreview = qrCorePxPreview * 0.06;
-  const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
-  const footerHPreview = PREVIEW_H * 0.03;
-  const footerFontPreview = Math.max(7, Math.round(footerHPreview * 0.36));
-
+  const qrFramePxPreview =
+    qrCorePxPreview + QR_QUIET_PX * 2 + QR_BORDER_PX * 2;
   const footerLeftPreview = consultantName
     ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
     : "LICENCIADO: (preencha em Configurações)";
@@ -601,52 +636,94 @@ export function PartnerQrCode({
     ? `WHATSAPP: ${formatPhoneDisplay(consultantPhone)}`
     : "WHATSAPP: —";
 
+  const footerHPercent = template.footerH ?? 2.8;
+  const { bandTop: footerTopPreview, bandHeight: footerHPreview } = clampFooterBand(
+    PREVIEW_H,
+    effFooterY,
+    footerHPercent,
+  );
+  const footerFontPreview = previewFooterFontSize(
+    PREVIEW_W_EFF,
+    footerHPreview,
+    footerLeftPreview,
+    footerRightPreview,
+    "700",
+  );
 
+  const isDigitalTemplate = templateId === "story" || templateId === "post";
+  const placeholderSizeHint = templateSizeHint(
+    dims.pdfWmm,
+    dims.pdfHmm,
+    dims.canvasW,
+    dims.canvasH,
+    isDigitalTemplate,
+  );
+  const placeholderArt = templatePlaceholderArt(dims.canvasW, dims.canvasH);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>QR Code — {partnerName}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2">
-          {/* Preview canvas */}
-          <div className="flex flex-col items-center gap-3">
+        <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
+          {/* Preview canvas — só escala visual; % do QR/rodapé = export */}
+          <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">
             <div
               ref={previewRef}
               role="application"
               aria-label="Editor do flyer. Arraste o QR ou a faixa de rodapé. Use os controles para ajuste fino."
-              className="relative overflow-hidden rounded-xl border bg-primary shadow-sm"
+              className="relative overflow-hidden rounded-xl border bg-primary shadow-sm max-w-full shrink-0"
               style={{
                 width: PREVIEW_W_EFF,
                 height: PREVIEW_H,
-                backgroundImage: bgImage ? `url(${bgImage})` : undefined,
-                  backgroundSize: "cover",
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "center",
               }}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
             >
-              {/* QR with white card, draggable */}
+              {bgImage ? (
+                <div
+                  className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+                  style={{ backgroundImage: `url(${bgImage})` }}
+                />
+              ) : (
+                <>
+                  <div
+                    className="absolute inset-0 scale-110 bg-cover bg-center bg-no-repeat blur-md opacity-75"
+                    style={{ backgroundImage: `url(${placeholderArt})` }}
+                  />
+                  <div className="absolute inset-0 bg-black/50" />
+                  <div className="absolute inset-0 z-[1] flex flex-col items-center justify-center pointer-events-none px-3 text-center">
+                    <p className="text-white font-bold text-sm drop-shadow-md">
+                      Envie a sua arte aqui
+                    </p>
+                    <p className="text-[#fff200] font-semibold text-xs mt-1 drop-shadow-md">
+                      Tamanho para impressão: {placeholderSizeHint}
+                    </p>
+                  </div>
+                </>
+              )}
+              {/* QR com moldura fina branca + contorno escuro */}
               <div
                 ref={qrSvgWrapperRef}
                 onPointerDown={handlePointerDown("qr")}
-                className={`absolute select-none touch-none bg-white rounded-md p-1.5 shadow-md ring-1 ring-black/10 ${locked ? "cursor-not-allowed" : "cursor-move"}`}
+                className={`absolute z-[2] select-none touch-none bg-white box-border border border-neutral-900 ${locked ? "cursor-not-allowed" : "cursor-move"}`}
                 style={{
-                  left: `calc(${effQrX}% - ${qrCardPxPreview / 2}px)`,
-                  top: `calc(${effQrY}% - ${qrCardPxPreview / 2}px)`,
-                  width: qrCardPxPreview,
-                  height: qrCardPxPreview,
-                  padding: qrPadPreview,
+                  left: `calc(${effQrX}% - ${qrFramePxPreview / 2}px)`,
+                  top: `calc(${effQrY}% - ${qrFramePxPreview / 2}px)`,
+                  width: qrFramePxPreview,
+                  height: qrFramePxPreview,
+                  padding: QR_QUIET_PX,
+                  borderWidth: QR_BORDER_PX,
                 }}
               >
                 <QRCodeSVG
                   value={url}
                   size={qrCorePxPreview}
                   level="M"
+                  includeMargin={false}
                   style={{ display: "block" }}
                 />
               </div>
@@ -655,17 +732,19 @@ export function PartnerQrCode({
               {effShowFooter && (
                 <div
                   onPointerDown={handlePointerDown("footer")}
-                  className={`absolute left-0 right-0 select-none touch-none bg-primary/95 flex items-center justify-between leading-tight px-2 ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
+                  className={`absolute z-[2] left-0 right-0 select-none touch-none bg-primary/95 leading-none px-2 py-0 flex items-center justify-between overflow-hidden whitespace-nowrap ${locked ? "cursor-not-allowed" : "cursor-row-resize"}`}
                   style={{
-                    top: `calc(${effFooterY}% - ${footerHPreview / 2}px)`,
+                    top: footerTopPreview,
+                    height: footerHPreview,
                     minHeight: footerHPreview,
+                    maxHeight: footerHPreview,
                     fontSize: footerFontPreview,
                     color: "#fff200",
                     fontWeight: 700,
                   }}
                 >
-                  <span className="whitespace-nowrap overflow-hidden text-ellipsis">{footerLeftPreview}</span>
-                  <span className="whitespace-nowrap pl-2">{footerRightPreview}</span>
+                  <span>{footerLeftPreview}</span>
+                  <span className="shrink-0 pl-1">{footerRightPreview}</span>
                 </div>
               )}
             </div>
@@ -680,7 +759,7 @@ export function PartnerQrCode({
           </div>
 
           {/* Controls */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 min-w-0">
             <div className="flex flex-col gap-2">
               <Label className="text-sm">Formato do template</Label>
               <div className="flex flex-wrap gap-2">
@@ -713,6 +792,12 @@ export function PartnerQrCode({
 
             <div className="flex flex-col gap-2">
               <Label className="text-sm">Imagem de fundo</Label>
+              {!template.src && (
+                <p className="text-xs text-muted-foreground leading-snug">
+                  Este formato não tem arte pronta. Envie a sua imagem no tamanho
+                  mostrado no preview (exemplo embaçado).
+                </p>
+              )}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -735,9 +820,13 @@ export function PartnerQrCode({
                   size="sm"
                   onClick={() => setBgImage(template.src)}
                   className="gap-2"
-                  disabled={locked || bgImage === template.src}
+                  disabled={
+                    locked ||
+                    (template.src ? bgImage === template.src : !bgImage)
+                  }
                 >
-                  <ImageIcon className="h-4 w-4" /> Usar template padrão
+                  <ImageIcon className="h-4 w-4" />{" "}
+                  {template.src ? "Usar template padrão" : "Voltar ao exemplo de tamanho"}
                 </Button>
                 {bgImage && bgImage !== template.src && !locked && (
                   <Button
@@ -839,7 +928,7 @@ export function PartnerQrCode({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={onClose}>
             Fechar
           </Button>
@@ -854,29 +943,6 @@ export function PartnerQrCode({
       </DialogContent>
     </Dialog>
   );
-}
-
-/** Helper: rounded rect path (no fill — caller fills). */
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + w - radius, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-  ctx.lineTo(x + w, y + h - radius);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-  ctx.lineTo(x + radius, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
 }
 
 /**
@@ -903,7 +969,7 @@ function PartnerLinkCard({
     }
   };
   return (
-    <div className="w-full max-w-[320px] rounded-lg border bg-card p-2.5 space-y-2">
+    <div className="w-full max-w-full sm:max-w-[320px] rounded-lg border bg-card p-2.5 space-y-2">
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {isShort ? "Link curto para compartilhar" : "Link direto para WhatsApp"}
       </div>

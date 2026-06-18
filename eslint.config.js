@@ -15,6 +15,7 @@ export default tseslint.config(
       "worker-portal/**",
       "screenshots/**",
       "fixtures/**",
+      "scripts/manual-tests/**",
       "**/*.min.js",
     ],
   },

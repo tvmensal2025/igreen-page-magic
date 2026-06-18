@@ -22,6 +22,8 @@ interface ProdutosModuleProps {
   instanceName?: string | null;
   isWhapi?: boolean;
   onTabChange?: (tab: ProdutosTabId) => void;
+  onOpenPosVenda?: (customerId: string) => void;
+  onOpenSettings?: () => void;
 }
 
 const TABS: { id: ProdutosTabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -37,6 +39,8 @@ export function ProdutosModule({
   instanceName,
   isWhapi,
   onTabChange,
+  onOpenPosVenda,
+  onOpenSettings,
 }: ProdutosModuleProps) {
   usePvFonts();
   const [tab, setTab] = useState<ProdutosTabId>(initialTab);
@@ -97,7 +101,11 @@ export function ProdutosModule({
         {/* Conteúdo */}
         <div className="animate-in fade-in duration-200">
           {tab === "acompanhamento" && (
-            <AcompanhamentoPanel consultantId={consultantId} />
+            <AcompanhamentoPanel
+              consultantId={consultantId}
+              onOpenPosVenda={onOpenPosVenda}
+              onOpenSettings={onOpenSettings}
+            />
           )}
           {tab === "orcamentos" && (
             <ProposalsPanel

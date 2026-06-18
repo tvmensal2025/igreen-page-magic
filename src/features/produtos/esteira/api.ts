@@ -5,7 +5,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { buildAttachmentPath } from "./logic";
 import {
-  DEFAULT_TEMPLATE_STAGES,
+  DEFAULT_TEMPLATE_BY_FAMILY,
   SALES_ATTACHMENTS_BUCKET,
   type AttachmentRow,
   type SaleStage,
@@ -113,11 +113,14 @@ export async function reorderStages(items: Array<{ id: string; position: number 
 export async function seedDefaultTemplate(): Promise<void> {
   const existing = await fetchTemplate();
   if (existing.length > 0) return;
-  const rows = DEFAULT_TEMPLATE_STAGES.map((name, idx) => ({
-    name,
-    position: idx,
-    is_active: true,
-  }));
+  const rows = Object.entries(DEFAULT_TEMPLATE_BY_FAMILY).flatMap(([family, stages]) =>
+    stages.map((name, position) => ({
+      name,
+      position,
+      is_active: true,
+      product_family: family,
+    })),
+  );
   const { error } = await supabase
     .from("sale_stage_templates" as never)
     .insert(rows as never);

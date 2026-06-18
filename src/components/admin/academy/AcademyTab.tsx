@@ -191,24 +191,120 @@ export function AcademyTab() {
       {/* ===== CORPO ===== */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-8">
 
-        {/* barra de progresso da jornada */}
-        <section className="space-y-2">
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="text-[10px] tracking-[0.25em] uppercase font-bold"
-               style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
-              Sua jornada
-            </p>
-            <p className="text-[11px] text-right" style={{ color: AC.textMute }}>
-              {nxt
-                ? `Faltam ${nxt.min - passedCount} prova${nxt.min - passedCount !== 1 ? "s" : ""} para ${nxt.name}`
-                : "Nível máximo alcançado"}
-            </p>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: AC.surface2 }}>
+        {/* jornada + níveis */}
+        <section className="space-y-4">
+          {/* card do nível atual */}
+          <div
+            className="relative overflow-hidden rounded-xl p-4 sm:p-5"
+            style={{
+              background: `linear-gradient(135deg, ${AC.surface2} 0%, ${AC.surface} 100%)`,
+              border: `1px solid ${AC.border}`,
+            }}
+          >
             <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${pct}%`, background: AC.primary }}
+              aria-hidden
+              className="absolute -top-10 -right-10 w-40 h-40 rounded-full blur-3xl opacity-20"
+              style={{ background: AC.primary }}
             />
+            <div className="relative flex flex-col sm:flex-row sm:items-center gap-4">
+              <div
+                className="flex items-center justify-center w-16 h-16 rounded-2xl text-3xl shrink-0"
+                style={{ background: AC.primarySoft, border: `1px solid ${AC.borderHi}` }}
+              >
+                {lvl.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold tracking-[0.25em] uppercase"
+                   style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
+                  Seu nível
+                </p>
+                <h3 className="text-xl font-bold mt-0.5" style={{ color: AC.text, fontFamily: AC_FONT_DISPLAY }}>
+                  {lvl.name}
+                </h3>
+                <p className="text-sm mt-1" style={{ color: AC.textDim }}>{lvl.desc}</p>
+              </div>
+              <div className="sm:text-right shrink-0">
+                <p className="text-3xl font-bold tabular-nums" style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>
+                  {passedCount}
+                </p>
+                <p className="text-[11px]" style={{ color: AC.textMute }}>
+                  prova{passedCount !== 1 ? "s" : ""} aprovada{passedCount !== 1 ? "s" : ""}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* escada de níveis */}
+          <div className="flex gap-1 overflow-x-auto no-scrollbar pb-1">
+            {KNOWLEDGE_LEVELS.map((level, i) => {
+              const reached = passedCount >= level.min;
+              const current = lvl.key === level.key;
+              const nextLvl = KNOWLEDGE_LEVELS[i + 1];
+              const inProgress = reached && nextLvl && passedCount < nextLvl.min;
+              return (
+                <div
+                  key={level.key}
+                  className="flex-none flex flex-col items-center gap-1.5 min-w-[72px] px-1"
+                  title={`${level.name}: ${level.min}+ provas`}
+                >
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-lg transition-all"
+                    style={{
+                      background: reached ? AC.primarySoft : "rgba(255,255,255,0.04)",
+                      border: `2px solid ${current || inProgress ? AC.primary : reached ? AC.borderHi : AC.border}`,
+                      opacity: reached ? 1 : 0.45,
+                      boxShadow: current ? `0 0 16px ${AC.primary}55` : "none",
+                    }}
+                  >
+                    {level.icon}
+                  </div>
+                  <span
+                    className="text-[9px] font-semibold text-center leading-tight"
+                    style={{
+                      color: current ? AC.primary : reached ? AC.textDim : AC.textMute,
+                      fontFamily: AC_FONT_DISPLAY,
+                    }}
+                  >
+                    {level.name}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* barras duplas: aulas + provas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[11px]">
+                <span style={{ color: AC.textDim }}>Aulas concluídas</span>
+                <span className="font-semibold tabular-nums" style={{ color: AC.text }}>
+                  {doneAulas}/{totalAulas} · {pct}%
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: AC.surface2 }}>
+                <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: AC.primary }} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[11px]">
+                <span style={{ color: AC.textDim }}>Provas aprovadas</span>
+                <span className="font-semibold tabular-nums" style={{ color: AC.text }}>
+                  {passedCount}/{totalQuizzes}
+                  {nxt && (
+                    <span style={{ color: AC.textMute }}> · próximo: {nxt.name}</span>
+                  )}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: AC.surface2 }}>
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${totalQuizzes ? Math.round(passedCount / totalQuizzes * 100) : 0}%`,
+                    background: `linear-gradient(90deg, ${AC.primaryDeep}, ${AC.primary})`,
+                  }}
+                />
+              </div>
+            </div>
           </div>
         </section>
 

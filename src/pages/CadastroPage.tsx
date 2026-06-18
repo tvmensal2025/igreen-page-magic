@@ -34,7 +34,7 @@ const CadastroPage = () => {
     // Pré-carrega a imagem de fundo antes de abrir o diálogo de impressão.
     // Sem isso, no primeiro clique a imagem ainda não está decodificada e o PDF sai em branco.
     const preload = new Image();
-    preload.src = "/images/mutirao-lei-14300.jpg";
+    preload.src = "/images/banner-a4.jpg";
     const triggerPrint = () => {
       // Pequeno delay extra para garantir que o React renderizou o print-page
       setTimeout(() => {
@@ -111,9 +111,9 @@ const CadastroPage = () => {
           }
         `}</style>
 
-        {/* Background: Mutirão Lei 14.300 banner em A4 */}
+        {/* Background: arte oficial A4 (BANNER-A4.pdf) */}
         <img
-          src="/images/mutirao-lei-14300.jpg"
+          src="/images/banner-a4.jpg"
           alt=""
           onError={(e) => console.error('[Print] Falha ao carregar banner:', e)}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }}

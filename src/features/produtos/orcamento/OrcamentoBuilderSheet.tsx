@@ -197,7 +197,11 @@ export function OrcamentoBuilderSheet({
   const sendViaWhatsApp = async (link: string) => {
     if (!recipient || !product) return false;
     if (!instanceName) {
-      toast({ title: "WhatsApp não conectado", variant: "destructive" });
+      toast({
+        title: "WhatsApp não conectado",
+        description: "Copie o link abaixo e envie manualmente ao cliente.",
+        variant: "destructive",
+      });
       return false;
     }
 

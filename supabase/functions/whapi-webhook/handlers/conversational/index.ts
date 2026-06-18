@@ -833,6 +833,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // disparando áudios/explicações antigas.
   if (
     (ctx.isFile || ctx.hasImage || ctx.hasDocument) &&
+    !ctx.hasAudio && // 🎧 áudio NUNCA vai pra OCR de conta — trata como mensagem comum
     !(ctx.customer as any).electricity_bill_photo_url &&
     !CADASTRO_STEPS.has(stepKey)
   ) {

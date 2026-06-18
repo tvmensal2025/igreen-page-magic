@@ -106,8 +106,8 @@ const raw: MaterialItem[] = [
   { id: "conta-video", title: "Como ler a conta de energia", section: "conta_energia", type: "video", url: `${SB}/conta-de-energia.mp4` },
 
   // ── Lei 14.300 ──
-  { id: "lei-mutirao", title: "Mutirão Lei 14.300", section: "lei_14300", type: "image", url: `/images/mutirao-lei-14300.jpg` },
-  { id: "lei-banner", title: "Banner Lei 14.300", section: "lei_14300", type: "image", url: `/images/banner-lei-14300-base.jpg` },
+  { id: "lei-mutirao", title: "Mutirão Lei 14.300 — A4", section: "lei_14300", type: "image", url: `/images/banner-a4.jpg` },
+  { id: "lei-banner", title: "Banner Lei 14.300 — 504×904", section: "lei_14300", type: "image", url: `/images/banner-504x904.jpg` },
 ];
 
 export const MATERIALS: MaterialItem[] = raw.map((m) => ({ ...m, url: abs(m.url) }));

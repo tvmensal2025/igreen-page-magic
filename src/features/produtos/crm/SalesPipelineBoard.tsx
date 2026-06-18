@@ -25,6 +25,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { SaleStagePanel, StageTemplateAdmin } from "@/features/produtos/esteira";
+import { SaleHistoryTimeline } from "./SaleHistoryTimeline";
 import { useUserRole } from "@/hooks/useUserRole";
 import {
   Select,
@@ -88,6 +89,7 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
   const [registrarOpen, setRegistrarOpen] = useState(false);
   // Esteira de acompanhamento (pós-venda) e admin do modelo de etapas.
   const [stagePanelSale, setStagePanelSale] = useState<Sale | null>(null);
+  const [historySale, setHistorySale] = useState<Sale | null>(null);
   const [templateAdminOpen, setTemplateAdminOpen] = useState(false);
   const { isAdmin } = useUserRole(consultantId);
   const { toast } = useToast();
@@ -338,6 +340,7 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
                   onOpenAcompanhamento={
                     sale.status === "fechado" ? () => setStagePanelSale(sale) : undefined
                   }
+                  onOpenHistory={() => setHistorySale(sale)}
                 />
               ))}
             </div>
@@ -393,6 +396,23 @@ export function SalesPipelineBoard({ consultantId }: SalesPipelineBoardProps) {
           {stagePanelSale && (
             <div className="mt-6">
               <SaleStagePanel saleId={stagePanelSale.id} />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Histórico de etapas do negócio */}
+      <Sheet open={historySale !== null} onOpenChange={(open) => !open && setHistorySale(null)}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto bg-pv-bg">
+          <SheetHeader>
+            <SheetTitle>Histórico do negócio</SheetTitle>
+            <SheetDescription>
+              Mudanças de etapa registradas automaticamente no pipeline.
+            </SheetDescription>
+          </SheetHeader>
+          {historySale && (
+            <div className="mt-6">
+              <SaleHistoryTimeline saleId={historySale.id} />
             </div>
           )}
         </SheetContent>
@@ -465,9 +485,10 @@ interface SaleCardProps {
   originProposal: Proposal | null;
   onDragStart: () => void;
   onOpenAcompanhamento?: () => void;
+  onOpenHistory?: () => void;
 }
 
-function SaleCard({ sale, product, dark, customerName, originProposal, onDragStart, onOpenAcompanhamento }: SaleCardProps) {
+function SaleCard({ sale, product, dark, customerName, originProposal, onDragStart, onOpenAcompanhamento, onOpenHistory }: SaleCardProps) {
   const familyLabel = product ? PRODUCT_FAMILY_LABEL[product.family] : "Produto";
   const action = NEXT_ACTION[sale.status];
   const daysAgo = Math.floor((Date.now() - new Date(sale.updatedAt).getTime()) / 86400000);
@@ -510,7 +531,20 @@ function SaleCard({ sale, product, dark, customerName, originProposal, onDragSta
               {action.label}
             </span>
           </div>
-          {onOpenAcompanhamento && (
+          <div className="flex items-center gap-2">
+            {onOpenHistory && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenHistory();
+                }}
+                className="text-[10px] uppercase tracking-wider text-white/40 hover:text-white/70"
+              >
+                Histórico
+              </button>
+            )}
+            {onOpenAcompanhamento && (
             <button
               type="button"
               onClick={(e) => {
@@ -521,7 +555,8 @@ function SaleCard({ sale, product, dark, customerName, originProposal, onDragSta
             >
               <ListChecks className="h-3 w-3" /> Acompanhar
             </button>
-          )}
+            )}
+          </div>
         </div>
         {originProposal && (
           <p className="mt-2 text-[9px] text-white/30 italic truncate">
@@ -558,9 +593,23 @@ function SaleCard({ sale, product, dark, customerName, originProposal, onDragSta
           {fmtCents(sale.amountCents)}
         </div>
       </div>
-      <div className="mt-3 pt-3 border-t border-pv-bg flex items-center gap-1.5">
-        <span className={`w-1.5 h-1.5 rounded-full ${action.dot}`} />
-        <span className="text-[10px] text-pv-ink/60">{action.label}</span>
+      <div className="mt-3 pt-3 border-t border-pv-bg flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${action.dot}`} />
+          <span className="text-[10px] text-pv-ink/60">{action.label}</span>
+        </div>
+        {onOpenHistory && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenHistory();
+            }}
+            className="text-[10px] text-pv-ink/40 hover:text-pv-accent uppercase tracking-wider"
+          >
+            Histórico
+          </button>
+        )}
       </div>
       {sale.notes && (
         <p className="mt-2 text-[10px] text-pv-ink/50 line-clamp-2 italic">{sale.notes}</p>

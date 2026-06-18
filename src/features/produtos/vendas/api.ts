@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { supabase } from "@/integrations/supabase/client";
-import type { CaptureData, CreateSaleInput, Sale, SaleRow, SaleStatus } from "./types";
+import type { CaptureData, CreateSaleInput, Sale, SaleRow, SaleStatus, SaleStatusHistoryEntry, SaleStatusHistoryRow } from "./types";
 
 const SELECT_COLUMNS =
   "id, consultant_id, product_id, customer_id, status, amount_cents, points_kwh, capture_data, notes, submitted_at, activated_at, closed_at, created_at, updated_at";
@@ -159,4 +159,27 @@ export async function updateSale(
 export async function deleteSale(saleId: string): Promise<void> {
   const { error } = await supabase.from("sales" as never).delete().eq("id", saleId);
   if (error) throw error;
+}
+
+function mapSaleStatusHistoryRow(row: SaleStatusHistoryRow): SaleStatusHistoryEntry {
+  return {
+    id: row.id,
+    saleId: row.sale_id,
+    fromStatus: row.from_status,
+    toStatus: row.to_status,
+    note: row.note,
+    changedBy: row.changed_by,
+    createdAt: row.created_at,
+  };
+}
+
+/** Histórico de mudanças de etapa de uma venda (auditoria). */
+export async function fetchSaleStatusHistory(saleId: string): Promise<SaleStatusHistoryEntry[]> {
+  const { data, error } = await supabase
+    .from("sale_status_history" as never)
+    .select("id, sale_id, from_status, to_status, note, changed_by, created_at")
+    .eq("sale_id", saleId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return ((data as unknown as SaleStatusHistoryRow[]) || []).map(mapSaleStatusHistoryRow);
 }

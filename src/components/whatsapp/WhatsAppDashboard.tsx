@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { MessageSquare, Clock, Send, TrendingUp, Calendar, Users } from "lucide-react";
+import { AICostCard } from "@/components/admin/AICostCard";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, subDays, differenceInMinutes, parseISO } from "date-fns";
@@ -204,6 +205,8 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
         <KpiCard icon={<Send className="w-4 h-4" />} label="Mensagens Enviadas" value={kpis?.sentMessages ?? 0} subtitle="Últimos 30 dias" />
         <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Taxa de Resposta" value={`${kpis?.responseRate ?? 0}%`} subtitle="Clientes respondidos" />
       </div>
+
+      <AICostCard userId={consultantId} className="rounded-xl p-3 space-y-3" />
 
       {/* Row 2: Funnel + Area Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

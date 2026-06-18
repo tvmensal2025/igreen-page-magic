@@ -4,8 +4,14 @@ import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import {
+  drawFlyerFooter,
+  clampFooterBand,
+  previewFooterFontSize,
+} from "@/components/admin/flyerFooter";
 import { Download, Copy, FileText, Loader2 } from "lucide-react";
+import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
+import { useToast } from "@/hooks/use-toast";
 
 type Format = "a4" | "banner";
 
@@ -25,12 +31,12 @@ interface PanfletoModalProps {
 const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
 
 // ============ Dimensões nativas (na proporção física EXATA do papel) ============
-// A4 = 210×297mm (0,707) · Banner = 504×940mm (0,536). Manter a proporção do
+// A4 = 210×297mm (0,707) · Banner = 504×904mm (360imprimir). Manter a proporção do
 // canvas igual à do papel garante impressão sem barra lateral e sem esticar o QR.
 const A4_W = 905;
 const A4_H = 1280;
 const BANNER_W = 1008;
-const BANNER_H = 1881;
+const BANNER_H = 1808;
 
 // ============ Templates (defaults em % do canvas — TRAVADOS) ============
 type TemplateCfg = {
@@ -48,36 +54,69 @@ type TemplateCfg = {
 
 const TEMPLATES: Record<Format, TemplateCfg> = {
   a4: {
-    bg: "/images/mutirao-lei-14300-base.jpg",
+    bg: "/images/banner-a4.jpg",
     canvasW: A4_W,
     canvasH: A4_H,
     pdfWmm: 210,
     pdfHmm: 297,
+    // Mesmos defaults travados do PartnerQrCode (Folha A4).
     qrX: 25,
     qrY: 91,
-    qrSize: 18,
+    qrSize: 16,
     footerY: 99,
-    footerH: 3,
+    footerH: 2.6,
   },
   banner: {
-    bg: "/images/banner-lei-14300-base.jpg",
+    bg: "/images/banner-504x904.jpg",
     canvasW: BANNER_W,
     canvasH: BANNER_H,
     pdfWmm: 504,
-    pdfHmm: 940,
-    qrX: 19.9,
-    qrY: 87.3,
-    qrSize: 30,
-    footerY: 98.7,
-    footerH: 2.65,
+    pdfHmm: 904,
+    // Mesmos defaults travados do PartnerQrCode (Banner 504×904mm).
+    qrX: 15,
+    qrY: 89,
+    qrSize: 23,
+    footerY: 100,
+    footerH: 3,
   },
 };
 
 const PREVIEW_W = 380;
 // Altura máxima do preview para caber numa tela de notebook sem scroll.
-// O Banner 504×940mm é alto e, calculado só pela largura, estouraria a tela;
+// O Banner 504×904mm é alto e, calculado só pela largura, estouraria a tela;
 // então reduzimos proporcionalmente até esse teto.
 const PREVIEW_MAX_H = 440;
+const QR_QUIET_PX = 2;
+const QR_BORDER_PX = 1;
+
+function drawQrWithThinFrame(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cx: number,
+  cy: number,
+  qrPx: number,
+) {
+  const quiet = Math.max(4, Math.round(qrPx * 0.012));
+  const border = Math.max(2, Math.round(qrPx * 0.004));
+  const dx = cx - qrPx / 2;
+  const dy = cy - qrPx / 2;
+  const outerX = dx - quiet;
+  const outerY = dy - quiet;
+  const outerW = qrPx + quiet * 2;
+  const outerH = qrPx + quiet * 2;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(outerX, outerY, outerW, outerH);
+  ctx.drawImage(img, dx, dy, qrPx, qrPx);
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = border;
+  ctx.strokeRect(
+    outerX + border / 2,
+    outerY + border / 2,
+    outerW - border,
+    outerH - border,
+  );
+}
 
 function formatBrPhone(raw?: string): string {
   if (!raw) return "";
@@ -113,21 +152,6 @@ function drawImageCover(
   ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + w - radius, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-  ctx.lineTo(x + w, y + h - radius);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-  ctx.lineTo(x + radius, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-}
-
 export function PanfletoModal({
   open,
   onClose,
@@ -153,21 +177,19 @@ export function PanfletoModal({
   const effQrSize = template.qrSize;
   const effFooterY = template.footerY;
 
-  const previewAspect = template.canvasH / template.canvasW;
-  let previewW = PREVIEW_W;
-  let previewH = PREVIEW_W * previewAspect;
-  if (previewH > PREVIEW_MAX_H) {
-    previewH = PREVIEW_MAX_H;
-    previewW = previewH / previewAspect;
-  }
-  const PREVIEW_W_EFF = Math.round(previewW);
-  const PREVIEW_H = Math.round(previewH);
+  const [rendering, setRendering] = useState(false);
+
+  // Preview na tela (responsivo). Export usa canvasW/canvasH do template — tamanhos fixos.
+  const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
+    template.canvasW,
+    template.canvasH,
+    PREVIEW_W,
+    PREVIEW_MAX_H,
+  );
 
   const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W_EFF;
-  const qrPadPreview = qrCorePxPreview * 0.06;
-  const qrCardPxPreview = qrCorePxPreview + qrPadPreview * 2;
-  const footerHPreview = Math.max(14, PREVIEW_H * (template.footerH / 100));
-  const footerFontPreview = Math.max(7, Math.round(footerHPreview * 0.36));
+  const qrFramePxPreview =
+    qrCorePxPreview + QR_QUIET_PX * 2 + QR_BORDER_PX * 2;
 
   const nomeUpper = (nomeConsultor || "CONSULTOR IGREEN").toUpperCase();
   const idLabel = igreenId ? ` • ID ${igreenId}` : "";
@@ -175,7 +197,18 @@ export function PanfletoModal({
   const footerLeft = `LICENCIADO: ${nomeUpper}${idLabel}`;
   const footerRight = `WHATSAPP: +55 ${phoneFmt}`;
 
-  const [rendering, setRendering] = useState(false);
+  const { bandTop: footerTopPreview, bandHeight: footerHPreview } = clampFooterBand(
+    PREVIEW_H,
+    effFooterY,
+    template.footerH,
+  );
+  const footerFontPreview = previewFooterFontSize(
+    PREVIEW_W_EFF,
+    footerHPreview,
+    footerLeft,
+    footerRight,
+    "900",
+  );
 
   const renderToCanvas = async (): Promise<HTMLCanvasElement | null> => {
     const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
@@ -207,54 +240,25 @@ export function PanfletoModal({
         const qrPx = (effQrSize / 100) * CW;
         const cx = (effQrX / 100) * CW;
         const cy = (effQrY / 100) * CH;
-        const dx = cx - qrPx / 2;
-        const dy = cy - qrPx / 2;
-        const pad = qrPx * 0.06;
-        ctx.save();
-        ctx.shadowColor = "rgba(0,0,0,0.35)";
-        ctx.shadowBlur = 16;
-        ctx.shadowOffsetY = 4;
-        ctx.fillStyle = "#d4a017";
-        roundRect(ctx, dx - pad - 4, dy - pad - 4, qrPx + pad * 2 + 8, qrPx + pad * 2 + 8, qrPx * 0.05);
-        ctx.fill();
-        ctx.restore();
-        ctx.fillStyle = "#ffffff";
-        roundRect(ctx, dx - pad, dy - pad, qrPx + pad * 2, qrPx + pad * 2, qrPx * 0.04);
-        ctx.fill();
-        ctx.drawImage(img, dx, dy, qrPx, qrPx);
+        drawQrWithThinFrame(ctx, img, cx, cy, qrPx);
         resolve();
       };
       img.onerror = () => resolve();
       img.src = svgUrl;
     });
 
-    const bandHeight = CH * (template.footerH / 100);
-    const bandY = (effFooterY / 100) * CH - bandHeight / 2;
-    ctx.fillStyle = "#0d3b1f";
-    ctx.fillRect(0, bandY, CW, bandHeight);
-    ctx.fillStyle = "#d4a017";
-    ctx.fillRect(0, bandY, CW, Math.max(2, bandHeight * 0.05));
-    ctx.fillRect(0, bandY + bandHeight - Math.max(2, bandHeight * 0.05), CW, Math.max(2, bandHeight * 0.05));
-
-    ctx.fillStyle = "#ffd700";
-    ctx.textBaseline = "middle";
-    const cyText = bandY + bandHeight / 2;
-    const sidePad = CW * 0.025;
-    const gap = CW * 0.02;
-    const available = CW - sidePad * 2 - gap;
-    let fSize = Math.round(bandHeight * 0.42);
-    while (fSize > 8) {
-      ctx.font = `900 ${fSize}px Montserrat, "Arial Black", sans-serif`;
-      const wL = ctx.measureText(footerLeft).width;
-      const wR = ctx.measureText(footerRight).width;
-      if (wL + wR <= available) break;
-      fSize -= 1;
-    }
-    ctx.font = `900 ${fSize}px Montserrat, "Arial Black", sans-serif`;
-    ctx.textAlign = "left";
-    ctx.fillText(footerLeft, sidePad, cyText);
-    ctx.textAlign = "right";
-    ctx.fillText(footerRight, CW - sidePad, cyText);
+    drawFlyerFooter(ctx, {
+      canvasW: CW,
+      canvasH: CH,
+      footerYPercent: effFooterY,
+      footerHPercent: template.footerH,
+      footerLeft,
+      footerRight,
+      bgColor: "#0d3b1f",
+      textColor: "#ffd700",
+      fontFamily: 'Montserrat, "Arial Black", sans-serif',
+      fontWeight: "900",
+    });
 
     return canvas;
   };
@@ -265,7 +269,7 @@ export function PanfletoModal({
       const canvas = await renderToCanvas();
       if (!canvas) return;
       const link = document.createElement("a");
-      link.download = `${format === "a4" ? "panfleto-a4" : "banner-504x940"}-igreen-${licenca}.png`;
+      link.download = `${format === "a4" ? "panfleto-a4" : "banner-504x904"}-igreen-${licenca}.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
       toast({ title: "✅ PNG baixado!" });
@@ -285,7 +289,7 @@ export function PanfletoModal({
       // preenche a página inteira sem esticar e sem barra verde nas laterais.
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
       pdf.addImage(imgData, "JPEG", 0, 0, wmm, hmm);
-      const name = format === "a4" ? "panfleto-a4-210x297" : "banner-504x940";
+      const name = format === "a4" ? "panfleto-a4-210x297" : "banner-504x904";
       pdf.save(`${name}-igreen-${licenca}.pdf`);
       toast({ title: "✅ PDF baixado!" });
     } finally {
@@ -300,18 +304,18 @@ export function PanfletoModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-4xl max-h-[95dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <FileText className="w-5 h-5 text-primary" /> {title ?? "Arte Mutirão Lei 14.300"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2">
+        <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
           {/* Preview */}
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">
             <div
-              className="relative overflow-hidden rounded-xl border bg-primary shadow-sm"
+              className="relative overflow-hidden rounded-xl border bg-primary shadow-sm max-w-full shrink-0"
               style={{
                 width: PREVIEW_W_EFF,
                 height: PREVIEW_H,
@@ -323,38 +327,40 @@ export function PanfletoModal({
             >
               <div
                 ref={qrSvgWrapperRef}
-                className="absolute select-none bg-white rounded-md shadow-md ring-2 ring-[#d4a017]"
+                className="absolute select-none bg-white box-border border border-neutral-900"
                 style={{
-                  left: `calc(${effQrX}% - ${qrCardPxPreview / 2}px)`,
-                  top: `calc(${effQrY}% - ${qrCardPxPreview / 2}px)`,
-                  width: qrCardPxPreview,
-                  height: qrCardPxPreview,
-                  padding: qrPadPreview,
+                  left: `calc(${effQrX}% - ${qrFramePxPreview / 2}px)`,
+                  top: `calc(${effQrY}% - ${qrFramePxPreview / 2}px)`,
+                  width: qrFramePxPreview,
+                  height: qrFramePxPreview,
+                  padding: QR_QUIET_PX,
+                  borderWidth: QR_BORDER_PX,
                 }}
               >
                 <QRCodeSVG
                   value={redirectUrl}
                   size={qrCorePxPreview}
                   level="H"
+                  includeMargin={false}
                   style={{ display: "block" }}
                 />
               </div>
 
               <div
-                className="absolute left-0 right-0 select-none flex items-center justify-between leading-tight px-2"
+                className="absolute left-0 right-0 select-none leading-none px-2 py-0 flex items-center justify-between overflow-hidden whitespace-nowrap"
                 style={{
-                  top: `calc(${effFooterY}% - ${footerHPreview / 2}px)`,
+                  top: footerTopPreview,
                   height: footerHPreview,
+                  minHeight: footerHPreview,
+                  maxHeight: footerHPreview,
                   fontSize: footerFontPreview,
                   color: "#ffd700",
                   fontWeight: 900,
                   background: "#0d3b1f",
-                  borderTop: "2px solid #d4a017",
-                  borderBottom: "2px solid #d4a017",
                 }}
               >
-                <span className="whitespace-nowrap overflow-hidden text-ellipsis">{footerLeft}</span>
-                <span className="whitespace-nowrap pl-2">{footerRight}</span>
+                <span>{footerLeft}</span>
+                <span className="shrink-0 pl-1">{footerRight}</span>
               </div>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px]">
@@ -363,7 +369,7 @@ export function PanfletoModal({
           </div>
 
           {/* Controles */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 min-w-0">
             <div className="flex flex-col gap-2">
               <Label className="text-sm">Formato</Label>
               <div className="flex flex-wrap gap-2">
@@ -381,7 +387,7 @@ export function PanfletoModal({
                   variant={format === "banner" ? "default" : "outline"}
                   onClick={() => setFormat("banner")}
                 >
-                  Banner 504×940mm
+                  Banner 504×904mm
                 </Button>
               </div>
             </div>
@@ -393,7 +399,7 @@ export function PanfletoModal({
           </div>
         </div>
 
-        <DialogFooter className="flex flex-wrap gap-2 sm:justify-end">
+        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={copyLink} className="gap-2">
             <Copy className="w-4 h-4" /> Copiar link
           </Button>

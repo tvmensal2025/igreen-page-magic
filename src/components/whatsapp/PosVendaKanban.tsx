@@ -71,7 +71,15 @@ function computeStage(c: PosVendaCustomer): Stage {
   return "aprovado";
 }
 
-export default function PosVendaKanban({ consultantId }: { consultantId: string }) {
+export default function PosVendaKanban({
+  consultantId,
+  initialCustomerId,
+  onInitialCustomerConsumed,
+}: {
+  consultantId: string;
+  initialCustomerId?: string | null;
+  onInitialCustomerConsumed?: () => void;
+}) {
   const [customers, setCustomers] = useState<PosVendaCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -151,6 +159,11 @@ export default function PosVendaKanban({ consultantId }: { consultantId: string 
 
   useEffect(() => { load(); }, [consultantId, ownerFilter, myIgreenId]);
   useEffect(() => { loadConsultants(); loadRegistrants(); }, [consultantId]);
+  useEffect(() => {
+    if (!initialCustomerId) return;
+    setViewCustomerId(initialCustomerId);
+    onInitialCustomerConsumed?.();
+  }, [initialCustomerId, onInitialCustomerConsumed]);
 
 
 

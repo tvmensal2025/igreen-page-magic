@@ -11,6 +11,7 @@ import { sendWhatsAppMessage, resolveRecipient, normalizeBrazilPhone } from "@/s
 import { supabase } from "@/integrations/supabase/client";
 import { createLogger } from "@/lib/logger";
 import { autoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
+import { applyTemplate } from "@/hooks/useTemplates";
 
 const logger = createLogger("useMessages");
 
@@ -435,14 +436,38 @@ export function useMessages(
         recipient = resolveRecipient(targetJid);
       }
 
-      logger.debug("sending to:", recipient, "instance:", instanceName, "text:", text.slice(0, 50));
+      // Renderiza variáveis de template ({{nome}}, {{first_name}}, {{valor_conta}}…)
+      // no envio manual. Antes, uma "resposta rápida" com {{first_name}} ia LITERAL
+      // para o cliente ("Oi {{first_name}}"), pois este caminho não passava pelo
+      // render (só os painéis de disparo em massa renderizavam). Só busca o cliente
+      // quando há placeholder, para não pesar o envio comum.
+      let outgoingText = text;
+      if (customerId && /\{/.test(text)) {
+        try {
+          const { data: cust } = await supabase
+            .from("customers")
+            .select("name, electricity_bill_value")
+            .eq("id", customerId)
+            .maybeSingle();
+          if (cust) {
+            outgoingText = applyTemplate(
+              { id: "", consultant_id: "", name: "", content: text, media_type: "text", media_url: null, image_url: null, created_at: "" },
+              { name: (cust as { name?: string }).name || "", electricity_bill_value: (cust as { electricity_bill_value?: number }).electricity_bill_value },
+            );
+          }
+        } catch (e) {
+          logger.warn("render template vars falhou (enviando texto cru):", e);
+        }
+      }
+
+      logger.debug("sending to:", recipient, "instance:", instanceName, "text:", outgoingText.slice(0, 50));
 
       try {
         const result = await sendWhatsAppMessage({
           instanceName: instanceName || "",
           phone: recipient,
           mediaCategory: "text",
-          text,
+          text: outgoingText,
           isWhapi,
           customerId,
           conversationStep: "consultor_manual",
@@ -477,7 +502,7 @@ export function useMessages(
             id: optimisticId,
             remoteJid,
             fromMe: true,
-            text,
+            text: outgoingText,
             timestamp: Date.now() / 1000,
             status: 1,
           },

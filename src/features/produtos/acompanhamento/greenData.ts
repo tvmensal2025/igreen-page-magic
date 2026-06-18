@@ -5,7 +5,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
   estimateBillValue,
+  graduacaoRank,
   isDirectCustomer,
+  resolveGraduacao,
   type CountMode,
   type EntradaRule,
   type GreenCustomerInput,
@@ -38,6 +40,18 @@ export interface ValidatedCustomers {
   potencialIgreen: GreenCustomerInput[];
   portfolio: GreenPortfolioStats;
   semFaturaCount: number;
+  /** Carteira para o painel de faturas Green. */
+  faturaClients: GreenFaturaClient[];
+}
+
+export type GreenFaturaKind = "real" | "estimada" | "sem_fatura";
+
+export interface GreenFaturaClient {
+  id: string;
+  name: string | null;
+  distribuidora: string | null;
+  faturaValor: number | null;
+  kind: GreenFaturaKind;
 }
 
 const DEFAULT_SETTINGS: Omit<GreenSettings, "myIgreenId" | "consultantName"> = {
@@ -105,10 +119,46 @@ async function loadConsultantProfile(consultantId: string) {
   };
 }
 
+/** Graduação do próprio consultor na rede sync iGreen (network_members). */
+async function fetchNetworkGraduacao(
+  consultantId: string,
+  myIgreenId: string | null,
+): Promise<string | null> {
+  const igreenNum = myIgreenId ? parseInt(myIgreenId.replace(/\D/g, ""), 10) : NaN;
+
+  if (Number.isFinite(igreenNum) && igreenNum > 0) {
+    const { data } = await supabase
+      .from("network_members" as any)
+      .select("graduacao")
+      .eq("consultant_id", consultantId)
+      .eq("igreen_id", igreenNum)
+      .maybeSingle();
+    const grad = (data as { graduacao?: string | null } | null)?.graduacao?.trim();
+    if (grad) return grad;
+  }
+
+  // Fallback: membro raiz (nível 0) costuma ser o próprio consultor.
+  const { data: root } = await supabase
+    .from("network_members" as any)
+    .select("graduacao")
+    .eq("consultant_id", consultantId)
+    .eq("nivel", 0)
+    .maybeSingle();
+  return (root as { graduacao?: string | null } | null)?.graduacao?.trim() || null;
+}
+
+async function persistGraduacaoUpgrade(consultantId: string, graduacao: string): Promise<void> {
+  const { error } = await supabase
+    .from("consultant_commission_settings" as any)
+    .upsert({ consultant_id: consultantId, graduacao }, { onConflict: "consultant_id" });
+  if (error) console.warn("[greenData] persistGraduacaoUpgrade:", error.message);
+}
+
 /** Carrega graduação, modo de contagem e IDs extras de cadastro CP. */
 export async function fetchGreenSettings(consultantId: string): Promise<GreenSettings> {
   const profile = await loadConsultantProfile(consultantId);
   const local = loadLocalGreenSettings(consultantId);
+  const networkGraduacao = await fetchNetworkGraduacao(consultantId, profile.myIgreenId);
 
   const { data, error } = await supabase
     .from("consultant_commission_settings" as any)
@@ -117,9 +167,13 @@ export async function fetchGreenSettings(consultantId: string): Promise<GreenSet
     .maybeSingle();
 
   if (error || !data) {
+    const graduacao = resolveGraduacao(local?.graduacao, networkGraduacao, DEFAULT_SETTINGS.graduacao);
+    if (networkGraduacao && graduacaoRank(graduacao) > graduacaoRank(local?.graduacao)) {
+      void persistGraduacaoUpgrade(consultantId, graduacao);
+    }
     return {
       ...DEFAULT_SETTINGS,
-      graduacao: local?.graduacao ?? DEFAULT_SETTINGS.graduacao,
+      graduacao,
       countMode: (local?.countMode as CountMode) ?? DEFAULT_SETTINGS.countMode,
       cadastroIgreenIds: local?.cadastroIgreenIds ?? [],
       ...profile,
@@ -132,8 +186,13 @@ export async function fetchGreenSettings(consultantId: string): Promise<GreenSet
     cadastro_igreen_ids?: string[];
   };
 
+  const graduacao = resolveGraduacao(row.graduacao, networkGraduacao, local?.graduacao, DEFAULT_SETTINGS.graduacao);
+  if (networkGraduacao && graduacaoRank(graduacao) > graduacaoRank(row.graduacao)) {
+    void persistGraduacaoUpgrade(consultantId, graduacao);
+  }
+
   const settings: GreenSettings = {
-    graduacao: row.graduacao || local?.graduacao || DEFAULT_SETTINGS.graduacao,
+    graduacao,
     countMode: (row.count_mode as CountMode) || local?.countMode || DEFAULT_SETTINGS.countMode,
     cadastroIgreenIds: row.cadastro_igreen_ids?.length
       ? row.cadastro_igreen_ids.map(String)
@@ -223,6 +282,7 @@ export async function deleteEntradaRule(id: string): Promise<void> {
 
 type RawCustomer = {
   id: string;
+  name: string | null;
   distribuidora: string | null;
   address_state: string | null;
   electricity_bill_value: number | null;
@@ -269,7 +329,7 @@ async function fetchAllSyncCustomers(consultantId: string): Promise<RawCustomer[
     const { data, error } = await supabase
       .from("customers")
       .select(
-        "id,distribuidora,address_state,electricity_bill_value,media_consumo,desconto_cliente,pos_venda_approved_at,registered_by_igreen_id,registered_by_name,status,andamento_igreen,pos_venda_stage",
+        "id,name,distribuidora,address_state,electricity_bill_value,media_consumo,desconto_cliente,pos_venda_approved_at,registered_by_igreen_id,registered_by_name,status,andamento_igreen,pos_venda_stage",
       )
       .eq("customer_origin", "igreen_sync")
       .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`)
@@ -331,12 +391,30 @@ export async function fetchValidatedCustomers(consultantId: string): Promise<Val
   const allActiveCrm: GreenCustomerInput[] = [];
   const thisMonth: GreenCustomerInput[] = [];
   const potencialIgreen: GreenCustomerInput[] = [];
+  const faturaClients: GreenFaturaClient[] = [];
   let semFaturaCount = 0;
 
   for (const c of rows) {
     if (isReproved(c)) continue;
 
     const input = toGreenInput(c, settings);
+    const billRaw = c.electricity_bill_value != null ? Number(c.electricity_bill_value) : null;
+    const hasRealBill = billRaw != null && billRaw > 0;
+    const est = estimateBillValue(billRaw, c.media_consumo, c.desconto_cliente);
+
+    let kind: GreenFaturaKind = "sem_fatura";
+    if (hasRealBill) kind = "real";
+    else if (est > 0) kind = "estimada";
+
+    if (c.pos_venda_approved_at || c.andamento_igreen === "Validado") {
+      faturaClients.push({
+        id: c.id,
+        name: c.name ?? null,
+        distribuidora: c.distribuidora,
+        faturaValor: input.faturaValor,
+        kind,
+      });
+    }
 
     if (c.pos_venda_approved_at) {
       allActiveCrm.push(input);
@@ -356,5 +434,6 @@ export async function fetchValidatedCustomers(consultantId: string): Promise<Val
     potencialIgreen,
     portfolio,
     semFaturaCount,
+    faturaClients,
   };
 }

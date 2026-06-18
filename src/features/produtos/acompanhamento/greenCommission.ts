@@ -74,6 +74,28 @@ export function graduacaoDisplay(graduacao?: string | null): GraduacaoOption {
   return GRADUACAO_OPTIONS.find((o) => o.value === key) ?? GRADUACAO_OPTIONS[0];
 }
 
+/** Índice na escada de graduação (0 = Licenciado). Graduações desconhecidas = 0. */
+export function graduacaoRank(graduacao?: string | null): number {
+  const key = normGraduacao(graduacao);
+  const idx = GRADUACAO_OPTIONS.findIndex((o) => o.value === key);
+  return idx >= 0 ? idx : 0;
+}
+
+/** Escolhe a graduação mais alta entre várias fontes (DB, sync iGreen, local). */
+export function resolveGraduacao(...sources: (string | null | undefined)[]): string {
+  let best = GRADUACAO_OPTIONS[0].value;
+  let bestRank = 0;
+  for (const source of sources) {
+    if (!source?.trim()) continue;
+    const rank = graduacaoRank(source);
+    if (rank > bestRank) {
+      bestRank = rank;
+      best = normGraduacao(source);
+    }
+  }
+  return best;
+}
+
 /** Tarifa média R$/kWh quando sync não traz valor da conta (estimativa conservadora). */
 export const DEFAULT_TARIFA_KWH = 0.95;
 

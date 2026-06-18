@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // Painel individual de gasto de IA do consultor. Mostra o total do mês e,
 // ao expandir, o detalhamento por dia e por finalidade (fase). Lê de
@@ -39,7 +40,7 @@ function brl(usd: number): string {
   return (usd * USD_TO_BRL).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export function AICostCard({ userId }: { userId: string }) {
+export function AICostCard({ userId, className }: { userId: string; className?: string }) {
   const [rows, setRows] = useState<CostRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -79,20 +80,20 @@ export function AICostCard({ userId }: { userId: string }) {
   const phases = Array.from(byPhase.entries()).sort((a, b) => b[1].usd - a[1].usd);
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
+    <div className={cn("bg-card border border-border rounded-2xl p-5 space-y-4 min-w-0", className)}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
             <Sparkles className="w-5 h-5 text-primary" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="font-heading font-bold text-foreground">Gasto com a IA (este mês)</h3>
             <p className="text-xs text-muted-foreground">
               Estimativa do custo da sua assistente virtual. Valores aproximados.
             </p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-left sm:text-right shrink-0">
           <div className="text-xl font-bold text-foreground">{loading ? "…" : brl(totalUsd)}</div>
           <div className="text-xs text-muted-foreground">{loading ? "" : `${totalCalls} interações`}</div>
         </div>

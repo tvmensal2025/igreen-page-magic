@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,11 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Recuperação de senha self-service: "forgot" envia o e-mail; "recovery"
+  // aparece quando o usuário volta pelo link do e-mail (evento PASSWORD_RECOVERY).
+  const [forgotMode, setForgotMode] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const recoveryRef = useRef(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -40,17 +45,80 @@ const Auth = () => {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
+      // No fluxo de recuperação NÃO navegamos: deixamos o usuário definir a nova senha.
+      if (event === "PASSWORD_RECOVERY") {
+        recoveryRef.current = true;
+        setRecoveryMode(true);
+        return;
+      }
+      if (session && !recoveryRef.current) {
         checkAdminAndNavigate(session.user.id);
       }
     });
     supabase.auth.getSession().then(({ data: { session } }) => {
+      const isRecoveryUrl = window.location.hash.includes("type=recovery");
+      if (isRecoveryUrl) {
+        recoveryRef.current = true;
+        setRecoveryMode(true);
+        return;
+      }
       if (session) {
         checkAdminAndNavigate(session.user.id);
       }
     });
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (!email.trim()) throw new Error("Informe seu e-mail.");
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/auth`,
+      });
+      if (error) throw error;
+      toast({
+        title: "Link enviado!",
+        description: "Se este e-mail estiver cadastrado, você receberá um link para redefinir a senha. Verifique sua caixa de entrada e o spam.",
+      });
+      setForgotMode(false);
+    } catch (error: unknown) {
+      toast({
+        title: "Não foi possível enviar",
+        description: error instanceof Error ? error.message : "Tente novamente em instantes.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.");
+      if (password !== confirmPassword) throw new Error("As senhas não coincidem.");
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      toast({ title: "Senha alterada!", description: "Você já pode acessar com a nova senha." });
+      recoveryRef.current = false;
+      setRecoveryMode(false);
+      // Limpa o hash de recuperação da URL.
+      window.history.replaceState(null, "", "/auth");
+      const { data } = await supabase.auth.getSession();
+      if (data.session) checkAdminAndNavigate(data.session.user.id);
+    } catch (error: unknown) {
+      toast({
+        title: "Erro ao alterar senha",
+        description: error instanceof Error ? error.message : "Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,17 +220,17 @@ const Auth = () => {
             </div>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold font-heading text-foreground tracking-tight">
-            {isLogin ? "Bem-vindo de volta" : "Crie sua conta"}
+            {recoveryMode ? "Definir nova senha" : forgotMode ? "Recuperar senha" : isLogin ? "Bem-vindo de volta" : "Crie sua conta"}
           </h1>
           <p className="text-muted-foreground mt-2 text-sm">Painel do Consultor iGreen Energy</p>
         </div>
 
         <div className="relative">
           <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-transparent to-accent/20 rounded-3xl blur-xl opacity-50" />
-          <form onSubmit={handleSubmit} className="relative space-y-5 bg-card/80 backdrop-blur-xl p-7 sm:p-8 rounded-2xl border border-border shadow-xl">
+          <form onSubmit={recoveryMode ? handleSetNewPassword : forgotMode ? handleForgotPassword : handleSubmit} className="relative space-y-5 bg-card/80 backdrop-blur-xl p-7 sm:p-8 rounded-2xl border border-border shadow-xl">
             <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
 
-            {!isLogin && (
+            {!isLogin && !forgotMode && !recoveryMode && (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="name" className="text-sm font-medium text-foreground">Nome completo</Label>
@@ -180,25 +248,42 @@ const Auth = () => {
 
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-foreground">Email</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com" required
-                className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium text-foreground">Senha</Label>
-              <div className="relative">
-                <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••" required minLength={6}
-                  className="h-12 rounded-xl bg-secondary/50 border-border text-base pr-12 placeholder:text-muted-foreground/50" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+            {!recoveryMode && (
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium text-foreground">Email</Label>
+                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu@email.com" required
+                  className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
               </div>
-            </div>
-            {!isLogin && (
+            )}
+            {forgotMode && (
+              <p className="text-xs text-muted-foreground">
+                Enviaremos um link para você criar uma nova senha.
+              </p>
+            )}
+            {!forgotMode && (
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-medium text-foreground">{recoveryMode ? "Nova senha" : "Senha"}</Label>
+                <div className="relative">
+                  <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••" required minLength={6}
+                    className="h-12 rounded-xl bg-secondary/50 border-border text-base pr-12 placeholder:text-muted-foreground/50" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {isLogin && !recoveryMode && (
+                  <div className="text-right">
+                    <button type="button" onClick={() => setForgotMode(true)}
+                      className="text-xs text-primary font-medium hover:underline underline-offset-4">
+                      Esqueci minha senha
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {(!isLogin && !forgotMode || recoveryMode) && (
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">Confirmar Senha</Label>
                 <div className="relative">
@@ -215,18 +300,27 @@ const Auth = () => {
             <Button type="submit" className="w-full h-12 text-base font-bold rounded-xl gap-2 transition-all duration-300 hover:shadow-lg"
               style={{ background: "var(--gradient-green)" }} disabled={loading}>
               {loading ? <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" /> : (
-                <>{isLogin ? "Entrar" : "Criar conta"}<ArrowRight className="w-4 h-4" /></>
+                <>{recoveryMode ? "Salvar nova senha" : forgotMode ? "Enviar link de recuperação" : isLogin ? "Entrar" : "Criar conta"}<ArrowRight className="w-4 h-4" /></>
               )}
             </Button>
           </form>
         </div>
 
-        <p className="text-center text-sm text-muted-foreground">
-          {isLogin ? "Não tem conta?" : "Já tem conta?"}{" "}
-          <button onClick={() => setIsLogin(!isLogin)} className="text-primary font-semibold hover:underline underline-offset-4">
-            {isLogin ? "Criar conta" : "Fazer login"}
-          </button>
-        </p>
+        {forgotMode ? (
+          <p className="text-center text-sm text-muted-foreground">
+            Lembrou a senha?{" "}
+            <button onClick={() => setForgotMode(false)} className="text-primary font-semibold hover:underline underline-offset-4">
+              Voltar ao login
+            </button>
+          </p>
+        ) : !recoveryMode ? (
+          <p className="text-center text-sm text-muted-foreground">
+            {isLogin ? "Não tem conta?" : "Já tem conta?"}{" "}
+            <button onClick={() => setIsLogin(!isLogin)} className="text-primary font-semibold hover:underline underline-offset-4">
+              {isLogin ? "Criar conta" : "Fazer login"}
+            </button>
+          </p>
+        ) : null}
 
         <div className="flex items-center justify-center gap-4 pt-2">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">

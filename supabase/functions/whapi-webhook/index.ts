@@ -26,6 +26,9 @@ import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
+import { summarizeWebhookBody } from "../_shared/log-redact.ts";
+import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
+import { resolveWorker } from "../_shared/portal-worker.ts";
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
 
@@ -48,6 +51,17 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Validação de origem (fail-open): só bloqueia se WHAPI_WEBHOOK_SECRET
+  // estiver configurado. Sem a env, mantém o comportamento atual.
+  const originAuth = verifyWebhookOrigin(req, "WHAPI_WEBHOOK_SECRET");
+  if (!originAuth.ok) {
+    console.warn("[whapi-webhook] origem rejeitada:", originAuth.reason);
+    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -65,7 +79,9 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    console.log("Whapi webhook received:", JSON.stringify(body).substring(0, 500));
+    // LGPD: nunca logar o corpo cru (contém telefone e texto do cliente).
+    // `summarizeWebhookBody` retorna apenas metadados estruturais.
+    console.log("Whapi webhook received:", JSON.stringify(summarizeWebhookBody(body)));
 
     // ─── Ignorar eventos que não são mensagens ─────────────────────────
     const eventType = body.event?.type;
@@ -415,8 +431,11 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }).eq("id", otpCustomer.id);
 
-          const workerUrl = settings.portal_worker_url || Deno.env.get("PORTAL_WORKER_URL") || Deno.env.get("WORKER_PORTAL_URL") || "";
-          const workerSecret = settings.worker_secret || Deno.env.get("WORKER_SECRET") || "";
+          // Roteia o OTP pelo worker do portal_kind do consultor (Portal 2 = autoconexao).
+          // Fallback defensivo para Portal 1 se a resolução falhar.
+          const resolvedOtpWorker = await resolveWorker(supabase, otpCustomer.id).catch(() => null);
+          const workerUrl = resolvedOtpWorker?.url || settings.portal_worker_url || Deno.env.get("PORTAL_WORKER_URL") || Deno.env.get("WORKER_PORTAL_URL") || "";
+          const workerSecret = resolvedOtpWorker?.secret || settings.worker_secret || Deno.env.get("WORKER_SECRET") || "";
           if (workerUrl && workerSecret) {
             try {
               const ctrl = new AbortController();
@@ -874,6 +893,17 @@ Deno.serve(async (req) => {
         const _pausedUntil = (customer as any).bot_paused_until && new Date((customer as any).bot_paused_until) > new Date();
         const _reason = (customer as any).bot_paused_reason || ((customer as any).assigned_human_id ? "humano_assumiu" : (_pausedUntil ? "paused_until" : "manual"));
         console.log(`🔇 Bot pausado para ${phone} (flag=${(customer as any).bot_paused === true}, human=${(customer as any).assigned_human_id || "—"}, until=${(customer as any).bot_paused_until || "—"}, reason=${_reason}) — ignorando msg`);
+
+        // Cliente respondeu durante o atendimento humano: avisa o consultor que
+        // assumiu para o lead não esfriar. Fire-and-forget (dedup interno 10min).
+        if ((customer as any).assigned_human_id && messageText) {
+          const { notifyClientReplyWhilePaused } = await import("../_shared/notify-consultant.ts");
+          notifyClientReplyWhilePaused(
+            (customer as any).assigned_human_id || (customer as any).consultant_id,
+            customer as any,
+            messageText,
+          ).catch((e) => console.warn("[notify-paused-reply] falhou:", (e as Error).message));
+        }
         return new Response(JSON.stringify({ ok: true, msg: "bot_paused", reason: _reason, paused_until: (customer as any).bot_paused_until || null }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -1816,14 +1846,14 @@ Deno.serve(async (req) => {
         ? await runConversationalFlow({
             supabase, sender: engineSender, customer, consultorId, nomeRepresentante,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
-            hasImage, hasDocument, imageMessage, documentMessage, message, key, messageId,
+            hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName: "whapi-superadmin",
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           })
         : await runBotFlow({
             supabase, sender: engineSender, customer, consultorId, nomeRepresentante,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
-            hasImage, hasDocument, imageMessage, documentMessage, message, key, messageId,
+            hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName: "whapi-superadmin",
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           });

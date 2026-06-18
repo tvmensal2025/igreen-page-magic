@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
-import { estimateCommission, summarizeSales, computeFinancialMetrics } from "../aggregate";
+import { estimateCommission, summarizeSales, computeFinancialMetrics, filterSalesByProduct, filterProposalsByProduct } from "../aggregate";
 import { computeCareerProgress, CAREER_TIERS } from "../careerPlan";
 import type { Product } from "../../catalogo/types";
 import type { Proposal } from "../../orcamento/types";
@@ -189,6 +189,25 @@ describe("summarizeSales", () => {
     const summary = summarizeSales(sales, [green, telecom]);
     expect(summary.byProduct[0].productId).toBe("g");
     expect(summary.byProduct[1].productId).toBe("t");
+  });
+
+  it("filterSalesByProduct retorna todas ou só o produto escolhido", () => {
+    const sales = [
+      makeSale({ id: "1", productId: "a" }),
+      makeSale({ id: "2", productId: "b" }),
+    ];
+    expect(filterSalesByProduct(sales, "all")).toHaveLength(2);
+    expect(filterSalesByProduct(sales, "b")).toHaveLength(1);
+    expect(filterSalesByProduct(sales, "b")[0].id).toBe("2");
+  });
+
+  it("filterProposalsByProduct filtra propostas por produto", () => {
+    const proposals = [
+      { id: "p1", productId: "a" } as Proposal,
+      { id: "p2", productId: "b" } as Proposal,
+    ];
+    expect(filterProposalsByProduct(proposals, "a")).toHaveLength(1);
+    expect(filterProposalsByProduct(proposals, "a")[0].id).toBe("p1");
   });
 });
 

@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import {
   fetchGreenSettings,
   fetchEntradaRules,
@@ -77,5 +78,23 @@ export function useDeleteEntradaRule(consultantId: string | undefined) {
   return useMutation({
     mutationFn: (id: string) => deleteEntradaRule(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: [GREEN_KEY, "rules", consultantId] }),
+  });
+}
+
+/** Timestamp da última sincronização com o portal iGreen (settings.last_igreen_sync). */
+export function useLastIgreenSync() {
+  return useQuery({
+    queryKey: [GREEN_KEY, "last-sync"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("settings")
+        .select("value")
+        .eq("key", "last_igreen_sync")
+        .maybeSingle();
+      if (error) throw error;
+      const raw = data?.value;
+      return typeof raw === "string" ? raw : null;
+    },
+    staleTime: 60_000,
   });
 }

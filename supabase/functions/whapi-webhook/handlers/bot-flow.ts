@@ -5142,7 +5142,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     case "ask_phone": {
       // ── DETECÇÃO INTELIGENTE: se o cliente mandou email ao invés de telefone, salvar e avançar ──
       if (messageText.includes("@") && isValidEmailFormat(messageText.trim())) {
-        console.log(`📧 [ask_phone] Cliente enviou email "${messageText.trim()}" ao invés de telefone — salvando e avançando`);
+        console.log(`📧 [ask_phone] Cliente enviou email (${messageText.trim().length} chars) ao invés de telefone — salvando e avançando`);
         updates.email = messageText.trim().toLowerCase();
         // Usar telefone do WhatsApp como telefone de contato (NÃO alterar phone_whatsapp — é chave da conversa)
         const p = (customer.phone_whatsapp || phone).replace(/\D/g, "");

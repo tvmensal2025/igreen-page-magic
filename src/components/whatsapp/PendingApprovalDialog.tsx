@@ -14,6 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox } from "lucide-react";
 
 import { toast } from "sonner";
@@ -264,36 +265,45 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl h-[85vh] max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0 bg-muted/20">
-            <div className="flex items-center justify-between">
-              <DialogTitle className="text-xl font-bold flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-primary" />
-                Confirmar novos clientes
-              </DialogTitle>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                      <HelpCircle className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[300px]">
-                    <p className="text-xs">
-                      Revise os clientes sincronizados do iGreen. Use <strong>Falta assinatura</strong> quando o cliente ainda não assinou.
-                      Ao confirmar aprovados, eles entram na autoprogressão (30/60/90/120 dias).
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+          <DialogHeader className="px-6 pt-6 pb-4 pr-12 border-b shrink-0 bg-muted/20">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 min-w-0">
+              <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
+              <span className="truncate">Confirmar novos clientes</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Ajuda sobre confirmação de clientes"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  side="bottom"
+                  sideOffset={6}
+                  collisionPadding={16}
+                  className="w-[min(280px,calc(100vw-3rem))] p-3 z-[130] text-xs leading-relaxed"
+                >
+                  <p>
+                    Revise os clientes sincronizados do iGreen. Use <strong>Falta assinatura</strong> quando o cliente ainda não assinou.
+                    Ao confirmar aprovados, eles entram na autoprogressão (30/60/90/120 dias).
+                  </p>
+                </PopoverContent>
+              </Popover>
+            </DialogTitle>
             <DialogDescription className="text-sm mt-1">
               Clientes sincronizados que aguardam revisão para iniciar o fluxo pós-venda.
             </DialogDescription>
 
 
             {/* Filtro por licenciado */}
-            <div className="flex items-center gap-2 mt-3 flex-wrap">
-              <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40">
+            <div className="flex flex-col gap-2 mt-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40 shrink-0">
                 <button
                   type="button"
                   onClick={() => setOwnerFilter("mine")}
@@ -331,38 +341,41 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-2"
+                  className="gap-2 shrink-0"
                   onClick={() => setWizardOpen(true)}
                 >
-                  <Settings2 className="w-3.5 h-3.5" />
-                  Configurar mensagens primeiro
+                  <Settings2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Configurar mensagens primeiro</span>
                 </Button>
               )}
+              </div>
 
               {/* Alterna entre a fila normal e as devolutivas estacionadas */}
+              <div className="flex shrink-0 sm:ml-auto">
               {view === "fila" ? (
                 devolutivasAbertas.length > 0 && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-2 border-warning/50 text-warning hover:bg-warning/10 ml-auto"
+                    className="gap-2 border-warning/50 text-warning hover:bg-warning/10 w-full sm:w-auto"
                     onClick={() => setView("devolutivas")}
                   >
-                    <Inbox className="w-3.5 h-3.5" />
-                    Devolutivas em aberto ({devolutivasAbertas.length})
+                    <Inbox className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Devolutivas em aberto ({devolutivasAbertas.length})</span>
                   </Button>
                 )
               ) : (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-2 ml-auto"
+                  className="gap-2 w-full sm:w-auto"
                   onClick={() => setView("fila")}
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
                   Voltar para a fila
                 </Button>
               )}
+              </div>
             </div>
           </DialogHeader>
 
@@ -377,16 +390,17 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                 </div>
               ) : (
                 <div className="border rounded-xl overflow-hidden bg-warning/10 border-warning/20">
-                  <div className="flex items-center gap-2 px-3 py-2 bg-background/40 font-medium text-sm text-warning">
-                    <PauseCircle className="w-4 h-4" />
-                    <span>{devolutivasAbertas.length} devolutiva(s) em aberto — resolva quando puder</span>
+                  <div className="flex items-center gap-2 px-3 py-2 bg-background/40 font-medium text-sm text-warning min-w-0">
+                    <PauseCircle className="w-4 h-4 shrink-0" />
+                    <span className="min-w-0">{devolutivasAbertas.length} devolutiva(s) em aberto — resolva quando puder</span>
                   </div>
                   <div className="divide-y divide-border/30 bg-background/40">
                     {devolutivasAbertas.map((c) => {
                       const noPhone = isPlaceholderPhone(c.phone_whatsapp);
                       const tone = avatarTone(c.id);
                       return (
-                        <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                        <div key={c.id} className="px-3 py-2.5 hover:bg-muted/30 transition-colors space-y-2">
+                          <div className="flex items-start gap-3 min-w-0">
                           <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${tone}`}>
                             {initialsFrom(c.name)}
                           </div>
@@ -400,20 +414,21 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                 </Badge>
                               ) : (
                                 <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                  <Phone className="w-3 h-3" />
+                                  <Phone className="w-3 h-3 shrink-0" />
                                   {formatPhoneBR(c.phone_whatsapp)}
                                 </span>
                               )}
                               {c.andamento_igreen && (
-                                <Badge variant="outline" className="text-[10px] py-0">{c.andamento_igreen}</Badge>
+                                <Badge variant="outline" className="text-[10px] py-0 max-w-full truncate">{c.andamento_igreen}</Badge>
                               )}
                             </div>
                           </div>
-                          <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+                          </div>
+                          <div className="flex gap-1 flex-wrap pl-12 sm:pl-0">
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button size="sm" variant="default" className="h-9 px-3 font-semibold" onClick={() => handleApproveClick(c)}>
+                                  <Button size="sm" variant="default" className="h-8 px-2.5 text-xs font-semibold" onClick={() => handleApproveClick(c)}>
                                     Resolver e validar
                                   </Button>
                                 </TooltipTrigger>
@@ -421,7 +436,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                               </Tooltip>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button size="sm" variant="outline" className="h-9 px-3 border-border/60" onClick={() => act(c.id, "review")}>
+                                  <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs border-border/60" onClick={() => act(c.id, "review")}>
                                     Rever
                                   </Button>
                                 </TooltipTrigger>
@@ -449,18 +464,18 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                 const Icon = sec.icon;
                 return (
                   <div key={sec.key} className={`border rounded-xl overflow-hidden ${sec.accent}`}>
-                    <div className="flex items-center justify-between px-3 py-2 bg-background/40">
-                      <div className={`flex items-center gap-2 font-medium text-sm ${sec.tone}`}>
-                        <Icon className="w-4 h-4" />
-                        <span>{list.length} {sec.label}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-background/40">
+                      <div className={`flex items-center gap-2 font-medium text-sm min-w-0 ${sec.tone}`}>
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{list.length} {sec.label}</span>
                       </div>
                       {sec.key === "aprovado" && (
-                        <Button size="sm" variant="default" onClick={handleBulkClick}>
+                        <Button size="sm" variant="default" className="shrink-0 w-full sm:w-auto" onClick={handleBulkClick}>
                           Confirmar todos ({list.length})
                         </Button>
                       )}
                       {sec.key === "falta_assinatura" && (
-                        <span className="text-[10px] text-muted-foreground pr-1">Aguardando assinatura no iGreen</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">Aguardando assinatura no iGreen</span>
                       )}
                     </div>
                     <div className="divide-y divide-border/30 bg-background/40">
@@ -468,7 +483,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                         const noPhone = isPlaceholderPhone(c.phone_whatsapp);
                         const tone = avatarTone(c.id);
                         return (
-                          <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                          <div key={c.id} className="px-3 py-2.5 hover:bg-muted/30 transition-colors space-y-2">
+                            <div className="flex items-start gap-3 min-w-0">
                             <div className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${tone}`}>
                               {initialsFrom(c.name)}
                             </div>
@@ -482,7 +498,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                   </Badge>
                                 ) : (
                                   <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                    <Phone className="w-3 h-3" />
+                                    <Phone className="w-3 h-3 shrink-0" />
                                     {formatPhoneBR(c.phone_whatsapp)}
                                   </span>
                                 )}
@@ -497,15 +513,16 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                   </Badge>
                                 ) : null}
                                 {c.andamento_igreen && (
-                                  <Badge variant="outline" className="text-[10px] py-0">{c.andamento_igreen}</Badge>
+                                  <Badge variant="outline" className="text-[10px] py-0 max-w-full truncate">{c.andamento_igreen}</Badge>
                                 )}
                               </div>
                             </div>
-                            <div className="flex gap-1.5 shrink-0 flex-wrap justify-end max-w-[280px] sm:max-w-none">
+                            </div>
+                            <div className="flex gap-1 flex-wrap pl-12 sm:pl-0">
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button size="sm" variant="default" className="h-9 px-3 font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => handleApproveClick(c)}>
+                                    <Button size="sm" variant="default" className="h-8 px-2.5 text-xs font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => handleApproveClick(c)}>
                                       Validar
                                     </Button>
                                   </TooltipTrigger>
@@ -524,7 +541,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                       <Button
                                         size="sm"
                                         variant="outline"
-                                        className="h-9 px-2.5 text-xs border-info/50 text-info hover:bg-info/10"
+                                        className="h-8 px-2 text-xs border-info/50 text-info hover:bg-info/10"
                                         onClick={() => act(c.id, "missing_signature")}
                                       >
                                         <FileSignature className="w-3.5 h-3.5 mr-1 shrink-0" />
@@ -541,7 +558,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                       <Button
                                         size="sm"
                                         variant="outline"
-                                        className="h-9 px-2.5 text-xs border-warning/50 text-warning hover:bg-warning/10"
+                                        className="h-8 px-2 text-xs border-warning/50 text-warning hover:bg-warning/10"
                                         onClick={() => act(c.id, "defer_devolutiva")}
                                       >
                                         <PauseCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
@@ -559,7 +576,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          className="h-9 px-2.5 text-xs border-warning/50 text-warning hover:bg-warning/10"
+                                          className="h-8 px-2 text-xs border-warning/50 text-warning hover:bg-warning/10"
                                           onClick={() => act(c.id, "defer_devolutiva")}
                                         >
                                           <PauseCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
@@ -573,7 +590,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          className="h-9 px-2.5 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+                                          className="h-8 px-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
                                           onClick={() => act(c.id, "reject_pending")}
                                         >
                                           <XCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
@@ -587,7 +604,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
 
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button size="sm" variant="outline" className="h-9 px-3 border-border/60" onClick={() => act(c.id, "review")}>
+                                    <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs border-border/60" onClick={() => act(c.id, "review")}>
                                       Rever
                                     </Button>
                                   </TooltipTrigger>
@@ -599,7 +616,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                     <Button
                                       size="icon"
                                       variant="ghost"
-                                      className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
+                                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
                                       onClick={() => setConfirmInvalidate(c)}
                                     >
                                       <Ban className="w-4 h-4" />
@@ -613,7 +630,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                     <Button
                                       size="icon"
                                       variant="ghost"
-                                      className="h-9 w-9 text-muted-foreground border border-transparent hover:border-border"
+                                      className="h-8 w-8 text-muted-foreground border border-transparent hover:border-border"
                                       onClick={() => act(c.id, "snooze")}
                                     >
                                       <Clock className="w-4 h-4" />

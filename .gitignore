@@ -29,6 +29,7 @@ dist-ssr
 
 # Playwright MCP session logs/snapshots
 .playwright-mcp/
+test-results/
 
 # Loose screenshots at repo root (test/debug artifacts)
 /admin-*.png

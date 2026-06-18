@@ -36,6 +36,8 @@ import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
+import { summarizeWebhookBody } from "../_shared/log-redact.ts";
+import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
 import {
   getFlowReliabilityV2,
   isV2Active,
@@ -94,6 +96,17 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Validação de origem (fail-open): só bloqueia se EVOLUTION_WEBHOOK_SECRET
+  // estiver configurado. Sem a env, mantém o comportamento atual.
+  const originAuth = verifyWebhookOrigin(req, "EVOLUTION_WEBHOOK_SECRET");
+  if (!originAuth.ok) {
+    console.warn("[evolution-webhook] origem rejeitada:", originAuth.reason);
+    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   // Lock state hoisted to function scope so the outer `finally` can guarantee
   // a release on every exit path (early-return, exception, normal completion).
   // `customer-lock.ts` intentionally lives behind direct RPC calls here
@@ -114,7 +127,9 @@ Deno.serve(async (req) => {
     lockSupabaseRef = supabase;
 
     const body = await req.json();
-    console.log("Evolution webhook received:", JSON.stringify(body).substring(0, 500));
+    // LGPD: nunca logar o corpo cru (contém telefone e texto do cliente).
+    // `summarizeWebhookBody` retorna apenas metadados estruturais.
+    console.log("Evolution webhook received:", JSON.stringify(summarizeWebhookBody(body)));
 
     // ─── 1) CONNECTION_UPDATE — handled by separate module ─────────────
     const fallbackInstance = req.headers.get("x-instance-name");
@@ -1876,14 +1891,14 @@ Deno.serve(async (req) => {
         ? await runConversationalFlow({
             supabase, sender, customer, consultorId, nomeRepresentante,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
-            hasImage, hasDocument, imageMessage, documentMessage, message, key, messageId,
+            hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName,
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           })
         : await runBotFlow({
             supabase, sender, customer, consultorId, nomeRepresentante,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
-            hasImage, hasDocument, imageMessage, documentMessage, message, key, messageId,
+            hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName,
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           });
