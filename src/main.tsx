@@ -3,8 +3,31 @@ import App from "./App.tsx";
 import "./index.css";
 import { ativarHardening } from "./lib/hardening";
 
+// ─── Gatilho de emergência: ?nuke=1 limpa tudo e recarrega ─────────────────
+// Para usuários presos numa versão muito antiga (PWA instalado offline há
+// semanas), basta abrir https://igreen.cloud/?nuke=1 que o app limpa SW +
+// caches + storages PWA e recarrega na raiz.
+if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("nuke")) {
+  (async () => {
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch {}
+    try {
+      if ("caches" in window) {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+      }
+    } catch {}
+    window.location.replace("/");
+  })();
+}
+
 // Camada dissuasória anti-inspeção (só em produção real; ver lib/hardening.ts).
 void ativarHardening();
+
 
 // Sentry é carregado de forma assíncrona para não bloquear o React.
 // Se falhar, o app continua funcionando normalmente.
@@ -114,10 +137,48 @@ async function checkVersionGate() {
     if (!res.ok) return;
     const { buildId } = await res.json();
     if (buildId && typeof buildId === "string" && buildId !== __BUILD_ID__) {
+      showUpdateBanner();
       await nukeAndReload(`version-gate:${__BUILD_ID__}->${buildId}`);
     }
   } catch { /* offline ou version.json ausente: ignora silenciosamente */ }
 }
+
+// Banner visível quando uma versão nova é detectada mas o usuário está
+// digitando/em modal (não podemos recarregar agora). Dá ao usuário a opção
+// manual de atualizar imediatamente.
+function showUpdateBanner() {
+  if (document.getElementById("__igreen_update_banner__")) return;
+  const el = document.createElement("div");
+  el.id = "__igreen_update_banner__";
+  el.style.cssText =
+    "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);" +
+    "background:#16a34a;color:#fff;padding:12px 18px;border-radius:9999px;" +
+    "font:600 14px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);" +
+    "z-index:2147483647;cursor:pointer;display:flex;gap:10px;align-items:center;";
+  el.innerHTML = "🔄 Nova versão disponível — toque para atualizar";
+  el.addEventListener("click", () => window.location.reload());
+  document.body.appendChild(el);
+}
+
+// Checa imediatamente ao carregar (antes mesmo do SW registrar), para pegar
+// usuário cujo HTML veio cacheado e nunca chegaria ao registerSW novo.
+void checkVersionGate();
+
+// Patch no History API para checar a cada navegação SPA.
+try {
+  const orig = { push: history.pushState, replace: history.replaceState };
+  history.pushState = function (...args) {
+    const r = orig.push.apply(this, args as any);
+    void checkVersionGate();
+    return r;
+  };
+  history.replaceState = function (...args) {
+    const r = orig.replace.apply(this, args as any);
+    void checkVersionGate();
+    return r;
+  };
+  window.addEventListener("popstate", () => void checkVersionGate());
+} catch { /* ambiente sem history */ }
 
 // ─── PWA: registro de Service Worker com guards de iframe/preview ──────────
 // Service worker quebra o preview do Lovable (cacheia builds velhos).
@@ -138,6 +199,7 @@ const isPreviewHost =
   host === "localhost" ||
   host === "127.0.0.1" ||
   isRawIpHost;
+
 
 if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
   // ─── Auto-reload quando um novo SW assume o controle ───────────────────
@@ -177,7 +239,7 @@ if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
             r.update().catch(() => {});
             void checkVersionGate();
           };
-          setInterval(poll, 60_000);
+          setInterval(poll, 30_000);
           // Checagem imediata ao registrar — pega usuário que abriu já com
           // bundle antigo em cache.
           void checkVersionGate();

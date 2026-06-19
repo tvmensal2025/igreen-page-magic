@@ -1,84 +1,69 @@
-## Resumo dos problemas
-1. Modal de ID (pós-liberação) fecha sozinho — precisa travar até salvar.
-2. Campo de ID não deve mais aparecer no cadastro inicial do cliente.
-3. Forçar atualização para todos os usuários (cache trava versões antigas).
-4. Link do QR Code de parceiro deve abrir tanto WhatsApp normal quanto Business.
-5. Algumas propostas não têm botão X para excluir — padronizar exclusão em todas.
-6. Lentidão geral (envio msg, fluxo, recebimento, UI) — auditoria + otimizações.
-7. Dashboard com pódio Top 3 (estilo palco) por nº de indicações.
+## Diagnóstico
 
----
+O projeto já tem boa infra anti-cache (kill-switch `/sw.js`, SW principal `/sw-app.js` com `skipWaiting`+`clientsClaim`, version gate via `/version.json`, reload em `controllerchange`). Mas há **um furo crítico**:
 
-## 1. Modal de ID — travar fechamento + remover do cadastro
+- `igreen.cloud` está no **Cloudflare com nuvem cinza (DNS-only)** → o tráfego vai **direto para a Lovable Hosting**, que **NÃO processa `public/_headers`**.
+- Resultado: `index.html`, `/sw-app.js` e `/version.json` podem ser servidos com cache padrão do CDN/navegador → o version gate nunca dispara porque o próprio `version.json` vem velho, e o SW novo nunca é baixado.
 
-**Arquivos a investigar/editar:**
-- `src/components/admin/parceiros/` e `src/features/produtos/vendas/orcamento/captura/` (referências hardcoded encontradas em análise anterior).
-- Localizar o `Dialog` que pede ID pós-liberação.
+Sem cabeçalhos do servidor, precisamos forçar "no-cache" pelo lado do **cliente** (meta tags, query busters, checagens mais agressivas) e adicionar uma rota de emergência manual.
 
-**Mudanças:**
-- `Dialog`: adicionar `onPointerDownOutside={(e) => e.preventDefault()}` e `onEscapeKeyDown={(e) => e.preventDefault()}`, esconder o botão "X" do `DialogContent` enquanto o campo ID estiver vazio/inválido.
-- Botão "Salvar" só habilita quando ID preenchido e validado.
-- Cadastro inicial: remover o input de ID (e seu schema de validação) — o ID passa a ser pedido somente nesse modal pós-liberação.
+## O que será feito
 
-## 2. Forçar atualização (auto-reload silencioso)
+### 1. Forçar revalidação do HTML pelo lado do cliente (`index.html`)
+Adicionar no `<head>`:
+```html
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+```
+Faz o navegador revalidar o HTML a cada navegação, independente do servidor.
 
-**Estratégia:**
-- Em `public/sw.js`: incrementar `CACHE_VERSION`, e no `activate` chamar `clients.claim()` + `caches.delete(old)`.
-- No `main.tsx`: ao registrar SW, escutar `controllerchange` → `window.location.reload()` silencioso.
-- Adicionar `<meta name="build-id">` no `index.html` lido por um pequeno `useEffect` que faz polling a cada 5 min em `/version.json` (gerado no build). Se mudou → `caches.delete()` + reload.
-- Sem toast (silencioso, conforme escolha).
+### 2. Quebrar cache do `/version.json` e `/sw-app.js` no registro
+Em `src/main.tsx`:
+- `fetch("/version.json")` já usa cache-buster — ok.
+- Adicionar buster também ao registrar o SW: `registerSW({ ... })` por baixo carrega `/sw-app.js`. Vamos usar `updateViaCache: "none"` no `navigator.serviceWorker.register` equivalente, e forçar `r.update()` com `fetch("/sw-app.js?_=" + Date.now(), {cache:"no-store"})` antes para invalidar.
 
-## 3. Link do parceiro abre WhatsApp + WhatsApp Business
+### 3. Version gate mais agressivo
+Hoje checa: ao registrar, a cada 60s, em `visibilitychange`, em `online`.
+Adicionar:
+- Checagem **a cada navegação de rota** (hook no React Router que chama `checkVersionGate`).
+- Reduzir o intervalo de polling de 60s → **30s**.
+- Rodar `checkVersionGate()` **antes** do `registerSW` (pega usuário cujo SW antigo está servindo HTML cacheado e nem chegaria a registrar o novo).
 
-**Arquivo:** `src/pages/PartnerRedirectPage.tsx` e geração do link em `useReferralPartners.ts`.
+### 4. Rota de emergência `?nuke=1` / `/__reset`
+Qualquer usuário preso pode acessar `https://igreen.cloud/?nuke=1` e o app:
+- Desregistra todos os SWs
+- Limpa todos os caches (`caches.keys()` → delete)
+- Limpa `localStorage` opcionalmente (só flags PWA, preserva auth)
+- Recarrega com `location.replace("/")`.
+Reutiliza a função `nukeAndReload` já existente; só adicionar o gatilho de URL no topo do `main.tsx`.
 
-**Estratégia:**
-- Hoje o link usa `https://wa.me/...` que abre só o app padrão.
-- Mudar para uma página intermediária que mostra 2 botões grandes: "Abrir no WhatsApp" e "Abrir no WhatsApp Business", usando os schemes:
-  - WhatsApp: `whatsapp://send?phone=...&text=...`
-  - Business: `whatsapp-business://send?phone=...&text=...` (Android) ou fallback `wa.me`.
-- Mobile detection: se único app instalado, redireciona direto; senão mostra escolha.
+### 5. Aviso visual de atualização (opcional, recomendado)
+Quando o version gate detecta versão nova mas o usuário está digitando (não pode recarregar agora), mostrar um **toast persistente** "Nova versão disponível — clique para atualizar". Hoje só re-tenta em 15s silenciosamente. Garante que o usuário tem opção manual.
 
-## 4. Excluir propostas — botão X em todas
+### 6. Limpar/remover `public/_headers` e `public/_redirects`
+Como Lovable Hosting ignora ambos, eles dão falsa segurança. Vamos:
+- **Remover** `public/_headers` e `public/_redirects` (Lovable já faz SPA fallback nativo).
+- Deixar comentário no `vite.config.ts` documentando que a estratégia anti-cache é 100% client-side.
 
-**Arquivos:** `src/features/produtos/orcamento/`, `ProposalsPanel.tsx`, `AcompanhamentoPanel.tsx`, listagens em outras abas.
+### 7. Documentação rápida (no `vite.config.ts` em comentário)
+Anotar que se um dia o domínio voltar para nuvem laranja do Cloudflare, basta recriar `_headers` que volta a funcionar como reforço.
 
-**Estratégia:**
-- Auditar todos os cards/linhas de proposta e garantir que cada um tenha o botão X com `AlertDialog` de confirmação.
-- Centralizar em um componente `ProposalDeleteButton` reutilizável (chama `deleteProposal(id)` + invalida queries).
-- Garantir RLS já permite delete (verificar policy de `proposals`).
+## Arquivos afetados
 
-## 5. Performance — auditoria geral
+- `index.html` — meta tags no-cache
+- `src/main.tsx` — polling 30s, hook por rota, gatilho `?nuke=1`, toast de update
+- `public/_headers` — remover
+- `public/_redirects` — remover
+- `vite.config.ts` — comentário explicativo
 
-**Diagnóstico (em ordem):**
-1. Rodar `supabase--slow_queries` para identificar queries pesadas.
-2. Rodar `browser--performance_profile` na rota `/admin` para Web Vitals e long tasks.
-3. Listar bundle splits em `vite.config.ts` e checar tamanhos.
+## Resultado esperado
 
-**Otimizações previstas:**
-- **Webhook recebimento**: revisar `supabase/functions/_shared/fluxo-b-ia/` — async/await sequenciais que poderiam ser paralelos; remover writes desnecessários a `customer_processing_lock`.
-- **Envio msg**: revisar `src/lib/whatsapp/send.ts` e `templateSender.ts` — eliminar re-fetches; usar `Promise.all`.
-- **UI**: adicionar `React.memo` em listas grandes (Kanban, ProposalsPanel), trocar `useEffect` que rebuscam tudo por subscriptions já existentes, lazy-load de rotas pesadas em `App.tsx`.
-- **Queries**: adicionar índices nos campos mais filtrados (a definir após slow_queries).
-- **React Query**: aumentar `staleTime` global para 30s, evitar refetch on focus em listas estáticas.
+Após publicar uma vez com essas mudanças, **todo deploy futuro** chega em qualquer navegador em no máximo:
+- **Imediato** se a aba está aberta (controllerchange + version gate).
+- **Na próxima navegação** se a aba estava fechada (meta no-cache força revalidar HTML).
+- **Manual via `?nuke=1`** para casos extremos (PWA instalado offline há semanas).
 
-## 6. Dashboard — Pódio Top 3 (palco) por nº de indicações
+## Nota importante
 
-**Arquivo:** `src/components/admin/parceiros/PartnerDashboard.tsx` (ou dashboard principal admin — confirmar onde encaixar).
-
-**Estratégia:**
-- Novo componente `ReferralPodium.tsx`: 3 colunas com alturas diferentes (2º à esquerda média, 1º central alta, 3º direita baixa), avatar + nome + nº indicações + medalha emoji 🥇🥈🥉.
-- Animação de entrada (`framer-motion` ou CSS keyframes).
-- Query: `select consultant_id, count(*) from network_members group by consultant_id order by count desc limit 3` (ajustar tabela conforme schema real de "indicações").
-
----
-
-## Ordem de execução proposta
-1. Modal ID + remoção do cadastro (rápido, alto impacto UX).
-2. Botão excluir em todas as propostas (rápido).
-3. Service Worker + auto-reload silencioso (deploy garante todos atualizarem).
-4. Página intermediária WhatsApp normal/Business.
-5. Pódio Top 3 no dashboard.
-6. Auditoria de performance (diagnóstico → otimizações pontuais).
-
-Confirma essa ordem? Posso começar.
+Esta primeira atualização ainda depende dos navegadores pegarem o **novo** `index.html` que contém as meta tags. Usuários muito presos podem precisar abrir `https://igreen.cloud/?nuke=1` **uma vez**. Daí em diante, está blindado.
