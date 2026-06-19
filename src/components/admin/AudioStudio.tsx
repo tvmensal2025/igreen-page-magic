@@ -479,12 +479,12 @@ export function AudioStudio({ userId }: { userId: string }) {
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token;
     if (!token) throw new Error("Sessão expirada. Faça login novamente.");
-    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tts-proxy`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/tts-proxy`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
-        "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || "",
+        "apikey": SUPABASE_PUBLISHABLE_KEY,
       },
       body: JSON.stringify({ text, voice_id: VOICE_ID, model_id: MODEL_ID }),
     });
@@ -492,7 +492,12 @@ export function AudioStudio({ userId }: { userId: string }) {
       const err = await res.json().catch(() => null);
       throw new Error(err?.error || `Erro ${res.status}: ${res.statusText}`);
     }
-    return res.blob();
+    const blob = await res.blob();
+    if (!(await isValidMp3(blob))) {
+      const detail = await blob.text().catch(() => "");
+      throw new Error(detail || "Resposta do TTS não veio em MP3 válido");
+    }
+    return blob;
   };
 
   const getOrGenerate = async (text: string): Promise<Blob> => {
@@ -618,7 +623,7 @@ export function AudioStudio({ userId }: { userId: string }) {
           kind,
           city: cidadeP,
           street: ruaP,
-          time_slot: `${horaInicio}h-${horaFim}h`,
+          time_slot: `${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`,
           place_name: placeP,
           script_text: textoPreview,
           audio_url: src.audio_url,
@@ -731,7 +736,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       }
 
       const ruaNome = fix(expandirEndereco(rua)).replace(/^(Rua|Avenida|Alameda|Travessa|Praça|Rodovia|Estrada)\s+/i, "");
-      const hora  = `${horaInicio}h-${horaFim}h`;
+      const hora  = `${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`;
       const nome  = kind === "mutirao"
         ? `${cidadeP || "áudio"} - ${ruaNome}${bairro.trim() ? ` (${fix(bairro.trim())})` : ""} - ${hora}`
         : `${cidadeP || "áudio"} - ${placeP}${ruaNome ? ` (${ruaNome})` : ""} - ${hora}`;
