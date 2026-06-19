@@ -77,17 +77,23 @@ function isUserBusyTyping(): boolean {
 }
 
 async function nukeAndReload(reason: string) {
-  const flag = "__sw_recovered__";
+  const flag = "__sw_recovered_at__";
   // Não interrompe o usuário no meio de um formulário/modal
   if (isUserBusyTyping()) {
     console.info("[recovery] usuário ocupado, adiando reload:", reason);
     setTimeout(() => { void nukeAndReload(reason); }, 15_000);
     return;
   }
+  // Trava anti-loop persistente (localStorage com TTL de 10 min). Antes era
+  // sessionStorage, mas isso permitia reloops ao abrir uma nova aba.
   try {
-    if (sessionStorage.getItem(flag)) return; // evita loop infinito
-    sessionStorage.setItem(flag, "1");
-  } catch { /* sessionStorage pode estar bloqueado */ }
+    const last = Number(localStorage.getItem(flag) || 0);
+    if (last && Date.now() - last < 10 * 60 * 1000) {
+      console.info("[recovery] recovery recente, ignorando:", reason);
+      return;
+    }
+    localStorage.setItem(flag, String(Date.now()));
+  } catch { /* storage pode estar bloqueado */ }
 
   console.warn("[recovery] limpando caches + SW. Motivo:", reason);
   try {
@@ -126,13 +132,12 @@ window.addEventListener("unhandledrejection", (e) => {
   }
 });
 
-// ─── Version gate: força atualização mesmo com cache teimoso ───────────────
-// Mesmo com o Service Worker em auto-update, alguns navegadores/CDN seguram
-// um index.html antigo ou um SW que não troca, deixando o usuário "preso" numa
-// versão velha. Para cobrir isso, comparamos o ID embutido neste bundle
-// (__BUILD_ID__) com o publicado em /version.json (servido sempre da rede).
-// Se forem diferentes, há um deploy novo: limpamos caches + SW e recarregamos
-// uma única vez (nukeAndReload já tem trava anti-loop por sessão).
+// ─── Version gate: detecta deploy novo SEM forçar reload ──────────────────
+// Antes este gate disparava nukeAndReload sozinho a cada 30s + em cada
+// navegação SPA + em visibilitychange + em online. Resultado: a página
+// recarregava sozinha no meio do trabalho do usuário (especialmente no
+// AudioStudio). Agora apenas mostra um banner verde "Nova versão disponível"
+// e o usuário decide quando atualizar.
 async function checkVersionGate() {
   try {
     const res = await fetch(`/version.json?_=${Date.now()}`, { cache: "no-store" });
@@ -140,14 +145,12 @@ async function checkVersionGate() {
     const { buildId } = await res.json();
     if (buildId && typeof buildId === "string" && buildId !== __BUILD_ID__) {
       showUpdateBanner();
-      await nukeAndReload(`version-gate:${__BUILD_ID__}->${buildId}`);
     }
   } catch { /* offline ou version.json ausente: ignora silenciosamente */ }
 }
 
-// Banner visível quando uma versão nova é detectada mas o usuário está
-// digitando/em modal (não podemos recarregar agora). Dá ao usuário a opção
-// manual de atualizar imediatamente.
+// Banner visível quando uma versão nova é detectada. O usuário decide
+// quando recarregar — nunca recarregamos sozinhos.
 function showUpdateBanner() {
   if (document.getElementById("__igreen_update_banner__")) return;
   const el = document.createElement("div");
@@ -165,22 +168,6 @@ function showUpdateBanner() {
 // Checa imediatamente ao carregar (antes mesmo do SW registrar), para pegar
 // usuário cujo HTML veio cacheado e nunca chegaria ao registerSW novo.
 void checkVersionGate();
-
-// Patch no History API para checar a cada navegação SPA.
-try {
-  const orig = { push: history.pushState, replace: history.replaceState };
-  history.pushState = function (...args) {
-    const r = orig.push.apply(this, args as any);
-    void checkVersionGate();
-    return r;
-  };
-  history.replaceState = function (...args) {
-    const r = orig.replace.apply(this, args as any);
-    void checkVersionGate();
-    return r;
-  };
-  window.addEventListener("popstate", () => void checkVersionGate());
-} catch { /* ambiente sem history */ }
 
 // ─── PWA: registro de Service Worker com guards de iframe/preview ──────────
 // Service worker quebra o preview do Lovable (cacheia builds velhos).
@@ -204,24 +191,13 @@ const isPreviewHost =
 
 
 if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
-  // ─── Auto-reload quando um novo SW assume o controle ───────────────────
-  // Com registerType:"autoUpdate" + skipWaiting+clientsClaim, o novo SW
-  // ativa sozinho. Mas o navegador só "vê" a UI nova se a página recarregar.
-  // Forçamos reload UMA vez quando o controlador troca (= deploy novo
-  // assumiu). O flag evita loop caso algo dê errado.
-  let reloadingForSW = false;
+  // ─── Novo SW assumiu o controle: mostra banner em vez de recarregar ────
+  // Antes recarregávamos automaticamente, o que tirava o usuário do meio do
+  // trabalho (sintoma: "página atualiza sozinha"). Agora apenas avisamos e
+  // o usuário decide quando aplicar a versão nova.
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (reloadingForSW) return;
-    const doReload = () => {
-      if (isUserBusyTyping()) {
-        setTimeout(doReload, 15_000);
-        return;
-      }
-      reloadingForSW = true;
-      console.info("[PWA] novo Service Worker assumiu — recarregando");
-      window.location.reload();
-    };
-    doReload();
+    console.info("[PWA] novo Service Worker assumiu — mostrando banner");
+    showUpdateBanner();
   });
 
 
@@ -230,33 +206,26 @@ if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
       const updateSW = registerSW({
         immediate: true,
         onNeedRefresh() {
-          // Como queremos auto-update, força aplicar imediatamente.
-          // O reload em si acontece no controllerchange acima.
-          updateSW(true).catch(() => {});
+          // Mostra o banner em vez de aplicar/recarregar sozinho.
+          showUpdateBanner();
         },
         onRegisteredSW(_swUrl, r) {
           if (!r) return;
-          // Checa por atualização a cada 60s enquanto a aba estiver aberta.
+          // Checa por atualização a cada 10 min (antes: 30s — muito agressivo).
           const poll = () => {
             r.update().catch(() => {});
             void checkVersionGate();
           };
-          setInterval(poll, 30_000);
+          setInterval(poll, 10 * 60 * 1000);
           // Checagem imediata ao registrar — pega usuário que abriu já com
           // bundle antigo em cache.
           void checkVersionGate();
-          // E sempre que a aba volta a ficar visível (usuário trocou de
-          // aba/celular e voltou), checa imediatamente — pega deploys
-          // feitos enquanto a aba estava em background.
-          document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") poll();
-          });
-          // E quando volta a ter rede.
-          window.addEventListener("online", poll);
         },
         onRegisterError(err) {
           console.warn("[PWA] register error:", err);
-          void nukeAndReload("sw-register-error");
+          // Não dispara nukeAndReload: erro de registro não significa cache
+          // corrompido. Se houver chunk faltando, o handler de ChunkLoadError
+          // acima já trata.
         },
       });
       void updateSW;

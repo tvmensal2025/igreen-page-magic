@@ -1,72 +1,67 @@
+# Por que a página fica recarregando
 
-## Problema
+Encontrei 3 causas reais analisando `src/main.tsx`, `public/sw.js`, `CampaignsList.tsx` e `AudioStudio.tsx`. Não é a UI re-renderizando — é a página inteira **recarregando sozinha** em loop.
 
-Hoje o roteiro é gerado em **uma única chamada** ao TTS. Isso garante MP3 válido, mas:
+## Causa 1 (principal): "version gate" agressivo em `src/main.tsx`
 
-- Cada novo áudio paga **tokens do roteiro inteiro**, mesmo trocando só a cidade ou o horário.
-- O cache (memória → IndexedDB → bucket `tts-cache`) só bate quando o **texto é 100% idêntico** — qualquer mudança invalida tudo.
+Hoje o `main.tsx` faz, em produção:
 
-Você tem razão: dá pra economizar muito reaproveitando as partes fixas.
+- `checkVersionGate()` **na inicialização**
+- `checkVersionGate()` em **toda navegação SPA** (patch em `history.pushState`, `replaceState`, `popstate`)
+- `setInterval(poll, 30_000)` chamando `r.update()` + `checkVersionGate()` a cada **30 s**
+- `checkVersionGate()` em **todo `visibilitychange`** (trocou de aba e voltou → checa)
+- `checkVersionGate()` em **todo evento `online`**
+- Auto-reload em `controllerchange` do Service Worker
+- `nukeAndReload` em qualquer `vite:preloadError` / `ChunkLoadError`
 
-## Solução: gerar e cachear por trecho
+Quando `/version.json` responde com um `buildId` diferente do `__BUILD_ID__` do bundle (acontece sempre que o CDN serve uma versão e o `version.json` outra, ou logo após deploy), ele dispara `nukeAndReload` → limpa caches → `window.location.replace(...)`. A trava `__sw_recovered__` é **por sessionStorage**, então abrir uma nova aba zera e o loop volta.
 
-Quebro o roteiro em segmentos estáveis. Cada segmento é gerado uma vez no TTS, fica no cache, e nas próximas vezes é só baixar do cache e concatenar.
+Soma disso com o `controllerchange` (cada novo SW que ativa força reload) = página recarregando "do nada" no meio do trabalho.
 
-### Segmentos do MUTIRÃO
-```
-[1] "Atenção, moradores e comerciantes de {CIDADE} e região!"   ← varia por cidade
-[2] FIXO_MUTIRAO                                                 ← 100% fixo (cache eterno)
-[3] "na {RUA}."                                                  ← varia por endereço
-[4] "Das {HORA_INICIO} às {HORA_FIM}."                           ← varia por horário
-[5] FIXO_FINAL                                                   ← 100% fixo (cache eterno)
-[6] sorteioTexto (quando ativo)                                  ← varia
-```
+## Causa 2: erros 400 derrubando confiança e gerando reloads
 
-### Segmentos do COMÉRCIO
-```
-[1] "Atenção, moradores de {CIDADE} e região!"
-[2] FIXO_COMERCIO                                                ← 100% fixo
-[3] frag do local ({COMERCIO} + rua)
-[4] "Das {HORA_INICIO} às {HORA_FIM}."
-[5] FIXO_FINAL                                                   ← 100% fixo
-```
+- `src/components/admin/ads/CampaignsList.tsx:187` faz `select("public_url")` mas a coluna correta da tabela `ad_image_library` é `url` (ver `src/services/adImageLibrary.ts`). Isso gera o `400 Bad Request` que aparece no console.
+- `tts-cache/v6_417632168_111.mp3` retorna 400 porque o arquivo não existe no bucket (cache miss tratado como erro). É um `HEAD/GET` de probe — não deveria poluir o console nem afetar render; o `AudioStudio` precisa engolir esse 400 como "não tem cache, gera".
 
-### Ganho real
+## Causa 3: `QuotaExceededError` do Workbox
 
-- **FIXO_MUTIRAO + FIXO_FINAL**: gerados 1x na vida toda — depois é zero token pra sempre.
-- Cidades repetidas (mesma cidade, ruas diferentes): segmento [1] reaproveitado.
-- Mesmo horário em áudios diferentes: segmento [4] reaproveitado.
-- Só os trechos realmente novos pagam tokens.
+O service worker do `vite-plugin-pwa` está tentando precachear assets demais e estoura o quota do navegador. Isso aborta a instalação do SW novo → o velho continua → `controllerchange` dispara depois → reload. Hoje não há `maximumFileSizeToCacheInBytes` nem exclusão de arquivos grandes (áudios/vídeos/PDFs) no `vite.config.ts`.
 
-Em uso normal, isso costuma economizar **60–80%** dos tokens depois dos primeiros áudios.
+# O que vou mudar
 
-## Como funciona tecnicamente
+## 1) `src/main.tsx` — desarmar o loop de reload
+- Remover o patch em `history.pushState/replaceState/popstate` que chama `checkVersionGate` (causa principal das checagens em rajada).
+- Aumentar o intervalo do `setInterval` de **30 s → 10 min**.
+- Remover a chamada de `checkVersionGate` no `visibilitychange`/`online` (manter só `r.update()`).
+- Mover a trava `__sw_recovered__` de **sessionStorage → localStorage** com TTL de 10 min, para não relooper ao abrir nova aba.
+- No `controllerchange`: **não** recarregar automaticamente; mostrar o banner "Nova versão disponível — toque para atualizar" (`showUpdateBanner`) e deixar o usuário decidir. Isso evita perder o que está digitando.
+- Manter `?nuke=1`, `vite:preloadError` e `ChunkLoadError` como hoje (são recuperação real de tela branca).
 
-1. `splitIntoSegments(kind, campos)` → devolve array de strings (os segmentos acima).
-2. Para cada segmento:
-   - `getCachedTTS(segmento)` — mesmo cache de 3 camadas que já existe.
-   - Se não tiver, chama `ttsGenerate(segmento)` e salva no cache.
-3. **Concatenação de MP3**: como cada trecho é um MP3 independente do ElevenLabs (mesmo `voice_id` + `model_id` + sample-rate), dá pra juntar os bytes diretamente — frames MP3 são autossuficientes. Faço isso com um `concatMp3Blobs(blobs[])` simples (`new Blob(blobs, { type: "audio/mpeg" })`) + tira tag ID3v2 dos trechos seguintes pra não embolar o player.
-4. Validação: rodo `isValidMp3` em cada trecho antes de juntar. Se algum vier corrompido, faço fallback para 1 chamada única do roteiro inteiro (comportamento atual) — assim nunca quebra.
-5. Dedup atual por `audio_hash` do texto completo continua igual (reaproveita o MP3 final inteiro quando o roteiro já existe — economia máxima, 0 token).
+## 2) `src/components/admin/ads/CampaignsList.tsx`
+- Trocar `select("public_url")` por `select("url")` e ler `imgs[0]?.url`. Acaba com o 400 do `ad_image_library`.
 
-### Pausas naturais
+## 3) `src/components/admin/AudioStudio.tsx`
+- No probe do cache TTS (`tts-cache/...mp3`), tratar 400/404 como cache-miss silencioso (sem logar erro vermelho).
 
-Entre segmentos coloco um silêncio curto (~120 ms de MP3 silencioso pré-gerado, ficando em `/public/audio/silence-120ms.mp3`) pra evitar emendas estranhas. Sem isso, junção fica seca demais.
+## 4) `vite.config.ts` — Workbox sem estourar quota
+- Adicionar em `VitePWA({ workbox: { ... } })`:
+  - `maximumFileSizeToCacheInBytes: 3 * 1024 * 1024` (3 MB)
+  - `globIgnores: ["**/*.mp3", "**/*.mp4", "**/*.wav", "**/*.pdf", "**/opus/*"]`
+- Mantém `NetworkFirst` para navegações; só corta o precache gigante que estoura quota.
 
-## Arquivos a mudar
+# Resultado esperado
 
-- `src/components/admin/AudioStudio.tsx`
-  - novo: `buildSegments(kind, ...)`, `concatMp3Blobs(blobs)`, `stripId3(blob)`.
-  - `handleGenerate`: troca `getOrGenerate(textoPreview)` por loop de segmentos + concat. Mantém try/catch com fallback pra chamada única.
-- `public/audio/silence-120ms.mp3` (asset novo, 1 KB).
+- Página para de recarregar sozinha enquanto o usuário trabalha (especialmente no AudioStudio).
+- Quando houver deploy novo, aparece o banner verde "Nova versão disponível" em vez de reload forçado.
+- Console limpa: sem mais 400 do `ad_image_library` nem `QuotaExceededError` do workbox.
+- Rascunho do AudioStudio (já implementado antes) continua salvando, mas tende a não ser mais necessário porque o reload espontâneo some.
 
-Cache, dedup, MinIO/Supabase upload, vinheta, parser de horário — tudo continua igual.
+# Detalhes técnicos
 
-## Pontos de atenção
+Arquivos editados:
+- `src/main.tsx` (linhas ~136–183 e ~206–264)
+- `src/components/admin/ads/CampaignsList.tsx` (linhas 185–193)
+- `src/components/admin/AudioStudio.tsx` (handler do probe `tts-cache`)
+- `vite.config.ts` (opções do `VitePWA`)
 
-- Concatenação de MP3 funciona bem com mesma voz/modelo/bitrate (caso aqui), mas alguns players são chatos com tags ID3 repetidas — por isso o `stripId3` nos segmentos 2+.
-- O hash do áudio completo (`audio_hash`) continua sendo do **texto completo**, pra dedup de áudio final não ser afetado.
-- Primeira geração paga tudo. A economia aparece da segunda em diante.
-
-Confirma que quer assim que eu implemento.
+Nada de banco / edge function muda. Nenhum dado é apagado.
