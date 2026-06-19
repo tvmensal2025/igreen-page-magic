@@ -656,33 +656,9 @@ export function AudioStudio({ userId }: { userId: string }) {
       // Dedup: roteiro EXATO já existe? reaproveita o MP3 pronto (0 token, 0 remontagem).
       if (await tryReuseExisting(hashText(textoPreview))) return;
 
-      let textos: string[];
-      if (kind === "mutirao") {
-        const trecho1 = `Atenção, moradores e comerciantes de ${cidadeP} e região!`;
-        textos = [trecho1, FIXO_MUTIRAO, `na ${ruaP}.`, horarioP, FIXO_FINAL];
-        if (sorteioTexto) textos.push(sorteioTexto);
-      } else {
-        const trecho1 = `Atenção, moradores de ${cidadeP} e região!`;
-        const ondeFrag = `${contraiEm(placeP)} ${placeP}${ruaP ? `, ${localizadoConcordado(placeP)} na ${ruaP}` : ""}.`;
-        textos = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL];
-      }
-
-      const blobs: Blob[] = [];
-      for (const t of textos) blobs.push(await getOrGenerate(t));
-      let buffers: AudioBuffer[];
-      try {
-        buffers = await Promise.all(blobs.map(decodeAudioBlob));
-      } catch (decodeErr) {
-        // Cache pode estar corrompido — purga e tenta novamente uma vez.
-        console.warn("[AudioStudio] decode falhou, purgando cache e regerando:", decodeErr);
-        await Promise.all(textos.map(purgeCachedTTS));
-        const fresh: Blob[] = [];
-        for (const t of textos) fresh.push(await ttsGenerate(t));
-        await Promise.all(textos.map((t, i) => setCachedTTS(t, fresh[i])));
-        buffers = await Promise.all(fresh.map(decodeAudioBlob));
-      }
-      const merged  = concatWithCrossfade(buffers, 100);
-      const mp3Blob = await encodeMp3(merged, 192);
+      // Gera o roteiro completo em uma única chamada. Isso evita o erro do
+      // navegador ao decodificar vários MP3s para juntar os trechos.
+      const mp3Blob = await getOrGenerate(textoPreview);
 
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioBlob(mp3Blob);
