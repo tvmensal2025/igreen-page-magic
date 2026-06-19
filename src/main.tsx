@@ -63,6 +63,8 @@ createRoot(document.getElementById("root")!).render(<App />);
 // caso, limpamos caches + SW e recarregamos UMA ÚNICA VEZ por sessão.
 function isUserBusyTyping(): boolean {
   try {
+    const generatingSince = Number(sessionStorage.getItem("tts_audio_studio_generating_v1") || 0);
+    if (generatingSince && Date.now() - generatingSince < 10 * 60 * 1000) return true;
     const el = document.activeElement as HTMLElement | null;
     if (!el) return false;
     const tag = el.tagName;
