@@ -1005,7 +1005,7 @@ Deno.serve(async (req) => {
     // Paridade com whapi-webhook. Idempotente — só preenche slots vazios.
     if (messageText && !isFile && customer) {
       try {
-        const multi = extractMultiField(messageText);
+        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
         const patch = buildMultiFieldPatch(customer, multi);
         if (Object.keys(patch).length > 0) {
           if (patch.name) {

@@ -629,7 +629,7 @@ Deno.serve(async (req) => {
     // pra `self_introduced` (mais forte que freeform_multi).
     if (messageText && !isFile && customer) {
       try {
-        const multi = extractMultiField(messageText);
+        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
         const patch = buildMultiFieldPatch(customer, multi);
         if (Object.keys(patch).length > 0) {
           if (patch.name) {
@@ -1079,7 +1079,7 @@ Deno.serve(async (req) => {
         console.log(`[manual-capture-stop] BYPASS — customer=${customer.id} flow_variant=${_flowVariant} hasActiveFlow=${_hasActiveFlow}`);
       } else {
       try {
-        const multi = extractMultiField(messageText);
+        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
         const patch = buildMultiFieldPatch(customer as any, multi);
         if (Object.keys(patch).length > 0) {
           await supabase.from("customers").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", customer.id);
@@ -1389,7 +1389,7 @@ Deno.serve(async (req) => {
         console.log(`[manual-capture-stop-audio] BYPASS — customer=${customer.id} flow_variant=${_flowVariantA} hasActiveFlow=${_hasActiveFlowA}`);
       } else {
       try {
-        const multi = extractMultiField(messageText);
+        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
         const patch = buildMultiFieldPatch(customer as any, multi);
         if (Object.keys(patch).length > 0) {
           await supabase.from("customers").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", customer.id);
