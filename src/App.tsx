@@ -43,7 +43,15 @@ import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportPr
 const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
 
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
