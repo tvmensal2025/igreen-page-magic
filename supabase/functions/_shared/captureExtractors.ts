@@ -111,7 +111,56 @@ const STOPWORDS_NOME = new Set([
   "humano","atendente","consultor","robo","robô","bot",
   // tokens curtos / lixo
   "n","s","ne","né","ta","tá","oq","pq","vc","tb","tbm",
+  // domínio: energia / conta de luz — palavras que o lead diz como SUBSTANTIVO,
+  // não como nome próprio. Sem isso "Apagão", "Energia", "Conta" viravam nome.
+  "apagao","apagão","energia","luz","conta","fatura","boleto","kwh","kw",
+  "distribuidora","enel","cemig","cpfl","equatorial","coelba","light",
+  "eletropaulo","neoenergia","celpe","celesc","copel","elektro","energisa",
+  "desconto","economia","economizar","pagamento","valor","preco","preço",
+  "dinheiro","grana","caro","barato",
+  "indicacao","indicação","propaganda","anuncio","anúncio",
+  "instagram","facebook","whatsapp","zap","site","google","tiktok","youtube",
+  "ajuda","ajudar","problema","duvida","dúvida","duvidas","dúvidas",
+  "simular","simulacao","simulação","cancelar","sair","parar","cadastro","cadastrar",
+  "info","informacao","informação","informacoes","informações",
+  "preciso","queria","precisava","gostaria",
 ]);
+
+// Substantivos do domínio que NUNCA podem virar nome, mesmo com erro de digitação.
+// Usados pra rejeitar via Levenshtein ≤1 quando a palavra tem ≥5 letras.
+const DOMAIN_BLACKLIST = [
+  "apagao","apagão","energia","fatura","boleto","conta","distribuidora",
+  "desconto","economia","pagamento","propaganda","anuncio","anúncio",
+  "instagram","facebook","whatsapp","cadastro","simular","simulacao","simulação",
+  "informacao","informação","problema","duvida","dúvida",
+];
+
+function levenshteinSmall(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 1) return 2;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function isDomainNoise(word: string): boolean {
+  const w = word.toLowerCase();
+  if (STOPWORDS_NOME.has(w)) return true;
+  if (w.length >= 5) {
+    for (const term of DOMAIN_BLACKLIST) {
+      if (levenshteinSmall(w, term) <= 1) return true;
+    }
+  }
+  return false;
+}
 
 function capitalizeName(raw: string): string {
   return raw.trim().split(/\s+/).slice(0, 3)
@@ -126,25 +175,40 @@ function isValidNameCandidate(cleaned: string): boolean {
   const parts = cleaned.toLowerCase().split(/\s+/);
   // Rejeita partes com menos de 2 letras (ex: "Ainda N" gerado de "ainda não")
   if (parts.some(p => p.length < 2)) return false;
-  // Rejeita se qualquer palavra for stopword comum
-  if (parts.some(p => STOPWORDS_NOME.has(p))) return false;
+  // Rejeita se qualquer palavra for stopword ou ruído de domínio
+  if (parts.some(p => isDomainNoise(p))) return false;
   return true;
 }
 
 
-export function extractNome(text: string): string | null {
+export interface ExtractNomeOpts {
+  /**
+   * Permite aceitar resposta de 1 palavra única sem gatilho ("sou X / me chamo X").
+   * Deve ser `true` SOMENTE quando o bot acabou de perguntar o nome explicitamente
+   * (ex: passo `capture_nome` ou `name_ask_sent_at` setado).
+   * Default `false`: 1 palavra avulsa NÃO vira nome — evita salvar "Apagão",
+   * "Energia", "Conta" e similares como nome do lead.
+   */
+  allowSingleWord?: boolean;
+}
+
+export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | null {
   if (!text) return null;
-  // 1) Frase estruturada: "sou X", "me chamo X", "meu nome é X"
+  // 1) Frase estruturada com gatilho explícito: "sou X", "me chamo X", "meu nome é X"
   const m = text.match(/(?:sou|me chamo|meu nome [eé]|aqui [eé]?o?\s?|nome:?\s?)\s+([a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){0,3})/i);
   if (m) {
     const cleaned = capitalizeName(m[1]);
     if (isValidNameCandidate(cleaned)) return cleaned;
   }
-  // 2) Resposta crua à pergunta "qual seu nome?": 1-3 palavras só com letras
+  // 2) Resposta crua: 1-3 palavras só com letras
   const trimmed = text.trim().replace(/[.!?,;:]+$/g, "");
   if (trimmed.length > 0 && trimmed.length <= 60) {
     const onlyLetters = /^[a-zà-ÿ]+(?:\s+[a-zà-ÿ]+){0,2}$/i.test(trimmed);
     if (onlyLetters) {
+      const wordCount = trimmed.split(/\s+/).length;
+      // 1 palavra única: só aceita quando o bot pediu o nome.
+      // 2-3 palavras: aceita (combinação rara de substantivos comuns juntos).
+      if (wordCount === 1 && !opts.allowSingleWord) return null;
       const cleaned = capitalizeName(trimmed);
       if (isValidNameCandidate(cleaned)) return cleaned;
     }
