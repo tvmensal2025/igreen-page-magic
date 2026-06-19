@@ -91,7 +91,11 @@ const WHAPI: MarcadoresWebhook = {
   v3Return: 'mode: "engine_v3"',
   cerebroCall: "await responderComCerebro({",
   cerebroGate: "if (_cerebroRespondeu) {",
-  cerebroReturn: 'mode: "cerebro"',
+  // O whapi emite o mode via ternário (`mode: cond ? "fluxo-b-ia" : "cerebro"`),
+  // então a string literal `mode: "cerebro"` não existe aqui. Casamos pelo fim
+  // do literal (`"cerebro" }`), que é único e preserva a intenção do teste:
+  // existe um early-return cujo mode resolve para "cerebro".
+  cerebroReturn: '"cerebro" }',
   vendedoraExec: "await runEngine()",
 };
 
@@ -219,18 +223,19 @@ Deno.test("15.2 (Property 1): os DOIS webhooks têm os MESMOS dois caminhos, na 
   const evo = await Deno.readTextFile(EVOLUTION_WEBHOOK);
   const whapi = await Deno.readTextFile(WHAPI_WEBHOOK);
 
-  for (const [nome, texto, vendedoraExec] of [
-    ["evolution-webhook", evo, EVOLUTION.vendedoraExec] as const,
-    ["whapi-webhook", whapi, WHAPI.vendedoraExec] as const,
+  for (const [nome, texto, vendedoraExec, cerebroReturn] of [
+    ["evolution-webhook", evo, EVOLUTION.vendedoraExec, EVOLUTION.cerebroReturn] as const,
+    ["whapi-webhook", whapi, WHAPI.vendedoraExec, WHAPI.cerebroReturn] as const,
   ]) {
     // Caminho determinístico (engine v3) presente.
     assert(
       texto.includes("runUnifiedEngineWebhookEntry") && texto.includes('mode: "engine_v3"'),
       `${nome}: falta o caminho determinístico (engine v3)`,
     );
-    // Caminho conversacional (Cérebro) presente.
+    // Caminho conversacional (Cérebro) presente. Usa o marcador por webhook —
+    // o whapi resolve o mode via ternário, então casamos pelo fim do literal.
     assert(
-      texto.includes("await responderComCerebro({") && texto.includes('mode: "cerebro"'),
+      texto.includes("await responderComCerebro({") && texto.includes(cerebroReturn),
       `${nome}: falta o caminho conversacional do Cérebro`,
     );
     // Caminho conversacional legado (vendedora) presente.
@@ -241,7 +246,7 @@ Deno.test("15.2 (Property 1): os DOIS webhooks têm os MESMOS dois caminhos, na 
 
     // Ordem v3 → Cérebro → vendedora idêntica nos dois.
     const idxV3 = texto.indexOf('mode: "engine_v3"');
-    const idxCerebro = texto.indexOf('mode: "cerebro"');
+    const idxCerebro = texto.indexOf(cerebroReturn);
     const idxVendedora = texto.indexOf(vendedoraExec);
     assert(
       idxV3 < idxCerebro && idxCerebro < idxVendedora,

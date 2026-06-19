@@ -4,8 +4,18 @@
 
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { createWhapiAdapter } from "./whapi.ts";
+import type { SendContext } from "./types.ts";
 
 const ADAPTER = createWhapiAdapter({ apiToken: "fake" });
+
+// Contexto mínimo válido para chamadas de envio (SendContext passou a exigir
+// estes campos). Valores fixos — os testes de envio não dependem deles.
+const SEND_CTX: SendContext = {
+  customerId: "cust-test",
+  consultantId: "cons-test",
+  stepId: "step-test",
+  idempotencyKey: "idem-test",
+};
 
 Deno.test("whapi adapter: capabilities estáticas estão corretas", () => {
   const c = ADAPTER.capabilities;
@@ -150,9 +160,11 @@ Deno.test("whapi sendChoice: >3 opções usa texto numerado (não interactive)",
           { id: "d", title: "D" },
         ],
       },
-      {},
+      SEND_CTX,
     );
     assertEquals(result.ok, false);
+    // Narrowing: `reason` só existe no ramo `ok: false` do SendResult.
+    if (result.ok) throw new Error("esperava downgrade (ok: false)");
     assertEquals(result.reason, "downgraded");
     assertEquals(calls.some((c) => c.url.includes("/messages/interactive")), false);
     const textCall = calls.find((c) => c.url.includes("/messages/text"));

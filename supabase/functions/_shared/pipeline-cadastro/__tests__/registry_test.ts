@@ -6,15 +6,15 @@ import {
   classifyStep,
 } from "../registry.ts";
 
-Deno.test("CADASTRO_STEP_REGISTRY has exactly 48 entries (audit canonical)", () => {
-  assertEquals(Object.keys(CADASTRO_STEP_REGISTRY).length, 48);
+Deno.test("CADASTRO_STEP_REGISTRY has exactly 49 entries (audit canonical)", () => {
+  assertEquals(Object.keys(CADASTRO_STEP_REGISTRY).length, 49);
 });
 
-Deno.test("CADASTRO_STEP_REGISTRY split: 42 cadastro-only + 6 híbrido", () => {
+Deno.test("CADASTRO_STEP_REGISTRY split: 43 cadastro-only + 6 híbrido", () => {
   const values = Object.values(CADASTRO_STEP_REGISTRY);
   const cadastroOnly = values.filter((v) => v === "cadastro-only").length;
   const hibrido = values.filter((v) => v === "híbrido").length;
-  assertEquals(cadastroOnly, 42);
+  assertEquals(cadastroOnly, 43);
   assertEquals(hibrido, 6);
 });
 

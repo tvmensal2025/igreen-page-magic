@@ -8,15 +8,20 @@
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { tick } from "./engine.ts";
+// IMPORTANTE: importar os tipos da MESMA fonte que `tick` usa
+// (`legacy-router-types.ts`). O módulo `types.ts` define um `EngineConfig`
+// diferente (sem `capabilities`, com `now`/`limits`), o que causava erro de
+// type-check ao passar o CONFIG para `tick`.
 import type {
+  ChannelCapabilities,
   EngineConfig,
   EngineCustomerState,
   EngineStep,
   InboundEvent,
-} from "./types.ts";
+} from "./legacy-router-types.ts";
 
 // Capabilities mock. Engine não usa diretamente — só no config.
-const CAPS: any = {
+const CAPS: ChannelCapabilities = {
   channel: "evolution",
   supportsButtons: true,
   maxButtons: 3,

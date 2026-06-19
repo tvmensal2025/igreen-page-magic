@@ -7,6 +7,16 @@ import {
   assertEquals,
   assertAlmostEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
+
+// Os testes de `sleepForMedia` precisam que as pausas reais entre mídias
+// estejam ATIVAS. Por padrão `FLOW_INSTANT_MODE` é "true" (zera as esperas e
+// faz `sleepForMedia` retornar antes de chamar setTimeout), o que faria os
+// asserts de tempo lerem `undefined`. Definimos a env ANTES de importar o
+// módulo e resetamos o cache do flow-pace para garantir o recálculo.
+Deno.env.set("FLOW_INSTANT_MODE", "false");
+import { __resetFlowInstantModeCache } from "../../_shared/flow-pace.ts";
+__resetFlowInstantModeCache();
+
 import { __test } from "./bot-flow.ts";
 
 const { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId } = __test;
