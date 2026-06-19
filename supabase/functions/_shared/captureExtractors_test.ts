@@ -50,3 +50,18 @@ Deno.test("extractNome: nomes legítimos ainda passam", () => {
   assertEquals(extractNome("sou Carlos"), "Carlos");
   assertEquals(extractNome("Ana Paula"), "Ana Paula");
 });
+
+Deno.test("extractNome: frase de indicação do QR do Horacio NÃO vira nome", () => {
+  // bug real: "limpa nome te recomendou" virava nome "Te Recomendou"
+  assertEquals(extractNome("Olá o horacio do limpa nome te recomendou, para eu economizar."), null);
+  assertEquals(extractNome("o horacio te recomendou"), null);
+  assertEquals(extractNome("a nilma me indicou"), null);
+  assertEquals(extractNome("o joão nos recomendou pra economizar"), null);
+  assertEquals(extractNome("fulano me mandou aqui"), null);
+});
+
+Deno.test("extractNome: gatilho 'nome' sem dois-pontos não captura mais (regressão Horacio)", () => {
+  assertEquals(extractNome("limpa nome te recomendou pra economizar"), null);
+  assertEquals(extractNome("Nome: João Silva"), "João Silva");
+});
+
