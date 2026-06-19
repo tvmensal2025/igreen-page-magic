@@ -28,10 +28,13 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useUserRole } from "@/hooks/useUserRole";
 import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@/lib/audioProcessing";
 import { AudioWhatsAppPopover } from "./AudioWhatsAppPopover";
+import { uploadMedia } from "@/services/minioUpload";
 
 // ─── ElevenLabs via proxy ─────────────────────────────────────────────────────
 const VOICE_ID = "rpNe0HOx7heUulPiOEaG";
 const MODEL_ID = "eleven_multilingual_v2";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo";
 
 // ─── Cache TTS ───────────────────────────────────────────────────────────────
 const CACHE_VERSION = 6;
@@ -275,12 +278,42 @@ function numeroEnderecoExtenso(input: string): string {
   if (isNaN(n) || n <= 0) return "";
   return numeroExtenso(n);
 }
+function parseHorario(input: string): { horas: number; minutos: number } | null {
+  const raw = (input || "").trim().toLowerCase();
+  if (!raw) return null;
+  const withSep = raw.match(/^(\d{1,2})\s*(?::|h|\.)\s*(\d{1,2})?$/);
+  if (withSep) {
+    const horas = Number(withSep[1]);
+    const minutos = Number(withSep[2] || 0);
+    return horas >= 0 && horas <= 23 && minutos >= 0 && minutos <= 59 ? { horas, minutos } : null;
+  }
+  if (/^\d{1,4}$/.test(raw)) {
+    if (raw.length <= 2) {
+      const horas = Number(raw);
+      return horas >= 0 && horas <= 23 ? { horas, minutos: 0 } : null;
+    }
+    const horas = Number(raw.slice(0, raw.length - 2));
+    const minutos = Number(raw.slice(-2));
+    return horas >= 0 && horas <= 23 && minutos >= 0 && minutos <= 59 ? { horas, minutos } : null;
+  }
+  return null;
+}
 function horarioExtenso(h: string): string {
-  const n = parseInt(h.replace(/\D/g, ""), 10);
-  if (isNaN(n)) return h;
-  if (n === 0)  return "meia-noite";
-  if (n === 12) return "meio-dia";
-  return `${numeroExtenso(n)} ${n === 1 ? "hora" : "horas"}`;
+  const parsed = parseHorario(h);
+  if (!parsed) return h;
+  const { horas, minutos } = parsed;
+  if (horas === 0 && minutos === 0) return "meia-noite";
+  if (horas === 12 && minutos === 0) return "meio-dia";
+  const horasTexto = `${numeroExtenso(horas)} ${horas === 1 ? "hora" : "horas"}`;
+  if (minutos === 0) return horasTexto;
+  return `${horasTexto} e ${numeroExtenso(minutos)} ${minutos === 1 ? "minuto" : "minutos"}`;
+}
+function horarioCurto(h: string): string {
+  const parsed = parseHorario(h);
+  if (!parsed) return h.trim();
+  return parsed.minutos === 0
+    ? `${parsed.horas}h`
+    : `${String(parsed.horas).padStart(2, "0")}:${String(parsed.minutos).padStart(2, "0")}`;
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────
