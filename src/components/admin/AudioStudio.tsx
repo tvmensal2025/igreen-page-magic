@@ -349,6 +349,7 @@ const FIXO_FINAL = "Traga: documento pessoal, fatura de energia atualizada e cel
 
 const SORTEIO_KEY = "tts_sorteio_igreen_v1";
 const AUDIO_DRAFT_KEY = "tts_audio_studio_draft_v1";
+const AUDIO_GENERATING_KEY = "tts_audio_studio_generating_v1";
 const AUDIO_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function buildSorteioTexto(tipo: SorteioTipo, valor: string, local: string, descricao: string, custom: string, autoCorrecao: boolean): string {
@@ -771,6 +772,7 @@ export function AudioStudio({ userId }: { userId: string }) {
     if (kind === "mutirao" && !rua.trim()) { toast({ title: "Preencha a rua ou local do mutirão", variant: "destructive" }); return; }
     if (kind === "comercio" && !placeName.trim()) { toast({ title: "Preencha o nome do comércio", variant: "destructive" }); return; }
 
+    try { sessionStorage.setItem(AUDIO_GENERATING_KEY, String(Date.now())); } catch {}
     setGenerating(true);
     stopAudio();
     try {
@@ -808,7 +810,10 @@ export function AudioStudio({ userId }: { userId: string }) {
       loadLibrary();
     } catch (e: any) {
       toast({ title: "Erro ao gerar áudio", description: e.message, variant: "destructive" });
-    } finally { setGenerating(false); }
+    } finally {
+      setGenerating(false);
+      try { sessionStorage.removeItem(AUDIO_GENERATING_KEY); } catch {}
+    }
   };
 
   const saveToLibrary = async (blob: Blob, scriptText: string, vinhetaBlob?: Blob | null): Promise<AudioRow | null> => {
