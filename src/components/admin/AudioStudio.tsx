@@ -631,7 +631,18 @@ export function AudioStudio({ userId }: { userId: string }) {
 
       const blobs: Blob[] = [];
       for (const t of textos) blobs.push(await getOrGenerate(t));
-      const buffers = await Promise.all(blobs.map(decodeAudioBlob));
+      let buffers: AudioBuffer[];
+      try {
+        buffers = await Promise.all(blobs.map(decodeAudioBlob));
+      } catch (decodeErr) {
+        // Cache pode estar corrompido — purga e tenta novamente uma vez.
+        console.warn("[AudioStudio] decode falhou, purgando cache e regerando:", decodeErr);
+        await Promise.all(textos.map(purgeCachedTTS));
+        const fresh: Blob[] = [];
+        for (const t of textos) fresh.push(await ttsGenerate(t));
+        await Promise.all(textos.map((t, i) => setCachedTTS(t, fresh[i])));
+        buffers = await Promise.all(fresh.map(decodeAudioBlob));
+      }
       const merged  = concatWithCrossfade(buffers, 100);
       const mp3Blob = await encodeMp3(merged, 192);
 
