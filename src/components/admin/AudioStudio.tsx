@@ -348,6 +348,8 @@ const FIXO_COMERCIO = "Hoje tem cadastramento para reduzir o valor da sua conta 
 const FIXO_FINAL = "Traga: documento pessoal, fatura de energia atualizada e celular em mãos!";
 
 const SORTEIO_KEY = "tts_sorteio_igreen_v1";
+const AUDIO_DRAFT_KEY = "tts_audio_studio_draft_v1";
+const AUDIO_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function buildSorteioTexto(tipo: SorteioTipo, valor: string, local: string, descricao: string, custom: string, autoCorrecao: boolean): string {
   const fix = autoCorrecao ? corrigirAcentos : (t: string) => t;
@@ -391,34 +393,71 @@ interface AudioRow {
   created_at: string;
 }
 
+interface AudioDraft {
+  savedAt: number;
+  kind: Kind;
+  cidade: string;
+  rua: string;
+  numero: string;
+  bairro: string;
+  placeName: string;
+  horaInicio: string;
+  horaFim: string;
+  refTipo: RefTipo;
+  referencia: string;
+  autoCorrecao: boolean;
+  sorteioAtivo: boolean;
+  sorteioTipo: SorteioTipo;
+  sorteioValor: string;
+  sorteioLocal: string;
+  sorteioDescricao: string;
+  sorteioCustom: string;
+}
+
+function readAudioDraft(): Partial<AudioDraft> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(AUDIO_DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Partial<AudioDraft>;
+    if (typeof draft.savedAt === "number" && Date.now() - draft.savedAt > AUDIO_DRAFT_MAX_AGE_MS) return null;
+    return draft;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Componente principal ────────────────────────────────────────────────────
 export function AudioStudio({ userId }: { userId: string }) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const { isSuperAdmin } = useUserRole(userId);
+  const initialDraftRef = useRef<Partial<AudioDraft> | null | undefined>(undefined);
+  if (initialDraftRef.current === undefined) initialDraftRef.current = readAudioDraft();
+  const initialDraft = initialDraftRef.current;
 
   // Tab variante
-  const [kind, setKind] = useState<Kind>("mutirao");
+  const [kind, setKind] = useState<Kind>(() => initialDraft?.kind === "comercio" ? "comercio" : "mutirao");
 
   // Form (compartilhado entre as duas variantes)
-  const [cidade,     setCidade]     = useState("");
-  const [rua,        setRua]        = useState("");
-  const [numero,     setNumero]     = useState("");
-  const [bairro,     setBairro]     = useState("");
-  const [placeName,  setPlaceName]  = useState(""); // só comércio
-  const [horaInicio, setHoraInicio] = useState("8");
-  const [horaFim,    setHoraFim]    = useState("18");
-  const [refTipo,    setRefTipo]    = useState<RefTipo>("proximo");
-  const [referencia, setReferencia] = useState("");
-  const [autoCorrecao, setAutoCorrecao] = useState(true);
+  const [cidade,     setCidade]     = useState(() => initialDraft?.cidade ?? "");
+  const [rua,        setRua]        = useState(() => initialDraft?.rua ?? "");
+  const [numero,     setNumero]     = useState(() => initialDraft?.numero ?? "");
+  const [bairro,     setBairro]     = useState(() => initialDraft?.bairro ?? "");
+  const [placeName,  setPlaceName]  = useState(() => initialDraft?.placeName ?? ""); // só comércio
+  const [horaInicio, setHoraInicio] = useState(() => initialDraft?.horaInicio ?? "8");
+  const [horaFim,    setHoraFim]    = useState(() => initialDraft?.horaFim ?? "18");
+  const [refTipo,    setRefTipo]    = useState<RefTipo>(() => initialDraft?.refTipo === "em_frente" ? "em_frente" : "proximo");
+  const [referencia, setReferencia] = useState(() => initialDraft?.referencia ?? "");
+  const [autoCorrecao, setAutoCorrecao] = useState(() => typeof initialDraft?.autoCorrecao === "boolean" ? initialDraft.autoCorrecao : true);
 
   // Sorteio (só mutirão)
-  const [sorteioAtivo,     setSorteioAtivo]     = useState(false);
-  const [sorteioTipo,      setSorteioTipo]      = useState<SorteioTipo>("dinheiro");
-  const [sorteioValor,     setSorteioValor]     = useState("");
-  const [sorteioLocal,     setSorteioLocal]     = useState("");
-  const [sorteioDescricao, setSorteioDescricao] = useState("");
-  const [sorteioCustom,    setSorteioCustom]    = useState("");
+  const [sorteioAtivo,     setSorteioAtivo]     = useState(() => Boolean(initialDraft?.sorteioAtivo));
+  const [sorteioTipo,      setSorteioTipo]      = useState<SorteioTipo>(() => initialDraft?.sorteioTipo ?? "dinheiro");
+  const [sorteioValor,     setSorteioValor]     = useState(() => initialDraft?.sorteioValor ?? "");
+  const [sorteioLocal,     setSorteioLocal]     = useState(() => initialDraft?.sorteioLocal ?? "");
+  const [sorteioDescricao, setSorteioDescricao] = useState(() => initialDraft?.sorteioDescricao ?? "");
+  const [sorteioCustom,    setSorteioCustom]    = useState(() => initialDraft?.sorteioCustom ?? "");
 
   // Player
   const [generating, setGenerating] = useState(false);
