@@ -683,6 +683,18 @@ Deno.serve(async (req) => {
               }).eq("id", customer.id);
               (customer as any).referral_partner_id = match.partnerId;
               console.log(`[keyword-match] customer=${customer.id} partner=${match.partnerId} keyword="${match.keyword}"`);
+              // Audit log — paridade com evolution-webhook (campaign_match_log)
+              try {
+                await supabase.from("campaign_match_log").insert({
+                  customer_id: customer.id,
+                  campaign_id: null,
+                  method: "keyword",
+                  similarity: match.score,
+                  message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                });
+              } catch (e) {
+                console.warn("[campaign-match-log] insert falhou:", (e as Error).message);
+              }
               // Aviso EXTRA ao parceiro (se tiver notification_phone). Não bloqueia o fluxo.
               notifyPartnerNewLead(superAdminConsultantId, match.partnerId, {
                 id: customer.id,
