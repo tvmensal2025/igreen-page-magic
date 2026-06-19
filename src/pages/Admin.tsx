@@ -54,6 +54,13 @@ import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
 import { SupportChatButton } from "@/components/support/SupportChatButton";
 
+const ADMIN_ACTIVE_TAB_KEY = "igreen_admin_active_tab_v1";
+const ADMIN_TAB_IDS: readonly AdminTabId[] = [
+  "dashboard", "crm", "crm-clientes", "conversao", "clientes", "produtos",
+  "captacao", "parceiros", "rede", "whatsapp", "central-anuncios", "links",
+  "materiais", "audio-studio", "academy",
+];
+
 const AdminContent = () => {
   const { privacyMode, togglePrivacy } = usePrivacyMode();
   const { loading, approved, userId, form, photoPreview, setPhotoPreview, handleFormChange, handleLogout, setForm } = useAdminAuth();
@@ -87,9 +94,14 @@ const AdminContent = () => {
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
       if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos") return tab as AdminTabId;
+      const stored = window.localStorage.getItem(ADMIN_ACTIVE_TAB_KEY) as AdminTabId | null;
+      if (stored && ADMIN_TAB_IDS.includes(stored)) return stored;
     }
     return "dashboard";
   });
+  useEffect(() => {
+    try { window.localStorage.setItem(ADMIN_ACTIVE_TAB_KEY, activeTab); } catch {}
+  }, [activeTab]);
   const [pendingAiSubTab, setPendingAiSubTab] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const tab = new URLSearchParams(window.location.search).get("tab");
