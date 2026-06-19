@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-const HEARTBEAT_MS = 25_000; // tabela `consultant_presence` é atualizada a cada 25s
+const HEARTBEAT_MS = 45_000; // tabela `consultant_presence` é atualizada a cada 45s (reduz ~45% das chamadas vs. 25s)
 const PRESENCE_TTL_MS = 90_000; // edge function considera presente se last_seen < 90s
 
 export interface ConsultantPresenceState {
