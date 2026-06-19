@@ -239,7 +239,7 @@ if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
             r.update().catch(() => {});
             void checkVersionGate();
           };
-          setInterval(poll, 60_000);
+          setInterval(poll, 30_000);
           // Checagem imediata ao registrar — pega usuário que abriu já com
           // bundle antigo em cache.
           void checkVersionGate();
