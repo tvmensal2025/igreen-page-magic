@@ -716,23 +716,37 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   const saveToLibrary = async (blob: Blob, scriptText: string, vinhetaBlob?: Blob | null): Promise<AudioRow | null> => {
     try {
-      const path = `${userId}/${kind}-${Date.now()}.mp3`;
-      const { error: upErr } = await supabase.storage.from("ai-agent-media").upload(path, blob, {
-        upsert: false, contentType: "audio/mpeg",
-      });
-      if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("ai-agent-media").getPublicUrl(path);
+      const uploadAudio = async (audio: Blob, suffix: string): Promise<string> => {
+        const slug = `${kind}-${cidadeP || "audio"}-${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}-${suffix}`;
+        const file = new File([audio], `${slug}.mp3`, { type: "audio/mpeg" });
+        try {
+          const result = await uploadMedia(file, undefined, {
+            scope: "admin",
+            consultant_id: userId,
+            kind: "audio",
+            slug,
+          });
+          return result.url;
+        } catch (uploadErr) {
+          console.warn("[AudioStudio] Upload MinIO falhou; usando fallback Supabase Storage:", uploadErr);
+          const path = `${userId}/${slug}-${Date.now()}.mp3`;
+          const { error: upErr } = await supabase.storage.from("ai-agent-media").upload(path, audio, {
+            upsert: false, contentType: "audio/mpeg",
+          });
+          if (upErr) throw upErr;
+          return supabase.storage.from("ai-agent-media").getPublicUrl(path).data.publicUrl;
+        }
+      };
+
+      const audioPublicUrl = await uploadAudio(blob, "sem-vinheta");
 
       // Sobe também a versão com vinheta (quando existir).
       let vinhetaUrl: string | null = null;
       if (vinhetaBlob && vinhetaBlob.size > 0) {
-        const pathV = `${userId}/${kind}-vinheta-${Date.now()}.mp3`;
-        const { error: upErrV } = await supabase.storage.from("ai-agent-media").upload(pathV, vinhetaBlob, {
-          upsert: false, contentType: "audio/mpeg",
+        vinhetaUrl = await uploadAudio(vinhetaBlob, "com-vinheta").catch((err) => {
+          console.warn("[AudioStudio] Erro ao salvar versão com vinheta:", err);
+          return null;
         });
-        if (!upErrV) {
-          vinhetaUrl = supabase.storage.from("ai-agent-media").getPublicUrl(pathV).data.publicUrl;
-        }
       }
 
       const ruaNome = fix(expandirEndereco(rua)).replace(/^(Rua|Avenida|Alameda|Travessa|Praça|Rodovia|Estrada)\s+/i, "");
@@ -744,7 +758,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       // Catálogo de mídia (mantém comportamento atual de aparecer na biblioteca do painel)
       await supabase.from("ai_media_library").insert({
         consultant_id: userId, is_public: false, kind: "audio",
-        label: nome, url: pub.publicUrl,
+        label: nome, url: audioPublicUrl,
         step_tags: ["any"], intent_tags: [], active: true, priority: 10,
       });
 
@@ -756,7 +770,7 @@ export function AudioStudio({ userId }: { userId: string }) {
         time_slot: hora,
         place_name: placeP,
         script_text: scriptText,
-        audio_url: pub.publicUrl,
+        audio_url: audioPublicUrl,
         audio_url_vinheta: vinhetaUrl,
         audio_hash: hashText(scriptText),
         is_public: false,
