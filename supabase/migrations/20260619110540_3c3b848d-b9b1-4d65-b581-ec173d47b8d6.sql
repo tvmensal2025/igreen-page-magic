@@ -1,0 +1,1 @@
+UPDATE public.customers SET capture_mode = 'auto' WHERE capture_mode IS DISTINCT FROM 'auto';
