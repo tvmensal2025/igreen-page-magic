@@ -107,6 +107,28 @@ async function isValidMp3(blob: Blob): Promise<boolean> {
     return false;
   } catch { return false; }
 }
+// Remove ID3v2 tag do início de um MP3 (necessário ao concatenar vários trechos
+// — sem isso, players ficam confusos com múltiplos headers ID3 no mesmo arquivo).
+async function stripId3(blob: Blob): Promise<Blob> {
+  if (blob.size < 10) return blob;
+  const head = new Uint8Array(await blob.slice(0, 10).arrayBuffer());
+  if (head[0] !== 0x49 || head[1] !== 0x44 || head[2] !== 0x33) return blob; // sem ID3
+  // tamanho do tag (synchsafe int de 7 bits)
+  const size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9];
+  const total = 10 + size;
+  if (total >= blob.size) return blob;
+  return blob.slice(total);
+}
+// Concatena vários MP3s no mesmo voice_id/model_id/bitrate. Frames MP3 são
+// autossuficientes — basta juntar bytes. Para players exigentes, mantém só o
+// ID3 do primeiro trecho.
+async function concatMp3Blobs(blobs: Blob[]): Promise<Blob> {
+  if (blobs.length === 0) return new Blob([], { type: "audio/mpeg" });
+  if (blobs.length === 1) return blobs[0];
+  const parts: Blob[] = [blobs[0]];
+  for (let i = 1; i < blobs.length; i++) parts.push(await stripId3(blobs[i]));
+  return new Blob(parts, { type: "audio/mpeg" });
+}
 export async function purgeCachedTTS(text: string): Promise<void> {
   const hash = hashText(text);
   cacheMap.delete(hash);
