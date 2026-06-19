@@ -209,7 +209,7 @@ export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | 
   // 1) Frase estruturada com gatilho explícito: "sou X", "me chamo X", "meu nome é X".
   //    Removido o gatilho frouxo `nome:?\s?` (matchava "limpa nome te recomendou" do QR).
   //    Mantemos "nome:" com dois-pontos obrigatórios pra forms tipo "Nome: João".
-  const m = text.match(/(?:\bsou\b|\bme chamo\b|\bmeu nome [eé]\b|\baqui [eé] o?\s?|\bnome:\s?)\s*([a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){0,3})/i);
+  const m = text.match(/(?:\bsou\b|\bme chamo\b|\bmeu nome [eé]\s|\baqui [eé] o?\s?|\bnome:\s?)\s*([a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){0,3})/i);
   if (m) {
     const cleaned = capitalizeName(m[1]);
     if (isValidNameCandidate(cleaned)) return cleaned;
