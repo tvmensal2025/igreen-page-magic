@@ -484,17 +484,23 @@ export function AudioStudio({ userId }: { userId: string }) {
     ? buildSorteioTexto(sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom, autoCorrecao)
     : "";
 
-  let textoPreview = "";
+  // Roteiro dividido em segmentos estáveis. Cada segmento é gerado e cacheado
+  // independentemente — partes fixas (FIXO_*) são geradas uma única vez na vida
+  // toda; cidade/horário/rua reaproveitam quando repetidos. Concatenamos os
+  // MP3s no final. Economiza 60–80% dos tokens em uso normal.
+  let segments: string[] = [];
   if (kind === "mutirao") {
     const trecho1 = cidadeP ? `Atenção, moradores e comerciantes de ${cidadeP} e região!` : "Atenção, moradores e comerciantes de [cidade] e região!";
-    textoPreview = [trecho1, FIXO_MUTIRAO, `na ${ruaP || "[rua]"}.`, horarioP, FIXO_FINAL, sorteioTexto].filter(Boolean).join(" ");
+    segments = [trecho1, FIXO_MUTIRAO, `na ${ruaP || "[rua]"}.`, horarioP, FIXO_FINAL];
+    if (sorteioTexto) segments.push(sorteioTexto);
   } else {
     const trecho1 = cidadeP ? `Atenção, moradores de ${cidadeP} e região!` : "Atenção, moradores de [cidade] e região!";
     const ondeFrag = placeP
       ? `${contraiEm(placeP)} ${placeP}${ruaP ? `, ${localizadoConcordado(placeP)} na ${ruaP}` : ""}.`
       : (ruaP ? `na ${ruaP}.` : "[nome do comércio].");
-    textoPreview = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL].filter(Boolean).join(" ");
+    segments = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL];
   }
+  const textoPreview = segments.join(" ");
 
   // ─── Geração TTS ──────────────────────────────────────────────────────────
   const ttsGenerate = async (text: string): Promise<Blob> => {
