@@ -3436,22 +3436,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             break;
           }
 
-          // 📌 REGRA DE NEGÓCIO (paridade com whapi 2026-05-28):
-          // - capture_mode='auto' (IA ligada): vai DIRETO pro cliente confirmar
-          //   com botões — sem passar pelo consultor.
-          // - capture_mode='manual' (consultor disparou 1-a-1): pausa para
-          //   modal blocking no painel. Cron libera se não decidir.
-          const captureMode = String((customer as any)?.capture_mode || "auto").toLowerCase();
+          // 📌 REGRA DE NEGÓCIO (2026-06-19): capture_mode='manual' foi
+          // descontinuado — todos os leads seguem o fluxo automático para
+          // garantir finalização no Portal 2. A coluna fica no schema caso
+          // queira reativar via flag futuramente, mas o bot ignora.
 
-          if (captureMode === "manual") {
-            console.log(`[ocr-bill] 🔒 [manual] marcando review pendente — consultor decide (customer=${customer.id})`);
-            updates.ocr_review_pending = "bill";
-            updates.ocr_review_started_at = new Date().toISOString();
-            updates.ocr_review_decided_at = null;
-            updates.ocr_review_decided_by = null;
-            reply = "";
-            break;
-          }
 
           // Modo automático → manda direto pro cliente confirmar (com botões).
           console.log(`[ocr-bill] 🤖 [auto] enviando confirmação direto pro cliente (customer=${customer.id})`);
@@ -4251,19 +4240,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             break;
           }
 
-          // 📌 REGRA DE NEGÓCIO (paridade com whapi 2026-05-28): mesmo de capture_conta.
-          // auto → direto pro cliente; manual → card de revisão pro consultor.
-          const captureModeDoc = String((customer as any)?.capture_mode || "auto").toLowerCase();
+          // 📌 REGRA DE NEGÓCIO (2026-06-19): capture_mode='manual' descontinuado.
+          // Todos os leads seguem direto pra confirmação automática.
 
-          if (captureModeDoc === "manual") {
-            console.log(`[ocr-doc] 🔒 [manual] marcando review pendente — consultor decide (customer=${customer.id})`);
-            updates.ocr_review_pending = "doc";
-            updates.ocr_review_started_at = new Date().toISOString();
-            updates.ocr_review_decided_at = null;
-            updates.ocr_review_decided_by = null;
-            reply = "";
-            break;
-          }
 
           console.log(`[ocr-doc] 🤖 [auto] enviando confirmação direto pro cliente (customer=${customer.id})`);
           const _mergedDoc = { ...customer, ...updates };
