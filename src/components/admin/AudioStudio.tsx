@@ -482,6 +482,7 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   // Persistência sorteio
   useEffect(() => {
+    if (initialDraftRef.current) return;
     try {
       const raw = localStorage.getItem(SORTEIO_KEY);
       if (raw) {
@@ -503,6 +504,23 @@ export function AudioStudio({ userId }: { userId: string }) {
       }));
     } catch {}
   }, [sorteioAtivo, sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom]);
+
+  // Rascunho completo: se a aba recarregar durante geração/upload, o formulário
+  // volta preenchido e a pessoa não perde cidade, endereço, horário e sorteio.
+  useEffect(() => {
+    try {
+      const draft: AudioDraft = {
+        savedAt: Date.now(), kind, cidade, rua, numero, bairro, placeName,
+        horaInicio, horaFim, refTipo, referencia, autoCorrecao,
+        sorteioAtivo, sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom,
+      };
+      localStorage.setItem(AUDIO_DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+  }, [
+    kind, cidade, rua, numero, bairro, placeName, horaInicio, horaFim, refTipo,
+    referencia, autoCorrecao, sorteioAtivo, sorteioTipo, sorteioValor,
+    sorteioLocal, sorteioDescricao, sorteioCustom,
+  ]);
 
   // ─── Texto preview ────────────────────────────────────────────────────────
   const fix = autoCorrecao ? corrigirAcentos : (t: string) => t;
