@@ -184,11 +184,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           if (missing.length > 0) {
             const { data: imgs } = await (supabase as any)
               .from("ad_image_library")
-              .select("public_url")
+              .select("url")
               .eq("consultant_id", consultantId)
               .order("created_at", { ascending: false })
               .limit(1);
-            const fallbackUrl = (imgs && imgs[0]?.public_url) || null;
+            const fallbackUrl = (imgs && imgs[0]?.url) || null;
             missing.forEach((cid) => {
               cr[cid] = fallbackUrl ? { kind: "image", url: fallbackUrl } : { kind: "none", url: null };
             });

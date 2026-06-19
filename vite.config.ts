@@ -98,8 +98,19 @@ export default defineConfig({
           /^\/r\//, // link curto de parceiro: deixa o redirect 302 do Cloudflare agir (nunca servir o app do cache)
         ],
         // Não tente precachear o manifest manual nem assets gigantes.
-        globIgnores: ["**/manifest.json", "**/sw.js", "**/version.json"],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // Excluímos mídia (mp3/mp4/wav/pdf) e o player Opus: estouravam o quota
+        // do Cache Storage do navegador (QuotaExceededError) abortando o SW.
+        globIgnores: [
+          "**/manifest.json",
+          "**/sw.js",
+          "**/version.json",
+          "**/*.mp3",
+          "**/*.mp4",
+          "**/*.wav",
+          "**/*.pdf",
+          "**/opus/*",
+        ],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
             // HTML — sempre tenta rede antes (3s) para pegar deploy novo.
