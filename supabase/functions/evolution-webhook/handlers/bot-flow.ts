@@ -732,7 +732,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       return { reply: "", updates: { __inline_sent: true, detour_count: 0 } as any };
     }
 
-    if (detourNext >= 8) {
+    if (detourNext >= 5) {
       patch.bot_paused = true;
       patch.bot_paused_reason = "muitas_duvidas";
       patch.bot_paused_at = new Date().toISOString();
@@ -999,10 +999,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const { full: reentry } = await resolveStepReentry(supabase, customer, stepKey, nomeRepresentante);
           const text = [qa.text, reentry].filter(Boolean).join("\n\n");
 
-          // Threshold 8 desvios + handoff alert visível ao consultor
+          // Threshold 5 desvios + handoff alert visível ao consultor
           const detourNext = Number((customer as any).detour_count || 0) + 1;
           const patch: Record<string, any> = { detour_count: detourNext };
-          if (detourNext >= 8) {
+          if (detourNext >= 5) {
             patch.bot_paused = true;
             patch.bot_paused_reason = "muitas_duvidas";
             patch.bot_paused_at = new Date().toISOString();
