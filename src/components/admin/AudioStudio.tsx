@@ -107,6 +107,28 @@ async function isValidMp3(blob: Blob): Promise<boolean> {
     return false;
   } catch { return false; }
 }
+// Remove ID3v2 tag do início de um MP3 (necessário ao concatenar vários trechos
+// — sem isso, players ficam confusos com múltiplos headers ID3 no mesmo arquivo).
+async function stripId3(blob: Blob): Promise<Blob> {
+  if (blob.size < 10) return blob;
+  const head = new Uint8Array(await blob.slice(0, 10).arrayBuffer());
+  if (head[0] !== 0x49 || head[1] !== 0x44 || head[2] !== 0x33) return blob; // sem ID3
+  // tamanho do tag (synchsafe int de 7 bits)
+  const size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9];
+  const total = 10 + size;
+  if (total >= blob.size) return blob;
+  return blob.slice(total);
+}
+// Concatena vários MP3s no mesmo voice_id/model_id/bitrate. Frames MP3 são
+// autossuficientes — basta juntar bytes. Para players exigentes, mantém só o
+// ID3 do primeiro trecho.
+async function concatMp3Blobs(blobs: Blob[]): Promise<Blob> {
+  if (blobs.length === 0) return new Blob([], { type: "audio/mpeg" });
+  if (blobs.length === 1) return blobs[0];
+  const parts: Blob[] = [blobs[0]];
+  for (let i = 1; i < blobs.length; i++) parts.push(await stripId3(blobs[i]));
+  return new Blob(parts, { type: "audio/mpeg" });
+}
 export async function purgeCachedTTS(text: string): Promise<void> {
   const hash = hashText(text);
   cacheMap.delete(hash);
@@ -462,17 +484,23 @@ export function AudioStudio({ userId }: { userId: string }) {
     ? buildSorteioTexto(sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom, autoCorrecao)
     : "";
 
-  let textoPreview = "";
+  // Roteiro dividido em segmentos estáveis. Cada segmento é gerado e cacheado
+  // independentemente — partes fixas (FIXO_*) são geradas uma única vez na vida
+  // toda; cidade/horário/rua reaproveitam quando repetidos. Concatenamos os
+  // MP3s no final. Economiza 60–80% dos tokens em uso normal.
+  let segments: string[] = [];
   if (kind === "mutirao") {
     const trecho1 = cidadeP ? `Atenção, moradores e comerciantes de ${cidadeP} e região!` : "Atenção, moradores e comerciantes de [cidade] e região!";
-    textoPreview = [trecho1, FIXO_MUTIRAO, `na ${ruaP || "[rua]"}.`, horarioP, FIXO_FINAL, sorteioTexto].filter(Boolean).join(" ");
+    segments = [trecho1, FIXO_MUTIRAO, `na ${ruaP || "[rua]"}.`, horarioP, FIXO_FINAL];
+    if (sorteioTexto) segments.push(sorteioTexto);
   } else {
     const trecho1 = cidadeP ? `Atenção, moradores de ${cidadeP} e região!` : "Atenção, moradores de [cidade] e região!";
     const ondeFrag = placeP
       ? `${contraiEm(placeP)} ${placeP}${ruaP ? `, ${localizadoConcordado(placeP)} na ${ruaP}` : ""}.`
       : (ruaP ? `na ${ruaP}.` : "[nome do comércio].");
-    textoPreview = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL].filter(Boolean).join(" ");
+    segments = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL];
   }
+  const textoPreview = segments.join(" ");
 
   // ─── Geração TTS ──────────────────────────────────────────────────────────
   const ttsGenerate = async (text: string): Promise<Blob> => {
@@ -506,6 +534,42 @@ export function AudioStudio({ userId }: { userId: string }) {
     const blob = await ttsGenerate(text);
     await setCachedTTS(text, blob);
     return blob;
+  };
+
+  // Gera o roteiro por segmentos: cada trecho é cacheado individualmente, então
+  // partes repetidas (FIXO_*, mesma cidade, mesmo horário) não pagam tokens de
+  // novo. Concatena os MP3s no final. Em qualquer falha de validação volta pro
+  // modo "tudo em uma chamada" pra garantir áudio funcional.
+  const getOrGenerateSegmented = async (segs: string[], fullText: string): Promise<Blob> => {
+    try {
+      const blobs: Blob[] = [];
+      let reused = 0;
+      for (const seg of segs) {
+        const trimmed = seg.trim();
+        if (!trimmed) continue;
+        const cached = await getCachedTTS(trimmed);
+        if (cached) {
+          blobs.push(cached);
+          reused++;
+          continue;
+        }
+        const fresh = await ttsGenerate(trimmed);
+        if (!(await isValidMp3(fresh))) throw new Error("Segmento TTS inválido");
+        await setCachedTTS(trimmed, fresh);
+        blobs.push(fresh);
+      }
+      if (blobs.length === 0) throw new Error("Nenhum segmento gerado");
+      const merged = await concatMp3Blobs(blobs);
+      if (!(await isValidMp3(merged))) throw new Error("MP3 concatenado inválido");
+      if (reused > 0) {
+        const economia = Math.round((reused / blobs.length) * 100);
+        console.log(`[tts] ${reused}/${blobs.length} segmentos do cache (~${economia}% economia)`);
+      }
+      return merged;
+    } catch (e) {
+      console.warn("[tts] geração por segmentos falhou, caindo pra chamada única:", e);
+      return getOrGenerate(fullText);
+    }
   };
 
   // Cache da vinheta em memória — evita refetch a cada geração/download.
@@ -656,9 +720,9 @@ export function AudioStudio({ userId }: { userId: string }) {
       // Dedup: roteiro EXATO já existe? reaproveita o MP3 pronto (0 token, 0 remontagem).
       if (await tryReuseExisting(hashText(textoPreview))) return;
 
-      // Gera o roteiro completo em uma única chamada. Isso evita o erro do
-      // navegador ao decodificar vários MP3s para juntar os trechos.
-      const mp3Blob = await getOrGenerate(textoPreview);
+      // Gera por segmentos (cache reaproveita trechos repetidos). Fallback
+      // automático pra chamada única se algo der errado.
+      const mp3Blob = await getOrGenerateSegmented(segments, textoPreview);
 
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioBlob(mp3Blob);

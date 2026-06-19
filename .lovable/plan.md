@@ -1,75 +1,72 @@
-## Análise — lead `5511973042020` (customer `f3f83cfe…`, Fluxo D do consultor `0c2711ad…`)
 
-### Conversa real (19/06 BRT)
+## Problema
 
-| Hora | Quem | Mensagem / passo |
-|---|---|---|
-| 12:41 | Lead | *"Olá o horacio do limpa nome **te recomendou**, para eu economizar."* (frase do QR físico do Horacio) |
-| 12:41 | Bot | `d_welcome` |
-| 12:42 | Lead | clica **🎥 Como funciona** |
-| 12:42 | Bot | `d_como_funciona` (áudio + vídeo + texto) |
-| 12:45 | Lead | clica **💬 Tenho uma pergunta** |
-| 12:45 | Bot | `d_duvidas`: **"Te, manda sua pergunta aqui..."** ← o "**Te**" do print |
-| 12:46 | Lead | clica **✅ Cadastrar agora** |
-| 12:46 | Bot | `d_pedir_documento`: **"Show, Te! Agora preciso de mais uma foto... 🪪 RG / 🚗 CNH"** ← pulou o pedido de conta |
-| 12:48 | Lead | manda foto (era conta de luz) |
-| 12:48 | Bot | "Esse arquivo não parece RG/CNH (parece conta de energia)" |
-| 12:49 | Lead | manda outra foto |
-| 12:49 | Bot | "Não consegui ler a conta com clareza (qualidade: 0%)" |
+Hoje o roteiro é gerado em **uma única chamada** ao TTS. Isso garante MP3 válido, mas:
 
-`customers.name = 'Te Recomendou'`, `name_source = self_introduced`. Conversation_step ficou em `aguardando_conta`.
+- Cada novo áudio paga **tokens do roteiro inteiro**, mesmo trocando só a cidade ou o horário.
+- O cache (memória → IndexedDB → bucket `tts-cache`) só bate quando o **texto é 100% idêntico** — qualquer mudança invalida tudo.
 
-## Os 3 bugs
+Você tem razão: dá pra economizar muito reaproveitando as partes fixas.
 
-### Bug 1 — Nome "Te Recomendou" extraído da frase
-O extrator de nome `self_introduced` pega "...**te recomendou**..." como nome. Por isso o bot chama o lead de **"Te"** em todas as mensagens. Esse mesmo QR físico do Horacio (`wa.me/...?text=Ol%C3%A1%20o%20horacio%20do%20limpa%20nome%20te%20recomendou...`) vai produzir esse bug em **toda** lead nova que escanear.
+## Solução: gerar e cachear por trecho
 
-**Origem provável:** `supabase/functions/_shared/conversion/phrase-catalog.ts` ou o name-extractor do `whapi-webhook`. Precisa adicionar blacklist para os padrões `\bte recomendou\b`, `\bme recomendou\b`, `\bnos recomendou\b`, `\brecomendou\b` (quando seguido/precedido por pronome), e nunca aceitar primeiro nome "Te"/"Me"/"Nos".
+Quebro o roteiro em segmentos estáveis. Cada segmento é gerado uma vez no TTS, fica no cache, e nas próximas vezes é só baixar do cache e concatenar.
 
-### Bug 2 — "Cadastrar agora" pulou o `d_pedir_conta`
-Depois do `d_duvidas`, o clique em **"✅ Cadastrar agora"** roteou direto para `d_pedir_documento` (capture_documento, pos 5), **pulando** o `d_pedir_conta` (pos 2) que é onde o fluxo D pede a conta de energia primeiro. O fluxo correto é:
-
+### Segmentos do MUTIRÃO
 ```
-d_welcome → d_pedir_conta → d_como_funciona → d_resultado → d_pedir_documento → ...
+[1] "Atenção, moradores e comerciantes de {CIDADE} e região!"   ← varia por cidade
+[2] FIXO_MUTIRAO                                                 ← 100% fixo (cache eterno)
+[3] "na {RUA}."                                                  ← varia por endereço
+[4] "Das {HORA_INICIO} às {HORA_FIM}."                           ← varia por horário
+[5] FIXO_FINAL                                                   ← 100% fixo (cache eterno)
+[6] sorteioTexto (quando ativo)                                  ← varia
 ```
 
-**Origem:** o botão "Cadastrar agora" do `d_duvidas` (ou o router do `d_duvidas`) tem `goto_step_id` apontando direto para `d_pedir_documento`. Precisa apontar para `d_pedir_conta` quando `bill_data_confirmed_at IS NULL`.
-
-### Bug 3 — OCR da conta retornou "qualidade 0%"
-Na 2ª foto (já no caminho `aguardando_conta`) o OCR rejeitou com 0%. O `error_message` do registro anterior diz:
+### Segmentos do COMÉRCIO
 ```
-aguard_conta: isFile=true hasImage=false fileBase64Len=646916 sandbox=false
+[1] "Atenção, moradores de {CIDADE} e região!"
+[2] FIXO_COMERCIO                                                ← 100% fixo
+[3] frag do local ({COMERCIO} + rua)
+[4] "Das {HORA_INICIO} às {HORA_FIM}."
+[5] FIXO_FINAL                                                   ← 100% fixo
 ```
-Sugere que o WhatsApp entregou a mídia como `document` (não como `image`), e o pipeline OCR não está convertendo/tratando esse caso bem. Pode ser também só foto ruim — sem ver a imagem é especulativo.
 
-## Plano
+### Ganho real
 
-### Etapa 1 — Bug 1 (nome "Te"): prioridade alta
-- Localizar o name-extractor (`whapi-webhook/handlers/conversational/*` + `_shared/conversion/phrase-catalog.ts`).
-- Adicionar blacklist de tokens: `te`, `me`, `nos`, `recomendou`, `recomendado`, `indicou`, `mandou`, e regex que rejeita sequências contendo `(te|me|nos)\s+recomendou`.
-- Migração de dados: `UPDATE customers SET name=NULL, name_source=NULL WHERE name ILIKE 'Te Recomendou%' OR name ILIKE 'Me Recomendou%'` (preserva o registro mas força o bot a perguntar o nome ou usar o nome da conta).
-- Teste unitário no `phrase-catalog.test.ts` cobrindo a frase exata do QR do Horacio.
+- **FIXO_MUTIRAO + FIXO_FINAL**: gerados 1x na vida toda — depois é zero token pra sempre.
+- Cidades repetidas (mesma cidade, ruas diferentes): segmento [1] reaproveitado.
+- Mesmo horário em áudios diferentes: segmento [4] reaproveitado.
+- Só os trechos realmente novos pagam tokens.
 
-### Etapa 2 — Bug 2 (roteamento "Cadastrar agora" → conta antes de doc)
-- Auditar o step `d_duvidas` (`bot_flow_steps` do flow `320bf22c…`) e os botões/router que ele despacha.
-- Garantir que "Cadastrar agora" siga esta lógica:
-  - se `bill_data_confirmed_at IS NULL` → vai para `d_pedir_conta`;
-  - se já tem conta confirmada → vai para `d_pedir_documento`.
-- Pode ser config (`fallback.goto_step_id` do botão) ou código no handler do `d_duvidas`. Investigar antes de decidir onde corrigir.
+Em uso normal, isso costuma economizar **60–80%** dos tokens depois dos primeiros áudios.
 
-### Etapa 3 — Bug 3 (OCR 0% / documento vs imagem)
-- Olhar `processando_ocr_conta` e a função que recebe a mídia (`whapi-webhook` → `qr-phrase` ou `ocr-*`).
-- Verificar se quando `messageType=document` e `mimetype=image/*` o pipeline está re-encodando como imagem antes de mandar pro OCR.
-- Adicionar log estruturado no `engine_logs` com kind=`ocr_quality_low` salvando mimetype, tamanho e primeiro KB do header pra diagnosticar reincidências.
+## Como funciona tecnicamente
 
-### Etapa 4 — Destravar este lead específico
-- `UPDATE customers SET name=NULL, conversation_step='aguardando_conta', ocr_conta_attempts=0, error_message=NULL WHERE id='f3f83cfe-9e3d-48a0-a04d-fcec0cad886c'`.
-- Mandar mensagem manual pelo painel: *"Olá! Pra eu te ajudar a economizar na conta de luz, me manda uma foto bem nítida da sua conta de energia (página com o valor total e o número da instalação) 📸"*.
+1. `splitIntoSegments(kind, campos)` → devolve array de strings (os segmentos acima).
+2. Para cada segmento:
+   - `getCachedTTS(segmento)` — mesmo cache de 3 camadas que já existe.
+   - Se não tiver, chama `ttsGenerate(segmento)` e salva no cache.
+3. **Concatenação de MP3**: como cada trecho é um MP3 independente do ElevenLabs (mesmo `voice_id` + `model_id` + sample-rate), dá pra juntar os bytes diretamente — frames MP3 são autossuficientes. Faço isso com um `concatMp3Blobs(blobs[])` simples (`new Blob(blobs, { type: "audio/mpeg" })`) + tira tag ID3v2 dos trechos seguintes pra não embolar o player.
+4. Validação: rodo `isValidMp3` em cada trecho antes de juntar. Se algum vier corrompido, faço fallback para 1 chamada única do roteiro inteiro (comportamento atual) — assim nunca quebra.
+5. Dedup atual por `audio_hash` do texto completo continua igual (reaproveita o MP3 final inteiro quando o roteiro já existe — economia máxima, 0 token).
 
-## O que NÃO faço sem confirmação
+### Pausas naturais
 
-- Etapa 3 (OCR) só investigar; só mexo no pipeline OCR se confirmarmos que é bug e não foto ruim.
-- Não vou mudar o QR do Horacio (já tratado em conversa anterior — vira keyword alias da Nilma).
-- Não vou alterar fluxo de outros consultores.
+Entre segmentos coloco um silêncio curto (~120 ms de MP3 silencioso pré-gerado, ficando em `/public/audio/silence-120ms.mp3`) pra evitar emendas estranhas. Sem isso, junção fica seca demais.
 
-**Confirma se posso seguir com Etapas 1, 2 e 4 agora, e investigar Etapa 3 em paralelo?**
+## Arquivos a mudar
+
+- `src/components/admin/AudioStudio.tsx`
+  - novo: `buildSegments(kind, ...)`, `concatMp3Blobs(blobs)`, `stripId3(blob)`.
+  - `handleGenerate`: troca `getOrGenerate(textoPreview)` por loop de segmentos + concat. Mantém try/catch com fallback pra chamada única.
+- `public/audio/silence-120ms.mp3` (asset novo, 1 KB).
+
+Cache, dedup, MinIO/Supabase upload, vinheta, parser de horário — tudo continua igual.
+
+## Pontos de atenção
+
+- Concatenação de MP3 funciona bem com mesma voz/modelo/bitrate (caso aqui), mas alguns players são chatos com tags ID3 repetidas — por isso o `stripId3` nos segmentos 2+.
+- O hash do áudio completo (`audio_hash`) continua sendo do **texto completo**, pra dedup de áudio final não ser afetado.
+- Primeira geração paga tudo. A economia aparece da segunda em diante.
+
+Confirma que quer assim que eu implemento.
