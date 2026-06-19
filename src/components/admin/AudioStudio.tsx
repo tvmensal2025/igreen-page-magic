@@ -81,11 +81,46 @@ async function idbSet(hash: string, blob: Blob): Promise<void> {
     });
   } catch {}
 }
+async function idbDelete(hash: string): Promise<void> {
+  try {
+    const db = await openIDB();
+    await new Promise<void>((res) => {
+      const tx = db.transaction("entries", "readwrite");
+      const req = tx.objectStore("entries").delete(hash);
+      req.onsuccess = () => res();
+      req.onerror   = () => res();
+    });
+  } catch {}
+}
+// Valida que o blob é realmente um MP3 (magic bytes "ID3" ou frame sync 0xFFEx).
+async function isValidMp3(blob: Blob): Promise<boolean> {
+  if (!blob || blob.size < 32) return false;
+  try {
+    const buf = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    // "ID3" tag
+    if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return true;
+    // MPEG frame sync: 11 bits set (0xFF followed by 0xEx/0xFx)
+    if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return true;
+    return false;
+  } catch { return false; }
+}
+export async function purgeCachedTTS(text: string): Promise<void> {
+  const hash = hashText(text);
+  cacheMap.delete(hash);
+  await idbDelete(hash);
+}
 async function getCachedTTS(text: string): Promise<Blob | null> {
   const hash = hashText(text);
-  if (cacheMap.has(hash)) return cacheMap.get(hash)!;
+  if (cacheMap.has(hash)) {
+    const b = cacheMap.get(hash)!;
+    if (await isValidMp3(b)) return b;
+    cacheMap.delete(hash); await idbDelete(hash);
+  }
   const local = await idbGet(hash);
-  if (local) { cacheMap.set(hash, local); return local; }
+  if (local) {
+    if (await isValidMp3(local)) { cacheMap.set(hash, local); return local; }
+    await idbDelete(hash);
+  }
   // Cache miss no bucket é esperado (objeto ainda não existe). Usamos a API
   // pública via fetch para evitar que o SDK logue erros no console.
   try {
@@ -94,7 +129,7 @@ async function getCachedTTS(text: string): Promise<Blob | null> {
       const r = await fetch(pub.publicUrl, { cache: "no-store" });
       if (r.ok) {
         const blob = await r.blob();
-        if (blob.size > 0) {
+        if (await isValidMp3(blob)) {
           cacheMap.set(hash, blob);
           await idbSet(hash, blob);
           return blob;
@@ -106,6 +141,10 @@ async function getCachedTTS(text: string): Promise<Blob | null> {
 }
 async function setCachedTTS(text: string, blob: Blob): Promise<void> {
   const hash = hashText(text);
+  if (!(await isValidMp3(blob))) {
+    console.warn("[tts-cache] blob inválido, não vou cachear");
+    return;
+  }
   cacheMap.set(hash, blob);
   await idbSet(hash, blob);
   supabase.storage.from(TTS_BUCKET)
