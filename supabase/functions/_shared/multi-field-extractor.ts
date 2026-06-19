@@ -59,11 +59,11 @@ export function extractBirthDate(text: string): string | null {
   return `${m[1]}/${m[2]}/${m[3]}`;
 }
 
-export function extractMultiField(text: string): MultiFieldResult {
+export function extractMultiField(text: string, opts?: { allowSingleWordName?: boolean }): MultiFieldResult {
   const out: MultiFieldResult = {};
   if (!text || typeof text !== "string") return out;
 
-  try { const v = extractNome(text); if (v) out.nome = v; } catch {}
+  try { const v = extractNome(text, { allowSingleWord: !!opts?.allowSingleWordName }); if (v) out.nome = v; } catch {}
   try { const v = extractCEP(text); if (v) out.cep = v; } catch {}
   try { const v = extractValor(text); if (v != null) out.valor_conta = v; } catch {}
   try { const v = extractCPF(text); if (v) out.cpf = v; } catch {}
@@ -81,7 +81,7 @@ export function extractMultiField(text: string): MultiFieldResult {
  *
  * Regras:
  * - `name`: só preenche se vazio OU se source atual for `whatsapp_profile`/`freeform`
- *   (NÃO sobrescreve OCR, manual ou confirmação explícita do cliente).
+ *   (NÃO sobrescreve OCR, manual, confirmação explícita ou freeform anterior).
  * - Outros campos: só preenche se estiverem vazios/null.
  */
 export function buildMultiFieldPatch(
@@ -89,15 +89,27 @@ export function buildMultiFieldPatch(
   multi: MultiFieldResult,
 ): Record<string, any> {
   const patch: Record<string, any> = {};
+  // freeform_multi entra como FORTE: depois que o lead se introduziu uma vez via
+  // mensagem livre, novas mensagens livres não sobrescrevem mais o nome.
   const strongNameSources = new Set([
-    "manual", "ocr_cnh", "ocr_rg", "ocr_doc", "ocr_conta", "self_introduced", "user_confirmed", "freeform_multi",
+    "manual", "ocr_cnh", "ocr_rg", "ocr_doc", "ocr_conta",
+    "self_introduced", "user_confirmed", "freeform_multi",
   ]);
-  // whatsapp_profile é fraco — qualquer self-intro do lead sobrescreve.
   if (multi.nome && (!customer.name || !strongNameSources.has(String(customer.name_source || "")))) {
     const cur = String(customer.name || "").trim().toLowerCase();
     if (cur !== multi.nome.toLowerCase()) {
       patch.name = multi.nome;
       patch.name_source = "freeform_multi";
+      try {
+        console.log("[name-overwrite]", JSON.stringify({
+          customer_id: customer.id,
+          old_name: customer.name ?? null,
+          old_source: customer.name_source ?? null,
+          new_name: multi.nome,
+          new_source: "freeform_multi",
+          name_ask_sent_at: customer.name_ask_sent_at ?? null,
+        }));
+      } catch {}
     }
   }
   if (multi.cep && !customer.cep) patch.cep = multi.cep;

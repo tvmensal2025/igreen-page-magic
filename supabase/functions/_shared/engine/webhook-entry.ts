@@ -149,7 +149,8 @@ function bindCaptures(args: { inbound: InboundEvent; specs: CaptureSpec[] }): Re
     switch (field) {
       case "name":
       case "nome":
-        value = extractNome(text);
+        // Step de captura explícita de nome → aceita resposta de 1 palavra única.
+        value = extractNome(text, { allowSingleWord: true });
         break;
       case "phone":
       case "telefone":

@@ -629,7 +629,7 @@ Deno.serve(async (req) => {
     // pra `self_introduced` (mais forte que freeform_multi).
     if (messageText && !isFile && customer) {
       try {
-        const multi = extractMultiField(messageText);
+        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
         const patch = buildMultiFieldPatch(customer, multi);
         if (Object.keys(patch).length > 0) {
           if (patch.name) {
@@ -683,6 +683,18 @@ Deno.serve(async (req) => {
               }).eq("id", customer.id);
               (customer as any).referral_partner_id = match.partnerId;
               console.log(`[keyword-match] customer=${customer.id} partner=${match.partnerId} keyword="${match.keyword}"`);
+              // Audit log — paridade com evolution-webhook (campaign_match_log)
+              try {
+                await supabase.from("campaign_match_log").insert({
+                  customer_id: customer.id,
+                  campaign_id: null,
+                  method: "keyword",
+                  similarity: match.score,
+                  message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                });
+              } catch (e) {
+                console.warn("[campaign-match-log] insert falhou:", (e as Error).message);
+              }
               // Aviso EXTRA ao parceiro (se tiver notification_phone). Não bloqueia o fluxo.
               notifyPartnerNewLead(superAdminConsultantId, match.partnerId, {
                 id: customer.id,
@@ -1079,7 +1091,7 @@ Deno.serve(async (req) => {
         console.log(`[manual-capture-stop] BYPASS — customer=${customer.id} flow_variant=${_flowVariant} hasActiveFlow=${_hasActiveFlow}`);
       } else {
       try {
-        const multi = extractMultiField(messageText);
+        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
         const patch = buildMultiFieldPatch(customer as any, multi);
         if (Object.keys(patch).length > 0) {
           await supabase.from("customers").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", customer.id);
@@ -1389,7 +1401,7 @@ Deno.serve(async (req) => {
         console.log(`[manual-capture-stop-audio] BYPASS — customer=${customer.id} flow_variant=${_flowVariantA} hasActiveFlow=${_hasActiveFlowA}`);
       } else {
       try {
-        const multi = extractMultiField(messageText);
+        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
         const patch = buildMultiFieldPatch(customer as any, multi);
         if (Object.keys(patch).length > 0) {
           await supabase.from("customers").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", customer.id);
