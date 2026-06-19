@@ -2,6 +2,12 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <!-- Anti-cache client-side: Lovable Hosting não processa public/_headers,
+         então forçamos revalidação aqui. Qualquer deploy novo é detectado
+         pelo navegador na próxima navegação. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <link rel="icon" type="image/png" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png">
