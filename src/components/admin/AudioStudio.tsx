@@ -151,15 +151,26 @@ function corrigirAcentos(texto: string): string {
   }).join("");
 }
 const ABREVIACOES: Record<string, string> = {
-  "av.":"Avenida","av":"Avenida","r.":"Rua","rua":"Rua",
-  "pça.":"Praça","pça":"Praça","praça":"Praça",
-  "al.":"Alameda","al":"Alameda","trav.":"Travessa","rod.":"Rodovia","est.":"Estrada",
+  "av.":"Avenida","av":"Avenida","avenida":"Avenida",
+  "r.":"Rua","rua":"Rua",
+  "pça.":"Praça","pça":"Praça","praca":"Praça","praça":"Praça",
+  "al.":"Alameda","al":"Alameda","alameda":"Alameda",
+  "trav.":"Travessa","trav":"Travessa","travessa":"Travessa",
+  "rod.":"Rodovia","rod":"Rodovia","rodovia":"Rodovia",
+  "est.":"Estrada","est":"Estrada","estrada":"Estrada",
+  "lgo.":"Largo","lgo":"Largo","largo":"Largo",
+  "pq.":"Parque","pq":"Parque","parque":"Parque",
+  "rot.":"Rotatória","rot":"Rotatória","rotatoria":"Rotatória","rotatória":"Rotatória",
+  "vl.":"Vila","vl":"Vila","vila":"Vila",
+  "jd.":"Jardim","jd":"Jardim","jardim":"Jardim",
 };
 function expandirEndereco(rua: string): string {
   if (!rua.trim()) return rua;
   const partes = rua.trim().split(/\s+/);
-  const primeira = partes[0].toLowerCase();
-  if (ABREVIACOES[primeira]) return ABREVIACOES[primeira] + " " + partes.slice(1).join(" ");
+  const primeiraNorm = partes[0].toLowerCase().replace(/[.,;:!?]+$/, "");
+  if (ABREVIACOES[primeiraNorm]) {
+    return ABREVIACOES[primeiraNorm] + (partes.length > 1 ? " " + partes.slice(1).join(" ") : "");
+  }
   return rua;
 }
 
