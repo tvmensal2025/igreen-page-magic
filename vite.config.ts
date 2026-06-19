@@ -27,7 +27,22 @@ function emitVersionJson() {
   };
 }
 
+// ─── ESTRATÉGIA ANTI-CACHE (importante!) ──────────────────────────────────
+// O domínio igreen.cloud está em Cloudflare com nuvem CINZA (DNS-only), então
+// o tráfego vai direto para a Lovable Hosting, que NÃO processa public/_headers.
+// Por isso a estratégia anti-cache é 100% client-side:
+//   1. Meta tags no-cache em index.html (forçam revalidar HTML)
+//   2. Service Worker em /sw-app.js com NetworkFirst para navegações
+//   3. /version.json + __BUILD_ID__ (gate em main.tsx) detecta deploy novo
+//      a cada 30s + em visibilitychange + em online + em cada navegação SPA
+//   4. Kill-switch em /sw.js (public/) para limpar instalações antigas
+//   5. Rota de emergência ?nuke=1 limpa SW + caches e recarrega
+// Se um dia a nuvem do Cloudflare voltar para LARANJA (proxy ativo), recriar
+// public/_headers volta a funcionar como reforço — mas o sistema atual já
+// blinda 100% sem depender de cabeçalhos de servidor.
+
 export default defineConfig({
+
   define: {
     // Disponível em todo o código do app como string literal.
     __BUILD_ID__: JSON.stringify(BUILD_ID),
