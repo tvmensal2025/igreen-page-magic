@@ -52,8 +52,15 @@ export async function resolveWorker(supabase: any, customerId: string): Promise<
   const settings: Record<string, string> = {};
   settingsRows?.forEach((s: any) => { settings[s.key] = s.value; });
 
-  const kind: "digital" | "autoconexao" =
-    (customer?.consultants?.portal_kind as any) === "autoconexao" ? "autoconexao" : "digital";
+  // 🔒 REGRA DE NEGÓCIO (2026-06-19): Portal 1 (digital) foi descontinuado pela
+  // empresa — todos os leads devem finalizar no Portal 2 (autoconexao).
+  // Mantemos o código do Portal 1 abaixo apenas como fallback histórico caso
+  // o Portal 1 volte no futuro, mas o roteamento sempre força 'autoconexao'.
+  const rawKind = (customer?.consultants?.portal_kind as any);
+  if (rawKind && rawKind !== "autoconexao") {
+    console.warn(`[portal-worker] ⚠️ consultor com portal_kind='${rawKind}' — forçando 'autoconexao' (Portal 1 descontinuado)`);
+  }
+  const kind: "digital" | "autoconexao" = "autoconexao";
 
   if (kind === "autoconexao") {
     const url = (
