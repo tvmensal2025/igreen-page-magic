@@ -28,10 +28,13 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useUserRole } from "@/hooks/useUserRole";
 import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@/lib/audioProcessing";
 import { AudioWhatsAppPopover } from "./AudioWhatsAppPopover";
+import { uploadMedia } from "@/services/minioUpload";
 
 // ─── ElevenLabs via proxy ─────────────────────────────────────────────────────
 const VOICE_ID = "rpNe0HOx7heUulPiOEaG";
 const MODEL_ID = "eleven_multilingual_v2";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo";
 
 // ─── Cache TTS ───────────────────────────────────────────────────────────────
 const CACHE_VERSION = 6;
@@ -275,12 +278,42 @@ function numeroEnderecoExtenso(input: string): string {
   if (isNaN(n) || n <= 0) return "";
   return numeroExtenso(n);
 }
+function parseHorario(input: string): { horas: number; minutos: number } | null {
+  const raw = (input || "").trim().toLowerCase();
+  if (!raw) return null;
+  const withSep = raw.match(/^(\d{1,2})\s*(?::|h|\.)\s*(\d{1,2})?$/);
+  if (withSep) {
+    const horas = Number(withSep[1]);
+    const minutos = Number(withSep[2] || 0);
+    return horas >= 0 && horas <= 23 && minutos >= 0 && minutos <= 59 ? { horas, minutos } : null;
+  }
+  if (/^\d{1,4}$/.test(raw)) {
+    if (raw.length <= 2) {
+      const horas = Number(raw);
+      return horas >= 0 && horas <= 23 ? { horas, minutos: 0 } : null;
+    }
+    const horas = Number(raw.slice(0, raw.length - 2));
+    const minutos = Number(raw.slice(-2));
+    return horas >= 0 && horas <= 23 && minutos >= 0 && minutos <= 59 ? { horas, minutos } : null;
+  }
+  return null;
+}
 function horarioExtenso(h: string): string {
-  const n = parseInt(h.replace(/\D/g, ""), 10);
-  if (isNaN(n)) return h;
-  if (n === 0)  return "meia-noite";
-  if (n === 12) return "meio-dia";
-  return `${numeroExtenso(n)} ${n === 1 ? "hora" : "horas"}`;
+  const parsed = parseHorario(h);
+  if (!parsed) return h;
+  const { horas, minutos } = parsed;
+  if (horas === 0 && minutos === 0) return "meia-noite";
+  if (horas === 12 && minutos === 0) return "meio-dia";
+  const horasTexto = `${numeroExtenso(horas)} ${horas === 1 ? "hora" : "horas"}`;
+  if (minutos === 0) return horasTexto;
+  return `${horasTexto} e ${numeroExtenso(minutos)} ${minutos === 1 ? "minuto" : "minutos"}`;
+}
+function horarioCurto(h: string): string {
+  const parsed = parseHorario(h);
+  if (!parsed) return h.trim();
+  return parsed.minutos === 0
+    ? `${parsed.horas}h`
+    : `${String(parsed.horas).padStart(2, "0")}:${String(parsed.minutos).padStart(2, "0")}`;
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────
@@ -446,12 +479,12 @@ export function AudioStudio({ userId }: { userId: string }) {
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token;
     if (!token) throw new Error("Sessão expirada. Faça login novamente.");
-    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tts-proxy`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/tts-proxy`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
-        "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || "",
+        "apikey": SUPABASE_PUBLISHABLE_KEY,
       },
       body: JSON.stringify({ text, voice_id: VOICE_ID, model_id: MODEL_ID }),
     });
@@ -459,7 +492,12 @@ export function AudioStudio({ userId }: { userId: string }) {
       const err = await res.json().catch(() => null);
       throw new Error(err?.error || `Erro ${res.status}: ${res.statusText}`);
     }
-    return res.blob();
+    const blob = await res.blob();
+    if (!(await isValidMp3(blob))) {
+      const detail = await blob.text().catch(() => "");
+      throw new Error(detail || "Resposta do TTS não veio em MP3 válido");
+    }
+    return blob;
   };
 
   const getOrGenerate = async (text: string): Promise<Blob> => {
@@ -585,7 +623,7 @@ export function AudioStudio({ userId }: { userId: string }) {
           kind,
           city: cidadeP,
           street: ruaP,
-          time_slot: `${horaInicio}h-${horaFim}h`,
+          time_slot: `${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`,
           place_name: placeP,
           script_text: textoPreview,
           audio_url: src.audio_url,
@@ -618,33 +656,9 @@ export function AudioStudio({ userId }: { userId: string }) {
       // Dedup: roteiro EXATO já existe? reaproveita o MP3 pronto (0 token, 0 remontagem).
       if (await tryReuseExisting(hashText(textoPreview))) return;
 
-      let textos: string[];
-      if (kind === "mutirao") {
-        const trecho1 = `Atenção, moradores e comerciantes de ${cidadeP} e região!`;
-        textos = [trecho1, FIXO_MUTIRAO, `na ${ruaP}.`, horarioP, FIXO_FINAL];
-        if (sorteioTexto) textos.push(sorteioTexto);
-      } else {
-        const trecho1 = `Atenção, moradores de ${cidadeP} e região!`;
-        const ondeFrag = `${contraiEm(placeP)} ${placeP}${ruaP ? `, ${localizadoConcordado(placeP)} na ${ruaP}` : ""}.`;
-        textos = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL];
-      }
-
-      const blobs: Blob[] = [];
-      for (const t of textos) blobs.push(await getOrGenerate(t));
-      let buffers: AudioBuffer[];
-      try {
-        buffers = await Promise.all(blobs.map(decodeAudioBlob));
-      } catch (decodeErr) {
-        // Cache pode estar corrompido — purga e tenta novamente uma vez.
-        console.warn("[AudioStudio] decode falhou, purgando cache e regerando:", decodeErr);
-        await Promise.all(textos.map(purgeCachedTTS));
-        const fresh: Blob[] = [];
-        for (const t of textos) fresh.push(await ttsGenerate(t));
-        await Promise.all(textos.map((t, i) => setCachedTTS(t, fresh[i])));
-        buffers = await Promise.all(fresh.map(decodeAudioBlob));
-      }
-      const merged  = concatWithCrossfade(buffers, 100);
-      const mp3Blob = await encodeMp3(merged, 192);
+      // Gera o roteiro completo em uma única chamada. Isso evita o erro do
+      // navegador ao decodificar vários MP3s para juntar os trechos.
+      const mp3Blob = await getOrGenerate(textoPreview);
 
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioBlob(mp3Blob);
@@ -678,27 +692,41 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   const saveToLibrary = async (blob: Blob, scriptText: string, vinhetaBlob?: Blob | null): Promise<AudioRow | null> => {
     try {
-      const path = `${userId}/${kind}-${Date.now()}.mp3`;
-      const { error: upErr } = await supabase.storage.from("ai-agent-media").upload(path, blob, {
-        upsert: false, contentType: "audio/mpeg",
-      });
-      if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("ai-agent-media").getPublicUrl(path);
+      const uploadAudio = async (audio: Blob, suffix: string): Promise<string> => {
+        const slug = `${kind}-${cidadeP || "audio"}-${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}-${suffix}`;
+        const file = new File([audio], `${slug}.mp3`, { type: "audio/mpeg" });
+        try {
+          const result = await uploadMedia(file, undefined, {
+            scope: "admin",
+            consultant_id: userId,
+            kind: "audio",
+            slug,
+          });
+          return result.url;
+        } catch (uploadErr) {
+          console.warn("[AudioStudio] Upload MinIO falhou; usando fallback Supabase Storage:", uploadErr);
+          const path = `${userId}/${slug}-${Date.now()}.mp3`;
+          const { error: upErr } = await supabase.storage.from("ai-agent-media").upload(path, audio, {
+            upsert: false, contentType: "audio/mpeg",
+          });
+          if (upErr) throw upErr;
+          return supabase.storage.from("ai-agent-media").getPublicUrl(path).data.publicUrl;
+        }
+      };
+
+      const audioPublicUrl = await uploadAudio(blob, "sem-vinheta");
 
       // Sobe também a versão com vinheta (quando existir).
       let vinhetaUrl: string | null = null;
       if (vinhetaBlob && vinhetaBlob.size > 0) {
-        const pathV = `${userId}/${kind}-vinheta-${Date.now()}.mp3`;
-        const { error: upErrV } = await supabase.storage.from("ai-agent-media").upload(pathV, vinhetaBlob, {
-          upsert: false, contentType: "audio/mpeg",
+        vinhetaUrl = await uploadAudio(vinhetaBlob, "com-vinheta").catch((err) => {
+          console.warn("[AudioStudio] Erro ao salvar versão com vinheta:", err);
+          return null;
         });
-        if (!upErrV) {
-          vinhetaUrl = supabase.storage.from("ai-agent-media").getPublicUrl(pathV).data.publicUrl;
-        }
       }
 
       const ruaNome = fix(expandirEndereco(rua)).replace(/^(Rua|Avenida|Alameda|Travessa|Praça|Rodovia|Estrada)\s+/i, "");
-      const hora  = `${horaInicio}h-${horaFim}h`;
+      const hora  = `${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`;
       const nome  = kind === "mutirao"
         ? `${cidadeP || "áudio"} - ${ruaNome}${bairro.trim() ? ` (${fix(bairro.trim())})` : ""} - ${hora}`
         : `${cidadeP || "áudio"} - ${placeP}${ruaNome ? ` (${ruaNome})` : ""} - ${hora}`;
@@ -706,7 +734,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       // Catálogo de mídia (mantém comportamento atual de aparecer na biblioteca do painel)
       await supabase.from("ai_media_library").insert({
         consultant_id: userId, is_public: false, kind: "audio",
-        label: nome, url: pub.publicUrl,
+        label: nome, url: audioPublicUrl,
         step_tags: ["any"], intent_tags: [], active: true, priority: 10,
       });
 
@@ -718,7 +746,7 @@ export function AudioStudio({ userId }: { userId: string }) {
         time_slot: hora,
         place_name: placeP,
         script_text: scriptText,
-        audio_url: pub.publicUrl,
+        audio_url: audioPublicUrl,
         audio_url_vinheta: vinhetaUrl,
         audio_hash: hashText(scriptText),
         is_public: false,
@@ -954,8 +982,8 @@ export function AudioStudio({ userId }: { userId: string }) {
                   <Input
                     value={f.value}
                     onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
-                    placeholder={f.ph}
-                    inputMode="numeric"
+                    placeholder={`${f.ph} ou ${String(f.ph).padStart(2, "0")}:00`}
+                    inputMode="text"
                     className="bg-background border-border/60 h-11 text-base font-mono text-center"
                   />
                   <p className="text-[10px] text-muted-foreground mt-1">→ {horarioExtenso(f.value || f.ph)}</p>
