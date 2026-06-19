@@ -124,7 +124,14 @@ const STOPWORDS_NOME = new Set([
   "simular","simulacao","simulação","cancelar","sair","parar","cadastro","cadastrar",
   "info","informacao","informação","informacoes","informações",
   "preciso","queria","precisava","gostaria",
+  // pronomes átonos / verbos de indicação — evitam capturar "te recomendou" do QR do Horacio
+  "te","me","nos","se","lhe","ti","mim",
+  "recomendou","recomendado","recomenda","recomendar","recomendação","recomendacao",
+  "indicou","indicado","indica","indicar","indicação","indicacao",
+  "mandou","mandado","manda","mandar",
+  "horacio","horácio","nilma","rafael",
 ]);
+
 
 // Substantivos do domínio que NUNCA podem virar nome, mesmo com erro de digitação.
 // Usados pra rejeitar via Levenshtein ≤1 quando a palavra tem ≥5 letras.
@@ -194,8 +201,15 @@ export interface ExtractNomeOpts {
 
 export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | null {
   if (!text) return null;
-  // 1) Frase estruturada com gatilho explícito: "sou X", "me chamo X", "meu nome é X"
-  const m = text.match(/(?:sou|me chamo|meu nome [eé]|aqui [eé]?o?\s?|nome:?\s?)\s+([a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){0,3})/i);
+  // Hard-block: frases de indicação (QR do Horacio etc.) — "te recomendou", "me indicou".
+  // Não tentamos extrair nome quando o texto contém esses padrões; nome do lead vem
+  // depois, do OCR da conta ou pergunta explícita "qual seu nome?".
+  if (/\b(te|me|nos|lhe)\s+(recomend|indic|mand)\w*/i.test(text)) return null;
+  if (/\b(recomend|indic)\w*\s+(voc[eê]|vc|tu)\b/i.test(text)) return null;
+  // 1) Frase estruturada com gatilho explícito: "sou X", "me chamo X", "meu nome é X".
+  //    Removido o gatilho frouxo `nome:?\s?` (matchava "limpa nome te recomendou" do QR).
+  //    Mantemos "nome:" com dois-pontos obrigatórios pra forms tipo "Nome: João".
+  const m = text.match(/(?:\bsou\b|\bme chamo\b|\bmeu nome [eé]\b|\baqui [eé] o?\s?|\bnome:\s?)\s*([a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){0,3})/i);
   if (m) {
     const cleaned = capitalizeName(m[1]);
     if (isValidNameCandidate(cleaned)) return cleaned;
@@ -215,6 +229,7 @@ export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | 
   }
   return null;
 }
+
 
 // Detecta intents puramente por regex (não dependem de IA).
 export function detectRegexIntents(text: string): string[] {
