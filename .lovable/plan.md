@@ -1,45 +1,38 @@
-# Plano: Garantir que TODOS os botões finalizam no Portal 2  
-ANALISE DENOVO E DEPOS APILCAR  
-  
-EXPLICACAO:PORTAL 1 FOI EXCLUIDO DA EMPRESA, HOJE ELES ACEIAT AEPNAS O 2 ENTAO O 1 VAI DAR ERRO, EU QUEROMANTER POR SEGURANCA SE ELES VOLTAR NO FUTURO
+## Contexto
 
-## Diagnóstico
+O QR escaneado pertencia ao parceiro **Horacio** (id `71fab01f…`, hoje inativo). O lead capturado foi:
 
-A auditoria confirmou que os 4 caminhos de entrada já convergem no `dispatchPortalWorker`:
+- **Claudia Luciana da Silva** — `5511971254913`, instalação `15459083`, criado em 15/06.
+- Hoje está com `referral_partner_id = NULL` (Horacio inativo não pôde ser atribuído).
 
+A parceira **Nilma Santana** já está cadastrada e ativa:
 
-| Entrada          | Onde                                                 | Chega no Portal 2? |
-| ---------------- | ---------------------------------------------------- | ------------------ |
-| Cadastro Rápido  | `bot-flow.ts:5360` (state `finalizando`)             | Sim                |
-| Cadastro Manual  | `finalize-capture/index.ts:197` (botão UI)           | Sim                |
-| Reaquecimento    | `reactivation-send` → fluxo normal → `finalizando`   | Sim                |
-| Partner Redirect | `PartnerRedirectPage` → fluxo normal → `finalizando` | Sim                |
+- id `ec20af50-ffc5-4c92-9514-8227b1a75e86`
+- short_code `431173`
+- keyword: `Sou de Elias Fausto`
+- qr_phrase: `Oi! gostaria de reduzir minha conta de luz, pode me ajudar? Sou de Elias Fausto.`
 
+Ou seja, a frase nova **já está salva** no registro da Nilma — basta usar o QR/link dela (`/qr-redirect?p=ec20af50…` ou short_code `431173`) que o WhatsApp abre com o texto certo. Nenhuma alteração de código é necessária.
 
-Porém ainda existem **3 portões** que podem desviar/parar o lead antes do Portal 2. Vou removê-los/ajustá-los.
+## Mudança a executar
 
-## Ajustes
+Migração única, só `UPDATE` de 1 linha:
 
-### 1. Fallback em `portal-worker.ts:55` (Portal 1 quando `portal_kind` não é `'autoconexao'`)
+```sql
+UPDATE public.customers
+SET referral_partner_id      = 'ec20af50-ffc5-4c92-9514-8227b1a75e86',
+    referral_keyword_matched = 'Sou de Elias Fausto'
+WHERE id = '70ac123e-efb6-4356-ad2d-ba877b126f93';
+```
 
-Hoje: `kind === 'autoconexao' ? 'autoconexao' : 'digital'` → qualquer valor inesperado cai no Portal 1.
-Mudar para: **sempre `'autoconexao'**` (com log de warning se vier diferente). Portal 1 fica no código mas não é mais alcançável por default.
+Efeito: a Claudia passa a contar como lead da Nilma para cashback e relatórios. Horacio continua inativo (sem leads).
 
-### 2. Branches `capture_mode === 'manual'` em `bot-flow.ts` (linhas ~3446 e ~4258)
+## Não vou mexer (a menos que peça)
 
-Hoje: lead com `capture_mode='manual'` pausa pra consultor revisar a conta/documento antes de seguir.
-Mudar para: tratar `manual` igual a `auto` (segue automático). Mantém a coluna no schema caso queira reativar futuramente via flag, mas o fluxo padrão ignora.
+- Não vou apagar os 2 registros do Horacio (`71fab01f…` e `6b7f601b…`) — ficam inativos apenas.
+- Não vou alterar `qr-phrase.ts` nem o template padrão: a Nilma já tem `qr_phrase` própria salva e o `resolveQrMessage` respeita frases customizadas dentro do limite de 90 caracteres (a dela tem 81, passa direto).
+- Não vou tocar em outros leads.
 
-### 3. Mesma correção no espelho `whapi-webhook/handlers/bot-flow.ts`
+## Próximo passo do operador
 
-As duas funções têm o mesmo código duplicado.
-
-## O que NÃO vou mexer (são corretos)
-
-- `**checkDocsPresentForPortal2**` (`portal-worker.ts:278`) — bloqueia só se faltar conta/doc de verdade. Status `missing_documents` é correto, não é bug.
-- `**worker_offline**` (`portal-worker.ts:269`) — quando a API do Portal 2 está fora; retry cron já cuida. Correto.
-- **OCR fallback** `humano` — só aciona se o passo no admin estiver configurado pra escalar (decisão de produto, não bug). OCR HUMANO SO QUANDO FOR ENVIADO O PASSO NO MANUAL, QUANDO O CLIENTE INICIA A CONVERSA AUTOMATCIO O A CONFIRMACAO É AUTOMATICA
-
-- Arquivos editados: `supabase/functions/_shared/portal-worker.ts`, `supabase/functions/evolution-webhook/handlers/bot-flow.ts`, `supabase/functions/whapi-webhook/handlers/bot-flow.ts`.
-- Sem migração de banco (defaults já corrigidos no ajuste anterior).
-- Backfill opcional: `UPDATE customers SET capture_mode='auto' WHERE capture_mode='manual'` (todos, não só últimos 30 dias) — me confirma se quer rodar.
+Usar daqui em diante o QR/link da Nilma (short_code `431173`). O QR antigo do Horacio segue inativo e não vincula novos leads.
