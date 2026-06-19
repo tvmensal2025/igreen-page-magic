@@ -3,8 +3,31 @@ import App from "./App.tsx";
 import "./index.css";
 import { ativarHardening } from "./lib/hardening";
 
+// ─── Gatilho de emergência: ?nuke=1 limpa tudo e recarrega ─────────────────
+// Para usuários presos numa versão muito antiga (PWA instalado offline há
+// semanas), basta abrir https://igreen.cloud/?nuke=1 que o app limpa SW +
+// caches + storages PWA e recarrega na raiz.
+if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("nuke")) {
+  (async () => {
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch {}
+    try {
+      if ("caches" in window) {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+      }
+    } catch {}
+    window.location.replace("/");
+  })();
+}
+
 // Camada dissuasória anti-inspeção (só em produção real; ver lib/hardening.ts).
 void ativarHardening();
+
 
 // Sentry é carregado de forma assíncrona para não bloquear o React.
 // Se falhar, o app continua funcionando normalmente.
