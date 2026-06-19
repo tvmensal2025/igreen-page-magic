@@ -982,8 +982,8 @@ export function AudioStudio({ userId }: { userId: string }) {
                   <Input
                     value={f.value}
                     onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
-                    placeholder={f.ph}
-                    inputMode="numeric"
+                    placeholder={`${f.ph} ou ${String(f.ph).padStart(2, "0")}:00`}
+                    inputMode="text"
                     className="bg-background border-border/60 h-11 text-base font-mono text-center"
                   />
                   <p className="text-[10px] text-muted-foreground mt-1">→ {horarioExtenso(f.value || f.ph)}</p>
