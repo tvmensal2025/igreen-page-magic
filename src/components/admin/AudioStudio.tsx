@@ -536,6 +536,42 @@ export function AudioStudio({ userId }: { userId: string }) {
     return blob;
   };
 
+  // Gera o roteiro por segmentos: cada trecho é cacheado individualmente, então
+  // partes repetidas (FIXO_*, mesma cidade, mesmo horário) não pagam tokens de
+  // novo. Concatena os MP3s no final. Em qualquer falha de validação volta pro
+  // modo "tudo em uma chamada" pra garantir áudio funcional.
+  const getOrGenerateSegmented = async (segs: string[], fullText: string): Promise<Blob> => {
+    try {
+      const blobs: Blob[] = [];
+      let reused = 0;
+      for (const seg of segs) {
+        const trimmed = seg.trim();
+        if (!trimmed) continue;
+        const cached = await getCachedTTS(trimmed);
+        if (cached) {
+          blobs.push(cached);
+          reused++;
+          continue;
+        }
+        const fresh = await ttsGenerate(trimmed);
+        if (!(await isValidMp3(fresh))) throw new Error("Segmento TTS inválido");
+        await setCachedTTS(trimmed, fresh);
+        blobs.push(fresh);
+      }
+      if (blobs.length === 0) throw new Error("Nenhum segmento gerado");
+      const merged = await concatMp3Blobs(blobs);
+      if (!(await isValidMp3(merged))) throw new Error("MP3 concatenado inválido");
+      if (reused > 0) {
+        const economia = Math.round((reused / blobs.length) * 100);
+        console.log(`[tts] ${reused}/${blobs.length} segmentos do cache (~${economia}% economia)`);
+      }
+      return merged;
+    } catch (e) {
+      console.warn("[tts] geração por segmentos falhou, caindo pra chamada única:", e);
+      return getOrGenerate(fullText);
+    }
+  };
+
   // Cache da vinheta em memória — evita refetch a cada geração/download.
   const vinhetaCacheRef = useRef<Blob | null>(null);
 
