@@ -389,7 +389,13 @@ Deno.serve(async (req) => {
         return json(400, { error: `Ação desconhecida: ${action}` });
     }
   } catch (err: any) {
-    console.error("[whapi-proxy] erro:", err);
-    return json(500, { error: err?.message || "Erro interno" });
+    const msg =
+      err?.message ||
+      (typeof err === "string" ? err : null) ||
+      (() => { try { return JSON.stringify(err); } catch { return null; } })() ||
+      "Erro interno desconhecido";
+    console.error("[whapi-proxy] erro:", msg, err);
+    // Retorna 200 com fallback p/ não derrubar a UI (blank screen)
+    return json(200, { error: msg, fallback: true });
   }
 });
