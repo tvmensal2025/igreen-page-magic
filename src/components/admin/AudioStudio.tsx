@@ -720,9 +720,9 @@ export function AudioStudio({ userId }: { userId: string }) {
       // Dedup: roteiro EXATO já existe? reaproveita o MP3 pronto (0 token, 0 remontagem).
       if (await tryReuseExisting(hashText(textoPreview))) return;
 
-      // Gera o roteiro completo em uma única chamada. Isso evita o erro do
-      // navegador ao decodificar vários MP3s para juntar os trechos.
-      const mp3Blob = await getOrGenerate(textoPreview);
+      // Gera por segmentos (cache reaproveita trechos repetidos). Fallback
+      // automático pra chamada única se algo der errado.
+      const mp3Blob = await getOrGenerateSegmented(segments, textoPreview);
 
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioBlob(mp3Blob);
