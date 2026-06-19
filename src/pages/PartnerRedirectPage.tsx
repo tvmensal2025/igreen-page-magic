@@ -47,7 +47,12 @@ export default function PartnerRedirectPage() {
         const data = await res.json();
         if (cancelled) return;
         if (data?.phone && data?.message) {
-          setResolved({ phone: String(data.phone), message: String(data.message) });
+          const phone = String(data.phone);
+          const message = String(data.message);
+          setResolved({ phone, message });
+          // Redireciona direto pro WhatsApp — wa.me abre o app instalado (normal ou Business)
+          // sem mostrar a tela de escolha. Usuário cai direto na conversa.
+          window.location.replace(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`);
         } else {
           fallbackRedirect(licenca, code);
         }
