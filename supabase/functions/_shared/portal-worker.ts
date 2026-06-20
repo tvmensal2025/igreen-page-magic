@@ -268,11 +268,27 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
     console.warn(`[portal-worker] health check falhou kind=${kind} url=${url}: ${healthErr}`);
   }
 
+  // Marca tentativa
+  await supabase.from("customers").update({
+    last_portal_dispatch_at: new Date().toISOString(),
+  }).eq("id", customerId).then(() => {}, () => {});
+
+  // Status terminais que NÃO podem ser regredidos por uma retentativa tardia
+  const TERMINAL_STATUSES = new Set([
+    "awaiting_otp", "validating_otp", "awaiting_signature", "complete", "handoff_humano",
+  ]);
+  const { data: currentRow } = await supabase
+    .from("customers").select("status").eq("id", customerId).maybeSingle();
+  const currentStatus = String(currentRow?.status || "");
+
   if (!online) {
-    await supabase.from("customers").update({
-      status: "worker_offline",
-      error_message: `Worker (${kind}) offline: ${healthErr || "sem resposta"} — retry automático em 1 min`,
-    }).eq("id", customerId);
+    if (!TERMINAL_STATUSES.has(currentStatus)) {
+      await supabase.from("customers").update({
+        status: "worker_offline",
+        error_message: `Worker (${kind}) offline: ${healthErr || "sem resposta"} — retry automático em 1 min`,
+        last_portal_dispatch_error: `offline:${healthErr || ""}`.slice(0, 200),
+      }).eq("id", customerId);
+    }
     return { ok: false, mode: "queued_offline", error: `worker_offline:${healthErr}`, worker: kind };
   }
 
@@ -280,16 +296,17 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
   // Body depende do kind
   let body: string;
   if (kind === "autoconexao") {
-    // REGRA: bloqueia despacho sem conta de energia + documento (frente/verso
-    // pra RG; só frente pra CNH). Protege caminhos fora do finalize-capture.
     const docs = await checkDocsPresentForPortal2(supabase, customerId);
     if (!docs.ok) {
       const msg = `Documentos obrigatórios ausentes: ${docs.missing.join(", ")}`;
       console.warn(`[portal-worker] customer=${customerId} despacho bloqueado — ${msg}`);
-      await supabase.from("customers").update({
-        status: "missing_documents",
-        error_message: msg,
-      }).eq("id", customerId);
+      if (!TERMINAL_STATUSES.has(currentStatus)) {
+        await supabase.from("customers").update({
+          status: "missing_documents",
+          error_message: msg,
+          last_portal_dispatch_error: msg.slice(0, 200),
+        }).eq("id", customerId);
+      }
       return { ok: false, mode: "queued_offline", error: "missing_documents", worker: kind };
     }
     const payload = await buildPortal2Payload(supabase, customerId);
@@ -313,7 +330,12 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
       });
       const respBody = await r.text();
       console.log(`[portal-worker] submit-lead kind=${kind} attempt=${attempt} status=${r.status} body=${respBody.slice(0, 200)}`);
-      if (r.ok) return { ok: true, mode: "dispatched", status: r.status, worker: kind };
+      if (r.ok) {
+        await supabase.from("customers").update({
+          last_portal_dispatch_error: null,
+        }).eq("id", customerId).then(() => {}, () => {});
+        return { ok: true, mode: "dispatched", status: r.status, worker: kind };
+      }
       lastErr = `Worker ${r.status}: ${respBody.slice(0, 120)}`;
     } catch (e: any) {
       lastErr = e?.message || String(e);
@@ -322,10 +344,17 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
     if (attempt < 3) await new Promise((r) => setTimeout(r, 2_000));
   }
 
-  await supabase.from("customers").update({
-    status: "worker_offline",
-    error_message: `Worker (${kind}) falhou: ${(lastErr || "").slice(0, 200)}`,
-  }).eq("id", customerId);
+  if (!TERMINAL_STATUSES.has(currentStatus)) {
+    await supabase.from("customers").update({
+      status: "worker_offline",
+      error_message: `Worker (${kind}) falhou: ${(lastErr || "").slice(0, 200)}`,
+      last_portal_dispatch_error: (lastErr || "").slice(0, 200),
+    }).eq("id", customerId);
+  } else {
+    await supabase.from("customers").update({
+      last_portal_dispatch_error: (lastErr || "").slice(0, 200),
+    }).eq("id", customerId).then(() => {}, () => {});
+  }
 
   return { ok: false, mode: "queued_offline", error: lastErr, worker: kind };
 }

@@ -35,15 +35,23 @@ Deno.serve(async (req) => {
 
     console.log(`🔐 submit-otp: customer=${customer_id}, code=${otp_code}`);
 
+    // Carrega dados para montar payload correto do worker-portal-2.
+    const { data: customer } = await supabase
+      .from("customers")
+      .select(`
+        id, portal2_idcliente,
+        consultants:consultant_id(igreen_id),
+        referral_partners:referral_partner_id(partner_igreen_id)
+      `)
+      .eq("id", customer_id)
+      .maybeSingle();
+
     // Salvar OTP no banco
     const { error: updateErr } = await supabase.from("customers").update({
       otp_code,
       otp_received_at: new Date().toISOString(),
       conversation_step: "validando_otp",
       status: "validating_otp",
-      // Conclusão do fluxo: cancela qualquer follow-up agendado. Sem isso, um
-      // agendamento órfão ("me chama amanhã") feito antes da conclusão dispararia
-      // o process-followups depois que o cliente já entrou no portal.
       next_followup_at: null,
       followup_hook: null,
     }).eq("id", customer_id);
@@ -56,25 +64,36 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Ler configurações para URL do worker
-    const { data: settingsRows } = await supabase.from("settings").select("*");
-    const settings: Record<string, string> = {};
-    settingsRows?.forEach((s: any) => { settings[s.key] = s.value; });
+    const donoIgreenId = (customer as any)?.consultants?.igreen_id
+      ? Number((customer as any).consultants.igreen_id) : null;
+    const partnerIgreenId = (customer as any)?.referral_partners?.partner_igreen_id
+      ? Number((customer as any).referral_partners.partner_igreen_id) : null;
+    const idconsultor = Number.isFinite(partnerIgreenId as number) && (partnerIgreenId as number) > 0
+      ? (partnerIgreenId as number) : donoIgreenId;
+    const idcliente = (customer as any)?.portal2_idcliente ? Number((customer as any).portal2_idcliente) : null;
 
-    // Resolve o worker pelo portal_kind do consultor (Portal 2 = autoconexao).
-    // Fallback defensivo: se a resolução falhar, mantém o comportamento antigo (Portal 1).
     const resolved = await resolveWorker(supabase, customer_id).catch(() => null);
-    const portalWorkerUrl = (resolved?.url || settings.portal_worker_url || Deno.env.get("PORTAL_WORKER_URL") || "").replace(/\/$/, "");
-    const workerSecret = resolved?.secret || settings.worker_secret || Deno.env.get("WORKER_SECRET") || "";
+    const portalWorkerUrl = (resolved?.url || Deno.env.get("PORTAL2_WORKER_URL") || Deno.env.get("PORTAL_WORKER_URL") || "").replace(/\/$/, "");
+    const workerSecret = resolved?.secret || Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET") || "";
 
     if (!portalWorkerUrl || !workerSecret) {
-      console.warn("⚠️ Worker URL ou Secret não configurados. OTP salvo, worker precisa fazer polling.");
-      return new Response(JSON.stringify({ success: true, mode: "polling", message: "OTP salvo. Worker fará polling." }), {
+      console.warn("⚠️ Worker URL ou Secret não configurados. OTP salvo, watchdog reenviará.");
+      return new Response(JSON.stringify({ success: true, mode: "polling", message: "OTP salvo." }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Enviar OTP ao worker (confirm-otp endpoint)
+    if (!idconsultor || !idcliente) {
+      console.warn(`⚠️ submit-otp customer=${customer_id} sem idconsultor/idcliente — watchdog reenviará`);
+      await supabase.from("customers").update({
+        last_otp_dispatch_at: new Date().toISOString(),
+        last_otp_dispatch_error: !idcliente ? "missing_portal2_idcliente" : "missing_idconsultor",
+      }).eq("id", customer_id);
+      return new Response(JSON.stringify({ success: true, mode: "polling", message: "OTP salvo, aguarda watchdog." }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     try {
       const res = await fetch(`${portalWorkerUrl}/confirm-otp`, {
         method: "POST",
@@ -82,12 +101,24 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${workerSecret}`,
         },
-        body: JSON.stringify({ customer_id, otp_code }),
+        body: JSON.stringify({ idconsultor, idcliente, code: otp_code, customer_id }),
         signal: AbortSignal.timeout(45_000),
       });
 
       const data = await res.text();
       console.log(`📡 Worker confirm-otp resposta (${res.status}): ${data.substring(0, 300)}`);
+      if (res.ok) {
+        await supabase.from("customers").update({
+          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_error: null,
+          portal_retry_count: 0,
+        }).eq("id", customer_id);
+      } else {
+        await supabase.from("customers").update({
+          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_error: `HTTP ${res.status}: ${data.slice(0, 200)}`,
+        }).eq("id", customer_id);
+      }
 
       return new Response(data, {
         status: res.status,
@@ -95,10 +126,14 @@ Deno.serve(async (req) => {
       });
     } catch (e: any) {
       console.error("⚠️ Erro ao enviar OTP ao worker:", e.message);
+      await supabase.from("customers").update({
+        last_otp_dispatch_at: new Date().toISOString(),
+        last_otp_dispatch_error: (e?.message || String(e)).slice(0, 200),
+      }).eq("id", customer_id);
       return new Response(JSON.stringify({
         success: true,
         mode: "polling",
-        message: "OTP salvo. Erro ao notificar worker, mas fará polling.",
+        message: "OTP salvo. Erro ao notificar worker, watchdog tentará novamente.",
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
