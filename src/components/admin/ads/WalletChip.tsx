@@ -10,6 +10,7 @@ import {
   type WalletBalance,
   type WalletFeed,
 } from "@/services/facebookAds";
+import { ManualTopupRequestDialog } from "@/components/wallet/ManualTopupRequestDialog";
 
 const QUICK_AMOUNTS = [50_00, 100_00, 200_00, 500_00];
 const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2)}`;
