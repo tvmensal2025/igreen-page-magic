@@ -375,7 +375,7 @@ export const SLUG_COMMERCIAL: Record<string, SlugCommercialProfile> = {
     partnerNote:
       "Energia limpa gerada em fazendas solares (parceria Comerc — usina Hélio Valgas, 5ª maior do Brasil, 662 MWp).",
     showClubBenefits: true,
-    heroImage: "/images/solar-bg.jpg",
+    heroImage: "/images/feed-1.jpeg",
     heroSubtitle:
       "Receba energia solar por assinatura, gerada em fazendas solares, e veja sua conta de luz cair todo mês — sem instalar nada e sem custo de adesão.",
     heroVideoId: "e71c0378-9980-40f0-9110-6e41ea908a15",

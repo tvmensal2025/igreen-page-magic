@@ -298,7 +298,7 @@ function GallerySection({ section, productSlug }: { section: ProductSection; pro
           {section.images?.map((img, i) => (
             <img
               key={i}
-              src={`/conexao/${productSlug}/${img}`}
+              src={img.startsWith("/") ? img : `/conexao/${productSlug}/${img}`}
               alt={`${section.title} ${i + 1}`}
               loading="lazy"
               decoding="async"
