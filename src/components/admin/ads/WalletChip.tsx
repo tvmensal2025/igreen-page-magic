@@ -128,7 +128,11 @@ export function WalletChip({ consultantId }: { consultantId: string }) {
                   </Button>
                 ))}
               </div>
+              <div className="mt-2">
+                <ManualTopupRequestDialog />
+              </div>
             </div>
+
 
             {feed && (feed.groups.length > 0 || feed.others.length > 0) && (
               <div className="rounded-lg border border-border/40">
