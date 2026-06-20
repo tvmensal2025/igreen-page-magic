@@ -3584,6 +3584,7 @@ export type Database = {
           lead_source_detail: Json | null
           link_assinatura: string | null
           link_facial: string | null
+          link_facial_sent_at: string | null
           manual_override_reactivate: boolean
           media_consumo: number | null
           media_message_id: string | null
@@ -3789,6 +3790,7 @@ export type Database = {
           lead_source_detail?: Json | null
           link_assinatura?: string | null
           link_facial?: string | null
+          link_facial_sent_at?: string | null
           manual_override_reactivate?: boolean
           media_consumo?: number | null
           media_message_id?: string | null
@@ -3994,6 +3996,7 @@ export type Database = {
           lead_source_detail?: Json | null
           link_assinatura?: string | null
           link_facial?: string | null
+          link_facial_sent_at?: string | null
           manual_override_reactivate?: boolean
           media_consumo?: number | null
           media_message_id?: string | null
