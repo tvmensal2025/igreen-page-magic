@@ -3614,6 +3614,9 @@ export type Database = {
           ocr_review_decided_by: string | null
           ocr_review_pending: string | null
           ocr_review_started_at: string | null
+          origin_channel: string | null
+          origin_consultant_id: string | null
+          origin_instance_name: string | null
           otp_code: string | null
           otp_received_at: string | null
           otp_test_phone: string | null
@@ -3820,6 +3823,9 @@ export type Database = {
           ocr_review_decided_by?: string | null
           ocr_review_pending?: string | null
           ocr_review_started_at?: string | null
+          origin_channel?: string | null
+          origin_consultant_id?: string | null
+          origin_instance_name?: string | null
           otp_code?: string | null
           otp_received_at?: string | null
           otp_test_phone?: string | null
@@ -4026,6 +4032,9 @@ export type Database = {
           ocr_review_decided_by?: string | null
           ocr_review_pending?: string | null
           ocr_review_started_at?: string | null
+          origin_channel?: string | null
+          origin_consultant_id?: string | null
+          origin_instance_name?: string | null
           otp_code?: string | null
           otp_received_at?: string | null
           otp_test_phone?: string | null
