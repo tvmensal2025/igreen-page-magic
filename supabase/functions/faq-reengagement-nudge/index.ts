@@ -16,7 +16,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveChannel } from "../_shared/channel-sender.ts";
+import { resolveChannelForCustomer, isUnavailable } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { normalizePhone } from "../_shared/utils.ts";
 import { isQuietHoursBRT } from "../_shared/bot/nudge-quiet-hours.ts";
@@ -75,11 +75,12 @@ serve(async (_req: Request) => {
 
   for (const lead of candidates) {
     try {
-      const channel = await resolveChannel(supabase, lead.consultant_id, env);
-      if (!channel) {
-        console.warn(`[faq-nudge] no channel for consultant ${lead.consultant_id}`);
+      const channel = await resolveChannelForCustomer(supabase, lead.id, env);
+      if (isUnavailable(channel)) {
+        console.warn(`[faq-nudge] canal indisponível lead=${lead.id} instance=${channel.instanceName} reason=${channel.reason}`);
         continue;
       }
+
 
       // Anti-ban check
       const quota = await checkSendQuota(supabase, channel.instanceName);
