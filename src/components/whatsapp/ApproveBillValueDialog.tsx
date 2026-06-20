@@ -22,13 +22,19 @@ export interface BillValueCustomer {
   electricity_bill_value?: number | null;
 }
 
+/** Estágio destino opcional escolhido na hora de aprovar (split button). */
+export type ApproveTargetStage = "aprovado" | "d30" | "d60" | "d90" | "d120";
+
 interface Props {
   customer: BillValueCustomer | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Estágio que o consultor pediu para o cliente cair direto após aprovar. */
+  targetStage?: ApproveTargetStage;
   /** Chamado após salvar o valor da conta (antes de concluir a aprovação). */
-  onSaved: (customerId: string, billValue: number) => void | Promise<void>;
+  onSaved: (customerId: string, billValue: number, targetStage?: ApproveTargetStage) => void | Promise<void>;
 }
+
 
 /** Cliente aprovado (ou que assinou e vai validar) precisa de fatura quando o sync não trouxe valor. */
 export function needsBillValueForApproval(
