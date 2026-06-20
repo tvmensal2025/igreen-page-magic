@@ -164,46 +164,106 @@ async function bucketB(supabase: any) {
 }
 
 async function bucketC(supabase: any) {
-  // OTP validado, link facial ausente
+  // OTP validado (ou recuperável) — garante link_facial gravado E enviado ao cliente
   const cutoff = new Date(Date.now() - 60_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
-    .select("id, portal2_idcliente, updated_at")
-    .not("portal2_otp_validated_at", "is", null)
-    .is("link_facial", null)
+    .select("id, portal2_idcliente, consultant_id, phone_whatsapp, name, link_facial, link_facial_sent_at, updated_at")
+    .not("portal2_idcliente", "is", null)
+    .or("portal2_otp_validated_at.not.is.null,link_facial.not.is.null")
+    .or("link_facial.is.null,link_facial_sent_at.is.null")
     .lt("updated_at", cutoff)
     .limit(BATCH_LIMIT);
 
+  const env = {
+    evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),
+    evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
+    whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+  };
+
   let recovered = 0;
+  let sent = 0;
   for (const r of rows ?? []) {
-    const { idconsultor, idcliente } = await resolveIds(supabase, r.id);
-    if (!idconsultor || !idcliente) continue;
-    const resolved = await resolveWorker(supabase, r.id).catch(() => null);
-    if (!resolved) continue;
-    try {
-      const url = `${resolved.url}/lead/${idcliente}/status?idconsultor=${idconsultor}`;
-      const res = await fetch(url, {
-        headers: { "Authorization": `Bearer ${resolved.secret}` },
-        signal: AbortSignal.timeout(20_000),
-      });
-      const json: any = await res.json().catch(() => ({}));
-      const ctr = json?.contract || {};
-      const link = ctr.linkassinatura || ctr.link_assinatura || ctr.linkAssinatura || null;
-      if (link) {
-        await supabase.from("customers").update({
-          link_facial: link,
-          link_assinatura: link,
-          portal2_contract_link: link,
-          status: "awaiting_signature",
-          conversation_step: "aguardando_facial",
-        }).eq("id", r.id);
-        recovered++;
+    let link: string | null = r.link_facial || null;
+
+    // 1) Se não temos link, busca no portal
+    if (!link) {
+      const { idconsultor, idcliente } = await resolveIds(supabase, r.id);
+      if (!idconsultor || !idcliente) continue;
+      const resolved = await resolveWorker(supabase, r.id).catch(() => null);
+      if (!resolved) continue;
+      try {
+        const url = `${resolved.url}/lead/${idcliente}/status?idconsultor=${idconsultor}`;
+        const res = await fetch(url, {
+          headers: { "Authorization": `Bearer ${resolved.secret}` },
+          signal: AbortSignal.timeout(20_000),
+        });
+        const json: any = await res.json().catch(() => ({}));
+        const ctr = json?.contract || {};
+        link = ctr.linkassinatura || ctr.link_assinatura || ctr.linkAssinatura || null;
+        if (link) {
+          await supabase.from("customers").update({
+            link_facial: link,
+            link_assinatura: link,
+            portal2_contract_link: link,
+            status: "awaiting_signature",
+            conversation_step: "aguardando_facial",
+          }).eq("id", r.id);
+          recovered++;
+        }
+      } catch (e: any) {
+        console.warn(`[watchdog C] customer=${r.id}: ${e?.message || e}`);
       }
-    } catch (e: any) {
-      console.warn(`[watchdog C] customer=${r.id}: ${e?.message || e}`);
+    }
+
+    // 2) Tem link mas ainda não foi enviado — envia via WhatsApp
+    if (link && !r.link_facial_sent_at && r.phone_whatsapp && r.consultant_id) {
+      try {
+        const channel = await resolveChannel(supabase, r.consultant_id, env);
+        if (!channel) {
+          console.warn(`[watchdog C] sem channel para consultor ${r.consultant_id}`);
+          continue;
+        }
+        const quota = await checkSendQuota(supabase, channel.instanceName);
+        if (!quota.allowed) {
+          console.warn(`[watchdog C] quota bloqueada ${channel.instanceName}: ${quota.reason}`);
+          continue;
+        }
+        const digits = String(r.phone_whatsapp).replace(/\D/g, "");
+        if (!digits) continue;
+        const jid = `${digits}@s.whatsapp.net`;
+        const firstName = String(r.name || "").trim().split(/\s+/)[0] || "";
+        const text = `${firstName ? firstName + ", " : ""}seu cadastro está quase pronto! 🎉\n\nClique no link abaixo pra fazer o reconhecimento facial e assinar o contrato:\n\n${link}\n\n_Leva menos de 1 minuto._`;
+        const sendCtx = {
+          customerId: r.id,
+          consultantId: r.consultant_id,
+          stepId: "watchdog_facial_link",
+          idempotencyKey: `facial:${r.id}:${Math.floor(Date.now() / (60 * 60 * 1000))}`,
+          supabase,
+        };
+        const result = await channel.adapter.sendText(jid, text, sendCtx);
+        if (result.ok) {
+          await registerSend(supabase, channel.instanceName);
+          await supabase.from("customers").update({
+            link_facial_sent_at: new Date().toISOString(),
+          }).eq("id", r.id);
+          await supabase.from("conversations").insert({
+            customer_id: r.id,
+            message_direction: "outbound",
+            message_text: text,
+            message_type: "text",
+            conversation_step: "aguardando_facial",
+          });
+          sent++;
+        } else {
+          console.warn(`[watchdog C] send falhou customer=${r.id}`);
+        }
+      } catch (e: any) {
+        console.warn(`[watchdog C] send erro customer=${r.id}: ${e?.message || e}`);
+      }
     }
   }
-  return { scanned: rows?.length ?? 0, recovered };
+  return { scanned: rows?.length ?? 0, recovered, sent };
 }
 
 Deno.serve(async (req) => {
