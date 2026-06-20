@@ -181,13 +181,39 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     return g;
   }, [filaItems]);
 
-  async function act(customerId: string, action: ActionKind) {
+  async function act(customerId: string, action: ActionKind, targetStage?: ApproveTargetStage) {
     const { data, error } = await supabase.rpc("confirm_pending_classification" as any, { _customer_id: customerId, _action: action });
     if (error) { toast.error(error.message); return; }
     const ok = (data as any)?.ok;
     if (!ok) { toast.error((data as any)?.error || "Erro"); return; }
+
+    // Se aprovado direto para 30/60/90/120 dias, sobrescreve o estágio e marca como manual
+    // (assim o cron de autoprogressão não vai reverter).
+    if (action === "approve" && targetStage && targetStage !== "aprovado") {
+      const { error: upErr } = await supabase
+        .from("customers")
+        .update({ pos_venda_stage: targetStage, pos_venda_manual: true })
+        .eq("id", customerId);
+      if (upErr) {
+        toast.error("Aprovado, mas falhou ao mover para " + targetStage + ": " + upErr.message);
+      }
+    }
+
     setItems((prev) => prev.filter((p) => p.id !== customerId));
+    const stageLabel = targetStage && targetStage !== "aprovado" ? ` (${targetStage.replace("d", "")} dias)` : "";
     const msg = {
+      approve: "Confirmado! Mensagem disparada." + stageLabel,
+      snooze: "Adiado 24h",
+      review: "Mantido em Espera",
+      invalidate: "Cliente marcado como inválido",
+      missing_signature: "Marcado como falta assinatura — permanece em espera.",
+      defer_devolutiva: "Devolutiva em aberto — guardado na lista para resolver depois.",
+      reject_pending: "Reclassificado como reprovado.",
+    }[action];
+    toast.success(msg);
+    onResolved?.();
+  }
+
       approve: "Confirmado! Mensagem disparada.",
       snooze: "Adiado 24h",
       review: "Mantido em Espera",
