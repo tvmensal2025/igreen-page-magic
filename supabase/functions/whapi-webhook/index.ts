@@ -549,6 +549,10 @@ Deno.serve(async (req) => {
           status: "pending",
           conversation_step: "welcome",
           flow_variant: abVariant,
+          // bind canal/instância de origem (regra de ouro: fica até o fim)
+          origin_channel: "whapi",
+          origin_instance_name: "whapi-superadmin",
+          origin_consultant_id: superAdminConsultantId,
           ...(realMode ? { is_test_lead: true, is_sandbox: false, capture_mode: "auto" } : {}),
           ...(pushedName ? { name: pushedName, name_source: "whatsapp_profile" } : {}),
           ...(resetMarker ? { chat_cleared_at: resetMarker.reset_at } : {}),

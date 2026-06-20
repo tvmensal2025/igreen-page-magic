@@ -17,6 +17,11 @@ export interface ResolvedChannel {
   adapter: ChannelAdapter;
 }
 
+/**
+ * @deprecated Para envios a CLIENTE finais, use `resolveChannelForCustomer`.
+ * Não checa saúde da instância — use só para notificar o próprio consultor
+ * ou fluxos sem `customerId`.
+ */
 export async function resolveChannel(
   supabase: any,
   consultantId: string,
@@ -50,6 +55,116 @@ export async function resolveChannel(
   }
 
   return null;
+}
+
+export type ChannelUnavailableReason =
+  | "no_origin_recorded"
+  | "instance_not_found"
+  | "instance_offline"
+  | "instance_locked"
+  | "manual_review_required"
+  | "missing_credentials";
+
+export interface UnavailableChannel {
+  unavailable: true;
+  reason: ChannelUnavailableReason;
+  detail: string;
+  instanceName: string | null;
+  kind: "evolution" | "whapi" | null;
+}
+
+const HEALTHY_STATUSES = new Set(["connected", "online", "open"]);
+
+/**
+ * Resolve o canal de saída para um cliente, respeitando origin_channel +
+ * origin_instance_name gravados no primeiro inbound. NUNCA troca de canal
+ * automaticamente: se a instância está offline, devolve `unavailable`.
+ */
+export async function resolveChannelForCustomer(
+  supabase: any,
+  customerId: string,
+  env: ChannelEnv,
+): Promise<ResolvedChannel | UnavailableChannel> {
+  const { data: c } = await supabase
+    .from("customers")
+    .select("origin_channel, origin_instance_name, consultant_id")
+    .eq("id", customerId)
+    .maybeSingle();
+
+  const kind = (c?.origin_channel as "evolution" | "whapi" | null) || null;
+  const instanceName = (c?.origin_instance_name as string | null) || null;
+
+  if (!kind || !instanceName) {
+    return {
+      unavailable: true, reason: "no_origin_recorded",
+      detail: "customer sem origin_channel/origin_instance_name",
+      instanceName, kind,
+    };
+  }
+
+  if (kind === "evolution") {
+    if (!env.evolutionUrl || !env.evolutionKey) {
+      return {
+        unavailable: true, reason: "missing_credentials",
+        detail: "EVOLUTION_API_URL/KEY ausentes", instanceName, kind,
+      };
+    }
+    const { data: inst } = await supabase
+      .from("whatsapp_instances")
+      .select("status, manual_review_required, fatal_lock_until")
+      .eq("instance_name", instanceName)
+      .maybeSingle();
+    if (!inst) {
+      return {
+        unavailable: true, reason: "instance_not_found",
+        detail: `instância ${instanceName} não cadastrada`, instanceName, kind,
+      };
+    }
+    if (inst.manual_review_required) {
+      return {
+        unavailable: true, reason: "manual_review_required",
+        detail: `instância ${instanceName} em revisão manual`, instanceName, kind,
+      };
+    }
+    if (inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date()) {
+      return {
+        unavailable: true, reason: "instance_locked",
+        detail: `instância ${instanceName} travada até ${inst.fatal_lock_until}`,
+        instanceName, kind,
+      };
+    }
+    const status = String(inst.status || "").toLowerCase();
+    if (status && !HEALTHY_STATUSES.has(status)) {
+      return {
+        unavailable: true, reason: "instance_offline",
+        detail: `instância ${instanceName} status=${status}`, instanceName, kind,
+      };
+    }
+    const adapter = getAdapter({
+      kind: "evolution",
+      input: { apiUrl: env.evolutionUrl, apiKey: env.evolutionKey, instanceName },
+    });
+    return { kind: "evolution", instanceName, adapter };
+  }
+
+  // kind === "whapi" — superadmin token compartilhado, sem health-check próprio.
+  if (!env.whapiToken) {
+    return {
+      unavailable: true, reason: "missing_credentials",
+      detail: "WHAPI_TOKEN ausente", instanceName, kind,
+    };
+  }
+  const adapter = getAdapter({
+    kind: "whapi",
+    input: { apiToken: env.whapiToken, instanceName },
+  });
+  return { kind: "whapi", instanceName, adapter };
+}
+
+export function isUnavailable(
+  ch: ResolvedChannel | UnavailableChannel | null,
+): ch is UnavailableChannel {
+  return !!ch && (ch as UnavailableChannel).unavailable === true;
 }
 
 async function guardOk(supabase: any, instanceName: string, label: string): Promise<boolean> {

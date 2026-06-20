@@ -704,6 +704,10 @@ Deno.serve(async (req) => {
           status: "pending",
           conversation_step: "welcome",
           flow_variant: newFlowVariant,
+          // bind canal/instância de origem (regra de ouro: fica até o fim)
+          origin_channel: "evolution",
+          origin_instance_name: instanceName,
+          origin_consultant_id: instanceData.consultant_id,
         })
         .select().single();
       if (error) {
