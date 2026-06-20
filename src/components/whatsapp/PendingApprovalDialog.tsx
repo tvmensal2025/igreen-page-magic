@@ -59,8 +59,9 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   const [wizardOpen, setWizardOpen] = useState(false);
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
-  /** Cliente aguardando informe da fatura antes de aprovar. */
-  const [billPrompt, setBillPrompt] = useState<Pending | null>(null);
+  /** Cliente aguardando informe da fatura antes de aprovar (com estágio destino opcional). */
+  const [billPrompt, setBillPrompt] = useState<{ customer: Pending; targetStage?: ApproveTargetStage } | null>(null);
+
   // Filtro por licenciado: "mine" (padrão, só meus), "all" (toda rede), ou igreen_id específico
   const [ownerFilter, setOwnerFilter] = useState<string>("mine");
   // Aba interna: "fila" = pendências normais / "devolutivas" = devolutivas em aberto (estacionadas)
