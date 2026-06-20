@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { MessageSquare, Clock, Send, TrendingUp, Calendar, Users } from "lucide-react";
-import { AICostCard } from "@/components/admin/AICostCard";
+import { MonthlyCostsCard } from "@/components/whatsapp/MonthlyCostsCard";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format, subDays, differenceInMinutes, parseISO } from "date-fns";
