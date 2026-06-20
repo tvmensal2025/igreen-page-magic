@@ -52,7 +52,7 @@ export function SystemHealthPanel() {
       supabase.from("customers").select("id", { count: "exact", head: true })
         .eq("bot_paused", true).eq("bot_paused_reason", "manual_global_pause"),
       supabase.from("whatsapp_instances" as any)
-        .select("id, instance_name, connected_phone, status, last_health_check_at, consultant_id, consultants:consultant_id(name, license)")
+        .select("id, instance_name, connected_phone, status, last_health_check_at, consultant_id")
         .in("status", downStatuses),
       supabase.from("customers").select("id", { count: "exact", head: true })
         .not("error_message", "is", null).gte("updated_at", since),
@@ -62,15 +62,30 @@ export function SystemHealthPanel() {
         .gte("created_at", since),
     ]);
     const rows: any[] = (downRows as any).data || [];
-    const downInstances: DownInstance[] = rows.map((r) => ({
-      id: r.id,
-      consultantName: r.consultants?.name || "Sem consultor",
-      license: r.consultants?.license ?? null,
-      phone: r.connected_phone ?? null,
-      instanceName: r.instance_name,
-      status: r.status,
-      lastSeen: r.last_health_check_at,
-    }));
+    const consultantIds = Array.from(
+      new Set(rows.map((r) => r.consultant_id).filter(Boolean))
+    );
+    const consultantMap = new Map<string, { name?: string; license?: string | null }>();
+    if (consultantIds.length > 0) {
+      const { data: cons } = await supabase
+        .from("consultants")
+        .select("id, name, license")
+        .in("id", consultantIds);
+      (cons || []).forEach((c: any) => consultantMap.set(c.id, { name: c.name, license: c.license }));
+    }
+    const downInstances: DownInstance[] = rows.map((r) => {
+      const c = consultantMap.get(r.consultant_id);
+      return {
+        id: r.id,
+        consultantName: c?.name || "Sem consultor",
+        license: c?.license ?? null,
+        phone: r.connected_phone ?? null,
+        instanceName: r.instance_name,
+        status: r.status,
+        lastSeen: r.last_health_check_at,
+      };
+    });
+
     setData({
       pausedGlobal: paused.count ?? 0,
       instancesNeedReconnect: downInstances.length,
