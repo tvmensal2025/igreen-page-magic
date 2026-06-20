@@ -1,20 +1,28 @@
 // portal-otp-watchdog: cron que garante que cadastros, OTPs e link facial
 // sempre cheguem ao Portal 2. Executa 1x/min via pg_cron.
 //
+// Regra de ouro: cada lead vive e morre na MESMA instância de WhatsApp
+// (origin_channel + origin_instance_name gravados no primeiro inbound).
+// Nunca trocamos de canal — se a instância caiu, alertamos o consultor
+// (via Whapi superadmin, fora do canal do cliente) e seguramos a mensagem.
+//
 // Buckets:
 //   A) cadastro_portal/portal_submitting/worker_offline/missing_documents
-//      sem portal2_idcliente há >90s  → dispatchPortalWorker
+//      sem portal2_idcliente há >90s → dispatchPortalWorker
 //   B) otp_code presente, portal2_idcliente presente, sem portal2_otp_validated_at
-//      e otp_received_at < now-30s     → reenvia /confirm-otp com payload correto
-//   C) portal2_otp_validated_at presente mas link_facial nulo há >60s
-//                                       → puxa contrato do worker e reenvia link
-//
-// Limite: 20 leads por bucket por execução; portal_retry_count gera backoff
-// (max 10 tentativas → alerta no super-admin-alerts e para de retentar).
+//      → reenvia /confirm-otp; se worker disser "expirado" limpa otp_code,
+//        pede novo código pelo canal de origem
+//   C) portal2_otp_validated_at presente mas link_facial não enviado
+//      → puxa contrato do worker e envia link pelo canal de origem;
+//        se instância offline, gera alerta e segura até voltar
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchPortalWorker, resolveWorker } from "../_shared/portal-worker.ts";
-import { resolveChannel } from "../_shared/channel-sender.ts";
+import {
+  resolveChannelForCustomer,
+  isUnavailable,
+  type UnavailableChannel,
+} from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 
 const corsHeaders = {
@@ -56,8 +64,73 @@ async function resolveIds(supabase: any, customerId: string): Promise<{
   return { idconsultor, idcliente };
 }
 
+/**
+ * Registra alerta no painel + manda WhatsApp para o consultor (via Whapi
+ * superadmin) avisando que a instância dele caiu e está bloqueando um lead.
+ * Throttle: 1x a cada 30min por (consultor + instância) para não spammar.
+ */
+async function alertConsultantInstanceOffline(
+  supabase: any,
+  customerId: string,
+  consultantId: string | null,
+  unavailable: UnavailableChannel,
+  customerLabel: string,
+) {
+  const alertKey = `instance_offline:${unavailable.instanceName || "?"}`;
+  const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: recent } = await supabase
+    .from("bot_handoff_alerts")
+    .select("id")
+    .eq("consultant_id", consultantId)
+    .eq("reason", alertKey)
+    .gt("created_at", since)
+    .limit(1);
+
+  await supabase.from("bot_handoff_alerts").insert({
+    customer_id: customerId,
+    consultant_id: consultantId,
+    reason: alertKey,
+    severity: "high",
+    details: unavailable.detail,
+  }).catch((e: any) => console.warn(`[alert insert] ${e?.message || e}`));
+
+  if (recent && recent.length > 0) return; // já avisou nos últimos 30min
+
+  // notifica consultor via Whapi superadmin (canal fora do cliente)
+  const whapiToken = Deno.env.get("WHAPI_TOKEN") || "";
+  if (!whapiToken || !consultantId) return;
+  const { data: consultant } = await supabase
+    .from("consultants")
+    .select("whatsapp_number, phone, name")
+    .eq("id", consultantId)
+    .maybeSingle();
+  const rawPhone = (consultant as any)?.whatsapp_number || (consultant as any)?.phone;
+  if (!rawPhone) return;
+  const digits = String(rawPhone).replace(/\D/g, "");
+  if (digits.length < 10) return;
+  const to = digits.startsWith("55") ? digits : `55${digits}`;
+  const text =
+    `⚠️ *Atenção, ${(consultant as any)?.name?.split(" ")?.[0] || "consultor"}!*\n\n` +
+    `Sua instância de WhatsApp (\`${unavailable.instanceName}\`) está fora do ar ` +
+    `(${unavailable.reason}).\n\n` +
+    `O lead *${customerLabel}* está aguardando mensagem e só será entregue quando você reconectar.\n\n` +
+    `Por favor, reabra o app e escaneie o QR code da instância.`;
+  try {
+    await fetch("https://gate.whapi.cloud/messages/text", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${whapiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ to, body: text }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e: any) {
+    console.warn(`[alert whapi] consultor=${consultantId}: ${e?.message || e}`);
+  }
+}
+
 async function bucketA(supabase: any) {
-  // Cadastro não chegou ao portal
   const cutoff = new Date(Date.now() - 90_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
@@ -79,15 +152,9 @@ async function bucketA(supabase: any) {
         portal_retry_count: retries + 1,
       }).eq("id", r.id);
       const res = await dispatchPortalWorker(supabase, r.id);
-      if (res.ok) {
-        await supabase.from("customers").update({
-          last_portal_dispatch_error: null,
-        }).eq("id", r.id);
-      } else {
-        await supabase.from("customers").update({
-          last_portal_dispatch_error: (res.error || res.mode).slice(0, 200),
-        }).eq("id", r.id);
-      }
+      await supabase.from("customers").update({
+        last_portal_dispatch_error: res.ok ? null : (res.error || res.mode).slice(0, 200),
+      }).eq("id", r.id);
       dispatched++;
     } catch (e: any) {
       console.warn(`[watchdog A] customer=${r.id} erro: ${e?.message || e}`);
@@ -96,12 +163,17 @@ async function bucketA(supabase: any) {
   return { scanned: rows?.length ?? 0, dispatched };
 }
 
+const OTP_EXPIRED_PATTERNS = [
+  /c[oó]digo inv[aá]lido ou expirado/i,
+  /otp.*expir/i,
+  /code.*expired/i,
+];
+
 async function bucketB(supabase: any) {
-  // OTP pendente
   const cutoff = new Date(Date.now() - 30_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
-    .select("id, otp_code, portal_retry_count, last_otp_dispatch_at")
+    .select("id, name, otp_code, portal_retry_count, last_otp_dispatch_at, consultant_id")
     .not("otp_code", "is", null)
     .not("portal2_idcliente", "is", null)
     .is("portal2_otp_validated_at", null)
@@ -109,7 +181,14 @@ async function bucketB(supabase: any) {
     .order("otp_received_at", { ascending: true })
     .limit(BATCH_LIMIT);
 
+  const env = {
+    evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),
+    evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
+    whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+  };
+
   let sent = 0;
+  let expired = 0;
   for (const r of rows ?? []) {
     const retries = Number(r.portal_retry_count || 0);
     if (retries >= MAX_RETRIES) continue;
@@ -145,13 +224,58 @@ async function bucketB(supabase: any) {
           portal_retry_count: 0,
         }).eq("id", r.id);
         sent++;
-      } else {
-        await supabase.from("customers").update({
-          last_otp_dispatch_at: new Date().toISOString(),
-          last_otp_dispatch_error: `HTTP ${res.status}: ${txt.slice(0, 200)}`,
-          portal_retry_count: retries + 1,
-        }).eq("id", r.id);
+        continue;
       }
+
+      // Detecta OTP expirado/inválido → para de retentar e pede novo código
+      const isExpired = OTP_EXPIRED_PATTERNS.some((re) => re.test(txt));
+      if (isExpired) {
+        await supabase.from("customers").update({
+          otp_code: null,
+          otp_received_at: null,
+          status: "awaiting_otp",
+          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_error: "otp_expired_cleared",
+          portal_retry_count: 0,
+        }).eq("id", r.id);
+        expired++;
+
+        // Mensagem ao cliente pelo canal de origem
+        const channel = await resolveChannelForCustomer(supabase, r.id, env);
+        if (isUnavailable(channel)) {
+          await alertConsultantInstanceOffline(
+            supabase, r.id, r.consultant_id, channel,
+            r.name || r.id,
+          );
+        } else {
+          const firstName = String(r.name || "").trim().split(/\s+/)[0] || "";
+          const msg =
+            `${firstName ? firstName + ", " : ""}seu código de verificação expirou ⏰\n\n` +
+            `Por favor, peça um *novo código* no Portal e me envie aqui pra eu validar.`;
+          const { data: c } = await supabase
+            .from("customers").select("phone_whatsapp").eq("id", r.id).maybeSingle();
+          const digits = String(c?.phone_whatsapp || "").replace(/\D/g, "");
+          if (digits) {
+            const jid = `${digits}@s.whatsapp.net`;
+            const sendCtx = {
+              customerId: r.id,
+              consultantId: r.consultant_id,
+              stepId: "watchdog_otp_expired",
+              idempotencyKey: `otp-exp:${r.id}:${Date.now()}`,
+              supabase,
+            };
+            const sendRes = await channel.adapter.sendText(jid, msg, sendCtx);
+            if (sendRes.ok) await registerSend(supabase, channel.instanceName);
+          }
+        }
+        continue;
+      }
+
+      await supabase.from("customers").update({
+        last_otp_dispatch_at: new Date().toISOString(),
+        last_otp_dispatch_error: `HTTP ${res.status}: ${txt.slice(0, 200)}`,
+        portal_retry_count: retries + 1,
+      }).eq("id", r.id);
     } catch (e: any) {
       await supabase.from("customers").update({
         last_otp_dispatch_at: new Date().toISOString(),
@@ -160,11 +284,10 @@ async function bucketB(supabase: any) {
       }).eq("id", r.id);
     }
   }
-  return { scanned: rows?.length ?? 0, sent };
+  return { scanned: rows?.length ?? 0, sent, expired };
 }
 
 async function bucketC(supabase: any) {
-  // OTP validado (ou recuperável) — garante link_facial gravado E enviado ao cliente
   const cutoff = new Date(Date.now() - 60_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
@@ -183,10 +306,12 @@ async function bucketC(supabase: any) {
 
   let recovered = 0;
   let sent = 0;
+  let offline = 0;
+
   for (const r of rows ?? []) {
     let link: string | null = r.link_facial || null;
 
-    // 1) Se não temos link, busca no portal
+    // 1) Sem link? Puxa do worker
     if (!link) {
       const { idconsultor, idcliente } = await resolveIds(supabase, r.id);
       if (!idconsultor || !idcliente) continue;
@@ -212,18 +337,28 @@ async function bucketC(supabase: any) {
           recovered++;
         }
       } catch (e: any) {
-        console.warn(`[watchdog C] customer=${r.id}: ${e?.message || e}`);
+        console.warn(`[watchdog C] recovery customer=${r.id}: ${e?.message || e}`);
       }
     }
 
-    // 2) Tem link mas ainda não foi enviado — envia via WhatsApp
-    if (link && !r.link_facial_sent_at && r.phone_whatsapp && r.consultant_id) {
+    // 2) Tem link mas ainda não enviado → manda pelo canal de origem
+    if (link && !r.link_facial_sent_at && r.phone_whatsapp) {
+      const channel = await resolveChannelForCustomer(supabase, r.id, env);
+
+      if (isUnavailable(channel)) {
+        offline++;
+        await supabase.from("customers").update({
+          last_portal_dispatch_at: new Date().toISOString(),
+          last_portal_dispatch_error: `instance_offline:${channel.instanceName}:${channel.reason}`,
+        }).eq("id", r.id);
+        await alertConsultantInstanceOffline(
+          supabase, r.id, r.consultant_id, channel,
+          r.name || r.phone_whatsapp,
+        );
+        continue;
+      }
+
       try {
-        const channel = await resolveChannel(supabase, r.consultant_id, env);
-        if (!channel) {
-          console.warn(`[watchdog C] sem channel para consultor ${r.consultant_id}`);
-          continue;
-        }
         const quota = await checkSendQuota(supabase, channel.instanceName);
         if (!quota.allowed) {
           console.warn(`[watchdog C] quota bloqueada ${channel.instanceName}: ${quota.reason}`);
@@ -233,7 +368,10 @@ async function bucketC(supabase: any) {
         if (!digits) continue;
         const jid = `${digits}@s.whatsapp.net`;
         const firstName = String(r.name || "").trim().split(/\s+/)[0] || "";
-        const text = `${firstName ? firstName + ", " : ""}seu cadastro está quase pronto! 🎉\n\nClique no link abaixo pra fazer o reconhecimento facial e assinar o contrato:\n\n${link}\n\n_Leva menos de 1 minuto._`;
+        const text =
+          `${firstName ? firstName + ", " : ""}seu cadastro está quase pronto! 🎉\n\n` +
+          `Clique no link abaixo pra fazer o reconhecimento facial e assinar o contrato:\n\n` +
+          `${link}\n\n_Leva menos de 1 minuto._`;
         const sendCtx = {
           customerId: r.id,
           consultantId: r.consultant_id,
@@ -263,7 +401,7 @@ async function bucketC(supabase: any) {
       }
     }
   }
-  return { scanned: rows?.length ?? 0, recovered, sent };
+  return { scanned: rows?.length ?? 0, recovered, sent, offline };
 }
 
 Deno.serve(async (req) => {
