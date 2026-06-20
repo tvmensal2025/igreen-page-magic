@@ -1,136 +1,91 @@
-## Diagnóstico (cliente SUELI APARECIDA, id 40907186…)
+# Plano revisado: cada lead fica preso ao canal/instância que o iniciou
 
-Rastreei a conversa + banco + código e achei a causa raiz da falha.
+## Regra de ouro (definida pelo usuário)
 
-### 1. OTP nunca chegou ao Portal 2 (causa raiz do "facial não chegou")
+> "Se o cliente iniciou naquela instância, o OTP e o final têm que ser sempre naquela."
 
-O cliente respondeu `334122` no WhatsApp. O `otp-intercept` (e o `submit-otp`) chamam o endpoint do worker assim:
+Nada de fallback automático Evolution → Whapi superadmin. Cada consultor tem **sua** instância (Evolution própria **ou** Whapi própria) e o lead vive e morre nela. Se a instância caiu, o sistema **não troca de canal** — ele alerta o consultor para religar e segura a mensagem até voltar.
 
-```
-POST {WORKER}/confirm-otp
-body: { customer_id, otp_code }
-```
+## Causa-raiz do caso SUELI
 
-Mas o `worker-portal-2/server.mjs` linha 1034 exige:
+1. `resolveChannel` escolhe Evolution por existir linha em `whatsapp_instances`, **sem** olhar `status`. A instância do consultor estava `needs_reconnect` desde 15/05 → todo envio falha com `Connection Closed`.
+2. Não existe coluna no `customers` que registre **em qual canal/instância o lead entrou**. Hoje cada chamada re-resolve por consultor e pode escolher errado se o consultor tiver mais de uma instância no futuro.
+3. Watchdog B fica re-tentando OTP expirado para sempre, gerando ruído.
 
-```js
-const { idconsultor, idcliente, code, customer_id } = req.body || {};
-if (!idconsultor || !idcliente || !code) return 400 'idconsultor, idcliente, code obrigatórios';
-```
+## Mudanças
 
-→ O worker devolve **400 imediato**. Como o cliente captura o erro silenciosamente (`catch` sem retry), o OTP é salvo no banco e nunca validado no portal. Sem validação, o backend iGreen não emite `link_assinatura`/facial. Cliente fica eternamente em `awaiting_otp`.
+### 1. Schema — gravar canal de origem no lead
 
-Confirmado no banco: `otp_code=334122`, `otp_received_at=14:28:55`, `portal2_otp_validated_at=null`, `link_facial=null`.
+Adicionar em `public.customers`:
 
-### 2. CEP caiu no FAQ ("pediu o fluxo de pergunta de novo")
+- `origin_channel text` — `'evolution'` ou `'whapi'`
+- `origin_instance_name text` — nome exato da instância (ex.: `igreen-0c2711ad4836` ou `whapi-<id>`)
+- `origin_consultant_id uuid` — redundância segura para auditoria
 
-Quando ela enviou `13350026`, o `conversation_step` do banco estava em `c87d76f8…` (passo `d_como_funciona`), não em `ask_cep`. A entrada não casou com nenhum trigger do passo e o `fallback.goto_step_id` levou a `d_duvidas` (38c0d101). Algum caminho de "restart" do conversational engine reverteu o step para `d_como_funciona` entre o pedido do CEP e a resposta do cliente.
+Preenchidos **uma vez**, no primeiro inbound (webhook do canal), e **nunca alterados** depois. Migration faz backfill com o melhor palpite atual (instance do consultor) só para leads existentes.
 
-### 3. Faltam redes de segurança (retry/cron) para o pipeline cadastro→OTP→facial
+### 2. `resolveChannel` passa a ser "bind por lead", não por consultor
 
-`dispatchPortalWorker` tem 3 tentativas mas só na hora; depois marca `worker_offline` e não há cron varrendo isso. Idem para OTP — nenhum job retenta `/confirm-otp` quando o worker estava fora ou retornou erro.
+Nova assinatura:
 
----
-
-## Plano (objetivo: nunca falhar e sempre chegar ao Portal)
-
-### Passo 1 — Corrigir o payload do `/confirm-otp` (a correção de fato)
-
-**`supabase/functions/evolution-webhook/handlers/otp-intercept.ts`**
-- Antes de chamar o worker, carregar do `customers`:
-  - `portal2_idcliente`
-  - `consultants:consultant_id(igreen_id, portal_kind)`
-  - `referral_partners:referral_partner_id(partner_igreen_id)`
-- Resolver `idconsultor` com a mesma regra do `buildPortal2Payload` (parceiro tem precedência se tiver `partner_igreen_id`).
-- Se `portal2_idcliente` ainda não existe (cadastro não foi pro portal antes do OTP), **disparar `dispatchPortalWorker` primeiro** e abortar o intercept dessa rodada (o cron do passo 3 finaliza).
-- Enviar:
-  ```json
-  { "idconsultor": <num>, "idcliente": <portal2_idcliente>, "code": <otp>, "customer_id": <uuid> }
-  ```
-- Timeout 30 s (não 5 s — o worker faz polling do contrato).
-- Em caso de !ok, registrar `last_otp_dispatch_error` e `last_otp_dispatch_at` no `customers` (campos novos, ver migration).
-- Em caso de ok, atualizar localmente `status='validating_otp'` e `conversation_step='aguardando_facial'` (o worker já faz o update final com o link, mas a UI vê progresso na hora).
-
-**`supabase/functions/submit-otp/index.ts`** — aplicar exatamente a mesma troca de payload + timeout (mantém compat com chamadas do frontend).
-
-### Passo 2 — Endurecer `dispatchPortalWorker`
-
-- Persistir `last_portal_dispatch_at` e `last_portal_dispatch_error` em `customers` (migration).
-- Quando todas as 3 tentativas falharem, **não** sobrescrever `status` se já estiver em `awaiting_otp` / `awaiting_signature` / `complete` (evita regressão de step quando uma retentativa tardia roda).
-- Log estruturado JSON pra facilitar o tail no Edge Functions.
-
-### Passo 3 — Cron de garantia ("portal-otp-watchdog")
-
-Nova função `supabase/functions/portal-otp-watchdog/index.ts`, agendada a cada **1 min** via `pg_cron` (já temos o setup).
-
-Varre `customers` em 3 buckets:
-
-| Bucket | Condição | Ação |
-|---|---|---|
-| A. Cadastro não despachado | `status IN ('cadastro_portal','portal_submitting','worker_offline','missing_documents')` AND `portal2_idcliente IS NULL` AND `updated_at < now() - 90s` | `dispatchPortalWorker(customer_id)` |
-| B. OTP pendente no portal | `otp_code IS NOT NULL` AND `portal2_otp_validated_at IS NULL` AND `portal2_idcliente IS NOT NULL` AND `otp_received_at < now() - 30s` | reenviar `/confirm-otp` com payload correto |
-| C. OTP validado sem link facial | `portal2_otp_validated_at IS NOT NULL` AND `link_facial IS NULL` AND `updated_at < now() - 60s` | chamar `/lead/:idcliente/status` no worker, pegar `linkassinatura`, salvar e enviar via WhatsApp |
-
-Cada bucket com:
-- limite de 20 leads por execução (não estoura worker);
-- backoff exponencial via coluna `portal_retry_count` (zera quando avança de fase, +1 a cada retry, máx 10 antes de abrir alerta no `super-admin-alerts`).
-
-### Passo 4 — Corrigir o desvio de step pós-CEP
-
-No `_shared/cerebro/decisor-passo.ts` (e/ou conversational `index.ts` onde o restart-cascade roda):
-- Quando `customer.conversation_step` começa com `ask_` (legacy) ou aponta para um `bot_flow_step` cujo `slot_key` está em (`cep`, `numero`, `email`, `complemento`), **não cascatear pro flow de FAQ/welcome** mesmo se o `fallback.goto_step_id` estiver setado — em vez disso, repetir o próprio passo com mensagem "❌ não entendi, me manda só o CEP".
-- Garantir que o `flow-router` não troca o `conversation_step` enquanto `pending_slot` ainda estiver pendente (gate no `flow-selectors/openingStep.ts`).
-
-### Passo 5 — Migration
-
-Nova migration adicionando:
-```sql
-ALTER TABLE public.customers
-  ADD COLUMN IF NOT EXISTS last_portal_dispatch_at timestamptz,
-  ADD COLUMN IF NOT EXISTS last_portal_dispatch_error text,
-  ADD COLUMN IF NOT EXISTS last_otp_dispatch_at timestamptz,
-  ADD COLUMN IF NOT EXISTS last_otp_dispatch_error text,
-  ADD COLUMN IF NOT EXISTS portal_retry_count int NOT NULL DEFAULT 0;
-
-CREATE INDEX IF NOT EXISTS idx_customers_otp_pending
-  ON public.customers (otp_received_at)
-  WHERE otp_code IS NOT NULL AND portal2_otp_validated_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_customers_portal_pending
-  ON public.customers (updated_at)
-  WHERE portal2_idcliente IS NULL AND status IN ('cadastro_portal','portal_submitting','worker_offline','missing_documents');
+```ts
+resolveChannelForCustomer(supabase, customerId, env): Promise<ResolvedChannel | null>
 ```
 
-E job no `cron`:
-```sql
-SELECT cron.schedule('portal-otp-watchdog','*/1 * * * *',
-  $$ SELECT net.http_post(...portal-otp-watchdog...) $$);
-```
+- Lê `origin_channel` + `origin_instance_name` do `customers`.
+- Monta o adapter exato dessa instância (Evolution OU Whapi, conforme gravado).
+- **Nunca** troca de tipo. Se a instância está fora do ar (`status NOT IN ('connected','online','open')` ou `fatal_lock_until > now()`), retorna `{ unavailable: true, reason }` em vez de cair para outro canal.
+- A versão legada `resolveChannel(consultantId)` é mantida só para fluxos que ainda não têm `customerId` (ex.: notificação ao consultor), mas marcada como `@deprecated` para envios a clientes.
 
-### Passo 6 — Hotfix da SUELI
+### 3. Inbound webhooks gravam o canal de origem
 
-Após o deploy, rodar via SQL (uma vez):
-```sql
-UPDATE customers SET status='awaiting_otp', updated_at=now()-interval '2 min'
-WHERE id='40907186-4789-4eaf-82bf-2de79f69b73c';
-```
-O watchdog (bucket B) reenvia o OTP com payload correto e ela recebe o link facial no WhatsApp em <1 min.
+- `whapi-webhook` → ao criar/atualizar customer, faz `upsert` com `origin_channel='whapi'` e `origin_instance_name=<instância whapi do consultor>` **só se NULL** (idempotente).
+- `evolution-webhook` → mesma lógica com `origin_channel='evolution'` e o `instance_name` do payload.
 
----
+### 4. Watchdog C (link facial) — usa o canal do lead e segura quando offline
 
-## Arquivos a tocar
+- Chama `resolveChannelForCustomer(customerId)`.
+- Se `unavailable`:
+  - **Não tenta enviar** (não polui logs com `Connection Closed`).
+  - Grava `last_portal_error='instance_offline:<instance>'` e `last_portal_dispatch_at=now()`.
+  - Insere um alerta em `bot_handoff_alerts` (severity `high`, tipo `instance_offline_blocking_delivery`) com o telefone do consultor — para ele saber que precisa reconectar para o lead receber o link.
+  - Continua tentando a cada ciclo, mas com backoff exponencial (já existe).
+- Quando voltar online → envia normalmente e marca `link_facial_sent_at`.
 
-1. `supabase/functions/evolution-webhook/handlers/otp-intercept.ts` — payload + timeout + resolução de `idconsultor/idcliente`.
-2. `supabase/functions/submit-otp/index.ts` — idem.
-3. `supabase/functions/_shared/portal-worker.ts` — não regredir status, gravar last_*_at/error.
-4. `supabase/functions/portal-otp-watchdog/index.ts` — **novo** cron worker.
-5. `supabase/functions/evolution-webhook/handlers/conversational/index.ts` (+ `flow-selectors/openingStep.ts`) — gate anti-desvio enquanto `pending_slot` está aberto.
-6. Migration `supabase/migrations/<ts>_portal_otp_watchdog.sql` — colunas + índices + cron.
+### 5. Watchdog B (OTP) — auto-expirar quando worker disser "expirado"
 
-Sem mudanças no `worker-portal-2` (o contrato dele já está certo — o lado errado é o caller).
+Quando worker devolver `"Código inválido ou expirado"`:
 
-## Fora do escopo
+- Limpar `otp_code` e `otp_received_at`.
+- Manter `status='awaiting_otp'`.
+- Disparar mensagem ao cliente pelo **canal de origem** pedindo um novo código (texto curto: "Seu código expirou. Por favor, peça um novo no Portal e me envie aqui.").
+- Se a instância de origem estiver offline → mesma trilha do item 4 (alerta ao consultor, sem trocar canal).
 
-- Reescrever o flow editor ou o motor de QA de fluxo.
-- Mexer no Portal 1 (já descontinuado, `resolveWorker` força `autoconexao`).
-- Mudar a UI de admin além do alerta já existente no `super-admin-alerts`.
+### 6. Hotfix SUELI (manual, já finalizada)
+
+Via `supabase--insert`:
+
+- `link_facial_sent_at = now()` (para watchdog C parar).
+- `otp_code = NULL`, `otp_received_at = NULL` (para watchdog B parar).
+- Backfill: `origin_channel='whapi'`, `origin_instance_name='<whapi instance do consultor>'` (confirmar nome exato antes).
+
+## Arquivos a editar
+
+- **Migration** — adicionar 3 colunas em `customers` + índice em `(origin_instance_name)` + backfill condicional.
+- `supabase/functions/_shared/channel-sender.ts` — nova função `resolveChannelForCustomer`, marcar `resolveChannel` como deprecated para envios a cliente.
+- `supabase/functions/whapi-webhook/index.ts` — gravar origem no primeiro inbound.
+- `supabase/functions/evolution-webhook/index.ts` (e/ou `handlers/`) — gravar origem no primeiro inbound.
+- `supabase/functions/portal-otp-watchdog/index.ts` — bucket B (auto-expira OTP) + bucket C (usa `resolveChannelForCustomer` e gera alerta em vez de spammar).
+- (data) Hotfix SUELI via insert tool.
+
+## Fora de escopo
+
+- Múltiplas instâncias por consultor (modelo atual = 1 consultor → 1 instância; o schema acima já suporta crescer).
+- Mudar canal mid-flow (proibido pela regra do usuário).
+- Reescrever editor de fluxo / Portal 1.
+
+## Pergunta única antes do build
+
+Para o alerta do item 4 (instância offline bloqueando entrega), o ideal é também **mandar WhatsApp pro próprio consultor** avisando "religue a instância, o lead X está parado"? Posso usar a Whapi superadmin **só para esse aviso ao consultor** (não ao cliente final), ou prefere apenas alerta no painel sem WhatsApp? pode mandar aviso
+
+&nbsp;
