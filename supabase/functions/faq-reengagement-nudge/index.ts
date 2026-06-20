@@ -75,11 +75,12 @@ serve(async (_req: Request) => {
 
   for (const lead of candidates) {
     try {
-      const channel = await resolveChannel(supabase, lead.consultant_id, env);
-      if (!channel) {
-        console.warn(`[faq-nudge] no channel for consultant ${lead.consultant_id}`);
+      const channel = await resolveChannelForCustomer(supabase, lead.id, env);
+      if (isUnavailable(channel)) {
+        console.warn(`[faq-nudge] canal indisponível lead=${lead.id} instance=${channel.instanceName} reason=${channel.reason}`);
         continue;
       }
+
 
       // Anti-ban check
       const quota = await checkSendQuota(supabase, channel.instanceName);
