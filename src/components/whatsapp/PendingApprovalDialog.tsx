@@ -236,13 +236,14 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     onResolved?.();
   }
 
-  function handleApproveClick(c: Pending) {
+  function handleApproveClick(c: Pending, targetStage?: ApproveTargetStage) {
     if (needsBillValueForApproval(c.pos_venda_pending_stage, c.electricity_bill_value)) {
-      setBillPrompt(c);
+      setBillPrompt({ customer: c, targetStage });
       return;
     }
-    void act(c.id, "approve");
+    void act(c.id, "approve", targetStage);
   }
+
 
   function handleBulkClick() {
     if (hasConfig === false) {
