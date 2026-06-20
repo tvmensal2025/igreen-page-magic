@@ -1,10 +1,14 @@
 // OTP intercept handler.
 // If a customer in awaiting_otp/portal_submitting sends a numeric code,
 // we capture it, persist, notify the worker and reply — bypassing the bot flow.
-// Extracted verbatim from index.ts.
+//
+// CONTRATO DO WORKER (worker-portal-2 /confirm-otp):
+//   POST { idconsultor, idcliente, code, customer_id }
+// — sem isso o worker devolve 400 e o OTP nunca chega ao Portal 2.
 
 import { fetchWithTimeout } from "../../_shared/utils.ts";
 import { resolveWorker } from "../../_shared/portal-worker.ts";
+import { dispatchPortalWorker } from "../../_shared/portal-worker.ts";
 import type { SupabaseClient, EvolutionSender } from "./types.ts";
 
 export interface OtpInterceptArgs {
@@ -46,10 +50,14 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
 
   const { data: otpCustomer } = await supabase
     .from("customers")
-    .select("id, name, status")
+    .select(`
+      id, name, status, portal2_idcliente,
+      consultants:consultant_id(igreen_id),
+      referral_partners:referral_partner_id(partner_igreen_id)
+    `)
     .eq("phone_whatsapp", phone)
     .eq("consultant_id", consultantId)
-    .in("status", ["awaiting_otp", "portal_submitting"])
+    .in("status", ["awaiting_otp", "portal_submitting", "validating_otp"])
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -67,32 +75,91 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
     })
     .eq("id", otpCustomer.id);
 
-  // Roteia o OTP pelo worker do portal_kind do consultor (Portal 2 = autoconexao).
-  // Fallback defensivo para os envs do Portal 1 se a resolução falhar.
+  // Resolve idconsultor (parceiro tem precedência, mesma regra do buildPortal2Payload)
+  const c: any = otpCustomer;
+  const donoIgreenId = c.consultants?.igreen_id ? Number(c.consultants.igreen_id) : null;
+  const partnerIgreenId = c.referral_partners?.partner_igreen_id
+    ? Number(c.referral_partners.partner_igreen_id) : null;
+  const idconsultor = Number.isFinite(partnerIgreenId as number) && (partnerIgreenId as number) > 0
+    ? (partnerIgreenId as number) : donoIgreenId;
+  const idcliente = c.portal2_idcliente ? Number(c.portal2_idcliente) : null;
+
+  await sender.sendText(remoteJid, `✅ Código recebido! Estou finalizando seu cadastro, aguarde alguns segundos...`);
+
+  // Se ainda não temos idcliente, o cadastro nunca chegou ao portal — dispara
+  // agora e deixa o watchdog reenviar o OTP em <1 min com idcliente já em mãos.
+  if (!idcliente) {
+    console.warn(`⚠️ OTP recebido mas portal2_idcliente ausente — disparando cadastro antes (customer=${otpCustomer.id})`);
+    await supabase.from("customers").update({
+      last_otp_dispatch_error: "missing_portal2_idcliente_will_retry",
+      last_otp_dispatch_at: new Date().toISOString(),
+    }).eq("id", otpCustomer.id);
+    dispatchPortalWorker(supabase, otpCustomer.id).catch((e) =>
+      console.warn(`[otp-intercept] dispatchPortalWorker pré-OTP falhou: ${e?.message || e}`)
+    );
+    await supabase.from("conversations").insert({
+      customer_id: otpCustomer.id,
+      message_direction: "inbound",
+      message_text: messageText,
+      message_type: "text",
+      conversation_step: "otp_received",
+    });
+    return { intercepted: true, customerId: otpCustomer.id, otp: extractedOtp };
+  }
+
+  if (!idconsultor) {
+    console.error(`❌ OTP customer=${otpCustomer.id} sem igreen_id do consultor — watchdog tentará novamente`);
+    await supabase.from("customers").update({
+      last_otp_dispatch_error: "missing_idconsultor",
+      last_otp_dispatch_at: new Date().toISOString(),
+    }).eq("id", otpCustomer.id);
+    return { intercepted: true, customerId: otpCustomer.id, otp: extractedOtp };
+  }
+
   const resolvedOtpWorker = await resolveWorker(supabase, otpCustomer.id).catch(() => null);
-  const workerUrl = resolvedOtpWorker?.url || Deno.env.get("WORKER_PORTAL_URL") || Deno.env.get("PORTAL_WORKER_URL");
-  const workerSecret = resolvedOtpWorker?.secret || Deno.env.get("WORKER_SECRET");
+  const workerUrl = resolvedOtpWorker?.url || Deno.env.get("PORTAL2_WORKER_URL") || Deno.env.get("WORKER_PORTAL_URL") || Deno.env.get("PORTAL_WORKER_URL");
+  const workerSecret = resolvedOtpWorker?.secret || Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET");
   if (workerUrl) {
     try {
-      await fetchWithTimeout(`${workerUrl}/confirm-otp`, {
+      const r = await fetchWithTimeout(`${workerUrl}/confirm-otp`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${workerSecret || ""}`,
         },
         body: JSON.stringify({
+          idconsultor,
+          idcliente,
+          code: extractedOtp,
           customer_id: otpCustomer.id,
-          otp_code: extractedOtp,
         }),
-        timeout: 5000,
+        timeout: 35_000,
       });
-      console.log(`✅ OTP enviado ao Worker VPS`);
+      const respBody = await r.text().catch(() => "");
+      if (r.ok) {
+        console.log(`✅ OTP enviado ao Worker Portal 2 (status=${r.status})`);
+        await supabase.from("customers").update({
+          status: "validating_otp",
+          conversation_step: "aguardando_facial",
+          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_error: null,
+          portal_retry_count: 0,
+        }).eq("id", otpCustomer.id);
+      } else {
+        console.warn(`⚠️ Worker /confirm-otp HTTP ${r.status}: ${respBody.slice(0, 200)}`);
+        await supabase.from("customers").update({
+          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_error: `HTTP ${r.status}: ${respBody.slice(0, 200)}`,
+        }).eq("id", otpCustomer.id);
+      }
     } catch (e: any) {
-      console.warn(`⚠️ Falha ao notificar Worker: ${e.message}`);
+      console.warn(`⚠️ Falha ao notificar Worker: ${e?.message || e}`);
+      await supabase.from("customers").update({
+        last_otp_dispatch_at: new Date().toISOString(),
+        last_otp_dispatch_error: (e?.message || String(e)).slice(0, 200),
+      }).eq("id", otpCustomer.id);
     }
   }
-
-  await sender.sendText(remoteJid, `✅ Código recebido! Processando...`);
 
   await supabase.from("conversations").insert({
     customer_id: otpCustomer.id,

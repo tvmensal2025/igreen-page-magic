@@ -3571,7 +3571,11 @@ export type Database = {
           last_inbound_media_mime: string | null
           last_inbound_media_url: string | null
           last_new_lead_notified_at: string | null
+          last_otp_dispatch_at: string | null
+          last_otp_dispatch_error: string | null
           last_partner_notified_at: string | null
+          last_portal_dispatch_at: string | null
+          last_portal_dispatch_error: string | null
           last_rescue_at: string | null
           last_rule_fire_at: string | null
           last_rule_id: string | null
@@ -3772,7 +3776,11 @@ export type Database = {
           last_inbound_media_mime?: string | null
           last_inbound_media_url?: string | null
           last_new_lead_notified_at?: string | null
+          last_otp_dispatch_at?: string | null
+          last_otp_dispatch_error?: string | null
           last_partner_notified_at?: string | null
+          last_portal_dispatch_at?: string | null
+          last_portal_dispatch_error?: string | null
           last_rescue_at?: string | null
           last_rule_fire_at?: string | null
           last_rule_id?: string | null
@@ -3973,7 +3981,11 @@ export type Database = {
           last_inbound_media_mime?: string | null
           last_inbound_media_url?: string | null
           last_new_lead_notified_at?: string | null
+          last_otp_dispatch_at?: string | null
+          last_otp_dispatch_error?: string | null
           last_partner_notified_at?: string | null
+          last_portal_dispatch_at?: string | null
+          last_portal_dispatch_error?: string | null
           last_rescue_at?: string | null
           last_rule_fire_at?: string | null
           last_rule_id?: string | null
