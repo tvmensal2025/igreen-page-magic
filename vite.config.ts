@@ -113,18 +113,15 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
-            // HTML — sempre tenta rede antes (3s) para pegar deploy novo.
-            // Cache curto (5min) para evitar servir HTML antigo apontando
-            // para chunks que já não existem no novo deploy.
+            // HTML — sempre rede. Servir HTML do cache é o que causa o loop
+            // "Cannot read properties of undefined (reading 'default')":
+            // o navegador carrega um index.html antigo que referencia chunks
+            // que não existem mais no deploy atual, e o React.lazy quebra.
+            // Sem fallback offline aqui — é intencional.
             urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "html-cache",
-              networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 5 },
-              cacheableResponse: { statuses: [200] },
-            },
+            handler: "NetworkOnly",
           },
+
           {
             // Supabase / edge functions / WhatsApp media — NUNCA cachear.
             urlPattern: /^https:\/\/[^/]*supabase\.(co|in)\//i,
