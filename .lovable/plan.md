@@ -1,47 +1,64 @@
-# Plano: Resetar senha da Bruna + Auditoria Mobile
+## 1. Acerto financeiro do Rafael
 
-## Parte 1 — Senha da Bruna (correção pontual)
+`rafael.ids@icloud.com` (uid `0c2711ad-4836-41e6-afba-edd94f698ae3`) está com `balance_cents=0` e `debt_cents=2348` (R$ 23,48), não R$ -100.
 
-**Diagnóstico:**
-- `brunabwk@gmail.com` (uid `f08b9176...`) existe em `auth.users`, e-mail confirmado, **não está banida**.
-- Existe `consultants` com `approved=true`, `license=brunabwk-f08b`.
-- Último login bem-sucedido: 15/06. Hoje (20/06) ela diz "senha inválida".
-- Conclusão: senha esquecida/digitada errado. Não é bug de código.
+Lançamento manual via `supabase--insert`:
+- Cria 1 registro em `wallet_transactions` tipo `topup` de R$ 123,48 com descrição `"Crédito manual Super Admin — quitação dívida + R$ 100 (pago em dinheiro)"`.
+- Atualiza `consultant_wallet`: `balance_cents = 10000`, `debt_cents = 0`, `total_topped_up_cents += 12348`.
+- Reativa campanhas pausadas por saldo (se houver) — limpa `pause_pending` e `pause_reason='saldo_insuficiente'`.
 
-**Ação (uma das duas — escolha sua):**
+## 2. Fluxo "Adicionar saldo em dinheiro"
 
-**Opção A (recomendada, sem código):** você reseta direto no painel Supabase Auth → Users → buscar `brunabwk@gmail.com` → "Send password recovery" ou "Reset password". Eu te passo o link clicável.
+Tabela nova `wallet_manual_topup_requests` (migration com GRANTs + RLS):
+- Colunas: `id`, `consultant_id`, `amount_cents`, `status` (`pending|approved|rejected`), `created_by_role` (`consultant|super_admin`), `note`, `approved_by`, `approved_at`, `created_at`.
+- RLS: consultor vê/cria os próprios; super_admin (via `has_role`) vê tudo e aprova.
 
-**Opção B:** eu disparo via SQL/edge function um e-mail de recuperação pra ela usando `supabase.auth.admin.generateLink({ type: 'recovery' })` numa edge function temporária do Super Admin. Só faço se você pedir — envolve criar uma edge function nova.
+Edge function nova `wallet-manual-credit`:
+- Valida JWT, checa `has_role(uid,'admin')`.
+- Body: `{ consultant_id, amount_cents, note, request_id? }`.
+- Credita carteira (quita débito primeiro, sobra vai pra saldo), grava `wallet_transactions` tipo `topup` com `metadata.source='manual_cash'`, marca request como `approved`.
 
-Não vou mexer no fluxo de login (`src/pages/Auth.tsx`) — está funcional, "Esqueci minha senha" já existe na tela.
+UI:
+- **Consultor** (`WalletChip.tsx`): novo botão "Paguei em dinheiro ao Super Admin" → modal com valor + observação → cria request `pending`. Mostra badge "Aguardando aprovação" enquanto pendente.
+- **Super Admin** (`SuperAdmin.tsx`): no card de cada consultor, botão "Adicionar saldo (dinheiro)" → modal valor/observação → chama edge function direto (sem request). Nova aba opcional "Saldos pendentes" lista requests `pending` com botões Aprovar/Rejeitar.
 
-## Parte 2 — Auditoria mobile (somente relatório, zero edição)
+## 3. Painel de custos do cliente (`WhatsAppDashboard`)
 
-**Viewport de teste:** 390×844 (iPhone 13/14 padrão) e 360×800 (Android comum).
+Substituir o `AICostCard` isolado por um novo `MonthlyCostsCard` que mostra:
 
-**Páginas/fluxos a auditar via Playwright logado como `rafael.ids@icloud.com`:**
+```text
+┌─ Custos do mês (estimativa) ────────────┐
+│  Total: R$ XX,XX                        │
+│  ───────────────────────────────────    │
+│  Anúncios (Facebook):    R$ XX,XX       │
+│  Assistente IA:          R$ XX,XX       │
+│  ───────────────────────────────────    │
+│  [Ver detalhes ▾]                       │
+└─────────────────────────────────────────┘
+```
 
-| # | Área | Rota / Componente | O que verifico |
-|---|---|---|---|
-| 1 | Criação de áudio | `audio_library` + `AudioWhatsAppPopover` (gravador opus) | Botão de gravar acessível, popover não estoura tela, input de telefone usável |
-| 2 | WhatsApp | `/admin` aba WhatsApp + `WhatsAppStatusPill`, QR code de pareamento | QR não cortado, botões "Conectar/Desconectar" tocáveis |
-| 3 | Captação | `/super-admin` → `CaptacaoTab` + `WhatsAppStatusPill` captação | Tabela rola horizontal, filtros não cobrem conteúdo |
-| 4 | Parceiros | `ParceirosTab` + `PartnerList` + `PartnerForm` | Tabela com scroll, modal de form cabe em 390px, dialog de delete |
-| 5 | Gerar QR Parceiro | `PartnerQrCode` | QR renderiza, botão download tocável, modal fecha |
-| 6 | Navegação | Header/Sidebar do Admin e SuperAdmin | Menu hamburger abre, não trava scroll |
+- **Anúncios**: soma `wallet_transactions` tipo `spend` do mês corrente, com breakdown por campanha ao expandir (já temos `getWalletFeed`).
+- **IA**: mantém lógica atual do `AICostCard` (agrupada por fase) como subseção expansível.
+- **Total**: soma dos dois, badge "estimativa".
+- Mantém o `WalletChip` separado pra recarregar.
 
-**Entregável:** um relatório no chat com, para cada item:
-- ✅ funcional / ⚠️ funcional com problema / ❌ quebrado
-- Print (se quebrado)
-- Linha/arquivo do problema
-- Severidade (bloqueante vs cosmético)
+## Arquivos afetados
 
-**O que NÃO farei nesta rodada:**
-- Não edito nenhum arquivo `.tsx`/`.ts`/CSS.
-- Não rodo migrações.
-- Não toco em edge functions.
-- Após receber o relatório, você decide o que corrigir numa próxima mensagem.
+**Novos**
+- `supabase/migrations/<ts>_wallet_manual_topup.sql` (tabela + RLS + GRANTs)
+- `supabase/functions/wallet-manual-credit/index.ts`
+- `src/components/wallet/ManualTopupDialog.tsx` (consultor — pedir aprovação)
+- `src/components/admin/super/SuperAdminCashCreditDialog.tsx` (super admin — creditar direto)
+- `src/components/whatsapp/MonthlyCostsCard.tsx`
 
-## Tempo estimado
-~5–7 min de Playwright (login + 6 fluxos × 2 viewports + screenshots).
+**Editados**
+- `src/components/admin/ads/WalletChip.tsx` — botão "Paguei em dinheiro"
+- `src/pages/SuperAdmin.tsx` — botão por consultor + (opcional) aba aprovações
+- `src/components/whatsapp/WhatsAppDashboard.tsx` — troca `AICostCard` por `MonthlyCostsCard`
+- `src/services/facebookAds.ts` — helper `getMonthlyAdSpend(consultantId)`
+
+## Fora de escopo
+
+- Cobrar pelo robô/WhatsApp (não há cobrança hoje).
+- Auditoria mobile já entregue na conversa anterior — não mexer.
+- Stripe topup automático segue funcionando como está.
