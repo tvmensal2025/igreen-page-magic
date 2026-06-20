@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Send, User, Loader2, Trash2, Zap, MapPin, Users, DollarSign, Wifi, Leaf } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import igreenLogo from "@/assets/igreen-logo.png";
+const igreenLogo = "/images/g-verde.png";
 
 interface ChatMessage {
   role: "user" | "assistant";

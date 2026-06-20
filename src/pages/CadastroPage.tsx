@@ -218,7 +218,7 @@ const CadastroPage = () => {
         >
           {/* Background with solar panels photo */}
           <div className="absolute inset-0">
-            <img src="/images/solar-bg.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+            <img src="/images/feed-1.jpeg" alt="" className="absolute inset-0 w-full h-full object-cover" />
             <div className="absolute inset-0" style={{ 
               background: 'linear-gradient(160deg, rgba(0,26,13,0.85) 0%, rgba(0,61,26,0.75) 30%, rgba(0,107,45,0.7) 60%, rgba(0,77,26,0.85) 100%)',
             }} />
