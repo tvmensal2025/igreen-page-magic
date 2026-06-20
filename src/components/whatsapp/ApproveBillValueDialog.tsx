@@ -53,7 +53,7 @@ function parseBillInput(raw: string): number | null {
   return Math.round(n * 100) / 100;
 }
 
-export default function ApproveBillValueDialog({ customer, open, onOpenChange, onSaved }: Props) {
+export default function ApproveBillValueDialog({ customer, open, onOpenChange, onSaved, targetStage }: Props) {
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -78,7 +78,7 @@ export default function ApproveBillValueDialog({ customer, open, onOpenChange, o
         .update({ electricity_bill_value: bill })
         .eq("id", customer.id);
       if (error) throw error;
-      await onSaved(customer.id, bill);
+      await onSaved(customer.id, bill, targetStage);
       onOpenChange(false);
       setValue("");
     } catch (e: unknown) {
@@ -88,6 +88,7 @@ export default function ApproveBillValueDialog({ customer, open, onOpenChange, o
       setSaving(false);
     }
   }
+
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!saving && !o) return; onOpenChange(o); }}>
