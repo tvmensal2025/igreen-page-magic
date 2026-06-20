@@ -544,18 +544,68 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button size="sm" variant="default" className="h-8 px-2.5 text-xs font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => handleApproveClick(c)}>
-                                      Validar
-                                    </Button>
+                                    {(sec.key === "aprovado" || sec.key === "falta_assinatura") ? (
+                                      <div className="inline-flex rounded-md shadow-sm">
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          className="h-8 px-2.5 text-xs font-semibold rounded-r-none hover:shadow-md transition-all"
+                                          onClick={() => handleApproveClick(c)}
+                                        >
+                                          Validar
+                                        </Button>
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="default"
+                                              className="h-8 w-7 px-0 rounded-l-none border-l border-primary-foreground/20"
+                                              aria-label="Validar e mover direto para 30/60/90/120 dias"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <ChevronDown className="w-3.5 h-3.5" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end" className="w-56">
+                                            <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
+                                              <CalendarClock className="w-3 h-3 inline mr-1" />
+                                              Validar e jogar direto em…
+                                            </DropdownMenuLabel>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d30")}>
+                                              30 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d60")}>
+                                              60 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d90")}>
+                                              90 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d120")}>
+                                              120 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c)}>
+                                              Recém aprovado (padrão)
+                                            </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      </div>
+                                    ) : (
+                                      <Button size="sm" variant="default" className="h-8 px-2.5 text-xs font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => handleApproveClick(c)}>
+                                        Validar
+                                      </Button>
+                                    )}
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     {sec.key === "falta_assinatura"
-                                      ? "Cliente assinou — confirmar e iniciar fluxo"
+                                      ? "Cliente assinou — confirmar e iniciar fluxo (use a seta para jogar direto em 30/60/90/120 dias)"
                                       : sec.key === "aprovado"
-                                        ? "Confirmar e iniciar fluxo"
+                                        ? "Confirmar e iniciar fluxo — use a seta para jogar direto em 30/60/90/120 dias se foi aprovado faz tempo"
                                         : "Confirmar classificação do sync"}
                                   </TooltipContent>
                                 </Tooltip>
+
 
                                 {(sec.key === "aprovado" || sec.key === "devolutiva") && (
                                   <Tooltip>
