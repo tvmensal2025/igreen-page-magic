@@ -8,12 +8,14 @@ import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isConsultantAIDisabled, isPausedByPhone } from "../_shared/bot/paused.ts";
 import {
-  resolveChannel,
+  resolveChannelForCustomer,
+  isUnavailable,
   sendStageAutoMessages,
   isValidJid,
   toJid,
   type ChannelEnv,
 } from "../_shared/channel-sender.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
