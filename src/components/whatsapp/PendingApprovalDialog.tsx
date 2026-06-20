@@ -15,12 +15,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox, ChevronDown, CalendarClock } from "lucide-react";
 
 import { toast } from "sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
 import PosVendaSetupWizard from "./PosVendaSetupWizard";
-import ApproveBillValueDialog, { needsBillValueForApproval } from "./ApproveBillValueDialog";
+import ApproveBillValueDialog, { needsBillValueForApproval, type ApproveTargetStage } from "./ApproveBillValueDialog";
+
 
 interface Pending {
   id: string;
@@ -55,8 +59,9 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   const [wizardOpen, setWizardOpen] = useState(false);
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
-  /** Cliente aguardando informe da fatura antes de aprovar. */
-  const [billPrompt, setBillPrompt] = useState<Pending | null>(null);
+  /** Cliente aguardando informe da fatura antes de aprovar (com estágio destino opcional). */
+  const [billPrompt, setBillPrompt] = useState<{ customer: Pending; targetStage?: ApproveTargetStage } | null>(null);
+
   // Filtro por licenciado: "mine" (padrão, só meus), "all" (toda rede), ou igreen_id específico
   const [ownerFilter, setOwnerFilter] = useState<string>("mine");
   // Aba interna: "fila" = pendências normais / "devolutivas" = devolutivas em aberto (estacionadas)
@@ -176,14 +181,28 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     return g;
   }, [filaItems]);
 
-  async function act(customerId: string, action: ActionKind) {
+  async function act(customerId: string, action: ActionKind, targetStage?: ApproveTargetStage) {
     const { data, error } = await supabase.rpc("confirm_pending_classification" as any, { _customer_id: customerId, _action: action });
     if (error) { toast.error(error.message); return; }
     const ok = (data as any)?.ok;
     if (!ok) { toast.error((data as any)?.error || "Erro"); return; }
+
+    // Se aprovado direto para 30/60/90/120 dias, sobrescreve o estágio e marca como manual
+    // (assim o cron de autoprogressão não vai reverter).
+    if (action === "approve" && targetStage && targetStage !== "aprovado") {
+      const { error: upErr } = await supabase
+        .from("customers")
+        .update({ pos_venda_stage: targetStage, pos_venda_manual: true })
+        .eq("id", customerId);
+      if (upErr) {
+        toast.error("Aprovado, mas falhou ao mover para " + targetStage + ": " + upErr.message);
+      }
+    }
+
     setItems((prev) => prev.filter((p) => p.id !== customerId));
+    const stageLabel = targetStage && targetStage !== "aprovado" ? ` (${targetStage.replace("d", "")} dias)` : "";
     const msg = {
-      approve: "Confirmado! Mensagem disparada.",
+      approve: "Confirmado! Mensagem disparada." + stageLabel,
       snooze: "Adiado 24h",
       review: "Mantido em Espera",
       invalidate: "Cliente marcado como inválido",
@@ -194,6 +213,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     toast.success(msg);
     onResolved?.();
   }
+
+
 
   async function actBulk() {
     const list = grouped["aprovado"] || [];
@@ -215,13 +236,14 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     onResolved?.();
   }
 
-  function handleApproveClick(c: Pending) {
+  function handleApproveClick(c: Pending, targetStage?: ApproveTargetStage) {
     if (needsBillValueForApproval(c.pos_venda_pending_stage, c.electricity_bill_value)) {
-      setBillPrompt(c);
+      setBillPrompt({ customer: c, targetStage });
       return;
     }
-    void act(c.id, "approve");
+    void act(c.id, "approve", targetStage);
   }
+
 
   function handleBulkClick() {
     if (hasConfig === false) {
@@ -522,18 +544,68 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button size="sm" variant="default" className="h-8 px-2.5 text-xs font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => handleApproveClick(c)}>
-                                      Validar
-                                    </Button>
+                                    {(sec.key === "aprovado" || sec.key === "falta_assinatura") ? (
+                                      <div className="inline-flex rounded-md shadow-sm">
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          className="h-8 px-2.5 text-xs font-semibold rounded-r-none hover:shadow-md transition-all"
+                                          onClick={() => handleApproveClick(c)}
+                                        >
+                                          Validar
+                                        </Button>
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="default"
+                                              className="h-8 w-7 px-0 rounded-l-none border-l border-primary-foreground/20"
+                                              aria-label="Validar e mover direto para 30/60/90/120 dias"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <ChevronDown className="w-3.5 h-3.5" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end" className="w-56">
+                                            <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
+                                              <CalendarClock className="w-3 h-3 inline mr-1" />
+                                              Validar e jogar direto em…
+                                            </DropdownMenuLabel>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d30")}>
+                                              30 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d60")}>
+                                              60 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d90")}>
+                                              90 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d120")}>
+                                              120 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c)}>
+                                              Recém aprovado (padrão)
+                                            </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      </div>
+                                    ) : (
+                                      <Button size="sm" variant="default" className="h-8 px-2.5 text-xs font-semibold shadow-sm hover:shadow-md transition-all" onClick={() => handleApproveClick(c)}>
+                                        Validar
+                                      </Button>
+                                    )}
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     {sec.key === "falta_assinatura"
-                                      ? "Cliente assinou — confirmar e iniciar fluxo"
+                                      ? "Cliente assinou — confirmar e iniciar fluxo (use a seta para jogar direto em 30/60/90/120 dias)"
                                       : sec.key === "aprovado"
-                                        ? "Confirmar e iniciar fluxo"
+                                        ? "Confirmar e iniciar fluxo — use a seta para jogar direto em 30/60/90/120 dias se foi aprovado faz tempo"
                                         : "Confirmar classificação do sync"}
                                   </TooltipContent>
                                 </Tooltip>
+
 
                                 {(sec.key === "aprovado" || sec.key === "devolutiva") && (
                                   <Tooltip>
@@ -697,17 +769,19 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
       </AlertDialog>
 
       <ApproveBillValueDialog
-        customer={billPrompt}
+        customer={billPrompt?.customer ?? null}
+        targetStage={billPrompt?.targetStage}
         open={!!billPrompt}
         onOpenChange={(o) => { if (!o) setBillPrompt(null); }}
-        onSaved={async (customerId, billValue) => {
+        onSaved={async (customerId, billValue, targetStage) => {
           setItems((prev) =>
             prev.map((p) => (p.id === customerId ? { ...p, electricity_bill_value: billValue } : p)),
           );
-          await act(customerId, "approve");
+          await act(customerId, "approve", targetStage);
           setBillPrompt(null);
         }}
       />
+
 
       <PosVendaSetupWizard
         consultantId={consultantId}

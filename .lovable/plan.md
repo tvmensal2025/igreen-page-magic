@@ -1,64 +1,50 @@
-## 1. Acerto financeiro do Rafael
+## O que muda
 
-`rafael.ids@icloud.com` (uid `0c2711ad-4836-41e6-afba-edd94f698ae3`) está com `balance_cents=0` e `debt_cents=2348` (R$ 23,48), não R$ -100.
+Hoje, ao clicar em **"Validar novos clientes"** e confirmar a aprovação, todo cliente cai em **"Aprovado"** e só avança para 30/60/90/120 dias conforme o tempo passa (cron diário). Quem foi aprovado há muito tempo no iGreen mas só está sendo validado agora fica preso em "Aprovado" por dias até o cron mover.
 
-Lançamento manual via `supabase--insert`:
-- Cria 1 registro em `wallet_transactions` tipo `topup` de R$ 123,48 com descrição `"Crédito manual Super Admin — quitação dívida + R$ 100 (pago em dinheiro)"`.
-- Atualiza `consultant_wallet`: `balance_cents = 10000`, `debt_cents = 0`, `total_topped_up_cents += 12348`.
-- Reativa campanhas pausadas por saldo (se houver) — limpa `pause_pending` e `pause_reason='saldo_insuficiente'`.
+A mudança permite o consultor escolher, no momento da validação, **em qual coluna o cliente deve aparecer**: Aprovado (padrão), 30, 60, 90 ou 120 dias.
 
-## 2. Fluxo "Adicionar saldo em dinheiro"
+## Como vai funcionar para o usuário
 
-Tabela nova `wallet_manual_topup_requests` (migration com GRANTs + RLS):
-- Colunas: `id`, `consultant_id`, `amount_cents`, `status` (`pending|approved|rejected`), `created_by_role` (`consultant|super_admin`), `note`, `approved_by`, `approved_at`, `created_at`.
-- RLS: consultor vê/cria os próprios; super_admin (via `has_role`) vê tudo e aprova.
+No diálogo "Validar novos clientes" (`PendingApprovalDialog`), o botão **"Confirmar / Aprovar"** vira um botão dividido:
 
-Edge function nova `wallet-manual-credit`:
-- Valida JWT, checa `has_role(uid,'admin')`.
-- Body: `{ consultant_id, amount_cents, note, request_id? }`.
-- Credita carteira (quita débito primeiro, sobra vai pra saldo), grava `wallet_transactions` tipo `topup` com `metadata.source='manual_cash'`, marca request como `approved`.
+- **Aprovar** (ação principal — mantém o comportamento atual: vai para "Aprovado")
+- Setinha ao lado abre menu com:
+  - Aprovar como **30 dias**
+  - Aprovar como **60 dias**
+  - Aprovar como **90 dias**
+  - Aprovar como **120 dias**
 
-UI:
-- **Consultor** (`WalletChip.tsx`): novo botão "Paguei em dinheiro ao Super Admin" → modal com valor + observação → cria request `pending`. Mostra badge "Aguardando aprovação" enquanto pendente.
-- **Super Admin** (`SuperAdmin.tsx`): no card de cada consultor, botão "Adicionar saldo (dinheiro)" → modal valor/observação → chama edge function direto (sem request). Nova aba opcional "Saldos pendentes" lista requests `pending` com botões Aprovar/Rejeitar.
+Escolhendo um período, o cliente já entra direto na coluna correspondente no Kanban Pós-Venda e **não é mais mexido pelo cron automático** (fica marcado como manual).
 
-## 3. Painel de custos do cliente (`WhatsAppDashboard`)
+A validação do valor da conta de luz (`ApproveBillValueDialog`) continua acontecendo antes, igual hoje — só depois do valor preenchido é que a coluna final é aplicada.
 
-Substituir o `AICostCard` isolado por um novo `MonthlyCostsCard` que mostra:
+## Onde mexer (técnico)
 
-```text
-┌─ Custos do mês (estimativa) ────────────┐
-│  Total: R$ XX,XX                        │
-│  ───────────────────────────────────    │
-│  Anúncios (Facebook):    R$ XX,XX       │
-│  Assistente IA:          R$ XX,XX       │
-│  ───────────────────────────────────    │
-│  [Ver detalhes ▾]                       │
-└─────────────────────────────────────────┘
-```
+1. **`src/components/whatsapp/PendingApprovalDialog.tsx`**
+   - Estender `act(customerId, action)` para aceitar um terceiro parâmetro opcional `targetStage?: 'aprovado'|'d30'|'d60'|'d90'|'d120'`.
+   - Fluxo dentro de `act` quando `action === 'approve'` e `targetStage` é informado e diferente de `'aprovado'`:
+     1. Chamar normalmente `supabase.rpc('confirm_pending_classification', { _customer_id, _action: 'approve' })` (mantém o stamp de `pos_venda_approved_at` e a auditoria existente).
+     2. Em seguida, `supabase.from('customers').update({ pos_venda_stage: targetStage, pos_venda_manual: true }).eq('id', customerId)` para sobrescrever a coluna.
+   - Substituir o botão "Confirmar/Aprovar" atual por um **split button** (Button + DropdownMenu do shadcn já usados no projeto). Ação principal = `handleApproveClick(c)` (comportamento atual). Itens do menu chamam `handleApproveClick(c, 'd30' | 'd60' | 'd90' | 'd120')`.
+   - Ajustar `handleApproveClick` para repassar `targetStage` ao `act` e ao `setBillPrompt` (guardar o `targetStage` junto do estado do prompt de valor da conta).
 
-- **Anúncios**: soma `wallet_transactions` tipo `spend` do mês corrente, com breakdown por campanha ao expandir (já temos `getWalletFeed`).
-- **IA**: mantém lógica atual do `AICostCard` (agrupada por fase) como subseção expansível.
-- **Total**: soma dos dois, badge "estimativa".
-- Mantém o `WalletChip` separado pra recarregar.
+2. **`src/components/whatsapp/ApproveBillValueDialog.tsx`**
+   - Aceitar `targetStage` como prop opcional e devolvê-lo no callback de confirmação, para que o `PosVendaKanban` aplique a mesma coluna escolhida originalmente.
 
-## Arquivos afetados
+3. **`src/components/whatsapp/PosVendaKanban.tsx`** (linha ~344)
+   - No callback do `ApproveBillValueDialog`, se vier `targetStage`, chamar `applyMoveTo(updated, targetStage)` em vez de fixo `'aprovado'`.
 
-**Novos**
-- `supabase/migrations/<ts>_wallet_manual_topup.sql` (tabela + RLS + GRANTs)
-- `supabase/functions/wallet-manual-credit/index.ts`
-- `src/components/wallet/ManualTopupDialog.tsx` (consultor — pedir aprovação)
-- `src/components/admin/super/SuperAdminCashCreditDialog.tsx` (super admin — creditar direto)
-- `src/components/whatsapp/MonthlyCostsCard.tsx`
+## Sem mudança de banco
 
-**Editados**
-- `src/components/admin/ads/WalletChip.tsx` — botão "Paguei em dinheiro"
-- `src/pages/SuperAdmin.tsx` — botão por consultor + (opcional) aba aprovações
-- `src/components/whatsapp/WhatsAppDashboard.tsx` — troca `AICostCard` por `MonthlyCostsCard`
-- `src/services/facebookAds.ts` — helper `getMonthlyAdSpend(consultantId)`
+- O campo `pos_venda_stage` já aceita `d30/d60/d90/d120`.
+- `pos_venda_manual = true` já bloqueia o cron de sobrescrever.
+- A RPC `confirm_pending_classification` continua sendo chamada para preservar `pos_venda_approved_at`, auditoria e limpeza de `pos_venda_pending_stage`.
 
-## Fora de escopo
+Nenhuma migration é necessária.
 
-- Cobrar pelo robô/WhatsApp (não há cobrança hoje).
-- Auditoria mobile já entregue na conversa anterior — não mexer.
-- Stripe topup automático segue funcionando como está.
+## Fora do escopo
+
+- Não mexe no botão de aprovação em massa nem nas regras de reprovação.
+- Não muda o cron diário nem a lógica de `computeStage`.
+- Não adiciona itens novos no menu de cada card do Kanban (drag-and-drop já cobre esse caso pontual).

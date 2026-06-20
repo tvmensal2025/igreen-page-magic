@@ -22,13 +22,19 @@ export interface BillValueCustomer {
   electricity_bill_value?: number | null;
 }
 
+/** Estágio destino opcional escolhido na hora de aprovar (split button). */
+export type ApproveTargetStage = "aprovado" | "d30" | "d60" | "d90" | "d120";
+
 interface Props {
   customer: BillValueCustomer | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Estágio que o consultor pediu para o cliente cair direto após aprovar. */
+  targetStage?: ApproveTargetStage;
   /** Chamado após salvar o valor da conta (antes de concluir a aprovação). */
-  onSaved: (customerId: string, billValue: number) => void | Promise<void>;
+  onSaved: (customerId: string, billValue: number, targetStage?: ApproveTargetStage) => void | Promise<void>;
 }
+
 
 /** Cliente aprovado (ou que assinou e vai validar) precisa de fatura quando o sync não trouxe valor. */
 export function needsBillValueForApproval(
@@ -47,7 +53,7 @@ function parseBillInput(raw: string): number | null {
   return Math.round(n * 100) / 100;
 }
 
-export default function ApproveBillValueDialog({ customer, open, onOpenChange, onSaved }: Props) {
+export default function ApproveBillValueDialog({ customer, open, onOpenChange, onSaved, targetStage }: Props) {
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -72,7 +78,7 @@ export default function ApproveBillValueDialog({ customer, open, onOpenChange, o
         .update({ electricity_bill_value: bill })
         .eq("id", customer.id);
       if (error) throw error;
-      await onSaved(customer.id, bill);
+      await onSaved(customer.id, bill, targetStage);
       onOpenChange(false);
       setValue("");
     } catch (e: unknown) {
@@ -82,6 +88,7 @@ export default function ApproveBillValueDialog({ customer, open, onOpenChange, o
       setSaving(false);
     }
   }
+
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!saving && !o) return; onOpenChange(o); }}>
