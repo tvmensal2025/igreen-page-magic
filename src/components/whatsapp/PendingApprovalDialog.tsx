@@ -15,12 +15,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox, ChevronDown, CalendarClock } from "lucide-react";
 
 import { toast } from "sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
 import PosVendaSetupWizard from "./PosVendaSetupWizard";
-import ApproveBillValueDialog, { needsBillValueForApproval } from "./ApproveBillValueDialog";
+import ApproveBillValueDialog, { needsBillValueForApproval, type ApproveTargetStage } from "./ApproveBillValueDialog";
+
 
 interface Pending {
   id: string;
