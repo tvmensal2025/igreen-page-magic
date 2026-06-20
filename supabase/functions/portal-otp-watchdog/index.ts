@@ -14,6 +14,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchPortalWorker, resolveWorker } from "../_shared/portal-worker.ts";
+import { resolveChannel } from "../_shared/channel-sender.ts";
+import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
