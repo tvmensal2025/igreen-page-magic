@@ -719,17 +719,19 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
       </AlertDialog>
 
       <ApproveBillValueDialog
-        customer={billPrompt}
+        customer={billPrompt?.customer ?? null}
+        targetStage={billPrompt?.targetStage}
         open={!!billPrompt}
         onOpenChange={(o) => { if (!o) setBillPrompt(null); }}
-        onSaved={async (customerId, billValue) => {
+        onSaved={async (customerId, billValue, targetStage) => {
           setItems((prev) =>
             prev.map((p) => (p.id === customerId ? { ...p, electricity_bill_value: billValue } : p)),
           );
-          await act(customerId, "approve");
+          await act(customerId, "approve", targetStage);
           setBillPrompt(null);
         }}
       />
+
 
       <PosVendaSetupWizard
         consultantId={consultantId}
