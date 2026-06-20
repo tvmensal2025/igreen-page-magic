@@ -214,17 +214,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     onResolved?.();
   }
 
-      approve: "Confirmado! Mensagem disparada.",
-      snooze: "Adiado 24h",
-      review: "Mantido em Espera",
-      invalidate: "Cliente marcado como inválido",
-      missing_signature: "Marcado como falta assinatura — permanece em espera.",
-      defer_devolutiva: "Devolutiva em aberto — guardado na lista para resolver depois.",
-      reject_pending: "Reclassificado como reprovado.",
-    }[action];
-    toast.success(msg);
-    onResolved?.();
-  }
+
 
   async function actBulk() {
     const list = grouped["aprovado"] || [];
