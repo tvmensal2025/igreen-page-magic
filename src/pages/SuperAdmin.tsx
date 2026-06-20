@@ -483,7 +483,9 @@ const SuperAdmin = () => {
                                 )}
                                 {c.approved ? "Revogar" : "Aprovar"}
                               </Button>
+                              <SuperAdminCashCreditDialog consultantId={c.id} consultantName={c.name} />
                             </div>
+
                           </div>
 
                           {/* Metrics Grid */}
