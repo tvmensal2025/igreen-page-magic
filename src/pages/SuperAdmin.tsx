@@ -42,6 +42,7 @@ const RolloutPanel = lazy(() => import("@/components/superadmin/RolloutPanel").t
 const FlowTemplateApprovalPanel = lazy(() => import("@/components/superadmin/FlowTemplateApprovalPanel"));
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { logAdminAction } from "@/hooks/useAdminAudit";
+import { SuperAdminCashCreditDialog } from "@/components/admin/super/SuperAdminCashCreditDialog";
 
 interface WhatsAppMetrics {
   hasInstance: boolean;
@@ -483,7 +484,9 @@ const SuperAdmin = () => {
                                 )}
                                 {c.approved ? "Revogar" : "Aprovar"}
                               </Button>
+                              <SuperAdminCashCreditDialog consultantId={c.id} consultantName={c.name} />
                             </div>
+
                           </div>
 
                           {/* Metrics Grid */}

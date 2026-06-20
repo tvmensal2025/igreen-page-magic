@@ -7401,6 +7401,54 @@ export type Database = {
         }
         Relationships: []
       }
+      wallet_manual_topup_requests: {
+        Row: {
+          amount_cents: number
+          approved_at: string | null
+          approved_by: string | null
+          consultant_id: string
+          created_at: string
+          created_by: string
+          created_by_role: string
+          id: string
+          note: string | null
+          rejection_reason: string | null
+          status: string
+          updated_at: string
+          wallet_transaction_id: string | null
+        }
+        Insert: {
+          amount_cents: number
+          approved_at?: string | null
+          approved_by?: string | null
+          consultant_id: string
+          created_at?: string
+          created_by: string
+          created_by_role: string
+          id?: string
+          note?: string | null
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+          wallet_transaction_id?: string | null
+        }
+        Update: {
+          amount_cents?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          consultant_id?: string
+          created_at?: string
+          created_by?: string
+          created_by_role?: string
+          id?: string
+          note?: string | null
+          rejection_reason?: string | null
+          status?: string
+          updated_at?: string
+          wallet_transaction_id?: string | null
+        }
+        Relationships: []
+      }
       wallet_transactions: {
         Row: {
           amount_cents: number

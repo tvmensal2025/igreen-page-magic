@@ -10,6 +10,7 @@ import {
   type WalletBalance,
   type WalletFeed,
 } from "@/services/facebookAds";
+import { ManualTopupRequestDialog } from "@/components/wallet/ManualTopupRequestDialog";
 
 const QUICK_AMOUNTS = [50_00, 100_00, 200_00, 500_00];
 const fmt = (cents: number) => `R$ ${(cents / 100).toFixed(2)}`;
@@ -127,7 +128,11 @@ export function WalletChip({ consultantId }: { consultantId: string }) {
                   </Button>
                 ))}
               </div>
+              <div className="mt-2">
+                <ManualTopupRequestDialog />
+              </div>
             </div>
+
 
             {feed && (feed.groups.length > 0 || feed.others.length > 0) && (
               <div className="rounded-lg border border-border/40">
