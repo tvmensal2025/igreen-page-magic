@@ -16,7 +16,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveChannel } from "../_shared/channel-sender.ts";
+import { resolveChannelForCustomer, isUnavailable } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { normalizePhone } from "../_shared/utils.ts";
 import { isQuietHoursBRT } from "../_shared/bot/nudge-quiet-hours.ts";
