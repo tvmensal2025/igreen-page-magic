@@ -1,67 +1,52 @@
-# Por que a página fica recarregando
+# Análise da plataforma (sessão Playwright como [rafael.ids@icloud.com](mailto:rafael.ids@icloud.com))
 
-Encontrei 3 causas reais analisando `src/main.tsx`, `public/sw.js`, `CampaignsList.tsx` e `AudioStudio.tsx`. Não é a UI re-renderizando — é a página inteira **recarregando sozinha** em loop.
+Naveguei autenticado por: `/auth` → `/super-admin` (abas Consultores, Captação, Gestores Ads, Saúde da Rede, Funil do Bot) → `/admin` (Painel, Captação no sidebar).
 
-## Causa 1 (principal): "version gate" agressivo em `src/main.tsx`
+## Resultado
 
-Hoje o `main.tsx` faz, em produção:
+**Captação do nome está OK.** A página `/admin` (Captação no sidebar) abriu normalmente, sem o erro antigo de nome. A aba Captação do Super Admin também renderizou KPIs e card "Conexão Segura" sem exceções.
 
-- `checkVersionGate()` **na inicialização**
-- `checkVersionGate()` em **toda navegação SPA** (patch em `history.pushState`, `replaceState`, `popstate`)
-- `setInterval(poll, 30_000)` chamando `r.update()` + `checkVersionGate()` a cada **30 s**
-- `checkVersionGate()` em **todo `visibilitychange`** (trocou de aba e voltou → checa)
-- `checkVersionGate()` em **todo evento `online`**
-- Auto-reload em `controllerchange` do Service Worker
-- `nukeAndReload` em qualquer `vite:preloadError` / `ChunkLoadError`
+**Erros do console (filtrados):**
 
-Quando `/version.json` responde com um `buildId` diferente do `__BUILD_ID__` do bundle (acontece sempre que o CDN serve uma versão e o `version.json` outra, ou logo após deploy), ele dispara `nukeAndReload` → limpa caches → `window.location.replace(...)`. A trava `__sw_recovered__` é **por sessionStorage**, então abrir uma nova aba zera e o loop volta.
 
-Soma disso com o `controllerchange` (cada novo SW que ativa força reload) = página recarregando "do nada" no meio do trabalho.
+| Erro                                                                                            | Origem                                               | Real?                              |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------- |
+| `Manifest fetch ... 401` em `/manifest.json`                                                    | Sandbox do preview da Lovable                        | ❌ Ruído — não acontece em produção |
+| `postMessage target origin mismatch` (lovable.js)                                               | iframe do editor Lovable                             | ❌ Ruído                            |
+| `r.split is not a function` em `chrome-extension://...`                                         | Extensão do Chrome do usuário                        | ❌ Não é do app                     |
+| `Lock broken by another request 'steal'` (Supabase auth)                                        | StrictMode + múltiplos `getSession` em paralelo      | ⚠️ Cosmético, auto-recupera        |
+| `**400 Bad Request` em `whatsapp_instances?select=...consultants:consultant_id(name,license)**` | `src/components/superadmin/SystemHealthPanel.tsx:55` | ✅ **Erro real**                    |
 
-## Causa 2: erros 400 derrubando confiança e gerando reloads
 
-- `src/components/admin/ads/CampaignsList.tsx:187` faz `select("public_url")` mas a coluna correta da tabela `ad_image_library` é `url` (ver `src/services/adImageLibrary.ts`). Isso gera o `400 Bad Request` que aparece no console.
-- `tts-cache/v6_417632168_111.mp3` retorna 400 porque o arquivo não existe no bucket (cache miss tratado como erro). É um `HEAD/GET` de probe — não deveria poluir o console nem afetar render; o `AudioStudio` precisa engolir esse 400 como "não tem cache, gera".
+## Causa do único erro real
 
-## Causa 3: `QuotaExceededError` do Workbox
+`SystemHealthPanel` faz embed PostgREST `consultants:consultant_id(name, license)`, mas a tabela `whatsapp_instances` **não tem foreign key** para `consultants` (confirmei via `information_schema`). Sem FK, o PostgREST recusa o embed com 400. Esse painel roda a cada 60 s no Super Admin → polui o console e não mostra instâncias caídas.
 
-O service worker do `vite-plugin-pwa` está tentando precachear assets demais e estoura o quota do navegador. Isso aborta a instalação do SW novo → o velho continua → `controllerchange` dispara depois → reload. Hoje não há `maximumFileSizeToCacheInBytes` nem exclusão de arquivos grandes (áudios/vídeos/PDFs) no `vite.config.ts`.
+## Plano de correção
 
-# O que vou mudar
+Apenas 1 arquivo, sem migration nem mudança de banco.
 
-## 1) `src/main.tsx` — desarmar o loop de reload
-- Remover o patch em `history.pushState/replaceState/popstate` que chama `checkVersionGate` (causa principal das checagens em rajada).
-- Aumentar o intervalo do `setInterval` de **30 s → 10 min**.
-- Remover a chamada de `checkVersionGate` no `visibilitychange`/`online` (manter só `r.update()`).
-- Mover a trava `__sw_recovered__` de **sessionStorage → localStorage** com TTL de 10 min, para não relooper ao abrir nova aba.
-- No `controllerchange`: **não** recarregar automaticamente; mostrar o banner "Nova versão disponível — toque para atualizar" (`showUpdateBanner`) e deixar o usuário decidir. Isso evita perder o que está digitando.
-- Manter `?nuke=1`, `vite:preloadError` e `ChunkLoadError` como hoje (são recuperação real de tela branca).
+### `src/components/superadmin/SystemHealthPanel.tsx`
 
-## 2) `src/components/admin/ads/CampaignsList.tsx`
-- Trocar `select("public_url")` por `select("url")` e ler `imgs[0]?.url`. Acaba com o 400 do `ad_image_library`.
+1. Remover o embed `consultants:consultant_id(name, license)` do `.select(...)` (linha 55).
+2. Após receber `downRows`, fazer uma segunda query agregada: `supabase.from("consultants").select("id, name, license").in("id", uniqueConsultantIds)`.
+3. Montar um `Map<consultant_id, {name, license}>` e usar no `rows.map(...)` (linhas 65-73) em vez de `r.consultants?.name`.
+4. Se `consultantIds` estiver vazio, pular a segunda query.
 
-## 3) `src/components/admin/AudioStudio.tsx`
-- No probe do cache TTS (`tts-cache/...mp3`), tratar 400/404 como cache-miss silencioso (sem logar erro vermelho).
+Resultado: zero erro 400, painel volta a listar instâncias com nome do consultor.
 
-## 4) `vite.config.ts` — Workbox sem estourar quota
-- Adicionar em `VitePWA({ workbox: { ... } })`:
-  - `maximumFileSizeToCacheInBytes: 3 * 1024 * 1024` (3 MB)
-  - `globIgnores: ["**/*.mp3", "**/*.mp4", "**/*.wav", "**/*.pdf", "**/opus/*"]`
-- Mantém `NetworkFirst` para navegações; só corta o precache gigante que estoura quota.
+## Não vou mexer (sem evidência de problema)
 
-# Resultado esperado
+- Página Captação (nome) — funcionando.
+- AudioStudio / re-render loop — já corrigido nas mensagens anteriores; não disparou nesta sessão.
+- `whapi-proxy` — sem novos 500 nos logs da edge function.
+- Lock warning do gotrue — comportamento conhecido do StrictMode, não causa falha funcional.
+- Manifest 401 — exclusivo do iframe de preview da Lovable.
 
-- Página para de recarregar sozinha enquanto o usuário trabalha (especialmente no AudioStudio).
-- Quando houver deploy novo, aparece o banner verde "Nova versão disponível" em vez de reload forçado.
-- Console limpa: sem mais 400 do `ad_image_library` nem `QuotaExceededError` do workbox.
-- Rascunho do AudioStudio (já implementado antes) continua salvando, mas tende a não ser mais necessário porque o reload espontâneo some.
+## Próximo passo
 
-# Detalhes técnicos
-
-Arquivos editados:
-- `src/main.tsx` (linhas ~136–183 e ~206–264)
-- `src/components/admin/ads/CampaignsList.tsx` (linhas 185–193)
-- `src/components/admin/AudioStudio.tsx` (handler do probe `tts-cache`)
-- `vite.config.ts` (opções do `VitePWA`)
-
-Nada de banco / edge function muda. Nenhum dado é apagado.
+Aprove para eu aplicar a correção no `SystemHealthPanel.tsx`.  
+  
+LEBRANDO QUE ESTAMOS NO SUPERADMIN E ELE SE CONECTA NO WHAPI E OS OUTROS CONSULTORES NO EVOLUTION  
+  
+FACA MAIS UMA ANALISE PARA CORRIGIR
