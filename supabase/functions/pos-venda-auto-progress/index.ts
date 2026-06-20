@@ -115,8 +115,8 @@ async function processCustomer(
   if (await isConsultantAIDisabled(supabase, ownerId)) return { moved: true, sent: false };
   if (await isPausedByPhone(supabase, phone, ownerId)) return { moved: true, sent: false };
 
-  const channel = await resolveChannel(supabase, ownerId, env);
-  if (!channel) {
+  const channel = await resolveChannelForCustomer(supabase, customer.id, env);
+  if (isUnavailable(channel)) {
     await supabase.from("customer_auto_message_log").insert({
       customer_id: customer.id,
       consultant_id: ownerId,
@@ -124,10 +124,12 @@ async function processCustomer(
       remote_jid: `${phone}@s.whatsapp.net`,
       customer_name: customer.name,
       message_preview: null,
-      status: "no_channel",
+      status: `no_channel:${channel.reason}`,
     });
+    console.warn(`[pos-venda] canal indisponível customer=${customer.id} instance=${channel.instanceName} reason=${channel.reason}`);
     return { moved: true, sent: false };
   }
+
 
   const jid = toJid(phone);
   const dealOrigin = targetStage === "reprovado" ? "reprovado" : "aprovado";
