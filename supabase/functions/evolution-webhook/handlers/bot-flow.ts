@@ -53,7 +53,9 @@ import {
   detectQuestionIntent,
   shouldSkipAskStep,
   hasBillData,
+  resolveResumeStep,
 } from "../../_shared/conversation-helpers.ts";
+
 import { matchQA } from "./conversational/index.ts";
 import { getTemplate } from "./conversational/templates.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
