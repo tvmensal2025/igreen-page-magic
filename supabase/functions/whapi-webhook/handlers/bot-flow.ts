@@ -5451,16 +5451,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const respNorm = resp.replace(/^[^a-z0-9]+/i, "").trim();
       const wants = triggers.includes(resp) || triggers.includes(respNorm) || /^(sim|quero|bora|vamos|pode|ok|cadastr|simular)\b/i.test(respNorm);
       if (wants) {
-        // 🛡️ Se o documento JÁ foi enviado (frente + verso quando aplicável),
-        // não pedir de novo — avança direto para o próximo passo faltando.
-        if (shouldSkipAskStep("aguardando_doc_auto", customer) && shouldSkipAskStep("aguardando_doc_verso", customer)) {
-          console.log("[ask_quero_cadastrar] skip — documento já enviado, avançando direto");
+        // 🔁 RESUME: se já temos doc (frente + verso/CNH), pula pro próximo
+        // passo faltante via resolveResumeStep — evita re-pedir doc/conta.
+        const resumed = resolveResumeStep(customer);
+        if (resumed !== "aguardando_doc_auto" && resumed !== "aguardando_doc_verso") {
+          console.log(`[ask_quero_cadastrar] resume → ${resumed} (dados já cobrem doc)`);
           const merged = { ...customer };
-          const next = await autoResolveCepIfNeeded(merged, updates);
-          updates.conversation_step = next === "ask_finalizar" ? "finalizando" : next;
-          reply = next === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(next, merged);
+          updates.conversation_step = resumed === "ask_finalizar" ? "finalizando" : resumed;
+          reply = resumed === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(resumed, merged);
           break;
         }
+
         // Procura o passo capture_documento do fluxo ativo e dispara.
         try {
           const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
