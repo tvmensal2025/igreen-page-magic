@@ -3496,7 +3496,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 2. AGUARDANDO CONTA ──────────────
     case "aguardando_conta": {
-      // 🛡️ Clique de botão (welcome residual) chegando em aguardando_conta:
+      // 🔁 IDEMPOTÊNCIA: conta JÁ recebida e confirmada — não reprocessar.
+      // Após um reset silencioso do step, o cliente pode reenviar a foto
+      // (porque o bot pediu de novo) ou reagir a botões. Em vez de fazer
+      // OCR de novo / sobrescrever dado bom, retomamos no passo certo.
+      if (hasBillData(customer) && (customer as any).bill_data_confirmed_at) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_conta — conta já confirmada, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi sua conta de luz ✅ Vamos continuar de onde paramos 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
+
       // o lead já avançou pra esperar foto, mas o chat antigo dele ainda mostra
       // os botões do welcome. Em vez de tratar como texto livre (que o regex
       // captura como valor numérico ou nome), apenas re-emite o prompt da conta.

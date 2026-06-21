@@ -3199,7 +3199,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 2. AGUARDANDO CONTA ──────────────
     case "aguardando_conta": {
+      // 🔁 IDEMPOTÊNCIA: conta JÁ recebida e confirmada — não reprocessar.
+      if (hasBillData(customer) && (customer as any).bill_data_confirmed_at) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_conta — conta já confirmada, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi sua conta de luz ✅ Vamos continuar de onde paramos 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
       // 🛡️ Clique de botão (welcome residual) chegando em aguardando_conta:
+
       // re-emite prompt da conta em vez de tratar título como texto livre.
       // Bug confirmado em sandbox 2026-05-29.
       if (isButton) {
