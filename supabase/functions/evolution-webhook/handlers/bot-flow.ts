@@ -2681,11 +2681,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 console.log(`[custom-step-resolver] 🛡️ block doc-before-bill → redirect ${stepRow.step_key} → ${contaStep.step_key}`);
                 step = "aguardando_conta";
                 stepRow = { ...stepRow, step_key: contaStep.step_key, step_type: "capture_conta" } as any;
+              }
+            } catch (_e) { /* fallback silencioso */ }
           }
 
-          // 🔁 RESUME determinístico: se o capture solicitado JÁ tem dado salvo,
-          // pula direto para o próximo passo realmente faltante. Bloqueia o
-          // bug "step resetado → bot re-pede dado que já está no banco".
+          // 🔁 RESUME determinístico (SIBLING, fora do guard doc-before-bill):
+          // se o capture solicitado JÁ tem dado salvo, pula direto para o
+          // próximo passo realmente faltante. Bloqueia o bug
+          // "step resetado → bot re-pede dado que já está no banco".
           if (
             step === "aguardando_conta" ||
             step === "aguardando_doc_auto" ||
@@ -2700,9 +2703,6 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             } catch (e) {
               console.warn(`[resume] falha resolveResumeStep:`, (e as any)?.message);
             }
-          }
-
-            } catch (_e) { /* fallback silencioso */ }
           }
 
           // 🛡️ Skip-guard global: se o passo determinístico mapeado já tem
