@@ -2963,11 +2963,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 console.log(`[custom-step-resolver] 🛡️ block doc-before-bill → redirect ${stepRow.step_key} → ${contaStep.step_key}`);
                 step = "aguardando_conta";
                 stepRow = { ...stepRow, step_key: contaStep.step_key, step_type: "capture_conta" } as any;
+              }
+            } catch (_e) { /* fallback silencioso */ }
           }
 
-          // 🔁 RESUME determinístico: se o capture solicitado JÁ tem dado salvo,
-          // pula direto para o próximo passo realmente faltante. Bloqueia o
-          // bug "step resetado para UUID do welcome → bot re-pede a conta".
+          // 🔁 RESUME determinístico (SIBLING, fora do guard doc-before-bill):
+          // se o capture solicitado JÁ tem dado salvo, pula direto para o
+          // próximo passo realmente faltante. Bloqueia o bug
+          // "step resetado para UUID do welcome → bot re-pede a conta/doc".
           if (
             step === "aguardando_conta" ||
             step === "aguardando_doc_auto" ||
@@ -2982,9 +2985,6 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             } catch (e) {
               console.warn(`[resume] falha resolveResumeStep:`, (e as any)?.message);
             }
-          }
-
-            } catch (_e) { /* fallback silencioso */ }
           }
 
           // 🛡️ Skip-guard global: se o passo determinístico mapeado já tem o dado
@@ -4286,6 +4286,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     // (auto_detect_doc_type=true). A IA olha a foto e classifica RG/CNH
     // sem perguntar. Se não vier foto ainda, pede a foto.
     case "aguardando_doc_auto": {
+      // 🔁 IDEMPOTÊNCIA: doc frente já recebido (mesmo após reset silencioso
+      // de conversation_step). Em vez de re-OCR e sobrescrever campos bons,
+      // retoma no passo correto via resolveResumeStep.
+      if (shouldSkipAskStep("aguardando_doc_auto", customer)) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_doc_auto — doc já recebido, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi seu documento ✅ Vamos continuar de onde paramos 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
       if (!isFile) {
         // ANTI-DUP: se o passo custom acabou de perguntar, NÃO duplica o prompt legacy.
         const _lastCustom = (customer as any).last_custom_prompt_at;
@@ -4611,6 +4623,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 5. VERSO ────────
     case "aguardando_doc_verso": {
+      // 🔁 IDEMPOTÊNCIA: verso já recebido — não reprocessar.
+      if (shouldSkipAskStep("aguardando_doc_verso", customer)) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_doc_verso — verso já recebido, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi o verso ✅ Vamos continuar 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
       if (!isFile) { reply = "📸 Envie o *VERSO do documento*.\n\nFormatos: JPG, PNG ou PDF"; break; }
       if (fileBase64) {
         const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
