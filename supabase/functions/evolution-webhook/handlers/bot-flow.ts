@@ -3889,6 +3889,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     // (auto_detect_doc_type=true). A IA olha a foto e classifica RG/CNH
     // sem perguntar. Se não vier foto ainda, pede a foto.
     case "aguardando_doc_auto": {
+      // 🔁 IDEMPOTÊNCIA: doc frente já recebido — não re-OCR.
+      if (shouldSkipAskStep("aguardando_doc_auto", customer)) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_doc_auto — doc já recebido, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi seu documento ✅ Vamos continuar de onde paramos 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
       if (!isFile) {
         // ANTI-DUP: se o passo custom acabou de perguntar, NÃO duplica o prompt legacy.
         const _lastCustom = (customer as any).last_custom_prompt_at;
