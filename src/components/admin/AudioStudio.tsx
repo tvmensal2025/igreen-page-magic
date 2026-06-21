@@ -1172,22 +1172,26 @@ export function AudioStudio({ userId }: { userId: string }) {
                 <Input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: Mercado Municipal..." className="bg-background border-border/60 h-11 text-base" />
               </Field>
             )}
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                { label: "Início", value: horaInicio, set: setHoraInicio, ph: "8" },
-                { label: "Fim", value: horaFim, set: setHoraFim, ph: "18" },
-              ] as const).map((f) => (
-                <Field key={f.label} icon={Clock} label={f.label}>
-                  <Input
-                    value={f.value}
-                    onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
-                    placeholder={`${f.ph} ou ${String(f.ph).padStart(2, "0")}:00`}
-                    inputMode="text"
-                    className="bg-background border-border/60 h-11 text-base font-mono text-center"
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1">→ {horarioExtenso(f.value || f.ph)}</p>
-                </Field>
-              ))}
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { label: "Início", value: horaInicio, set: setHoraInicio, ph: "8" },
+                  { label: "Fim", value: horaFim, set: setHoraFim, ph: "18" },
+                ] as const).map((f) => (
+                  <Field key={f.label} icon={Clock} label={f.label}>
+                    <Input
+                      value={f.value}
+                      onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
+                      placeholder={`${f.ph} ou ${String(f.ph).padStart(2, "0")}:00`}
+                      inputMode="text"
+                      className="bg-background border-border/60 h-11 text-base font-mono text-center"
+                    />
+                  </Field>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground italic">
+                🔊 vai falar: "{horarioRangeFalado(horaInicio || "8", horaFim || "18")}"
+              </p>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-border/40">
               <div>
