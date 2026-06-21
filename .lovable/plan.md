@@ -1,82 +1,63 @@
-## Plano — Retomada determinística do cadastro + auditoria do reset silencioso
+# Análise: o cadastro vai do início ao fim?
 
-### Objetivo
-Garantir que, se algo derrubar o `conversation_step` no meio do cadastro, o bot **retome no passo certo** baseado nos dados já salvos, **sem re-pedir nada**. E instalar uma "câmera" pra identificar o culpado pelo reset.
+## Resposta curta
+**Quase, mas ainda não.** Os pilares estão certos (`resolveResumeStep`, idempotência em `aguardando_conta`, migration de auditoria), mas encontrei **2 falhas residuais** que ainda permitem o sintoma (pedir a conta de novo / não pedir o verso). Sem corrigir, o cadastro pode reiniciar parcialmente em alguns caminhos.
 
-### Causa raiz (resumo)
-- **Dados não se perdem** — frente, verso, conta, OCR e confirmações foram persistidos corretamente no caso Maricelha.
-- O que se perde é o **ponteiro do passo** (`customers.conversation_step`): algum processo paralelo (re-welcome reset, flow-router, ou watchdog) sobrescreve o step entre uma outbound e a próxima inbound, **sem registrar a transição** em `bot_step_transitions`.
-- Quando o cliente clica de novo "✅ Quero me cadastrar", o orquestrador dispara `capture_conta` sem checar se `electricity_bill_photo_url` já existe — então re-pergunta.
+## O que está OK (verificado em código)
+1. `resolveResumeStep(customer)` em `_shared/conversation-helpers.ts` (linhas 364-377): ordem correta — conta → confirma conta → doc frente → doc verso → confirma doc → demais campos.
+2. `aguardando_conta` (whapi `bot-flow.ts:3503`, evolution `:3204`): idempotência funciona — se `hasBillData + bill_data_confirmed_at`, retoma sem re-OCR.
+3. `ask_quero_cadastrar` (whapi `:5456`, evolution `:5039`): retoma direto se já tem doc.
+4. Migration `silent_step_reset_log` + trigger `audit_silent_step_reset`: ativa, vai logar a causa raiz dos resets.
 
----
+## Bugs residuais encontrados
 
-### Mudanças
-
-#### 🔴 P0.1 — `resolveResumeStep(customer)` em `_shared/conversation-helpers.ts`
-Função pura que devolve o próximo passo faltante baseado SÓ nos campos do customer:
+### BUG 1 (crítico) — Resume no dispatcher mal aninhado
+Em `whapi-webhook/handlers/bot-flow.ts` (linhas 2951-2988) e `evolution-webhook/handlers/bot-flow.ts` (linhas 2670-2706), o bloco de RESUME determinístico foi escrito **dentro** do `if ((stype === "capture_documento") && !hasBillData(customer)) { try { ... } }`. Estrutura atual:
 
 ```text
-1. !hasBillData                          → aguardando_conta
-2. !bill_data_confirmed_at               → confirmando_dados_conta
-3. !document_front_url                   → aguardando_doc_auto
-4. é CNH? skip verso : !document_back_url → aguardando_doc_verso
-5. !doc_data_confirmed_at                → confirmando_dados_doc
-6. !cpf                                  → ask_cpf
-7. !cep                                  → ask_cep
-8. !address_number                       → ask_number
-9. !email                                → ask_email
-10. tudo OK                              → ask_finalizar
+if (capture_documento && !hasBillData) {
+  try {
+    if (contaStep) { step = "aguardando_conta"; ... }
+    // ← bloco RESUME está AQUI, escopo errado
+  } catch {}
+}
 ```
 
-#### 🔴 P0.2 — Wiring do resume nos dois bot-flow
-Em `whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`:
-- Generalizar o guard da linha 2949 (hoje só protege `capture_documento`) pra usar `resolveResumeStep`.
-- Generalizar o skip da linha 5421 (hoje só checa documentos) pra usar `resolveResumeStep`.
-- **Novo**: dentro do dispatcher de capture (linhas 2882–2995), antes de aceitar qualquer `capture_*`, comparar com `resolveResumeStep(customer)` — se divergir, usar o resultado do resume e logar `[resume] dispatcher quis X, resume aponta Y — usando Y`.
+**Efeito:** o resume só roda quando o flow tenta `capture_documento` sem conta ainda — exatamente o caso em que `hasBillData=false` e `resolveResumeStep` devolve `"aguardando_conta"` (no-op). Para **todos os outros caminhos** (dispatcher mandando `capture_conta` após reset silencioso, ou `aguardando_doc_auto/verso` com dados já salvos) o resume **não dispara**. Esse é o caminho exato do bug que o cliente reportou.
 
-#### 🔴 P0.3 — Idempotência de mídia já recebida
-No topo do switch principal de `bot-flow.ts`: se inbound é foto/PDF E todos os arquivos esperados (`electricity_bill_photo_url`, `document_front_url`, `document_back_url` se aplicável) já estão salvos → **não sobrescrever**. Responder "Já recebi seus documentos. Vamos continuar 👇" e disparar `resolveResumeStep`.
+**Correção:** mover o bloco RESUME para **fora** do `if` do guard doc-before-bill, como irmão (sibling) — roda sempre que `step ∈ {aguardando_conta, aguardando_doc_auto, aguardando_doc_verso}` no dispatcher, independentemente do `stype` mapeado.
 
-#### 🟠 P1.1 — Anti-reset durante coleta ativa
-Adicionar guard em 3 lugares:
-- `whapi-webhook/index.ts` (re-welcome reset, linhas ~820 e ~1660): se step ∈ `legacyCaptureSteps` E `customer_flow_state.entered_step_at` < 10 min → abortar reset, logar `[re-welcome:skip] step protegido em coleta ativa`.
-- `bot-stuck-recovery/index.ts`: mesmo guard antes de qualquer reset.
-- `_shared/flow-router.ts`: se step atual ∈ `legacyCaptureSteps` E entrada recente → devolver o step atual sem sobrescrever.
+### BUG 2 (médio) — `aguardando_doc_auto` sem idempotência
+`case "aguardando_doc_auto"` (whapi `:4288`, evolution equivalente) **não tem** o guard de idempotência que `aguardando_conta` ganhou. Se o customer já tem `document_front_url` válido e a mídia é reenviada (cenário pós-reset), o handler roda `detectDocumentTypeDetailed` + OCR de novo, podendo sobrescrever campos.
 
-#### 🟠 P1.2 — Trigger de auditoria `audit_silent_step_reset`
-Migration cria função + trigger `BEFORE UPDATE` em `customers`. Quando:
-- `OLD.conversation_step` matchar `^(aguardando_|ask_|confirmando_)` AND
-- `NEW.conversation_step` for UUID puro de flow (`^[0-9a-f-]{36}$`) AND
-- Não existir transição correspondente em `bot_step_transitions` nos últimos 10s
+**Correção:** adicionar no topo do case (espelho de `aguardando_conta`):
+```ts
+if (!shouldSkipAsk("document_front", customer)) { /* segue fluxo normal */ }
+else {
+  const resumed = resolveResumeStep(customer);
+  updates.conversation_step = resumed;
+  reply = isFile
+    ? `Já recebi seu documento ✅ Vamos continuar 👇\n\n${getReplyForStep(resumed, customer)}`
+    : getReplyForStep(resumed, customer);
+  break;
+}
+```
+E o mesmo em `aguardando_doc_verso` (skip se `document_back_url` já existe ou se for CNH).
 
-→ insere em `engine_logs` `{action:'silent_step_reset', from, to, txid, app_name, customer_id}`. Não bloqueia o update — só registra. Em 24h vamos saber **qual função** está causando o reset.
+## Mudanças propostas (build mode)
 
-#### 🟡 P2 — Commit-then-step
-Auditar os 3 lugares que fazem `updates.X = ...; updates.conversation_step = ...` no mesmo objeto. Garantir que a mudança de step só acontece após o `update` confirmar persistência dos campos novos.
+1. `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
+   - Mover bloco RESUME (linhas 2968-2985) para depois do fechamento do `if (capture_documento && !hasBillData)` (após linha 2988).
+   - Adicionar guard de idempotência no topo de `case "aguardando_doc_auto"` (linha 4288) e `case "aguardando_doc_verso"` (linha 4613).
+2. `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
+   - Mesma reorganização do bloco RESUME (linhas 2686-2703 → mover para fora).
+   - Mesmos guards de idempotência nos cases de doc.
+3. Sem migration nova. Sem mudança de UI.
 
-#### Limpeza
-- Marcar customer fantasma `4539d2c3-…` (phone 5511971254913) com `bot_paused=true, bot_paused_reason='created_empty_test'`. Não deletar (preserva histórico).
+## Verificação após o fix
+- Reler os blocos editados (`code--view`).
+- `supabase--read_query`: conferir que `silent_step_reset_log` ainda está vazio (nenhum reset disparado pela mudança).
+- Rodar um cenário manual ou checar `edge_function_logs` do whapi-webhook procurando `[resume] dispatcher quis ...` — só deve aparecer quando dispatcher tenta passo já cumprido.
 
----
-
-### Verificação após implementar
-1. `curl_edge_functions` no whapi-webhook simulando: welcome → conta → confirma → frente → **reset forçado via SQL** → cliente reenvia "Quero cadastrar" → esperado: bot pula direto pra `aguardando_doc_verso`.
-2. Mesmo cenário com watchdog simulado → anti-reset bloqueia.
-3. Query em `engine_logs WHERE action='silent_step_reset'` por 24h pra mapear o culpado real.
-
----
-
-### Arquivos tocados
-- `supabase/functions/_shared/conversation-helpers.ts`
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
-- `supabase/functions/_shared/flow-router.ts`
-- `supabase/functions/whapi-webhook/index.ts`
-- `supabase/functions/bot-stuck-recovery/index.ts`
-- Migration: função `log_silent_step_reset()` + trigger `audit_silent_step_reset` em `customers`
-- Data fix: pausar customer fantasma
-
-### O que NÃO muda
-- Sem mudança de UI/frontend.
-- Template welcome (fallback "responda com o número") fica como está.
-- Instância super-admin `igreen-0c2711ad4836` em `needs_reconnect` é operacional, não entra aqui.
+## Conclusão
+Com BUG 1 + BUG 2 corrigidos, o cadastro segue do início ao fim mesmo em caso de reset silencioso: dados ficam salvos e o bot retoma exatamente onde parou, sem repetir conta nem pular verso. Os 4 itens já implementados anteriormente continuam válidos — só faltava completar o wiring.
