@@ -609,7 +609,7 @@ export function AudioStudio({ userId }: { userId: string }) {
     ruaP = `${ruaP}, ${prep} ${contraiA(refP)} ${refP}`;
   }
   const placeP = fix(placeName.trim());
-  const horarioP = `Das ${horarioExtenso(horaInicio || "8")} às ${horarioExtenso(horaFim || "18")}.`;
+  const horarioP = `${capitalize(horarioRangeFalado(horaInicio || "8", horaFim || "18"))}.`;
   const sorteioTexto = kind === "mutirao" && sorteioAtivo
     ? buildSorteioTexto(sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom, autoCorrecao)
     : "";
