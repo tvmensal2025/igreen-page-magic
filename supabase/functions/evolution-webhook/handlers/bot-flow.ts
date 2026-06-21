@@ -53,7 +53,9 @@ import {
   detectQuestionIntent,
   shouldSkipAskStep,
   hasBillData,
+  resolveResumeStep,
 } from "../../_shared/conversation-helpers.ts";
+
 import { matchQA } from "./conversational/index.ts";
 import { getTemplate } from "./conversational/templates.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
@@ -2679,7 +2681,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 console.log(`[custom-step-resolver] 🛡️ block doc-before-bill → redirect ${stepRow.step_key} → ${contaStep.step_key}`);
                 step = "aguardando_conta";
                 stepRow = { ...stepRow, step_key: contaStep.step_key, step_type: "capture_conta" } as any;
+          }
+
+          // 🔁 RESUME determinístico: se o capture solicitado JÁ tem dado salvo,
+          // pula direto para o próximo passo realmente faltante. Bloqueia o
+          // bug "step resetado → bot re-pede dado que já está no banco".
+          if (
+            step === "aguardando_conta" ||
+            step === "aguardando_doc_auto" ||
+            step === "aguardando_doc_verso"
+          ) {
+            try {
+              const resumed = resolveResumeStep(customer);
+              if (resumed && resumed !== step) {
+                console.log(`[resume] dispatcher quis ${step}, resume aponta ${resumed} — usando ${resumed}`);
+                step = resumed;
               }
+            } catch (e) {
+              console.warn(`[resume] falha resolveResumeStep:`, (e as any)?.message);
+            }
+          }
+
             } catch (_e) { /* fallback silencioso */ }
           }
 
@@ -3177,7 +3199,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 2. AGUARDANDO CONTA ──────────────
     case "aguardando_conta": {
+      // 🔁 IDEMPOTÊNCIA: conta JÁ recebida e confirmada — não reprocessar.
+      if (hasBillData(customer) && (customer as any).bill_data_confirmed_at) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_conta — conta já confirmada, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi sua conta de luz ✅ Vamos continuar de onde paramos 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
       // 🛡️ Clique de botão (welcome residual) chegando em aguardando_conta:
+
       // re-emite prompt da conta em vez de tratar título como texto livre.
       // Bug confirmado em sandbox 2026-05-29.
       if (isButton) {
@@ -5002,15 +5035,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const triggers = ["btn_quero_cadastrar", "quero_cadastrar", "sim_cadastrar", "cadastrar", "btn_cadastrar", "quero_simular", "btn_simular", "simular", "btn_quero_simular", "1", "sim", "s", "quero", "bora", "vamos", "vamo", "pode", "ok", "blz", "beleza"];
       const wants = triggers.includes(resp) || /^(sim|quero|bora|vamos|pode|ok)\b/i.test(resp);
       if (wants) {
-        // 🛡️ Se o documento JÁ foi enviado, não pedir de novo.
-        if (shouldSkipAskStep("aguardando_doc_auto", customer) && shouldSkipAskStep("aguardando_doc_verso", customer)) {
-          console.log("[ask_quero_cadastrar] skip — documento já enviado, avançando direto");
+        // 🔁 RESUME determinístico — pula pro próximo passo faltante.
+        const resumed = resolveResumeStep(customer);
+        if (resumed !== "aguardando_doc_auto" && resumed !== "aguardando_doc_verso") {
+          console.log(`[ask_quero_cadastrar] resume → ${resumed} (dados já cobrem doc)`);
           const merged = { ...customer };
-          const next = await autoResolveCepIfNeeded(merged, updates);
-          updates.conversation_step = next === "ask_finalizar" ? "finalizando" : next;
-          reply = next === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(next, merged);
+          updates.conversation_step = resumed === "ask_finalizar" ? "finalizando" : resumed;
+          reply = resumed === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(resumed, merged);
           break;
         }
+
         try {
           const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
           if (_flowRow?.id) {

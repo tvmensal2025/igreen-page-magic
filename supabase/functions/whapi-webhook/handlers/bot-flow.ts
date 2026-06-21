@@ -55,7 +55,9 @@ import {
   detectQuestionIntent,
   shouldSkipAskStep,
   hasBillData,
+  resolveResumeStep,
 } from "../../_shared/conversation-helpers.ts";
+
 import { matchQA } from "./conversational/index.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
 import { detectFlowSwitch } from "../../_shared/flow-router.ts";
@@ -2961,7 +2963,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 console.log(`[custom-step-resolver] 🛡️ block doc-before-bill → redirect ${stepRow.step_key} → ${contaStep.step_key}`);
                 step = "aguardando_conta";
                 stepRow = { ...stepRow, step_key: contaStep.step_key, step_type: "capture_conta" } as any;
+          }
+
+          // 🔁 RESUME determinístico: se o capture solicitado JÁ tem dado salvo,
+          // pula direto para o próximo passo realmente faltante. Bloqueia o
+          // bug "step resetado para UUID do welcome → bot re-pede a conta".
+          if (
+            step === "aguardando_conta" ||
+            step === "aguardando_doc_auto" ||
+            step === "aguardando_doc_verso"
+          ) {
+            try {
+              const resumed = resolveResumeStep(customer);
+              if (resumed && resumed !== step) {
+                console.log(`[resume] dispatcher quis ${step}, resume aponta ${resumed} — usando ${resumed}`);
+                step = resumed;
               }
+            } catch (e) {
+              console.warn(`[resume] falha resolveResumeStep:`, (e as any)?.message);
+            }
+          }
+
             } catch (_e) { /* fallback silencioso */ }
           }
 
@@ -3474,7 +3496,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 2. AGUARDANDO CONTA ──────────────
     case "aguardando_conta": {
-      // 🛡️ Clique de botão (welcome residual) chegando em aguardando_conta:
+      // 🔁 IDEMPOTÊNCIA: conta JÁ recebida e confirmada — não reprocessar.
+      // Após um reset silencioso do step, o cliente pode reenviar a foto
+      // (porque o bot pediu de novo) ou reagir a botões. Em vez de fazer
+      // OCR de novo / sobrescrever dado bom, retomamos no passo certo.
+      if (hasBillData(customer) && (customer as any).bill_data_confirmed_at) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_conta — conta já confirmada, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi sua conta de luz ✅ Vamos continuar de onde paramos 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
+
       // o lead já avançou pra esperar foto, mas o chat antigo dele ainda mostra
       // os botões do welcome. Em vez de tratar como texto livre (que o regex
       // captura como valor numérico ou nome), apenas re-emite o prompt da conta.
@@ -5416,16 +5451,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const respNorm = resp.replace(/^[^a-z0-9]+/i, "").trim();
       const wants = triggers.includes(resp) || triggers.includes(respNorm) || /^(sim|quero|bora|vamos|pode|ok|cadastr|simular)\b/i.test(respNorm);
       if (wants) {
-        // 🛡️ Se o documento JÁ foi enviado (frente + verso quando aplicável),
-        // não pedir de novo — avança direto para o próximo passo faltando.
-        if (shouldSkipAskStep("aguardando_doc_auto", customer) && shouldSkipAskStep("aguardando_doc_verso", customer)) {
-          console.log("[ask_quero_cadastrar] skip — documento já enviado, avançando direto");
+        // 🔁 RESUME: se já temos doc (frente + verso/CNH), pula pro próximo
+        // passo faltante via resolveResumeStep — evita re-pedir doc/conta.
+        const resumed = resolveResumeStep(customer);
+        if (resumed !== "aguardando_doc_auto" && resumed !== "aguardando_doc_verso") {
+          console.log(`[ask_quero_cadastrar] resume → ${resumed} (dados já cobrem doc)`);
           const merged = { ...customer };
-          const next = await autoResolveCepIfNeeded(merged, updates);
-          updates.conversation_step = next === "ask_finalizar" ? "finalizando" : next;
-          reply = next === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(next, merged);
+          updates.conversation_step = resumed === "ask_finalizar" ? "finalizando" : resumed;
+          reply = resumed === "ask_finalizar" ? "✅ Tudo certo! Processando seu cadastro..." : getReplyForStep(resumed, merged);
           break;
         }
+
         // Procura o passo capture_documento do fluxo ativo e dispara.
         try {
           const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");

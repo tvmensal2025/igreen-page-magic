@@ -348,6 +348,36 @@ export function shouldSkipAskStep(step: string, customer: any): boolean {
 }
 
 /**
+ * Resume determinístico: dado o estado dos campos do customer (não o
+ * conversation_step do banco), devolve qual é o próximo passo que falta.
+ *
+ * Uso: chamar SEMPRE que precisar despachar um capture_* — se o resultado
+ * diferir do step que ia ser disparado, usar o resultado daqui. Garante que
+ * um reset silencioso de conversation_step não force o cliente a reenviar
+ * dado já salvo.
+ *
+ * Ordem do funil:
+ *   1. conta (foto+OCR) → confirma conta
+ *   2. doc frente → (se RG) doc verso → confirma doc
+ *   3. demais campos pessoais (delegado a getNextMissingStep)
+ */
+export function resolveResumeStep(customer: any): string {
+  if (!customer) return "aguardando_conta";
+  // 1. Conta de luz
+  if (!hasBillData(customer)) return "aguardando_conta";
+  if (!customer.bill_data_confirmed_at) return "confirmando_dados_conta";
+  // 2. Documento frente
+  if (!shouldSkipAsk("document_front", customer)) return "aguardando_doc_auto";
+  // 3. Verso (CNH dispensa — shouldSkipAsk já trata)
+  if (!shouldSkipAsk("document_back", customer)) return "aguardando_doc_verso";
+  // 4. Confirmação dos dados do doc
+  if (!customer.doc_data_confirmed_at) return "confirmando_dados_doc";
+  // 5+ delega para o resolver clássico que cobre nome/cpf/rg/email/cep/etc
+  return getNextMissingStep(customer);
+}
+
+
+/**
  * Retorna true se já existem evidências de que a conta de luz foi recebida
  * (foto, base64, ou dados extraídos pelo OCR). Usado para bloquear o
  * disparo de capture_documento ANTES da simulação.
