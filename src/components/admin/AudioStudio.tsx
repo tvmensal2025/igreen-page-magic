@@ -609,7 +609,8 @@ export function AudioStudio({ userId }: { userId: string }) {
     ruaP = `${ruaP}, ${prep} ${contraiA(refP)} ${refP}`;
   }
   const placeP = fix(placeName.trim());
-  const horarioP = `${capitalize(horarioRangeFalado(horaInicio || "8", horaFim || "18"))}.`;
+  const horarioRangeTxt = horarioRangeFalado(horaInicio || "8", horaFim || "18");
+  const horarioP = `${horarioRangeTxt.charAt(0).toUpperCase()}${horarioRangeTxt.slice(1)}.`;
   const sorteioTexto = kind === "mutirao" && sorteioAtivo
     ? buildSorteioTexto(sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom, autoCorrecao)
     : "";
