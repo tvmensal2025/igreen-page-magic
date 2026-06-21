@@ -7104,6 +7104,36 @@ export type Database = {
         }
         Relationships: []
       }
+      silent_step_reset_log: {
+        Row: {
+          app_name: string | null
+          created_at: string
+          customer_id: string
+          from_step: string
+          id: string
+          to_step: string
+          txid: number | null
+        }
+        Insert: {
+          app_name?: string | null
+          created_at?: string
+          customer_id: string
+          from_step: string
+          id?: string
+          to_step: string
+          txid?: number | null
+        }
+        Update: {
+          app_name?: string | null
+          created_at?: string
+          customer_id?: string
+          from_step?: string
+          id?: string
+          to_step?: string
+          txid?: number | null
+        }
+        Relationships: []
+      }
       stage_auto_messages: {
         Row: {
           consultant_id: string
