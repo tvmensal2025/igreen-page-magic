@@ -320,15 +320,87 @@ function parseHorario(input: string): { horas: number; minutos: number } | null 
   }
   return null;
 }
+// Numerais femininos (concordam com "hora"): "uma hora", "duas horas"...
+const UNIDADES_F = ["","uma","duas","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze"];
+
+type PeriodoDia = "madrugada" | "manha" | "tarde" | "noite" | "meio" | "meia";
+
+function periodoDe(h: number): PeriodoDia {
+  if (h === 0) return "meia";
+  if (h >= 1 && h <= 4) return "madrugada";
+  if (h >= 5 && h <= 11) return "manha";
+  if (h === 12) return "meio";
+  if (h >= 13 && h <= 18) return "tarde";
+  return "noite"; // 19-23
+}
+
+function periodoSufixo(p: PeriodoDia): string {
+  if (p === "madrugada") return "da madrugada";
+  if (p === "manha") return "da manhã";
+  if (p === "tarde") return "da tarde";
+  if (p === "noite") return "da noite";
+  return ""; // meio-dia / meia-noite já são autoexplicativos
+}
+
+type HoraToken = { texto: string; tipo: "num" | "meio" | "meia"; singular: boolean };
+
+// Constrói a hora falada coloquial. Se includePeriodo=false, devolve só o número
+// (para o lado "início" de um range que compartilha período com o "fim").
+function horaFalada(h: number, m: number, includePeriodo: boolean): HoraToken {
+  if (h === 0 && m === 0) return { texto: "meia-noite", tipo: "meia", singular: true };
+  if (h === 12 && m === 0) return { texto: "meio-dia", tipo: "meio", singular: true };
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const num = UNIDADES_F[display] || String(display);
+  let texto = num;
+  if (m === 30) texto += " e meia";
+  else if (m === 15) texto += " e quinze";
+  else if (m === 45) texto += " e quarenta e cinco";
+  else if (m > 0) texto += ` e ${numeroExtenso(m)}`;
+  if (includePeriodo) {
+    const suf = periodoSufixo(periodoDe(h));
+    if (suf) texto += " " + suf;
+  }
+  return { texto, tipo: "num", singular: display === 1 };
+}
+
+// Preposições contraídas para abrir o range ("das oito", "do meio-dia", "da uma")
+function prepDe(t: HoraToken): string {
+  if (t.tipo === "meio") return "do";
+  if (t.tipo === "meia") return "da";
+  return t.singular ? "da" : "das";
+}
+// Preposições contraídas para fechar o range ("às cinco", "ao meio-dia", "à uma")
+function prepA(t: HoraToken): string {
+  if (t.tipo === "meio") return "ao";
+  if (t.tipo === "meia") return "à";
+  return t.singular ? "à" : "às";
+}
+
+// Compatibilidade: usado na UI de preview. Devolve a hora isolada com período.
 function horarioExtenso(h: string): string {
   const parsed = parseHorario(h);
   if (!parsed) return h;
-  const { horas, minutos } = parsed;
-  if (horas === 0 && minutos === 0) return "meia-noite";
-  if (horas === 12 && minutos === 0) return "meio-dia";
-  const horasTexto = `${numeroExtenso(horas)} ${horas === 1 ? "hora" : "horas"}`;
-  if (minutos === 0) return horasTexto;
-  return `${horasTexto} e ${numeroExtenso(minutos)} ${minutos === 1 ? "minuto" : "minutos"}`;
+  return horaFalada(parsed.horas, parsed.minutos, true).texto;
+}
+
+// Constrói o range falado em PT-BR coloquial:
+//  - mesmo período → fala o período só no fim ("das duas às cinco da tarde")
+//  - períodos diferentes → cada lado leva o seu ("das onze da manhã às quatro da tarde")
+//  - meio-dia / meia-noite usam "ao" / "à" / "do" / "da"
+function horarioRangeFalado(hInicio: string, hFim: string): string {
+  const a = parseHorario(hInicio);
+  const b = parseHorario(hFim);
+  if (!a && !b) return `${hInicio} às ${hFim}`;
+  if (!a || !b) {
+    const only = a ? horaFalada(a.horas, a.minutos, true) : horaFalada(b!.horas, b!.minutos, true);
+    return `${prepDe(only)} ${only.texto}`;
+  }
+  const pa = periodoDe(a.horas);
+  const pb = periodoDe(b.horas);
+  const compartilha = pa === pb && (pa === "madrugada" || pa === "manha" || pa === "tarde" || pa === "noite");
+  const inicio = horaFalada(a.horas, a.minutos, !compartilha);
+  const fim = horaFalada(b.horas, b.minutos, true);
+  return `${prepDe(inicio)} ${inicio.texto} ${prepA(fim)} ${fim.texto}`;
 }
 function horarioCurto(h: string): string {
   const parsed = parseHorario(h);
@@ -537,7 +609,8 @@ export function AudioStudio({ userId }: { userId: string }) {
     ruaP = `${ruaP}, ${prep} ${contraiA(refP)} ${refP}`;
   }
   const placeP = fix(placeName.trim());
-  const horarioP = `Das ${horarioExtenso(horaInicio || "8")} às ${horarioExtenso(horaFim || "18")}.`;
+  const horarioRangeTxt = horarioRangeFalado(horaInicio || "8", horaFim || "18");
+  const horarioP = `${horarioRangeTxt.charAt(0).toUpperCase()}${horarioRangeTxt.slice(1)}.`;
   const sorteioTexto = kind === "mutirao" && sorteioAtivo
     ? buildSorteioTexto(sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom, autoCorrecao)
     : "";
@@ -1099,22 +1172,26 @@ export function AudioStudio({ userId }: { userId: string }) {
                 <Input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: Mercado Municipal..." className="bg-background border-border/60 h-11 text-base" />
               </Field>
             )}
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                { label: "Início", value: horaInicio, set: setHoraInicio, ph: "8" },
-                { label: "Fim", value: horaFim, set: setHoraFim, ph: "18" },
-              ] as const).map((f) => (
-                <Field key={f.label} icon={Clock} label={f.label}>
-                  <Input
-                    value={f.value}
-                    onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
-                    placeholder={`${f.ph} ou ${String(f.ph).padStart(2, "0")}:00`}
-                    inputMode="text"
-                    className="bg-background border-border/60 h-11 text-base font-mono text-center"
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1">→ {horarioExtenso(f.value || f.ph)}</p>
-                </Field>
-              ))}
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { label: "Início", value: horaInicio, set: setHoraInicio, ph: "8" },
+                  { label: "Fim", value: horaFim, set: setHoraFim, ph: "18" },
+                ] as const).map((f) => (
+                  <Field key={f.label} icon={Clock} label={f.label}>
+                    <Input
+                      value={f.value}
+                      onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
+                      placeholder={`${f.ph} ou ${String(f.ph).padStart(2, "0")}:00`}
+                      inputMode="text"
+                      className="bg-background border-border/60 h-11 text-base font-mono text-center"
+                    />
+                  </Field>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground italic">
+                🔊 vai falar: "{horarioRangeFalado(horaInicio || "8", horaFim || "18")}"
+              </p>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-border/40">
               <div>
