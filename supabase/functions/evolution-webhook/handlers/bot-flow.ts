@@ -2681,7 +2681,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 console.log(`[custom-step-resolver] 🛡️ block doc-before-bill → redirect ${stepRow.step_key} → ${contaStep.step_key}`);
                 step = "aguardando_conta";
                 stepRow = { ...stepRow, step_key: contaStep.step_key, step_type: "capture_conta" } as any;
+          }
+
+          // 🔁 RESUME determinístico: se o capture solicitado JÁ tem dado salvo,
+          // pula direto para o próximo passo realmente faltante. Bloqueia o
+          // bug "step resetado → bot re-pede dado que já está no banco".
+          if (
+            step === "aguardando_conta" ||
+            step === "aguardando_doc_auto" ||
+            step === "aguardando_doc_verso"
+          ) {
+            try {
+              const resumed = resolveResumeStep(customer);
+              if (resumed && resumed !== step) {
+                console.log(`[resume] dispatcher quis ${step}, resume aponta ${resumed} — usando ${resumed}`);
+                step = resumed;
               }
+            } catch (e) {
+              console.warn(`[resume] falha resolveResumeStep:`, (e as any)?.message);
+            }
+          }
+
             } catch (_e) { /* fallback silencioso */ }
           }
 
