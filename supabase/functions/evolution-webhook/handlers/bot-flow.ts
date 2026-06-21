@@ -4197,6 +4197,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 5. VERSO ────────
     case "aguardando_doc_verso": {
+      // 🔁 IDEMPOTÊNCIA: verso já recebido — não reprocessar.
+      if (shouldSkipAskStep("aguardando_doc_verso", customer)) {
+        const resumed = resolveResumeStep(customer);
+        console.log(`[idempotency] aguardando_doc_verso — verso já recebido, retomando em ${resumed}`);
+        updates.conversation_step = resumed;
+        reply = isFile
+          ? `Já recebi o verso ✅ Vamos continuar 👇\n\n${getReplyForStep(resumed, customer)}`
+          : getReplyForStep(resumed, customer);
+        break;
+      }
       if (!isFile) { reply = "📸 Envie o *VERSO do documento*.\n\nFormatos: JPG, PNG ou PDF"; break; }
       if (fileBase64) {
         const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
