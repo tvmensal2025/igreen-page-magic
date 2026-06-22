@@ -1743,6 +1743,46 @@ Deno.serve(async (req) => {
       // continua em sys (bot-flow.ts). Nada mais bounce entre engines.
       const currentStepRaw = stripPrefix((customer as any).conversation_step || "");
       const isCadastroStep = CADASTRO_STEPS.has(currentStepRaw);
+
+      // 🛟 BRIDGE UUID→sys: quando o conversation_step é um UUID de um passo
+      // CUSTOM cujo step_type é capture_conta/capture_documento/capture_doc/
+      // capture_email/confirm_phone/finalizar_cadastro, FORÇA engine=sys.
+      //
+      // Por quê: `routeEngine` manda qualquer UUID para `flow`
+      // (runConversationalFlow), mas só o engine `sys` (bot-flow.ts legacy)
+      // tem o pipeline de OCR, edição de dados, Portal2 e finalize-capture.
+      // Sem este bridge, leads em fluxo custom (5 passos: conta→doc→email→
+      // confirm_phone→finalizar) recebem o prompt repetido a cada inbound
+      // porque o conversational handler não sabe processar foto/PDF como
+      // conta de luz. O custom-step-resolver dentro do bot-flow.ts (linha
+      // ~2856) mapeia o UUID para o step nominal correto (aguardando_conta
+      // etc.) e o switch executa OCR + botões SIM/NÃO/EDITAR.
+      // Bug observado: lead 5511971254913 enviou conta de luz 2× e bot
+      // re-emitiu prompt 3× sem nunca chamar OCR (ocr_conta_attempts=0).
+      try {
+        if (engine === "flow" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentStepRaw)) {
+          const { data: stepRow } = await supabase
+            .from("bot_flow_steps")
+            .select("step_type")
+            .eq("id", currentStepRaw)
+            .maybeSingle();
+          const CAPTURE_TYPES = new Set([
+            "capture_conta", "capture_documento", "capture_doc",
+            "capture_email", "confirm_phone", "finalizar_cadastro",
+          ]);
+          if (stepRow && CAPTURE_TYPES.has(String((stepRow as any).step_type))) {
+            console.log(`🛟 [router-bridge] UUID ${currentStepRaw} type=${(stepRow as any).step_type} → forçando engine=sys (legacy tem OCR/portal2/finalize)`);
+            engine = "sys";
+            // ⚠️ NÃO limpa conversation_step — o custom-step-resolver dentro
+            // de bot-flow.ts precisa do UUID para localizar o step e
+            // (a) mapear para o nominal correto, (b) avançar pelo
+            // bot_flow_steps.position+1 quando o passo concluir.
+          }
+        }
+      } catch (e) {
+        console.warn("[router-bridge] lookup step_type falhou:", (e as any)?.message);
+      }
+
       if (
         engine === "sys" &&
         !isCadastroStep &&
