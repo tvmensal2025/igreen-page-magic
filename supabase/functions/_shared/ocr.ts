@@ -168,8 +168,15 @@ export async function ocrContaEnergia(
       console.log("🧪 [ocrContaEnergia] forceOcrFail=true → simulando falha");
       return { sucesso: false, erro: "test_force_ocr_fail" };
     }
-    // OCR roda SEMPRE de verdade (Gemini), inclusive no simulador — usuário pediu
-    // paridade total com o fluxo original. Mock OCR removido em 2026-05-25.
+    // 🧪 Sandbox tradicional (mock mode): a imagem de teste é um PNG 1x1 fake,
+    // o Gemini não tem o que extrair. Retorna payload determinístico para o
+    // happy_path conseguir avançar. Só ativa em isMockMode() (sandbox phone
+    // 5500000... SEM x-bot-real-services) — produção e "Modo Real" usam Gemini.
+    if (isMockMode()) {
+      console.log("🧪 [ocrContaEnergia] mockMode → retornando OCR mock da conta");
+      return mockBillOcr();
+    }
+    // OCR roda de verdade (Gemini) em produção e no Modo Real do simulador.
     if (!geminiApiKey) return { sucesso: false, erro: "GEMINI_API_KEY não configurada" };
 
     const img = await baixarImagem(imagemUrl, base64FromEvolution, mediaMessage);
@@ -456,6 +463,11 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
     if (isTestMode() && shouldForceOcrFail()) {
       console.log("🧪 [ocrDocumento] forceOcrFail=true → simulando falha");
       return { sucesso: false, erro: "test_force_ocr_fail" };
+    }
+    // 🧪 Sandbox tradicional (mock mode): PNG 1x1 fake → payload determinístico.
+    if (isMockMode()) {
+      console.log("🧪 [ocrDocumento] mockMode → retornando OCR mock do documento");
+      return mockDocOcr();
     }
     if (!geminiApiKey) return { sucesso: false, erro: "GEMINI_API_KEY não configurada" };
 
@@ -752,7 +764,12 @@ export async function ocrDocumentoFrenteVerso(
     console.log("🧪 [ocrDocumentoFrenteVerso] forceOcrFail=true → simulando falha");
     return { sucesso: false, erro: "test_force_ocr_fail" };
   }
-  // OCR sempre real (Gemini) — simulador agora roda igual fluxo original.
+  // 🧪 Sandbox tradicional (mock mode): PNG 1x1 fake → payload determinístico.
+  if (isMockMode()) {
+    console.log("🧪 [ocrDocumentoFrenteVerso] mockMode → retornando OCR mock do documento");
+    return mockDocOcr();
+  }
+  // OCR sempre real (Gemini) em produção e no Modo Real do simulador.
   console.log(`🔍 ocrDocumentoFrenteVerso: frenteB64=${!!frenteBase64}, versoB64=${!!versoBase64}, frenteUrl=${frenteUrl?.substring(0,60)}, versoUrl=${versoUrl?.substring(0,60)}`);
 
   // OCR da frente — passa frenteBase64 e frenteMediaMsg
