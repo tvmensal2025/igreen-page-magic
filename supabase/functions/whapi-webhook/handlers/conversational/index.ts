@@ -831,17 +831,29 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // conta de luz IMEDIATAMENTE — vai para o pipeline determinístico de OCR
   // no próximo turno. Sem isso, o lead manda a foto e o bot continua
   // disparando áudios/explicações antigas.
+  // Blindagem B: descobre se o passo ATUAL é de captura (conta x documento).
+  // Quando é documento, o redirecionamento não pode ser bloqueado por já
+  // existir foto da conta — e tem que ir pro OCR de documento, não de conta.
+  const { resolveCaptureRedirectStep, resolveImageCaptureStep } =
+    await import("../../../_shared/image-capture-step.ts");
+  const _captureRedirect = (ctx.isFile || ctx.hasImage || ctx.hasDocument) && !ctx.hasAudio
+    ? await resolveCaptureRedirectStep(ctx.supabase, (ctx.customer as any).consultant_id, stepKey)
+    : null;
+  const _isDocCapture = _captureRedirect === "aguardando_doc_auto";
+
   if (
     (ctx.isFile || ctx.hasImage || ctx.hasDocument) &&
     !ctx.hasAudio && // 🎧 áudio NUNCA vai pra OCR de conta — trata como mensagem comum
-    !(ctx.customer as any).electricity_bill_photo_url &&
+    // Conta: só redireciona se ainda não temos a foto. Documento: sempre
+    // (a foto da conta já existir é o caso NORMAL nesse ponto do funil).
+    (_isDocCapture || !(ctx.customer as any).electricity_bill_photo_url) &&
     !CADASTRO_STEPS.has(stepKey)
   ) {
-    // Task 21: resolve step image_capture configurável do flow do consultor;
-    // fallback hardcoded "aguardando_conta" preservado (regressão 3.13/3.23).
-    const { resolveImageCaptureStep } = await import("../../../_shared/image-capture-step.ts");
-    const targetStep = await resolveImageCaptureStep(ctx.supabase, (ctx.customer as any).consultant_id);
-    console.log(`[conversational] 📸 arquivo recebido em step="${stepKey}" → redirecionando para ${targetStep}`);
+    // Prioridade: passo de captura explícito (capture_conta/_documento) define
+    // o destino canônico. Senão, usa o resolver genérico (fallback legado).
+    const targetStep = _captureRedirect
+      || await resolveImageCaptureStep(ctx.supabase, (ctx.customer as any).consultant_id);
+    console.log(`[conversational] 📸 arquivo recebido em step="${stepKey}" (doc=${_isDocCapture}) → redirecionando para ${targetStep}`);
     try {
       const { runBotFlow } = await import("../bot-flow.ts");
       (ctx.customer as any).conversation_step = targetStep;
@@ -1063,6 +1075,43 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // _finalize salve conversation_step no passo novo (e não no antigo).
   if (currentStep && currentStepRaw && currentStep.id !== currentStepRaw.id) {
     stepKey = currentStep.id;
+  }
+
+  // ─── Blindagem B: passo de captura NUNCA fica preso no conversacional ──
+  // Se o passo atual (custom) é de captura de conta/documento, o turno é
+  // delegado ao pipeline determinístico (bot-flow.ts) via a chave CANÔNICA.
+  // Lá o prompt é emitido (quando ainda não há arquivo) e o OCR roda (quando
+  // o cliente já mandou a foto/PDF). Sem isso, um passo capture_* sem texto
+  // deixa o lead mudo e o OCR nunca é extraído.
+  {
+    const _ct = String(currentStep?.step_type || "");
+    const _captureToCanonical = _ct === "capture_conta" || _ct === "image_capture"
+      ? "aguardando_conta"
+      : (_ct === "capture_documento" || _ct === "capture_doc")
+      ? "aguardando_doc_auto"
+      : null;
+    if (_captureToCanonical) {
+      console.log(`[conversational] 🎯 passo de captura "${stepKey}" (${_ct}) → delegando ao bot-flow como ${_captureToCanonical}`);
+      try {
+        const { runBotFlow } = await import("../bot-flow.ts");
+        (ctx.customer as any).conversation_step = _captureToCanonical;
+        const result = await runBotFlow(ctx);
+        const emittedInline = (!result.reply || result.reply === "")
+          && !!result.updates && Object.keys(result.updates).length > 0;
+        return {
+          reply: result.reply,
+          updates: {
+            ...(result.updates || {}),
+            conversation_step: result.updates?.conversation_step || _captureToCanonical,
+            ...(emittedInline ? { __inline_sent: true } : {}),
+          },
+        };
+      } catch (e) {
+        console.error("[conversational] falha ao delegar passo de captura p/ bot-flow:", (e as Error)?.message || e);
+        // Fail-safe: ao menos persiste a chave canônica pra próxima mensagem cair no OCR.
+        return { reply: "", updates: { conversation_step: _captureToCanonical } };
+      }
+    }
   }
   // Registra a pergunta do passo atual + vars para o fallback de _finalize.
   const _turnVars = {
