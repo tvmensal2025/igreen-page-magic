@@ -8172,6 +8172,7 @@ export type Database = {
       }
       fork_message_template: { Args: { _origin_id: string }; Returns: string }
       fork_public_ai_media: { Args: { _media_id: string }; Returns: string }
+      funnel_step_rank: { Args: { step: string }; Returns: number }
       gen_partner_short_code: { Args: { p_len?: number }; Returns: string }
       get_coverage_summary: {
         Args: never

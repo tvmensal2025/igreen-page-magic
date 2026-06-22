@@ -1,63 +1,70 @@
-# Análise: o cadastro vai do início ao fim?
+# Plano — Robustez do fluxo de cadastro WhatsApp
 
-## Resposta curta
-**Quase, mas ainda não.** Os pilares estão certos (`resolveResumeStep`, idempotência em `aguardando_conta`, migration de auditoria), mas encontrei **2 falhas residuais** que ainda permitem o sintoma (pedir a conta de novo / não pedir o verso). Sem corrigir, o cadastro pode reiniciar parcialmente em alguns caminhos.
+## Status por pilar
 
-## O que está OK (verificado em código)
-1. `resolveResumeStep(customer)` em `_shared/conversation-helpers.ts` (linhas 364-377): ordem correta — conta → confirma conta → doc frente → doc verso → confirma doc → demais campos.
-2. `aguardando_conta` (whapi `bot-flow.ts:3503`, evolution `:3204`): idempotência funciona — se `hasBillData + bill_data_confirmed_at`, retoma sem re-OCR.
-3. `ask_quero_cadastrar` (whapi `:5456`, evolution `:5039`): retoma direto se já tem doc.
-4. Migration `silent_step_reset_log` + trigger `audit_silent_step_reset`: ativa, vai logar a causa raiz dos resets.
+| Pilar | Status |
+|---|---|
+| `resolveResumeStep` em capture | ✅ Implementado |
+| RESUME no dispatcher (sibling, não aninhado) | ✅ whapi + evolution |
+| Guard `shouldSkipAskStep` em capture | ✅ whapi + evolution |
+| Idempotência `aguardando_conta` | ✅ whapi + evolution |
+| Idempotência `aguardando_doc_auto` | ✅ whapi + evolution |
+| Idempotência `aguardando_doc_verso` | ✅ whapi + evolution |
+| `ask_quero_cadastrar` retoma cliente existente | ✅ whapi + evolution |
+| Auditoria de reset silencioso | ✅ Pacote 1 (junho/2026) — trigger reescrito |
+| Auto-retomada de `confirmando_*` parado | ⏳ Pacote 2 — pendente |
+| Dedupe de customer por phone | ❌ Não necessário (zero duplicatas em 30 dias) |
+| Lock idempotente em `ask_finalizar` | ⏳ Pacote 4 — pendente, baixa prioridade |
 
-## Bugs residuais encontrados
+---
 
-### BUG 1 (crítico) — Resume no dispatcher mal aninhado
-Em `whapi-webhook/handlers/bot-flow.ts` (linhas 2951-2988) e `evolution-webhook/handlers/bot-flow.ts` (linhas 2670-2706), o bloco de RESUME determinístico foi escrito **dentro** do `if ((stype === "capture_documento") && !hasBillData(customer)) { try { ... } }`. Estrutura atual:
+## Pacote 1 — Visibilidade (APLICADO)
 
-```text
-if (capture_documento && !hasBillData) {
-  try {
-    if (contaStep) { step = "aguardando_conta"; ... }
-    // ← bloco RESUME está AQUI, escopo errado
-  } catch {}
-}
+**Problema:** `silent_step_reset_log` ficou vazio por dias mesmo com clientes voltando ao início. O trigger anterior só logava `step_nominal → UUID`, mas a regressão real é `confirmando_dados_doc → aguardando_conta` (nominal → nominal).
+
+**Solução aplicada:**
+- Nova função `public.funnel_step_rank(text)` atribui rank ordinal a cada step (welcome=10, aguardando_conta=30, …, portal_submitting=100, UUID/flow:UUID=200).
+- `log_silent_step_reset` reescrito: loga **qualquer** transição com `new_rank < old_rank`, exceto quando há `bot_step_transitions` registrada nos últimos 10s (mudança legítima do engine).
+- Trigger continua à prova de falhas (`EXCEPTION WHEN OTHERS → RETURN NEW`).
+
+**Como verificar:**
+```sql
+-- Após alguns dias, deve ter dados:
+SELECT from_step, to_step, count(*)
+FROM silent_step_reset_log
+WHERE created_at > now() - interval '7 days'
+GROUP BY 1,2 ORDER BY 3 DESC;
 ```
 
-**Efeito:** o resume só roda quando o flow tenta `capture_documento` sem conta ainda — exatamente o caso em que `hasBillData=false` e `resolveResumeStep` devolve `"aguardando_conta"` (no-op). Para **todos os outros caminhos** (dispatcher mandando `capture_conta` após reset silencioso, ou `aguardando_doc_auto/verso` com dados já salvos) o resume **não dispara**. Esse é o caminho exato do bug que o cliente reportou.
+Com esses dados poderemos atacar a causa raiz (qual handler está escrevendo `aguardando_conta` em cima de step avançado).
 
-**Correção:** mover o bloco RESUME para **fora** do `if` do guard doc-before-bill, como irmão (sibling) — roda sempre que `step ∈ {aguardando_conta, aguardando_doc_auto, aguardando_doc_verso}` no dispatcher, independentemente do `stype` mapeado.
+---
 
-### BUG 2 (médio) — `aguardando_doc_auto` sem idempotência
-`case "aguardando_doc_auto"` (whapi `:4288`, evolution equivalente) **não tem** o guard de idempotência que `aguardando_conta` ganhou. Se o customer já tem `document_front_url` válido e a mídia é reenviada (cenário pós-reset), o handler roda `detectDocumentTypeDetailed` + OCR de novo, podendo sobrescrever campos.
+## Pacote 2 — Auto-retomada de `confirmando_*` (PENDENTE)
 
-**Correção:** adicionar no topo do case (espelho de `aguardando_conta`):
-```ts
-if (!shouldSkipAsk("document_front", customer)) { /* segue fluxo normal */ }
-else {
-  const resumed = resolveResumeStep(customer);
-  updates.conversation_step = resumed;
-  reply = isFile
-    ? `Já recebi seu documento ✅ Vamos continuar 👇\n\n${getReplyForStep(resumed, customer)}`
-    : getReplyForStep(resumed, customer);
-  break;
-}
-```
-E o mesmo em `aguardando_doc_verso` (skip se `document_back_url` já existe ou se for CNH).
+**Problema:** Cliente recebe botão de confirmação WHAPI (expira em 72h) ou pedido "digite 1/2" (Evolution). Se o cliente não responder em 1–6h, fica preso indefinidamente — nenhum cron re-envia.
 
-## Mudanças propostas (build mode)
+**Plano detalhado (próxima iteração):**
 
-1. `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
-   - Mover bloco RESUME (linhas 2968-2985) para depois do fechamento do `if (capture_documento && !hasBillData)` (após linha 2988).
-   - Adicionar guard de idempotência no topo de `case "aguardando_doc_auto"` (linha 4288) e `case "aguardando_doc_verso"` (linha 4613).
-2. `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
-   - Mesma reorganização do bloco RESUME (linhas 2686-2703 → mover para fora).
-   - Mesmos guards de idempotência nos cases de doc.
-3. Sem migration nova. Sem mudança de UI.
+1. **Nova tabela** `public.confirmacao_retry_log(customer_id PK, step, last_retry_at, retry_count)` — garante idempotência (1 retry por step).
+2. **Edge function** `confirmacao-retry`:
+   - Lê customers em `confirmando_dados_conta|confirmando_dados_doc|confirmando_doc_verso` com `updated_at < now() - 2h`.
+   - Para cada um, dispara o handler correspondente (`re-render` do botão WHAPI ou do prompt Evolution) **apenas se** não há retry recente em `confirmacao_retry_log`.
+   - Registra `retry_count++`; se `retry_count >= 2` e `updated_at < now() - 6h`, escala via `bot_handoff_alerts` para o consultor humano.
+3. **Cron**: `*/30 * * * *` (a cada 30 min).
+4. **NÃO auto-confirmar** — risco de gravar dado errado como venda.
 
-## Verificação após o fix
-- Reler os blocos editados (`code--view`).
-- `supabase--read_query`: conferir que `silent_step_reset_log` ainda está vazio (nenhum reset disparado pela mudança).
-- Rodar um cenário manual ou checar `edge_function_logs` do whapi-webhook procurando `[resume] dispatcher quis ...` — só deve aparecer quando dispatcher tenta passo já cumprido.
+**Bloqueio para shippar agora:** precisa de design das funções de re-render (texto + mídia já enviados antes), do guard contra re-envio em janelas de silêncio do consultor, e de teste e2e. Próxima sessão.
 
-## Conclusão
-Com BUG 1 + BUG 2 corrigidos, o cadastro segue do início ao fim mesmo em caso de reset silencioso: dados ficam salvos e o bot retoma exatamente onde parou, sem repetir conta nem pular verso. Os 4 itens já implementados anteriormente continuam válidos — só faltava completar o wiring.
+---
+
+## Pacote 4 — Lock em `ask_finalizar` (PENDENTE, baixa)
+
+**Trivial (~10 linhas):** envolver handler de `ask_finalizar` em `customer_processing_lock` igual aos outros. Só executar depois do Pacote 2 estar estável.
+
+---
+
+## Notas operacionais
+
+- WHAPI usa botões (expiram em 72h). Evolution usa "digite 1/2/3". Ambos passam pelo mesmo dispatcher e estão protegidos por `customer_processing_lock` global.
+- `bot_step_transitions` é a fonte de verdade para mudanças legítimas. Se algum handler novo trocar `conversation_step` sem inserir transição, o Pacote 1 vai gerar falso-positivo no log — auditar antes de criar novos steps.
