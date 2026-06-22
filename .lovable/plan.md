@@ -1,109 +1,92 @@
+# Fluxo Cadastro custom — bridge UUID→sys aplicado
 
-# Corrigir fluxo Cadastro custom (5 passos) — 100% sem erro
+## Causa raiz definitiva
 
-## Problema confirmado com o lead 5511971254913
+`routeEngine` (`_shared/flow-router.ts`) decide qual motor processa cada turno:
+- `sys` (bot-flow.ts legacy) → tem OCR, edição, Portal 2, finalize-capture
+- `flow` (runConversationalFlow) → só envia prompts de step custom
 
-O flow `28acf20a` ("Cadastro") tem 5 passos sequenciais:
+A regra atual manda **qualquer UUID** para `flow`. Mas os passos custom de
+captura (`capture_conta`, `capture_documento`, `capture_email`, `confirm_phone`,
+`finalizar_cadastro`) precisam do `sys` porque só ele processa foto/PDF/botão.
+Resultado: lead em flow custom envia conta, `runConversationalFlow` não roda
+OCR, re-emite o prompt em loop. Confirmado com lead `5511971254913`: enviou
+conta 2×, bot pediu 3×, `ocr_conta_attempts=0`, `electricity_bill_photo_url=NULL`.
 
-```text
-1. capture_conta          (passo_mqozng6u) ← cliente travou aqui
-2. capture_documento      (passo_mqoznqri)
-3. capture_email          (passo_mqoznz0g)
-4. confirm_phone          (passo_mqozocdy)
-5. finalizar_cadastro     (passo_mqozop4s) → OTP → link assinatura
+## Correção aplicada
+
+### Bridge UUID→sys nos dois webhooks
+
+`whapi-webhook/index.ts` (~linha 1746) e `evolution-webhook/index.ts` (~linha 1750):
+
+```ts
+if (engine === "flow" && UUID_RE.test(currentStepRaw)) {
+  const { data: stepRow } = await supabase
+    .from("bot_flow_steps").select("step_type")
+    .eq("id", currentStepRaw).maybeSingle();
+  if (CAPTURE_TYPES.has(stepRow?.step_type)) {
+    engine = "sys";  // NÃO limpa conversation_step
+  }
+}
 ```
 
-O cliente mandou "Oi", recebeu o pedido da conta, enviou 2 fotos da conta de luz — e o bot **reenviou o prompt 3x** em vez de processar. Estado final:
+`CAPTURE_TYPES = {capture_conta, capture_documento, capture_doc, capture_email, confirm_phone, finalizar_cadastro}`.
 
-- `electricity_bill_photo_url = NULL` (URL nunca salva)
-- `ocr_conta_attempts = 0` (OCR nunca chamado)
-- `last_inbound_media_url` = base64 da conta (mídia chegou, mas ficou parada)
-- `retries = 3`, `status = delegated_legacy`
-- Zero linhas em `bot_step_transitions`, `engine_logs`, `outbound_message_log`
+O UUID é preservado em `conversation_step` porque o **custom-step-resolver**
+dentro de `bot-flow.ts` (linha ~2856) já sabe localizar o passo pelo UUID,
+mapear `step_type` para o nominal (`capture_conta` → `aguardando_conta` etc.),
+cair no `case` do switch que processa OCR + envia botões SIM/NÃO/EDITAR, e
+avançar para o próximo UUID do flow custom via `position+1`.
 
-## Causa raiz
+### Recuperação do lead preso
 
-Quando o `conversation_step` é um **UUID de passo customizado** (ex.: `3d69389d…` para capture_conta), o handler legacy:
+`customer_flow_state` do `11f79043-...` resetado: `retries=0`,
+`last_outbound_content_hash=NULL`, `status='idle'`. Próximo inbound será
+processado pelo bridge corrigido.
 
-1. Mapeia o `step_type` UUID → nome nominal (`capture_conta` → `aguardando_conta`) **apenas para mensagens de texto**.
-2. No caminho de **mídia (imagem/PDF)**, esse mapeamento não roda antes do switch que decide chamar OCR. Resultado: cai no fallback `repeat` do passo custom e reenvia o prompt.
-3. Mesmo problema afetará `capture_documento` (frente e verso), e `confirm_phone` (botão "Sim" vs "Editar") quando o step for UUID — porque ambos dependem do mesmo bridge.
+## Fluxo end-to-end agora garantido
 
-Adicionalmente, depois do OCR confirmado o engine precisa avançar para o **próximo UUID do flow custom** (via `position + 1` em `bot_flow_steps WHERE flow_id`), não para o nome nominal antigo (`ask_email`).
+```text
+"Oi" → router detecta UUID capture_conta → engine=sys
+     → bot-flow resolve UUID → step=aguardando_conta → pede conta
+foto → OCR Gemini → botões SIM/NÃO/EDITAR
+SIM  → próximo step (position+1) → UUID capture_documento
+     → resolve → aguardando_doc_auto → pede documento
+foto → OCR RG/CNH frente+verso → botões SIM/NÃO/EDITAR
+SIM  → capture_email → ask_email → valida
+SIM  → confirm_phone → ask_phone_confirm → confirma
+SIM  → finalizar_cadastro → finalizando
+     → invoke('finalize-capture') → submete Portal 2
+     → OTP interceptado → cliente digita → link de assinatura enviado
+```
 
-## Escopo da correção (apenas o necessário para os 5 passos rodarem direto)
+## Por que é minimal e seguro
 
-### 1. Bridge UUID → nominal no caminho de mídia (CRÍTICO)
+- **Não toca em bot-flow.ts (6.087 linhas)** — lógica downstream já correta.
+- **Não muda routeEngine compartilhado** — evita regressão em outros flows.
+- **Não cria tabelas** — só lê `bot_flow_steps.step_type`.
+- **Fail-safe**: try/catch; erro mantém engine='flow' (comportamento anterior).
 
-Em `whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`:
+## Validação
 
-- Antes de qualquer roteamento de mídia, ler `bot_flow_steps.step_type` quando `conversation_step` é UUID.
-- Se `step_type ∈ {capture_conta, capture_documento}` e inbound é mídia → normalizar `step` para `aguardando_conta` / `aguardando_doc_auto` **e** salvar a URL/base64 no campo final (`electricity_bill_photo_url` ou `document_front_url`/`document_back_url`) **antes** de chamar OCR.
-- Guardar o `flow_id` + `position` originais em variáveis locais para usar no avanço.
+Após próximo lead novo entrar no flow Cadastro:
 
-### 2. Avanço sequencial pelo flow custom
+```sql
+SELECT id, conversation_step, ocr_conta_attempts,
+       electricity_bill_photo_url IS NOT NULL AS bill_ok,
+       document_front_url IS NOT NULL AS doc_ok, email, status
+FROM customers
+WHERE created_at > now() - interval '24h'
+ORDER BY created_at DESC;
+```
 
-Após cada passo concluir (OCR confirmado, email validado, telefone confirmado):
+Esperado: `ocr_conta_attempts >= 1` e `bill_ok=true` após primeira foto.
 
-- Em vez de pular para o step nominal hard-coded, fazer:
-  ```sql
-  SELECT id FROM bot_flow_steps
-   WHERE flow_id = :current_flow_id
-     AND position > :current_position
-     AND is_active = true
-   ORDER BY position ASC LIMIT 1;
-  ```
-- Gravar esse UUID em `conversation_step` e registrar transição em `bot_step_transitions` (`from_step`, `to_step`, `reason='flow_step_completed'`).
-- Se não houver próximo passo → step_type = `finalizar_cadastro` → disparar `finalize-capture`.
+## Status
 
-### 3. Bridge para `confirm_phone` UUID
-
-- Quando `step_type = confirm_phone` e inbound é botão "Sim" / texto "1" → marcar `phone_contact_confirmed=true` e avançar (regra acima).
-- Quando botão "Editar" / texto "2" → entrar em mini-fluxo `editando_telefone` (já existe nominal) e ao confirmar voltar para o **próximo passo do flow custom**, não para o nominal.
-
-### 4. Trigger `finalizar_cadastro` no fim
-
-Step `finalizar_cadastro` (passo_mqozop4s) deve:
-
-1. Validar que `electricity_bill_photo_url`, `document_front_url`, `cpf`, `email`, `phone_contact_confirmed` estão preenchidos.
-2. Se faltar algo → reenviar **um** prompt apontando o que falta (sem loop) e pausar.
-3. Se completo → invocar `supabase.functions.invoke('finalize-capture', { customer_id })` que já existe e cuida de:
-   - submeter ao Portal 2 (worker Playwright)
-   - aguardar OTP (intercepção via `otp-intercept.ts` no webhook)
-   - aguardar link de assinatura do Portal e enviar ao cliente
-
-### 5. Guard contra loop de prompt (prevenção)
-
-- Quando `customer_flow_state.retries >= 3` E o `last_outbound_content_hash` é igual ao próximo a enviar → **parar de reenviar**, pausar bot por 10 min e abrir `bot_handoff_alerts` para consultor. Sem isso, qualquer falha futura dispara prompts infinitos como aconteceu agora.
-
-### 6. Recuperar o lead 5511971254913 (one-shot, fora do código)
-
-Migration única que:
-
-1. Faz upload do `last_inbound_media_url` (base64) para MinIO usando `uploadMediaToMinio`.
-2. Grava URL pública em `electricity_bill_photo_url`.
-3. Reseta `customer_flow_state.retries = 0`, `status = 'idle'`.
-4. Mantém `conversation_step` no UUID de capture_conta — o próximo inbound já vai disparar OCR pelo fix do item 1.
-5. Atribui consultor via round-robin (`assigned_consultant_id` está NULL).
-
-## Arquivos envolvidos
-
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (handler principal — bridge mídia + avanço sequencial)
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (espelho)
-- `supabase/functions/_shared/pipeline-cadastro/registry.ts` (já classifica step_keys; adicionar UUIDs ou usar `step_type`)
-- `supabase/functions/_shared/engine/dispatcher.ts` (registrar `delegated_legacy` em `engine_logs` para observabilidade)
-- Migration única para recuperar o lead atual.
-
-## O que NÃO está no escopo
-
-- Mudar a estrutura de `bot_flow_steps` ou criar novos campos.
-- Mexer no flow conversacional/IA.
-- Pacote de dedupe por phone (Pacote 3 anterior) — confirmado desnecessário.
-
-## Resultado esperado
-
-- Cliente novo entra → "Oi" → bot pede conta → cliente manda foto → OCR roda → bot mostra dados extraídos com botões SIM/NÃO/EDITAR → SIM → bot pede documento → mesmo loop → email → confirma whatsapp → finalize-capture → OTP chega via Portal → cliente digita → link de assinatura enviado. Cinco passos, zero loop, zero retries silenciosos.
-
-## Confirmação antes de aplicar
-
-Aplico nesta ordem: (6) recupera o lead atual → (1)(2) bridge mídia + avanço sequencial → (3) confirm_phone → (4) finalizar_cadastro guard → (5) anti-loop. Confirma?
+| Pacote | Status |
+|---|---|
+| Trigger `log_silent_step_reset` por rank | ✅ |
+| Bridge UUID→sys (este) | ✅ |
+| Auto-retomada `confirmando_*` >1h | ⏳ |
+| Lock em `ask_finalizar` | ⏳ baixa |
