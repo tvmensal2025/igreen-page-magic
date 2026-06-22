@@ -1747,6 +1747,34 @@ Deno.serve(async (req) => {
       // força engine=flow mesmo que o step legacy esteja setado.
       const currentStepRaw = stripPrefix((customer as any).conversation_step || "");
       const isCadastroStep = CADASTRO_STEPS.has(currentStepRaw);
+
+      // 🛟 BRIDGE UUID→sys (espelho do whapi-webhook): UUIDs de passos custom
+      // com step_type ∈ {capture_conta, capture_documento, capture_doc,
+      // capture_email, confirm_phone, finalizar_cadastro} têm que rodar no
+      // engine `sys` (bot-flow.ts) porque só ele faz OCR/edição/Portal2/
+      // finalize-capture. Sem este bridge, o conversational handler engole
+      // a foto da conta e re-emite o prompt em loop. Custom-step-resolver
+      // dentro de bot-flow.ts (linha ~2876) mapeia o UUID para o nominal.
+      try {
+        if (engine === "flow" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentStepRaw)) {
+          const { data: stepRow } = await supabase
+            .from("bot_flow_steps")
+            .select("step_type")
+            .eq("id", currentStepRaw)
+            .maybeSingle();
+          const CAPTURE_TYPES = new Set([
+            "capture_conta", "capture_documento", "capture_doc",
+            "capture_email", "confirm_phone", "finalizar_cadastro",
+          ]);
+          if (stepRow && CAPTURE_TYPES.has(String((stepRow as any).step_type))) {
+            console.log(`🛟 [router-bridge] UUID ${currentStepRaw} type=${(stepRow as any).step_type} → forçando engine=sys`);
+            engine = "sys";
+          }
+        }
+      } catch (e) {
+        console.warn("[router-bridge] lookup step_type falhou:", (e as any)?.message);
+      }
+
       if (engine === "sys" && !isCadastroStep && consultantFlag && customerOverride !== false && _fbVariantLegacy !== "B") {
         try {
           // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
