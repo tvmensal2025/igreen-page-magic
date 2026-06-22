@@ -137,7 +137,10 @@ function nextReply(
   if (s === "ask_bill_value" || s === "editing_conta_valor") return { kind: "text", text: "350" };
   if (s === "editing_conta_menu" || s === "editing_doc_menu") return { kind: "text", text: "0" };
   if (s === "ask_finalizar") return { kind: "text", text: "finalizar" };
-  if (s === "portal_submitting" || s === "complete") return null;
+  // Pós-finalização (stubs de sandbox): OTP exige 4-8 dígitos; facial exige confirmação.
+  if (s === "aguardando_otp" || s === "validando_otp") return { kind: "text", text: "123456" };
+  if (s === "aguardando_facial" || s === "aguardando_assinatura") return { kind: "text", text: "pronto" };
+  if (s === "portal_submitting" || s === "complete" || s === "cadastro_em_analise") return null;
 
   return { kind: "text", text: "sim" };
 }
@@ -846,7 +849,7 @@ Deno.serve(async (req) => {
       const stepKey = cleanStep(stepBefore);
       visitedSteps.add(stepKey);
 
-      if (stepKey === "complete" || stepKey === "portal_submitting") { finalStatus = "completed"; stopReason = "conversion_step_reached"; break; }
+      if (stepKey === "complete" || stepKey === "portal_submitting" || stepKey === "aguardando_otp" || stepKey === "aguardando_facial" || stepKey === "cadastro_em_analise") { finalStatus = "completed"; stopReason = "conversion_step_reached"; break; }
       if (stepKey === "valor_baixo" || cur?.status === "rejected" || cur?.bot_paused === true) { finalStatus = scenario === "valor_baixo" ? "low_value" : "paused_or_rejected"; stopReason = "lead_disqualified_or_paused"; break; }
 
       const reply = nextReply(scenario, cur, turn, stepHits);
@@ -914,7 +917,7 @@ Deno.serve(async (req) => {
       }
       lastStep = stepAfter;
 
-      if (afterKey === "complete" || afterKey === "portal_submitting") { finalStatus = "completed"; stopReason = "conversion_step_reached"; break; }
+      if (afterKey === "complete" || afterKey === "portal_submitting" || afterKey === "aguardando_otp" || afterKey === "aguardando_facial" || afterKey === "cadastro_em_analise") { finalStatus = "completed"; stopReason = "conversion_step_reached"; break; }
       if (afterKey === "valor_baixo" || after?.status === "rejected" || after?.bot_paused === true) { finalStatus = scenario === "valor_baixo" ? "low_value" : "paused_or_rejected"; stopReason = "lead_disqualified_or_paused"; break; }
     }
 
@@ -951,7 +954,7 @@ Deno.serve(async (req) => {
     if (["happy_path", "joia_validacao", "documento_cnh", "recusa_conta", "recusa_documento", "lead_indeciso"].includes(scenario)) {
       checks.push({ name: "Chegou em estado de conversão", passed: finalStatus === "completed", detail: `status=${finalStatus}, step=${finalCustomer?.conversation_step}` });
       checks.push({ name: "Conta foi validada", passed: visited.includes("confirmando_dados_conta") || Number(finalCustomer?.electricity_bill_value || 0) >= 100, detail: `valor=${finalCustomer?.electricity_bill_value}` });
-      checks.push({ name: "Documento foi validado", passed: visited.includes("confirmando_dados_doc") || ["complete", "portal_submitting"].includes(cleanStep(finalCustomer?.conversation_step)), detail: `doc=${finalCustomer?.document_type || "∅"}` });
+      checks.push({ name: "Documento foi validado", passed: visited.includes("confirmando_dados_doc") || ["complete", "portal_submitting", "aguardando_otp", "aguardando_facial", "cadastro_em_analise"].includes(cleanStep(finalCustomer?.conversation_step)), detail: `doc=${finalCustomer?.document_type || "∅"}` });
     }
     if (scenario === "valor_baixo") checks.push({ name: "Valor baixo não seguiu para venda", passed: finalStatus === "low_value", detail: `status=${finalCustomer?.status}, step=${finalCustomer?.conversation_step}` });
     if (scenario === "lead_some") checks.push({ name: "Lead silencioso detectado", passed: finalStatus === "lead_silent", detail: `status=${finalStatus}` });
