@@ -9,6 +9,7 @@ import { ChatView } from "./ChatView";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 import { WhapiBillingBanner } from "./WhapiBillingBanner";
+import { useWhapiHealth } from "@/hooks/useWhapiHealth";
 
 import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -172,6 +173,10 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
   const totalUnread = useMemo(() => chats.reduce((sum, c) => sum + c.unreadCount, 0), [chats]);
   const isConnected = connectionStatus === "connected";
 
+  // Whapi: só exibir painel de reconexão no Dashboard quando o canal cair (não está AUTH).
+  const whapiHealth = useWhapiHealth(!!isWhapi);
+  const whapiDown = !!isWhapi && whapiHealth.lastCheckedAt !== null && whapiHealth.status !== "AUTH";
+
   return (
     <div className="flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
       {/* Compact connection status — pill on the left, soft border */}
@@ -262,7 +267,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
         {activeSubTab === "dashboard" && (
           <Suspense fallback={<LazyFallback />}>
             <div className="p-3 space-y-3">
-              {isWhapi && <WhapiConnectionPanel visible={true} />}
+              {isWhapi && whapiDown && <WhapiConnectionPanel visible={true} />}
               <WhatsAppDashboard consultantId={userId} />
             </div>
           </Suspense>
