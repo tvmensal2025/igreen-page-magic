@@ -91,8 +91,8 @@ async function sendValidationLinkToCustomer(customerId, link) {
     `com um *código de verificação* (6 dígitos).\n\n` +
     `Quando chegar, é só *me responder aqui mesmo com esse código*. ` +
     `Eu cuido de digitar pra você no portal — assim você não precisa abrir nada. ✅\n\n` +
-    `Depois eu te mando o link da *validação facial* (uma selfie rápida) ` +
-    `pra finalizar.`,
+    `Se preferir acompanhar/concluir manualmente, este é o link oficial da iGreen:\n${link}\n\n` +
+    `É *o mesmo link* da validação facial (selfie) e da assinatura do contrato — guarda aí.`,
   );
 }
 
