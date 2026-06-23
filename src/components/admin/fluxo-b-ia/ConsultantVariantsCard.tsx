@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Save, GitBranch } from "lucide-react";
 
-type Mode = "D_ONLY" | "B_ONLY" | "BOTH";
+type Mode = "A_ONLY" | "D_ONLY" | "B_ONLY" | "BOTH";
 
 const MODE_TO_ARRAY: Record<Mode, string[]> = {
+  A_ONLY: ["A"],
   D_ONLY: ["D"],
   B_ONLY: ["B"],
   BOTH: ["B", "D"],
@@ -18,6 +19,7 @@ const MODE_TO_ARRAY: Record<Mode, string[]> = {
 
 function arrayToMode(arr: string[] | null | undefined): Mode {
   const a = (arr || []).map((x) => String(x).toUpperCase()).sort();
+  if (a.length === 1 && a[0] === "A") return "A_ONLY";
   if (a.length === 1 && a[0] === "B") return "B_ONLY";
   if (a.length === 1 && a[0] === "D") return "D_ONLY";
   return "BOTH";
@@ -31,9 +33,9 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<Mode>("BOTH");
-  const [original, setOriginal] = useState<Mode>("BOTH");
-  const [counts, setCounts] = useState<{ B: number; D: number }>({ B: 0, D: 0 });
+  const [mode, setMode] = useState<Mode>("D_ONLY");
+  const [original, setOriginal] = useState<Mode>("D_ONLY");
+  const [counts, setCounts] = useState<{ A: number; B: number; D: number }>({ A: 0, B: 0, D: 0 });
 
   useEffect(() => {
     if (!consultantId) return;
@@ -48,15 +50,16 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
       setMode(m);
       setOriginal(m);
 
-      // counts últimos 7 dias
       const since = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
-      const [{ count: bCount }, { count: dCount }] = await Promise.all([
+      const [{ count: aCount }, { count: bCount }, { count: dCount }] = await Promise.all([
+        supabase.from("customers").select("id", { count: "exact", head: true })
+          .eq("consultant_id", consultantId).eq("flow_variant", "A").gte("created_at", since),
         supabase.from("customers").select("id", { count: "exact", head: true })
           .eq("consultant_id", consultantId).eq("flow_variant", "B").gte("created_at", since),
         supabase.from("customers").select("id", { count: "exact", head: true })
           .eq("consultant_id", consultantId).eq("flow_variant", "D").gte("created_at", since),
       ]);
-      setCounts({ B: bCount ?? 0, D: dCount ?? 0 });
+      setCounts({ A: aCount ?? 0, B: bCount ?? 0, D: dCount ?? 0 });
       setLoading(false);
     })();
   }, [consultantId]);
@@ -84,10 +87,11 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><GitBranch className="w-5 h-5 text-primary" />Distribuição de Fluxo</CardTitle>
-        <CardDescription>
-          Define quais variantes este consultor recebe. Últimos 7 dias:
-          <Badge variant="outline" className="ml-2">Fluxo B (IA): {counts.B}</Badge>
-          <Badge variant="outline" className="ml-1">Fluxo D (botões): {counts.D}</Badge>
+        <CardDescription className="space-x-1">
+          Define qual fluxo este consultor entrega ao novo lead. Últimos 7 dias:
+          <Badge variant="outline" className="ml-2">A (cadastro direto): {counts.A}</Badge>
+          <Badge variant="outline">B (IA): {counts.B}</Badge>
+          <Badge variant="outline">D (botões): {counts.D}</Badge>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -95,8 +99,15 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
           <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("D_ONLY")}>
             <RadioGroupItem value="D_ONLY" id="m-d" className="mt-1" />
             <Label htmlFor="m-d" className="cursor-pointer flex-1">
-              <div className="font-medium">Apenas Fluxo D (botões guiados)</div>
-              <div className="text-xs text-muted-foreground">Roteiro fixo com botões. Mais previsível, sem IA livre.</div>
+              <div className="font-medium">Apenas Fluxo D (botões guiados) — recomendado</div>
+              <div className="text-xs text-muted-foreground">Roteiro fixo e conversacional. Lead sobe pra Fluxo A automaticamente quando pedir cadastro.</div>
+            </Label>
+          </div>
+          <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("A_ONLY")}>
+            <RadioGroupItem value="A_ONLY" id="m-a" className="mt-1" />
+            <Label htmlFor="m-a" className="cursor-pointer flex-1">
+              <div className="font-medium">Apenas Fluxo A (cadastro direto)</div>
+              <div className="text-xs text-muted-foreground">Vai direto em "envie sua conta de luz". Use só para campanhas/leads muito qualificados.</div>
             </Label>
           </div>
           <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("B_ONLY")}>
@@ -109,8 +120,8 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
           <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("BOTH")}>
             <RadioGroupItem value="BOTH" id="m-both" className="mt-1" />
             <Label htmlFor="m-both" className="cursor-pointer flex-1">
-              <div className="font-medium">Ambos (A/B 50/50)</div>
-              <div className="text-xs text-muted-foreground">Roteador sorteia entre B e D para cada novo lead. Recomendado para comparar.</div>
+              <div className="font-medium">Ambos (B + D 50/50)</div>
+              <div className="text-xs text-muted-foreground">Roteador sorteia entre B e D para cada novo lead. Para comparar performance.</div>
             </Label>
           </div>
         </RadioGroup>
