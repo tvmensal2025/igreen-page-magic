@@ -60,7 +60,7 @@ import {
 import { matchQA } from "./conversational/index.ts";
 import { getTemplate } from "./conversational/templates.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
-import { detectFlowSwitch } from "../../_shared/flow-router.ts";
+import { detectFlowSwitch, CADASTRO_STEPS } from "../../_shared/flow-router.ts";
 import { ocrContaEnergia, ocrDocumentoFrenteVerso } from "../../_shared/ocr.ts";
 import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/document-type.ts";
 import { detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
