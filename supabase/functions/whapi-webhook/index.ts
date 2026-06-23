@@ -1759,6 +1759,11 @@ Deno.serve(async (req) => {
       // etc.) e o switch executa OCR + botões SIM/NÃO/EDITAR.
       // Bug observado: lead 5511971254913 enviou conta de luz 2× e bot
       // re-emitiu prompt 3× sem nunca chamar OCR (ocr_conta_attempts=0).
+      // 🔒 Flag: quando o bridge forçar sys por causa de um step CUSTOM de
+      // captura, o bloco abaixo (engine==="sys" && !isCadastroStep) NÃO pode
+      // reverter para "flow" nem zerar conversation_step, senão o handler
+      // conversacional recebe o PDF/imagem e fica mudo (não tem OCR).
+      let bridgeForcedSysForCapture = false;
       try {
         if (engine === "flow" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentStepRaw)) {
           const { data: stepRow } = await supabase
@@ -1773,6 +1778,7 @@ Deno.serve(async (req) => {
           if (stepRow && CAPTURE_TYPES.has(String((stepRow as any).step_type))) {
             console.log(`🛟 [router-bridge] UUID ${currentStepRaw} type=${(stepRow as any).step_type} → forçando engine=sys (legacy tem OCR/portal2/finalize)`);
             engine = "sys";
+            bridgeForcedSysForCapture = true;
             // ⚠️ NÃO limpa conversation_step — o custom-step-resolver dentro
             // de bot-flow.ts precisa do UUID para localizar o step e
             // (a) mapear para o nominal correto, (b) avançar pelo
@@ -1786,6 +1792,7 @@ Deno.serve(async (req) => {
       if (
         engine === "sys" &&
         !isCadastroStep &&
+        !bridgeForcedSysForCapture &&
         consultantFlag &&
         customerOverride !== false &&
         _fbVariantLegacy !== "B"
