@@ -1,96 +1,94 @@
-## 1) Vai dar certo? O link de facial vai chegar?
+## Parte 1 — Fluxo D já entrega o link do Portal 2?
 
-**Sim, vai funcionar — mas o link da facial NÃO sai do nosso bot.** Como já está hoje:
+**Sim, entrega — porque cadastro é compartilhado.** O Fluxo D conduz a conversa até o lead aceitar cadastrar. A partir daí, *todo* lead (D, B ou A) vai para os mesmos `conversation_step` do pipeline determinístico (`aguardando_conta` → `processando_ocr_conta` → ... → `portal_submitting`). O `worker-portal-2/server.mjs` é quem efetivamente:
 
-1. Bot determinístico (Fluxo A) → coleta conta → OCR → SIM → documento → email → telefone → finalizar.
-2. Worker `worker-portal-2` faz login no Portal iGreen, preenche o formulário, intercepta o **OTP** (SMS/WhatsApp) e devolve para o bot (`aguardando_otp` → `validando_otp`).
-3. Depois do OTP validado, **o próprio Portal iGreen envia ao celular do cliente o link de selfie/biometria facial** (SMS/push do portal — fora do nosso fluxo). Nosso bot fica em `aguardando_facial` apenas monitorando.
-4. Quando o portal confirma a facial, o worker avança para `aguardando_assinatura` → `cadastro_em_analise` → `complete`.  
-O PORTALWORKER2 ABRE O LINK PARA DIGITAR O OTP ESSE MESMO LINK TEM QUE SER ENVIADO AO CLIENTE PELO NOSSO FLUXO PARA O CLIENTE SE NAO ELE FICA PERDIDO. 
+1. Faz login no Portal iGreen, preenche o formulário, gera o `idcliente`.
+2. Monta o `validationLink` (`https://digital.igreenenergy.com.br/validacao-codigo/{idcliente}?id={consultor}&sendcontract=true`).
+3. Persiste em `customers.link_facial`, `link_assinatura`, `igreen_link`, `portal2_contract_link`.
+4. Dispara `sendValidationLinkToCustomer` — após a edição anterior, **o link agora vai no corpo da mensagem** ("Se preferir acompanhar/concluir manualmente, este é o link oficial da iGreen: …").
+5. Move `conversation_step` para `aguardando_otp`.
 
-**Pontos de atenção (riscos reais):**
+Depois do OTP validado, o bot entra em `aguardando_facial`/`aguardando_assinatura` (`bot-flow.ts` linhas ~5395-5411 em ambos webhooks) e já responde com o mesmo link:
 
-- Se o número de celular preenchido no portal estiver errado, o link de facial não chega — por isso o passo `ask_phone_confirm` é crítico.
-- Se o cliente abrir o link facial mas o portal não devolver status, ficamos travados em `aguardando_facial` (tem watchdog mas pode dar timeout).
-- O fluxo determinístico já está com bypass total do Cérebro em cadastro (alteração da rodada anterior), então não há mais risco de IA "atravessar".
+> 📸 *Última etapa: Validação Facial*
+> 👉 Abra este link no seu celular e siga as instruções: {link}
 
-Veredito: **vai dar certo** desde que (a) número confirmado correto, (b) Portal 2 online, (c) cliente abra o SMS/link do portal. Nada novo a corrigir nesse ponto.
+Quando o cliente responde "PRONTO" (ou variações), avança para `cadastro_em_analise`.
 
----
+**Conclusão:** Fluxo D entrega o link sim, em dois momentos:
 
-## 2) Ativar Fluxo A só por palavra-chave (sem mexer em parceiros)
+- **Momento 1 (após submit do Portal 2):** mensagem da iGreen com OTP + link explícito.
+- **Momento 2 (após OTP validado / pedido de facial):** link da selfie.
 
-**É possível, sim**, e a estrutura já existe parcialmente. Hoje a atribuição de variante (`A`/`B`/`C`/`D`/`E`) é feita por **round-robin** na RPC `assign_flow_variant`, baseada em `consultants.active_variants`. Ou seja: hoje o Fluxo A é decidido na **criação do lead**, sem olhar o conteúdo da mensagem.
+### Riscos / pontos a fechar
 
-O que o usuário quer: lead novo entra num fluxo "padrão" (ex.: Fluxo D ou welcome neutro). **Só quando ele digita uma palavra-chave específica** (ex.: "cadastro", "quero entrar", "energia"), o sistema **muda o lead para o Fluxo A** e começa o cadastro determinístico.
+1. **Variante "D" continua em D mesmo após confirmar cadastro?** Sim — só muda para `conversation_step=aguardando_conta`, mas `flow_variant` continua D. Isso é OK, porque o roteador (`flow-router.ts`) já preserva `CADASTRO_STEPS` no engine `sys` independente da variante.
+2. **Se o worker falhar antes do `sendValidationLinkToCustomer**` (ex.: portal offline), o link nunca chega. Hoje cai em `aguardando_humano`. Tem watchdog (`flow-d-stuck-watchdog`) mas convém validar que ele cobre esse caso.
+3. **Fluxo D tem um "passo final" próprio no Flow Builder** (`complete`) — esse texto é configurável e roda *depois* da análise da iGreen, não interfere no envio do link.
 
-### Por que isso NÃO conflita com palavras-chave de parceiro
-
-São tabelas e fluxos independentes:
-
-
-| Função                          | Tabela                                                                        | O que faz                                                                                                      |
-| ------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Parceiro (atribuição comercial) | `referral_partners.keywords`                                                  | Marca `customers.referral_partner_id`. Usado só para CLI no link de cadastro. **Não muda variante nem fluxo.** |
-| Switch de fluxo (PJ/Licenciada) | `flow_router_rules.trigger_keywords`                                          | Detecta intenção forte e troca `flow_key`. Já implementado em `detectFlowSwitch`.                              |
-| **Novo: ativar Fluxo A**        | `flow_router_rules` com `target_flow_key='fluxo_a_cadastro'` (ou nova tabela) | Vai mudar `customers.flow_variant` para `'A'` e setar `conversation_step='aguardando_conta'`.                  |
-
-
-Os três rodam em ordem e leem campos diferentes — não há interferência. Inclusive a busca de parceiro continua acontecendo no mesmo turno (vide `evolution-webhook/index.ts:962`).
+Veredito: **funciona 100%** desde que worker complete o submit e a Evolution/Whapi do consultor esteja online.
 
 ---
 
-## Plano de implementação
+## Parte 2 — UI para gerenciar tudo (deixar 100%)
 
-### Etapa 1 — Mudar comportamento padrão de atribuição
+Hoje o admin tem `ConsultantVariantsCard` (escolhe D/B/Ambos por consultor) em `/admin/fluxo-b`. **Não existe UI** para:
 
-- Hoje `assign_flow_variant` faz round-robin. Vamos manter a RPC, **mas atualizar `active_variants` dos consultores** para o que o usuário escolher como padrão (ex.: só `['D']`). Assim leads novos entram em D, não em A.
-- (Decisão necessária: qual variante padrão para leads novos? D? B? welcome neutro?)
+- Ativar Fluxo A por palavra-chave (`flow_router_rules` com `target_flow_key='fluxo_a_cadastro'`).
+- Ver/editar as palavras-chave que ativam o cadastro.
+- Incluir a variante **A** na escolha de distribuição (hoje só B/D).
 
-### Etapa 2 — Tabela de gatilhos de Fluxo A por palavra-chave
+### Plano de UI
 
-Opções:
+#### 2.1 Estender `ConsultantVariantsCard`
 
-- **(a) Reutilizar `flow_router_rules**` criando regra com `target_flow_key='fluxo_a_cadastro'` e palavras-chave (`["cadastro","quero cadastrar","quero entrar","energia"]`). Adicionar handler em `detectFlowSwitch` que, quando alvo for `fluxo_a_cadastro`, dispara mudança de variante.
-- **(b) Nova coluna `consultants.fluxo_a_keywords text[]**` (mais simples, scoped por consultor).
+- Adicionar opção **"Cadastro direto (Fluxo A)"** ao radio (modo `A_ONLY` → `active_variants=['A']`), além de D/B/BOTH.
+- Mostrar contagem de leads em A nos últimos 7 dias junto com B e D.
+- Texto explicando: "Fluxo A entra direto em 'envie sua conta de luz'. Use só para captação muito qualificada."
 
-Recomendo **(a)** — já existe UI/cache/ordem por prioridade, e mantém a porta aberta para outros fluxos.
+#### 2.2 Novo card `FluxoAKeywordsCard` (mesma página `/admin/fluxo-b`)
 
-### Etapa 3 — Handler no webhook
+- Lista as keywords ativas para o consultor logado em `flow_router_rules` (filtrando `target_flow_key='fluxo_a_cadastro'`).
+- Input para adicionar nova keyword (chips) — salva no array `trigger_keywords`.
+- Botão remover por chip.
+- Toggle "Ativo" (campo `is_active`).
+- Aviso: "Quando o cliente digitar uma destas palavras, o bot pula a conversa e pede direto a foto da conta. Não interfere em palavras-chave de parceiros (essas continuam marcando o `referral_partner_id`)."
+- Pré-popular com `["fazer o cadastro"]` se o consultor ainda não tem regra (já vem do seed da rodada anterior).
 
-Em `evolution-webhook/index.ts` e `whapi-webhook/index.ts`, no bloco onde mensagem textual é processada (antes do roteamento de engine):
+#### 2.3 Card de **status do link Portal 2** na conversa (chat do consultor)
 
-1. Se `customer.flow_variant !== 'A'` **E** `customer.conversation_step` não está em `CADASTRO_STEPS` (não interrompe quem já está no meio de algo) **E** `detectFlowSwitch` retornar `fluxo_a_cadastro`:
-  - Atualizar `customers`: `flow_variant='A'`, `conversation_step='aguardando_conta'`, limpar estado de cadastro antigo.
-  - Disparar mensagem inicial do Fluxo A ("Perfeito! 🙌 📸 Me envia agora uma *foto da sua conta de luz*…").
-2. **Não tocar** no bloco de `referral_partners` (linhas ~962) — continua rodando em paralelo no mesmo turno; se a palavra-chave de parceiro casar, marca `referral_partner_id`; se a de Fluxo A casar, ativa cadastro. Ambos podem acontecer juntos.
+- No painel de conversas, quando `customer.portal2_contract_link` existir, mostrar um card destacado:
+  - Status: criado / OTP enviado / OTP validado / facial concluída / aprovado.
+  - Botão "Copiar link" + "Reenviar link ao cliente" (chama edge function existente ou um novo POST que dispara `sendValidationLinkToCustomer`).
+- Resolve o caso de cliente perdido: consultor reenviza com 1 clique.
 
-### Etapa 4 — UI admin (opcional nesta rodada)
+#### 2.4 Indicador na lista de leads
 
-- Tela simples em `/admin/fluxos` (ou nova) para listar/editar keywords do Fluxo A — escreve em `flow_router_rules`.
-- Se preferir, na primeira versão deixamos hardcoded no banco via migration e a UI fica para depois.
+- Coluna/badge "Aguardando facial" quando `conversation_step` é `aguardando_facial`/`aguardando_assinatura` há mais de N horas → consultor pode intervir.
 
-### Etapa 5 — Testes manuais
+### Arquivos a tocar
 
-- Lead novo sem palavra-chave → entra em D (não em A).
-- Lead novo digita "quero me cadastrar" → vira A, recebe foto de conta.
-- Lead novo digita "promo parceiro X" → marca `referral_partner_id`, **não** muda variante.
-- Lead novo digita "cadastro pela parceira X" → marca parceiro **E** ativa A.
-- Lead já em meio do cadastro (CADASTRO_STEPS) digita palavra-chave → ignorado (não reinicia).
+- `src/components/admin/fluxo-b-ia/ConsultantVariantsCard.tsx` — adicionar opção A.
+- `src/components/admin/fluxo-b-ia/FluxoAKeywordsCard.tsx` — **novo**.
+- `src/pages/AdminFluxoB.tsx` — montar o novo card.
+- Componente de chat do consultor (verificar onde está — `ConsultantPage.tsx` ou subcomponente) — card de status do Portal 2.
+- (Opcional) Edge function `reenviar-link-portal` ou rota direta para `worker-portal-2`.
+
+### Testes manuais antes de fechar
+
+1. Lead novo → entra em D (default atual).
+2. Lead digita "fazer o cadastro" → vira A imediatamente, recebe "📸 Me envia agora uma foto da sua conta de luz".
+3. Lead conclui fluxo D normal → cadastro determinístico → worker dispara → mensagem com link chega ao cliente.
+4. No painel admin: trocar consultor para "A_ONLY" → novos leads dele entram direto em A.
+5. Adicionar keyword nova ("quero cadastrar") na UI → testar com lead que não está em A.
+6. Card de status Portal 2 mostra o link e botão "Reenviar" funciona.
 
 ---
 
-## Arquivos a editar
+## Perguntas antes de construir
 
-- `supabase/functions/_shared/flow-router.ts` — estender `detectFlowSwitch` para suportar `target_flow_key='fluxo_a_cadastro'` (ou criar `detectFluxoAActivation`).
-- `supabase/functions/evolution-webhook/index.ts` e `supabase/functions/whapi-webhook/index.ts` — chamar o detector e mutar `customers.flow_variant` + step.
-- Migration: inserir regras seed em `flow_router_rules` com `target_flow_key='fluxo_a_cadastro'` e keywords default; opcionalmente atualizar `consultants.active_variants` para `['D']` (ou outra default).
-
----
-
-## Perguntas antes de eu construir
-
-1. **Qual variante padrão** para lead novo sem palavra-chave? (D, B, ou um "welcome neutro"?)
-2. **Quais palavras-chave** devem ativar o Fluxo A? Sugestão: `cadastro`, `quero cadastrar`, `quero me cadastrar`, `energia`, `começar cadastro`.
-3. **Escopo**: regra global (todos os consultores) ou por consultor?
-4. **UI agora ou depois?** Posso entregar só a lógica + seed agora e UI numa próxima rodada.
+1. **Distribuição com A:** quer que A apareça como opção isolada (`A_ONLY`) **e** combinável (`A+D`, `A+B`)? Ou só radio mutuamente exclusivo (4 opções: A / B / D / BOTH B+D)? isolada
+2. **Card de status Portal 2:** onde quer mostrar — dentro do chat do consultor (`/consultor/...`) ou também numa página admin separada? dentro do chat
+3. **Reenvio do link:** prefere botão que chama o worker-portal-2 (`/send-validation-link/:customerId`, precisa criar endpoint) ou que envia direto via Evolution/Whapi da edge function (`manual-step-send` ou nova)? ele envia direto, mas em chat no whatsapp e no captacao clicando no botao tbm envia no bot
+4. **Keyword UI por consultor ou também global?** Hoje a regra pode ter `consultant_id=NULL` (vale pra todos). Quer expor isso na UI ou manter sempre por consultor? todos incicia com essa palavra chave, e vale para todos, mas eles podem mudar
+5. &nbsp;

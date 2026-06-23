@@ -9,6 +9,7 @@ import { Loader2, Sparkles, ArrowLeft, FlaskConical, BookOpen, User } from "luci
 import PersonaPanel from "@/components/admin/fluxo-b-ia/PersonaPanel";
 import SimulatorPanel from "@/components/admin/fluxo-b-ia/SimulatorPanel";
 import ConsultantVariantsCard from "@/components/admin/fluxo-b-ia/ConsultantVariantsCard";
+import FluxoAKeywordsCard from "@/components/admin/fluxo-b-ia/FluxoAKeywordsCard";
 import AdminKnowledge from "@/pages/AdminKnowledge";
 
 interface Consultant { id: string; name: string }
@@ -105,6 +106,7 @@ export default function AdminFluxoB() {
               </CardContent>
             </Card>
             {selectedId && <ConsultantVariantsCard consultantId={selectedId} />}
+            {selectedId && <FluxoAKeywordsCard consultantId={selectedId} />}
           </TabsContent>
         </Tabs>
       </div>
