@@ -367,8 +367,57 @@ Deno.serve(async (req) => {
           }
         }
 
-        if (!r.ok) return json(r.status, { error: r.data });
+        if (!r.ok) {
+          const msg = JSON.stringify(r.data || "");
+          if (r.status === 404 || /channel not found|unauthorized|invalid token/i.test(msg)) {
+            console.warn(`[whapi-proxy] send_media(${mediatype}): canal Whapi indisponível`);
+            return json(503, { error: "Canal WhatsApp (Whapi) offline ou token inválido. Reconecte o canal nas configurações." });
+          }
+          return json(r.status, { error: r.data });
+        }
         return json(200, { key: { id: r.data?.message?.id || r.data?.id || "" } });
+      }
+
+      case "health_check": {
+        // Status do canal Whapi (para o painel de reconexão sem código).
+        const r = await whapiFetch(whapiToken, `/health`, { method: "GET" });
+        const me = await whapiFetch(whapiToken, `/users/me`, { method: "GET" }).catch(() => ({ ok: false, data: null }));
+        const status = r.data?.status?.text || r.data?.status || "UNKNOWN";
+        const phone = (me as any)?.data?.phone || (me as any)?.data?.id || null;
+        const channelId = r.data?.channel?.id || r.data?.channel_id || null;
+        if (phone) {
+          try {
+            await admin.from("settings").upsert(
+              { key: "whapi_connected_phone", value: String(phone) },
+              { onConflict: "key" },
+            );
+          } catch (_) { /* ignora */ }
+        }
+        return json(200, {
+          ok: r.ok,
+          status: String(status).toUpperCase(),
+          phone,
+          channel_id: channelId,
+          raw: r.data,
+        });
+      }
+
+      case "request_qr": {
+        // Pede QR code de pareamento (canal precisa estar em INIT/QR).
+        const r = await whapiFetch(whapiToken, `/users/login`, { method: "GET" });
+        if (!r.ok) {
+          const msg = JSON.stringify(r.data || "");
+          if (r.status === 404 || /channel not found|unauthorized|invalid token/i.test(msg)) {
+            return json(503, { error: "Canal Whapi offline ou token inválido." });
+          }
+          return json(r.status, { error: r.data });
+        }
+        return json(200, { qr: r.data?.base64 || r.data?.qr || null, raw: r.data });
+      }
+
+      case "logout": {
+        const r = await whapiFetch(whapiToken, `/users/logout`, { method: "POST" });
+        return json(r.ok ? 200 : r.status, { ok: r.ok, raw: r.data });
       }
 
       case "get_profile_pic": {
