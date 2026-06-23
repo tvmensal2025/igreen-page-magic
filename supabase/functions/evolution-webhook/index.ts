@@ -1883,14 +1883,19 @@ Deno.serve(async (req) => {
       // pipeline de OCR/portal (despachado pelo próprio Cérebro) seguem intactos.
       let _cerebroRespondeu = false;
       const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
-      // 🔑 MÍDIA → caminho determinístico (OCR). O Cérebro NÃO executa OCR de
-      // conta/documento (a ação `ocr` do despacho é no-op). Quem lê a foto é o
-      // `runBotFlow` (cases aguardando_conta / aguardando_doc_auto), idêntico ao
-      // que já funciona. Então, ao receber imagem/documento, pulamos o Cérebro e
-      // deixamos o determinístico processar — o Cérebro segue cuidando do texto.
-      const _temMidiaOcr = (hasImage || hasDocument) && !hasAudio;
-      if (_temMidiaOcr) {
-        console.log(`[cerebro] mídia (img/doc) → delegando ao determinístico (OCR) customer=${customer.id}`);
+      // 🔑 CADASTRO → caminho determinístico (OCR + confirmação + doc + portal).
+      // O Cérebro NÃO executa OCR (ação `ocr` do despacho é no-op) e usa uma
+      // fonte de estado distinta (`customer_flow_state.current_step_id`) da do
+      // determinístico (`customers.conversation_step`). Misturar os dois no meio
+      // do cadastro dessincroniza o passo. Regra: assim que o lead ENTRA no
+      // cadastro — manda mídia (foto conta/doc) OU já está num passo de cadastro
+      // (CADASTRO_STEPS) — TODO o turno vai ao determinístico, que conduz o
+      // cadastro inteiro (OCR→confirma→doc→email→telefone→portal→OTP→link).
+      // O Cérebro segue dono APENAS da fase conversacional inicial (antes da conta).
+      const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
+      const _emCadastro = CADASTRO_STEPS.has(stepBefore);
+      if (_midiaOcr || _emCadastro) {
+        console.log(`[cerebro] cadastro em andamento (midia=${_midiaOcr} step=${stepBefore}) → determinístico customer=${customer.id}`);
       } else if (_fbVarCerebro === "D") {
         console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
       } else try {
