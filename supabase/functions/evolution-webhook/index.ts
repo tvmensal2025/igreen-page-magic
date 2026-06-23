@@ -1889,7 +1889,9 @@ Deno.serve(async (req) => {
       let _cerebroRespondeu = false;
       const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
       const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
-      const _emCadastro = CADASTRO_STEPS.has(stepBefore);
+      // 🛡️ Cadastro também inclui UUID custom de captura/finalize — sem isso
+      // o Cérebro/IA livre engole a foto da conta e o OCR nunca roda.
+      const _emCadastro = CADASTRO_STEPS.has(stepBefore) || bridgeForcedSysForCapture;
 
       // 🛡️ Guarda de origem: clientes já cadastrados/sincronizados
       // (`igreen_sync` = carteira XLSX/worker; `igreen_extension` = extensão
