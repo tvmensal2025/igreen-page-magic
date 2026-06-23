@@ -252,6 +252,15 @@ async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string
   // O case "ask_finalizar" continua existindo como fallback para leads antigos
   // que já estão parados nesse step.
   if (step === "ask_finalizar") return "finalizando";
+  // 🚫 NUNCA pedir CEP ao cliente. Se OCR não pegou e ViaCEP não resolveu,
+  // segue o fluxo silencioso (portal pode falhar depois — fallback humano).
+  if (step === "ask_cep") {
+    console.warn("⚠️ CEP não resolvido (OCR genérico + ViaCEP sem retorno) — seguindo sem pedir ao cliente (regra do produto).");
+    const mock = { ...merged, cep: "01310100" };
+    let nxt = getNextMissingStep(mock);
+    if (nxt === "ask_cep") nxt = "ask_number";
+    step = nxt;
+  }
   return step;
 }
 
