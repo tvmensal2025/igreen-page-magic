@@ -460,7 +460,7 @@ Deno.serve(async (req) => {
       case "health_check": {
         // Status do canal Whapi (para o painel de reconexão sem código).
         const r = await whapiFetch(whapiToken, `/health`, { method: "GET" });
-        const me = await whapiFetch(whapiToken, `/users/me`, { method: "GET" }).catch(() => ({ ok: false, data: null }));
+        const me = await whapiFetch(whapiToken, `/users/me`, { method: "GET" }).catch(() => ({ ok: false, status: 0, data: null }));
         const status = r.data?.status?.text || r.data?.status || "UNKNOWN";
         const phone = (me as any)?.data?.phone || (me as any)?.data?.id || null;
         const channelId = r.data?.channel?.id || r.data?.channel_id || null;
@@ -472,11 +472,25 @@ Deno.serve(async (req) => {
             );
           } catch (_) { /* ignora */ }
         }
+        // Classifica motivo quando o canal não respondeu OK — ex.: 402 unpaid, 404 channel_not_found.
+        let reasonCode: WhapiReasonCode | null = null;
+        let helpUrl: string | null = null;
+        let reasonMessage: string | null = null;
+        if (!r.ok) {
+          const cls = classifyWhapiError(r.status, r.data);
+          reasonCode = cls.reasonCode;
+          helpUrl = cls.helpUrl;
+          reasonMessage = cls.error;
+          console.warn(`[whapi-proxy] health_check: canal indisponível (${reasonCode}) status=${r.status}`);
+        }
         return json(200, {
           ok: r.ok,
           status: String(status).toUpperCase(),
           phone,
           channel_id: channelId,
+          reasonCode,
+          reasonMessage,
+          helpUrl,
           raw: r.data,
         });
       }
@@ -485,9 +499,9 @@ Deno.serve(async (req) => {
         // Pede QR code de pareamento (canal precisa estar em INIT/QR).
         const r = await whapiFetch(whapiToken, `/users/login`, { method: "GET" });
         if (!r.ok) {
-          const msg = JSON.stringify(r.data || "");
-          if (r.status === 404 || /channel not found|unauthorized|invalid token/i.test(msg)) {
-            return json(503, { error: "Canal Whapi offline ou token inválido." });
+          if (isWhapiErrorBlob(r.status, r.data)) {
+            const cls = classifyWhapiError(r.status, r.data);
+            return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
           }
           return json(r.status, { error: r.data });
         }
