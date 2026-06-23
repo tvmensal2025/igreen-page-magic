@@ -983,21 +983,56 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       } else {
         const candidate = await detectFlowSwitch(supabase, customer.consultant_id, messageText, null);
         if (candidate) {
-          console.log(`[flow-router] proposing switch → ${candidate.target_flow_key} (kw="${candidate.matched_keyword}")`);
-          await supabase.from("customers").update({ pending_flow_switch: candidate.target_flow_key }).eq("id", customer.id);
-          (customer as any).pending_flow_switch = candidate.target_flow_key;
-          try {
-            await supabase.from("bot_handoff_alerts").insert({
-              customer_id: customer.id,
-              consultant_id: customer.consultant_id,
-              reason: "flow_switch_requested",
-              user_message: messageText.slice(0, 200),
-            } as any);
-          } catch {}
-          return {
-            reply: `Vi que você quer falar sobre **${candidate.target_flow_label}** — quer que eu mude pra esse atendimento? (responde *sim* ou *não*)`,
-            updates: {},
-          };
+          // 🚀 ATIVAÇÃO IMEDIATA DO FLUXO A POR PALAVRA-CHAVE (sem sim/não).
+          // Só ativa se: (a) não está já em A, (b) não está no meio de um passo de cadastro.
+          if (candidate.target_flow_key === "fluxo_a_cadastro") {
+            const curVariant = String((customer as any).flow_variant || "").toUpperCase();
+            const curStep = String((customer as any).conversation_step || "");
+            const stripped = curStep.startsWith("flow:") ? curStep.slice(5) : curStep;
+            const inCadastro = CADASTRO_STEPS.has(stripped);
+            if (curVariant !== "A" && !inCadastro) {
+              console.log(`[flow-router] activating Fluxo A (kw="${candidate.matched_keyword}") customer=${customer.id}`);
+              await supabase.from("customers").update({
+                flow_variant: "A",
+                conversation_step: "aguardando_conta",
+                pending_flow_switch: null,
+                sales_phase: "abertura",
+                bot_paused: false,
+              }).eq("id", customer.id);
+              (customer as any).flow_variant = "A";
+              (customer as any).conversation_step = "aguardando_conta";
+              try {
+                await supabase.from("bot_step_transitions").insert({
+                  customer_id: customer.id,
+                  consultant_id: customer.consultant_id,
+                  from_step: curStep || null,
+                  to_step: "aguardando_conta",
+                  intent: `flow_router:fluxo_a_cadastro:${candidate.matched_keyword}`,
+                });
+              } catch {}
+              return {
+                reply: "Perfeito! 🙌\n\n📸 Me envia agora uma *foto da sua conta de luz* (fatura do mês atual ou a anterior).💚",
+                updates: {},
+              };
+            }
+            // já está em A ou no cadastro — ignora silenciosamente
+          } else {
+            console.log(`[flow-router] proposing switch → ${candidate.target_flow_key} (kw="${candidate.matched_keyword}")`);
+            await supabase.from("customers").update({ pending_flow_switch: candidate.target_flow_key }).eq("id", customer.id);
+            (customer as any).pending_flow_switch = candidate.target_flow_key;
+            try {
+              await supabase.from("bot_handoff_alerts").insert({
+                customer_id: customer.id,
+                consultant_id: customer.consultant_id,
+                reason: "flow_switch_requested",
+                user_message: messageText.slice(0, 200),
+              } as any);
+            } catch {}
+            return {
+              reply: `Vi que você quer falar sobre **${candidate.target_flow_label}** — quer que eu mude pra esse atendimento? (responde *sim* ou *não*)`,
+              updates: {},
+            };
+          }
         }
       }
     } catch (e) {
