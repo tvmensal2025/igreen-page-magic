@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { writeFileSync } from "fs";
-import { VitePWA } from "vite-plugin-pwa";
 
 // ID único deste build (timestamp). É embutido no bundle (__BUILD_ID__) e
 // também gravado em /version.json. O app compara os dois em runtime para
@@ -28,18 +27,11 @@ function emitVersionJson() {
 }
 
 // ─── ESTRATÉGIA ANTI-CACHE (importante!) ──────────────────────────────────
-// O domínio igreen.cloud está em Cloudflare com nuvem CINZA (DNS-only), então
-// o tráfego vai direto para a Lovable Hosting, que NÃO processa public/_headers.
-// Por isso a estratégia anti-cache é 100% client-side:
-//   1. Meta tags no-cache em index.html (forçam revalidar HTML)
-//   2. Service Worker em /sw-app.js com NetworkFirst para navegações
-//   3. /version.json + __BUILD_ID__ (gate em main.tsx) detecta deploy novo
-//      a cada 30s + em visibilitychange + em online + em cada navegação SPA
-//   4. Kill-switch em /sw.js (public/) para limpar instalações antigas
-//   5. Rota de emergência ?nuke=1 limpa SW + caches e recarrega
-// Se um dia a nuvem do Cloudflare voltar para LARANJA (proxy ativo), recriar
-// public/_headers volta a funcionar como reforço — mas o sistema atual já
-// blinda 100% sem depender de cabeçalhos de servidor.
+// Este app NÃO registra mais Service Worker de cache. O problema relatado foi
+// exatamente usuários presos em páginas antigas após várias atualizações.
+// Mantemos apenas manifest/installability e kill-switches em /sw.js e
+// /sw-app.js para remover instalações antigas. Atualização de página aberta é
+// feita por /version.json + __BUILD_ID__ em src/main.tsx.
 
 export default defineConfig({
 
@@ -70,97 +62,6 @@ export default defineConfig({
   plugins: [
     react(),
     emitVersionJson(),
-    VitePWA({
-      registerType: "autoUpdate",
-      injectRegister: null, // registramos manualmente em main.tsx (com guards)
-      strategies: "generateSW",
-      filename: "sw-app.js", // /sw.js fica reservado para o kill-switch em public/
-      devOptions: { enabled: false },
-      includeAssets: [
-        "favicon.png",
-        "favicon-16.png",
-        "favicon-32.png",
-        "apple-touch-icon.png",
-      ],
-      manifest: false, // usamos o /public/manifest.json existente
-      workbox: {
-        cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
-        // Movido para /sw-app.js. O /sw.js no /public é um kill-switch para
-        // limpar instalações antigas — não é mais o SW principal do app.
-        navigateFallback: "/index.html",
-        navigateFallbackDenylist: [
-          /^\/~oauth/,
-          /^\/api/,
-          /^\/functions/,
-          /^\/reset/, // rota de recuperação manual nunca pode vir do cache
-          /^\/r\//, // link curto de parceiro: deixa o redirect 302 do Cloudflare agir (nunca servir o app do cache)
-        ],
-        // Não tente precachear o manifest manual nem assets gigantes.
-        // Excluímos mídia (mp3/mp4/wav/pdf) e o player Opus: estouravam o quota
-        // do Cache Storage do navegador (QuotaExceededError) abortando o SW.
-        globIgnores: [
-          "**/manifest.json",
-          "**/sw.js",
-          "**/version.json",
-          "**/*.mp3",
-          "**/*.mp4",
-          "**/*.wav",
-          "**/*.pdf",
-          "**/opus/*",
-        ],
-        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
-        runtimeCaching: [
-          {
-            // HTML — sempre rede. Servir HTML do cache é o que causa o loop
-            // "Cannot read properties of undefined (reading 'default')":
-            // o navegador carrega um index.html antigo que referencia chunks
-            // que não existem mais no deploy atual, e o React.lazy quebra.
-            // Sem fallback offline aqui — é intencional.
-            urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkOnly",
-          },
-
-          {
-            // Supabase / edge functions / WhatsApp media — NUNCA cachear.
-            urlPattern: /^https:\/\/[^/]*supabase\.(co|in)\//i,
-            handler: "NetworkOnly",
-          },
-          {
-            // version.json — sempre rede. É o gatilho do version gate; cachear
-            // aqui anularia a detecção de nova versão.
-            urlPattern: ({ url }) => url.pathname === "/version.json",
-            handler: "NetworkOnly",
-          },
-          {
-            // MinIO / mídia dinâmica — sempre rede.
-            urlPattern: /minio|igreen\.cloud\/(media|whatsapp)/i,
-            handler: "NetworkOnly",
-          },
-          {
-            // Fontes Google.
-            urlPattern: /^https:\/\/fonts\.(gstatic|googleapis)\.com\//,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "google-fonts",
-              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            // Imagens estáticas do app.
-            urlPattern: ({ request }) => request.destination === "image",
-            handler: "CacheFirst",
-            options: {
-              cacheName: "img-cache",
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
-      },
-    }),
   ],
   resolve: {
     alias: {
