@@ -3460,11 +3460,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             console.warn(`[telemetry] ocr_cep_missing customer=${customer.id} has_street=${!!updates.address_street} has_city=${!!updates.address_city} has_state=${!!updates.address_state}`);
           }
           if (!updates.cep && updates.address_city && updates.address_state && updates.address_street) {
-            console.log("🔍 CEP não encontrado. Buscando via ViaCEP...");
+            console.log("🔍 CEP não encontrado. Buscando via ViaCEP (reverse)...");
             const cepBuscado = await buscarCepPorEndereco(updates.address_state, updates.address_city, updates.address_street);
             if (cepBuscado) {
               updates.cep = cepBuscado;
               console.log(`✅ CEP auto-preenchido: ${cepBuscado}`);
+            }
+          }
+          // OCR trouxe CEP mas faltam campos do endereço → forward lookup
+          if (updates.cep && (!updates.address_street || !updates.address_neighborhood || !updates.address_city || !updates.address_state)) {
+            console.log(`🔍 CEP ${updates.cep} presente, completando endereço via ViaCEP (forward)...`);
+            const end = await buscarEnderecoPorCep(updates.cep);
+            if (end) {
+              if (!updates.address_street && end.logradouro) updates.address_street = end.logradouro;
+              if (!updates.address_neighborhood && end.bairro) updates.address_neighborhood = end.bairro;
+              if (!updates.address_city && end.localidade) updates.address_city = end.localidade;
+              if (!updates.address_state && end.uf) updates.address_state = end.uf;
+              console.log(`✅ Endereço completado via CEP: ${end.logradouro || "(s/rua)"} - ${end.localidade}/${end.uf}`);
             }
           }
 
