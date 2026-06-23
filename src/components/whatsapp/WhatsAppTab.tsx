@@ -7,6 +7,7 @@ import { ConnectionPanel } from "./ConnectionPanel";
 import { ChatSidebar } from "./ChatSidebar";
 import { ChatView } from "./ChatView";
 import { DragResizer } from "@/components/layout/DragResizer";
+import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 
 import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
