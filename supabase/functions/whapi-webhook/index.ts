@@ -2031,6 +2031,8 @@ Deno.serve(async (req) => {
 
       if (_fbVarCerebro === "D" && !_isAtivoOrigin) {
         console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
+      } else if (_fbVarCerebro === "A" && _emCadastro && !_isAtivoOrigin) {
+        console.log(`[fluxo-a-bypass] customer=${customer.id} step=${stepBefore} — cadastro determinístico, Cérebro pulado`);
       } else if (_isAtivoOrigin) {
         // Cliente já cadastrado (carteira/extensão) → Cérebro responde sempre,
         // SEM tocar em estado de cadastro, SEM OCR, SEM Portal 2.

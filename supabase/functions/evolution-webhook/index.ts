@@ -1923,7 +1923,7 @@ Deno.serve(async (req) => {
       //  - cadastro + expected/mídia → determinístico (pula Cérebro)
       const _rodarCerebro = _isAtivoOrigin
         || (!_emCadastro && !(_fbVarCerebro === "D"))
-        || (_emCadastro && _cadKind === "freeform_question");
+        || (_emCadastro && _cadKind === "freeform_question" && _fbVarCerebro !== "A");
 
       if (!_rodarCerebro) {
         if (_emCadastro) {
