@@ -132,37 +132,100 @@ window.addEventListener("unhandledrejection", (e) => {
   }
 });
 
-// ─── Version gate: detecta deploy novo SEM forçar reload ──────────────────
-// Antes este gate disparava nukeAndReload sozinho a cada 30s + em cada
-// navegação SPA + em visibilitychange + em online. Resultado: a página
-// recarregava sozinha no meio do trabalho do usuário (especialmente no
-// AudioStudio). Agora apenas mostra um banner verde "Nova versão disponível"
-// e o usuário decide quando atualizar.
+// ─── Version gate: detecta deploy novo e atualiza em momento SEGURO ───────
+// O cliente não precisa saber limpar cache. Quando uma versão nova é
+// publicada, o app aplica sozinho — mas só quando o usuário NÃO está
+// digitando, com um formulário/modal aberto ou gerando áudio. Assim a
+// atualização acontece de forma transparente, sem interromper o trabalho.
+//
+// IMPORTANTE — anti-loop: o app só recarrega quando o buildId do servidor é
+// DIFERENTE do build em execução, e no máximo 2 vezes para a MESMA versão
+// nova. Se recarregou e mesmo assim continuou no build velho (deploy ainda
+// não propagou ou cache do navegador preso), ele PARA de tentar e deixa o app
+// funcionando — em vez de ficar recarregando sozinho toda hora ("bugado").
+const UPDATE_ATTEMPT_KEY = "__igreen_update_attempt_v1__";
+const UPDATE_MAX_ATTEMPTS = 2;
+const UPDATE_ATTEMPT_TTL_MS = 30 * 60 * 1000; // 30 min
+
+type UpdateAttempt = { target: string; count: number; ts: number };
+
+function readUpdateAttempt(): UpdateAttempt | null {
+  try {
+    const raw = localStorage.getItem(UPDATE_ATTEMPT_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw) as UpdateAttempt;
+    if (!rec || typeof rec.target !== "string") return null;
+    // Registro velho (>30 min) não vale mais — considera limpo.
+    if (!rec.ts || Date.now() - rec.ts > UPDATE_ATTEMPT_TTL_MS) return null;
+    return rec;
+  } catch { return null; }
+}
+
+// Limpeza no boot: se já estamos rodando a versão que era o alvo, a
+// atualização deu certo — zera o contador para liberar futuras versões.
+try {
+  const rec = readUpdateAttempt();
+  if (rec && rec.target === __BUILD_ID__) localStorage.removeItem(UPDATE_ATTEMPT_KEY);
+} catch { /* storage bloqueado: ignora */ }
+
 async function checkVersionGate() {
   try {
     const res = await fetch(`/version.json?_=${Date.now()}`, { cache: "no-store" });
     if (!res.ok) return;
     const { buildId } = await res.json();
     if (buildId && typeof buildId === "string" && buildId !== __BUILD_ID__) {
-      showUpdateBanner();
+      applyUpdateWhenSafe(buildId, "version-gate");
     }
   } catch { /* offline ou version.json ausente: ignora silenciosamente */ }
 }
 
-// Banner visível quando uma versão nova é detectada. O usuário decide
-// quando recarregar — nunca recarregamos sozinhos.
-function showUpdateBanner() {
-  if (document.getElementById("__igreen_update_banner__")) return;
-  const el = document.createElement("div");
-  el.id = "__igreen_update_banner__";
-  el.style.cssText =
-    "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);" +
-    "background:#16a34a;color:#fff;padding:12px 18px;border-radius:9999px;" +
-    "font:600 14px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);" +
-    "z-index:2147483647;cursor:pointer;display:flex;gap:10px;align-items:center;";
-  el.innerHTML = "🔄 Nova versão disponível — toque para atualizar";
-  el.addEventListener("click", () => window.location.reload());
-  document.body.appendChild(el);
+// Garante que só agendamos uma única atualização (evita timers empilhados
+// quando várias fontes detectam a versão nova ao mesmo tempo).
+let updateScheduled = false;
+
+// Aplica a versão nova recarregando a página, porém apenas quando for seguro.
+// Se o usuário estiver ocupado (digitando, modal aberto, gerando áudio),
+// reavalia a cada 15s até encontrar uma janela tranquila. Reaproveita a mesma
+// heurística do nukeAndReload (isUserBusyTyping).
+//
+// targetBuildId: a versão nova que queremos aplicar. Serve de chave do
+// anti-loop. Quando a origem não conhece o buildId (SW), passamos "sw".
+function applyUpdateWhenSafe(targetBuildId: string, reason: string) {
+  if (updateScheduled) return;
+
+  // Anti-loop: se já recarregamos o limite de vezes para ESTA mesma versão
+  // alvo e ainda assim não saímos do build antigo, paramos. Evita o ciclo
+  // "recarrega → volta velho → recarrega" quando o deploy não propagou.
+  const prev = readUpdateAttempt();
+  if (prev && prev.target === targetBuildId && prev.count >= UPDATE_MAX_ATTEMPTS) {
+    console.warn(
+      "[update] já tentei atualizar para", targetBuildId,
+      `${prev.count}x sem sucesso — parando para não ficar em loop`,
+    );
+    return;
+  }
+
+  updateScheduled = true;
+
+  const tryReload = () => {
+    if (isUserBusyTyping()) {
+      console.info("[update] usuário ocupado, adiando atualização:", reason);
+      setTimeout(tryReload, 15_000);
+      return;
+    }
+    // Registra a tentativa ANTES de recarregar, para o anti-loop contar mesmo
+    // que o reload aconteça em seguida.
+    try {
+      const cur = readUpdateAttempt();
+      const count = cur && cur.target === targetBuildId ? cur.count + 1 : 1;
+      const rec: UpdateAttempt = { target: targetBuildId, count, ts: Date.now() };
+      localStorage.setItem(UPDATE_ATTEMPT_KEY, JSON.stringify(rec));
+    } catch { /* storage bloqueado: segue mesmo assim */ }
+    console.info("[update] aplicando versão nova. Motivo:", reason);
+    window.location.reload();
+  };
+
+  tryReload();
 }
 
 // Checa imediatamente ao carregar (antes mesmo do SW registrar), para pegar
@@ -191,13 +254,13 @@ const isPreviewHost =
 
 
 if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
-  // ─── Novo SW assumiu o controle: mostra banner em vez de recarregar ────
-  // Antes recarregávamos automaticamente, o que tirava o usuário do meio do
-  // trabalho (sintoma: "página atualiza sozinha"). Agora apenas avisamos e
-  // o usuário decide quando aplicar a versão nova.
+  // ─── Novo SW assumiu o controle: aplica a versão nova em momento seguro ─
+  // Antes mostrávamos um banner e dependíamos do usuário tocar nele (muitos
+  // ignoravam e ficavam na versão velha). Agora atualizamos sozinhos assim
+  // que for seguro (sem interromper digitação/modal/geração de áudio).
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    console.info("[PWA] novo Service Worker assumiu — mostrando banner");
-    showUpdateBanner();
+    console.info("[PWA] novo Service Worker assumiu — agendando atualização");
+    applyUpdateWhenSafe("sw", "controllerchange");
   });
 
 
@@ -206,8 +269,8 @@ if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
       const updateSW = registerSW({
         immediate: true,
         onNeedRefresh() {
-          // Mostra o banner em vez de aplicar/recarregar sozinho.
-          showUpdateBanner();
+          // Aplica a versão nova sozinho, em momento seguro.
+          applyUpdateWhenSafe("sw", "onNeedRefresh");
         },
         onRegisteredSW(_swUrl, r) {
           if (!r) return;
