@@ -263,7 +263,14 @@ Deno.serve(async (req) => {
           method: "POST",
           body: JSON.stringify({ to, body: text }),
         });
-        if (!r.ok) return json(r.status, { error: r.data });
+        if (!r.ok) {
+          const msg = JSON.stringify(r.data || "");
+          if (r.status === 404 || /channel not found|unauthorized|invalid token/i.test(msg)) {
+            console.warn("[whapi-proxy] send_text: canal Whapi indisponível");
+            return json(503, { error: "Canal WhatsApp (Whapi) offline ou token inválido. Reconecte o canal nas configurações." });
+          }
+          return json(r.status, { error: r.data });
+        }
         return json(200, { key: { id: r.data?.message?.id || r.data?.id || "" } });
       }
 
