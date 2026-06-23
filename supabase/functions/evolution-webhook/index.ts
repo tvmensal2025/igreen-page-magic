@@ -1755,6 +1755,10 @@ Deno.serve(async (req) => {
       // finalize-capture. Sem este bridge, o conversational handler engole
       // a foto da conta e re-emite o prompt em loop. Custom-step-resolver
       // dentro de bot-flow.ts (linha ~2876) mapeia o UUID para o nominal.
+      // 🔒 Flag: quando o bridge forçar sys por causa de um step CUSTOM de
+      // captura, o bloco abaixo (engine==="sys" && !isCadastroStep) NÃO pode
+      // reverter para "flow" nem zerar conversation_step.
+      let bridgeForcedSysForCapture = false;
       try {
         if (engine === "flow" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentStepRaw)) {
           const { data: stepRow } = await supabase
@@ -1769,13 +1773,14 @@ Deno.serve(async (req) => {
           if (stepRow && CAPTURE_TYPES.has(String((stepRow as any).step_type))) {
             console.log(`🛟 [router-bridge] UUID ${currentStepRaw} type=${(stepRow as any).step_type} → forçando engine=sys`);
             engine = "sys";
+            bridgeForcedSysForCapture = true;
           }
         }
       } catch (e) {
         console.warn("[router-bridge] lookup step_type falhou:", (e as any)?.message);
       }
 
-      if (engine === "sys" && !isCadastroStep && consultantFlag && customerOverride !== false && _fbVariantLegacy !== "B") {
+      if (engine === "sys" && !isCadastroStep && !bridgeForcedSysForCapture && consultantFlag && customerOverride !== false && _fbVariantLegacy !== "B") {
         try {
           // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
           // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
