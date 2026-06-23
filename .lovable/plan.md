@@ -1,58 +1,61 @@
-Diagnóstico encontrado
+## Diagnóstico do número 11971254913
 
-- O número analisado é `5511971254913` / `11971254913`.
-- A conversa atual tem apenas dois inbounds registrados: `Oi` e um arquivo da conta. Não existe resposta outbound gravada em `conversations` depois do arquivo.
-- O cliente atual ficou no customer `3435a944-0bce-44e9-aab4-e0676270da84`, passo `3d69389d-92bb-4e85-a8f6-e66fe16906e9`, que é o step `capture_conta` do Fluxo A/Cadastro.
-- O estado v3 (`customer_flow_state`) ficou `paused_system`, `pause_reason=retry_exhausted`, `retries=3`, com `flow_id=null`.
-- O log mostra que o WHAPI baixou a mídia e o router-bridge detectou corretamente `UUID capture_conta -> engine=sys`, mas depois o gate do Cérebro ainda classificou cadastro usando `CADASTRO_STEPS.has(stepBefore)`. Como `stepBefore` era UUID, `_emCadastro=false`, então o turno ainda pôde cair no caminho conversacional/sombra em vez de ser tratado como cadastro determinístico.
-- No Evolution existe um segundo problema: ele ainda não tem o mesmo flag `bridgeForcedSysForCapture` do WHAPI. Depois de forçar `engine=sys`, o bloco seguinte pode reverter para `engine=flow` e limpar `conversation_step`, exatamente o bug que já havia sido corrigido no WHAPI.
+Linha do tempo real (cliente PAULO ROBERTO, id `66d1b2b5…`):
 
-Conclusão
+```text
+Cliente: "Oi"
+Bot:  [step capture_conta] "Perfeito! 🙌 📸 Me envia agora uma foto da sua conta de luz…"
+Cliente: [foto da conta]
+Bot:  "✅ SIM"  (confirmação dos dados extraídos)
+Bot:  [ask_quero_cadastrar] "Pra continuar seu cadastro… toque no botão"  ← INTERMEDIÁRIO INDESEJADO
+       botão "✅ Quero me cadastrar"
+Cliente: clica em "Quero me cadastrar"
+Bot:  [capture_documento] "Show! 🙌 Agora preciso… RG/CNH"
+Cliente: [foto do doc]
+Bot:  confirmação dos dados do doc
+Bot:  [ask_phone_confirm] → ask_phone → ask_email
+Cliente: "livro@gmail.com"
+Bot:  "❌ CEP inválido. Informe os *8 números*:"  ← BOT FORÇOU ask_cep
+```
 
-O fluxo salvo de 5 passos não é o único problema. O problema real é de roteamento: steps customizados de cadastro por UUID precisam ser tratados como cadastro determinístico em todos os gates, não só no primeiro bridge. Enquanto isso não for corrigido, criar outro fluxo com os mesmos passos pode repetir a falha.
+Causas no código:
 
-Plano de correção
+- **Etapa "Quero me cadastrar"** é injetada manualmente entre `capture_conta` e `capture_documento` em quatro blocos (dois em `evolution-webhook/handlers/bot-flow.ts` por volta das linhas 3793, 3845, 3877 e o `case "ask_quero_cadastrar"` na 5107; espelhado em `whapi-webhook/handlers/bot-flow.ts`). Ela não vem do flow builder.
+- **Passo `ask_cep**` é forçado por `conversation-helpers.ts` (`if (!c.cep) return "ask_cep"`) quando o cadastro tenta finalizar sem CEP no banco — o OCR não extraiu CEP da conta, e o helper desvia para CEP em vez de seguir o fluxo do builder.
 
-1. Corrigir o WHAPI para reconhecer UUID de cadastro também no gate do Cérebro
-   - Criar um booleano compartilhado para indicar que o UUID atual foi identificado como step de cadastro/captura.
-   - Usar esse booleano em `_emCadastro`, além de `CADASTRO_STEPS.has(stepBefore)`.
-   - Resultado esperado: quando o cliente estiver em UUID `capture_conta`, `capture_documento`, `capture_email`, `confirm_phone` ou `finalizar_cadastro`, mídia/texto esperado sempre vai para `runBotFlow`, nunca para o caminho conversacional.
+## O que vou mudar
 
-2. Corrigir o Evolution com a mesma blindagem do WHAPI
-   - Adicionar `bridgeForcedSysForCapture` no `evolution-webhook/index.ts`.
-   - Impedir que o bloco seguinte reverta `engine=sys` para `engine=flow` quando o bridge acabou de detectar um UUID de cadastro.
-   - Também usar o mesmo booleano no `_emCadastro` do gate do Cérebro.
-   - Resultado esperado: WHAPI e Evolution ficam simétricos e nenhum dos dois engole mídia de cadastro.
+### 1. Pular a etapa "Quero me cadastrar"
 
-3. Garantir que o estado v3 não pause indevidamente um lead legado/custom de cadastro
-   - Ajustar o hook v3/dark ou o gate de uso para não usar `customer_flow_state` com `flow_id=null` como fonte de pausa operacional para o fluxo legado/custom.
-   - O v3 em modo dark deve observar e logar, mas não deve transformar o lead em `paused_system/retry_exhausted` quando o legado ainda é a fonte real.
+Nos quatro blocos de `evolution-webhook/handlers/bot-flow.ts` e `whapi-webhook/handlers/bot-flow.ts` que após `confirmando_dados_doc`/confirmação da conta enviam o CTA "✅ Quero me cadastrar", trocar o efeito para:
 
-4. Recuperar o lead 11971254913 para novo teste limpo
-   - Limpar a pausa sistêmica do customer atual `3435a944-0bce-44e9-aab4-e0676270da84`.
-   - Resetar `customer_flow_state.status` para rodar novamente, `pause_reason=null`, `retries=0`, `last_outbound_content_hash=null`.
-   - Manter ou recolocar `conversation_step` no UUID correto de `capture_conta` do fluxo Cadastro.
-   - Assim o próximo arquivo enviado pelo número deve passar pelo OCR real.
+- não enviar o CTA;
+- não setar `conversation_step = "ask_quero_cadastrar"`;
+- despachar direto o próximo passo do flow (`capture_documento`), reutilizando a mesma rotina já usada dentro do `case "ask_quero_cadastrar"` quando o usuário responde "sim".
 
-5. Revisar o Fluxo A/Cadastro salvo
-   - Confirmar os 5 steps ativos e em ordem: conta, documento, email, confirmar telefone, finalizar cadastro.
-   - Aplicar a reescrita polida dos 5 textos se ainda não foi aprovada/aplicada.
-   - Confirmar que o step 1 tem `captures` preenchido, pois hoje ele já tem captura de mídia configurada.
+O `case "ask_quero_cadastrar"` continua existindo (defensivo) para leads antigos que já estão travados nesse estado — ele responde "sim" automaticamente.
 
-6. Validar com evidência
-   - Enviar/receber nova mídia no número de teste.
-   - Conferir logs esperados: router-bridge, cadastro determinístico, custom-step-resolver, OCR da conta, atualização de dados da conta e avanço para documento.
-   - Confirmar que aparece pelo menos um outbound depois do PDF e que o lead não volta para `paused_system/retry_exhausted`.
+### 2. Não pedir CEP em momento nenhum
 
-Arquivos prováveis
+- Em `_shared/conversation-helpers.ts`: remover a linha que retorna `ask_cep` quando `!c.cep`. Se faltar CEP, a função deixa o fluxo seguir normalmente (continua no próximo passo do builder).
+- Em `evolution-webhook/handlers/bot-flow.ts` e `whapi-webhook/handlers/bot-flow.ts`: nos três blocos de "redirect para ask_cep" depois de erro de validação (`err.includes("CEP"/"Cidade"/"Estado")`), trocar o redirect por um log + seguir adiante (ou tentar ViaCEP silencioso a partir do que existir). Não enviar mensagem pedindo CEP ao cliente.
+- O `case "ask_cep"` permanece no switch (defensivo, para leads já travados) mas não é mais alcançável pelo fluxo novo.
 
-- `supabase/functions/whapi-webhook/index.ts`
-- `supabase/functions/evolution-webhook/index.ts`
-- Possivelmente `supabase/functions/_shared/engine/webhook-hook.ts` ou o ponto onde o v3 dark é chamado
-- Banco: reset pontual do customer/flow state do número `11971254913`
+### 3. Primeira mensagem
 
-O que não farei
+A primeira mensagem do bot já é exatamente "Perfeito! 🙌 📸 Me envia agora uma *foto da sua conta de luz*…" vinda do step `capture_conta` do flow. Pelo que entendi você quer manter essa como porta de entrada (sem outro welcome antes) — então **não vou alterar o texto**, só garantir que ela continue sendo a primeira (já é).
 
-- Não vou alterar a estrutura dos steps do Flow Builder sem necessidade.
-- Não vou mexer em frontend.
-- Não vou criar arquivos de TODO/resumo separados.
+### 4. Limpar lead atual para teste
+
+Resetar o estado do PAULO ROBERTO (`66d1b2b5…`) para o início do fluxo, para você poder testar de novo do "Oi".
+
+## O que NÃO vou mexer
+
+- Texto dos steps no flow builder (capture_conta, capture_documento, capture_email, confirm_phone, finalizar_cadastro).
+- Lógica de OCR e extração da conta.
+- Outros caminhos do bot (reativação, pós-venda, etc.).
+
+## Antes de implementar — preciso confirmar 2 coisas:
+
+1. **Sem CEP de jeito nenhum?** Hoje o portal iGreen exige CEP no cadastro. Se a gente nunca pergunta e o OCR não extrair, o `finalizar_cadastro` vai falhar no portal. Você quer: **(a)** nunca pedir, deixar falhar/usar default, ou **(b)** só pedir CEP se o OCR não tiver pego, e usar ViaCEP silencioso se tiver cidade/estado/rua? OCR PEGA A DA CONTA, MAS AS VESES A ACONTA NAO ESTA COM O CEP DA RUA E SIM DA CIDADE, AI AOTUMANTICAMENTE ENTRA O BUSCA CEP CORRETO
+2. **Confirmação dos dados da conta** (o "✅ SIM" após OCR) — mantém ou também remove? mantem o sim completo com o editar, analise para ficar igual, 
