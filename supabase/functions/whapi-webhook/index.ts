@@ -2012,7 +2012,11 @@ Deno.serve(async (req) => {
       // determinístico). Só vira "freeform_question" quando o lead claramente
       // perguntou outra coisa, fora do objetivo do step.
       const { classifyCadastroInput } = await import("../_shared/cadastro-input-classifier.ts");
-      const _emCadastro = CADASTRO_STEPS.has(stepBefore);
+      // 🛡️ Cadastro também inclui UUID de passos custom de captura/finalize
+      // (capture_conta/capture_documento/capture_email/confirm_phone/
+      // finalizar_cadastro). Sem isso, o Cérebro/IA livre engole o turno e o
+      // OCR/portal nunca roda — exatamente o bug reincidente no 11971254913.
+      const _emCadastro = CADASTRO_STEPS.has(stepBefore) || bridgeForcedSysForCapture;
       const _cadKind = (_emCadastro && !_isAtivoOrigin)
         ? classifyCadastroInput({
           stepBefore,
