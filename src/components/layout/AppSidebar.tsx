@@ -165,7 +165,7 @@ export function AppSidebar({
           {!collapsed && (
             <>
               <div className="min-w-0 flex-1">
-                <p className="pe-heading text-base font-bold tracking-tight leading-tight truncate text-white">{consultantName}</p>
+                <p className="pe-heading text-base font-bold tracking-tight leading-tight truncate !text-white" style={{ color: "#ffffff" }}>{consultantName}</p>
                 <p className="text-[9px] mt-1 uppercase tracking-[0.22em] truncate text-white font-bold">{consultantLevel}</p>
               </div>
               <button
