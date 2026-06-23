@@ -4192,26 +4192,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           // messages acima) e PARA. Só quando o cliente clicar "Quero me
           // cadastrar" é que o capture_documento dispara. Nunca encadear.
           if (nextCustom.step_type === "capture_documento" || nextCustom.step_type === "capture_doc") {
-            // Se o último passo `message` da CHAIN (ex.: d_resultado) já tem
-            // botões interativos próprios (cadastrar/dúvida/falar humano),
-            // NÃO duplicar com outro CTA — o step do consultor já cumpre o papel.
-            if ((updates as any).__last_chain_had_buttons) {
-              console.log("[post-confirm-conta] skip CTA quero_cadastrar — último step da chain já tem botões próprios");
-            } else {
-              try {
-                const ctaText = "Pra continuar seu cadastro e garantir essa economia, é só tocar no botão abaixo 👇";
-                await sendOptions(remoteJid, ctaText, [
-                  { id: "btn_quero_cadastrar", title: "✅ Quero me cadastrar" },
-                ]);
-                await supabase.from("conversations").insert({
-                  customer_id: customer.id, message_direction: "outbound",
-                  message_text: ctaText, message_type: "text", conversation_step: "ask_quero_cadastrar",
-                });
-              } catch (e) {
-                console.warn(`[post-confirm-conta] envio do CTA quero_cadastrar falhou:`, (e as Error).message);
-              }
+            // 🚀 Ir DIRETO pra captura do documento (sem CTA "Quero me cadastrar").
+            // Regra explícita do produto: pós-SIM da conta, dispara capture_documento
+            // imediatamente — cliente já demonstrou intenção ao confirmar os dados.
+            try {
+              await dispatchStepFromFlow(nextCustom.step_key, _vars);
+            } catch (e) {
+              console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
+              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
             }
-            updates.conversation_step = "ask_quero_cadastrar";
+            updates.conversation_step = "aguardando_doc_auto";
           } else {
             // Para finalizar_cadastro NÃO usamos dispatch: o texto precisa ir
             // acoplado ao botão interativo (sendOptions).
