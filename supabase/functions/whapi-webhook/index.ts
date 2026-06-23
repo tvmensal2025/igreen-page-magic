@@ -1995,6 +1995,12 @@ Deno.serve(async (req) => {
 
       if (_fbVarCerebro === "D") {
         console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
+      } else if ((hasImage || hasDocument) && !hasAudio) {
+        // 🔑 MÍDIA → caminho determinístico (OCR). O Cérebro NÃO executa OCR de
+        // conta/documento (a ação `ocr` do despacho é no-op). Quem lê a foto é o
+        // `runBotFlow` (cases aguardando_conta / aguardando_doc_auto), idêntico
+        // ao que já funciona. Pulamos o Cérebro; o determinístico processa.
+        console.log(`[cerebro] mídia (img/doc) → delegando ao determinístico (OCR) customer=${customer.id}`);
       } else {
         _cerebroRespondeu = await runConversacionalTurn({
           text: messageText ?? null,

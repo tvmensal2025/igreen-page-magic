@@ -1883,7 +1883,15 @@ Deno.serve(async (req) => {
       // pipeline de OCR/portal (despachado pelo próprio Cérebro) seguem intactos.
       let _cerebroRespondeu = false;
       const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
-      if (_fbVarCerebro === "D") {
+      // 🔑 MÍDIA → caminho determinístico (OCR). O Cérebro NÃO executa OCR de
+      // conta/documento (a ação `ocr` do despacho é no-op). Quem lê a foto é o
+      // `runBotFlow` (cases aguardando_conta / aguardando_doc_auto), idêntico ao
+      // que já funciona. Então, ao receber imagem/documento, pulamos o Cérebro e
+      // deixamos o determinístico processar — o Cérebro segue cuidando do texto.
+      const _temMidiaOcr = (hasImage || hasDocument) && !hasAudio;
+      if (_temMidiaOcr) {
+        console.log(`[cerebro] mídia (img/doc) → delegando ao determinístico (OCR) customer=${customer.id}`);
+      } else if (_fbVarCerebro === "D") {
         console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
       } else try {
         const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
