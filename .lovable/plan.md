@@ -1,42 +1,46 @@
-## Objetivo
-Garantir que o Super Admin (`rafael.ids@icloud.com`) **sempre** opere via Whapi e que, quando o canal Whapi cair (token expirado, canal removido — o famoso `404 Channel not found`), seja possível **reconectar pela própria interface, sem mexer em código**.
+# Avisar quando o canal Whapi estiver bloqueado por pagamento
 
-## Diagnóstico atual
-- A regra "superadmin = Whapi" já está aplicada em `src/hooks/useWhatsApp.ts` (linhas 700‑760) e no `supabase/functions/whapi-proxy/index.ts` (linha 211). ✅
-- O erro de hoje (`Edge function returned 404: Channel not found`) veio do gate `gate.whapi.cloud`: o token salvo em `settings.whapi_token` aponta para um canal que não existe mais. O proxy já passou a devolver `503` amigável, mas **não há tela para trocar o token / religar o canal** — então hoje, para reconectar, é preciso editar a tabela `settings` no banco. É exatamente o que o usuário quer eliminar.
+## Problema
 
-## Plano
+Quando o canal Whapi é suspenso por falta de pagamento, a API responde com `404 Channel not found` (ou erros tipo `unpaid` / `suspended` / `blocked`). Hoje o proxy converte tudo em um genérico **"Canal Whapi offline ou token inválido"**, então o Super Admin perde tempo tentando trocar token, escanear QR, etc., sem saber que o problema é financeiro no painel da Whapi.
 
-### 1. Reforço da regra "Superadmin = Whapi, sempre"
-- Em `useWhatsApp.ts`, adicionar um **bypass duro no início do `init()`**: antes de qualquer leitura de `settings`, se `supabase.auth.getUser()` retornar e‑mail `rafael.ids@icloud.com` **ou** `is_super_admin(user.id) === true`, marcar `isWhapi=true`, `status="connected"` e sair — sem nem tentar Evolution. (Hoje a checagem de e‑mail está só como fallback dentro do `try/catch`.)
-- Em `whapi-proxy/index.ts`, aceitar como super admin tanto `settings.superadmin_consultant_id === userId` quanto `is_super_admin(userId)`. Isso protege contra `settings` corrompida.
-- Garantir que `useChats`, `useMessages`, `WhatsAppTab`, `ChatView` e `ConnectionPanel` recebem `isWhapi` consistentemente (já recebem — só validar nada novo passou a chamar Evolution).
+## O que vai mudar
 
-### 2. Painel "Conexão Whapi (Super Admin)" — reconectar sem código
-Novo card dentro de `WhatsAppTab` que **só aparece para o super admin** (`isWhapi === true`), com:
+### 1. `whapi-proxy/index.ts` — classificar o motivo da falha
+- Ao receber resposta da Whapi, inspecionar `status` + corpo (`error.code`, `error.message`, `reason`).
+- Mapear para um `reasonCode` explícito:
+  - `unpaid` → HTTP 402, mensagem: *"Canal Whapi bloqueado por falta de pagamento. Acesse panel.whapi.cloud → Billing para regularizar."*
+  - `channel_not_found` → HTTP 404, mensagem: *"Canal Whapi não existe mais (foi removido). Crie um novo canal e atualize o token."*
+  - `invalid_token` → HTTP 401, mensagem: *"Token Whapi inválido. Cole o token novo do painel."*
+  - `offline` (QR/desconectado) → HTTP 503 atual.
+- Retornar JSON `{ error, reasonCode, helpUrl: "https://panel.whapi.cloud/billing" }`.
+- `health_check` também devolve `reasonCode` para o card.
 
-- **Status do canal em tempo real**: chamada nova `whapi-proxy` action `health_check` → faz `GET /health` no gate Whapi e retorna `{ status: "AUTH" | "QR" | "OFFLINE", phone, channel_id }`. Render: badge verde/amarelo/vermelho.
-- **Telefone conectado** lido de `/users/me` (Whapi) — salvo de volta em `settings.whapi_connected_phone`.
-- **Botão "Atualizar token Whapi"**: abre input que salva em `settings.whapi_token` via uma edge function nova `whapi-admin` (apenas super admin pode chamar). Depois de salvar, dispara `health_check` automaticamente.
-- **Botão "Pedir QR / Pareamento"**: action `request_qr` no proxy → `GET /users/login` no Whapi; renderiza o QR base64 retornado, igual ao fluxo Evolution.
-- **Botão "Logout do canal"**: action `logout` → `POST /users/logout`, útil para reparear.
-- **Banner global** no topo do chat quando `health_check` devolver `OFFLINE` nas últimas N tentativas, com CTA "Reconectar agora" que abre esse painel.
+### 2. `useWhapiHealth.ts` — expor `reasonCode` + `helpUrl`
+- Guardar último `reasonCode` no estado.
+- Polling continua igual, só passa a informação adiante.
 
-### 3. Fallback de envio mais claro
-Hoje `whapi-proxy/send_text` já devolve `503` com mensagem amigável quando o canal cai. Replicar o mesmo tratamento em `send_media` e `send_audio` (atualmente só `send_text` tem) para nunca quebrar a UI com 404 cru.
+### 3. `WhapiConnectionPanel.tsx` — UI explícita
+- Quando `reasonCode === "unpaid"`: banner **vermelho destacado** "Canal bloqueado por falta de pagamento na Whapi" + botão *"Abrir billing da Whapi"* (link para `panel.whapi.cloud/billing`) **antes** dos campos de token/QR (que ficam desabilitados, porque trocar token não resolve).
+- Quando `channel_not_found`: banner laranja "Canal removido — crie um novo" com link para `panel.whapi.cloud`.
+- Quando `invalid_token`: foca no campo de token.
+- Mantém o fluxo atual para `offline`/`QR`.
 
-### 4. Documentação curta
-Adicionar nota em `mem://whatsapp/superadmin-whapi.md` (nova) com a regra fixa: **"rafael.ids@icloud.com = Whapi sempre; consultores normais = Evolution; reconexão Whapi vive na aba WhatsApp > Conexão Whapi."** Atualizar `mem://index.md`.
+### 4. Banner global no chat (Super Admin)
+- Em `WhatsAppTab` (ou onde o chat renderiza), quando `reasonCode === "unpaid"`, mostrar um **alerta fixo no topo** com a mesma mensagem e CTA, para o problema ser visível mesmo fora do painel de conexão.
 
-## Arquivos afetados
-- `src/hooks/useWhatsApp.ts` — bypass duro do super admin no topo do init.
-- `src/components/whatsapp/WhatsAppTab.tsx` — render do novo painel.
-- `src/components/whatsapp/WhapiConnectionPanel.tsx` (novo) — UI de status, QR, troca de token, logout.
-- `src/hooks/useWhapiHealth.ts` (novo) — polling do `health_check` a cada 30s.
-- `supabase/functions/whapi-proxy/index.ts` — novas actions `health_check`, `request_qr`, `logout`; mesmo tratamento 503 em `send_media`/`send_audio`; aceitar `is_super_admin` como fallback de autorização.
-- `supabase/functions/whapi-admin/index.ts` (novo) — endpoint para atualizar `settings.whapi_token` com checagem `is_super_admin`.
-- `mem://whatsapp/superadmin-whapi.md` (novo) + `mem://index.md`.
+### 5. Toast no envio falho
+- No hook de envio (onde hoje aparece o 503 genérico), ler `reasonCode` da resposta e mostrar toast específico ("Pagamento Whapi pendente" etc.) em vez do texto atual.
 
-## Resultado esperado
-- Super admin nunca mais aparece como Evolution em nenhuma tela.
-- Quando o canal Whapi cair, super admin vê banner vermelho, abre o painel, cola o novo token (ou escaneia QR) e o sistema volta a enviar — **sem deploy, sem SQL, sem alterar código**.
+## Arquivos
+
+- `supabase/functions/whapi-proxy/index.ts` — classificar erros, devolver `reasonCode`/`helpUrl`.
+- `src/hooks/useWhapiHealth.ts` — expor novos campos.
+- `src/components/whatsapp/WhapiConnectionPanel.tsx` — banners por motivo + CTA billing.
+- `src/components/whatsapp/WhatsAppTab.tsx` — banner global "pagamento pendente" para Super Admin.
+- `src/hooks/useWhatsApp.ts` — propagar `reasonCode` nos toasts de erro de envio.
+- `mem/whatsapp/superadmin-whapi.md` — anexar a regra: "Se Whapi responder 404/`unpaid`/`suspended`, o sistema deve avisar imediatamente que é problema de pagamento, não tentar reconectar."
+
+## Resultado
+
+Da próxima vez que o canal cair por pagamento, o Super Admin vê na hora um aviso vermelho com link direto para o billing da Whapi, em vez de perder tempo trocando token.

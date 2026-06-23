@@ -14,12 +14,91 @@ const corsHeaders = {
 };
 
 const WHAPI_BASE = "https://gate.whapi.cloud";
+const WHAPI_BILLING_URL = "https://panel.whapi.cloud/billing";
+const WHAPI_PANEL_URL = "https://panel.whapi.cloud";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+export type WhapiReasonCode =
+  | "unpaid"
+  | "channel_not_found"
+  | "invalid_token"
+  | "offline"
+  | "rate_limited"
+  | "unknown";
+
+/**
+ * Classifica a resposta de erro da Whapi para que o front mostre
+ * a mensagem certa (especialmente "bloqueado por falta de pagamento",
+ * que hoje aparece como 404 genérico).
+ */
+function classifyWhapiError(status: number, data: any): {
+  reasonCode: WhapiReasonCode;
+  httpStatus: number;
+  error: string;
+  helpUrl: string | null;
+} {
+  const blob = (() => {
+    try { return JSON.stringify(data || "").toLowerCase(); } catch { return ""; }
+  })();
+
+  // Pagamento/suspensão — Whapi pode devolver 402, 403, ou 404 com mensagem específica.
+  if (
+    status === 402 ||
+    /unpaid|payment required|payment_required|billing|suspend|suspended|blocked|expired|trial.*(ended|over)|no.*active.*subscription/i.test(blob)
+  ) {
+    return {
+      reasonCode: "unpaid",
+      httpStatus: 402,
+      error: "Canal Whapi bloqueado por falta de pagamento. Acesse panel.whapi.cloud → Billing para regularizar.",
+      helpUrl: WHAPI_BILLING_URL,
+    };
+  }
+
+  if (status === 404 || /channel not found|channel_not_found|no channel/i.test(blob)) {
+    return {
+      reasonCode: "channel_not_found",
+      httpStatus: 404,
+      error: "Canal Whapi não existe mais (foi removido no painel). Crie um canal novo e atualize o token.",
+      helpUrl: WHAPI_PANEL_URL,
+    };
+  }
+
+  if (status === 401 || /unauthorized|invalid token|invalid_token|forbidden/i.test(blob)) {
+    return {
+      reasonCode: "invalid_token",
+      httpStatus: 401,
+      error: "Token Whapi inválido. Cole o token novo do painel da Whapi.",
+      helpUrl: WHAPI_PANEL_URL,
+    };
+  }
+
+  if (status === 429 || /rate.?limit|too many/i.test(blob)) {
+    return {
+      reasonCode: "rate_limited",
+      httpStatus: 429,
+      error: "Whapi limitou as requisições. Tente novamente em alguns segundos.",
+      helpUrl: null,
+    };
+  }
+
+  return {
+    reasonCode: "offline",
+    httpStatus: 503,
+    error: "Canal WhatsApp (Whapi) offline. Verifique conexão / QR no painel de reconexão.",
+    helpUrl: null,
+  };
+}
+
+function isWhapiErrorBlob(status: number, data: any): boolean {
+  if (status >= 400) return true;
+  const blob = (() => { try { return JSON.stringify(data || "").toLowerCase(); } catch { return ""; } })();
+  return /channel not found|unauthorized|invalid token|unpaid|suspend|blocked/i.test(blob);
 }
 
 async function whapiFetch(token: string, path: string, init: RequestInit = {}) {
@@ -274,10 +353,10 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ to, body: text }),
         });
         if (!r.ok) {
-          const msg = JSON.stringify(r.data || "");
-          if (r.status === 404 || /channel not found|unauthorized|invalid token/i.test(msg)) {
-            console.warn("[whapi-proxy] send_text: canal Whapi indisponível");
-            return json(503, { error: "Canal WhatsApp (Whapi) offline ou token inválido. Reconecte o canal nas configurações." });
+          if (isWhapiErrorBlob(r.status, r.data)) {
+            const cls = classifyWhapiError(r.status, r.data);
+            console.warn(`[whapi-proxy] send_text bloqueado (${cls.reasonCode})`);
+            return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
           }
           return json(r.status, { error: r.data });
         }
@@ -368,10 +447,10 @@ Deno.serve(async (req) => {
         }
 
         if (!r.ok) {
-          const msg = JSON.stringify(r.data || "");
-          if (r.status === 404 || /channel not found|unauthorized|invalid token/i.test(msg)) {
-            console.warn(`[whapi-proxy] send_media(${mediatype}): canal Whapi indisponível`);
-            return json(503, { error: "Canal WhatsApp (Whapi) offline ou token inválido. Reconecte o canal nas configurações." });
+          if (isWhapiErrorBlob(r.status, r.data)) {
+            const cls = classifyWhapiError(r.status, r.data);
+            console.warn(`[whapi-proxy] send_media(${mediatype}) bloqueado (${cls.reasonCode})`);
+            return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
           }
           return json(r.status, { error: r.data });
         }
@@ -381,7 +460,7 @@ Deno.serve(async (req) => {
       case "health_check": {
         // Status do canal Whapi (para o painel de reconexão sem código).
         const r = await whapiFetch(whapiToken, `/health`, { method: "GET" });
-        const me = await whapiFetch(whapiToken, `/users/me`, { method: "GET" }).catch(() => ({ ok: false, data: null }));
+        const me = await whapiFetch(whapiToken, `/users/me`, { method: "GET" }).catch(() => ({ ok: false, status: 0, data: null }));
         const status = r.data?.status?.text || r.data?.status || "UNKNOWN";
         const phone = (me as any)?.data?.phone || (me as any)?.data?.id || null;
         const channelId = r.data?.channel?.id || r.data?.channel_id || null;
@@ -393,11 +472,25 @@ Deno.serve(async (req) => {
             );
           } catch (_) { /* ignora */ }
         }
+        // Classifica motivo quando o canal não respondeu OK — ex.: 402 unpaid, 404 channel_not_found.
+        let reasonCode: WhapiReasonCode | null = null;
+        let helpUrl: string | null = null;
+        let reasonMessage: string | null = null;
+        if (!r.ok) {
+          const cls = classifyWhapiError(r.status, r.data);
+          reasonCode = cls.reasonCode;
+          helpUrl = cls.helpUrl;
+          reasonMessage = cls.error;
+          console.warn(`[whapi-proxy] health_check: canal indisponível (${reasonCode}) status=${r.status}`);
+        }
         return json(200, {
           ok: r.ok,
           status: String(status).toUpperCase(),
           phone,
           channel_id: channelId,
+          reasonCode,
+          reasonMessage,
+          helpUrl,
           raw: r.data,
         });
       }
@@ -406,9 +499,9 @@ Deno.serve(async (req) => {
         // Pede QR code de pareamento (canal precisa estar em INIT/QR).
         const r = await whapiFetch(whapiToken, `/users/login`, { method: "GET" });
         if (!r.ok) {
-          const msg = JSON.stringify(r.data || "");
-          if (r.status === 404 || /channel not found|unauthorized|invalid token/i.test(msg)) {
-            return json(503, { error: "Canal Whapi offline ou token inválido." });
+          if (isWhapiErrorBlob(r.status, r.data)) {
+            const cls = classifyWhapiError(r.status, r.data);
+            return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
           }
           return json(r.status, { error: r.data });
         }

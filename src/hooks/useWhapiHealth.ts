@@ -3,6 +3,15 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type WhapiHealthStatus = "AUTH" | "QR" | "INIT" | "OFFLINE" | "UNKNOWN";
 
+export type WhapiReasonCode =
+  | "unpaid"
+  | "channel_not_found"
+  | "invalid_token"
+  | "offline"
+  | "rate_limited"
+  | "unknown"
+  | null;
+
 export interface WhapiHealth {
   status: WhapiHealthStatus;
   phone: string | null;
@@ -10,6 +19,9 @@ export interface WhapiHealth {
   checking: boolean;
   lastCheckedAt: number | null;
   error: string | null;
+  reasonCode: WhapiReasonCode;
+  reasonMessage: string | null;
+  helpUrl: string | null;
 }
 
 const POLL_MS = 30_000;
@@ -32,6 +44,9 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
     checking: false,
     lastCheckedAt: null,
     error: null,
+    reasonCode: null,
+    reasonMessage: null,
+    helpUrl: null,
   });
   const mountedRef = useRef(true);
 
@@ -51,6 +66,9 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
         checking: false,
         lastCheckedAt: Date.now(),
         error: null,
+        reasonCode: (data?.reasonCode ?? null) as WhapiReasonCode,
+        reasonMessage: data?.reasonMessage ?? null,
+        helpUrl: data?.helpUrl ?? null,
       });
     } catch (e: any) {
       if (!mountedRef.current) return;

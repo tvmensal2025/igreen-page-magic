@@ -8,6 +8,7 @@ import { ChatSidebar } from "./ChatSidebar";
 import { ChatView } from "./ChatView";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
+import { WhapiBillingBanner } from "./WhapiBillingBanner";
 
 import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -256,6 +257,8 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
 
       {/* Content area */}
       <div className="flex-1 min-h-0 min-w-0 border border-t-0 border-border rounded-b-lg overflow-hidden bg-background flex flex-col">
+        {/* Banner global de billing Whapi — aparece em qualquer sub-aba quando o canal está bloqueado por pagamento */}
+        <WhapiBillingBanner enabled={!!isWhapi} />
         {activeSubTab === "dashboard" && (
           <Suspense fallback={<LazyFallback />}>
             <div className="p-3 space-y-3">
