@@ -119,3 +119,37 @@ export async function buscarCepPorEndereco(estado: string, cidade: string, rua: 
   }
   return "";
 }
+
+// ─── Buscar endereço por CEP via ViaCEP (forward lookup) ─────────────────
+// Retorna { logradouro, bairro, localidade, uf } ou null se inválido/erro.
+// CEP genérico (termina em 000) ainda retorna cidade/UF — preenche o que dá.
+export interface EnderecoViaCep {
+  cep: string;
+  logradouro: string;
+  bairro: string;
+  localidade: string;
+  uf: string;
+}
+
+export async function buscarEnderecoPorCep(cep: string): Promise<EnderecoViaCep | null> {
+  const cepClean = String(cep || "").replace(/\D/g, "");
+  if (cepClean.length !== 8) return null;
+  try {
+    const url = `https://viacep.com.br/ws/${cepClean}/json/`;
+    console.log(`🔍 ViaCEP forward lookup: ${url}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_VIA_CEP) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || data.erro) return null;
+    return {
+      cep: cepClean,
+      logradouro: String(data.logradouro || "").trim(),
+      bairro: String(data.bairro || "").trim(),
+      localidade: String(data.localidade || "").trim(),
+      uf: String(data.uf || "").trim().toUpperCase(),
+    };
+  } catch (e: any) {
+    console.warn(`⚠️ Erro ViaCEP forward: ${e?.message}`);
+    return null;
+  }
+}

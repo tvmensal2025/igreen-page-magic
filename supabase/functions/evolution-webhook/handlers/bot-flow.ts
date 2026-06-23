@@ -33,6 +33,7 @@ import {
   fetchInsecure,
   withRetry,
   buscarCepPorEndereco,
+  buscarEnderecoPorCep,
   normalizePhone,
   TIMEOUT_VIA_CEP,
   logStructured,
@@ -205,6 +206,31 @@ async function resolveOcrFallback(
 // ── Auto-resolve CEP from address data (avoid asking user) ──
 async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string> {
   let step = getNextMissingStep(merged);
+
+  // Caso A: já tem CEP válido salvo → pular ask_cep e completar endereço via ViaCEP direto
+  if (step === "ask_cep") {
+    const cepClean = String(merged.cep || "").replace(/\D/g, "");
+    if (cepClean.length === 8 && !/000$/.test(cepClean)) {
+      console.log(`🔍 CEP já existe (${cepClean}). Buscando endereço via ViaCEP direto...`);
+      try {
+        const end = await buscarEnderecoPorCep(cepClean);
+        if (end) {
+          if (!merged.address_street && end.logradouro) { merged.address_street = end.logradouro; updates.address_street = end.logradouro; }
+          if (!merged.address_neighborhood && end.bairro) { merged.address_neighborhood = end.bairro; updates.address_neighborhood = end.bairro; }
+          if (!merged.address_city && end.localidade) { merged.address_city = end.localidade; updates.address_city = end.localidade; }
+          if (!merged.address_state && end.uf) { merged.address_state = end.uf; updates.address_state = end.uf; }
+          merged.cep = cepClean;
+          updates.cep = cepClean;
+          console.log(`✅ Endereço auto-preenchido via CEP: ${end.logradouro || "(s/rua)"} - ${end.bairro || "(s/bairro)"} - ${end.localidade}/${end.uf}`);
+          step = getNextMissingStep(merged);
+        }
+      } catch (e: any) {
+        console.warn(`⚠️ Erro ViaCEP forward em autoResolve: ${e?.message}`);
+      }
+    }
+  }
+
+  // Caso B: tem endereço mas falta CEP → reverse lookup
   if (step === "ask_cep" && merged.address_city && merged.address_state && merged.address_street) {
     console.log("🔍 Auto-resolvendo CEP via ViaCEP antes de perguntar ao usuário...");
     try {
@@ -3434,11 +3460,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             console.warn(`[telemetry] ocr_cep_missing customer=${customer.id} has_street=${!!updates.address_street} has_city=${!!updates.address_city} has_state=${!!updates.address_state}`);
           }
           if (!updates.cep && updates.address_city && updates.address_state && updates.address_street) {
-            console.log("🔍 CEP não encontrado. Buscando via ViaCEP...");
+            console.log("🔍 CEP não encontrado. Buscando via ViaCEP (reverse)...");
             const cepBuscado = await buscarCepPorEndereco(updates.address_state, updates.address_city, updates.address_street);
             if (cepBuscado) {
               updates.cep = cepBuscado;
               console.log(`✅ CEP auto-preenchido: ${cepBuscado}`);
+            }
+          }
+          // OCR trouxe CEP mas faltam campos do endereço → forward lookup
+          if (updates.cep && (!updates.address_street || !updates.address_neighborhood || !updates.address_city || !updates.address_state)) {
+            console.log(`🔍 CEP ${updates.cep} presente, completando endereço via ViaCEP (forward)...`);
+            const end = await buscarEnderecoPorCep(updates.cep);
+            if (end) {
+              if (!updates.address_street && end.logradouro) updates.address_street = end.logradouro;
+              if (!updates.address_neighborhood && end.bairro) updates.address_neighborhood = end.bairro;
+              if (!updates.address_city && end.localidade) updates.address_city = end.localidade;
+              if (!updates.address_state && end.uf) updates.address_state = end.uf;
+              console.log(`✅ Endereço completado via CEP: ${end.logradouro || "(s/rua)"} - ${end.localidade}/${end.uf}`);
             }
           }
 
@@ -4912,9 +4950,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const cepClean = messageText.replace(/\D/g, "");
       if (cepClean.length !== 8) { reply = "❌ CEP inválido. Informe os *8 números*:"; break; }
       try {
-        const viaCepRes = await fetchWithTimeout(`https://viacep.com.br/ws/${cepClean}/json/`, { timeout: TIMEOUT_VIA_CEP });
-        const viaCep = await viaCepRes.json();
-        if (viaCep.erro) { reply = "❌ CEP não encontrado. Verifique e tente novamente:"; break; }
+        const viaCep = await buscarEnderecoPorCep(cepClean);
+        if (!viaCep) { reply = "❌ CEP não encontrado. Verifique e tente novamente:"; break; }
         updates.cep = cepClean;
         updates.address_street = viaCep.logradouro || customer.address_street || "";
         updates.address_neighborhood = viaCep.bairro || customer.address_neighborhood || "";
