@@ -204,11 +204,21 @@ Deno.serve(async (req) => {
     const { data: settingsRows } = await admin
       .from("settings")
       .select("key, value")
-      .in("key", ["superadmin_consultant_id", "whapi_token"]);
+      .in("key", ["superadmin_consultant_id", "whapi_token", "whapi_connected_phone"]);
     const settings: Record<string, string> = {};
     settingsRows?.forEach((r: any) => { settings[r.key] = r.value; });
 
-    if (settings.superadmin_consultant_id !== userId) {
+    let isAuthorized = settings.superadmin_consultant_id === userId;
+    if (!isAuthorized) {
+      // Fallback seguro: confirma o papel pela função is_super_admin
+      // (SECURITY DEFINER), evitando bloqueios quando settings está fora do ar
+      // ou foi corrompida.
+      try {
+        const { data: isSuper } = await admin.rpc("is_super_admin", { _user_id: userId });
+        if (isSuper === true) isAuthorized = true;
+      } catch (_) { /* ignora */ }
+    }
+    if (!isAuthorized) {
       return json(403, { error: "Acesso restrito ao super admin" });
     }
     const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
