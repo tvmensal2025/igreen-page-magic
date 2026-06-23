@@ -2147,9 +2147,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       console.log(`[intent-override] CADASTRAR detectado: "${txt.slice(0, 60)}"`);
       return {
         reply:
-          "📋 Ótimo! Vamos iniciar seu cadastro.\n\n" +
-          "📸 *Envie uma FOTO ou PDF da sua conta de energia* para começarmos!\n\n" +
-          "Formatos aceitos: JPG, PNG ou PDF",
+          "Perfeito! 🙌\n\n" +
+          "📸 Me envia agora uma *foto da sua conta de luz* (fatura do mês atual ou a anterior).💚",
         updates: { conversation_step: "aguardando_conta", sales_phase: "fechamento" },
       };
     }
@@ -3224,7 +3223,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     case "aguardando_humano": {
       const resp = messageText.toLowerCase().trim();
       if (resp?.includes("cadastr") || resp === "2") {
-        reply = "📋 Vamos iniciar seu cadastro!\n\n📸 *Envie uma FOTO ou PDF da sua conta de energia* para começarmos!\n\nFormatos aceitos: JPG, PNG ou PDF";
+        reply = "Perfeito! 🙌\n\n📸 Me envia agora uma *foto da sua conta de luz* (fatura do mês atual ou a anterior).💚";
         updates.conversation_step = "aguardando_conta";
       } else {
         reply = `⏳ Sua solicitação já foi registrada! Um consultor da equipe *${nomeRepresentante}* entrará em contato em breve.\n\nSe quiser iniciar o cadastro agora, digite *cadastrar*.`;
@@ -5443,7 +5442,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           } else {
             console.warn(`⚠️ Step desconhecido: ${step} — resetando para aguardando_conta`);
             updates.conversation_step = "aguardando_conta";
-            reply = `👋 Olá! Eu sou o assistente de *${nomeRepresentante}* em parceria com a *iGreen Energy*!\n\n📸 *Envie uma FOTO ou PDF da sua conta de energia* para começarmos!\n\nFormatos aceitos: JPG, PNG ou PDF`;
+            reply = `Perfeito! 🙌\n\n📸 Me envia agora uma *foto da sua conta de luz* (fatura do mês atual ou a anterior).💚`;
           }
         }
       }
