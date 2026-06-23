@@ -289,13 +289,24 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
           <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => copy(row.otp_code!, "Código")}><Copy className="w-3 h-3" /></Button>
         </div>
       )}
-      {isSign && row?.link_assinatura && (
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <Send className="w-3 h-3" />
-          <a href={row.link_assinatura} target="_blank" rel="noreferrer" className="underline truncate">{row.link_assinatura}</a>
-          <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => copy(row.link_assinatura!, "Link")}><Copy className="w-3 h-3" /></Button>
-        </div>
-      )}
+      {(() => {
+        const portalLink = row?.link_facial || row?.link_assinatura || row?.portal2_contract_link || row?.igreen_link;
+        if (!portalLink) return null;
+        return (
+          <div className="mt-1.5 space-y-1">
+            <div className="flex items-center gap-1.5">
+              <Send className="w-3 h-3 shrink-0" />
+              <a href={portalLink} target="_blank" rel="noreferrer" className="underline truncate text-[11px]">{portalLink}</a>
+              <Button size="icon" variant="ghost" className="h-5 w-5 shrink-0" onClick={() => copy(portalLink, "Link")}><Copy className="w-3 h-3" /></Button>
+            </div>
+            <div className="flex justify-end">
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" disabled={resending} onClick={resendLink}>
+                {resending ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Send className="w-3 h-3 mr-1" />Reenviar link ao cliente</>}
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
       {showError && errorText && (
         <p className="mt-1.5 leading-snug whitespace-pre-wrap">{errorText}</p>
       )}
