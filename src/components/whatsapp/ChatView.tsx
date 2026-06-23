@@ -13,6 +13,7 @@ import type { ChatItem } from "@/hooks/useChats";
 import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff } from "lucide-react";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
+import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
@@ -566,6 +567,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </AlertDialogContent>
         </AlertDialog>
       </div>
+
+      {customerId && (
+        <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
+      )}
 
       {/* Messages area — flex-1 min-h-0 garante composer sempre visível */}
       <div
