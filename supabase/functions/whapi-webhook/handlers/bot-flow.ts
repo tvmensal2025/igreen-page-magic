@@ -5361,9 +5361,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
       try {
-        const viaCepRes = await fetchWithTimeout(`https://viacep.com.br/ws/${cepClean}/json/`, { timeout: TIMEOUT_VIA_CEP });
-        const viaCep = await viaCepRes.json();
-        if (viaCep.erro) { reply = "❌ CEP não encontrado. Verifique e tente novamente:"; break; }
+        const viaCep = await buscarEnderecoPorCep(cepClean);
+        if (!viaCep) { reply = "❌ CEP não encontrado. Verifique e tente novamente:"; break; }
         updates.cep = cepClean;
         updates.address_street = viaCep.logradouro || customer.address_street || "";
         updates.address_neighborhood = viaCep.bairro || customer.address_neighborhood || "";
