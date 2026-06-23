@@ -249,6 +249,15 @@ async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string
       console.warn(`⚠️ Erro auto-resolve CEP: ${e?.message}`);
     }
   }
+  // 🚫 NUNCA pedir CEP ao cliente. Se OCR não pegou e ViaCEP não resolveu,
+  // segue o fluxo silencioso (regra explícita do produto).
+  if (step === "ask_cep") {
+    console.warn("⚠️ CEP não resolvido (OCR genérico + ViaCEP sem retorno) — seguindo sem pedir ao cliente (regra do produto).");
+    const mock = { ...merged, cep: "01310100" };
+    let nxt = getNextMissingStep(mock);
+    if (nxt === "ask_cep") nxt = "ask_number";
+    step = nxt;
+  }
   return step;
 }
 
