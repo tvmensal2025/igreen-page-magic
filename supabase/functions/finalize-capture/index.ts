@@ -120,11 +120,29 @@ Deno.serve(async (req) => {
 
     const { data: customer, error: fetchErr } = await supabase
       .from("customers")
-      .select("id, consultant_id, phone_whatsapp, name, status, conversation_step, name_mismatch_flag, name_mismatch_acknowledged_at, document_back_url, electricity_bill_photo_url, igreen_link")
+      .select("id, consultant_id, phone_whatsapp, name, status, conversation_step, name_mismatch_flag, name_mismatch_acknowledged_at, document_back_url, electricity_bill_photo_url, igreen_link, customer_origin")
       .eq("id", customerId)
       .maybeSingle();
 
     if (fetchErr || !customer) return jres({ error: "Cliente não encontrado" }, 404);
+
+    // 🛡️ Guarda de origem: clientes já cadastrados/sincronizados
+    // (`igreen_sync` = carteira XLSX/worker; `igreen_extension` = extensão
+    // Chrome do consultor) JÁ ESTÃO no portal. Nunca devem disparar o Portal 2
+    // de novo — geraria duplicidade. Defesa-em-profundidade para o caso de o
+    // botão "Finalizar" ser clicado ou um webhook chamar este endpoint pra um
+    // lead de origem ativa.
+    const _origin = String((customer as any).customer_origin || "").toLowerCase();
+    if (_origin === "igreen_sync" || _origin === "igreen_extension") {
+      console.log(`[finalize-capture][origin-guard] customer=${customerId} origin=${_origin} — bloqueado (já cadastrado)`);
+      return jres({
+        ok: true,
+        already: true,
+        mode: "origin_guard_skip",
+        origin: _origin,
+        message: "Cliente já cadastrado (carteira/extensão). Portal 2 não é disparado.",
+      });
+    }
 
     if (TERMINAL.has(String(customer.conversation_step || "")) || TERMINAL.has(String(customer.status || ""))) {
       return jres({
