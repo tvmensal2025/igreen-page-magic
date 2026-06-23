@@ -4282,7 +4282,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               .eq("id", customer.id);
           } catch (_) { /* best-effort */ }
           (updates as any).__inline_sent = true;
-          updates.conversation_step = "ask_quero_cadastrar";
+          updates.conversation_step = "aguardando_doc_auto";
           reply = "";
         }
       } else if (resp === "nao_conta" || resp === "nao" || resp === "não" || resp === "n" || resp === "2" || resp === "errado" || resp === "❌") {
