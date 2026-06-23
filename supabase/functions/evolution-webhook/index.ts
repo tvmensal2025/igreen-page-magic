@@ -1883,22 +1883,53 @@ Deno.serve(async (req) => {
       // pipeline de OCR/portal (despachado pelo próprio Cérebro) seguem intactos.
       let _cerebroRespondeu = false;
       const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
-      // 🔑 CADASTRO → caminho determinístico (OCR + confirmação + doc + portal).
-      // O Cérebro NÃO executa OCR (ação `ocr` do despacho é no-op) e usa uma
-      // fonte de estado distinta (`customer_flow_state.current_step_id`) da do
-      // determinístico (`customers.conversation_step`). Misturar os dois no meio
-      // do cadastro dessincroniza o passo. Regra: assim que o lead ENTRA no
-      // cadastro — manda mídia (foto conta/doc) OU já está num passo de cadastro
-      // (CADASTRO_STEPS) — TODO o turno vai ao determinístico, que conduz o
-      // cadastro inteiro (OCR→confirma→doc→email→telefone→portal→OTP→link).
-      // O Cérebro segue dono APENAS da fase conversacional inicial (antes da conta).
       const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
       const _emCadastro = CADASTRO_STEPS.has(stepBefore);
-      if (_midiaOcr || _emCadastro) {
-        console.log(`[cerebro] cadastro em andamento (midia=${_midiaOcr} step=${stepBefore}) → determinístico customer=${customer.id}`);
-      } else if (_fbVarCerebro === "D") {
-        console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+
+      // 🛡️ Guarda de origem: clientes já cadastrados/sincronizados
+      // (`igreen_sync` = carteira XLSX/worker; `igreen_extension` = extensão
+      // Chrome do consultor) NUNCA entram no cadastro nem no Portal 2 — já
+      // estão registrados. Vão direto pro Cérebro responder dúvidas,
+      // independente do step legado.
+      const _origin = String((customer as any).customer_origin || "").toLowerCase();
+      const _isAtivoOrigin = _origin === "igreen_sync" || _origin === "igreen_extension";
+
+      // Classifica o input dentro do cadastro. Default = "expected" (vai ao
+      // determinístico). Só vira "freeform_question" quando o lead claramente
+      // perguntou outra coisa, fora do objetivo do step.
+      const { classifyCadastroInput } = await import("../_shared/cadastro-input-classifier.ts");
+      const _cadKind = (_emCadastro && !_isAtivoOrigin)
+        ? classifyCadastroInput({
+          stepBefore,
+          text: messageText ?? null,
+          isButton,
+          hasImage,
+          hasDocument,
+          hasAudio,
+        })
+        : null;
+
+      // Decide se o Cérebro deve correr este turno:
+      //  - origem ativa (já cadastrado) → SEMPRE Cérebro
+      //  - fora do cadastro → comportamento normal (Cérebro decide)
+      //  - cadastro + freeform_question → Cérebro (sem mexer no estado)
+      //  - cadastro + expected/mídia → determinístico (pula Cérebro)
+      const _rodarCerebro = _isAtivoOrigin
+        || (!_emCadastro && !(_fbVarCerebro === "D"))
+        || (_emCadastro && _cadKind === "freeform_question");
+
+      if (!_rodarCerebro) {
+        if (_emCadastro) {
+          console.log(`[cerebro] cadastro em andamento (midia=${_midiaOcr} step=${stepBefore} kind=${_cadKind ?? "media"}) → determinístico customer=${customer.id}`);
+        } else if (_fbVarCerebro === "D") {
+          console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+        }
       } else try {
+        if (_isAtivoOrigin) {
+          console.log(`[origin-guard] customer=${customer.id} origin=${_origin} → Cérebro (pula cadastro/portal)`);
+        } else if (_emCadastro) {
+          console.log(`[cerebro] freeform no cadastro step=${stepBefore} customer=${customer.id} → Cérebro readOnly`);
+        }
         const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
         const r = await responderComCerebro({
           supabase,
@@ -1928,6 +1959,17 @@ Deno.serve(async (req) => {
       if (_cerebroRespondeu) {
         return new Response(
           JSON.stringify({ ok: true, mode: "cerebro" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // 🛡️ Defesa adicional: origem ativa que por algum motivo o Cérebro não
+      // respondeu (off/dark/erro). Não deve cair no cadastro determinístico —
+      // só loga e responde 200 sem disparar Portal 2.
+      if (_isAtivoOrigin) {
+        console.log(`[origin-guard] customer=${customer.id} origin=${_origin} — Cérebro silencioso; pulando cadastro determinístico`);
+        return new Response(
+          JSON.stringify({ ok: true, mode: "origin_guard_skip" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
