@@ -9,6 +9,7 @@ import { ChatView } from "./ChatView";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 import { WhapiBillingBanner } from "./WhapiBillingBanner";
+import { useWhapiHealth } from "@/hooks/useWhapiHealth";
 
 import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
