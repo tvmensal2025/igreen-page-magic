@@ -173,6 +173,10 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
   const totalUnread = useMemo(() => chats.reduce((sum, c) => sum + c.unreadCount, 0), [chats]);
   const isConnected = connectionStatus === "connected";
 
+  // Whapi: só exibir painel de reconexão no Dashboard quando o canal cair (não está AUTH).
+  const whapiHealth = useWhapiHealth(!!isWhapi);
+  const whapiDown = !!isWhapi && whapiHealth.lastCheckedAt !== null && whapiHealth.status !== "AUTH";
+
   return (
     <div className="flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
       {/* Compact connection status — pill on the left, soft border */}
