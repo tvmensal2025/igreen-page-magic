@@ -1,69 +1,58 @@
-## Análise profunda — Fluxo A não está seguindo as etapas
+## Auditoria: os passos do Fluxo A vão funcionar em qualquer fluxo novo?
 
-### O que verifiquei no banco
+### Resposta curta
 
-**Fluxo A (`28acf20a-eaac-4548-8cf9-041781c41f56`, variant=A, is_active=true) — 5 steps:**
+**SIM**, com 2 ressalvas pequenas. O engine reconhece os passos pelo `step_type`, não pelo UUID — então qualquer fluxo novo com os mesmos `step_type`s funciona igual.
 
+---
 
-| pos | step_key                          | step_type            | captures                                                            |
-| --- | --------------------------------- | -------------------- | ------------------------------------------------------------------- |
-| 1   | `passo_mqozng6u` (id `3d69389d…`) | `capture_conta`      | `**[]` vazio**                                                      |
-| 2   | `passo_mqoznqri`                  | `capture_documento`  | `[{kind:media, name:documento_cliente, auto_detect_doc_type:true}]` |
-| 3   | `passo_mqoznz0g`                  | `capture_email`      | `[{kind:text, name:email}]`                                         |
-| 4   | `passo_mqozocdy`                  | `confirm_phone`      | `[{kind:text, name:telefone}]`                                      |
-| 5   | `passo_mqozop4s`                  | `finalizar_cadastro` | `[]`                                                                |
+### Como o engine resolve os passos (evidências no código)
+
+`whapi-webhook/handlers/bot-flow.ts` (linhas 2796-2848) tem o **custom-step-resolver**: dado um `conversation_step` (UUID ou step_key custom), busca em `bot_flow_steps` e mapeia o `step_type` pro handler legacy:
 
 
-**Lead `5511971254913` (customer `02eda00b…`):**
+| step_type                           | handler legacy        | função                                         |
+| ----------------------------------- | --------------------- | ---------------------------------------------- |
+| `capture_conta`                     | `aguardando_conta`    | OCR da conta de luz + extração                 |
+| `capture_documento` / `capture_doc` | `aguardando_doc_auto` | OCR de RG/CNH com auto-detect                  |
+| `capture_email`                     | `ask_email`           | validação de e-mail                            |
+| `confirm_phone`                     | `ask_phone_confirm`   | confirma telefone (Sim/Editar)                 |
+| `finalizar_cadastro`                | `finalizando`         | dispara Portal2 + OTP + selfie                 |
+| `message`                           | passo informativo     | só envia texto+mídia e avança por `position+1` |
 
-- `conversation_step = 3d69389d…` (step 1)
-- `previous_conversation_step = welcome`
-- `ocr_conta_attempts = 0` ← OCR nunca rodou
-- `flow_variant = A`
 
-**Conversa registrada:**
+`resolveFlowId` (`_shared/resolve-flow.ts`) busca o flow ativo por **consultant_id + variant** — sem UUIDs hard-coded.
 
-- 15:37:10 — inbound "Oi" (step=null)
-- 15:44:03 — inbound imagem (step já = step 1)
-- **0 outbound registrados** (nem o prompt do step 1)
+### O que confere no banco hoje
 
-**outbound_message_log:** última tentativa 09:48 de hoje, todas com `result_status: failed`.
+**Fluxo A do Rafael** (`28acf20a…`, variant=A, sync_mode=custom):
 
-**Logs whapi-webhook (16:15 e 16:19):** imagens entrando, mas `parseWhapiMessage` retornou null e marcou "Mensagem ignorada".
 
-### Onde está quebrando — 3 camadas
+| pos | step_type            | captures                                    | transitions                | fallback        | status |
+| --- | -------------------- | ------------------------------------------- | -------------------------- | --------------- | ------ |
+| 1   | `capture_conta`      | ✅ corrigido agora                           | `[]` (avança por position) | `{mode:repeat}` | OK     |
+| 2   | `capture_documento`  | ✅ `media + auto_detect_doc_type`            | `[]`                       | `{mode:repeat}` | OK     |
+| 3   | `capture_email`      | ✅ `text + email`                            | `[]`                       | `{mode:repeat}` | OK     |
+| 4   | `confirm_phone`      | ✅ `text + telefone`                         | `[]`                       | `{mode:repeat}` | OK     |
+| 5   | `finalizar_cadastro` | `[]` (correto: não captura, dispara portal) | `[]`                       | `{mode:repeat}` | OK     |
 
-**1. Bug do router-bridge (já corrigido + deployado nesta sessão)**
-`whapi-webhook/index.ts:1766-1795` — quando o `conversation_step` é UUID de `capture_conta`, o bridge força `engine=sys` (que tem OCR), mas o bloco logo abaixo revertia pra `flow`. Resultado: PDF/imagem caía no handler conversacional sem OCR e o bot ficava mudo. Flag `bridgeForcedSysForCapture` agora bloqueia a reversão.
 
-**2. `captures: []` vazio no step 1**
-O step 1 (`capture_conta`) não declara `name: conta_luz, kind: media` como os outros. O `custom-step-resolver` (bot-flow.ts:3032) mapeia `capture_conta` → legacy `aguardando_conta`, que sabe processar a imagem mesmo sem `captures` preenchido — mas a inconsistência pode causar o resolver a tratar como "no-match" e re-emitir prompt.
+**Uso global desses step_types em outros fluxos** (todas as 8 instâncias de cada `confirm_phone`, `capture_email`, `capture_documento`, `finalizar_cadastro` no banco rodam pela mesma engine): consistente.
 
-**3. `parseWhapiMessage` ignorando imagens recentes (16:15 / 16:19)**
-Pelo summary do log (`fromMe:[false], type:[image], count:1`), a função NÃO deveria retornar null. Sem `chat_id` no log, suspeito de `@status` ou variante de @newsletter não coberta. Precisa logar o motivo do null.
+### Hard-codes encontrados — 1 só, sem impacto
 
-### Plano de ação
+- `supabase/functions/_shared/image-capture-step_test.ts:51` → `const UUID = "3d69389d…"`. **É arquivo de teste**, não roda em produção. Pode ficar.
 
-**A. Verificar se o fix do router-bridge resolveu (5 min)**
+### Ressalvas (não impedem funcionar, mas vale corrigir)
 
-1. Resetar o `conversation_step` do customer `02eda00b…` pra `null` (forçar re-welcome) OU pedir pro Rafael mandar nova conta agora.
-2. Conferir em `outbound_message_log` se aparece um envio com `result_status='sent'` em vez de `failed`.
-3. Conferir `ocr_conta_attempts` virou ≥ 1.
+**R1. Não existe template público variante A.** Hoje só `variant=D` tem `is_public=true`. Se um novo consultor criar fluxo variante A com `sync_mode='public'`, o `resolveFlowId` cai no fallback e pode pegar o flow errado. **Recomendado:** marcar o Fluxo A do Rafael como `is_public=true` (vira o template oficial da variante A).
 
-**B. Instrumentar `parseWhapiMessage` pra explicar o null**
-Trocar `return null` por logs específicos (`group`, `from_me_api`, `empty`, `unknown_type`) e re-deployar — sem isso continuamos cegos sobre as imagens "ignoradas".
+**R2. `step_key` precisa ser único por flow.** Se duplicar `step_key` ao criar fluxo novo, o resolver pega o `.maybeSingle()` e quebra. Hoje todos os 117 passos do banco respeitam isso, mas o editor não bloqueia — **recomendado adicionar índice único `(flow_id, step_key)**`.
 
-**C. Normalizar step 1 (`captures: []` → `captures: [{kind:media, name:conta_luz, required:true, accepts:[image,document], retry_text:"📸 Pode reenviar a foto da sua conta de luz?"}]`)**
-Deixa o step igual aos outros e elimina caminho de "no-match".
+### Plano
 
-**D. Investigar por que o welcome de step 1 nunca foi enviado pro lead**
+1. **Marcar o Fluxo A do Rafael como `is_public=true**` → vira template oficial da variante A. Novos consultores em `sync_mode='public'` herdam direto.
+2. **Adicionar índice único `(flow_id, step_key)` em `bot_flow_steps**` → garantia de que step_key não duplica.
+3. **Smoke test:** criar um fluxo novo de teste copiando esses 5 step_types e simular um lead percorrendo as 5 etapas (existe `src/lib/flow-simulator/engine.ts`).
 
-- Verificar se `consultantFlag` está true pro super-admin
-- Verificar se `customerOverride` não está `false`
-- Conferir histórico de erros do whapi-proxy entre 15:37 e 15:45
-
-### Perguntas antes de implementar
-
-- Posso **resetar o `conversation_step` do lead 5511971254913 pra null** pra testar o fix limpo? (apaga progresso atual do cadastro dele)
-- Quer que eu **adicione o capture do step 1** já nesta passada, ou só instrumentar/testar primeiro? SIM MAS ANALISE TODOS E JA FACA EM SEGUIDA TODOS COM O TEXTO QUE ESTA LA E QUE SIGA CADA ETAPA COMO TEM QUE SEGUIR TODAS
-- Confirma que **só estamos olhando Whapi (super admin Rafael)** e não Evolution? Evolution está offline (`needs_reconnect`) mas não é o canal deste lead.
+Posso aplicar 1 e 2 numa migração e rodar o simulador no passo 3. SIM
