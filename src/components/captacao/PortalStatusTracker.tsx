@@ -25,6 +25,9 @@ interface Row {
   conversation_step: string | null;
   otp_code: string | null;
   link_assinatura: string | null;
+  link_facial: string | null;
+  portal2_contract_link: string | null;
+  igreen_link: string | null;
   igreen_code: string | null;
   error_message: string | null;
   finalized_at: string | null;
@@ -92,6 +95,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
   const [row, setRow] = useState<Row | null>(null);
   const [trace, setTrace] = useState<PortalTrace | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [resending, setResending] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -101,7 +105,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
       const [{ data: cust }, { data: traces }] = await Promise.all([
         supabase
           .from("customers")
-          .select("status, conversation_step, otp_code, link_assinatura, igreen_code, error_message, finalized_at, portal2_status, portal2_extraction_mode, portal2_error_kind, ocr_done, ocr_confianca, portal2_ocr_doc_result, portal2_ocr_bill_result")
+          .select("status, conversation_step, otp_code, link_assinatura, link_facial, portal2_contract_link, igreen_link, igreen_code, error_message, finalized_at, portal2_status, portal2_extraction_mode, portal2_error_kind, ocr_done, ocr_confianca, portal2_ocr_doc_result, portal2_ocr_bill_result")
           .eq("id", customerId).maybeSingle(),
         supabase
           .from("portal2_audit_traces")
@@ -171,6 +175,18 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props
     } catch (e: any) {
       sonnerToast.error(e?.message || "Falha ao reenviar");
     } finally { setRetrying(false); }
+  };
+
+  const resendLink = async () => {
+    if (resending) return;
+    setResending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("resend-portal-link", { body: { customerId, consultantId } });
+      if (error || (data as any)?.error) throw new Error((data as any)?.message || (data as any)?.error || error?.message);
+      sonnerToast.success("Link reenviado pelo bot ao cliente");
+    } catch (e: any) {
+      sonnerToast.error(e?.message || "Falha ao reenviar link");
+    } finally { setResending(false); }
   };
 
   const copy = async (txt: string, label: string) => {
