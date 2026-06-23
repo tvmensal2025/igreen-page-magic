@@ -33,6 +33,7 @@ import {
   fetchInsecure,
   withRetry,
   buscarCepPorEndereco,
+  buscarEnderecoPorCep,
   normalizePhone,
   TIMEOUT_VIA_CEP,
   logStructured,
