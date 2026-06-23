@@ -252,6 +252,15 @@ async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string
   // O case "ask_finalizar" continua existindo como fallback para leads antigos
   // que já estão parados nesse step.
   if (step === "ask_finalizar") return "finalizando";
+  // 🚫 NUNCA pedir CEP ao cliente. Se OCR não pegou e ViaCEP não resolveu,
+  // segue o fluxo silencioso (portal pode falhar depois — fallback humano).
+  if (step === "ask_cep") {
+    console.warn("⚠️ CEP não resolvido (OCR genérico + ViaCEP sem retorno) — seguindo sem pedir ao cliente (regra do produto).");
+    const mock = { ...merged, cep: "01310100" };
+    let nxt = getNextMissingStep(mock);
+    if (nxt === "ask_cep") nxt = "ask_number";
+    step = nxt;
+  }
   return step;
 }
 
@@ -3787,24 +3796,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (nextCustom) {
           console.log(`[post-confirm-conta] next=${nextCustom.step_key} type=${nextCustom.step_type} reason=customflow`);
 
-          // 🚦 SEPARAÇÃO conta ↔ documento — conta e doc são processos
-          // individuais. Após confirmar a conta envia APENAS a simulação e
-          // PARA. O capture_documento só dispara quando o cliente clicar
-          // "Quero me cadastrar".
+          // 🚀 Ir DIRETO pra captura do documento (sem CTA "Quero me cadastrar").
+          // Regra explícita do produto: pós-SIM da conta, dispara capture_documento
+          // imediatamente — cliente já demonstrou intenção ao confirmar os dados.
           if (nextCustom.step_type === "capture_documento" || nextCustom.step_type === "capture_doc") {
             try {
-              const ctaText = "Pra continuar seu cadastro e garantir essa economia, é só tocar no botão abaixo 👇";
-              await sendOptions(remoteJid, ctaText, [
-                { id: "btn_quero_cadastrar", title: "✅ Quero me cadastrar" },
-              ]);
-              await supabase.from("conversations").insert({
-                customer_id: customer.id, message_direction: "outbound",
-                message_text: ctaText, message_type: "text", conversation_step: "ask_quero_cadastrar",
-              });
+              await dispatchStepFromFlow(nextCustom.step_key, _vars);
             } catch (e) {
-              console.warn(`[post-confirm-conta] envio do CTA quero_cadastrar falhou:`, (e as Error).message);
+              console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
+              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
             }
-            updates.conversation_step = "ask_quero_cadastrar";
+            updates.conversation_step = "aguardando_doc_auto";
           } else {
             const ok = nextCustom.step_type === "finalizar_cadastro"
               ? true
@@ -3840,18 +3842,26 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             void ok;
           }
         } else {
-          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — parando após simulação (sem encadear doc)`);
+          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — pedindo doc direto (sem CTA "quero me cadastrar")`);
           try {
-            const ctaText = "Pra continuar seu cadastro e garantir essa economia, é só tocar no botão abaixo 👇";
-            await sendOptions(remoteJid, ctaText, [
-              { id: "btn_quero_cadastrar", title: "✅ Quero me cadastrar" },
-            ]);
-            await supabase.from("conversations").insert({
-              customer_id: customer.id, message_direction: "outbound",
-              message_text: ctaText, message_type: "text", conversation_step: "ask_quero_cadastrar",
-            });
+            const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
+            let _dispatched = false;
+            if (_flowRow?.id) {
+              const { data: _docStep } = await supabase
+                .from("bot_flow_steps").select("step_key")
+                .eq("flow_id", (_flowRow as any).id).eq("is_active", true)
+                .in("step_type", ["capture_documento", "capture_doc"])
+                .order("position", { ascending: true }).limit(1).maybeSingle();
+              if (_docStep?.step_key) {
+                await dispatchStepFromFlow(_docStep.step_key, _vars);
+                _dispatched = true;
+              }
+            }
+            if (!_dispatched) {
+              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+            }
           } catch (_) { /* segue */ }
-          updates.conversation_step = "ask_quero_cadastrar";
+          updates.conversation_step = "aguardando_doc_auto";
         }
 
         (updates as any).__inline_sent = true;
@@ -3874,7 +3884,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               .eq("id", customer.id);
           } catch (_) { /* best-effort */ }
           (updates as any).__inline_sent = true;
-          updates.conversation_step = "ask_quero_cadastrar";
+          updates.conversation_step = "aguardando_doc_auto";
           reply = "";
         }
       } else if (resp === "nao_conta" || resp === "nao" || resp === "não" || resp === "n" || resp === "2" || resp === "errado" || resp === "❌") {
@@ -5527,12 +5537,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
         if (err.includes("CPF")) { updates.conversation_step = "ask_cpf"; reply = `⚠️ ${err}\n\nQual o seu *CPF*? (apenas números)`; redirected = true; break; }
         if (err.includes("RG")) { updates.conversation_step = "ask_rg"; reply = `⚠️ ${err}\n\nQual o seu *RG*?`; redirected = true; break; }
-        if (err.includes("CEP")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nQual o seu *CEP*? (8 dígitos)`; redirected = true; break; }
+        if (err.includes("CEP")) { console.warn(`[validate] ignorando erro CEP (regra: nunca pedir): ${err}`); continue; }
         if (err.includes("rua") || err.includes("Endereço")) { updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo*:`; redirected = true; break; }
         if (err.includes("Número")) { updates.conversation_step = "ask_number"; reply = `⚠️ ${err}\n\nQual o *número* da residência?`; redirected = true; break; }
         if (err.includes("Bairro")) { updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo* (rua, número, bairro):`; redirected = true; break; }
-        if (err.includes("Cidade")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nInforme o *CEP* correto para completar a cidade:`; redirected = true; break; }
-        if (err.includes("Estado")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nInforme o *CEP* correto:`; redirected = true; break; }
+        if (err.includes("Cidade")) { console.warn(`[validate] ignorando erro Cidade (regra: nunca pedir CEP): ${err}`); continue; }
+        if (err.includes("Estado")) { console.warn(`[validate] ignorando erro Estado (regra: nunca pedir CEP): ${err}`); continue; }
         if (err.includes("Valor")) { updates.conversation_step = "ask_bill_value"; reply = `⚠️ ${err}\n\nQual o *valor* da sua conta de luz?`; redirected = true; break; }
         if (err.includes("Distribuidora")) { updates.conversation_step = "ask_distribuidora"; reply = `⚠️ ${err}\n\nQual a *distribuidora* da sua conta de luz? (ex: CPFL, Enel, Cemig)`; redirected = true; break; }
         if (err.includes("instalação") || err.includes("instalacao")) { updates.conversation_step = "ask_installation_number"; reply = `⚠️ ${err}\n\nQual o *número da instalação* da conta? (Campo "Seu Código", 7+ dígitos)`; redirected = true; break; }
