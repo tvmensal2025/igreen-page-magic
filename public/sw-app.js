@@ -1,6 +1,6 @@
 // Kill-switch Service Worker.
-// Substitui instalações antigas em /sw.js e remove o cache de app que prendia
-// usuários em páginas velhas. Depois se desregistra sozinho.
+// /sw-app.js foi o Service Worker principal do PWA. Agora este arquivo existe
+// só para atualizar navegadores antigos, limpar caches do app e se remover.
 
 function isAppCacheName(name) {
   return (
@@ -34,9 +34,6 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-// Garante que enquanto este SW estiver vivo ele NUNCA serve nada do cache —
-// sempre rede. Isso evita servir respostas obsoletas durante o curto período
-// entre install e unregister.
 self.addEventListener("fetch", (event) => {
   event.respondWith(fetch(event.request).catch(() => Response.error()));
 });

@@ -232,71 +232,48 @@ function applyUpdateWhenSafe(targetBuildId: string, reason: string) {
 // usuário cujo HTML veio cacheado e nunca chegaria ao registerSW novo.
 void checkVersionGate();
 
-// ─── PWA: registro de Service Worker com guards de iframe/preview ──────────
-// Service worker quebra o preview do Lovable (cacheia builds velhos).
-// Só registramos em produção real (domínio publicado / igreen.cloud).
+// Mantém páginas abertas atualizadas mesmo sem Service Worker.
+// Se o usuário ficar parado na página oficial e houver publish novo, o app
+// detecta pelo /version.json e recarrega sozinho quando for seguro.
+setInterval(() => { void checkVersionGate(); }, 60 * 1000);
+window.addEventListener("online", () => { void checkVersionGate(); });
+window.addEventListener("focus", () => { void checkVersionGate(); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void checkVersionGate();
+});
+
+// ─── PWA/Service Worker: agora é só limpeza, nunca registro ────────────────
+// O app parou de registrar Service Worker de cache porque isso prendia usuários
+// em versões antigas. Mantemos o manifest para abrir como app na tela inicial,
+// mas removemos qualquer SW antigo (/sw.js ou /sw-app.js) e caches do Workbox.
 const inIframe = (() => {
   try { return window.self !== window.top; } catch { return true; }
 })();
-const host = typeof window !== "undefined" ? window.location.hostname : "";
-// Considera "preview/dev" (NÃO registra Service Worker) quando:
-// - host do Lovable/preview
-// - localhost / 127.0.0.1
-// - acesso direto por IP (ex.: VPS de desenvolvimento 72.60.159.48)
-// Isso evita que o SW cacheie builds antigos durante o desenvolvimento na VPS.
-const isRawIpHost = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":") /* IPv6 */;
-const isPreviewHost =
-  host.includes("id-preview--") ||
-  host.includes("lovableproject.com") ||
-  host === "localhost" ||
-  host === "127.0.0.1" ||
-  isRawIpHost;
 
-
-if (!inIframe && !isPreviewHost && "serviceWorker" in navigator) {
-  // ─── Novo SW assumiu o controle: aplica a versão nova em momento seguro ─
-  // Antes mostrávamos um banner e dependíamos do usuário tocar nele (muitos
-  // ignoravam e ficavam na versão velha). Agora atualizamos sozinhos assim
-  // que for seguro (sem interromper digitação/modal/geração de áudio).
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    console.info("[PWA] novo Service Worker assumiu — agendando atualização");
-    applyUpdateWhenSafe("sw", "controllerchange");
-  });
-
-
-  import("virtual:pwa-register")
-    .then(({ registerSW }) => {
-      const updateSW = registerSW({
-        immediate: true,
-        onNeedRefresh() {
-          // Aplica a versão nova sozinho, em momento seguro.
-          applyUpdateWhenSafe("sw", "onNeedRefresh");
-        },
-        onRegisteredSW(_swUrl, r) {
-          if (!r) return;
-          // Checa por atualização a cada 10 min (antes: 30s — muito agressivo).
-          const poll = () => {
-            r.update().catch(() => {});
-            void checkVersionGate();
-          };
-          setInterval(poll, 10 * 60 * 1000);
-          // Checagem imediata ao registrar — pega usuário que abriu já com
-          // bundle antigo em cache.
-          void checkVersionGate();
-        },
-        onRegisterError(err) {
-          console.warn("[PWA] register error:", err);
-          // Não dispara nukeAndReload: erro de registro não significa cache
-          // corrompido. Se houver chunk faltando, o handler de ChunkLoadError
-          // acima já trata.
-        },
-      });
-      void updateSW;
-    })
-    .catch((e) => console.warn("[PWA] register failed:", e));
-} else if ("serviceWorker" in navigator) {
-  // Em preview / iframe / localhost: limpa qualquer SW antigo para não cachear.
-  navigator.serviceWorker.getRegistrations().then((rs) => {
-    rs.forEach((r) => r.unregister());
-  }).catch(() => {});
+function isAppCacheName(name: string): boolean {
+  return (
+    /(^|-)precache-v\d+-|(^|-)runtime-|(^|-)googleAnalytics-/.test(name) ||
+    /^workbox-/.test(name) ||
+    name === "img-cache" ||
+    name === "google-fonts"
+  );
 }
+
+async function cleanupLegacyServiceWorkers() {
+  if (inIframe) return;
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+  } catch (e) { console.warn("[PWA] limpeza de SW antigo falhou:", e); }
+
+  try {
+    if ("caches" in window) {
+      const names = await caches.keys();
+      await Promise.all(names.filter(isAppCacheName).map((n) => caches.delete(n)));
+    }
+  } catch (e) { console.warn("[PWA] limpeza de cache antigo falhou:", e); }
+}
+
+void cleanupLegacyServiceWorkers();
