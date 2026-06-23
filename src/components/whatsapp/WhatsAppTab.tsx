@@ -7,6 +7,7 @@ import { ConnectionPanel } from "./ConnectionPanel";
 import { ChatSidebar } from "./ChatSidebar";
 import { ChatView } from "./ChatView";
 import { DragResizer } from "@/components/layout/DragResizer";
+import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 
 import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -257,7 +258,10 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
       <div className="flex-1 min-h-0 min-w-0 border border-t-0 border-border rounded-b-lg overflow-hidden bg-background flex flex-col">
         {activeSubTab === "dashboard" && (
           <Suspense fallback={<LazyFallback />}>
-            <WhatsAppDashboard consultantId={userId} />
+            <div className="p-3 space-y-3">
+              {isWhapi && <WhapiConnectionPanel visible={true} />}
+              <WhatsAppDashboard consultantId={userId} />
+            </div>
           </Suspense>
         )}
 

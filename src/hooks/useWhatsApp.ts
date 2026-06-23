@@ -697,6 +697,35 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       const name = getFixedInstanceName(consultantId);
       setInstanceName(name);
 
+      // ── BYPASS DURO DO SUPER ADMIN ──
+      // REGRA FIXA: rafael.ids@icloud.com (ou qualquer user com role super_admin)
+      // é SEMPRE Whapi. Nunca pode cair no fluxo Evolution, nem mesmo se
+      // a tabela `settings` estiver com timeout/RLS/erro de rede.
+      // Esta checagem roda ANTES de tudo, para nunca exibir UI de Evolution
+      // para o super admin.
+      try {
+        const { data: { user: _u } } = await supabase.auth.getUser();
+        if (_u?.id === consultantId) {
+          const emailSuper = (_u.email || "").toLowerCase() === "rafael.ids@icloud.com";
+          let roleSuper = false;
+          try {
+            const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: _u.id });
+            roleSuper = isSuper === true;
+          } catch (_) { /* ignora — se não houver RPC, usa só e-mail */ }
+          if (emailSuper || roleSuper) {
+            setIsWhapi(true);
+            setHasInstance(true);
+            setStatus("connected");
+            setPhoneNumber("+55 11 99009-2401");
+            setError(null);
+            setIsLoading(false);
+            setHealth("healthy");
+            addLog("✅ Conectado via Whapi Cloud (Super Admin — bypass)");
+            return;
+          }
+        }
+      } catch (_) { /* segue para fluxo normal abaixo */ }
+
       // ── WHAPI CHECK: Se este consultor é o super admin (usa Whapi), pular Evolution ──
       // Identificação primária: settings.superadmin_consultant_id (DB).
       // Identificação secundária: e-mail do auth (rafael.ids@icloud.com) —
