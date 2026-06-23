@@ -257,7 +257,10 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
       <div className="flex-1 min-h-0 min-w-0 border border-t-0 border-border rounded-b-lg overflow-hidden bg-background flex flex-col">
         {activeSubTab === "dashboard" && (
           <Suspense fallback={<LazyFallback />}>
-            <WhatsAppDashboard consultantId={userId} />
+            <div className="p-3 space-y-3">
+              {isWhapi && <WhapiConnectionPanel visible={true} />}
+              <WhatsAppDashboard consultantId={userId} />
+            </div>
           </Suspense>
         )}
 
