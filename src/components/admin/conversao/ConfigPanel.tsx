@@ -1,17 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Save, Clock, Power, CalendarClock } from "lucide-react";
+import { Loader2, Clock, Power, CalendarClock, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 /**
- * Painel de CONFIGURAÇÃO do reaquecimento — é AQUI que o consultor define o
- * TEMPO (quanto esperar antes de reativar), os limites e a janela de horário,
- * e liga/desliga o reaquecimento automático.
+ * Painel de CONFIGURAÇÃO do reaquecimento — auto-save com debounce de 600ms.
+ * Cada mudança em um campo grava automaticamente em reactivation_settings;
+ * sem botão "Salvar". Cache em escopo de módulo evita piscar o loader quando
+ * o consultor alterna entre abas do ViewSwitcher.
  */
 
 interface Settings {
@@ -34,50 +35,111 @@ const DEFAULTS: Settings = {
   enviar_fim_de_semana: false,
 };
 
+// Cache em escopo de módulo: ao remontar a aba "Configurar" o estado já
+// aparece preenchido sem spinner, enquanto o load() confirma em background.
+const SETTINGS_CACHE = new Map<string, Settings>();
+
+type SaveState = "idle" | "saving" | "saved" | "error";
+
 interface Props {
   consultantId: string;
 }
 
 export function ConfigPanel({ consultantId }: Props) {
-  const [s, setS] = useState<Settings>(DEFAULTS);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const cached = SETTINGS_CACHE.get(consultantId);
+  const [s, setS] = useState<Settings>(cached ?? DEFAULTS);
+  const [loading, setLoading] = useState(!cached);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [consultantId]);
+  const hydratedRef = useRef<boolean>(!!cached);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inflightRef = useRef<Promise<void> | null>(null);
 
-  async function load() {
-    setLoading(true);
-    const { data } = await (supabase as any)
-      .from("reactivation_settings")
-      .select("*")
-      .eq("consultant_id", consultantId)
-      .maybeSingle();
-    if (data) {
-      setS({
-        auto_enabled: data.auto_enabled,
-        horas_ate_primeiro_followup: data.horas_ate_primeiro_followup,
-        max_envios: data.max_envios,
-        horas_entre_envios: data.horas_entre_envios,
-        janela_inicio: data.janela_inicio,
-        janela_fim: data.janela_fim,
-        enviar_fim_de_semana: data.enviar_fim_de_semana,
-      });
+  // Carga inicial — sempre confirma com o banco. Se já tinha cache, não pisca.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await (supabase as any)
+        .from("reactivation_settings")
+        .select("*")
+        .eq("consultant_id", consultantId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data) {
+        const next: Settings = {
+          auto_enabled: data.auto_enabled,
+          horas_ate_primeiro_followup: data.horas_ate_primeiro_followup,
+          max_envios: data.max_envios,
+          horas_entre_envios: data.horas_entre_envios,
+          janela_inicio: data.janela_inicio,
+          janela_fim: data.janela_fim,
+          enviar_fim_de_semana: data.enviar_fim_de_semana,
+        };
+        SETTINGS_CACHE.set(consultantId, next);
+        setS(next);
+      }
+      setLoading(false);
+      // Marca hidratado só depois do estado inicial vir do banco — evita
+      // que o efeito de auto-save dispare com os valores DEFAULTS.
+      hydratedRef.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [consultantId]);
+
+  // Persiste no banco. Serializa: se já há um save em voo, espera antes do próximo.
+  async function persist(snapshot: Settings) {
+    if (inflightRef.current) {
+      try { await inflightRef.current; } catch { /* ignored */ }
     }
-    setLoading(false);
+    setSaveState("saving");
+    const p = (async () => {
+      const { error } = await (supabase as any)
+        .from("reactivation_settings")
+        .upsert({
+          consultant_id: consultantId,
+          ...snapshot,
+          updated_at: new Date().toISOString(),
+        });
+      if (error) {
+        setSaveState("error");
+        setLastError(error.message);
+        toast.error("Erro ao salvar configuração", { description: error.message });
+      } else {
+        SETTINGS_CACHE.set(consultantId, snapshot);
+        setLastSavedAt(new Date());
+        setLastError(null);
+        setSaveState("saved");
+      }
+    })();
+    inflightRef.current = p;
+    try { await p; } finally {
+      if (inflightRef.current === p) inflightRef.current = null;
+    }
   }
 
-  async function save() {
-    setSaving(true);
-    const { error } = await (supabase as any)
-      .from("reactivation_settings")
-      .upsert({ consultant_id: consultantId, ...s, updated_at: new Date().toISOString() });
-    setSaving(false);
-    if (error) toast.error("Erro ao salvar: " + error.message);
-    else toast.success("Configuração salva");
-  }
+  // Auto-save com debounce sempre que `s` mudar.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      void persist(s);
+    }, 600);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s, consultantId]);
 
   function set<K extends keyof Settings>(k: K, v: Settings[K]) {
     setS((prev) => ({ ...prev, [k]: v }));
+  }
+
+  function retry() {
+    void persist(s);
   }
 
   if (loading) {
@@ -86,6 +148,15 @@ export function ConfigPanel({ consultantId }: Props) {
 
   return (
     <div className="max-w-2xl space-y-4">
+      {/* Cabeçalho com status de auto-save */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold">Configuração do reaquecimento</h2>
+          <p className="text-xs text-muted-foreground">Suas alterações são salvas automaticamente.</p>
+        </div>
+        <SaveStatus state={saveState} lastSavedAt={lastSavedAt} errorMsg={lastError} onRetry={retry} />
+      </div>
+
       {/* Liga/desliga */}
       <Card className="flex items-center gap-4 p-4">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 border border-primary/30">
@@ -148,13 +219,46 @@ export function ConfigPanel({ consultantId }: Props) {
           Enviar também aos sábados e domingos
         </label>
       </Card>
-
-      <Button onClick={save} disabled={saving}>
-        {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
-        Salvar configuração
-      </Button>
     </div>
   );
+}
+
+function SaveStatus({
+  state, lastSavedAt, errorMsg, onRetry,
+}: {
+  state: SaveState;
+  lastSavedAt: Date | null;
+  errorMsg: string | null;
+  onRetry: () => void;
+}) {
+  if (state === "saving") {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Salvando…
+      </span>
+    );
+  }
+  if (state === "error") {
+    return (
+      <div className="flex items-center gap-2 text-xs text-destructive">
+        <AlertCircle className="h-3.5 w-3.5" />
+        <span>Erro ao salvar{errorMsg ? `: ${errorMsg}` : ""}</span>
+        <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={onRetry}>
+          Tentar novamente
+        </Button>
+      </div>
+    );
+  }
+  if (state === "saved" && lastSavedAt) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Check className="h-3.5 w-3.5 text-primary" />
+        Salvo às {lastSavedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+      </span>
+    );
+  }
+  return null;
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {

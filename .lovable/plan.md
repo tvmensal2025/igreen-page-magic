@@ -1,74 +1,48 @@
-## Auditoria — o que foi feito nas últimas rodadas
+# Configuração com auto-save e abertura só por clique
 
-### 1. Banco de dados (já aplicado, sem ação tua)
+## O problema observado
+No painel **Central de Conversão → aba "Configurar"** (`src/components/admin/conversao/ConfigPanel.tsx`) hoje o consultor precisa clicar em **"Salvar configuração"** depois de cada ajuste. Se ele esquece, o valor digitado é perdido na próxima visita. Além disso, a sensação de "ficar abrindo toda vez" vem desse fluxo: ao reabrir a aba, o painel re-monta, busca o que está no banco e descarta o que não foi salvo.
 
-- **6/6 consultores** agora têm `active_variants = ['D']` (Fluxo D conversacional como padrão).
-- **1 regra global** em `flow_router_rules` (`consultant_id=NULL`, `target_flow_key='fluxo_a_cadastro'`, `trigger_keywords=['fazer o cadastro']`, `is_active=true`).
-- **6 regras por consultor** já existentes (de rodadas anteriores) — quando o consultor personalizar via UI, sobrescreve a global.
+A aba em si **já só é montada quando o usuário clica em "Configurar"** no `ViewSwitcher` (rota `/admin → Conversão`, `activeView` default = `"fila"`, `ConfigPanel` mora dentro de `<TabsContent value="config">` em `ConversaoCockpit.tsx`). Não há rota nem efeito que force `activeView="config"`. Então o ajuste é todo dentro do `ConfigPanel`: **salvar sozinho** e **não recarregar/piscar** quando o consultor volta para a aba.
 
-### 2. Edge Functions (auto-deploy pelo Lovable — já no ar)
+## O que muda (somente UX do ConfigPanel)
 
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` — detecta keyword "fazer o cadastro" e força `flow_variant='A'` + `conversation_step='aguardando_conta'` imediatamente, respondendo "📸 Me envia agora uma foto da sua conta de luz".
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` — idem.
-- `supabase/functions/resend-portal-link/index.ts` (**nova**) — recebe `customerId`+`consultantId`, busca o link (`link_facial`/`link_assinatura`/`portal2_contract_link`/`igreen_link`), resolve o canal de origem (Evolution/Whapi) e dispara a mensagem com o link ao cliente.
+1. **Auto-save com debounce de 600 ms**
+   - Cada alteração em qualquer campo (Switch de ligar/desligar, horas, máximo, intervalo, janela início/fim, fim de semana) dispara um `upsert` em `reactivation_settings` automaticamente.
+   - Usa um `useRef` de timer; cancela e reagenda a cada digitação para não bater no banco a cada tecla.
+   - Não dispara durante o carregamento inicial nem antes do primeiro `load()` completar (flag `hydrated`).
 
-### 3. UI front-end (auto-deploy pelo Lovable — no preview)
+2. **Feedback discreto, sem toast por tecla**
+   - Indicador inline ao lado do título: `Salvando…` / `Salvo às HH:MM` / `Erro ao salvar` (com botão "Tentar novamente").
+   - Toast somente em erro; sucesso fica no indicador para não poluir.
 
-- Admin → Fluxo B → **Por Consultor** ganhou:
-  - Card de distribuição atualizado: agora tem 4 opções (A direto / D / B / B+D).
-  - Novo card **"Palavras-chave do Fluxo A"** — chips editáveis, switch on/off, herda global ou cria override.
-- **Captação (`PortalStatusTracker`)**: bloco com link clicável + "Copiar" + botão **"Reenviar link ao cliente"** sempre que houver link.
-- **Chat WhatsApp (`ChatView`)**: o mesmo `PortalStatusTracker` agora aparece acima das mensagens — consultor vê status do Portal 2, OTP, link e botão de reenvio sem sair do chat.
+3. **Botão "Salvar configuração" removido**
+   - Como tudo é automático, o botão sai. Fica só o estado de salvamento visível.
 
-### 4. Worker Portal 2 — ⚠️ PRECISA DEPLOY MANUAL
+4. **Não recarregar do banco a cada montagem desnecessária**
+   - Mantém o `load()` na primeira montagem por `consultantId`, mas guarda um cache em `useRef` por `consultantId` para que, ao alternar entre abas do `ViewSwitcher`, o estado local não pisque com loader (a aba é desmontada/remontada pelo Radix Tabs — usamos cache em escopo do módulo, `Map<consultantId, Settings>`, para reidratar instantaneamente enquanto o `load()` confirma em background).
 
-**Aqui mora a única ação que depende de ti.**
+5. **Garantir que a aba só abre por clique (verificação)**
+   - Conferir que nenhum `useEffect` em `ConversaoCockpit.tsx` muda `activeView` para `"config"` sem ação do usuário. Estado inicial fica `"fila"`; o único caminho para `"config"` é o clique no `ViewSwitcher` / `Tabs`.
 
-O arquivo `worker-portal-2/server.mjs` foi alterado:
+## Detalhes técnicos
 
-- `sendValidationLinkToCustomer` agora envia o link no corpo da mensagem ("Se preferir acompanhar/concluir manualmente, este é o link oficial da iGreen: …").
+Arquivo único alterado:
 
-Mas esse worker **não roda no Lovable nem no Supabase** — roda na tua VPS (Docker / `node server.mjs`). O Lovable só commita o código no repositório. Portanto:
+- `src/components/admin/conversao/ConfigPanel.tsx`
+  - Adicionar `useRef<NodeJS.Timeout | null>` para o debounce.
+  - Adicionar `useRef<boolean>` `hydrated` para suprimir auto-save antes do primeiro load.
+  - Adicionar estado `saveState: "idle" | "saving" | "saved" | "error"` e `lastSavedAt: Date | null`.
+  - Mover a função `save` para receber o snapshot atual e ser chamada pelo efeito de debounce que observa `s`.
+  - Cache de hidratação: `const CACHE = new Map<string, Settings>()` em escopo de módulo; ao montar, se houver entrada para `consultantId`, usar imediatamente e pular o spinner; sempre disparar `load()` em background para confirmar.
+  - Substituir o `<Button>Salvar configuração</Button>` por `<SaveStatus state={saveState} lastSavedAt={lastSavedAt} onRetry={...} />`.
 
-```
-✅ Código atualizado no repo
-❌ Worker rodando na VPS ainda está na versão antiga
-```
+Nenhuma mudança em banco, RLS, edge functions, schemas ou outros componentes. Nenhum impacto no `worker-portal-2` (assunto anterior já encerrado).
 
-Para a mudança do worker entrar em produção, **tu precisa**:
+## Como testar depois da implementação
 
-1. Fazer pull do código na VPS (`git pull` no diretório do worker).
-2. Reiniciar o container/processo:
-  - Docker: `docker compose build worker-portal-2 && docker compose up -d worker-portal-2`
-  - PM2 / systemd: `pm2 restart worker-portal-2` ou `systemctl restart worker-portal-2`.
-3. Conferir logs para garantir que voltou online (`docker logs -f worker-portal-2` ou `pm2 logs worker-portal-2`).
-
-**Importante:** o fluxo já funciona *sem* esse redeploy, porque:
-
-- O link do facial é enviado no `bot-flow.ts` quando o lead entra em `aguardando_facial` (essa parte é Lovable/Supabase → já no ar).
-- O OTP continua sendo enviado normalmente pela iGreen.
-- O botão "Reenviar link" no chat e na captação chama a nova edge function (já no ar).
-
-O redeploy do worker só melhora a **primeira mensagem** que sai junto do OTP (passa a incluir o link explícito). Sem o redeploy, o cliente ainda recebe o link mais tarde — quando o bot pedir a selfie — e o consultor pode reenviar a qualquer momento pelo botão novo.
-
----
-
-## Resposta direta
-
-> **"ajustou o portal2?"**
-> Sim, o código do worker foi ajustado, mas **a versão rodando na tua VPS ainda é a antiga**. Precisa redeployar lá para a mensagem inicial com o link entrar em vigor.
-
-> **"preciso ir no portal?"**
-> Não no portal da iGreen. Só na VPS do worker (SSH/Docker) para puxar o novo código e reiniciar o processo. Se preferires, posso preparar um script de deploy ou checar se há CI configurado.
-
----
-
-## Próximo passo proposto
-
-Como o redeploy do worker é fora do Lovable, este é um plano de **revisão** — não há código novo para escrever a menos que tu queiras:
-
-1. **Verificar/criar um workflow de deploy automatizado** (GitHub Actions → SSH → docker pull → restart) para o worker-portal-2.
-2. **Ou** posso só te entregar um one-liner de SSH para rodar agora.
-3. **Ou** se preferires testar o resto antes (chips de keywords, botão reenviar, conversão por keyword), aprovar este plano sem alteração de código.
-
-Me diz qual caminho seguir. irei fazer manual no easypanel e fazer deploy
+1. Abrir `/admin → Central de Conversão → Configurar`.
+2. Mudar "Esperar quantas horas paradas" de 24 para 48 e clicar em outra aba **sem clicar em salvar**. Voltar para "Configurar": deve aparecer 48.
+3. Conferir indicador `Salvo às HH:MM` aparece ~600 ms depois da última tecla.
+4. Trocar o consultor (se aplicável): cache reidrata sem spinner; valor real do banco confirma em seguida.
+5. Recarregar a página: configuração persistida no Supabase.
