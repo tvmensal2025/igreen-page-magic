@@ -4239,20 +4239,26 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             void ok;
           }
         } else {
-          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — parando após simulação (sem encadear doc)`);
-          // Mesmo sem next custom, NÃO pedir o documento automaticamente.
-          // Envia CTA para o cliente decidir.
+          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — pedindo doc direto (sem CTA "quero me cadastrar")`);
           try {
-            const ctaText = "Pra continuar seu cadastro e garantir essa economia, é só tocar no botão abaixo 👇";
-            await sendOptions(remoteJid, ctaText, [
-              { id: "btn_quero_cadastrar", title: "✅ Quero me cadastrar" },
-            ]);
-            await supabase.from("conversations").insert({
-              customer_id: customer.id, message_direction: "outbound",
-              message_text: ctaText, message_type: "text", conversation_step: "ask_quero_cadastrar",
-            });
+            const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
+            let _dispatched = false;
+            if (_flowRow?.id) {
+              const { data: _docStep } = await supabase
+                .from("bot_flow_steps").select("step_key")
+                .eq("flow_id", (_flowRow as any).id).eq("is_active", true)
+                .in("step_type", ["capture_documento", "capture_doc"])
+                .order("position", { ascending: true }).limit(1).maybeSingle();
+              if (_docStep?.step_key) {
+                await dispatchStepFromFlow(_docStep.step_key, _vars);
+                _dispatched = true;
+              }
+            }
+            if (!_dispatched) {
+              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+            }
           } catch (_) { /* segue */ }
-          updates.conversation_step = "ask_quero_cadastrar";
+          updates.conversation_step = "aguardando_doc_auto";
         }
 
         (updates as any).__inline_sent = true;
