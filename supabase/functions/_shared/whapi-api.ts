@@ -438,13 +438,19 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
  */
 export function parseWhapiMessage(body: any) {
   const messages = body.messages || [];
-  if (messages.length === 0) return null;
+  if (messages.length === 0) {
+    console.log("[parseWhapiMessage] null reason=empty_messages");
+    return null;
+  }
 
   const msg = messages[0];
 
-  // Ignorar grupos
+  // Ignorar grupos / status / broadcast
   const chatId = msg.chat_id || "";
-  if (chatId.includes("@g.us") || chatId.includes("@newsletter") || chatId.includes("@broadcast")) return null;
+  if (chatId.includes("@g.us") || chatId.includes("@newsletter") || chatId.includes("@broadcast") || chatId.includes("status@")) {
+    console.log(`[parseWhapiMessage] null reason=non_user_chat chatId=${chatId} type=${msg.type}`);
+    return null;
+  }
 
   // Mensagem enviada por nós: se foi via API (bot/painel), ignorar.
   // Se foi digitada no app/web/desktop do WhatsApp pelo consultor, sinalizar
@@ -452,7 +458,7 @@ export function parseWhapiMessage(body: any) {
   if (msg.from_me) {
     const source = String(msg.source || "").toLowerCase();
     if (source === "api" || source === "") {
-      // API ou desconhecido (assumir API para não pausar erroneamente)
+      console.log(`[parseWhapiMessage] null reason=from_me_api source=${source}`);
       return null;
     }
     return {
