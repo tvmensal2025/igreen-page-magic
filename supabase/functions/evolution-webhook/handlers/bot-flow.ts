@@ -5537,12 +5537,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
         if (err.includes("CPF")) { updates.conversation_step = "ask_cpf"; reply = `⚠️ ${err}\n\nQual o seu *CPF*? (apenas números)`; redirected = true; break; }
         if (err.includes("RG")) { updates.conversation_step = "ask_rg"; reply = `⚠️ ${err}\n\nQual o seu *RG*?`; redirected = true; break; }
-        if (err.includes("CEP")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nQual o seu *CEP*? (8 dígitos)`; redirected = true; break; }
+        if (err.includes("CEP")) { console.warn(`[validate] ignorando erro CEP (regra: nunca pedir): ${err}`); continue; }
         if (err.includes("rua") || err.includes("Endereço")) { updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo*:`; redirected = true; break; }
         if (err.includes("Número")) { updates.conversation_step = "ask_number"; reply = `⚠️ ${err}\n\nQual o *número* da residência?`; redirected = true; break; }
         if (err.includes("Bairro")) { updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo* (rua, número, bairro):`; redirected = true; break; }
-        if (err.includes("Cidade")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nInforme o *CEP* correto para completar a cidade:`; redirected = true; break; }
-        if (err.includes("Estado")) { updates.conversation_step = "ask_cep"; reply = `⚠️ ${err}\n\nInforme o *CEP* correto:`; redirected = true; break; }
+        if (err.includes("Cidade")) { console.warn(`[validate] ignorando erro Cidade (regra: nunca pedir CEP): ${err}`); continue; }
+        if (err.includes("Estado")) { console.warn(`[validate] ignorando erro Estado (regra: nunca pedir CEP): ${err}`); continue; }
         if (err.includes("Valor")) { updates.conversation_step = "ask_bill_value"; reply = `⚠️ ${err}\n\nQual o *valor* da sua conta de luz?`; redirected = true; break; }
         if (err.includes("Distribuidora")) { updates.conversation_step = "ask_distribuidora"; reply = `⚠️ ${err}\n\nQual a *distribuidora* da sua conta de luz? (ex: CPFL, Enel, Cemig)`; redirected = true; break; }
         if (err.includes("instalação") || err.includes("instalacao")) { updates.conversation_step = "ask_installation_number"; reply = `⚠️ ${err}\n\nQual o *número da instalação* da conta? (Campo "Seu Código", 7+ dígitos)`; redirected = true; break; }
