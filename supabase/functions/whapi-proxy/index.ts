@@ -14,12 +14,91 @@ const corsHeaders = {
 };
 
 const WHAPI_BASE = "https://gate.whapi.cloud";
+const WHAPI_BILLING_URL = "https://panel.whapi.cloud/billing";
+const WHAPI_PANEL_URL = "https://panel.whapi.cloud";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+export type WhapiReasonCode =
+  | "unpaid"
+  | "channel_not_found"
+  | "invalid_token"
+  | "offline"
+  | "rate_limited"
+  | "unknown";
+
+/**
+ * Classifica a resposta de erro da Whapi para que o front mostre
+ * a mensagem certa (especialmente "bloqueado por falta de pagamento",
+ * que hoje aparece como 404 genérico).
+ */
+function classifyWhapiError(status: number, data: any): {
+  reasonCode: WhapiReasonCode;
+  httpStatus: number;
+  error: string;
+  helpUrl: string | null;
+} {
+  const blob = (() => {
+    try { return JSON.stringify(data || "").toLowerCase(); } catch { return ""; }
+  })();
+
+  // Pagamento/suspensão — Whapi pode devolver 402, 403, ou 404 com mensagem específica.
+  if (
+    status === 402 ||
+    /unpaid|payment required|payment_required|billing|suspend|suspended|blocked|expired|trial.*(ended|over)|no.*active.*subscription/i.test(blob)
+  ) {
+    return {
+      reasonCode: "unpaid",
+      httpStatus: 402,
+      error: "Canal Whapi bloqueado por falta de pagamento. Acesse panel.whapi.cloud → Billing para regularizar.",
+      helpUrl: WHAPI_BILLING_URL,
+    };
+  }
+
+  if (status === 404 || /channel not found|channel_not_found|no channel/i.test(blob)) {
+    return {
+      reasonCode: "channel_not_found",
+      httpStatus: 404,
+      error: "Canal Whapi não existe mais (foi removido no painel). Crie um canal novo e atualize o token.",
+      helpUrl: WHAPI_PANEL_URL,
+    };
+  }
+
+  if (status === 401 || /unauthorized|invalid token|invalid_token|forbidden/i.test(blob)) {
+    return {
+      reasonCode: "invalid_token",
+      httpStatus: 401,
+      error: "Token Whapi inválido. Cole o token novo do painel da Whapi.",
+      helpUrl: WHAPI_PANEL_URL,
+    };
+  }
+
+  if (status === 429 || /rate.?limit|too many/i.test(blob)) {
+    return {
+      reasonCode: "rate_limited",
+      httpStatus: 429,
+      error: "Whapi limitou as requisições. Tente novamente em alguns segundos.",
+      helpUrl: null,
+    };
+  }
+
+  return {
+    reasonCode: "offline",
+    httpStatus: 503,
+    error: "Canal WhatsApp (Whapi) offline. Verifique conexão / QR no painel de reconexão.",
+    helpUrl: null,
+  };
+}
+
+function isWhapiErrorBlob(status: number, data: any): boolean {
+  if (status >= 400) return true;
+  const blob = (() => { try { return JSON.stringify(data || "").toLowerCase(); } catch { return ""; } })();
+  return /channel not found|unauthorized|invalid token|unpaid|suspend|blocked/i.test(blob);
 }
 
 async function whapiFetch(token: string, path: string, init: RequestInit = {}) {
