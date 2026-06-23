@@ -3860,6 +3860,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         // texto de continuidade em vez de ficar mudo, e gravamos error_message
         // no customer pra o watchdog/CRM enxergar.
         try {
+        // 🔑 FIX (regressão ask_quero_cadastrar → loop): marca a conta como
+        // CONFIRMADA pelo cliente. Sem isso, `resolveResumeStep` (chamado em
+        // ask_quero_cadastrar e aguardando_conta) via `!bill_data_confirmed_at`
+        // e devolvia o lead para `confirmando_dados_conta` em loop. No modo
+        // `manual` o webhook já gravava esse timestamp; no modo `auto` ninguém
+        // gravava. Idempotente: só seta se ainda não estava marcado.
+        if (!(customer as any).bill_data_confirmed_at) {
+          updates.bill_data_confirmed_at = new Date().toISOString();
+          updates.bill_data_confirmation_by = "client";
+        }
         // FIX 2: garantir que o nome confirmado é o do TITULAR DA CONTA (OCR),
         // não o nome digitado pelo lead no boas-vindas.
         const _billHolder = String((customer as any).bill_holder_name || (updates as any).bill_holder_name || "").trim();
@@ -4770,6 +4780,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     case "confirmando_dados_doc": {
       const resp = isButton ? buttonId : messageText.toLowerCase().trim();
       if (resp === "sim_doc" || resp === "sim" || resp === "s" || resp === "1" || resp === "ok" || resp === "correto" || resp === "✅") {
+        // 🔑 FIX (mesmo loop do bill): marca o documento como CONFIRMADO. Sem
+        // isso `resolveResumeStep` via `!doc_data_confirmed_at` e devolvia o
+        // lead para `confirmando_dados_doc` em loop no modo auto. Idempotente.
+        if (!(customer as any).doc_data_confirmed_at) {
+          updates.doc_data_confirmed_at = new Date().toISOString();
+          updates.doc_data_confirmation_by = "client";
+        }
         if (customer.name || updates.name) updates.name_source = "user_confirmed";
         const _mismatch = (updates.name_mismatch_flag ?? (customer as any).name_mismatch_flag) === true;
         const _acked = (updates.name_mismatch_acknowledged_at ?? (customer as any).name_mismatch_acknowledged_at);
