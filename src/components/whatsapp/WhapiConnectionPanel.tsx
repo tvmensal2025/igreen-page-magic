@@ -121,7 +121,53 @@ export function WhapiConnectionPanel({ visible }: Props) {
           )}
         </div>
 
-        {health.status !== "AUTH" && (
+        {/* Banner específico por motivo — pagamento bloqueado tem prioridade */}
+        {health.reasonCode === "unpaid" && (
+          <div className="rounded-md border-2 border-destructive bg-destructive/10 p-3 text-xs text-destructive space-y-2">
+            <div className="flex items-start gap-2">
+              <CreditCard className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold mb-1">Canal Whapi bloqueado por falta de pagamento</div>
+                <div>
+                  A Whapi suspendeu este canal. Trocar token ou escanear QR <b>não resolve</b> —
+                  regularize o pagamento no painel da Whapi.
+                </div>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => window.open(health.helpUrl || "https://panel.whapi.cloud/billing", "_blank")}
+              className="w-full"
+            >
+              <ExternalLink className="h-3.5 w-3.5 mr-1" />
+              Abrir billing da Whapi
+            </Button>
+          </div>
+        )}
+
+        {health.reasonCode === "channel_not_found" && (
+          <div className="rounded-md border-2 border-orange-500 bg-orange-500/10 p-3 text-xs text-orange-700 dark:text-orange-300 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold mb-1">Canal Whapi não existe mais</div>
+                <div>O canal foi removido no painel. Crie um canal novo e cole o token abaixo.</div>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.open(health.helpUrl || "https://panel.whapi.cloud", "_blank")}
+              className="w-full"
+            >
+              <ExternalLink className="h-3.5 w-3.5 mr-1" />
+              Abrir painel Whapi
+            </Button>
+          </div>
+        )}
+
+        {health.status !== "AUTH" && !health.reasonCode && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
             <div>
