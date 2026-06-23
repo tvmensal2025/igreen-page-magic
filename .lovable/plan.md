@@ -1,92 +1,172 @@
-# Fluxo Cadastro custom — bridge UUID→sys aplicado
+## Ajuste pedido
 
-## Causa raiz definitiva
+O Cérebro **NUNCA** pode interpretar a entrada esperada do step (e-mail em `ask_email`, SIM/NÃO em `confirmando_*`, foto em `aguardando_conta`, etc.). Cada step tem um foco único; só se a mensagem for claramente **off-topic** (pergunta sobre outro assunto), o Cérebro responde — caso contrário, é sempre determinístico.
 
-`routeEngine` (`_shared/flow-router.ts`) decide qual motor processa cada turno:
-- `sys` (bot-flow.ts legacy) → tem OCR, edição, Portal 2, finalize-capture
-- `flow` (runConversationalFlow) → só envia prompts de step custom
+Isso muda a regra do classificador: ele passa a ser **default = expected** (vai ao determinístico) e só marca `freeform_question` quando há sinal forte de que o lead está perguntando outra coisa.
 
-A regra atual manda **qualquer UUID** para `flow`. Mas os passos custom de
-captura (`capture_conta`, `capture_documento`, `capture_email`, `confirm_phone`,
-`finalizar_cadastro`) precisam do `sys` porque só ele processa foto/PDF/botão.
-Resultado: lead em flow custom envia conta, `runConversationalFlow` não roda
-OCR, re-emite o prompt em loop. Confirmado com lead `5511971254913`: enviou
-conta 2×, bot pediu 3×, `ocr_conta_attempts=0`, `electricity_bill_photo_url=NULL`.
+## Contexto observado no código
 
-## Correção aplicada
+1. **Origem do lead já existe na base** (`customers.customer_origin`):
+   - `whatsapp_lead` / `manual` / `null` → lead novo, passa por cadastro.
+   - `igreen_sync` → carteira validada (XLSX / worker).
+   - `igreen_extension` → cliente já cadastrado (extensão).
 
-### Bridge UUID→sys nos dois webhooks
+2. **0 guardas de origem nos webhooks** (`whapi-webhook/index.ts`, `evolution-webhook/index.ts`). Hoje cliente sincronizado que mandar mensagem cai no cadastro e pode ir ao Portal 2.
 
-`whapi-webhook/index.ts` (~linha 1746) e `evolution-webhook/index.ts` (~linha 1750):
+3. **Bypass do Cérebro durante cadastro é binário** (commit 291d6fe4): se `CADASTRO_STEPS.has(stepBefore)`, pula Cérebro 100%. Lead sem resposta para perguntas livres no meio do cadastro.
+
+## Objetivo
+
+A. Leads com `customer_origin ∈ {igreen_sync, igreen_extension}` **nunca** entram no cadastro nem no Portal 2 — vão direto ao Cérebro.
+
+B. Durante o cadastro, Cérebro só responde quando a mensagem é claramente **off-topic** para o step atual. Qualquer coisa que possa ser a resposta esperada (mesmo malformada) vai ao determinístico, que valida/re-pergunta.
+
+## Mudanças propostas
+
+### 1) Guarda de origem nos dois webhooks
+
+Local: após carregar `customer` (~linha 1745 whapi, 1749 evolution).
 
 ```ts
-if (engine === "flow" && UUID_RE.test(currentStepRaw)) {
-  const { data: stepRow } = await supabase
-    .from("bot_flow_steps").select("step_type")
-    .eq("id", currentStepRaw).maybeSingle();
-  if (CAPTURE_TYPES.has(stepRow?.step_type)) {
-    engine = "sys";  // NÃO limpa conversation_step
-  }
+const _origin = String((customer as any).customer_origin || "").toLowerCase();
+const _isAtivoOrigin = _origin === "igreen_sync" || _origin === "igreen_extension";
+```
+
+Quando `_isAtivoOrigin === true`:
+- Forçar `engine = "cerebro"` independente do `currentStepRaw`.
+- Pular o bridge UUID→sys (capture_*).
+- Não redirecionar mídia para OCR de conta/doc.
+- Nunca chamar `finalize-capture` / Portal 2.
+- `conversation_step` permanece como está (provavelmente `'ativo'`).
+
+### 2) Classificador conservador (default = determinístico)
+
+Novo arquivo: `supabase/functions/_shared/cadastro-input-classifier.ts`.
+
+Regra **único caminho freeform_question** — todos os outros casos são `expected`:
+
+```ts
+export type CadastroInputKind = "expected" | "freeform_question";
+
+// Cada step tem um "objetivo" — qualquer input plausível para esse objetivo
+// é ENTREGUE AO DETERMINÍSTICO. Cérebro só entra quando a mensagem é
+// inequivocamente off-topic (pergunta sobre outro assunto).
+export function classifyCadastroInput(args: {
+  stepBefore: string;
+  text: string | null;
+  isButton: boolean;
+  hasImage: boolean;
+  hasDocument: boolean;
+  hasAudio: boolean;
+}): CadastroInputKind {
+  // 1) Mídia, botão e áudio nunca são pergunta livre — vão ao determinístico.
+  if (args.isButton || args.hasImage || args.hasDocument || args.hasAudio) return "expected";
+
+  const text = (args.text || "").trim();
+  if (!text) return "expected";
+
+  // 2) Texto curto (≤ 3 palavras) dentro do cadastro = quase sempre tentativa
+  //    de responder (sim, nao, ok, meu email, cpf, etc.) → determinístico.
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= 3) return "expected";
+
+  // 3) Heurística off-topic POR STEP (objetivo da etapa).
+  //    Se o texto contém marcador do objetivo da etapa → expected.
+  //    Senão e tem marcador de pergunta livre → freeform_question.
+  const lower = text.toLowerCase();
+  const hasQuestionMark = lower.includes("?");
+  const questionWords = /\b(quanto|como|porque|por que|pq|quando|onde|qual|quais|posso|vou|tenho que|é seguro|funciona|cobra|gratis|grátis|desconto)\b/;
+
+  const stepObjectiveHit: Record<string, RegExp> = {
+    ask_email:       /@|email|e-mail/i,
+    capture_email:   /@|email|e-mail/i,
+    ask_phone_confirm: /\d{8,}|whats|telefone|numero|número|celular|confirm/i,
+    confirm_phone:     /\d{8,}|whats|telefone|numero|número|celular|confirm/i,
+    confirmando_dados_conta: /^(sim|nao|não|n|s|editar|corrigir|esta certo|está certo|ok)/i,
+    confirmando_dados_doc:   /^(sim|nao|não|n|s|editar|corrigir|esta certo|está certo|ok)/i,
+    aguardando_conta:        /conta|luz|energia|foto|fatura|enviei|mandei/i,
+    aguardando_doc_auto:     /doc|rg|cnh|identidade|foto|enviei|mandei/i,
+    capture_conta:           /conta|luz|energia|foto|fatura/i,
+    capture_documento:       /doc|rg|cnh|identidade|foto/i,
+    ask_finalizar:           /^(sim|nao|não|finaliza|terminar|ok|pode)/i,
+    finalizar_cadastro:      /^(sim|nao|não|finaliza|terminar|ok|pode)/i,
+  };
+
+  const objective = stepObjectiveHit[args.stepBefore];
+  if (objective && objective.test(text)) return "expected";
+
+  // Tem sinal de pergunta E NÃO casa com objetivo do step → Cérebro.
+  if (hasQuestionMark || questionWords.test(lower)) return "freeform_question";
+
+  // Padrão seguro: na dúvida, determinístico (re-prompt corrige).
+  return "expected";
 }
 ```
 
-`CAPTURE_TYPES = {capture_conta, capture_documento, capture_doc, capture_email, confirm_phone, finalizar_cadastro}`.
+Substituir nos dois webhooks a condição:
+```ts
+} else if (((hasImage || hasDocument) && !hasAudio) || CADASTRO_STEPS.has(stepBefore)) {
+```
+por:
+```ts
+const _cadKind = CADASTRO_STEPS.has(stepBefore)
+  ? classifyCadastroInput({ stepBefore, text: messageText, isButton, hasImage, hasDocument, hasAudio })
+  : null;
+const _emCadastroExpected = _cadKind === "expected";
+const _emCadastroFreeform = _cadKind === "freeform_question";
+const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
 
-O UUID é preservado em `conversation_step` porque o **custom-step-resolver**
-dentro de `bot-flow.ts` (linha ~2856) já sabe localizar o passo pelo UUID,
-mapear `step_type` para o nominal (`capture_conta` → `aguardando_conta` etc.),
-cair no `case` do switch que processa OCR + envia botões SIM/NÃO/EDITAR, e
-avançar para o próximo UUID do flow custom via `position+1`.
-
-### Recuperação do lead preso
-
-`customer_flow_state` do `11f79043-...` resetado: `retries=0`,
-`last_outbound_content_hash=NULL`, `status='idle'`. Próximo inbound será
-processado pelo bridge corrigido.
-
-## Fluxo end-to-end agora garantido
-
-```text
-"Oi" → router detecta UUID capture_conta → engine=sys
-     → bot-flow resolve UUID → step=aguardando_conta → pede conta
-foto → OCR Gemini → botões SIM/NÃO/EDITAR
-SIM  → próximo step (position+1) → UUID capture_documento
-     → resolve → aguardando_doc_auto → pede documento
-foto → OCR RG/CNH frente+verso → botões SIM/NÃO/EDITAR
-SIM  → capture_email → ask_email → valida
-SIM  → confirm_phone → ask_phone_confirm → confirma
-SIM  → finalizar_cadastro → finalizando
-     → invoke('finalize-capture') → submete Portal 2
-     → OTP interceptado → cliente digita → link de assinatura enviado
+if (_midiaOcr || _emCadastroExpected) {
+  // → 100% determinístico, igual hoje
+} else if (_emCadastroFreeform) {
+  // → Cérebro responde em readOnly e NÃO roda determinístico no turno
+  const r = await responderComCerebro({ ..., readOnly: true });
+  // não mexer em conversation_step, customer_flow_state, hashes
+  return ok(); // encerra turno
+} else {
+  // fluxo conversacional normal (welcome/qualificacao)
+}
 ```
 
-## Por que é minimal e seguro
+### 3) `responderComCerebro({ readOnly: true })`
 
-- **Não toca em bot-flow.ts (6.087 linhas)** — lógica downstream já correta.
-- **Não muda routeEngine compartilhado** — evita regressão em outros flows.
-- **Não cria tabelas** — só lê `bot_flow_steps.step_type`.
-- **Fail-safe**: try/catch; erro mantém engine='flow' (comportamento anterior).
+Novo parâmetro em `supabase/functions/_shared/cerebro/resposta-hook.ts`. Quando `readOnly`:
+- Permite gerar e enviar texto.
+- **Bloqueia** qualquer write em `customers.conversation_step`, `customer_flow_state.current_step_id`, `next_followup_at`, contadores de retry.
+- **Não** muda `last_outbound_content_hash` do step atual (usar chave separada `last_freeform_hash`) — assim o próximo re-prompt determinístico ainda passa pelo dedupe normal.
 
-## Validação
+### 4) Proteção em `finalize-capture`
 
-Após próximo lead novo entrar no flow Cadastro:
+No topo do handler: se `customer.customer_origin ∈ {igreen_sync, igreen_extension}` → 200 + log, sem criar idcliente no Portal 2.
 
-```sql
-SELECT id, conversation_step, ocr_conta_attempts,
-       electricity_bill_photo_url IS NOT NULL AS bill_ok,
-       document_front_url IS NOT NULL AS doc_ok, email, status
-FROM customers
-WHERE created_at > now() - interval '24h'
-ORDER BY created_at DESC;
-```
+### 5) Testes Deno
 
-Esperado: `ocr_conta_attempts >= 1` e `bill_ok=true` após primeira foto.
+- `cadastro-input-classifier_test.ts`:
+  - `ask_email` + `"meuemail@x.com"` → expected
+  - `ask_email` + `"meu email é joao arroba"` → expected (contém `email`)
+  - `ask_email` + `"quanto vou economizar por mês?"` → freeform_question
+  - `confirmando_dados_conta` + `"sim"` → expected
+  - `confirmando_dados_conta` + `"como funciona a energia solar?"` → freeform_question
+  - `aguardando_conta` + foto → expected
+  - `ask_phone_confirm` + `"11999999999"` → expected
+  - Texto curto qualquer (`"ok"`, `"hum"`) em qualquer step → expected
+- `webhook-origin-guard_test.ts`: stub com `customer_origin='igreen_extension'` não chama `runBotFlow` nem `finalize-capture`.
 
-## Status
+### 6) Sem migrations
 
-| Pacote | Status |
-|---|---|
-| Trigger `log_silent_step_reset` por rank | ✅ |
-| Bridge UUID→sys (este) | ✅ |
-| Auto-retomada `confirmando_*` >1h | ⏳ |
-| Lock em `ask_finalizar` | ⏳ baixa |
+Tudo lê de colunas existentes. Sem backfill — os 583 leads param de ser empurrados ao Portal 2 a partir do próximo turno.
+
+## Arquivos tocados
+
+- `supabase/functions/whapi-webhook/index.ts` (guard de origem + classifier)
+- `supabase/functions/evolution-webhook/index.ts` (idem)
+- `supabase/functions/_shared/cadastro-input-classifier.ts` (novo)
+- `supabase/functions/_shared/cerebro/resposta-hook.ts` (suportar `readOnly`)
+- `supabase/functions/finalize-capture/index.ts` (guard de defesa)
+- Testes Deno correspondentes
+
+## Riscos e mitigação
+
+- **Cérebro responder onde não devia**: classificador é default=expected; só dispara Cérebro com sinal forte de pergunta livre (`?` ou palavra interrogativa) E sem hit no objetivo do step. Texto curto e mídia nunca viram freeform.
+- **Cérebro confundindo input válido**: `readOnly=true` impede qualquer mudança de estado — mesmo se Cérebro respondesse errado, o step continua intacto e re-pergunta no próximo turno.
+- **Cliente sincronizado que precisa recadastrar**: fora de escopo; exige re-classificação manual de `customer_origin`.

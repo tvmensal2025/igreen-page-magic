@@ -1993,17 +1993,67 @@ Deno.serve(async (req) => {
         }
       };
 
-      if (_fbVarCerebro === "D") {
+      // 🛡️ Guarda de origem: clientes já cadastrados/sincronizados (carteira
+      // iGreen via XLSX/worker = `igreen_sync`, ou via extensão Chrome do
+      // consultor = `igreen_extension`) NUNCA entram no cadastro nem vão ao
+      // Portal 2 — já estão no portal. Quando mandam mensagem, vão direto
+      // pro Cérebro responder dúvidas, independente do step legado.
+      const _origin = String((customer as any).customer_origin || "").toLowerCase();
+      const _isAtivoOrigin = _origin === "igreen_sync" || _origin === "igreen_extension";
+
+      // Classifica o input dentro do cadastro. Default = "expected" (vai ao
+      // determinístico). Só vira "freeform_question" quando o lead claramente
+      // perguntou outra coisa, fora do objetivo do step.
+      const { classifyCadastroInput } = await import("../_shared/cadastro-input-classifier.ts");
+      const _emCadastro = CADASTRO_STEPS.has(stepBefore);
+      const _cadKind = (_emCadastro && !_isAtivoOrigin)
+        ? classifyCadastroInput({
+          stepBefore,
+          text: messageText ?? null,
+          isButton,
+          hasImage,
+          hasDocument,
+          hasAudio,
+        })
+        : null;
+      const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
+
+      if (_fbVarCerebro === "D" && !_isAtivoOrigin) {
         console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
-      } else if (((hasImage || hasDocument) && !hasAudio) || CADASTRO_STEPS.has(stepBefore)) {
-        // 🔑 CADASTRO → caminho determinístico (OCR + confirmação + doc + portal).
-        // O Cérebro NÃO executa OCR (ação `ocr` do despacho é no-op) e usa fonte
-        // de estado distinta da do determinístico — misturar dessincroniza o
-        // passo. Assim que o lead entra no cadastro (manda mídia OU já está num
-        // CADASTRO_STEP), TODO o turno vai ao determinístico, que conduz o
-        // cadastro inteiro. O Cérebro fica só na fase conversacional inicial.
-        console.log(`[cerebro] cadastro em andamento (step=${stepBefore}) → determinístico customer=${customer.id}`);
+      } else if (_isAtivoOrigin) {
+        // Cliente já cadastrado (carteira/extensão) → Cérebro responde sempre,
+        // SEM tocar em estado de cadastro, SEM OCR, SEM Portal 2.
+        console.log(`[origin-guard] customer=${customer.id} origin=${_origin} → Cérebro (readOnly), pula cadastro/portal`);
+        _cerebroRespondeu = await runConversacionalTurn({
+          text: messageText ?? null,
+          isButton,
+          buttonId: buttonId ?? null,
+          hasImage,
+          hasDocument,
+          hasAudio,
+          messageId: messageId ?? null,
+        });
+      } else if (!_emCadastro) {
+        _cerebroRespondeu = await runConversacionalTurn({
+          text: messageText ?? null,
+          isButton,
+          buttonId: buttonId ?? null,
+          hasImage,
+          hasDocument,
+          hasAudio,
+          messageId: messageId ?? null,
+        });
+      } else if (_midiaOcr || _cadKind === "expected") {
+        // 🔑 CADASTRO + resposta esperada → caminho determinístico (OCR +
+        // confirmação + doc + portal). O Cérebro NÃO interpreta o input
+        // esperado do step. Cada etapa tem foco único — quem valida e
+        // re-pergunta é o handler determinístico.
+        console.log(`[cerebro] cadastro em andamento (step=${stepBefore} kind=${_cadKind ?? "media"}) → determinístico customer=${customer.id}`);
       } else {
+        // CADASTRO + pergunta livre off-topic → Cérebro responde sem mexer
+        // no estado. O step do cadastro permanece intacto e o próximo
+        // re-prompt do determinístico segue normalmente.
+        console.log(`[cerebro] freeform no cadastro step=${stepBefore} customer=${customer.id} → Cérebro readOnly`);
         _cerebroRespondeu = await runConversacionalTurn({
           text: messageText ?? null,
           isButton,
