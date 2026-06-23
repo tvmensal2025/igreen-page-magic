@@ -15,3 +15,11 @@ type: constraint
 - Pedir QR (`request_qr`) e fazer logout (`logout`) do canal.
 
 Nunca remover esses caminhos. Nunca expor o painel para consultores normais (gate por `isWhapi`).
+
+**Classificação de erros da Whapi (não tratar tudo como "offline"):** `whapi-proxy` chama `classifyWhapiError(status, data)` em todo erro e devolve `{ reasonCode, helpUrl }`:
+- `unpaid` (HTTP 402) — canal suspenso por falta de pagamento. Trocar token/QR **não resolve**. UI mostra banner vermelho com CTA para `panel.whapi.cloud/billing`, tanto no card de conexão quanto como banner global em todas as sub-abas do WhatsApp (`WhapiBillingBanner`).
+- `channel_not_found` (HTTP 404) — canal removido. CTA para criar novo canal em `panel.whapi.cloud`.
+- `invalid_token` (HTTP 401) — token inválido. UI foca em colar token novo.
+- `offline` (HTTP 503) — QR/desconectado. Fluxo padrão de reconexão.
+
+`health_check` também devolve `reasonCode`/`reasonMessage`/`helpUrl` para `useWhapiHealth`, então a UI nunca pode esconder o motivo real do bloqueio. **Nunca** voltar à mensagem genérica "Canal Whapi offline ou token inválido" — o super admin precisa saber se é problema financeiro para não perder tempo.
