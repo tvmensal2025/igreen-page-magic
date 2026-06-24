@@ -218,6 +218,9 @@ export async function analyzeRoof(
       max_panels: metrics.maxPanels,
       panel_watts: metrics.panelCapacityWatts,
       max_yearly_kwh: metrics.yearlyEnergyKwh,
+      // Registra a origem real para auditoria: "mock" quando não há chave
+      // Google configurada (fixture de SP), "google_solar_api" quando é dado real.
+      source: mock ? "mock" : "google_solar_api",
       expires_at: expiresAt.toISOString(),
     })
     .select("id")
