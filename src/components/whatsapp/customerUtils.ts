@@ -40,6 +40,7 @@ export interface Customer {
   customer_referred_by_name?: string | null;
   customer_referred_by_phone?: string | null;
   tipo_produto?: string | null;
+  customer_origin?: string | null;
 }
 
 export interface ParsedCustomer {

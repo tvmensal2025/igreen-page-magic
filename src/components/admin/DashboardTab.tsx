@@ -17,6 +17,8 @@ import { TopConsumersCard } from "./TopConsumersCard";
 import { GeographyCard } from "./GeographyCard";
 import { RetentionCard } from "./RetentionCard";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+import { filterMyClients } from "@/lib/myClientsFilter";
+import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
 import { TeamRankingTab } from "./TeamRankingTab";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
 
@@ -37,10 +39,15 @@ interface DashboardTabProps {
   onPeriodChange: (days: number) => void;
 }
 
-export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTabProps) {
+export function DashboardTab({ userId, form, periodDays, onPeriodChange }: DashboardTabProps) {
   const [scope, setScope] = useState<"me" | "team">("me");
   const { data: teamIds = [] } = useTeamConsultantIds(userId);
   const isLeader = teamIds.length > 1;
+  const { data: myClientsSettings } = useMyClientsSettings(userId, {
+    myIgreenId: (form?.igreen_id as string) || null,
+    consultantName: (form?.name as string) || null,
+    cadastroIgreenIds: [],
+  });
   const { data: analytics } = useAnalytics(
     userId,
     periodDays,
@@ -83,7 +90,10 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
 
   const filteredMetrics = useMemo(() => {
     if (!analytics) return null;
-    const walletOnly = analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
+    let walletOnly = analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
+    if (scope === "me" && myClientsSettings) {
+      walletOnly = filterMyClients(walletOnly, myClientsSettings);
+    }
     const filtered = selectedLicenciado === "all" ? walletOnly : walletOnly.filter((c: any) => c.registered_by_name === selectedLicenciado);
     const totalCustomers = filtered.length;
     const totalKw = filtered.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
@@ -130,7 +140,7 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
     return { totalCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
-  }, [analytics, selectedLicenciado, periodDays]);
+  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings]);
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);

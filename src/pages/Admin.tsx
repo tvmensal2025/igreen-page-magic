@@ -396,6 +396,8 @@ const AdminContent = () => {
             <CustomerManager
               customers={customers as never[]}
               consultantId={userId}
+              consultantIgreenId={form.igreen_id || undefined}
+              consultantName={form.name || undefined}
               onCustomersChange={fetchCustomers}
               instanceName={instanceName}
               onOpenChat={handleOpenChatFromCustomer}

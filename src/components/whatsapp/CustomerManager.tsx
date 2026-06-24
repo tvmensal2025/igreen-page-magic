@@ -22,6 +22,8 @@ import { CustomerListItem } from "./CustomerListItem";
 import { CustomerEditDialog } from "./CustomerEditDialog";
 import { CustomerImportExport } from "./CustomerImportExport";
 import { useCustomerDeals } from "@/hooks/useCustomerDeals";
+import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
+import { filterMyClients } from "@/lib/myClientsFilter";
 import {
   type Customer, type StatusFilter,
   isDevolutiva, buildWhatsAppMessage,
@@ -30,12 +32,22 @@ import {
 interface CustomerManagerProps {
   customers: Customer[];
   consultantId: string;
+  consultantIgreenId?: string;
+  consultantName?: string;
   onCustomersChange: () => void;
   instanceName?: string | null;
   onOpenChat?: (phone: string, suggestedMessage?: string) => void;
 }
 
-export function CustomerManager({ customers, consultantId, onCustomersChange, instanceName, onOpenChat }: CustomerManagerProps) {
+export function CustomerManager({
+  customers,
+  consultantId,
+  consultantIgreenId,
+  consultantName,
+  onCustomersChange,
+  instanceName,
+  onOpenChat,
+}: CustomerManagerProps) {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -56,7 +68,16 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const dealsByCustomer = useCustomerDeals(consultantId, customers);
+  const { data: myClientsSettings } = useMyClientsSettings(consultantId, {
+    myIgreenId: consultantIgreenId || null,
+    consultantName: consultantName ?? null,
+    cadastroIgreenIds: [],
+  });
+  const myCustomers = useMemo(
+    () => (myClientsSettings ? filterMyClients(customers, myClientsSettings) : customers),
+    [customers, myClientsSettings],
+  );
+  const dealsByCustomer = useCustomerDeals(consultantId, myCustomers);
 
   // Fetch last sync timestamp
   useEffect(() => {
@@ -126,38 +147,38 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
 
   const licenciadoOptions = useMemo(() => {
     const names = new Set<string>();
-    for (const c of customers) {
+    for (const c of myCustomers) {
       if (c.registered_by_name) names.add(c.registered_by_name);
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [customers]);
+  }, [myCustomers]);
 
   const distribuidoraOptions = useMemo(() => {
     const names = new Set<string>();
-    for (const c of customers) {
+    for (const c of myCustomers) {
       if (c.distribuidora) names.add(c.distribuidora);
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [customers]);
+  }, [myCustomers]);
 
   const cidadeOptions = useMemo(() => {
     const names = new Set<string>();
-    for (const c of customers) {
+    for (const c of myCustomers) {
       const label = [c.address_city, c.address_state].filter(Boolean).join(" - ");
       if (label) names.add(label);
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [customers]);
+  }, [myCustomers]);
 
   const searchFiltered = search.trim()
-    ? customers.filter(
+    ? myCustomers.filter(
         (c) =>
           (c.name || "").toLowerCase().includes(search.toLowerCase()) ||
           c.phone_whatsapp.includes(search) ||
           (c.email || "").toLowerCase().includes(search.toLowerCase()) ||
           (c.cpf || "").includes(search)
       )
-    : customers;
+    : myCustomers;
 
   const tipoFiltered = selectedTipo === "all"
     ? searchFiltered
@@ -229,13 +250,13 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
   }
 
   const filterButtons: { key: StatusFilter; label: string; count: number; color: string }[] = [
-    { key: "all", label: "Todos", count: customers.length, color: "text-foreground" },
-    { key: "approved", label: "Aprovados", count: customers.filter((c) => c.status === "approved").length, color: "text-primary" },
-    { key: "awaiting_signature", label: "Falta Assinatura", count: customers.filter((c) => c.status === "awaiting_signature").length, color: "text-warning" },
-    { key: "pending", label: "Pendentes", count: customers.filter((c) => c.status === "pending").length, color: "text-warning" },
-    { key: "devolutiva", label: "Devolutiva", count: customers.filter((c) => c.status === "devolutiva" || isDevolutiva(c)).length, color: "text-destructive" },
-    { key: "rejected", label: "Reprovados", count: customers.filter((c) => c.status === "rejected").length, color: "text-destructive" },
-    { key: "lead", label: "Clientes interessados", count: customers.filter((c) => c.status === "lead").length, color: "text-info" },
+    { key: "all", label: "Todos", count: myCustomers.length, color: "text-foreground" },
+    { key: "approved", label: "Aprovados", count: myCustomers.filter((c) => c.status === "approved").length, color: "text-primary" },
+    { key: "awaiting_signature", label: "Falta Assinatura", count: myCustomers.filter((c) => c.status === "awaiting_signature").length, color: "text-warning" },
+    { key: "pending", label: "Pendentes", count: myCustomers.filter((c) => c.status === "pending").length, color: "text-warning" },
+    { key: "devolutiva", label: "Devolutiva", count: myCustomers.filter((c) => c.status === "devolutiva" || isDevolutiva(c)).length, color: "text-destructive" },
+    { key: "rejected", label: "Reprovados", count: myCustomers.filter((c) => c.status === "rejected").length, color: "text-destructive" },
+    { key: "lead", label: "Clientes interessados", count: myCustomers.filter((c) => c.status === "lead").length, color: "text-info" },
   ];
 
   return (
@@ -251,11 +272,12 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
             </div>
             <div className="min-w-0">
               <h3 className="font-bold text-foreground text-base sm:text-lg tracking-tight">
-                Clientes
-                <span className="ml-2 text-sm font-normal text-muted-foreground">({customers.length})</span>
+                Meus clientes
+                <span className="ml-2 text-sm font-normal text-muted-foreground">({myCustomers.length})</span>
               </h3>
               <p className="text-[11px] text-muted-foreground truncate">
-                Gerencie sua carteira
+                Cadastrados por você
+                {myClientsSettings?.myIgreenId ? ` (iGreen ${myClientsSettings.myIgreenId})` : ""}
                 {lastSync && <span className="hidden sm:inline ml-2 text-muted-foreground/60">• Última sync: {new Date(lastSync).toLocaleString("pt-BR")}</span>}
               </p>
             </div>
@@ -277,7 +299,7 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
                 </DropdownMenuItem>
                 <CustomerImportExport
                   asMenuItems
-                  customers={customers}
+                  customers={myCustomers}
                   filtered={filtered}
                   consultantId={consultantId}
                   onCustomersChange={onCustomersChange}
@@ -410,7 +432,7 @@ export function CustomerManager({ customers, consultantId, onCustomersChange, in
                 <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mx-auto mb-3">
                   <Users className="w-7 h-7 text-muted-foreground/30" />
                 </div>
-                <p className="text-sm text-muted-foreground">{customers.length === 0 ? "Nenhum cliente cadastrado" : "Nenhum resultado"}</p>
+                <p className="text-sm text-muted-foreground">{myCustomers.length === 0 ? "Nenhum cliente cadastrado por você" : "Nenhum resultado"}</p>
               </div>
             )}
             renderItem={(c) => (

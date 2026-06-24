@@ -1,6 +1,8 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+import { filterMyClients, type MyClientsSettings } from "@/lib/myClientsFilter";
+import { loadLocalGreenSettings } from "@/features/produtos/acompanhamento/greenData";
 
 export interface DailyViews {
   date: string;
@@ -104,6 +106,26 @@ export function useAnalytics(
       if (eventsRes.error) throw eventsRes.error;
       if (dealsRes.error) throw dealsRes.error;
 
+      const scopeConsultantId = consultantId!;
+
+      const [{ data: consultantProfile }, { data: greenRow }] = await Promise.all([
+        supabase.from("consultants").select("igreen_id, name").eq("id", scopeConsultantId).maybeSingle(),
+        supabase
+          .from("consultant_commission_settings" as any)
+          .select("cadastro_igreen_ids")
+          .eq("consultant_id", scopeConsultantId)
+          .maybeSingle(),
+      ]);
+      const localGreen = loadLocalGreenSettings(scopeConsultantId);
+      const dbCadastroIds = (greenRow as { cadastro_igreen_ids?: string[] } | null)?.cadastro_igreen_ids;
+      const myClientsSettings: MyClientsSettings = {
+        myIgreenId: consultantProfile?.igreen_id != null ? String(consultantProfile.igreen_id) : null,
+        consultantName: consultantProfile?.name ?? null,
+        cadastroIgreenIds: dbCadastroIds?.length
+          ? dbCadastroIds.map(String)
+          : localGreen?.cadastroIgreenIds?.map(String) ?? [],
+      };
+
       const views = viewsRes.data;
       const events = eventsRes.data;
 
@@ -196,10 +218,13 @@ export function useAnalytics(
         return o === "whatsapp_lead" || o === "manual";
       });
       const walletCustomers = allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
+      const scopedWalletCustomers = useTeam
+        ? walletCustomers
+        : filterMyClients(walletCustomers, myClientsSettings);
 
-      const totalCustomers = walletCustomers.length;
+      const totalCustomers = scopedWalletCustomers.length;
       const statusMap = new Map<string, number>();
-      for (const c of walletCustomers) {
+      for (const c of scopedWalletCustomers) {
         const s = c.status || "pending";
         statusMap.set(s, (statusMap.get(s) || 0) + 1);
       }
@@ -211,12 +236,12 @@ export function useAnalytics(
         .map(([status, count]) => ({ status, count, label: statusLabels[status] || status.charAt(0).toUpperCase() + status.slice(1) }))
         .sort((a, b) => b.count - a.count);
 
-      const totalKw = walletCustomers.reduce((sum, c) => sum + (Number(c.media_consumo) || 0), 0);
-      const customersWithConsumption = walletCustomers.filter((c) => Number(c.media_consumo) > 0);
+      const totalKw = scopedWalletCustomers.reduce((sum, c) => sum + (Number(c.media_consumo) || 0), 0);
+      const customersWithConsumption = scopedWalletCustomers.filter((c) => Number(c.media_consumo) > 0);
       const avgKw = customersWithConsumption.length > 0 ? totalKw / customersWithConsumption.length : 0;
 
       const licMap = new Map<string, number>();
-      for (const c of walletCustomers) {
+      for (const c of scopedWalletCustomers) {
         const lic = c.registered_by_name;
         if (lic) licMap.set(lic, (licMap.get(lic) || 0) + 1);
       }
@@ -237,7 +262,7 @@ export function useAnalytics(
         const label = `${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
         weekMap.set(label, 0);
       }
-      for (const c of walletCustomers) {
+      for (const c of scopedWalletCustomers) {
         const created = new Date(c.created_at);
         if (created >= sinceDate) {
           const daysAgo = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
@@ -371,10 +396,10 @@ export function useAnalytics(
       const sparkLeads = buildDailySpark(leadCustomers as Array<{ created_at: string }>);
 
       // === Carteira iGreen — SNAPSHOT (não janela), inclui receita potencial ===
-      const approvedWallet = walletCustomers.filter((c: any) => c.status === "approved" || c.status === "active");
+      const approvedWallet = scopedWalletCustomers.filter((c: any) => c.status === "approved" || c.status === "active");
       const walletSnapshot = {
         totalApproved: approvedWallet.length,
-        totalWallet: walletCustomers.length,
+        totalWallet: scopedWalletCustomers.length,
         receitaPotencial: approvedWallet.reduce((s: number, c: any) => s + (Number(c.electricity_bill_value) || 0), 0),
       };
       const sparkApproved = buildDailySpark(approvedWallet as Array<{ created_at: string }>);
