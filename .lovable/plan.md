@@ -1,48 +1,74 @@
-# Configuração com auto-save e abertura só por clique
+# Smoke test E2E /admin com Playwright
 
-## O problema observado
-No painel **Central de Conversão → aba "Configurar"** (`src/components/admin/conversao/ConfigPanel.tsx`) hoje o consultor precisa clicar em **"Salvar configuração"** depois de cada ajuste. Se ele esquece, o valor digitado é perdido na próxima visita. Além disso, a sensação de "ficar abrindo toda vez" vem desse fluxo: ao reabrir a aba, o painel re-monta, busca o que está no banco e descarta o que não foi salvo.
+## Objetivo
 
-A aba em si **já só é montada quando o usuário clica em "Configurar"** no `ViewSwitcher` (rota `/admin → Conversão`, `activeView` default = `"fila"`, `ConfigPanel` mora dentro de `<TabsContent value="config">` em `ConversaoCockpit.tsx`). Não há rota nem efeito que force `activeView="config"`. Então o ajuste é todo dentro do `ConfigPanel`: **salvar sozinho** e **não recarregar/piscar** quando o consultor volta para a aba.
+Validar 12 áreas do painel admin com fluxo completo (carregamento + interação/CRUD), entregando tabela de status, screenshots e captura de erros console/network.
 
-## O que muda (somente UX do ConfigPanel)
+## Pré-requisitos do usuário
 
-1. **Auto-save com debounce de 600 ms**
-   - Cada alteração em qualquer campo (Switch de ligar/desligar, horas, máximo, intervalo, janela início/fim, fim de semana) dispara um `upsert` em `reactivation_settings` automaticamente.
-   - Usa um `useRef` de timer; cancela e reagenda a cada digitação para não bater no banco a cada tecla.
-   - Não dispara durante o carregamento inicial nem antes do primeiro `load()` completar (flag `hydrated`).
+Antes de eu rodar, preciso de **2 coisas**:
 
-2. **Feedback discreto, sem toast por tecla**
-   - Indicador inline ao lado do título: `Salvando…` / `Salvo às HH:MM` / `Erro ao salvar` (com botão "Tentar novamente").
-   - Toast somente em erro; sucesso fica no indicador para não poluir.
+1. **Credenciais de um admin de teste** (email + senha) — cole no chat. Vou usar uma única vez para login via Playwright; não são logadas nem persistidas.
+2. **Aprovação para mutações reais.** Você pediu "CRUD/ações reais quando possível". Isso pode criar/alterar dados de produção (ex.: criar consultor de teste, mover deal no kanban, salvar configuração). Confirme:
+  - ✅ OK criar/editar registros marcados como `SMOKE-TEST-<timestamp>` que eu apago no fim
+  - ❌ ou prefere read-only: só abrir telas, abrir modais, alternar tabs, ler dados — sem POST/PATCH/DELETE
 
-3. **Botão "Salvar configuração" removido**
-   - Como tudo é automático, o botão sai. Fica só o estado de salvamento visível.
+Se preferir read-only, o smoke vira só "carregamento + navegação", igual à opção média. Recomendo isso para a primeira rodada e depois aprofundamos.
 
-4. **Não recarregar do banco a cada montagem desnecessária**
-   - Mantém o `load()` na primeira montagem por `consultantId`, mas guarda um cache em `useRef` por `consultantId` para que, ao alternar entre abas do `ViewSwitcher`, o estado local não pisque com loader (a aba é desmontada/remontada pelo Radix Tabs — usamos cache em escopo do módulo, `Map<consultantId, Settings>`, para reidratar instantaneamente enquanto o `load()` confirma em background).
+## Áreas cobertas (12)
 
-5. **Garantir que a aba só abre por clique (verificação)**
-   - Conferir que nenhum `useEffect` em `ConversaoCockpit.tsx` muda `activeView` para `"config"` sem ação do usuário. Estado inicial fica `"fila"`; o único caminho para `"config"` é o clique no `ViewSwitcher` / `Tabs`.
 
-## Detalhes técnicos
+| #   | Área                                       | Rota provável               | Ação chave                                                          |
+| --- | ------------------------------------------ | --------------------------- | ------------------------------------------------------------------- |
+| 1   | Clientes interessados                      | `/admin` → tab Interessados | Listar, abrir card, ler detalhes                                    |
+| 2   | Clientes ativos                            | `/admin` → tab Ativos       | Listar, abrir card                                                  |
+| 3   | Conversão                                  | `/admin/conversao`          | Fila → Reaquecimento → **Configurar** (validar auto-save sem botão) |
+| 4   | Clientes (CRM)                             | `/admin` (kanban)           | Abrir deal, ler stages                                              |
+| 5   | Produtos & Vendas                          | `/admin` produtos           | Listar produtos, abrir 1 venda                                      |
+| 6   | Captação                                   | `/admin` captação           | Abrir formulário, validar campos                                    |
+| 7   | Parceiros                                  | `/admin` parceiros          | Listar referral_partners                                            |
+| 8   | Rede                                       | `/admin` rede               | Listar network_members                                              |
+| 9   | WhatsApp                                   | `/admin` whatsapp           | Status instância, fluxos B/D                                        |
+| 10  | Central de Anúncios                        | `/admin` anúncios           | Listar campanhas FB                                                 |
+| 11  | Links                                      | `/admin` links              | Listar                                                              |
+| 12  | Materiais + Estúdio Áudio + iGreen Academy | rotas respectivas           | Carregar página, listar itens                                       |
 
-Arquivo único alterado:
 
-- `src/components/admin/conversao/ConfigPanel.tsx`
-  - Adicionar `useRef<NodeJS.Timeout | null>` para o debounce.
-  - Adicionar `useRef<boolean>` `hydrated` para suprimir auto-save antes do primeiro load.
-  - Adicionar estado `saveState: "idle" | "saving" | "saved" | "error"` e `lastSavedAt: Date | null`.
-  - Mover a função `save` para receber o snapshot atual e ser chamada pelo efeito de debounce que observa `s`.
-  - Cache de hidratação: `const CACHE = new Map<string, Settings>()` em escopo de módulo; ao montar, se houver entrada para `consultantId`, usar imediatamente e pular o spinner; sempre disparar `load()` em background para confirmar.
-  - Substituir o `<Button>Salvar configuração</Button>` por `<SaveStatus state={saveState} lastSavedAt={lastSavedAt} onRetry={...} />`.
+## Execução técnica
 
-Nenhuma mudança em banco, RLS, edge functions, schemas ou outros componentes. Nenhum impacto no `worker-portal-2` (assunto anterior já encerrado).
+Script único `/tmp/browser/admin-smoke/run.py` (Playwright async, Chromium headless, viewport 1280×1800):
 
-## Como testar depois da implementação
+1. **Login** em `http://localhost:8080` com credenciais fornecidas → aguarda redirect autenticado.
+2. **Mapear rotas reais** lendo `src/App.tsx` e `src/pages/Admin*.tsx` antes do run (descobrir paths corretos das 12 áreas).
+3. **Para cada área**, em sequência:
+  - `page.goto(rota)` com `wait_until="networkidle"`
+  - Aguardar seletor âncora (heading h1/h2 da página) — confirma render sem branco
+  - Screenshot `NN_area-nome.png`
+  - Executar ação chave (clique em tab/abrir modal/etc) — screenshot pós-ação
+  - Coletar `console` errors e `network` responses 4xx/5xx via listeners registrados no `context`
+4. **Caso 3 (Configurar)** — validação específica do fix recente:
+  - Alterar o campo "Máximo de tentativas" para um valor `+1`
+  - Aguardar 1.2s (debounce 600ms + folga)
+  - Recarregar a página, voltar para Configurar, verificar que o novo valor persistiu sem clicar em nenhum botão Salvar
+5. **Cleanup**: se houver mutações marcadas `SMOKE-TEST-*`, deletar via Supabase REST ao final.
 
-1. Abrir `/admin → Central de Conversão → Configurar`.
-2. Mudar "Esperar quantas horas paradas" de 24 para 48 e clicar em outra aba **sem clicar em salvar**. Voltar para "Configurar": deve aparecer 48.
-3. Conferir indicador `Salvo às HH:MM` aparece ~600 ms depois da última tecla.
-4. Trocar o consultor (se aplicável): cache reidrata sem spinner; valor real do banco confirma em seguida.
-5. Recarregar a página: configuração persistida no Supabase.
+## Saída
+
+Arquivo `/tmp/browser/admin-smoke/report.md` com:
+
+- Tabela: Área | Status (✅/⚠️/❌) | URL final | Tempo de carga | Erros console | 4xx/5xx
+- Lista detalhada de cada erro encontrado (mensagem + stack curta + request)
+- Galeria de screenshots inline
+- Veredito: pronto pra produção / áreas que precisam fix
+
+O relatório vem no chat + screenshots anexadas.
+
+## Tempo estimado
+
+~15-20 min de execução real, mais 5 min para mapear rotas e escrever o script.
+
+---
+
+**Próximo passo:** me responda com (a) credenciais admin de teste e (b) read-only ou pode mutar com cleanup.  
+usuario: [rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)  
+senha:10203040
