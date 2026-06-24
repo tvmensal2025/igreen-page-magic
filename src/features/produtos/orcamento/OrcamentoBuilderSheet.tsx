@@ -49,8 +49,7 @@ import {
   suggestProjectAmountCents,
 } from "@/features/solar-3d/adapters/proposalSolarBlock";
 import type { SolarAnalyzeResult } from "@/features/solar-3d/lib/types";
-import { analyzeRoof } from "@/features/solar-3d/lib/api";
-import { Link } from "react-router-dom";
+import { SolarAnalysisModal } from "@/features/solar-3d/components/SolarAnalysisModal";
 import { Sun } from "lucide-react";
 
 interface OrcamentoBuilderSheetProps {
@@ -111,7 +110,7 @@ export function OrcamentoBuilderSheet({
   const [payments, setPayments] = useState<PaymentOption[]>([]);
   const [solarSnapshotId, setSolarSnapshotId] = useState<string | null>(null);
   const [solarExtraItems, setSolarExtraItems] = useState<ProposalLineItem[]>([]);
-  const [solarLoading, setSolarLoading] = useState(false);
+  const [solarModalOpen, setSolarModalOpen] = useState(false);
 
   // Só os produtos vendáveis por orçamento (allowlist por slug). Os demais
   // continuam no catálogo/banco, mas não aparecem no seletor do builder.
@@ -174,32 +173,13 @@ export function OrcamentoBuilderSheet({
       .catch(() => {});
   }, [open, projectAmount]);
 
-  const importSolarFromCustomer = async () => {
-    if (!recipient?.customerId) {
-      toast({ title: "Selecione um cliente com endereço no CRM", variant: "destructive" });
-      return;
+  const applySolarResult = (result: SolarAnalyzeResult) => {
+    setSolarSnapshotId(result.snapshotId);
+    setSolarExtraItems(solarDesignToLineItems(result));
+    if (!projectAmount) {
+      setProjectAmount(String(suggestProjectAmountCents(result.metrics.systemSizeKwp) / 100));
     }
-    setSolarLoading(true);
-    try {
-      const result: SolarAnalyzeResult = await analyzeRoof({
-        customerId: recipient.customerId,
-        electricityBillValue: currentBill ? Number(currentBill) : undefined,
-      });
-      setSolarSnapshotId(result.snapshotId);
-      setSolarExtraItems(solarDesignToLineItems(result));
-      if (!projectAmount) {
-        setProjectAmount(String(suggestProjectAmountCents(result.metrics.systemSizeKwp) / 100));
-      }
-      toast({ title: "Análise solar importada", description: `${result.metrics.systemSizeKwp} kWp` });
-    } catch (e) {
-      toast({
-        title: "Falha na análise solar",
-        description: e instanceof Error ? e.message : "Erro",
-        variant: "destructive",
-      });
-    } finally {
-      setSolarLoading(false);
-    }
+    toast({ title: "Análise solar vinculada", description: `${result.metrics.systemSizeKwp} kWp · ${result.metrics.panelsCount} módulos` });
   };
 
   const currentStep = !product ? 1 : !recipient ? 2 : 3;
@@ -354,6 +334,7 @@ export function OrcamentoBuilderSheet({
 
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
@@ -539,32 +520,29 @@ export function OrcamentoBuilderSheet({
                   {config?.pricingMode === "project_once" && (
                     <>
                       {isPlacas && (
-                        <div className="rounded-lg border border-amber-200/60 bg-amber-50/50 p-4 space-y-2">
-                          <p className="text-sm font-medium flex items-center gap-2">
+                        <div className="rounded-xl border border-amber-200/60 bg-gradient-to-br from-amber-50/80 to-orange-50/40 p-4 space-y-3">
+                          <p className="text-sm font-semibold flex items-center gap-2">
                             <Sun className="h-4 w-4 text-amber-600" />
                             Design solar no telhado
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            Importe análise remota para enriquecer a proposta com kWp e prévia visual.
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            Análise remota com satélite — enriquece a proposta com kWp, geração e prévia visual.
                           </p>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              disabled={solarLoading}
-                              onClick={importSolarFromCustomer}
-                              className="text-xs font-medium px-3 py-1.5 rounded-full bg-primary text-primary-foreground disabled:opacity-50"
-                            >
-                              {solarLoading ? "Analisando…" : "Importar do CRM"}
-                            </button>
-                            <Link
-                              to="/admin/solar-design"
-                              className="text-xs font-medium px-3 py-1.5 rounded-full border"
-                            >
-                              Abrir ferramenta
-                            </Link>
-                          </div>
+                          <button
+                            type="button"
+                            disabled={!recipient?.customerId}
+                            onClick={() => setSolarModalOpen(true)}
+                            className="text-xs font-semibold px-4 py-2 rounded-full bg-primary text-primary-foreground disabled:opacity-50 shadow-sm"
+                          >
+                            Analisar telhado do cliente
+                          </button>
+                          {!recipient?.customerId && (
+                            <p className="text-[11px] text-amber-800">Selecione um cliente do CRM no passo anterior.</p>
+                          )}
                           {solarSnapshotId && (
-                            <p className="text-xs text-emerald-700">✓ Análise vinculada à proposta</p>
+                            <p className="text-xs text-emerald-700 font-medium flex items-center gap-1">
+                              <Check className="h-3.5 w-3.5" /> Análise vinculada à proposta
+                            </p>
                           )}
                         </div>
                       )}
@@ -759,6 +737,17 @@ export function OrcamentoBuilderSheet({
         </div>
       </SheetContent>
     </Sheet>
+    <SolarAnalysisModal
+      open={solarModalOpen}
+      onOpenChange={setSolarModalOpen}
+      customerId={recipient?.customerId}
+      customerName={recipient?.name}
+      defaultBill={currentBill ? Number(currentBill) : null}
+      onApplied={applySolarResult}
+      applyLabel="Vincular à proposta"
+      showProposalAction
+    />
+    </>
   );
 }
 

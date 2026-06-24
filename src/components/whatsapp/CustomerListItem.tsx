@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { SolarAnalysisModal } from "@/features/solar-3d/components/SolarAnalysisModal";
 import {
   Trash2, Phone, Mail, MapPin, Zap, ChevronDown, Pencil,
   CreditCard, User, MessageCircle, Building2, AlertTriangle, FileText, ClipboardCopy, Users,
@@ -118,12 +118,16 @@ export function CustomerListItem({
   customer: c, isExpanded, profilePic, deal,
   onToggleExpand, onEdit, onDelete, onOpenWhatsApp, onCopyMessage,
 }: CustomerListItemProps) {
+  const [solarOpen, setSolarOpen] = useState(false);
   const status = getStatusBadge(c.status);
   const hasDevolutiva = isDevolutiva(c);
   const stageDots = getStageDotsForCustomer(c.status, deal);
 
   // Resumo de localização e contato para a linha principal
   const location = [c.address_city, c.address_state].filter(Boolean).join(" / ");
+  const addressHint = [c.address_street, c.address_number, c.address_neighborhood, c.address_city, c.address_state, c.cep]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div
@@ -291,10 +295,13 @@ export function CustomerListItem({
               <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg" onClick={onCopyMessage}>
                 <ClipboardCopy className="w-4 h-4" /> Copiar mensagem
               </Button>
-              <Button asChild variant="outline" size="sm" className="h-9 gap-2 rounded-lg text-amber-600 border-amber-500/30 hover:bg-amber-500/10">
-                <Link to={`/admin/solar-design?customerId=${c.id}`}>
-                  <Sun className="w-4 h-4" /> Analisar telhado
-                </Link>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-2 rounded-lg text-amber-600 border-amber-500/30 hover:bg-amber-500/10"
+                onClick={() => setSolarOpen(true)}
+              >
+                <Sun className="w-4 h-4" /> Analisar telhado
               </Button>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -322,6 +329,14 @@ export function CustomerListItem({
           </div>
         </div>
       )}
+      <SolarAnalysisModal
+        open={solarOpen}
+        onOpenChange={setSolarOpen}
+        customerId={c.id}
+        customerName={c.name}
+        defaultBill={c.electricity_bill_value}
+        addressHint={addressHint || undefined}
+      />
     </div>
   );
 }

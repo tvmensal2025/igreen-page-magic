@@ -1,44 +1,29 @@
-import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Loader2, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { Sun, History } from "lucide-react";
 import { toast } from "sonner";
-import { analyzeRoof, updateSnapshotPanels, saveManualSketch } from "../lib/api";
-import { SolarMap2D } from "../components/SolarMap2D";
-import { SolarMetricsPanel } from "../components/SolarMetricsPanel";
-import { SolarPanelSlider } from "../components/SolarPanelSlider";
-import { SolarDisclaimer } from "../components/SolarDisclaimer";
-import { SolarSketchFallback } from "../components/SolarSketchFallback";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { saveManualSketch, updateSnapshotPanels, listConsultantSolarAnalyses, loadSolarSnapshot } from "../lib/api";
+import { SolarAnalysisModal } from "../components/SolarAnalysisModal";
+import { SolarAnalysisResults } from "../components/SolarAnalysisResults";
 import type { SolarAnalyzeResult } from "../lib/types";
 
 export default function SolarDesignPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const customerId = searchParams.get("customerId");
-  const [address, setAddress] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(!!customerId);
   const [result, setResult] = useState<SolarAnalyzeResult | null>(null);
   const [view3d, setView3d] = useState(false);
   const [manualApplied, setManualApplied] = useState(false);
+  const [history, setHistory] = useState<Awaited<ReturnType<typeof listConsultantSolarAnalyses>>>([]);
 
-  const runAnalysis = async () => {
-    setLoading(true);
-    try {
-      const data = await analyzeRoof({
-        customerId,
-        addressText: address || undefined,
-        allowExperiment: true,
-      });
-      setResult(data);
-      setManualApplied(false);
-      if (data.mock) toast.info("Modo demonstração (configure GOOGLE_SOLAR_API_KEY para dados reais)");
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    listConsultantSolarAnalyses(25)
+      .then(setHistory)
+      .catch(() => {});
+  }, [result]);
 
   const handleManualSketch = async (widthM: number, depthM: number) => {
     if (!result) return;
@@ -83,81 +68,90 @@ export default function SolarDesignPage() {
     }
   };
 
+  const onApplied = (data: SolarAnalyzeResult) => {
+    setResult(data);
+    setModalOpen(false);
+  };
+
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex items-center gap-3">
-        <Sun className="h-8 w-8 text-primary" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg">
+          <Sun className="h-6 w-6" />
+        </div>
         <div>
-          <h1 className="text-2xl font-semibold">Análise de telhado</h1>
-          <p className="text-sm text-muted-foreground">Conexão Placas — dimensionamento remoto</p>
+          <h1 className="text-2xl font-bold tracking-tight">Análise de telhado</h1>
+          <p className="text-sm text-muted-foreground">Conexão Placas — dimensionamento remoto com satélite</p>
         </div>
       </div>
 
-      <div className="space-y-3">
-        {!customerId && (
-          <div>
-            <Label htmlFor="addr">Endereço completo</Label>
-            <Input
-              id="addr"
-              placeholder="Rua, número, bairro, cidade, UF, CEP"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
-          </div>
-        )}
-        {customerId && (
-          <p className="text-sm text-muted-foreground">Cliente vinculado — endereço será lido do CRM.</p>
-        )}
-        <Button onClick={runAnalysis} disabled={loading || (!customerId && !address.trim())}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-          Analisar telhado
-        </Button>
-      </div>
-
-      {result && (
-        <div className="space-y-4">
-          {result.imageryQuality === "BASE" && !manualApplied && (
-            <SolarSketchFallback onSave={handleManualSketch} />
-          )}
-          <div className="flex gap-2">
-            <Button type="button" size="sm" variant={view3d ? "outline" : "default"} onClick={() => setView3d(false)}>
-              2D
-            </Button>
-            <Button type="button" size="sm" variant={view3d ? "default" : "outline"} onClick={() => setView3d(true)}>
-              3D
-            </Button>
-          </div>
-          {view3d ? (
-            <div className="text-sm text-muted-foreground p-4 border rounded-lg">
-              Visualização 3D disponível na página de detalhe.{" "}
-              <Link className="text-primary underline" to={`/admin/solar-design/${result.snapshotId}`}>
-                Abrir detalhe
-              </Link>
-            </div>
-          ) : (
-            <SolarMap2D
-              panelPositions={result.panelPositions}
-              roofSegments={result.roofSegments}
-            />
-          )}
-          <SolarMetricsPanel metrics={result.metrics} imageryQuality={result.imageryQuality} />
-          <SolarPanelSlider
-            metrics={result.metrics}
-            presets={result.presets}
-            onChange={onPanelsChange}
-            onApplyPreset={onPanelsChange}
-          />
-          <p className="text-sm bg-muted/50 p-3 rounded-lg">{result.salesBlurb}</p>
-          <SolarDisclaimer />
-          <Button asChild>
-            <Link
-              to="/admin?tab=produtos"
-              onClick={() => sessionStorage.setItem("solar_pending_snapshot", result.snapshotId)}
-            >
-              Usar na proposta Placas
-            </Link>
-          </Button>
+      {!result ? (
+        <div className="rounded-2xl border border-dashed bg-muted/30 p-8 text-center space-y-4">
+          <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+            Analise o telhado do cliente em poucos cliques e gere uma proposta profissional com kWp, geração e economia.
+          </p>
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20"
+          >
+            Nova análise
+          </button>
         </div>
+      ) : (
+        <SolarAnalysisResults
+          result={result}
+          view3d={view3d}
+          onView3dChange={setView3d}
+          manualApplied={manualApplied}
+          onManualSketch={handleManualSketch}
+          onPanelsChange={onPanelsChange}
+          onUseInProposal={() => {
+            sessionStorage.setItem("solar_pending_snapshot", result.snapshotId);
+            navigate("/admin?tab=produtos");
+          }}
+        />
+      )}
+
+      <SolarAnalysisModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        customerId={customerId}
+        onApplied={onApplied}
+      />
+
+      {history.length > 0 && (
+        <section className="rounded-2xl border bg-card p-5 space-y-3">
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <History className="h-4 w-4 text-primary" />
+            Telhados analisados (salvos)
+          </h2>
+          <ul className="divide-y">
+            {history.map((h) => (
+              <li key={h.analysisId} className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{h.addressText ?? "Sem endereço"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {h.systemKwp} kWp · {h.panelsCount} módulos ·{" "}
+                    {formatDistanceToNow(new Date(h.createdAt), { addSuffix: true, locale: ptBR })}
+                  </p>
+                </div>
+                {h.snapshotId && (
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-primary hover:underline shrink-0"
+                    onClick={async () => {
+                      const loaded = await loadSolarSnapshot(h.snapshotId!);
+                      setResult(loaded);
+                    }}
+                  >
+                    Abrir análise
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

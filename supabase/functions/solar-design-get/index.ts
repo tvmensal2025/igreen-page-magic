@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
       return json({
         snapshot: {
           id: snap.id,
+          analysisId: snap.analysis_id,
           panelsCount: snap.panels_count,
           systemKwp: snap.system_kwp,
           yearlyEnergyKwh: snap.yearly_energy_kwh,

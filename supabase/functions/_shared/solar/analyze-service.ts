@@ -119,6 +119,13 @@ export async function analyzeRoof(
       .maybeSingle();
 
     if (cached) {
+      if (input.customerId) {
+        await admin
+          .from("solar_roof_analyses")
+          .update({ customer_id: input.customerId })
+          .eq("id", cached.id)
+          .is("customer_id", null);
+      }
       const insights = cached.building_insights as import("./types.ts").BuildingInsightsResponse;
       const defaultPanels = input.panelsCount ?? Math.min(14, cached.max_panels ?? 14);
       const metrics = buildMetrics(insights, defaultPanels, input.electricityBillValue);
