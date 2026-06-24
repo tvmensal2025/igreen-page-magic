@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     const res = await fetch(mapUrl);
     if (!res.ok) {
       const txt = await res.text();
-      return json({ error: "Falha ao obter imagem", detail: txt.slice(0, 120) }, 502);
+      return json({ error: "Falha ao obter imagem", detail: txt.slice(0, 400) }, 502);
     }
 
     const bytes = new Uint8Array(await res.arrayBuffer());
