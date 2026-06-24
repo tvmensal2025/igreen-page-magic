@@ -15,7 +15,12 @@ const SUGGESTIONS = [
   "Como melhorar o CPL?",
 ];
 
-export function SupportChatButton() {
+interface SupportChatButtonProps {
+  /** Classes extras no FAB (ex.: ocultar na aba Produtos mobile). */
+  className?: string;
+}
+
+export function SupportChatButton({ className }: SupportChatButtonProps = {}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([
@@ -54,9 +59,10 @@ export function SupportChatButton() {
       <Button
         onClick={() => setOpen(true)}
         size="lg"
-        className="fixed bottom-5 right-5 z-50 rounded-full shadow-lg gap-2 bg-primary hover:bg-primary/90"
+        aria-label="Pedir ajuda ao suporte iGreen"
+        className={`fixed bottom-20 sm:bottom-5 right-4 sm:right-5 z-[90] min-h-[48px] min-w-[48px] rounded-full shadow-lg gap-2 bg-primary hover:bg-primary/90 ${className ?? ""}`}
       >
-        <MessageCircleQuestion className="w-5 h-5" />
+        <MessageCircleQuestion className="w-5 h-5 shrink-0" />
         <span className="hidden sm:inline">Pedir ajuda</span>
       </Button>
 

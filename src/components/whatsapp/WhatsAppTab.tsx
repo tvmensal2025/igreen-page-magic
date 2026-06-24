@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsLgDown } from "@/hooks/use-mobile";
 import { useWhatsApp } from "@/hooks/useWhatsApp";
 import { useTemplates } from "@/hooks/useTemplates";
 import { useChats } from "@/hooks/useChats";
@@ -11,8 +11,14 @@ import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 import { WhapiBillingBanner } from "./WhapiBillingBanner";
 import { useWhapiHealth } from "@/hooks/useWhapiHealth";
 
-import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow } from "lucide-react";
+import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Heavy panels — load only when their sub-tab is opened
 const BulkProPanel = lazy(() => import("./bulk-pro/BulkProPanel").then(m => ({ default: m.BulkProPanel })));
@@ -40,18 +46,21 @@ interface WhatsAppTabProps {
 
 type SubTab = "dashboard" | "conversas" | "agente" | "envio_massa" | "templates" | "agendamentos" | "historico";
 
-const SUB_TABS: { key: SubTab; label: string; icon: React.ElementType }[] = [
-  { key: "dashboard", label: "Dashboard", icon: BarChart3 },
-  { key: "conversas", label: "Conversas", icon: MessageSquare },
-  { key: "agente", label: "Atendente IA", icon: Bot },
-  { key: "envio_massa", label: "Envio em Massa", icon: Send },
-  { key: "templates", label: "Templates", icon: FileText },
-  { key: "agendamentos", label: "Agendamentos", icon: Clock },
-  { key: "historico", label: "Histórico", icon: History },
+const SUB_TABS: { key: SubTab; label: string; shortLabel: string; icon: React.ElementType }[] = [
+  { key: "dashboard", label: "Dashboard", shortLabel: "Início", icon: BarChart3 },
+  { key: "conversas", label: "Conversas", shortLabel: "Chats", icon: MessageSquare },
+  { key: "agente", label: "Atendente IA", shortLabel: "IA", icon: Bot },
+  { key: "envio_massa", label: "Envio em Massa", shortLabel: "Massa", icon: Send },
+  { key: "templates", label: "Templates", shortLabel: "Modelos", icon: FileText },
+  { key: "agendamentos", label: "Agendamentos", shortLabel: "Agenda", icon: Clock },
+  { key: "historico", label: "Histórico", shortLabel: "Hist.", icon: History },
 ];
 
+const MOBILE_PRIMARY_TABS: SubTab[] = ["dashboard", "conversas", "agente", "envio_massa"];
+const MOBILE_MORE_TABS: SubTab[] = ["templates", "agendamentos", "historico"];
+
 export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab }: WhatsAppTabProps) {
-  const isMobile = useIsMobile();
+  const isCompactLayout = useIsLgDown();
   const {
     connectionStatus,
     instanceName,
@@ -172,6 +181,8 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
 
   const totalUnread = useMemo(() => chats.reduce((sum, c) => sum + c.unreadCount, 0), [chats]);
   const isConnected = connectionStatus === "connected";
+  /** Mobile com chat aberto: esconde chrome do módulo para dar espaço ao composer. */
+  const immersiveChat = isCompactLayout && activeSubTab === "conversas" && !!selectedChatJid;
 
   // Whapi: só exibir painel de reconexão no Dashboard quando o canal cair (não está AUTH).
   const whapiHealth = useWhapiHealth(!!isWhapi);
@@ -179,7 +190,9 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
 
   return (
     <div className="flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
-      {/* Compact connection status — pill on the left, soft border */}
+      {/* Status + sub-abas — ocultos no mobile enquanto uma conversa está aberta */}
+      {!immersiveChat && (
+      <>
       <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-primary/5 via-card to-card border border-border/60 rounded-t-xl shrink-0 h-8">
         {isConnected ? (
           <div className="flex items-center gap-2 min-w-0">
@@ -221,24 +234,30 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
         )}
       </div>
 
-      {/* Sub-tab navigation — underline animado, hover suave, pill de badge */}
-      <div className="flex border-x border-border/60 bg-card/80 backdrop-blur-sm overflow-x-auto shrink-0 h-10 px-1 gap-0.5 scrollbar-thin">
-        {SUB_TABS.map((tab) => {
+      {/* Sub-abas: mobile (<lg) condensadas + "Mais"; desktop todas visíveis */}
+      {(() => {
+        const tabBtnClass = (isActive: boolean) =>
+          `relative flex items-center gap-1 px-2 lg:px-3 py-1.5 text-[10px] lg:text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 min-h-[44px] lg:min-h-0 ${
+            isActive
+              ? "text-primary bg-primary/8"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+          }`;
+
+        const renderTabBtn = (tab: (typeof SUB_TABS)[number], displayLabel: string) => {
           const Icon = tab.icon;
-          const showBadge = tab.key === "conversas" && totalUnread > 0;
           const isActive = activeSubTab === tab.key;
+          const showBadge = tab.key === "conversas" && totalUnread > 0;
           return (
             <button
               key={tab.key}
+              type="button"
               onClick={() => setActiveSubTab(tab.key)}
-              className={`relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 ${
-                isActive
-                  ? "text-primary bg-primary/8"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-              }`}
+              aria-label={tab.label}
+              aria-current={isActive ? "page" : undefined}
+              className={tabBtnClass(isActive)}
             >
-              <Icon className={`h-3.5 w-3.5 transition-transform ${isActive ? "scale-110" : ""}`} />
-              <span className="hidden sm:inline">{tab.label}</span>
+              <Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${isActive ? "scale-110" : ""}`} />
+              <span>{displayLabel}</span>
               {showBadge && (
                 <span className="bg-primary text-primary-foreground text-[9px] rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 font-bold shadow-sm shadow-primary/30">
                   {totalUnread > 99 ? "99+" : totalUnread}
@@ -249,16 +268,67 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
               )}
             </button>
           );
-        })}
-        {/* Construtor de Fluxos — abre a página dedicada (rota /admin/fluxos) */}
-        <Link
-          to="/admin/fluxos"
-          className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 text-muted-foreground hover:text-foreground hover:bg-muted/40"
-        >
-          <Workflow className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Construtor de Fluxos</span>
-        </Link>
-      </div>
+        };
+
+        const navShell = "flex border-x border-border/60 bg-card/80 backdrop-blur-sm overflow-x-auto shrink-0 min-h-10 px-1 pr-3 gap-0.5 scrollbar-thin items-center snap-x snap-mandatory";
+
+        return (
+          <>
+            <div className={`${navShell} lg:hidden`}>
+              {SUB_TABS.filter((t) => MOBILE_PRIMARY_TABS.includes(t.key)).map((tab) =>
+                renderTabBtn(tab, tab.shortLabel),
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Mais opções do WhatsApp"
+                    className={tabBtnClass(MOBILE_MORE_TABS.includes(activeSubTab))}
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5 shrink-0" />
+                    <span>Mais</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  {SUB_TABS.filter((t) => MOBILE_MORE_TABS.includes(t.key)).map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <DropdownMenuItem
+                        key={tab.key}
+                        onClick={() => setActiveSubTab(tab.key)}
+                        className={activeSubTab === tab.key ? "bg-primary/10 text-primary" : ""}
+                      >
+                        <Icon className="h-4 w-4 mr-2" />
+                        {tab.label}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <DropdownMenuItem asChild>
+                    <Link to="/admin/fluxos" className="flex items-center cursor-pointer">
+                      <Workflow className="h-4 w-4 mr-2" />
+                      Construtor de Fluxos
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <div className={`${navShell} hidden lg:flex`}>
+              {SUB_TABS.map((tab) => renderTabBtn(tab, tab.label))}
+              <Link
+                to="/admin/fluxos"
+                aria-label="Construtor de Fluxos"
+                className={`${tabBtnClass(false)} text-muted-foreground hover:text-foreground hover:bg-muted/40`}
+              >
+                <Workflow className="h-3.5 w-3.5 shrink-0" />
+                <span>Construtor de Fluxos</span>
+              </Link>
+            </div>
+          </>
+        );
+      })()}
+      </>
+      )}
 
       {/* Content area */}
       <div className="flex-1 min-h-0 min-w-0 border border-t-0 border-border rounded-b-lg overflow-hidden bg-background flex flex-col">
@@ -302,13 +372,13 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                 </div>
               )}
               <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "240px" } as React.CSSProperties}>
-              {/* Mobile: show sidebar OR chat, not both */}
-              {isMobile ? (
+              {/* Layout compacto (<lg): lista OU chat; desktop: lado a lado */}
+              {isCompactLayout ? (
                 selectedChatJid ? (
                   <div className="flex flex-col h-full w-full">
                     <button
                       onClick={() => setSelectedChatJid(null)}
-                      className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-primary bg-card border-b border-border shrink-0"
+                      className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] text-xs font-medium text-primary bg-card border-b border-border shrink-0"
                     >
                       ← Voltar às conversas
                     </button>

@@ -329,7 +329,7 @@ export function AcademyTab() {
           />
         </section>
 
-        <footer className="text-center pt-4 pb-2 border-t" style={{ borderColor: AC.border }}>
+        <footer className="text-center pt-4 pb-24 lg:pb-8 border-t" style={{ borderColor: AC.border }}>
           <p className="text-[10px] tracking-[0.25em] uppercase" style={{ color: AC.textMute, fontFamily: AC_FONT_DISPLAY }}>
             iGreen Academy
           </p>

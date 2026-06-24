@@ -39,7 +39,7 @@ export function MainChart({ data = [] }: Props) {
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: COLOR_CLIQUES }} />Cliques
           </span>
-          <span className="hidden sm:inline-flex items-center gap-1.5">
+          <span className="hidden lg:inline-flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: COLOR_LEADS }} />Clientes interessados
           </span>
         </div>

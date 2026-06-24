@@ -373,14 +373,16 @@ export default function PosVendaKanban({
             </SelectContent>
           </Select>
 
-          <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-white shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]">
-            <CheckCircle2 className="w-4 h-4" />
-            Validar novos clientes
+          <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-white shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] min-h-[44px] lg:min-h-0">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span className="lg:hidden">Validar</span>
+            <span className="hidden lg:inline">Validar novos clientes</span>
           </Button>
           <PosVendaAutoConfigDialog consultantId={consultantId} />
-          <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl border-border/60">
-            <RefreshCw className={`w-4 h-4 ${recomputing ? "animate-spin" : ""}`} />
-            Recalcular tudo
+          <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl border-border/60 min-h-[44px] lg:min-h-0">
+            <RefreshCw className={`w-4 h-4 shrink-0 ${recomputing ? "animate-spin" : ""}`} />
+            <span className="lg:hidden">Recalcular</span>
+            <span className="hidden lg:inline">Recalcular tudo</span>
           </Button>
 
         </div>

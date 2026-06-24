@@ -18,7 +18,7 @@ export function FunnelStrip({ funnel = [] }: Props) {
     <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       <header className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h3 className="text-sm font-semibold text-foreground">Funil de conversão</h3>
-        <span className="text-xs text-muted-foreground hidden sm:inline">
+        <span className="text-xs text-muted-foreground hidden lg:inline">
           Visita → Clique → Cliente interessado → Aprovado
         </span>
       </header>

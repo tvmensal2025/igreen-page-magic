@@ -37,7 +37,7 @@ export function LinkCard({ emoji, title, description, url, onCopy, previewUrl }:
             {url.replace("https://", "")}
           </code>
           <Button size="sm" variant="outline" onClick={() => onCopy(url)} className="gap-1.5 shrink-0 rounded-xl hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all h-9 px-2.5 sm:px-3" aria-label="Copiar">
-            <Copy className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Copiar</span>
+            <Copy className="w-3.5 h-3.5" /> <span className="hidden lg:inline">Copiar</span>
           </Button>
         </div>
       </div>

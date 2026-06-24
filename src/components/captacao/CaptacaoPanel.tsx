@@ -217,9 +217,10 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
             </div>
           ) : (
             <>
-              {/* Sub-header Cockpit: anel de progresso + nome + ações */}
-              <div className="px-3 py-2 border-b border-border bg-card/40 flex items-center gap-3 shrink-0">
-                <Button size="icon" variant="ghost" className="md:hidden h-8 w-8 shrink-0" onClick={() => setSelectedId(null)} title="Voltar">
+              {/* Sub-header Cockpit: duas linhas no mobile para não espremer ações */}
+              <div className="px-3 py-2 border-b border-border bg-card/40 flex flex-col gap-2 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                <Button size="icon" variant="ghost" className="lg:hidden h-9 w-9 shrink-0" onClick={() => setSelectedId(null)} title="Voltar">
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
                 <ProgressRing progress={session.progress} filled={session.filledCount} total={session.totalFields} />
@@ -229,33 +230,34 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                     {session.isComplete ? "Pronto para cadastrar" : `${session.filledCount} de ${session.totalFields} campos`}
                   </span>
                 </div>
-                <div className="hidden md:block shrink-0">
-                  <WhatsAppStatusPill connected={connected} />
+                <Button size="sm" variant="default" className="gap-1.5 h-9 px-3 shrink-0 lg:hidden" onClick={() => setFichaOpen(true)} title="Abrir ficha de cadastro">
+                  <ClipboardCheck className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Ficha</span>
+                </Button>
+                {phone && onOpenChat && (
+                  <Button size="sm" variant="outline" className="gap-1 h-9 px-2.5 text-[11px] shrink-0" onClick={() => onOpenChat(phone)}>
+                    <MessageCircle className="w-3 h-3" />
+                    <span className="hidden lg:inline">Abrir conversa</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </Button>
+                )}
                 </div>
+                <div className="flex items-center gap-2 overflow-x-auto scrollbar-none -mx-1 px-1 pb-0.5">
+                <WhatsAppStatusPill connected={connected} />
                 {/* Atalho de fluxos reais do consultor (variante + nome) */}
-                <div className="hidden sm:flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 shrink-0 max-w-[320px] overflow-x-auto">
+                <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 shrink-0 max-w-full overflow-x-auto">
                   {(flowOptions.length > 0 ? flowOptions : [{ variant: "A", name: "Fluxo A" }]).map((f) => (
                     <button
                       key={f.variant}
                       onClick={() => changeVariant(f.variant as "A" | "B" | "C" | "D" | "E")}
-                      className={`px-2 py-0.5 text-[11px] font-semibold rounded-sm transition whitespace-nowrap ${variant === f.variant ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
+                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-sm transition whitespace-nowrap min-h-[32px] ${variant === f.variant ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
                       title={`Usar ${f.name}`}
                     >
                       {f.name}
                     </button>
                   ))}
                 </div>
-                <Button size="sm" variant="default" className="gap-1.5 h-8 px-3 shrink-0 lg:hidden" onClick={() => setFichaOpen(true)} title="Abrir ficha de cadastro">
-                  <ClipboardCheck className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Ficha</span>
-                </Button>
-                {phone && onOpenChat && (
-                  <Button size="sm" variant="outline" className="gap-1 h-8 px-2 text-[11px] shrink-0" onClick={() => onOpenChat(phone)}>
-                    <MessageCircle className="w-3 h-3" />
-                    <span className="hidden lg:inline">Abrir conversa</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </Button>
-                )}
+                </div>
               </div>
 
               {/* Aviso de nome divergente */}
@@ -301,7 +303,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
               </div>
 
               {/* Composer */}
-              <div className="border-t border-border/60 bg-card/40">
+              <div className="border-t border-border/60 bg-card/40 shrink-0 wa-message-composer-shell relative z-20">
                 <MessageComposer
                   onSend={sendText}
                   onSendAudio={sendAudioB64}

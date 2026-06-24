@@ -88,7 +88,7 @@ export default function StepListToolbar({
               title={t.hint}
             >
               <span>{t.emoji}</span>
-              <span className="hidden sm:inline">{t.label.replace(/^Cap(?:tar|turar) /, "")}</span>
+              <span className="hidden lg:inline">{t.label.replace(/^Cap(?:tar|turar) /, "")}</span>
             </button>
           );
         })}

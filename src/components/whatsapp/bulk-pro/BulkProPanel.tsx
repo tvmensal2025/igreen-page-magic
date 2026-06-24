@@ -465,7 +465,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId 
                 title={expanded ? "Reduzir (Esc)" : "Expandir tela"}
               >
                 {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                <span className="hidden sm:inline">{expanded ? "Reduzir" : "Expandir"}</span>
+                <span className="hidden lg:inline">{expanded ? "Reduzir" : "Expandir"}</span>
               </button>
             </div>
           </div>

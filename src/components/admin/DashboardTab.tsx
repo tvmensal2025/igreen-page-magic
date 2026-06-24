@@ -16,6 +16,7 @@ import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
 import { GeographyCard } from "./GeographyCard";
 import { RetentionCard } from "./RetentionCard";
+import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { TeamRankingTab } from "./TeamRankingTab";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
 
@@ -74,7 +75,7 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
     if (!analytics?.allCustomers) return [];
     const names = new Set<string>();
     for (const c of analytics.allCustomers) {
-      if (c.customer_origin !== "igreen_sync") continue;
+      if (!isIgreenWalletOrigin(c.customer_origin)) continue;
       if (c.registered_by_name) names.add(c.registered_by_name);
     }
     return Array.from(names).sort();
@@ -82,7 +83,7 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
 
   const filteredMetrics = useMemo(() => {
     if (!analytics) return null;
-    const walletOnly = analytics.allCustomers.filter((c: any) => c.customer_origin === "igreen_sync");
+    const walletOnly = analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
     const filtered = selectedLicenciado === "all" ? walletOnly : walletOnly.filter((c: any) => c.registered_by_name === selectedLicenciado);
     const totalCustomers = filtered.length;
     const totalKw = filtered.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
@@ -222,7 +223,7 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
           </Select>
           <Button variant="outline" size="sm" onClick={handleDashboardSync} disabled={syncingDashboard || syncCooldown > 0} className="h-7 text-[11px] px-2 gap-1" title="Sincronizar iGreen">
             {syncingDashboard ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            <span className="hidden sm:inline">{syncingDashboard ? "Sincronizando..." : syncCooldown > 0 ? `${syncCooldown}s` : "Sincronizar"}</span>
+            <span className="hidden lg:inline">{syncingDashboard ? "Sincronizando..." : syncCooldown > 0 ? `${syncCooldown}s` : "Sincronizar"}</span>
           </Button>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -237,7 +238,7 @@ export function DashboardTab({ userId, periodDays, onPeriodChange }: DashboardTa
           </Select>
           <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting} className="h-7 text-[11px] px-2 gap-1" title="Exportar PDF">
             {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}
-            <span className="hidden sm:inline">{exporting ? "Gerando..." : "PDF"}</span>
+            <span className="hidden lg:inline">{exporting ? "Gerando..." : "PDF"}</span>
           </Button>
           {/* Manutenção — reset do número de teste (apenas super admin) */}
           <PhoneResetButton userId={userId} />

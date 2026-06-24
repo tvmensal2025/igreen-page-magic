@@ -26,11 +26,11 @@ interface ProdutosModuleProps {
   onOpenSettings?: () => void;
 }
 
-const TABS: { id: ProdutosTabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "acompanhamento", label: "Acompanhamento", icon: LayoutDashboard },
-  { id: "orcamentos", label: "Orçamentos", icon: FileText },
-  { id: "pipeline", label: "Pipeline", icon: KanbanSquare },
-  { id: "catalogo", label: "Catálogo", icon: PackageSearch },
+const TABS: { id: ProdutosTabId; label: string; shortLabel: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "acompanhamento", label: "Acompanhamento", shortLabel: "Acomp.", icon: LayoutDashboard },
+  { id: "orcamentos", label: "Orçamentos", shortLabel: "Orçam.", icon: FileText },
+  { id: "pipeline", label: "Pipeline", shortLabel: "Pipe.", icon: KanbanSquare },
+  { id: "catalogo", label: "Catálogo", shortLabel: "Cat.", icon: PackageSearch },
 ];
 
 export function ProdutosModule({
@@ -67,35 +67,40 @@ export function ProdutosModule({
   };
 
   return (
-    <div className={`pv-scope min-h-full w-full bg-pv-bg text-pv-ink ${pvBody}`}>
+    <div className={`pv-scope min-h-full w-full bg-pv-bg text-pv-ink ${pvBody} pb-24 md:pb-0`}>
       <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 space-y-8">
         {/* Topbar editorial */}
         <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-pv-mid/30 pb-4 gap-4">
-          <nav className="flex gap-6 sm:gap-8 text-sm font-medium text-pv-ink/60 overflow-x-auto">
-            {TABS.map(({ id, label, icon: Icon }) => {
+          <nav className="flex gap-4 sm:gap-8 text-sm font-medium text-pv-ink/60 overflow-x-auto scrollbar-thin -mx-1 px-1">
+            {TABS.map(({ id, label, shortLabel, icon: Icon }) => {
               const active = tab === id;
               return (
                 <button
                   key={id}
                   type="button"
                   onClick={() => change(id)}
-                  className={`pb-2 flex items-center gap-1.5 whitespace-nowrap transition-colors duration-200 ${
+                  aria-label={label}
+                  aria-current={active ? "page" : undefined}
+                  className={`pb-2 flex items-center gap-1.5 whitespace-nowrap transition-colors duration-200 min-h-[44px] md:min-h-0 ${
                     active
                       ? "text-pv-ink border-b-2 border-pv-accent"
                       : "hover:text-pv-ink"
                   }`}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                  {label}
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="sm:hidden">{shortLabel}</span>
+                  <span className="hidden sm:inline">{label}</span>
                 </button>
               );
             })}
           </nav>
-          <OrcamentoButton
-            consultantId={consultantId}
-            instanceName={instanceName}
-            isWhapi={isWhapi}
-          />
+          <div className="hidden md:block">
+            <OrcamentoButton
+              consultantId={consultantId}
+              instanceName={instanceName}
+              isWhapi={isWhapi}
+            />
+          </div>
         </div>
 
         {/* Conteúdo */}
@@ -117,6 +122,16 @@ export function ProdutosModule({
           {tab === "pipeline" && <SalesPipelineBoard consultantId={consultantId} />}
           {tab === "catalogo" && <ProductCatalogTable />}
         </div>
+      </div>
+
+      {/* CTA fixo no rodapé — mobile */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-[85] p-3 bg-pv-bg/95 border-t border-pv-mid/30 backdrop-blur-sm pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <OrcamentoButton
+          consultantId={consultantId}
+          instanceName={instanceName}
+          isWhapi={isWhapi}
+          className="w-full"
+        />
       </div>
     </div>
   );

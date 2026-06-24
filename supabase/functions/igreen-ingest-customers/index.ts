@@ -67,38 +67,48 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
     phone = `sem_celular_${fb.replace(/\D/g, "")}`;
     placeholder = true;
   }
-  const r: Record<string, unknown> = {
+  const rec: Record<string, unknown> = {
     phone_whatsapp: phone,
-    customer_origin: "igreen_extension",
+    customer_origin: "igreen_sync",
     phone_contact_confirmed: false,
   };
   const name = safeStr(get(c, "nomeCliente", "nome", "name"));
-  if (name) r.name = name;
+  if (name) rec.name = name;
   const statusRaw = safeStr(get(c, "andamento", "status"));
-  r.status = placeholder ? "contato_incompleto" : mapStatus(statusRaw || undefined);
+  rec.status = placeholder ? "contato_incompleto" : mapStatus(statusRaw || undefined);
   const cpf = safeStr(get(c, "cpf", "documento"));
-  if (cpf) r.cpf = cpf.replace(/\D/g, "");
+  if (cpf) rec.cpf = cpf.replace(/\D/g, "");
   const email = safeStr(get(c, "email"));
-  if (email) r.email = email;
+  if (email) rec.email = email;
   const city = safeStr(get(c, "cidade", "municipio"));
-  if (city) r.address_city = city;
+  if (city) rec.address_city = city;
   const state = safeStr(get(c, "uf", "estado"));
-  if (state) r.address_state = state.toUpperCase();
+  if (state) rec.address_state = state.toUpperCase();
   const dist = safeStr(get(c, "distribuidora"));
-  if (dist) r.distribuidora = dist;
+  if (dist) rec.distribuidora = dist;
   const andamento = safeStr(get(c, "andamento"));
-  if (andamento) r.andamento_igreen = andamento;
+  if (andamento) rec.andamento_igreen = andamento;
   const dev = safeStr(get(c, "devolutiva"));
-  if (dev) r.devolutiva = dev;
+  if (dev) rec.devolutiva = dev;
   const icode = safeStr(get(c, "codigoIgreen", "codigoCliente", "codigo"));
-  if (icode) r.igreen_code = icode;
+  if (icode) rec.igreen_code = icode;
   const cons = safeNum(get(c, "consumoMedio", "consumo_medio"));
-  if (cons != null) r.media_consumo = cons;
+  if (cons != null) rec.media_consumo = cons;
   const desc = safeNum(get(c, "descontoCliente", "desconto"));
-  if (desc != null) r.desconto_cliente = desc;
+  if (desc != null) rec.desconto_cliente = desc;
   const inst = safeStr(get(c, "numeroInstalacao", "instalacao"));
-  if (inst) r.numero_instalacao = inst;
-  return r;
+  if (inst) rec.numero_instalacao = inst;
+  const nasc = safeStr(get(c, "dataNascimento", "data_nascimento", "nascimento"));
+  if (nasc) {
+    const m = nasc.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m) {
+      const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+      rec.data_nascimento = `${yyyy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    } else if (/^\d{4}-\d{2}-\d{2}/.test(nasc)) {
+      rec.data_nascimento = nasc.slice(0, 10);
+    }
+  }
+  return rec;
 }
 
 Deno.serve(async (req) => {

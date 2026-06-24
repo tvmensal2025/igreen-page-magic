@@ -217,7 +217,7 @@ export function AcademyPlayer({
           }}
         >
           <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
-          <span className="hidden sm:inline">Voltar</span>
+          <span className="hidden lg:inline">Voltar</span>
         </button>
 
         <div className="flex-1 min-w-0 flex items-center gap-2 text-xs">

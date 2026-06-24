@@ -41,7 +41,7 @@ export function AppTopbar({
           <button
             type="button"
             onClick={handleToggle}
-            className="p-2 rounded-lg hover:bg-[var(--pe-surface-muted)] transition-colors"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-[var(--pe-surface-muted)] transition-colors"
             aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
             title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -52,11 +52,11 @@ export function AppTopbar({
             )}
           </button>
           <div className="min-w-0">
-            <h1 className="pe-heading text-base sm:text-xl font-bold tracking-tight truncate" style={{ color: "var(--pe-emerald-strong)" }}>
+            <h1 className="pe-heading text-base sm:text-xl font-bold tracking-tight truncate max-w-[58vw] sm:max-w-none" style={{ color: "var(--pe-emerald-strong)" }}>
               {title}
             </h1>
             {subtitle && (
-              <p className="text-[11px] sm:text-xs font-medium truncate" style={{ color: "var(--pe-text-muted)" }}>
+              <p className="hidden sm:block text-[11px] sm:text-xs font-medium truncate max-w-[52vw] lg:max-w-none" style={{ color: "var(--pe-text-muted)" }}>
                 {subtitle}
               </p>
             )}
@@ -68,7 +68,7 @@ export function AppTopbar({
             <button
               type="button"
               onClick={onTogglePrivacy}
-              className={`p-2 rounded-lg transition-all ${privacyMode ? "bg-[var(--pe-accent-glow)]" : "hover:bg-[var(--pe-surface-muted)]"}`}
+              className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg transition-all ${privacyMode ? "bg-[var(--pe-accent-glow)]" : "hover:bg-[var(--pe-surface-muted)]"}`}
               style={{ color: privacyMode ? "var(--pe-emerald)" : "var(--pe-text-muted)" }}
               aria-label={privacyMode ? "Mostrar dados" : "Ocultar dados"}
               title={privacyMode ? "Privacidade ATIVA" : "Ocultar dados sensíveis"}
@@ -81,7 +81,7 @@ export function AppTopbar({
             <button
               type="button"
               onClick={onOpenAi}
-              className="hidden sm:inline-flex p-2 rounded-lg transition-all hover:bg-[var(--pe-surface-muted)]"
+              className="inline-flex min-w-[44px] min-h-[44px] items-center justify-center rounded-lg transition-all hover:bg-[var(--pe-surface-muted)]"
               style={{ color: "var(--pe-text-muted)" }}
               aria-label="Assistente IA"
               title="Assistente iGreen IA"

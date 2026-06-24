@@ -8,6 +8,8 @@ interface Props {
   customerId: string;
   consultantId: string;
   onRetry?: () => void;
+  /** Mobile: banner do portal inicia recolhido para liberar área de mensagens. */
+  defaultCollapsed?: boolean;
 }
 
 // Resultado de extração persistido pelo worker (já sanitizado/mascarado — Req 4/12).
@@ -91,12 +93,16 @@ function friendlyPortalError(raw: string): string {
   return raw;
 }
 
-export function PortalStatusTracker({ customerId, consultantId, onRetry }: Props) {
+export function PortalStatusTracker({ customerId, consultantId, onRetry, defaultCollapsed = false }: Props) {
   const [row, setRow] = useState<Row | null>(null);
   const [trace, setTrace] = useState<PortalTrace | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [resending, setResending] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  useEffect(() => {
+    setCollapsed(defaultCollapsed);
+  }, [customerId, defaultCollapsed]);
 
   useEffect(() => {
     if (!customerId) return;

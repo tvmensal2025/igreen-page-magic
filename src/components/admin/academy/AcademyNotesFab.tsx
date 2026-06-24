@@ -341,7 +341,7 @@ export function AcademyNotesFab() {
         <button
           onClick={() => setOpen(true)}
           aria-label="Abrir caderno de anotações"
-          className="fixed bottom-5 right-5 z-[110] flex items-center gap-2 rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-105 active:scale-95"
+          className="fixed bottom-20 max-lg:bottom-20 lg:bottom-5 right-4 lg:right-5 z-[110] flex items-center gap-2 rounded-full min-h-[48px] min-w-[48px] px-3 lg:px-4 py-3 shadow-lg transition-transform hover:scale-105 active:scale-95"
           style={{
             background: `linear-gradient(135deg, ${AC.primary}, ${AC.primaryDeep})`,
             color: "#FFFFFF", fontFamily: AC_FONT_DISPLAY,

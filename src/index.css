@@ -1137,3 +1137,19 @@ html {
   --input: var(--pv-mid);
   --ring: var(--pv-accent);
 }
+
+/* WhatsApp: composer acima da barra minimizada de Captação (CaptureSheet) */
+body[data-captacao-bar-open] .wa-message-composer-shell {
+  padding-bottom: calc(3rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 1023px) {
+  .wa-message-composer-shell {
+    box-shadow: 0 -6px 16px -8px hsl(var(--foreground) / 0.12);
+  }
+}
+
+/* Cookie banner: evita que FAB/composer fiquem cobertos no painel admin */
+body[data-cookie-banner] .painel-elite {
+  padding-bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+}

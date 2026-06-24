@@ -101,7 +101,7 @@ export function InstallPwaButton() {
         title="Instalar app no celular"
       >
         <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        <span className="hidden sm:inline text-xs font-bold">Instalar app</span>
+        <span className="hidden lg:inline text-xs font-bold">Instalar app</span>
         <span
           onClick={dismiss}
           className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"

@@ -389,7 +389,13 @@ Deno.serve(async (req) => {
         const patch: Record<string, unknown> = { ...r };
         delete patch.consultant_id;
         delete patch.is_test_lead; delete patch.is_sandbox;
-        delete patch.customer_origin; delete patch.phone_contact_confirmed;
+        // Garante origem carteira iGreen em todo sync da extensão (persistência na base).
+        patch.customer_origin = "igreen_sync";
+        delete patch.phone_contact_confirmed;
+        if (ex.conversation_step && ex.conversation_step !== "complete") {
+          delete patch.status;
+          delete patch.customer_origin;
+        }
         // RECUPERAR TELEFONE: se o registro existente tem placeholder e o XLSX trouxe número real,
         // substituir o phone_whatsapp. Caso contrário, NÃO mexer no phone (já estava certo).
         const newPhone = String(r.phone_whatsapp);

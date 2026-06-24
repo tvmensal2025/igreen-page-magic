@@ -10,24 +10,27 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { ChatItem } from "@/hooks/useChats";
-import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff } from "lucide-react";
+import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical } from "lucide-react";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsLgDown } from "@/hooks/use-mobile";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { createLogger } from "@/lib/logger";
 import { autoTakeoverByPhone, takeoverByPhoneDetailed, undoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
 import { ToastAction } from "@/components/ui/toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Tables } from "@/integrations/supabase/types";
 
 const logger = createLogger("ChatView");
@@ -63,11 +66,12 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [sendingToCrm, setSendingToCrm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [botPaused, setBotPaused] = useState<boolean>(false);
   const [botForceEnabled, setBotForceEnabled] = useState<boolean>(false);
   const [globalAiEnabled, setGlobalAiEnabled] = useState<boolean>(true);
   const [togglingBot, setTogglingBot] = useState(false);
-  const isMobile = useIsMobile();
+  const isCompactLayout = useIsLgDown();
   const { width: vw } = useViewportWidth();
   const isXl = vw >= 1280;
 
@@ -85,15 +89,22 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const captureIncomplete = !!captureCustomer && !(captureCustomer.name && captureCustomer.cpf && captureCustomer.email && Number(captureCustomer.electricity_bill_value || 0) > 0);
   const captureActive = captureOpen || captureIncomplete;
 
-  // Auto-abre o painel quando o lead ainda não completou cadastro (uma vez por sessão).
+  // Ao trocar de conversa, fecha a ficha para não bloquear o composer do novo chat.
+  useEffect(() => {
+    setCaptureOpen(false);
+  }, [chat?.remoteJid]);
+
+  // Auto-abre captação só no desktop (painel lateral). No mobile/tablet o consultor
+  // precisa escrever a mensagem primeiro — abre manualmente pelo botão Captação.
   useEffect(() => {
     if (!customerId || !captureCustomer) return;
+    if (isCompactLayout) return;
     if (captureCustomer.name && captureCustomer.cpf) return;
     const key = `cap-auto-open-${customerId}`;
     if (typeof window !== "undefined" && window.sessionStorage.getItem(key)) return;
     window.sessionStorage.setItem(key, "1");
     setCaptureOpen(true);
-  }, [customerId, captureCustomer]);
+  }, [customerId, captureCustomer, isCompactLayout]);
 
   const toggleCapture = useCallback(() => {
     if (!customerId) {
@@ -101,7 +112,6 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       return;
     }
     setCaptureOpen(true);
-    // Garante que o modo manual fique persistido (caso algum legado tenha voltado p/ auto)
     void supabase.from("customers")
       .update({ capture_mode: "manual", capture_started_at: new Date().toISOString() })
       .eq("id", customerId);
@@ -122,6 +132,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     });
     setResetting(false);
     if (r.ok) {
+      setResetDialogOpen(false);
       await refetch();
       toast({
         title: "Conversa zerada",
@@ -435,12 +446,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   const phoneNumber = chat.remoteJid.split("@")[0];
 
-  // Em desktop/tablet (≥768px), a Ficha de Captação fica SEMPRE visível como
-  // coluna lateral fixa quando há cliente selecionado (consultor pediu pra
-  // não ter que abrir manualmente toda hora — fica acessível na lateral).
-  // Em mobile real (<768px), continua como Sheet (overlay) por baixo.
-  const showInlineCapture = !isMobile && !!customerId;
-  const showSheetCapture = isMobile && !!customerId;
+  // Desktop (≥1024px): ficha lateral fixa. Compacto: Sheet sob demanda (nunca inline).
+  const showInlineCapture = !isCompactLayout && !!customerId;
+  const showSheetCapture = isCompactLayout && !!customerId;
 
 
   return (
@@ -448,8 +456,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       <div className="flex flex-col min-h-0 min-w-0 flex-1">
 
 
-      {/* Chat header — h-14, mais ar */}
-      <div className="flex items-center gap-2.5 px-3.5 h-14 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
+      {/* Chat header — mobile: nome + captação + menu ⋯; desktop: barra completa */}
+      <div className="flex items-center gap-2 px-3 lg:px-3.5 min-h-12 lg:min-h-14 py-1.5 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
         <Avatar className="h-9 w-9 shrink-0 ring-1 ring-primary/20">
           <AvatarImage src={chat.profilePicUrl} />
           <AvatarFallback className="bg-gradient-to-br from-primary/25 to-primary/5 text-primary text-[11px] font-bold">
@@ -458,11 +466,78 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         </Avatar>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate sensitive-name leading-tight">{chat.name}</p>
-          <p className="text-[10px] text-muted-foreground sensitive-phone leading-tight flex items-center gap-1">
-            <span className="inline-block h-1 w-1 rounded-full bg-primary/60" />
+          <p className="text-[10px] text-muted-foreground sensitive-phone leading-tight flex items-center gap-1 truncate">
+            <span className="inline-block h-1 w-1 rounded-full bg-primary/60 shrink-0" />
             {phoneNumber}
           </p>
         </div>
+
+        {isCompactLayout ? (
+          <>
+            {isCustomer && customerId && (
+              <Button
+                size="icon"
+                variant={captureActive ? "default" : "outline"}
+                className={`h-10 w-10 shrink-0 rounded-full ${
+                  captureActive
+                    ? "bg-gradient-to-r from-primary to-primary/85 text-primary-foreground shadow-md shadow-primary/30"
+                    : "border-primary/30 text-primary"
+                }`}
+                onClick={toggleCapture}
+                title="Captação"
+                aria-label="Abrir captação"
+              >
+                <ClipboardList className="h-4 w-4" />
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="outline" className="h-10 w-10 shrink-0 rounded-full" aria-label="Mais ações do chat">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {isCustomer ? (
+                  <DropdownMenuItem disabled className="text-xs opacity-100">
+                    <UserCheck className="h-4 w-4 mr-2 text-primary" /> Cliente cadastrado
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={() => setShowAddDialog(true)}>
+                    <UserPlus className="h-4 w-4 mr-2" /> Adicionar cliente
+                  </DropdownMenuItem>
+                )}
+                {kanbanStages.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {kanbanStages.map((stage) => (
+                      <DropdownMenuItem key={stage.id} disabled={sendingToCrm} onClick={() => handleSendToCrm(stage.stage_key)}>
+                        <KanbanSquare className="h-4 w-4 mr-2" /> Enviar p/ {stage.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+                {customerId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={toggleBot} disabled={togglingBot}>
+                      {botActive ? <Bot className="h-4 w-4 mr-2 text-primary" /> : <BotOff className="h-4 w-4 mr-2" />}
+                      IA {botActive ? "ligada" : "desligada"} (só este lead)
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  disabled={resetting}
+                  onClick={() => setResetDialogOpen(true)}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" /> Zerar conversa do bot
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        ) : (
+          <>
         {isCustomer ? (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
             <UserCheck className="h-3 w-3" />
@@ -535,20 +610,22 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </Button>
         )}
 
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 min-w-[32px] text-[10px] gap-1 px-2.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 transition-colors"
+          disabled={resetting}
+          title="Apaga histórico do bot e reinicia o fluxo do zero"
+          onClick={() => setResetDialogOpen(true)}
+        >
+          {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+          <span className="hidden lg:inline font-medium">Zerar</span>
+        </Button>
+          </>
+        )}
+      </div>
 
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 min-w-[32px] text-[10px] gap-1 px-2.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 transition-colors"
-              disabled={resetting}
-              title="Apaga histórico do bot e reinicia o fluxo do zero"
-            >
-              {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-              <span className="hidden lg:inline font-medium">Zerar</span>
-            </Button>
-          </AlertDialogTrigger>
+      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Zerar conversa deste cliente interessado?</AlertDialogTitle>
@@ -566,10 +643,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
 
       {customerId && (
-        <PortalStatusTracker customerId={customerId} consultantId={consultantId} />
+        <PortalStatusTracker customerId={customerId} consultantId={consultantId} defaultCollapsed={isCompactLayout} />
       )}
 
       {/* Messages area — flex-1 min-h-0 garante composer sempre visível */}
@@ -609,7 +685,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         <div ref={bottomRef} aria-hidden className="h-2" />
       </div>
 
-      {/* Composer */}
+      {/* Composer — shell reserva espaço quando a barra minimizada de captação está ativa */}
+      <div className="shrink-0 wa-message-composer-shell relative z-20 bg-card">
       <MessageComposer
         onSend={async (text) => {
           stickToBottomRef.current = true;
@@ -709,6 +786,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         }}
         templates={templates}
       />
+      </div>
 
       {/* Add Customer Dialog */}
       {chat && (
@@ -765,7 +843,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       )}
 
 
-      {/* Capture Sheet (overlay) — mobile e desktop apertado (<xl) */}
+      {/* Capture Sheet (overlay) — mobile/tablet compacto (<lg) */}
       {showSheetCapture && (
         <CaptureSheet
           open={captureOpen}

@@ -1,5 +1,6 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 
 export interface DailyViews {
   date: string;
@@ -194,7 +195,7 @@ export function useAnalytics(
         const o = c.customer_origin || "whatsapp_lead";
         return o === "whatsapp_lead" || o === "manual";
       });
-      const walletCustomers = allCustomers.filter((c: any) => c.customer_origin === "igreen_sync");
+      const walletCustomers = allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
 
       const totalCustomers = walletCustomers.length;
       const statusMap = new Map<string, number>();

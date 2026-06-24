@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -67,7 +66,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const [sentSteps, setSentSteps] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<"passos" | "ficha">("passos");
   const [submitting, setSubmitting] = useState(false);
-  const isMobile = useIsMobile();
+  const isOverlaySheet = !inline;
   const [minimized, setMinimized] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [allSteps, setAllSteps] = useState<SequenceStep[]>([]);
@@ -78,9 +77,9 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   // No mobile o painel abre minimizado (pílula no rodapé) pra não tampar o teclado/composer.
   // Mas quando o consultor expande, vai direto pra fullscreen (sem estado compacto intermediário).
   // Mobile: começa minimizado (barra fina), abre em meia-tela. Grabber arrasta pra cima → fullscreen.
-  useEffect(() => { setSentSteps(new Set()); setMinimized(isMobile); setExpanded(false); }, [customerId, isMobile]);
+  useEffect(() => { setSentSteps(new Set()); setMinimized(isOverlaySheet); setExpanded(false); }, [customerId, isOverlaySheet]);
   const pendingSteps = useMemo(() => allSteps.filter((s) => !sentSteps.has(s.step_key)), [allSteps, sentSteps]);
-  useEffect(() => { if (open) { setMinimized(isMobile); setExpanded(false); } else { setMinimized(false); setExpanded(false); } }, [open, isMobile]);
+  useEffect(() => { if (open) { setMinimized(isOverlaySheet); setExpanded(false); } else { setMinimized(false); setExpanded(false); } }, [open, isOverlaySheet]);
 
   // Garante modo manual ao abrir
   useEffect(() => {
@@ -529,9 +528,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         className={`w-full p-0 flex flex-col gap-0 border-0 bg-background sm:max-w-none shadow-[0_-12px_40px_-12px_hsl(var(--primary)/0.35)] ${
           expanded
             ? "h-[100dvh] rounded-none"
-            : isMobile
-              ? "h-[50dvh] min-h-[280px] max-h-[100dvh] rounded-t-2xl"
-              : "h-[28dvh] min-h-[200px] max-h-[100dvh] rounded-t-2xl"
+            : "h-[50dvh] min-h-[280px] max-h-[100dvh] rounded-t-2xl"
         }`}
       >
         {/* Grabber — arraste pra cima vira fullscreen, pra baixo minimiza */}
@@ -578,11 +575,6 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               </Button>
             )}
             <div className="flex items-center gap-0.5 shrink-0">
-              {!isMobile && (
-                <Button size="icon" variant="ghost" className={expanded ? "h-9 w-9" : "h-7 w-7"} onClick={() => setExpanded((v) => !v)} title={expanded ? "Recolher" : "Expandir"}>
-                  {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                </Button>
-              )}
               <Button size="icon" variant="ghost" className={expanded ? "h-10 w-10" : "h-7 w-7"} onClick={() => setMinimized(true)} title="Minimizar">
                 <ChevronDown className={expanded ? "w-5 h-5" : "w-4 h-4"} />
               </Button>

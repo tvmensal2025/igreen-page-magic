@@ -55,6 +55,16 @@ import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 import { SupportChatButton } from "@/components/support/SupportChatButton";
 
 const ADMIN_ACTIVE_TAB_KEY = "igreen_admin_active_tab_v1";
+/** Abas onde o FAB de suporte some no mobile/tablet para não cobrir CTAs, composer ou kanban. */
+const SUPPORT_FAB_HIDDEN_COMPACT: ReadonlySet<AdminTabId> = new Set([
+  "whatsapp",
+  "captacao",
+  "crm",
+  "crm-clientes",
+  "produtos",
+  "academy",
+  "conversao",
+]);
 const ADMIN_TAB_IDS: readonly AdminTabId[] = [
   "dashboard", "crm", "crm-clientes", "conversao", "clientes", "produtos",
   "captacao", "parceiros", "rede", "whatsapp", "central-anuncios", "links",
@@ -519,7 +529,10 @@ const AdminContent = () => {
         />
       </Suspense>
 
-      
+      {/* Suporte IA — oculto na aba Produtos em mobile (CTA sticky no rodapé) */}
+      <SupportChatButton
+        className={SUPPORT_FAB_HIDDEN_COMPACT.has(activeTab) ? "max-lg:hidden" : undefined}
+      />
     </div>
   );
 };

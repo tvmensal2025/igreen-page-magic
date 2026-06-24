@@ -203,7 +203,7 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect }: Props) {
       </div>
 
       <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0">
-        <Button size="sm" variant="default" className="flex-1 h-8 text-[11px] gap-1.5 rounded-lg" onClick={async () => {
+        <Button size="sm" variant="default" className="flex-1 min-h-[44px] lg:h-8 text-[11px] gap-1.5 rounded-lg" onClick={async () => {
           const phone = await prompt({
             title: "Entrar em captação manual",
             description: "Informe o telefone do cliente interessado (com DDD).",
@@ -226,7 +226,7 @@ export function CaptureLeadList({ consultantId, selectedId, onSelect }: Props) {
           }
           void load();
         }}><UserPlus className="w-3.5 h-3.5" /> Novo cliente</Button>
-        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" title="Atualizar lista" onClick={() => void load()}>
+        <Button size="icon" variant="ghost" className="h-11 w-11 lg:h-8 lg:w-8 shrink-0" title="Atualizar lista" onClick={() => void load()}>
           <RefreshCw className="w-3.5 h-3.5" />
         </Button>
       </div>
