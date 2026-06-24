@@ -71,6 +71,9 @@ Deno.serve(async (req) => {
       panelsCount: body.panelsCount != null ? Number(body.panelsCount) : null,
       electricityBillValue: body.electricityBillValue != null ? Number(body.electricityBillValue) : null,
       includeDataLayers: body.includeDataLayers === true,
+      uf: body.uf ? String(body.uf) : null,
+      distribuidora: body.distribuidora ? String(body.distribuidora) : null,
+      monthlyConsumptionKwh: body.monthlyConsumptionKwh != null ? Number(body.monthlyConsumptionKwh) : null,
     });
 
     return json(result);

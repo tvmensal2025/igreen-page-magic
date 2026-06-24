@@ -5,6 +5,7 @@ import {
   pickPresets,
   estimateMonthlySavingsCents,
   tariffForUF,
+  tariffForDistribuidora,
   fioBFractionForYear,
   estimateMonthlySavings,
 } from "../../../../supabase/functions/_shared/solar/economics-br.ts";
@@ -35,6 +36,19 @@ describe("economics-br", () => {
     expect(tariffForUF("SP")).toBeGreaterThan(0);
     expect(tariffForUF("XX")).toBe(DEFAULT_TARIFF_KWH_BRL);
     expect(tariffForUF(null)).toBe(DEFAULT_TARIFF_KWH_BRL);
+  });
+
+  it("tarifa por distribuidora: match exato, por grupo e fallback na UF", () => {
+    // match exato
+    expect(tariffForDistribuidora("CPFL PIRATININGA", "SP")).toBe(0.84);
+    // normaliza acento/caixa
+    expect(tariffForDistribuidora("cpfl piratininga", "SP")).toBe(0.84);
+    // match por grupo (primeira palavra)
+    expect(tariffForDistribuidora("CPFL ALGUMA COISA", "SP")).toBe(0.85);
+    // desconhecida → cai na tarifa da UF
+    expect(tariffForDistribuidora("DISTRIBUIDORA XPTO", "MG")).toBe(tariffForUF("MG"));
+    // sem nada → média BR
+    expect(tariffForDistribuidora(null, null)).toBe(DEFAULT_TARIFF_KWH_BRL);
   });
 
   it("Fio B segue o cronograma da Lei 14.300 e satura em 100% a partir de 2029", () => {

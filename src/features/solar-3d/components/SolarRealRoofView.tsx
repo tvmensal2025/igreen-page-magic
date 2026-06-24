@@ -47,14 +47,27 @@ export function SolarRealRoofView({
     return buildRoofImageUrl(SUPABASE_URL, resolvedConsultant, imagery);
   }, [resolvedConsultant, imagery]);
 
-  // Painéis projetados na imagem (apenas os com lat/lng e dentro do quadro).
+  // Painéis projetados na imagem (apenas os com lat/lng e dentro do quadro),
+  // com tamanho real (m → %) e rotação pelo azimute do telhado.
   const projected = useMemo(() => {
     if (!imagery) return [];
+    const mpp = imagery.metersPerPixel ?? null;
+    // % do tamanho do painel em relação à largura da imagem.
+    const sizePct = (meters: number) =>
+      mpp ? Math.max(0.6, Math.min(8, (meters / mpp / imagery.sizePx) * 100)) : null;
     return panelPositions
       .filter((p) => typeof p.lat === "number" && typeof p.lng === "number")
       .map((p) => {
         const rel = latLngToRelative(p.lat as number, p.lng as number, imagery);
-        return { index: p.index, ...rel };
+        // azimute do telhado define a rotação do módulo no plano da imagem.
+        const rot = typeof p.azimuthDegrees === "number" ? p.azimuthDegrees : 0;
+        return {
+          index: p.index,
+          ...rel,
+          wPct: sizePct(p.widthM ?? 1.05),
+          hPct: sizePct(p.heightM ?? 1.88),
+          rot,
+        };
       })
       .filter((p) => p.x >= -0.05 && p.x <= 1.05 && p.y >= -0.05 && p.y <= 1.05);
   }, [panelPositions, imagery]);
@@ -83,18 +96,18 @@ export function SolarRealRoofView({
         </div>
       )}
 
-      {/* Painéis sobrepostos no telhado real */}
+      {/* Painéis sobrepostos no telhado real — tamanho e ângulo reais */}
       {state === "ok" &&
         projected.map((p) => (
           <div
             key={p.index}
-            className="absolute rounded-[1px] bg-gradient-to-br from-sky-900/90 to-slate-950/90 border border-sky-300/70 shadow"
+            className="absolute rounded-[1px] bg-gradient-to-br from-sky-900/90 to-slate-950/90 border border-sky-300/80 shadow-[0_1px_2px_rgba(0,0,0,.5)]"
             style={{
               left: `${p.x * 100}%`,
               top: `${p.y * 100}%`,
-              width: "2.6%",
-              height: "1.7%",
-              transform: "translate(-50%, -50%)",
+              width: p.wPct ? `${p.wPct}%` : "2.6%",
+              height: p.hPct ? `${p.hPct}%` : "1.7%",
+              transform: `translate(-50%, -50%) rotate(${p.rot}deg)`,
             }}
             title={`Módulo ${p.index + 1}`}
           />

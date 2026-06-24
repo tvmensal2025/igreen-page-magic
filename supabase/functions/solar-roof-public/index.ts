@@ -44,6 +44,9 @@ Deno.serve(async (req) => {
       addressText,
       electricityBillValue: body.electricityBillValue != null ? Number(body.electricityBillValue) : null,
       includeDataLayers: false,
+      uf: body.uf ? String(body.uf) : null,
+      distribuidora: body.distribuidora ? String(body.distribuidora) : null,
+      monthlyConsumptionKwh: body.monthlyConsumptionKwh != null ? Number(body.monthlyConsumptionKwh) : null,
     });
 
     return json({

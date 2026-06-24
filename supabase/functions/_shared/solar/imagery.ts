@@ -15,6 +15,8 @@ export interface ImageryView {
   sizePx: number;
   /** Scale do Static Maps (2 = retina). */
   scale: number;
+  /** Metros por pixel (lógico) no centro — para dimensionar os módulos reais. */
+  metersPerPixel: number;
 }
 
 export interface LatLngPoint {
@@ -49,7 +51,14 @@ export function computeImageryView(
   );
 
   if (valid.length === 0) {
-    return { centerLat: fallbackLat, centerLng: fallbackLng, zoom: 20, sizePx, scale };
+    return {
+      centerLat: fallbackLat,
+      centerLng: fallbackLng,
+      zoom: 20,
+      sizePx,
+      scale,
+      metersPerPixel: metersPerPixelAt(fallbackLat, 20),
+    };
   }
 
   let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
@@ -76,7 +85,12 @@ export function computeImageryView(
   let zoom = Math.floor(Math.min(zoomX, zoomY));
   zoom = Math.max(17, Math.min(21, zoom)); // limites sensatos para telhado
 
-  return { centerLat, centerLng, zoom, sizePx, scale };
+  return { centerLat, centerLng, zoom, sizePx, scale, metersPerPixel: metersPerPixelAt(centerLat, zoom) };
+}
+
+/** Metros por pixel (lógico) na latitude/zoom dados (Web Mercator). */
+export function metersPerPixelAt(lat: number, zoom: number): number {
+  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
 }
 
 /** Monta a URL do Static Maps (satélite) — uso server-side apenas. */

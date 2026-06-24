@@ -33,6 +33,60 @@ export function tariffForUF(uf?: string | null): number {
 }
 
 /**
+ * Tarifa por distribuidora (R$/kWh, residencial B1 com tributos — referência
+ * comercial 2025/2026). Mais precisa que por UF. As chaves são normalizadas
+ * (maiúsculas, sem acento) e o match aceita prefixo de grupo (ex.: "CPFL").
+ */
+export const TARIFF_BY_DISTRIBUIDORA: Record<string, number> = {
+  "CPFL PAULISTA": 0.86,
+  "CPFL PIRATININGA": 0.84,
+  "CPFL SANTA CRUZ": 0.88,
+  "CPFL": 0.85,
+  "ENEL SP": 0.83,
+  "ENEL RJ": 1.04,
+  "ENEL CE": 0.86,
+  "ELEKTRO": 0.84,
+  "EDP SP": 0.83,
+  "EDP ES": 0.92,
+  "LIGHT": 1.06,
+  "CEMIG": 1.05,
+  "CEMIG-D": 1.05,
+  "COPEL": 0.83,
+  "CELESC": 0.83,
+  "RGE": 0.95,
+  "EQUATORIAL": 0.97,
+  "ENERGISA": 0.96,
+  "ENERGISA SUL SUDESTE": 0.95,
+  "NEOENERGIA": 0.93,
+  "COELBA": 0.98,
+  "CELPE": 0.92,
+  "COSERN": 0.90,
+};
+
+function normalizeKey(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Tarifa por distribuidora com fallback inteligente: tenta match exato, depois
+ * por prefixo de grupo (ex.: "CPFL ..."), e por fim cai na tarifa da UF.
+ */
+export function tariffForDistribuidora(distribuidora?: string | null, uf?: string | null): number {
+  if (distribuidora) {
+    const key = normalizeKey(distribuidora);
+    if (TARIFF_BY_DISTRIBUIDORA[key]) return TARIFF_BY_DISTRIBUIDORA[key];
+    const group = key.split(" ")[0];
+    if (TARIFF_BY_DISTRIBUIDORA[group]) return TARIFF_BY_DISTRIBUIDORA[group];
+  }
+  return tariffForUF(uf);
+}
+
+/**
  * Cronograma do Fio B (Lei 14.300/2022): fração da TUSD Fio B cobrada sobre a
  * energia injetada na rede, por ano de conexão. Sobe gradualmente até 100%.
  */
@@ -181,6 +235,8 @@ export function estimateMonthlySavingsCents(
 export interface BuildMetricsContext {
   /** UF do cliente para tarifa regional. */
   uf?: string | null;
+  /** Distribuidora do cliente (tarifa mais precisa que UF). */
+  distribuidora?: string | null;
   /** Consumo mensal real (kWh). */
   monthlyConsumptionKwh?: number | null;
   /** Ano de referência (Fio B). Default: ano atual. */
@@ -201,7 +257,7 @@ export function buildMetrics(
   const yearly = cfg?.yearlyEnergyDcKwh ?? count * panelWatts * 1.4;
   const kwp = (count * panelWatts) / 1000;
 
-  const tariff = tariffForUF(ctx?.uf);
+  const tariff = tariffForDistribuidora(ctx?.distribuidora, ctx?.uf);
   const savings = estimateMonthlySavings({
     yearlyEnergyKwh: yearly,
     tariff,
@@ -239,14 +295,30 @@ export function buildMetrics(
 }
 
 export function extractPanelPositions(insights: BuildingInsightsResponse, count: number) {
-  const panels = insights.solarPotential?.solarPanels ?? [];
-  return panels.slice(0, count).map((p, i) => ({
-    index: i,
-    lat: p.center?.latitude ?? null,
-    lng: p.center?.longitude ?? null,
-    segmentIndex: p.segmentIndex ?? 0,
-    yearlyKwh: p.yearlyEnergyDcKwh ?? null,
-  }));
+  const sp = insights.solarPotential ?? {};
+  const panels = sp.solarPanels ?? [];
+  const segments = sp.roofSegmentStats ?? [];
+  // Dimensões reais do módulo (m), vindas da Solar API.
+  const panelW = sp.panelWidthMeters ?? 1.045;
+  const panelH = sp.panelHeightMeters ?? 1.879;
+  return panels.slice(0, count).map((p, i) => {
+    const segIdx = p.segmentIndex ?? 0;
+    const seg = segments[segIdx];
+    return {
+      index: i,
+      lat: p.center?.latitude ?? null,
+      lng: p.center?.longitude ?? null,
+      segmentIndex: segIdx,
+      yearlyKwh: p.yearlyEnergyDcKwh ?? null,
+      // Orientação real do módulo no telhado.
+      orientation: p.orientation ?? "LANDSCAPE",
+      // Azimute do segmento de telhado (graus) — para girar o módulo no desenho.
+      azimuthDegrees: seg?.azimuthDegrees ?? null,
+      // Dimensão real (m) considerando a orientação.
+      widthM: p.orientation === "PORTRAIT" ? panelW : panelH,
+      heightM: p.orientation === "PORTRAIT" ? panelH : panelW,
+    };
+  });
 }
 
 export function extractRoofSegments(insights: BuildingInsightsResponse) {

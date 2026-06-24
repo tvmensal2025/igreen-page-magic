@@ -23,6 +23,10 @@ export interface SolarPanelPosition {
   lng: number | null;
   segmentIndex: number;
   yearlyKwh: number | null;
+  orientation?: "LANDSCAPE" | "PORTRAIT";
+  azimuthDegrees?: number | null;
+  widthM?: number;
+  heightM?: number;
 }
 
 export interface SolarRoofSegment {
@@ -40,6 +44,7 @@ export interface SolarImageryView {
   zoom: number;
   sizePx: number;
   scale: number;
+  metersPerPixel?: number;
 }
 
 export interface SolarAnalyzeResult {

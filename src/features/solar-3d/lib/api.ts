@@ -10,6 +10,9 @@ export async function analyzeRoof(body: {
   electricityBillValue?: number | null;
   forceRefresh?: boolean;
   allowExperiment?: boolean;
+  uf?: string | null;
+  distribuidora?: string | null;
+  monthlyConsumptionKwh?: number | null;
 }): Promise<SolarAnalyzeResult> {
   const { data, error } = await supabase.functions.invoke("solar-roof-analyze", { body });
   if (error) throw error;

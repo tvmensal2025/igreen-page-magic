@@ -16,6 +16,7 @@ export interface SolarPanelSlot {
   center?: { latitude: number; longitude: number };
   segmentIndex?: number;
   yearlyEnergyDcKwh?: number;
+  orientation?: "LANDSCAPE" | "PORTRAIT";
 }
 
 export interface BuildingInsightsResponse {
@@ -27,6 +28,8 @@ export interface BuildingInsightsResponse {
     maxArrayPanelsCount?: number;
     maxSunshineHoursPerYear?: number;
     panelCapacityWatts?: number;
+    panelWidthMeters?: number;
+    panelHeightMeters?: number;
     carbonOffsetFactorKgPerMwh?: number;
     solarPanelConfigs?: SolarPanelConfig[];
     solarPanels?: SolarPanelSlot[];
