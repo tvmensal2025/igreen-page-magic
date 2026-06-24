@@ -13,6 +13,7 @@ import {
   extractRoofSegments,
   pickPresets,
   estimateMonthlySavingsCents,
+  tariffForUF,
 } from "./economics-br.ts";
 import { SOLAR_DISCLAIMER } from "./types.ts";
 import { logApiUsage } from "./rate-limit.ts";
@@ -29,6 +30,10 @@ export interface AnalyzeRoofInput {
   panelsCount?: number | null;
   electricityBillValue?: number | null;
   includeDataLayers?: boolean;
+  /** UF do cliente (para tarifa regional). Resolvido do cadastro se ausente. */
+  uf?: string | null;
+  /** Consumo mensal real em kWh. Resolvido do cadastro (media_consumo) se ausente. */
+  monthlyConsumptionKwh?: number | null;
 }
 
 export interface AnalyzeRoofResult {
@@ -47,11 +52,17 @@ export interface AnalyzeRoofResult {
 
 function buildSalesBlurb(metrics: ReturnType<typeof buildMetrics>): string {
   const savings = (metrics.estimatedMonthlySavingsCents / 100).toFixed(0);
-  return (
+  const base =
     `Seu telhado comporta até ${metrics.maxPanels} módulos. Com ${metrics.panelsCount} placas ` +
     `(${metrics.systemSizeKwp} kWp), a geração estimada é de ~${metrics.yearlyEnergyKwh.toLocaleString("pt-BR")} kWh/ano, ` +
-    `com economia aproximada de R$ ${savings}/mês na conta. Vistoria técnica confirma antes da instalação.`
-  );
+    `com economia aproximada de R$ ${savings}/mês na conta.`;
+  const payback = metrics.paybackYears
+    ? ` Retorno do investimento em cerca de ${metrics.paybackYears.toLocaleString("pt-BR")} anos.`
+    : "";
+  const co2 = metrics.yearlyCo2OffsetKg
+    ? ` Evita ~${metrics.yearlyCo2OffsetKg.toLocaleString("pt-BR")} kg de CO₂ por ano.`
+    : "";
+  return `${base}${payback}${co2} Vistoria técnica confirma antes da instalação.`;
 }
 
 export async function analyzeRoof(
@@ -69,7 +80,7 @@ export async function analyzeRoof(
     const { data: cust } = await admin
       .from("customers")
       .select(
-        "address_street, address_number, address_neighborhood, address_city, address_state, cep, electricity_bill_value",
+        "address_street, address_number, address_neighborhood, address_city, address_state, cep, electricity_bill_value, media_consumo",
       )
       .eq("id", input.customerId)
       .maybeSingle();
@@ -78,6 +89,9 @@ export async function analyzeRoof(
       if (input.electricityBillValue == null) {
         input.electricityBillValue = (cust as { electricity_bill_value?: number }).electricity_bill_value ?? null;
       }
+      const c = cust as { address_state?: string | null; media_consumo?: number | null };
+      if (input.uf == null) input.uf = c.address_state ?? null;
+      if (input.monthlyConsumptionKwh == null) input.monthlyConsumptionKwh = c.media_consumo ?? null;
     }
   }
 
@@ -128,7 +142,10 @@ export async function analyzeRoof(
       }
       const insights = cached.building_insights as import("./types.ts").BuildingInsightsResponse;
       const defaultPanels = input.panelsCount ?? Math.min(14, cached.max_panels ?? 14);
-      const metrics = buildMetrics(insights, defaultPanels, input.electricityBillValue);
+      const metrics = buildMetrics(insights, defaultPanels, input.electricityBillValue, {
+        uf: input.uf,
+        monthlyConsumptionKwh: input.monthlyConsumptionKwh,
+      });
       const snapshot = await upsertPrimarySnapshot(admin, {
         analysisId: cached.id,
         consultantId: input.consultantId,
@@ -142,7 +159,7 @@ export async function analyzeRoof(
         cacheHit: true,
         latencyMs: Date.now() - t0,
       });
-      const presets = pickPresets(insights.solarPotential?.solarPanelConfigs, input.electricityBillValue);
+      const presets = pickPresets(insights.solarPotential?.solarPanelConfigs, input.electricityBillValue, tariffForUF(input.uf));
       return {
         ok: true,
         mock,
@@ -196,7 +213,10 @@ export async function analyzeRoof(
 
   const sp = insights.solarPotential ?? {};
   const defaultPanels = input.panelsCount ?? Math.min(14, sp.maxArrayPanelsCount ?? 14);
-  const metrics = buildMetrics(insights, defaultPanels, input.electricityBillValue);
+  const metrics = buildMetrics(insights, defaultPanels, input.electricityBillValue, {
+    uf: input.uf,
+    monthlyConsumptionKwh: input.monthlyConsumptionKwh,
+  });
 
   const imageryDate = insights.imageryDate
     ? `${insights.imageryDate.year}-${String(insights.imageryDate.month).padStart(2, "0")}-${String(insights.imageryDate.day).padStart(2, "0")}`
@@ -236,7 +256,7 @@ export async function analyzeRoof(
     panelsCount: defaultPanels,
   });
 
-  const presets = pickPresets(sp.solarPanelConfigs, input.electricityBillValue);
+  const presets = pickPresets(sp.solarPanelConfigs, input.electricityBillValue, tariffForUF(input.uf));
 
   return {
     ok: true,
@@ -372,17 +392,22 @@ export async function updateSnapshotPanels(
   if (!analysis) throw new Error("Análise não encontrada");
 
   let bill: number | null = null;
+  let uf: string | null = null;
+  let monthlyConsumptionKwh: number | null = null;
   if (analysis.customer_id) {
     const { data: c } = await admin
       .from("customers")
-      .select("electricity_bill_value")
+      .select("electricity_bill_value, address_state, media_consumo")
       .eq("id", analysis.customer_id)
       .maybeSingle();
-    bill = (c as { electricity_bill_value?: number } | null)?.electricity_bill_value ?? null;
+    const cust = c as { electricity_bill_value?: number; address_state?: string | null; media_consumo?: number | null } | null;
+    bill = cust?.electricity_bill_value ?? null;
+    uf = cust?.address_state ?? null;
+    monthlyConsumptionKwh = cust?.media_consumo ?? null;
   }
 
   const insights = analysis.building_insights as import("./types.ts").BuildingInsightsResponse;
-  const metrics = buildMetrics(insights, panelsCount, bill);
+  const metrics = buildMetrics(insights, panelsCount, bill, { uf, monthlyConsumptionKwh });
 
   await admin
     .from("solar_design_snapshots")

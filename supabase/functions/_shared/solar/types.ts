@@ -53,6 +53,18 @@ export interface SolarMetrics {
   estimatedMonthlySavingsCents: number;
   maxPanels: number;
   imageryQuality: ImageryQuality;
+  /** Tarifa R$/kWh usada no cálculo (regional por UF quando disponível). */
+  tariffKwhBrl?: number;
+  /** Consumo mensal considerado (kWh), quando conhecido. */
+  monthlyConsumptionKwh?: number | null;
+  /** Fração do Fio B (Lei 14.300) aplicada no ano de referência. */
+  fioBFraction?: number;
+  /** CO2 evitado por ano (kg). */
+  yearlyCo2OffsetKg?: number;
+  /** Custo estimado do sistema (centavos) para cálculo de payback. */
+  estimatedProjectCostCents?: number;
+  /** Payback simples estimado (anos). */
+  paybackYears?: number | null;
 }
 
 export const SOLAR_DISCLAIMER =

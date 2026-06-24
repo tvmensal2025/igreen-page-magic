@@ -9,6 +9,12 @@ export interface SolarMetrics {
   estimatedMonthlySavingsCents: number;
   maxPanels: number;
   imageryQuality: string;
+  tariffKwhBrl?: number;
+  monthlyConsumptionKwh?: number | null;
+  fioBFraction?: number;
+  yearlyCo2OffsetKg?: number;
+  estimatedProjectCostCents?: number;
+  paybackYears?: number | null;
 }
 
 export interface SolarPanelPosition {

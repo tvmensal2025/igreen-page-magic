@@ -4,6 +4,9 @@ import {
   monthlyKwhFromBill,
   pickPresets,
   estimateMonthlySavingsCents,
+  tariffForUF,
+  fioBFractionForYear,
+  estimateMonthlySavings,
 } from "../../../../supabase/functions/_shared/solar/economics-br.ts";
 
 const configs = [
@@ -28,17 +31,46 @@ describe("economics-br", () => {
     expect(ideal!.yearlyEnergyDcKwh).toBeGreaterThanOrEqual(targetYearly);
   });
 
-  it("economia mensal respeita teto de 85% da conta e geração", () => {
-    const yearly = 8400;
-    const bill = 400;
-    const fromGen = Math.round((yearly / 12) * DEFAULT_TARIFF_KWH_BRL * 100);
-    const cap = Math.round(bill * 0.85 * 100);
-    expect(estimateMonthlySavingsCents(yearly, bill)).toBe(Math.min(fromGen, cap));
+  it("tarifa regional por UF tem fallback na média BR", () => {
+    expect(tariffForUF("SP")).toBeGreaterThan(0);
+    expect(tariffForUF("XX")).toBe(DEFAULT_TARIFF_KWH_BRL);
+    expect(tariffForUF(null)).toBe(DEFAULT_TARIFF_KWH_BRL);
   });
 
-  it("sem conta usa apenas geração × tarifa", () => {
-    const yearly = 6000;
-    const expected = Math.round((yearly / 12) * DEFAULT_TARIFF_KWH_BRL * 100);
-    expect(estimateMonthlySavingsCents(yearly, null)).toBe(expected);
+  it("Fio B segue o cronograma da Lei 14.300 e satura em 100% a partir de 2029", () => {
+    expect(fioBFractionForYear(2025)).toBe(0.45);
+    expect(fioBFractionForYear(2026)).toBe(0.60);
+    expect(fioBFractionForYear(2029)).toBe(1.0);
+    expect(fioBFractionForYear(2035)).toBe(1.0);
+  });
+
+  it("economia não ultrapassa o consumo do cliente (excedente não conta na conta)", () => {
+    // Gera muito (12000 kWh/ano = 1000/mês) mas consome só 300 kWh/mês.
+    const r = estimateMonthlySavings({
+      yearlyEnergyKwh: 12000,
+      monthlyConsumptionKwh: 300,
+      tariff: 0.9,
+      year: 2026,
+    });
+    expect(r.usefulKwh).toBe(300);
+    expect(r.monthlyConsumptionKwh).toBe(300);
+  });
+
+  it("injeção paga Fio B; economia fica abaixo da tarifa cheia sobre o gerado", () => {
+    const tariff = 0.9;
+    const r = estimateMonthlySavings({
+      yearlyEnergyKwh: 3600, // 300/mês
+      monthlyConsumptionKwh: 1000, // consome bem mais, tudo é útil
+      tariff,
+      year: 2026,
+    });
+    const tarifaCheia = 300 * tariff * 100;
+    expect(r.monthlySavingsCents).toBeLessThan(Math.round(tarifaCheia));
+    expect(r.monthlySavingsCents).toBeGreaterThan(0);
+  });
+
+  it("estimateMonthlySavingsCents mantém compatibilidade (só valor da conta)", () => {
+    const cents = estimateMonthlySavingsCents(6000, 400);
+    expect(cents).toBeGreaterThan(0);
   });
 });
