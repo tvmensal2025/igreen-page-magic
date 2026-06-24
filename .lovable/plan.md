@@ -1,72 +1,68 @@
-# Toast de atualização com hard-reset
-
 ## Problema
 
-Hoje, quando há uma versão nova publicada:
+Após o portal cadastrar o cliente, a **primeira** mensagem hoje já entrega o link junto com o pedido do código — fica longa, confusa e o cliente acaba abrindo o link e tendo que digitar o código no portal (que deu erro pra Lucinéia). O correto é:
 
-- O app verifica `/version.json` a cada 60s e tenta recarregar **sozinho**, mas só quando o usuário não está digitando / sem modal aberto / sem áudio gerando.
-- Se a janela do navegador fica com um modal aberto o dia inteiro, ou o usuário fica digitando sem parar, a atualização **nunca acontece** — e ele continua na versão antiga sem saber.
-- O usuário não tem nenhum botão visível para forçar a atualização. As únicas saídas (`?nuke=1` ou `/reset`) são "URLs secretas" que o cliente final não conhece.
+1. **Mensagem 1 (logo após cadastro):** pedir SÓ o código de 6 dígitos. Curta, sem link.
+2. **Cliente responde o código aqui no WhatsApp** → worker valida via API (`/confirm-otp` já faz isso).
+3. **Mensagem 2 (só depois do OTP validado):** mandar o link da facial/assinatura com uma mensagem de fechamento "chave de ouro".
 
-## Solução
+Cliente Lucinéia já está cadastrada → **não vou disparar nada pra ela**, só ajustar o código pros próximos.
 
-Mostrar um **toast persistente** (sonner) no canto da tela assim que `checkVersionGate()` detectar `buildId` diferente. O toast tem:
+## Mudanças (somente `worker-portal-2/server.mjs`)
 
-- Texto: **"Nova versão disponível"** + descrição "Atualize para receber as últimas melhorias."
-- Botão de ação: **"Atualizar agora"** → executa **hard-reset** (mesma rotina do `/reset` + `?nuke=1`):
-  1. `caches.delete()` para todos os caches do navegador
-  2. `serviceWorker.getRegistrations()` + `unregister()` em todos
-  3. `localStorage.clear()` e `sessionStorage.clear()`
-  4. `window.location.replace("/?fresh=" + Date.now())`
-- Botão secundário: **"Depois"** → fecha o toast; ele volta a aparecer no próximo `focus`/`visibilitychange`.
-- `duration: Infinity` (não some sozinho) e `dismissible: true`.
+### 1. `sendValidationLinkToCustomer` (linhas 86–97) — remover o link
 
-O **auto-reload silencioso** atual continua funcionando como fallback: se o usuário ignorar o toast e em algum momento ficar ocioso (sem digitar, sem modal), o app recarrega sozinho como já faz hoje. O toast só dá a opção **manual** para quem nunca atinge a janela segura.
+Nova mensagem curta, pedindo só o código:
 
-## Arquivos a alterar
+```
+Oi {Nome}! 🎉
 
-### 1. Novo: `src/lib/hardReset.ts`
+Seu cadastro foi enviado pra iGreen. 🌱
 
-Função única e reutilizável. Recebe `reason: string` para log. Faz:
+📲 Em instantes você vai receber aqui no WhatsApp uma mensagem
+da iGreen com um *código de 6 dígitos*.
 
-```text
-limpar caches → unregister SWs → limpar storages → reload("/?fresh=<ts>")
+Quando chegar, *me responde aqui com o código* para eu
+validar. ✅
+
 ```
 
-Exporta `hardReset(reason)`. A página `/reset` (`src/pages/ResetApp.tsx`) também passa a usar essa função, em vez de duplicar a lógica.
+Renomear o log de `📲 link WhatsApp` para `📲 pedido de código` pra refletir o conteúdo. Manter a assinatura da função e a chamada em `processLead` (linha 286) — só muda o texto.
 
-### 2. Novo: `src/components/UpdateAvailableToast.tsx`
+### 2. `sendFacialLinkToCustomer` (linhas 103–110) — virar a "chave de ouro"
 
-Componente "headless" (sem JSX visível) que:
+Mensagem final, agora que o código já foi validado, entregando o link de assinatura/facial:
 
-- Escuta um `CustomEvent("igreen:update-available", { detail: { buildId } })` no `window`.
-- Quando dispara, chama `toast(...)` do sonner com `id: "update-available"` (evita duplicatas), `duration: Infinity`, e os dois botões.
-- Botão "Atualizar agora" → `hardReset("user-clicked-update-toast")`.
+```
+Perfeito, {Nome}! ✅ Código validado.
 
-Renderizado uma única vez em `src/App.tsx` (logo ao lado do `<Toaster />` global).
+Falta só *um passo* pra ativar sua economia de energia: a
+*assinatura digital* (com uma selfie rapidinha pra validação facial).
 
-### 3. Editar: `src/main.tsx`
+🔗 Abre esse link no celular e segue o passo a passo:
+{link}
 
-Em `checkVersionGate()`, quando detecta `buildId !== __BUILD_ID__`:
+Quando terminar, me responde aqui
+*PRONTO* que eu confirmo seu contrato ativo. 💚🌱
 
-- Continua chamando `applyUpdateWhenSafe(...)` (auto-reload silencioso atual — não muda).
-- **Adicionalmente**, dispara `window.dispatchEvent(new CustomEvent("igreen:update-available", { detail: { buildId } }))` para o toast aparecer imediatamente.
+Bem-vinda(o) à iGreen — economia + energia limpa, todo mês! 🎉
+```
 
-O auto-reload e o toast convivem: o que acontecer primeiro (usuário clicar OU app achar janela segura) aplica a atualização.
+Sem outras mudanças. A função já é chamada em `/confirm-otp` (linha 1085).
 
-### 4. Editar: `src/pages/ResetApp.tsx`
+### 3. Comentário do fluxo (linhas 67–79 e 81–97)
 
-Trocar a lógica inline de `handleReset` por uma chamada a `hardReset("manual-reset-page")`. Mantém a UI atual.
+Atualizar os JSDocs pra explicar a nova divisão em 2 mensagens (pedir código → enviar link final), pra não confundir manutenção futura.
 
-## Notas técnicas
+## O que NÃO vou mexer
 
-- **Hard-reset apaga login Supabase** (`localStorage.clear()`). É o que o usuário pediu — garantia máxima. O usuário precisará logar de novo após clicar em "Atualizar agora". O texto do botão secundário (`"Depois"`) e a descrição do toast podem mencionar isso? Sugiro a descrição: *"Atualize para receber as últimas melhorias. Você precisará entrar novamente."*
-- **Anti-spam**: `toast(..., { id: "update-available" })` garante que múltiplos `checkVersionGate()` consecutivos não empilham toasts.
-- **Não muda nada de SW**: os kill-switches `/sw.js` e `/sw-app.js` continuam como estão.
-- **Sem novas dependências**: sonner já está instalado, `<Toaster />` já está no root.
+- Lógica de cadastro, OTP, retry, BullMQ — intocados.
+- `sendCorrectionRequestToCustomer` (duplicate_phone etc) — intocado.
+- Nenhuma mensagem vai pra Lucinéia (`75572275-…`); ela já está em `awaiting_signature` e o ajuste só afeta cadastros novos a partir do próximo deploy.
+- O erro `UNAUTHORIZED_INVALID_JWT_FORMAT` da auditoria IA (último log) é assunto separado — não toco nesse fluxo agora; se quiser, abro depois.
 
-## Fora do escopo
+## Deploy
 
-- Botão fixo no menu do header (usuário escolheu "só toast").
-- Mudanças no fluxo de auto-reload silencioso atual.
-- Soft-reset (usuário escolheu hard-reset).
+Worker `worker-portal-2` roda no EasyPanel/VPS — após aprovar, é necessário **redeploy manual** lá (mesma rotina do último ajuste de mensagem). O código no repo fica pronto, mas o container precisa ser reconstruído pra mensagem nova entrar em produção.  
+  
+EU MELHOREI AS 2  MSG ACIMA, PODE DEIXAR COMO EU COLOQUEI

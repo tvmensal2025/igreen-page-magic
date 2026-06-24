@@ -79,36 +79,37 @@ function buildValidationLink(idcliente, idconsultor) {
 }
 
 /**
- * Envia uma mensagem WhatsApp pro cliente com o link da validação.
- * Tenta Evolution API (instância do consultor) primeiro, depois Whapi como fallback.
- * Best-effort: erros são logados mas não quebram o cadastro.
+ * MENSAGEM 1 (logo após cadastro no portal):
+ * Pede SÓ o código de 6 dígitos que a iGreen vai mandar.
+ * Sem link nessa etapa — o cliente responde o código aqui no WhatsApp
+ * e o worker valida via /confirm-otp. O link de assinatura só vai
+ * depois, em sendFacialLinkToCustomer.
  */
 async function sendValidationLinkToCustomer(customerId, link) {
   return _sendMessageToCustomer(customerId, ({ firstName }) =>
     `Oi ${firstName}! 🎉\n\n` +
     `Seu cadastro foi enviado pra iGreen. 🌱\n\n` +
-    `📲 Em instantes você vai receber *aqui no WhatsApp* uma mensagem da iGreen ` +
-    `com um *código de verificação* (6 dígitos).\n\n` +
-    `Quando chegar, é só *me responder aqui mesmo com esse código*. ` +
-    `Eu cuido de digitar pra você no portal — assim você não precisa abrir nada. ✅\n\n` +
-    `Se preferir acompanhar/concluir manualmente, este é o link oficial da iGreen:\n${link}\n\n` +
-    `É *o mesmo link* da validação facial (selfie) e da assinatura do contrato — guarda aí.`,
+    `📲 Em instantes você vai receber aqui no WhatsApp uma mensagem ` +
+    `da iGreen com um *código de 6 dígitos*.\n\n` +
+    `Quando chegar, *me responde aqui com o código* para eu validar. ✅`,
   );
 }
 
 /**
- * Envia o link da validação facial pro cliente após o OTP ter sido validado.
- * Mensagem foca SÓ na selfie — o código já foi resolvido via API.
+ * MENSAGEM 2 (após OTP validado com sucesso):
+ * Chave de ouro — entrega o link da facial/assinatura e fecha o ciclo.
  */
 async function sendFacialLinkToCustomer(customerId, link) {
   return _sendMessageToCustomer(customerId, ({ firstName }) =>
-    `Tudo certo, ${firstName}! ✅\n\n` +
-    `*Código validado.* Agora falta só uma coisinha: a *validação facial*.\n\n` +
-    `📸 Abre o link no celular e segue as instruções (basicamente uma selfie):\n` +
-    `${link}\n\n` +
-    `Quando terminar, me responde aqui *PRONTO* que eu fecho seu cadastro. 💚`,
+    `Perfeito, ${firstName}! ✅ Código validado.\n\n` +
+    `Falta só *um passo* pra ativar sua economia de energia: a ` +
+    `*assinatura digital* (com uma selfie rapidinha pra validação facial).\n\n` +
+    `🔗 Abre esse link no celular e segue o passo a passo:\n${link}\n\n` +
+    `Quando terminar, me responde aqui *PRONTO* que eu confirmo seu contrato ativo. 💚🌱\n\n` +
+    `Bem-vinda(o) à iGreen — economia + energia limpa, todo mês! 🎉`,
   );
 }
+
 
 /**
  * Loop de correção (Req 7.1): quando o Portal 2 rejeita um dado recuperável,
