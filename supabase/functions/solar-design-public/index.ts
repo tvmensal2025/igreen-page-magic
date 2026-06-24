@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
 
     const { data: analysis } = await admin
       .from("solar_roof_analyses")
-      .select("imagery_quality, address_text")
+      .select("imagery_quality, address_text, imagery_view, consultant_id")
       .eq("id", snap.analysis_id)
       .maybeSingle();
 
@@ -54,6 +54,8 @@ Deno.serve(async (req) => {
         imageryQuality: analysis?.imagery_quality ?? "UNKNOWN",
         addressCity: analysis?.address_text?.split(",").slice(-3, -1).join(",") ?? null,
         disclaimer: SOLAR_DISCLAIMER,
+        imagery: analysis?.imagery_view ?? null,
+        consultantId: analysis?.consultant_id ?? null,
       },
     });
   } catch (e) {

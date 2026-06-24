@@ -150,6 +150,7 @@ export async function loadSolarSnapshot(snapshotId: string): Promise<SolarAnalyz
     panelPositions: snap.panelPositions ?? [],
     disclaimer: data.disclaimer,
     salesBlurb: snap.salesBlurb ?? "",
+    imagery: analysis?.imagery ?? undefined,
   };
 }
 

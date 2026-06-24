@@ -58,6 +58,8 @@ Deno.serve(async (req) => {
       disclaimer: result.disclaimer,
       salesBlurb: result.salesBlurb,
       snapshotId: result.snapshotId,
+      imagery: result.imagery,
+      consultantId,
     });
   } catch (e) {
     return json({ error: (e as Error).message }, 502);

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SolarMap2D } from "./SolarMap2D";
+import { SolarRealRoofView } from "./SolarRealRoofView";
 import { SolarMetricsPanel } from "./SolarMetricsPanel";
 import { SolarPanelSlider } from "./SolarPanelSlider";
 import { SolarDisclaimer } from "./SolarDisclaimer";
@@ -84,10 +85,17 @@ export function SolarAnalysisResults({
           </Button>
         </div>
       ) : (
-        <SolarMap2D
+        <SolarRealRoofView
+          imagery={result.imagery}
           panelPositions={result.panelPositions}
-          roofSegments={result.roofSegments}
           className="shadow-md ring-1 ring-black/5"
+          fallback={
+            <SolarMap2D
+              panelPositions={result.panelPositions}
+              roofSegments={result.roofSegments}
+              className="shadow-md ring-1 ring-black/5"
+            />
+          }
         />
       )}
 

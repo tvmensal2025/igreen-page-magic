@@ -17,6 +17,7 @@ import {
 } from "./economics-br.ts";
 import { SOLAR_DISCLAIMER } from "./types.ts";
 import { logApiUsage } from "./rate-limit.ts";
+import { computeImageryView } from "./imagery.ts";
 
 const CACHE_DAYS = 30;
 
@@ -48,6 +49,8 @@ export interface AnalyzeRoofResult {
   panelPositions: ReturnType<typeof extractPanelPositions>;
   disclaimer: string;
   salesBlurb: string;
+  /** Enquadramento da imagem de satélite real (para sobrepor painéis). */
+  imagery: import("./types.ts").SolarImageryView;
 }
 
 function buildSalesBlurb(metrics: ReturnType<typeof buildMetrics>): string {
@@ -160,6 +163,14 @@ export async function analyzeRoof(
         latencyMs: Date.now() - t0,
       });
       const presets = pickPresets(insights.solarPotential?.solarPanelConfigs, input.electricityBillValue, tariffForUF(input.uf));
+      const cachedPanels = extractPanelPositions(insights, metrics.panelsCount);
+      const cachedSegments = extractRoofSegments(insights);
+      const cachedCenter = (insights.center ?? { latitude: lat, longitude: lng }) as { latitude: number; longitude: number };
+      const cachedImagery = computeImageryView(
+        cachedCenter.latitude,
+        cachedCenter.longitude,
+        [...cachedPanels, ...cachedSegments].map((p) => ({ lat: p.lat, lng: p.lng })),
+      );
       return {
         ok: true,
         mock,
@@ -171,10 +182,11 @@ export async function analyzeRoof(
           eco: presets.eco ? { panels: presets.eco.panelsCount, kwh: presets.eco.yearlyEnergyDcKwh } : null,
           ideal: presets.ideal ? { panels: presets.ideal.panelsCount, kwh: presets.ideal.yearlyEnergyDcKwh } : null,
         },
-        roofSegments: extractRoofSegments(insights),
-        panelPositions: extractPanelPositions(insights, metrics.panelsCount),
+        roofSegments: cachedSegments,
+        panelPositions: cachedPanels,
         disclaimer: SOLAR_DISCLAIMER,
         salesBlurb: buildSalesBlurb(metrics),
+        imagery: cachedImagery,
       };
     }
   }
@@ -222,6 +234,15 @@ export async function analyzeRoof(
     ? `${insights.imageryDate.year}-${String(insights.imageryDate.month).padStart(2, "0")}-${String(insights.imageryDate.day).padStart(2, "0")}`
     : null;
 
+  const freshPanels = extractPanelPositions(insights, metrics.panelsCount);
+  const freshSegments = extractRoofSegments(insights);
+  const freshCenter = (insights.center ?? { latitude: lat, longitude: lng }) as { latitude: number; longitude: number };
+  const freshImagery = computeImageryView(
+    freshCenter.latitude,
+    freshCenter.longitude,
+    [...freshPanels, ...freshSegments].map((p) => ({ lat: p.lat, lng: p.lng })),
+  );
+
   const { data: analysis, error: insErr } = await admin
     .from("solar_roof_analyses")
     .insert({
@@ -235,6 +256,7 @@ export async function analyzeRoof(
       data_layers: dataLayers,
       imagery_quality: metrics.imageryQuality,
       imagery_date: imageryDate,
+      imagery_view: freshImagery,
       max_panels: metrics.maxPanels,
       panel_watts: metrics.panelCapacityWatts,
       max_yearly_kwh: metrics.yearlyEnergyKwh,
@@ -269,10 +291,11 @@ export async function analyzeRoof(
       eco: presets.eco ? { panels: presets.eco.panelsCount, kwh: presets.eco.yearlyEnergyDcKwh } : null,
       ideal: presets.ideal ? { panels: presets.ideal.panelsCount, kwh: presets.ideal.yearlyEnergyDcKwh } : null,
     },
-    roofSegments: extractRoofSegments(insights),
-    panelPositions: extractPanelPositions(insights, metrics.panelsCount),
+    roofSegments: freshSegments,
+    panelPositions: freshPanels,
     disclaimer: SOLAR_DISCLAIMER,
     salesBlurb: buildSalesBlurb(metrics),
+    imagery: freshImagery,
   };
 }
 

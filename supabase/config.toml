@@ -164,6 +164,10 @@ verify_jwt = false
 [functions.solar-roof-context]
 verify_jwt = false
 
+# Imagem de satélite real do telhado (proxy da chave Google — público controlado).
+[functions.solar-roof-image]
+verify_jwt = false
+
 # Aviso de novo cadastro pendente ao super admin (chamado por trigger via pg_net,
 # sem JWT de usuário — autenticado pela apikey anon do cron interno).
 [functions.notify-superadmin-signup]

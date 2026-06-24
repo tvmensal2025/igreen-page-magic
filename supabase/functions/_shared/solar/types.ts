@@ -67,5 +67,17 @@ export interface SolarMetrics {
   paybackYears?: number | null;
 }
 
+/**
+ * Enquadramento da imagem de satélite real do telhado. Permite ao frontend
+ * projetar lat/lng dos painéis sobre a imagem (mesma projeção Web Mercator).
+ */
+export interface SolarImageryView {
+  centerLat: number;
+  centerLng: number;
+  zoom: number;
+  sizePx: number;
+  scale: number;
+}
+
 export const SOLAR_DISCLAIMER =
   "Estimativa comercial baseada em imagens de satélite. Valores finais dependem de vistoria técnica, homologação na concessionária e medição no local. Não constitui projeto executivo.";

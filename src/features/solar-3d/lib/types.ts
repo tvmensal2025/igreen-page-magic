@@ -34,6 +34,14 @@ export interface SolarRoofSegment {
   lng: number | null;
 }
 
+export interface SolarImageryView {
+  centerLat: number;
+  centerLng: number;
+  zoom: number;
+  sizePx: number;
+  scale: number;
+}
+
 export interface SolarAnalyzeResult {
   ok: true;
   mock: boolean;
@@ -49,6 +57,7 @@ export interface SolarAnalyzeResult {
   panelPositions: SolarPanelPosition[];
   disclaimer: string;
   salesBlurb: string;
+  imagery?: SolarImageryView;
 }
 
 export interface PublicSolarDesign {
@@ -62,4 +71,6 @@ export interface PublicSolarDesign {
   imageryQuality: string;
   addressCity: string | null;
   disclaimer: string;
+  imagery?: SolarImageryView;
+  consultantId?: string | null;
 }
