@@ -1,5 +1,6 @@
 import type { PublicSolarDesign } from "../lib/types";
 import { SolarMap2D } from "./SolarMap2D";
+import { SolarRealRoofView } from "./SolarRealRoofView";
 import { SolarDisclaimer } from "./SolarDisclaimer";
 import { formatBRLFromCents } from "@/features/produtos/lib/money";
 
@@ -9,7 +10,12 @@ export function SolarProposalSection({ solar }: { solar: PublicSolarDesign }) {
       <h3 className="text-lg font-semibold flex items-center gap-2">
         Seu telhado com energia solar
       </h3>
-      <SolarMap2D panelPositions={solar.panelPositions} roofSegments={solar.roofSegments} />
+      <SolarRealRoofView
+        consultantId={solar.consultantId}
+        imagery={solar.imagery}
+        panelPositions={solar.panelPositions}
+        fallback={<SolarMap2D panelPositions={solar.panelPositions} roofSegments={solar.roofSegments} />}
+      />
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
         <div>
           <div className="text-muted-foreground text-xs">Sistema</div>

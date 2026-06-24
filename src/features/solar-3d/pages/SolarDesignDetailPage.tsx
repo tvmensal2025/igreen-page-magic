@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { SolarMetricsPanel } from "../components/SolarMetricsPanel";
 import { SolarDisclaimer } from "../components/SolarDisclaimer";
 import { SolarMap2D } from "../components/SolarMap2D";
+import { SolarRealRoofView } from "../components/SolarRealRoofView";
 import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -55,9 +56,30 @@ export default function SolarDesignDetailPage() {
       <Button variant="ghost" size="sm" asChild>
         <Link to="/admin/solar-design">← Voltar</Link>
       </Button>
-      <Suspense fallback={<SolarMap2D panelPositions={snap.panelPositions} roofSegments={snap.roofSegments} />}>
-        <SolarRoofViewer3D panelPositions={snap.panelPositions} roofSegments={snap.roofSegments} />
-      </Suspense>
+
+      {/* Telhado REAL de satélite com os módulos sobrepostos (visual principal) */}
+      <SolarRealRoofView
+        consultantId={data?.analysis?.consultantId}
+        imagery={data?.analysis?.imagery}
+        panelPositions={snap.panelPositions}
+        fallback={
+          <Suspense fallback={<SolarMap2D panelPositions={snap.panelPositions} roofSegments={snap.roofSegments} />}>
+            <SolarRoofViewer3D panelPositions={snap.panelPositions} roofSegments={snap.roofSegments} />
+          </Suspense>
+        }
+      />
+
+      {/* Maquete 3D interativa (complementar) */}
+      <details className="rounded-xl border bg-muted/30">
+        <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-muted-foreground">
+          Ver maquete 3D interativa
+        </summary>
+        <div className="p-3">
+          <Suspense fallback={<SolarMap2D panelPositions={snap.panelPositions} roofSegments={snap.roofSegments} />}>
+            <SolarRoofViewer3D panelPositions={snap.panelPositions} roofSegments={snap.roofSegments} />
+          </Suspense>
+        </div>
+      </details>
       <SolarMetricsPanel metrics={metrics} imageryQuality={metrics.imageryQuality} />
       {snap.salesBlurb && <p className="text-sm">{snap.salesBlurb}</p>}
       <SolarDisclaimer />
