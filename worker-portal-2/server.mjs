@@ -285,7 +285,7 @@ async function processLead(job) {
     // Mandar o link pro cliente via WhatsApp (mesmo link de OTP/facial/assinatura)
     try {
       const sendResult = await sendValidationLinkToCustomer(customer_id, validationLink);
-      console.log(`  📲 link WhatsApp: ${JSON.stringify(sendResult)}`);
+      console.log(`  📲 pedido de código: ${JSON.stringify(sendResult)}`);
     } catch (e) {
       console.warn(`  ⚠ envio do link falhou: ${e.message}`);
     }
