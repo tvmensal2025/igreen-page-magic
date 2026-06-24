@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { hardReset } from "@/lib/hardReset";
 
 // Página oculta de recuperação. Caminho: /reset
 // Quando um usuário ficar preso em uma versão antiga (tela branca, "só abre
@@ -12,23 +13,10 @@ export default function ResetApp() {
     setStatus("cleaning");
     setMessage("Limpando cache...");
     try {
-      if ("caches" in window) {
-        const names = await caches.keys();
-        await Promise.all(names.map((n) => caches.delete(n)));
-      }
-      if ("serviceWorker" in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((r) => r.unregister()));
-      }
-      try { localStorage.removeItem("__sw_recovered__"); } catch {}
-      try { sessionStorage.clear(); } catch {}
+      await hardReset("manual-reset-page");
+      // hardReset chama window.location.replace — abaixo é só fallback visual.
       setStatus("done");
       setMessage("Pronto! Recarregando...");
-      setTimeout(() => {
-        const url = new URL(window.location.origin + "/auth");
-        url.searchParams.set("sw-recover", String(Date.now()));
-        window.location.replace(url.toString());
-      }, 600);
     } catch (e) {
       setStatus("error");
       setMessage((e as Error)?.message || "Erro inesperado");

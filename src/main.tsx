@@ -174,6 +174,14 @@ async function checkVersionGate() {
     if (!res.ok) return;
     const { buildId } = await res.json();
     if (buildId && typeof buildId === "string" && buildId !== __BUILD_ID__) {
+      // Notifica a UI para mostrar o toast "Nova versão disponível" com botão
+      // manual de "Atualizar agora". O auto-reload silencioso continua em
+      // paralelo — o que acontecer primeiro aplica a atualização.
+      try {
+        window.dispatchEvent(
+          new CustomEvent("igreen:update-available", { detail: { buildId } }),
+        );
+      } catch { /* CustomEvent indisponível em navegadores muito antigos */ }
       applyUpdateWhenSafe(buildId, "version-gate");
     }
   } catch { /* offline ou version.json ausente: ignora silenciosamente */ }

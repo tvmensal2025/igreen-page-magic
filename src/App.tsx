@@ -39,6 +39,7 @@ import { CookieBanner } from "@/components/CookieBanner";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
 import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportProvider";
+import { UpdateAvailableToast } from "@/components/UpdateAvailableToast";
 
 const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
 
@@ -61,6 +62,7 @@ const App = () => (
         <PromptDialogProvider>
         <Toaster />
         <Sonner />
+        <UpdateAvailableToast />
         <BrowserRouter>
           <Suspense fallback={
             <div className="flex h-screen items-center justify-center bg-background">
