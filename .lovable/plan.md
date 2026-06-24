@@ -1,74 +1,72 @@
-# Smoke test E2E /admin com Playwright
+# Toast de atualização com hard-reset
 
-## Objetivo
+## Problema
 
-Validar 12 áreas do painel admin com fluxo completo (carregamento + interação/CRUD), entregando tabela de status, screenshots e captura de erros console/network.
+Hoje, quando há uma versão nova publicada:
 
-## Pré-requisitos do usuário
+- O app verifica `/version.json` a cada 60s e tenta recarregar **sozinho**, mas só quando o usuário não está digitando / sem modal aberto / sem áudio gerando.
+- Se a janela do navegador fica com um modal aberto o dia inteiro, ou o usuário fica digitando sem parar, a atualização **nunca acontece** — e ele continua na versão antiga sem saber.
+- O usuário não tem nenhum botão visível para forçar a atualização. As únicas saídas (`?nuke=1` ou `/reset`) são "URLs secretas" que o cliente final não conhece.
 
-Antes de eu rodar, preciso de **2 coisas**:
+## Solução
 
-1. **Credenciais de um admin de teste** (email + senha) — cole no chat. Vou usar uma única vez para login via Playwright; não são logadas nem persistidas.
-2. **Aprovação para mutações reais.** Você pediu "CRUD/ações reais quando possível". Isso pode criar/alterar dados de produção (ex.: criar consultor de teste, mover deal no kanban, salvar configuração). Confirme:
-  - ✅ OK criar/editar registros marcados como `SMOKE-TEST-<timestamp>` que eu apago no fim
-  - ❌ ou prefere read-only: só abrir telas, abrir modais, alternar tabs, ler dados — sem POST/PATCH/DELETE
+Mostrar um **toast persistente** (sonner) no canto da tela assim que `checkVersionGate()` detectar `buildId` diferente. O toast tem:
 
-Se preferir read-only, o smoke vira só "carregamento + navegação", igual à opção média. Recomendo isso para a primeira rodada e depois aprofundamos.
+- Texto: **"Nova versão disponível"** + descrição "Atualize para receber as últimas melhorias."
+- Botão de ação: **"Atualizar agora"** → executa **hard-reset** (mesma rotina do `/reset` + `?nuke=1`):
+  1. `caches.delete()` para todos os caches do navegador
+  2. `serviceWorker.getRegistrations()` + `unregister()` em todos
+  3. `localStorage.clear()` e `sessionStorage.clear()`
+  4. `window.location.replace("/?fresh=" + Date.now())`
+- Botão secundário: **"Depois"** → fecha o toast; ele volta a aparecer no próximo `focus`/`visibilitychange`.
+- `duration: Infinity` (não some sozinho) e `dismissible: true`.
 
-## Áreas cobertas (12)
+O **auto-reload silencioso** atual continua funcionando como fallback: se o usuário ignorar o toast e em algum momento ficar ocioso (sem digitar, sem modal), o app recarrega sozinho como já faz hoje. O toast só dá a opção **manual** para quem nunca atinge a janela segura.
 
+## Arquivos a alterar
 
-| #   | Área                                       | Rota provável               | Ação chave                                                          |
-| --- | ------------------------------------------ | --------------------------- | ------------------------------------------------------------------- |
-| 1   | Clientes interessados                      | `/admin` → tab Interessados | Listar, abrir card, ler detalhes                                    |
-| 2   | Clientes ativos                            | `/admin` → tab Ativos       | Listar, abrir card                                                  |
-| 3   | Conversão                                  | `/admin/conversao`          | Fila → Reaquecimento → **Configurar** (validar auto-save sem botão) |
-| 4   | Clientes (CRM)                             | `/admin` (kanban)           | Abrir deal, ler stages                                              |
-| 5   | Produtos & Vendas                          | `/admin` produtos           | Listar produtos, abrir 1 venda                                      |
-| 6   | Captação                                   | `/admin` captação           | Abrir formulário, validar campos                                    |
-| 7   | Parceiros                                  | `/admin` parceiros          | Listar referral_partners                                            |
-| 8   | Rede                                       | `/admin` rede               | Listar network_members                                              |
-| 9   | WhatsApp                                   | `/admin` whatsapp           | Status instância, fluxos B/D                                        |
-| 10  | Central de Anúncios                        | `/admin` anúncios           | Listar campanhas FB                                                 |
-| 11  | Links                                      | `/admin` links              | Listar                                                              |
-| 12  | Materiais + Estúdio Áudio + iGreen Academy | rotas respectivas           | Carregar página, listar itens                                       |
+### 1. Novo: `src/lib/hardReset.ts`
 
+Função única e reutilizável. Recebe `reason: string` para log. Faz:
 
-## Execução técnica
+```text
+limpar caches → unregister SWs → limpar storages → reload("/?fresh=<ts>")
+```
 
-Script único `/tmp/browser/admin-smoke/run.py` (Playwright async, Chromium headless, viewport 1280×1800):
+Exporta `hardReset(reason)`. A página `/reset` (`src/pages/ResetApp.tsx`) também passa a usar essa função, em vez de duplicar a lógica.
 
-1. **Login** em `http://localhost:8080` com credenciais fornecidas → aguarda redirect autenticado.
-2. **Mapear rotas reais** lendo `src/App.tsx` e `src/pages/Admin*.tsx` antes do run (descobrir paths corretos das 12 áreas).
-3. **Para cada área**, em sequência:
-  - `page.goto(rota)` com `wait_until="networkidle"`
-  - Aguardar seletor âncora (heading h1/h2 da página) — confirma render sem branco
-  - Screenshot `NN_area-nome.png`
-  - Executar ação chave (clique em tab/abrir modal/etc) — screenshot pós-ação
-  - Coletar `console` errors e `network` responses 4xx/5xx via listeners registrados no `context`
-4. **Caso 3 (Configurar)** — validação específica do fix recente:
-  - Alterar o campo "Máximo de tentativas" para um valor `+1`
-  - Aguardar 1.2s (debounce 600ms + folga)
-  - Recarregar a página, voltar para Configurar, verificar que o novo valor persistiu sem clicar em nenhum botão Salvar
-5. **Cleanup**: se houver mutações marcadas `SMOKE-TEST-*`, deletar via Supabase REST ao final.
+### 2. Novo: `src/components/UpdateAvailableToast.tsx`
 
-## Saída
+Componente "headless" (sem JSX visível) que:
 
-Arquivo `/tmp/browser/admin-smoke/report.md` com:
+- Escuta um `CustomEvent("igreen:update-available", { detail: { buildId } })` no `window`.
+- Quando dispara, chama `toast(...)` do sonner com `id: "update-available"` (evita duplicatas), `duration: Infinity`, e os dois botões.
+- Botão "Atualizar agora" → `hardReset("user-clicked-update-toast")`.
 
-- Tabela: Área | Status (✅/⚠️/❌) | URL final | Tempo de carga | Erros console | 4xx/5xx
-- Lista detalhada de cada erro encontrado (mensagem + stack curta + request)
-- Galeria de screenshots inline
-- Veredito: pronto pra produção / áreas que precisam fix
+Renderizado uma única vez em `src/App.tsx` (logo ao lado do `<Toaster />` global).
 
-O relatório vem no chat + screenshots anexadas.
+### 3. Editar: `src/main.tsx`
 
-## Tempo estimado
+Em `checkVersionGate()`, quando detecta `buildId !== __BUILD_ID__`:
 
-~15-20 min de execução real, mais 5 min para mapear rotas e escrever o script.
+- Continua chamando `applyUpdateWhenSafe(...)` (auto-reload silencioso atual — não muda).
+- **Adicionalmente**, dispara `window.dispatchEvent(new CustomEvent("igreen:update-available", { detail: { buildId } }))` para o toast aparecer imediatamente.
 
----
+O auto-reload e o toast convivem: o que acontecer primeiro (usuário clicar OU app achar janela segura) aplica a atualização.
 
-**Próximo passo:** me responda com (a) credenciais admin de teste e (b) read-only ou pode mutar com cleanup.  
-usuario: [rafael.ids@icloud.com](mailto:rafael.ids@icloud.com)  
-senha:10203040
+### 4. Editar: `src/pages/ResetApp.tsx`
+
+Trocar a lógica inline de `handleReset` por uma chamada a `hardReset("manual-reset-page")`. Mantém a UI atual.
+
+## Notas técnicas
+
+- **Hard-reset apaga login Supabase** (`localStorage.clear()`). É o que o usuário pediu — garantia máxima. O usuário precisará logar de novo após clicar em "Atualizar agora". O texto do botão secundário (`"Depois"`) e a descrição do toast podem mencionar isso? Sugiro a descrição: *"Atualize para receber as últimas melhorias. Você precisará entrar novamente."*
+- **Anti-spam**: `toast(..., { id: "update-available" })` garante que múltiplos `checkVersionGate()` consecutivos não empilham toasts.
+- **Não muda nada de SW**: os kill-switches `/sw.js` e `/sw-app.js` continuam como estão.
+- **Sem novas dependências**: sonner já está instalado, `<Toaster />` já está no root.
+
+## Fora do escopo
+
+- Botão fixo no menu do header (usuário escolheu "só toast").
+- Mudanças no fluxo de auto-reload silencioso atual.
+- Soft-reset (usuário escolheu hard-reset).
