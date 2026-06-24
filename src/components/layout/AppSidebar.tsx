@@ -21,6 +21,7 @@ import {
   Settings,
   ChevronDown,
   MoreHorizontal,
+  CalendarClock,
 } from "lucide-react";
 
 export type AdminTabId =
@@ -34,6 +35,7 @@ export type AdminTabId =
   | "parceiros"
   | "rede"
   | "whatsapp"
+  | "agendamentos"
   | "central-anuncios"
   | "links"
   | "materiais"
@@ -72,6 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "parceiros", label: "Parceiros", icon: Handshake },
       { id: "rede", label: "Rede", icon: Network },
       { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
+      { id: "agendamentos", label: "Agendamentos", icon: CalendarClock },
     ],
   },
   {

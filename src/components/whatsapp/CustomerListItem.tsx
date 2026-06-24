@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Trash2, Phone, Mail, MapPin, Zap, ChevronDown, Pencil,
   CreditCard, User, MessageCircle, Building2, AlertTriangle, FileText, ClipboardCopy, Users,
-  Download, FileDown, Loader2, ExternalLink,
+  Download, FileDown, Loader2, ExternalLink, Sun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -289,6 +290,11 @@ export function CustomerListItem({
               </Button>
               <Button variant="outline" size="sm" className="h-9 gap-2 rounded-lg" onClick={onCopyMessage}>
                 <ClipboardCopy className="w-4 h-4" /> Copiar mensagem
+              </Button>
+              <Button asChild variant="outline" size="sm" className="h-9 gap-2 rounded-lg text-amber-600 border-amber-500/30 hover:bg-amber-500/10">
+                <Link to={`/admin/solar-design?customerId=${c.id}`}>
+                  <Sun className="w-4 h-4" /> Analisar telhado
+                </Link>
               </Button>
             </div>
             <div className="flex flex-wrap gap-2">

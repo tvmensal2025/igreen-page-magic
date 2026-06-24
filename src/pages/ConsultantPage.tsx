@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useConsultant } from "@/hooks/useConsultant";
 import { useTrackView } from "@/hooks/useTrackView";
@@ -19,6 +20,10 @@ import SEOHead from "@/components/SEOHead";
 import PixelInjector from "@/components/PixelInjector";
 import PageStatus from "@/components/common/PageStatus";
 import { useInstancePhone } from "@/hooks/useInstancePhone";
+
+const SolarCaptacaoWidget = lazy(() =>
+  import("@/features/solar-3d").then((m) => ({ default: m.SolarCaptacaoWidget })),
+);
 
 const ConsultantPage = () => {
   const { licenca } = useParams<{ licenca: string }>();
@@ -67,6 +72,14 @@ const ConsultantPage = () => {
       />
       <div className="min-h-screen">
         <HeroSection cadastroUrl={consultant.cadastro_url} whatsappUrl={whatsappUrl} consultantId={consultant.id} />
+
+        {(consultant as { solar_public_widget_enabled?: boolean }).solar_public_widget_enabled && (
+          <Suspense fallback={null}>
+            <div className="section-container">
+              <SolarCaptacaoWidget consultantId={consultant.id} />
+            </div>
+          </Suspense>
+        )}
 
         {isAdsMode ? (
           // Versão CTWA enxuta — foco em conversão direta para WhatsApp

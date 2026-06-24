@@ -6,7 +6,8 @@
 // =============================================================================
 
 import { useEffect, useState } from "react";
-import { LayoutDashboard, KanbanSquare, PackageSearch, FileText } from "lucide-react";
+import { LayoutDashboard, KanbanSquare, PackageSearch, FileText, Sun } from "lucide-react";
+import { Link } from "react-router-dom";
 import { AcompanhamentoPanel } from "./acompanhamento";
 import { SalesPipelineBoard } from "./crm";
 import { ProductCatalogTable } from "./catalogo/ProductCatalogTable";
@@ -94,12 +95,19 @@ export function ProdutosModule({
               );
             })}
           </nav>
-          <div className="hidden md:block">
-            <OrcamentoButton
-              consultantId={consultantId}
-              instanceName={instanceName}
-              isWhapi={isWhapi}
-            />
+          <div className="hidden md:flex items-center gap-2">
+          <OrcamentoButton
+            consultantId={consultantId}
+            instanceName={instanceName}
+            isWhapi={isWhapi}
+          />
+          <Link
+            to="/admin/solar-design"
+            className="inline-flex items-center gap-2 rounded-full border border-pv-mid/40 bg-white px-4 py-2 text-sm font-medium text-pv-ink shadow-sm hover:bg-pv-bg transition-colors"
+          >
+            <Sun className="h-4 w-4 text-amber-600" />
+            Análise telhado
+          </Link>
           </div>
         </div>
 

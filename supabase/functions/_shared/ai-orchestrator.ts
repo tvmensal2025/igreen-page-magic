@@ -163,6 +163,22 @@ async function runOrchestratorBrain(input: OrchestratorInput): Promise<{
     .from("consultants").select("ai_persona").eq("id", input.consultantId).maybeSingle();
   const persona = (coRow as any)?.ai_persona || null;
 
+  let solarContext = "";
+  const cid = input.customer?.id;
+  const msgLower = (input.message || "").toLowerCase();
+  if (
+    cid &&
+    /telhad|placa|fotovolta|painel solar|kwp|serve\s+meu|cabem/.test(msgLower)
+  ) {
+    try {
+      const { getSolarContextForCustomer } = await import("./solar/analyze-service.ts");
+      const ctx = await getSolarContextForCustomer(input.supabase, cid);
+      if (ctx) solarContext = `\nDADOS ANÁLISE SOLAR (use se relevante, cite como estimativa):\n${ctx}\n`;
+    } catch {
+      /* best-effort */
+    }
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 20_000);
   try {
@@ -179,7 +195,7 @@ AÇÃO PENDENTE DO BOT (o que o lead precisa fazer agora): ${input.stepGoal || "
 NOME LEAD: ${String(input.customer?.name || "").split(/\s+/)[0] || "(?)"}
 VALOR CONTA: ${input.customer?.electricity_bill_value || "(?)"}
 ESTADO: ${input.customer?.address_state || "(?)"}
-${input.customer?.conversation_summary ? `\nRESUMO DA CONVERSA (memória persistente):\n${String(input.customer.conversation_summary).slice(0, 1000)}\n` : ""}
+${solarContext}${input.customer?.conversation_summary ? `\nRESUMO DA CONVERSA (memória persistente):\n${String(input.customer.conversation_summary).slice(0, 1000)}\n` : ""}
 HISTÓRICO RECENTE:
 ${(input.history || "").slice(-2400)}
 

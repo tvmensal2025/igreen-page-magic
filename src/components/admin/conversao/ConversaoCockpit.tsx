@@ -88,9 +88,11 @@ function brl(n: number) {
 
 interface Props {
   consultantId: string;
+  initialView?: string;
+  onViewConsumed?: () => void;
 }
 
-export function ConversaoCockpit({ consultantId }: Props) {
+export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: Props) {
   const navigate = useNavigate();
   const [rows, setRows] = useState<LeadRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,9 +108,16 @@ export function ConversaoCockpit({ consultantId }: Props) {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSending, setBatchSending] = useState<{ done: number; total: number } | null>(null);
-  const [activeView, setActiveView] = useState<string>("fila");
+  const [activeView, setActiveView] = useState<string>(initialView || "fila");
   const [searchParams] = useSearchParams();
   const { partners } = useReferralPartners();
+
+  useEffect(() => {
+    if (!initialView) return;
+    setActiveView(initialView);
+    onViewConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialView]);
   // Dispara a classificação sob demanda uma única vez por consultor ao abrir a
   // Central. Evita o trabalho ocioso do cron periódico: só processa quando
   // alguém realmente abre a tela.

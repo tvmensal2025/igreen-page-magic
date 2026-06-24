@@ -44,6 +44,7 @@ const AdsCentralTab = lazy(() => import("@/components/admin/ads/AdsCentralTab").
 const CaptacaoPanel = lazy(() => import("@/components/captacao/CaptacaoPanel").then(m => ({ default: m.CaptacaoPanel })));
 const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTab").then(m => ({ default: m.ParceirosTab })));
 const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
+const AgendamentosHub = lazy(() => import("@/components/whatsapp/AgendamentosHub").then(m => ({ default: m.AgendamentosHub })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
@@ -67,7 +68,7 @@ const SUPPORT_FAB_HIDDEN_COMPACT: ReadonlySet<AdminTabId> = new Set([
 ]);
 const ADMIN_TAB_IDS: readonly AdminTabId[] = [
   "dashboard", "crm", "crm-clientes", "conversao", "clientes", "produtos",
-  "captacao", "parceiros", "rede", "whatsapp", "central-anuncios", "links",
+  "captacao", "parceiros", "rede", "whatsapp", "agendamentos", "central-anuncios", "links",
   "materiais", "audio-studio", "academy",
 ];
 
@@ -103,7 +104,7 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "historico" || (tab && (AI_SUB_TABS as readonly string[]).includes(tab))) return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos") return tab as AdminTabId;
+      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos" || tab === "agendamentos") return tab as AdminTabId;
       const stored = window.localStorage.getItem(ADMIN_ACTIVE_TAB_KEY) as AdminTabId | null;
       if (stored && ADMIN_TAB_IDS.includes(stored)) return stored;
     }
@@ -119,6 +120,9 @@ const AdminContent = () => {
   });
   const [produtosSubTab, setProdutosSubTab] = useState<ProdutosTabId>("acompanhamento");
   const [posVendaHighlightId, setPosVendaHighlightId] = useState<string | null>(null);
+
+  const [pendingConversaoView, setPendingConversaoView] = useState<string | null>(null);
+  const [pendingWhatsAppSub, setPendingWhatsAppSub] = useState<string | null>(null);
 
   const [pendingChatPhone, setPendingChatPhone] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -145,6 +149,25 @@ const AdminContent = () => {
     const h = () => setSettingsOpen(true);
     window.addEventListener("open-admin-settings", h);
     return () => window.removeEventListener("open-admin-settings", h);
+  }, []);
+
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        tab?: string;
+        whatsappSub?: string;
+        conversaoView?: string;
+        hubTab?: string;
+      } | undefined;
+      if (!detail?.tab) return;
+      if (detail.tab === "agendamentos" || ADMIN_TAB_IDS.includes(detail.tab as AdminTabId)) {
+        setActiveTab(detail.tab as AdminTabId);
+      }
+      if (detail.whatsappSub) setPendingWhatsAppSub(detail.whatsappSub);
+      if (detail.conversaoView) setPendingConversaoView(detail.conversaoView);
+    };
+    window.addEventListener("igreen-admin-nav", onNav);
+    return () => window.removeEventListener("igreen-admin-nav", onNav);
   }, []);
   const [periodDays, setPeriodDays] = useState(30);
 
@@ -267,6 +290,7 @@ const AdminContent = () => {
     "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
     "rede": { title: "Rede", subtitle: "Sua estrutura e hierarquia" },
     "whatsapp": { title: "WhatsApp", subtitle: "Atendimento, automação e disparo" },
+    "agendamentos": { title: "Agendamentos", subtitle: "Central unificada de envios programados e automações" },
     "central-anuncios": { title: "Central de Anúncios", subtitle: "Performance de campanhas" },
     "links": { title: "Links", subtitle: "Sua landing, QR Codes e materiais" },
     "materiais": { title: "Materiais", subtitle: "Biblioteca de assets de divulgação" },
@@ -411,16 +435,30 @@ const AdminContent = () => {
           {userId && activeTab === "whatsapp" && (
             <WhatsAppErrorBoundary>
               <WhatsAppTab
-                key="whatsapp-tab"
+                key={`whatsapp-tab-${pendingWhatsAppSub ?? "default"}`}
                 userId={userId}
                 customers={customers as never[]}
                 pendingChatPhone={pendingChatPhone}
                 pendingChatMessage={pendingChatMessage}
                 onPendingChatConsumed={() => { setPendingChatPhone(null); setPendingChatMessage(undefined); }}
-                initialSubTab={pendingAiSubTab ? "agente" : undefined}
+                initialSubTab={
+                  pendingWhatsAppSub === "envio_massa" ? "envio_massa"
+                  : pendingWhatsAppSub === "agendamentos" ? "agendamentos"
+                  : pendingAiSubTab ? "agente" : undefined
+                }
                 initialAgentSubTab={pendingAiSubTab as any}
+                onSubTabConsumed={() => setPendingWhatsAppSub(null)}
               />
             </WhatsAppErrorBoundary>
+          )}
+
+          {userId && activeTab === "agendamentos" && (
+            <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" /></div>}>
+              <AgendamentosHub
+                consultantId={userId}
+                instanceName={instanceName || ""}
+              />
+            </Suspense>
           )}
 
           {userId && activeTab === "central-anuncios" && (
@@ -428,7 +466,11 @@ const AdminContent = () => {
           )}
 
           {userId && activeTab === "conversao" && (
-            <ConversaoCockpit consultantId={userId} />
+            <ConversaoCockpit
+              consultantId={userId}
+              initialView={pendingConversaoView ?? undefined}
+              onViewConsumed={() => setPendingConversaoView(null)}
+            />
           )}
 
           {userId && activeTab === "produtos" && (

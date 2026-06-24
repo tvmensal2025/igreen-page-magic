@@ -41,6 +41,7 @@ import {
   type ProposalStatus,
 } from "@/features/produtos/orcamento";
 import { PAYMENT_METHOD_LABEL, type ProposalLineItem } from "@/features/produtos/orcamento";
+import { SolarProposalSection } from "@/features/solar-3d";
 import { formatBRLFromCents } from "@/features/produtos/lib/money";
 import { useProducts, resolveLanding } from "@/features/produtos/catalogo";
 
@@ -204,7 +205,7 @@ export default function ProposalPublicPage() {
   // Separa as formas de pagamento (kind: "payment") dos detalhes comuns, para
   // renderizar o pagamento num bloco dedicado (cartão, parcelas, juros, banco).
   const paymentItems = proposal.lineItems.filter((i) => i.kind === "payment");
-  const detailItems = proposal.lineItems.filter((i) => i.kind !== "payment");
+  const detailItems = proposal.lineItems.filter((i) => i.kind !== "payment" && i.kind !== "solar_design");
 
   return (
     <>
@@ -297,6 +298,12 @@ export default function ProposalPublicPage() {
               </div>
 
               <StatusBanner status={proposal.status} validUntilLabel={validUntilLabel} />
+
+              {view.solar && (
+                <div className="mt-3 [&_section]:border-white/20 [&_section]:bg-white/10 [&_section]:text-white [&_.text-muted-foreground]:text-white/70">
+                  <SolarProposalSection solar={view.solar} />
+                </div>
+              )}
 
               {/* Valor / economia */}
               {proposal.amountCents != null && proposal.amountCents > 0 && (

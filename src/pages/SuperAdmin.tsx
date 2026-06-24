@@ -11,7 +11,7 @@ import {
   Shield, Users, CheckCircle, XCircle, LogOut, Loader2, UserCheck, UserX,
   KeyRound, Brain, MessageSquare, Wifi, WifiOff, AlertTriangle, Send,
   Search, Eye, TrendingUp, Phone, Calendar, RefreshCw, Sparkles, Activity,
-  ChevronRight, BarChart3, Megaphone, Target,
+  ChevronRight, BarChart3, Megaphone, Target, Sun,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 // Heavy panels — lazy load on demand to shrink initial bundle
@@ -39,6 +39,7 @@ const AILearningHealthPanel = lazy(() => import("@/components/admin/super/AILear
 const CaptacaoTab = lazy(() => import("@/components/superadmin/CaptacaoTab").then(m => ({ default: m.CaptacaoTab })));
 const AdManagersTab = lazy(() => import("@/components/superadmin/AdManagersTab").then(m => ({ default: m.AdManagersTab })));
 const RolloutPanel = lazy(() => import("@/components/superadmin/RolloutPanel").then(m => ({ default: m.RolloutPanel })));
+const SolarModulePanel = lazy(() => import("@/components/superadmin/SolarModulePanel").then(m => ({ default: m.SolarModulePanel })));
 const FlowTemplateApprovalPanel = lazy(() => import("@/components/superadmin/FlowTemplateApprovalPanel"));
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { logAdminAction } from "@/hooks/useAdminAudit";
@@ -75,7 +76,7 @@ const SuperAdmin = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "financeiro" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout">("consultores");
+  const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "financeiro" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout" | "solar">("consultores");
   const [searchTerm, setSearchTerm] = useState("");
   const accessDeniedToastShownRef = useRef(false);
   const { isAdmin, loading: roleLoading } = useUserRole(userId);
@@ -264,6 +265,7 @@ const SuperAdmin = () => {
     { id: "templates_fluxo" as const, label: "Templates de Fluxo", icon: Sparkles },
     { id: "financeiro" as const, label: "Financeiro / P&L", icon: BarChart3 },
     { id: "rollout" as const, label: "Rollout V3", icon: Activity },
+    { id: "solar" as const, label: "Solar 3D", icon: Sun },
   ];
 
   const formatActivity = (lastAct: string | null) => {
@@ -563,6 +565,7 @@ const SuperAdmin = () => {
         {activeTab === "saude_rede" && <NetworkHealthPanel />}
         {activeTab === "ia_aprendendo" && <AILearningHealthPanel />}
         {activeTab === "rollout" && <RolloutPanel />}
+        {activeTab === "solar" && <SolarModulePanel />}
         </Suspense>
       </main>
     </div>

@@ -46,7 +46,7 @@ export interface ProposalLineItem {
   label: string;
   value: string;
   /** Marca este item como uma forma de pagamento (renderiza em bloco próprio). */
-  kind?: "payment";
+  kind?: "payment" | "solar_design";
   /** Tipo da forma de pagamento. */
   method?: PaymentMethod;
   /** Banco/financeira (apenas financiamento). */
@@ -121,6 +121,7 @@ export interface Proposal {
   viewedAt: string | null;
   respondedAt: string | null;
   saleId: string | null;
+  solarSnapshotId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -147,6 +148,7 @@ export interface ProposalRow {
   viewed_at: string | null;
   responded_at: string | null;
   sale_id: string | null;
+  solar_snapshot_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -177,6 +179,8 @@ export interface CreateProposalInput {
   message?: string | null;
   /** Dias até expirar (prazo). */
   validForDays: number;
+  /** Snapshot do módulo solar 3D (Conexão Placas). */
+  solarSnapshotId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,4 +214,5 @@ export interface PublicProposalView {
     family: string;
   } | null;
   events: ProposalEvent[];
+  solar?: import("@/features/solar-3d/lib/types").PublicSolarDesign | null;
 }

@@ -31,6 +31,8 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 
 const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
 const ProposalPublicPage = lazy(() => import("./pages/ProposalPublicPage"));
+const SolarDesignPage = lazy(() => import("./features/solar-3d/pages/SolarDesignPage"));
+const SolarDesignDetailPage = lazy(() => import("./features/solar-3d/pages/SolarDesignDetailPage"));
 const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
@@ -87,8 +89,11 @@ const App = () => (
               <Route path="/admin/conhecimento" element={<ProtectedRoute><AdminKnowledge /></ProtectedRoute>} />
               <Route path="/admin/reaquecimento" element={<ProtectedRoute><AdminReaquecimento /></ProtectedRoute>} />
               <Route path="/admin/conversao" element={<ProtectedRoute><AdminConversao /></ProtectedRoute>} />
+              <Route path="/admin/agendamentos" element={<Navigate to="/admin?tab=agendamentos" replace />} />
               <Route path="/admin/meta-ads" element={<ProtectedRoute><AdminMetaAds /></ProtectedRoute>} />
-              
+              <Route path="/admin/solar-design" element={<ProtectedRoute><SolarDesignPage /></ProtectedRoute>} />
+              <Route path="/admin/solar-design/:snapshotId" element={<ProtectedRoute><SolarDesignDetailPage /></ProtectedRoute>} />
+              <Route path="/experiments/solar-3d" element={<ProtectedRoute><SolarDesignPage /></ProtectedRoute>} />
               
               <Route path="/admin/faq" element={<Navigate to="/admin/conhecimento?tab=ia" replace />} />
               <Route path="/admin/fluxos-legado" element={<Navigate to="/admin/fluxos" replace />} />

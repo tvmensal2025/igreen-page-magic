@@ -6,7 +6,7 @@
 // createProposal, WhatsApp) é mantida — só a apresentação muda.
 // =============================================================================
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Sheet,
   SheetContent,
@@ -37,11 +37,21 @@ import {
   PAYMENT_METHOD_LABEL,
   type PaymentMethod,
   type PaymentOption,
+  type ProposalLineItem,
 } from "./types";
 import { RecipientPicker, type RecipientSelection } from "./components/RecipientPicker";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { formatBRLFromCents, reaisToCents } from "../lib/money";
 import { pvSerif, pvBody, usePvFonts } from "../theme";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  solarDesignToLineItems,
+  suggestProjectAmountCents,
+} from "@/features/solar-3d/adapters/proposalSolarBlock";
+import type { SolarAnalyzeResult } from "@/features/solar-3d/lib/types";
+import { analyzeRoof } from "@/features/solar-3d/lib/api";
+import { Link } from "react-router-dom";
+import { Sun } from "lucide-react";
 
 interface OrcamentoBuilderSheetProps {
   consultantId: string;
@@ -99,6 +109,9 @@ export function OrcamentoBuilderSheet({
   // Formas de pagamento (apenas project_once / Placas): consultor digita
   // à vista, cartão e/ou financiamento (banco, parcelas, valor, juros).
   const [payments, setPayments] = useState<PaymentOption[]>([]);
+  const [solarSnapshotId, setSolarSnapshotId] = useState<string | null>(null);
+  const [solarExtraItems, setSolarExtraItems] = useState<ProposalLineItem[]>([]);
+  const [solarLoading, setSolarLoading] = useState(false);
 
   // Só os produtos vendáveis por orçamento (allowlist por slug). Os demais
   // continuam no catálogo/banco, mas não aparecem no seletor do builder.
@@ -133,6 +146,61 @@ export function OrcamentoBuilderSheet({
   const isMarketFree = config?.pricingMode === "market_free";
   // Placas (venda do sistema): habilita o editor de formas de pagamento.
   const isProjectOnce = config?.pricingMode === "project_once";
+  const isPlacas = product?.slug === "conexao-placas";
+
+  useEffect(() => {
+    if (!open) return;
+    const pending = sessionStorage.getItem("solar_pending_snapshot");
+    if (!pending) return;
+    sessionStorage.removeItem("solar_pending_snapshot");
+    setSolarSnapshotId(pending);
+    supabase.functions
+      .invoke("solar-design-get", { body: { snapshotId: pending } })
+      .then(({ data }) => {
+        if (data?.snapshot) {
+          const s = data.snapshot;
+          setSolarExtraItems([
+            {
+              label: "Sistema fotovoltaico (estimativa)",
+              value: `${s.systemKwp} kWp · ${s.panelsCount} módulos`,
+              kind: "solar_design",
+            },
+          ]);
+          if (!projectAmount && s.systemKwp) {
+            setProjectAmount(String(suggestProjectAmountCents(Number(s.systemKwp)) / 100));
+          }
+        }
+      })
+      .catch(() => {});
+  }, [open, projectAmount]);
+
+  const importSolarFromCustomer = async () => {
+    if (!recipient?.customerId) {
+      toast({ title: "Selecione um cliente com endereço no CRM", variant: "destructive" });
+      return;
+    }
+    setSolarLoading(true);
+    try {
+      const result: SolarAnalyzeResult = await analyzeRoof({
+        customerId: recipient.customerId,
+        electricityBillValue: currentBill ? Number(currentBill) : undefined,
+      });
+      setSolarSnapshotId(result.snapshotId);
+      setSolarExtraItems(solarDesignToLineItems(result));
+      if (!projectAmount) {
+        setProjectAmount(String(suggestProjectAmountCents(result.metrics.systemSizeKwp) / 100));
+      }
+      toast({ title: "Análise solar importada", description: `${result.metrics.systemSizeKwp} kWp` });
+    } catch (e) {
+      toast({
+        title: "Falha na análise solar",
+        description: e instanceof Error ? e.message : "Erro",
+        variant: "destructive",
+      });
+    } finally {
+      setSolarLoading(false);
+    }
+  };
 
   const currentStep = !product ? 1 : !recipient ? 2 : 3;
 
@@ -147,6 +215,8 @@ export function OrcamentoBuilderSheet({
     setValidForDays("7");
     setCreatedLink(null);
     setPayments([]);
+    setSolarSnapshotId(null);
+    setSolarExtraItems([]);
   };
 
   const canSubmit =
@@ -164,7 +234,7 @@ export function OrcamentoBuilderSheet({
       const paymentItems = isProjectOnce
         ? paymentOptionsToLineItems(paymentsToCents(payments))
         : [];
-      const lineItems = [...quote.details, ...paymentItems];
+      const lineItems = [...quote.details, ...solarExtraItems, ...paymentItems];
 
       const proposal = await createProposal.mutateAsync({
         consultantId,
@@ -177,6 +247,7 @@ export function OrcamentoBuilderSheet({
         lineItems,
         message: message.trim() || null,
         validForDays: Number(validForDays) || 7,
+        solarSnapshotId,
       });
 
       const link = `${PUBLIC_BASE}/proposta/${proposal.publicToken}`;
@@ -467,6 +538,36 @@ export function OrcamentoBuilderSheet({
 
                   {config?.pricingMode === "project_once" && (
                     <>
+                      {isPlacas && (
+                        <div className="rounded-lg border border-amber-200/60 bg-amber-50/50 p-4 space-y-2">
+                          <p className="text-sm font-medium flex items-center gap-2">
+                            <Sun className="h-4 w-4 text-amber-600" />
+                            Design solar no telhado
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Importe análise remota para enriquecer a proposta com kWp e prévia visual.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={solarLoading}
+                              onClick={importSolarFromCustomer}
+                              className="text-xs font-medium px-3 py-1.5 rounded-full bg-primary text-primary-foreground disabled:opacity-50"
+                            >
+                              {solarLoading ? "Analisando…" : "Importar do CRM"}
+                            </button>
+                            <Link
+                              to="/admin/solar-design"
+                              className="text-xs font-medium px-3 py-1.5 rounded-full border"
+                            >
+                              Abrir ferramenta
+                            </Link>
+                          </div>
+                          {solarSnapshotId && (
+                            <p className="text-xs text-emerald-700">✓ Análise vinculada à proposta</p>
+                          )}
+                        </div>
+                      )}
                       <Field label="Valor do projeto">
                         <Input
                           type="number"

@@ -16,7 +16,7 @@ import type {
 } from "./types";
 
 const SELECT_COLUMNS =
-  "id, public_token, consultant_id, product_id, customer_id, recipient_name, recipient_phone, status, amount_cents, amount_period, discount_cents, line_items, message, valid_until, sent_at, viewed_at, responded_at, sale_id, created_at, updated_at";
+  "id, public_token, consultant_id, product_id, customer_id, recipient_name, recipient_phone, status, amount_cents, amount_period, discount_cents, line_items, message, valid_until, sent_at, viewed_at, responded_at, sale_id, solar_snapshot_id, created_at, updated_at";
 
 function asLineItems(value: unknown): ProposalLineItem[] {
   if (Array.isArray(value)) return value as ProposalLineItem[];
@@ -45,6 +45,7 @@ export function mapProposalRow(row: ProposalRow): Proposal {
     viewedAt: row.viewed_at,
     respondedAt: row.responded_at,
     saleId: row.sale_id,
+    solarSnapshotId: row.solar_snapshot_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -125,6 +126,7 @@ export async function createProposal(input: CreateProposalInput): Promise<Propos
       discount_cents: input.discountCents ?? null,
       line_items: input.lineItems,
       message: input.message ?? null,
+      solar_snapshot_id: input.solarSnapshotId ?? null,
       valid_until: validUntil,
       sent_at: new Date().toISOString(),
     } as never)

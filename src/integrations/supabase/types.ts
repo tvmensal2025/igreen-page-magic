@@ -2867,6 +2867,8 @@ export type Database = {
           photo_url: string | null
           portal_kind: string
           referred_by: string | null
+          solar_3d_enabled: boolean
+          solar_public_widget_enabled: boolean
           timezone: string | null
           use_engine_v3: boolean
         }
@@ -2907,6 +2909,8 @@ export type Database = {
           photo_url?: string | null
           portal_kind?: string
           referred_by?: string | null
+          solar_3d_enabled?: boolean
+          solar_public_widget_enabled?: boolean
           timezone?: string | null
           use_engine_v3?: boolean
         }
@@ -2947,6 +2951,8 @@ export type Database = {
           photo_url?: string | null
           portal_kind?: string
           referred_by?: string | null
+          solar_3d_enabled?: boolean
+          solar_public_widget_enabled?: boolean
           timezone?: string | null
           use_engine_v3?: boolean
         }
@@ -6154,6 +6160,7 @@ export type Database = {
           responded_at: string | null
           sale_id: string | null
           sent_at: string | null
+          solar_snapshot_id: string | null
           status: Database["public"]["Enums"]["proposal_status"]
           updated_at: string
           valid_until: string | null
@@ -6176,6 +6183,7 @@ export type Database = {
           responded_at?: string | null
           sale_id?: string | null
           sent_at?: string | null
+          solar_snapshot_id?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           updated_at?: string
           valid_until?: string | null
@@ -6198,6 +6206,7 @@ export type Database = {
           responded_at?: string | null
           sale_id?: string | null
           sent_at?: string | null
+          solar_snapshot_id?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           updated_at?: string
           valid_until?: string | null
@@ -6251,6 +6260,13 @@ export type Database = {
             columns: ["sale_id"]
             isOneToOne: false
             referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_solar_snapshot_id_fkey"
+            columns: ["solar_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "solar_design_snapshots"
             referencedColumns: ["id"]
           },
         ]
@@ -7133,6 +7149,272 @@ export type Database = {
           txid?: number | null
         }
         Relationships: []
+      }
+      solar_api_usage_log: {
+        Row: {
+          cache_hit: boolean
+          consultant_id: string | null
+          created_at: string
+          endpoint: string
+          error_code: string | null
+          id: string
+          latency_ms: number | null
+        }
+        Insert: {
+          cache_hit?: boolean
+          consultant_id?: string | null
+          created_at?: string
+          endpoint: string
+          error_code?: string | null
+          id?: string
+          latency_ms?: number | null
+        }
+        Update: {
+          cache_hit?: boolean
+          consultant_id?: string | null
+          created_at?: string
+          endpoint?: string
+          error_code?: string | null
+          id?: string
+          latency_ms?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solar_api_usage_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "solar_api_usage_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solar_api_usage_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solar_api_usage_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      solar_design_snapshots: {
+        Row: {
+          analysis_id: string
+          consultant_id: string
+          created_at: string
+          id: string
+          is_primary: boolean
+          label: string | null
+          manual_sketch: Json | null
+          monthly_savings_cents: number | null
+          panel_positions: Json
+          panels_count: number
+          preview_image_path: string | null
+          roof_segments: Json
+          sales_blurb: string | null
+          system_kwp: number
+          updated_at: string
+          yearly_energy_kwh: number | null
+        }
+        Insert: {
+          analysis_id: string
+          consultant_id: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string | null
+          manual_sketch?: Json | null
+          monthly_savings_cents?: number | null
+          panel_positions?: Json
+          panels_count: number
+          preview_image_path?: string | null
+          roof_segments?: Json
+          sales_blurb?: string | null
+          system_kwp: number
+          updated_at?: string
+          yearly_energy_kwh?: number | null
+        }
+        Update: {
+          analysis_id?: string
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string | null
+          manual_sketch?: Json | null
+          monthly_savings_cents?: number | null
+          panel_positions?: Json
+          panels_count?: number
+          preview_image_path?: string | null
+          roof_segments?: Json
+          sales_blurb?: string | null
+          system_kwp?: number
+          updated_at?: string
+          yearly_energy_kwh?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solar_design_snapshots_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "solar_roof_analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solar_design_snapshots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "solar_design_snapshots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solar_design_snapshots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solar_design_snapshots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      solar_public_rate_limit: {
+        Row: {
+          count: number
+          day: string
+          ip_hash: string
+        }
+        Insert: {
+          count?: number
+          day?: string
+          ip_hash: string
+        }
+        Update: {
+          count?: number
+          day?: string
+          ip_hash?: string
+        }
+        Relationships: []
+      }
+      solar_roof_analyses: {
+        Row: {
+          address_text: string | null
+          building_insights: Json
+          cache_key: string
+          consultant_id: string
+          created_at: string
+          customer_id: string | null
+          data_layers: Json | null
+          expires_at: string
+          id: string
+          imagery_date: string | null
+          imagery_quality: string
+          latitude: number
+          longitude: number
+          max_panels: number | null
+          max_yearly_kwh: number | null
+          panel_watts: number | null
+          source: string
+        }
+        Insert: {
+          address_text?: string | null
+          building_insights: Json
+          cache_key: string
+          consultant_id: string
+          created_at?: string
+          customer_id?: string | null
+          data_layers?: Json | null
+          expires_at: string
+          id?: string
+          imagery_date?: string | null
+          imagery_quality?: string
+          latitude: number
+          longitude: number
+          max_panels?: number | null
+          max_yearly_kwh?: number | null
+          panel_watts?: number | null
+          source?: string
+        }
+        Update: {
+          address_text?: string | null
+          building_insights?: Json
+          cache_key?: string
+          consultant_id?: string
+          created_at?: string
+          customer_id?: string | null
+          data_layers?: Json | null
+          expires_at?: string
+          id?: string
+          imagery_date?: string | null
+          imagery_quality?: string
+          latitude?: number
+          longitude?: number
+          max_panels?: number | null
+          max_yearly_kwh?: number | null
+          panel_watts?: number | null
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solar_roof_analyses_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "solar_roof_analyses_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solar_roof_analyses_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solar_roof_analyses_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "solar_roof_analyses_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stage_auto_messages: {
         Row: {

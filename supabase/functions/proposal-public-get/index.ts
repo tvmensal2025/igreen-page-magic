@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     const { data: proposal, error } = await supabase
       .from("proposals")
       .select(
-        "id, public_token, consultant_id, product_id, status, amount_cents, amount_period, discount_cents, line_items, message, valid_until, sent_at, viewed_at, responded_at, recipient_name",
+        "id, public_token, consultant_id, product_id, status, amount_cents, amount_period, discount_cents, line_items, message, valid_until, sent_at, viewed_at, responded_at, recipient_name, solar_snapshot_id",
       )
       .eq("public_token", token)
       .maybeSingle();
@@ -84,6 +84,37 @@ Deno.serve(async (req) => {
       .eq("proposal_id", proposal.id)
       .order("created_at", { ascending: true });
 
+    let solar = null;
+    if (proposal.solar_snapshot_id) {
+      const { data: snap } = await supabase
+        .from("solar_design_snapshots")
+        .select(
+          "panels_count, system_kwp, yearly_energy_kwh, monthly_savings_cents, roof_segments, panel_positions, sales_blurb, analysis_id",
+        )
+        .eq("id", proposal.solar_snapshot_id)
+        .maybeSingle();
+      if (snap) {
+        const { data: analysis } = await supabase
+          .from("solar_roof_analyses")
+          .select("imagery_quality, address_text")
+          .eq("id", snap.analysis_id)
+          .maybeSingle();
+        solar = {
+          panelsCount: snap.panels_count,
+          systemKwp: snap.system_kwp,
+          yearlyEnergyKwh: snap.yearly_energy_kwh,
+          monthlySavingsCents: snap.monthly_savings_cents,
+          roofSegments: snap.roof_segments,
+          panelPositions: snap.panel_positions,
+          salesBlurb: snap.sales_blurb,
+          imageryQuality: analysis?.imagery_quality ?? "UNKNOWN",
+          addressCity: analysis?.address_text?.split(",").slice(-3, -1).join(",") ?? null,
+          disclaimer:
+            "Estimativa comercial baseada em imagens de satélite. Valores finais dependem de vistoria técnica e homologação na concessionária.",
+        };
+      }
+    }
+
     return json({
       proposal: {
         token: proposal.public_token,
@@ -114,6 +145,7 @@ Deno.serve(async (req) => {
           }
         : null,
       events: events ?? [],
+      solar,
     });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);

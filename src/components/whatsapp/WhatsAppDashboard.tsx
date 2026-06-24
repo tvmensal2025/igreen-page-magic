@@ -1,12 +1,17 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageSquare, Clock, Send, TrendingUp, Calendar, Users } from "lucide-react";
+import { MessageSquare, Clock, Send, TrendingUp, Calendar, Users, Sparkles, CalendarClock } from "lucide-react";
 import { MonthlyCostsCard } from "@/components/whatsapp/MonthlyCostsCard";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { format, subDays, differenceInMinutes, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+import { buildUpcomingPosVendaMessages, groupSentStageKeys } from "@/lib/posVendaSchedule";
+import { dispatchAgendamentosNav } from "@/lib/agendamentosHub";
+import type { PosVendaStage } from "@/lib/posVenda/format";
 
 interface WhatsAppDashboardProps {
   consultantId: string;
@@ -96,6 +101,62 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
       return data || [];
     },
   });
+
+  const { data: posVendaUpcoming } = useQuery({
+    queryKey: ["waDashPosVendaUpcoming", consultantId],
+    queryFn: async () => {
+      const [custRes, logRes, defRes] = await Promise.all([
+        supabase
+          .from("customers")
+          .select("id, name, phone_whatsapp, pos_venda_stage, pos_venda_approved_at, customer_origin")
+          .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`)
+          .in("pos_venda_stage", ["aprovado", "reprovado", "d30", "d60", "d90", "d120"]),
+        supabase.from("customer_auto_message_log").select("customer_id, stage_key").eq("consultant_id", consultantId),
+        supabase.from("pos_venda_default_media").select("stage, message_text").eq("is_active", true),
+      ]);
+      const wallet = (custRes.data || []).filter((c) => isIgreenWalletOrigin(c.customer_origin));
+      const previews: Partial<Record<PosVendaStage, string>> = {};
+      for (const d of defRes.data || []) {
+        if (d.message_text) previews[d.stage as PosVendaStage] = d.message_text;
+      }
+      return buildUpcomingPosVendaMessages(
+        wallet.map((c) => ({
+          id: c.id,
+          name: c.name,
+          phone_whatsapp: c.phone_whatsapp,
+          pos_venda_stage: c.pos_venda_stage,
+          pos_venda_approved_at: c.pos_venda_approved_at,
+        })),
+        groupSentStageKeys((logRes.data || []) as Array<{ customer_id: string; stage_key: string }>),
+        previews,
+      );
+    },
+  });
+
+  const upcomingCombined = useMemo(() => {
+    const manual = (scheduledMsgs || []).map((msg) => ({
+      id: `m-${msg.id}`,
+      kind: "manual" as const,
+      name: customers?.find((c) => {
+        const phone = msg.remote_jid?.replace("@s.whatsapp.net", "").replace(/\D/g, "") || "";
+        return c.phone_whatsapp?.replace(/\D/g, "") === phone;
+      })?.name,
+      preview: msg.message_text,
+      at: msg.scheduled_at,
+      label: "Manual",
+    }));
+    const auto = (posVendaUpcoming || []).slice(0, 8).map((u) => ({
+      id: u.id,
+      kind: "auto" as const,
+      name: u.customerName,
+      preview: u.messagePreview || `Mensagem ${u.stageLabel}`,
+      at: u.scheduledAt.toISOString(),
+      label: u.stageLabel,
+    }));
+    return [...manual, ...auto]
+      .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+      .slice(0, 6);
+  }, [scheduledMsgs, posVendaUpcoming, customers]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -292,34 +353,41 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* Scheduled Messages */}
         <div className="bg-card rounded-xl border border-border p-3 min-w-0">
-          <h3 className="font-heading font-bold text-foreground mb-2.5 flex items-center gap-2 text-sm">
-            <Calendar className="w-4 h-4 text-primary" /> Próximos Agendamentos
-          </h3>
-          {scheduledMsgs && scheduledMsgs.length > 0 ? (
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <h3 className="font-heading font-bold text-foreground flex items-center gap-2 text-sm">
+              <Calendar className="w-4 h-4 text-primary" /> Próximos envios
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-[10px] gap-1 px-2 text-primary"
+              onClick={() => dispatchAgendamentosNav({ tab: "agendamentos" })}
+            >
+              <CalendarClock className="w-3 h-3" />
+              Ver tudo
+            </Button>
+          </div>
+          {upcomingCombined.length > 0 ? (
             <div className="space-y-2">
-              {scheduledMsgs.map((msg) => {
-                const phone = msg.remote_jid?.replace("@s.whatsapp.net", "") || "";
-                const customer = customers?.find((c) => c.phone_whatsapp === phone || c.phone_whatsapp?.replace(/\D/g, "") === phone);
-                return (
-                  <div key={msg.id} className="flex items-start gap-2 p-1.5 rounded-lg bg-muted/20 min-w-0">
-                    <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                      <Clock className="w-3.5 h-3.5 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-foreground truncate">
-                        {customer?.name || phone || "Destinatário"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground truncate">{msg.message_text}</p>
-                      <p className="text-[10px] text-primary mt-0.5">
-                        {format(parseISO(msg.scheduled_at), "dd/MM 'às' HH:mm", { locale: ptBR })}
-                      </p>
-                    </div>
+              {upcomingCombined.map((item) => (
+                <div key={item.id} className="flex items-start gap-2 p-1.5 rounded-lg bg-muted/20 min-w-0">
+                  <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${item.kind === "auto" ? "bg-accent/10" : "bg-primary/10"}`}>
+                    {item.kind === "auto" ? <Sparkles className="w-3.5 h-3.5 text-accent" /> : <Clock className="w-3.5 h-3.5 text-primary" />}
                   </div>
-                );
-              })}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-foreground truncate">{item.name || "Cliente"}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{item.preview}</p>
+                    <p className="text-[10px] text-primary mt-0.5">
+                      {format(parseISO(item.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+                      <span className="text-muted-foreground/50 mx-1">•</span>
+                      <span className={item.kind === "auto" ? "text-accent" : "text-muted-foreground"}>{item.label}</span>
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground text-center py-6">Nenhum agendamento pendente</p>
+            <p className="text-xs text-muted-foreground text-center py-6">Nenhum envio previsto</p>
           )}
         </div>
 

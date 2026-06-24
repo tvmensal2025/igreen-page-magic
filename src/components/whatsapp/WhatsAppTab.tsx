@@ -42,6 +42,7 @@ interface WhatsAppTabProps {
   customers?: any[];
   initialSubTab?: SubTab;
   initialAgentSubTab?: string | null;
+  onSubTabConsumed?: () => void;
 }
 
 type SubTab = "dashboard" | "conversas" | "agente" | "envio_massa" | "templates" | "agendamentos" | "historico";
@@ -59,7 +60,7 @@ const SUB_TABS: { key: SubTab; label: string; shortLabel: string; icon: React.El
 const MOBILE_PRIMARY_TABS: SubTab[] = ["dashboard", "conversas", "agente", "envio_massa"];
 const MOBILE_MORE_TABS: SubTab[] = ["templates", "agendamentos", "historico"];
 
-export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab }: WhatsAppTabProps) {
+export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab, onSubTabConsumed }: WhatsAppTabProps) {
   const isCompactLayout = useIsLgDown();
   const {
     connectionStatus,
@@ -103,6 +104,13 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
   );
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(initialSubTab ?? "dashboard");
+
+  useEffect(() => {
+    if (!initialSubTab) return;
+    setActiveSubTab(initialSubTab);
+    onSubTabConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSubTab]);
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [pendingMessageKey, setPendingMessageKey] = useState(0);
@@ -497,18 +505,12 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
 
         {activeSubTab === "agendamentos" && (
           <div className="p-3 overflow-auto h-full min-w-0">
-            {isConnected && instanceName ? (
-              <Suspense fallback={<LazyFallback />}>
-                <SchedulePanel
-                  consultantId={userId}
-                  instanceName={instanceName}
-                />
-              </Suspense>
-            ) : (
-              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-                Conecte o WhatsApp para gerenciar agendamentos.
-              </div>
-            )}
+            <Suspense fallback={<LazyFallback />}>
+              <SchedulePanel
+                consultantId={userId}
+                instanceName={instanceName || ""}
+              />
+            </Suspense>
           </div>
         )}
 

@@ -145,6 +145,25 @@ verify_jwt = false
 [functions.proposal-respond]
 verify_jwt = false
 
+# Módulo Solar 3D
+[functions.solar-geocode]
+verify_jwt = false
+
+[functions.solar-roof-analyze]
+verify_jwt = false
+
+[functions.solar-design-get]
+verify_jwt = false
+
+[functions.solar-design-public]
+verify_jwt = false
+
+[functions.solar-roof-public]
+verify_jwt = false
+
+[functions.solar-roof-context]
+verify_jwt = false
+
 # Aviso de novo cadastro pendente ao super admin (chamado por trigger via pg_net,
 # sem JWT de usuário — autenticado pela apikey anon do cron interno).
 [functions.notify-superadmin-signup]
