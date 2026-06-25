@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Calendar, Clock, Trash2, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
-  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, Info,
+  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap,
 } from "lucide-react";
 
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
@@ -33,14 +33,15 @@ function formatScheduleDate(dateStr: string | Date) {
   }
 }
 
+/** Selo de status com linguagem do consultor, não do sistema. */
 function timelineStatusBadge(status: AgendamentoTimelineItem["status"]) {
   switch (status) {
     case "overdue":
-      return <Badge variant="outline" className="text-[9px] border-warning/40 text-warning">Pronto / atrasado</Badge>;
+      return <Badge variant="outline" className="text-[9px] border-warning/40 text-warning">Vai sair agora</Badge>;
     case "running":
-      return <Badge variant="outline" className="text-[9px] border-primary/40 text-primary">Em andamento</Badge>;
+      return <Badge variant="outline" className="text-[9px] border-primary/40 text-primary">Enviando</Badge>;
     case "failed":
-      return <Badge variant="outline" className="text-[9px] border-destructive/40 text-destructive">Falhou</Badge>;
+      return <Badge variant="outline" className="text-[9px] border-destructive/40 text-destructive">Erro — clique para ver</Badge>;
     default:
       return <Badge variant="outline" className="text-[9px] border-muted-foreground/30 text-muted-foreground">Agendado</Badge>;
   }
@@ -49,7 +50,7 @@ function timelineStatusBadge(status: AgendamentoTimelineItem["status"]) {
 function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
   switch (kind) {
     case "pos_venda_auto": return <Sparkles className="w-3.5 h-3.5 text-accent" />;
-    case "bot_followup": return <Bot className="w-3.5 h-3.5 text-info" />;
+    case "bot_followup": return <Flame className="w-3.5 h-3.5 text-info" />;
     case "bulk_campaign": return <Megaphone className="w-3.5 h-3.5 text-warning" />;
     default: return <Clock className="w-3.5 h-3.5 text-primary" />;
   }
@@ -128,7 +129,7 @@ export function AgendamentosHub({
   const statusConfig = (status: string) => {
     switch (status) {
       case "pending":
-        return { icon: <Clock className="w-3 h-3" />, label: "Pendente", cls: "bg-warning/15 text-warning border-warning/25" };
+        return { icon: <Clock className="w-3 h-3" />, label: "Aguardando hora", cls: "bg-warning/15 text-warning border-warning/25" };
       case "sent":
         return { icon: <CheckCircle2 className="w-3 h-3" />, label: "Enviada", cls: "bg-primary/15 text-primary border-primary/25" };
       case "failed":
@@ -138,60 +139,67 @@ export function AgendamentosHub({
     }
   };
 
-  const systems = [
+  /**
+   * Sistemas que aparecem na "Visão geral".
+   * Linguagem do consultor: cada card explica o que faz, mostra um selo
+   * Ligado/Desligado quando aplicável e leva direto pro lugar de configurar.
+   */
+  const sistemasAgendados = [
     {
-      id: "fila" as const,
-      title: "Fila com data fixa",
-      motor: "send-scheduled-messages · 5 min",
+      id: "manual" as const,
+      title: "Agenda manual",
+      desc: "Você escolhe o cliente, escreve a mensagem e marca a hora.",
       count: stats.pendingManual,
-      desc: "Manuais, lembretes de reprovado e reaquecimento agendado",
       icon: CalendarClock,
-      config: () => setActiveTab("fila"),
+      action: () => setActiveTab("manual"),
     },
     {
       id: "pos-venda" as const,
       title: "Pós-venda automático",
-      motor: "pos-venda-auto-progress · horário",
+      desc: "Mensagens automáticas de 30, 60, 90 e 120 dias depois que o consultor marcou o cliente como aprovado.",
       count: stats.posVendaUpcoming,
-      desc: "Marcos 30/60/90/120 dias após aprovação no CRM",
       icon: Sparkles,
-      config: () => dispatchAgendamentosNav({ tab: "crm-clientes" }),
+      action: () => setActiveTab("pos-venda"),
     },
     {
-      id: "conversao" as const,
-      title: "Conversão & reaquecimento",
-      motor: "reactivation-cron · 1 h + bot follow-up · 5 min",
+      id: "reaquecimento" as const,
+      title: "Reaquecimento de leads",
+      desc: "Volta a falar com leads que sumiram. Só age em leads do WhatsApp e cadastros manuais — nunca em cliente da carteira.",
       count: stats.botFollowups,
-      desc: `Auto ${reactivationSettings.auto_enabled ? "ligado" : "desligado"} · ${autoReactivateTemplates} templates ativos`,
       icon: Flame,
-      config: () => dispatchAgendamentosNav({ tab: "conversao", conversaoView: "config" }),
+      badge: reactivationSettings.auto_enabled ? "Ligado" : "Desligado",
+      badgeOn: reactivationSettings.auto_enabled,
+      action: () => setActiveTab("reaquecimento"),
     },
     {
-      id: "bulk" as const,
-      title: "Disparo PRO",
-      motor: "bulk-scheduler · 1 min",
+      id: "campanhas" as const,
+      title: "Campanhas em massa",
+      desc: "Disparos para várias pessoas de uma vez (antigo Disparo PRO).",
       count: stats.bulkActive,
-      desc: "Campanhas agendadas ou em andamento",
       icon: Megaphone,
-      config: () => dispatchAgendamentosNav({ tab: "whatsapp", whatsappSub: "envio_massa" }),
+      action: () => setActiveTab("campanhas"),
     },
+  ];
+
+  /** Coisas que não são agendadas — disparam na hora. */
+  const disparoNaHora = [
     {
-      id: "crm" as const,
-      title: "CRM — ao mover coluna",
-      motor: "Imediato (sem fila)",
-      count: null,
-      desc: "Mensagens ao arrastar deal no Kanban de interessados",
+      title: "CRM: ao mover card no Kanban",
+      desc: "Quando o consultor arrasta o card, a mensagem configurada para aquela coluna sai na hora. Não entra na fila de agendados, mas aparece no histórico.",
       icon: LayoutGrid,
-      config: () => dispatchAgendamentosNav({ tab: "crm" }),
+      action: () => dispatchAgendamentosNav({ tab: "crm" }),
     },
     {
-      id: "historico" as const,
-      title: "Histórico automático",
-      motor: "Somente leitura",
-      count: null,
-      desc: "Pós-venda enviado + CRM leads",
-      icon: History,
-      config: () => setActiveTab("historico"),
+      title: "IA de resgate",
+      desc: "Quando um lead trava no fluxo do bot, a IA tenta retomar a conversa. Roda automaticamente para leads — nunca toca cliente da carteira.",
+      icon: ShieldCheck,
+      badge: "Automático",
+    },
+    {
+      title: "Cutucadinha pós-FAQ",
+      desc: "Se o lead pergunta algo no FAQ e some por 20min, a IA dá uma cutucada. Só para leads.",
+      icon: Zap,
+      badge: "Automático",
     },
   ];
 
@@ -208,7 +216,7 @@ export function AgendamentosHub({
             <div className="min-w-0">
               <h3 className="font-heading font-bold text-foreground text-lg">Central de Agendamentos</h3>
               <p className="text-xs text-muted-foreground">
-                Todos os envios programados e motores automáticos em um só lugar
+                Tudo que vai sair sozinho da sua conta — em um lugar só, em português claro.
               </p>
             </div>
           </div>
@@ -230,50 +238,56 @@ export function AgendamentosHub({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-5">
+        {/* Aviso fixo: regra de ouro da carteira. Sempre visível. */}
+        <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-3 flex gap-2.5">
+          <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+          <p className="text-[12px] text-foreground leading-relaxed">
+            <strong>Clientes da carteira iGreen nunca recebem nada automático.</strong>{" "}
+            Reaquecimento, resgate e cutucada só rodam para leads do WhatsApp e cadastros manuais.
+            A esteira 30/60/90/120 dias do pós-venda só começa quando o consultor (ou admin) clica em <em>Aprovado</em>.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
           <div className="rounded-xl border border-border/50 bg-muted/20 p-2.5 text-center">
             <p className="text-lg font-bold text-foreground">{stats.timelineUpcoming}</p>
             <p className="text-[10px] text-muted-foreground font-medium">Próximos envios</p>
           </div>
           <div className="rounded-xl border border-warning/15 bg-warning/5 p-2.5 text-center">
             <p className="text-lg font-bold text-warning">{stats.pendingManual}</p>
-            <p className="text-[10px] text-warning/70 font-medium">Fila manual</p>
+            <p className="text-[10px] text-warning/70 font-medium">Agenda manual</p>
           </div>
           <div className="rounded-xl border border-accent/20 bg-accent/5 p-2.5 text-center">
             <p className="text-lg font-bold text-accent">{stats.posVendaUpcoming}</p>
             <p className="text-[10px] text-accent/80 font-medium">Pós-venda</p>
           </div>
-          <div className="rounded-xl border border-info/15 bg-info/5 p-2.5 text-center">
-            <p className="text-lg font-bold text-info">{stats.botFollowups}</p>
-            <p className="text-[10px] text-info/70 font-medium">Follow-up bot</p>
-          </div>
-          <div className="rounded-xl border border-primary/15 bg-primary/5 p-2.5 text-center col-span-2 sm:col-span-1">
+          <div className="rounded-xl border border-primary/15 bg-primary/5 p-2.5 text-center">
             <p className="text-lg font-bold text-primary">{stats.bulkActive}</p>
-            <p className="text-[10px] text-primary/70 font-medium">Disparo PRO</p>
+            <p className="text-[10px] text-primary/70 font-medium">Campanhas</p>
           </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AgendamentosHubTab)} className="space-y-4">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/40 p-1">
             <TabsTrigger value="overview" className="text-xs">Visão geral</TabsTrigger>
-            <TabsTrigger value="fila" className="text-xs">Fila manual</TabsTrigger>
+            <TabsTrigger value="manual" className="text-xs">Agenda manual</TabsTrigger>
             <TabsTrigger value="pos-venda" className="text-xs">Pós-venda</TabsTrigger>
-            <TabsTrigger value="conversao" className="text-xs">Conversão</TabsTrigger>
-            <TabsTrigger value="bulk" className="text-xs">Disparo PRO</TabsTrigger>
+            <TabsTrigger value="reaquecimento" className="text-xs">Reaquecimento</TabsTrigger>
+            <TabsTrigger value="campanhas" className="text-xs">Campanhas</TabsTrigger>
             <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
           </TabsList>
 
           {/* ── Visão geral ── */}
           <TabsContent value="overview" className="space-y-5 mt-0">
             <section>
-              <h4 className="text-sm font-bold text-foreground mb-3">Próximos envios (unificado)</h4>
+              <h4 className="text-sm font-bold text-foreground mb-3">Próximos envios</h4>
               {loading ? (
                 <div className="flex items-center justify-center py-8 text-sm text-muted-foreground gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
                 </div>
               ) : timeline.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-4 py-6 text-center">
-                  <p className="text-sm text-muted-foreground">Nenhum envio previsto nos sistemas monitorados</p>
+                  <p className="text-sm text-muted-foreground">Nada agendado no momento</p>
                 </div>
               ) : (
                 <ScrollArea className="max-h-[360px]">
@@ -307,9 +321,9 @@ export function AgendamentosHub({
             </section>
 
             <section>
-              <h4 className="text-sm font-bold text-foreground mb-3">Sistemas e configuração</h4>
+              <h4 className="text-sm font-bold text-foreground mb-3">O que está ligado</h4>
               <div className="grid sm:grid-cols-2 gap-3">
-                {systems.map((sys) => {
+                {sistemasAgendados.map((sys) => {
                   const Icon = sys.icon;
                   return (
                     <div key={sys.id} className="rounded-xl border border-border/50 bg-card/50 p-4 flex flex-col gap-2">
@@ -318,15 +332,24 @@ export function AgendamentosHub({
                           <Icon className="w-4 h-4 text-primary shrink-0" />
                           <span className="text-sm font-bold truncate">{sys.title}</span>
                         </div>
-                        {sys.count !== null && (
-                          <Badge variant="outline" className="text-[10px] shrink-0">{sys.count}</Badge>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {sys.badge && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${sys.badgeOn ? "border-primary/40 text-primary" : "border-muted-foreground/30 text-muted-foreground"}`}
+                            >
+                              {sys.badge}
+                            </Badge>
+                          )}
+                          {typeof sys.count === "number" && (
+                            <Badge variant="outline" className="text-[10px]">{sys.count}</Badge>
+                          )}
+                        </div>
                       </div>
                       <p className="text-[11px] text-muted-foreground">{sys.desc}</p>
-                      <p className="text-[10px] text-muted-foreground/70 font-mono">{sys.motor}</p>
-                      <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={sys.config}>
+                      <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={sys.action}>
                         <Settings2 className="w-3.5 h-3.5" />
-                        Configurar
+                        Abrir e configurar
                       </Button>
                     </div>
                   );
@@ -334,24 +357,46 @@ export function AgendamentosHub({
               </div>
             </section>
 
-            <div className="rounded-xl border border-info/20 bg-info/5 p-4 flex gap-3">
-              <Info className="w-4 h-4 text-info shrink-0 mt-0.5" />
-              <div className="text-[11px] text-muted-foreground space-y-1">
-                <p>
-                  <strong className="text-foreground">Resgate IA</strong> (bot-stuck-recovery · 5 min) e{" "}
-                  <strong className="text-foreground">nudge FAQ</strong> (5 min) não têm fila com data — disparam por inatividade.
-                </p>
-                <p>Cada sistema usa tabela/motor próprio para não duplicar envios. Configurações abrem na tela original do módulo.</p>
+            <section>
+              <h4 className="text-sm font-bold text-foreground mb-1">Dispara na hora (sem fila)</h4>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                Estes envios não aparecem na contagem de "Próximos envios" porque não esperam horário marcado.
+                Eles aparecem no histórico depois que saem.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {disparoNaHora.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.title} className="rounded-xl border border-border/40 bg-muted/15 p-4 flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Icon className="w-4 h-4 text-info shrink-0" />
+                          <span className="text-sm font-bold truncate">{item.title}</span>
+                        </div>
+                        {item.badge && (
+                          <Badge variant="outline" className="text-[10px] border-info/40 text-info shrink-0">{item.badge}</Badge>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+                      {item.action && (
+                        <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={item.action}>
+                          <Settings2 className="w-3.5 h-3.5" />
+                          Abrir Kanban
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            </section>
           </TabsContent>
 
-          {/* ── Fila manual ── */}
-          <TabsContent value="fila" className="space-y-4 mt-0">
+          {/* ── Agenda manual ── */}
+          <TabsContent value="manual" className="space-y-4 mt-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <p className="text-sm font-bold">scheduled_messages</p>
-                <p className="text-[11px] text-muted-foreground">Lembretes de reprovado, reaquecimento agendado e envios avulsos</p>
+                <p className="text-sm font-bold">Mensagens que você marcou para sair</p>
+                <p className="text-[11px] text-muted-foreground">Avisos avulsos, lembretes, retomada de cliente reprovado.</p>
               </div>
               <Button
                 onClick={() => setShowForm(!showForm)}
@@ -361,13 +406,13 @@ export function AgendamentosHub({
                 title={!instanceName ? "Conecte o WhatsApp para agendar" : undefined}
               >
                 <Plus className="w-4 h-4" />
-                Agendar manual
+                Agendar nova
               </Button>
             </div>
 
             {!instanceName && (
               <p className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-                Conecte o WhatsApp na aba Conversas para criar novos agendamentos manuais. A visualização da fila continua disponível.
+                Conecte o WhatsApp na aba Conversas para criar novos agendamentos. A lista do que já está agendado continua aparecendo.
               </p>
             )}
 
@@ -396,7 +441,7 @@ export function AgendamentosHub({
             )}
 
             {manual.length === 0 ? (
-              <EmptyState text="Nenhum item na fila manual" />
+              <EmptyState text="Nada agendado manualmente ainda" />
             ) : (
               <MessageList messages={manual} onDelete={handleDeleteManual} statusConfig={statusConfig} />
             )}
@@ -406,24 +451,33 @@ export function AgendamentosHub({
           <TabsContent value="pos-venda" className="space-y-4 mt-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <p className="text-sm font-bold">Esteira 30 / 60 / 90 / 120 dias</p>
-                <p className="text-[11px] text-muted-foreground">Previsto a partir de pos_venda_approved_at — envio via cron, não entra na fila manual</p>
+                <p className="text-sm font-bold">Esteira automática: 30, 60, 90 e 120 dias</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Conta a partir da data em que o consultor clicou em <em>Aprovado</em>. Só clientes aprovados entram.
+                </p>
               </div>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => dispatchAgendamentosNav({ tab: "crm-clientes" })}>
-                <Settings2 className="w-3.5 h-3.5" /> Configurar mensagens no CRM
+                <Settings2 className="w-3.5 h-3.5" /> Editar mensagens
               </Button>
             </div>
             {loading ? (
               <LoadingRow />
             ) : posVenda.length === 0 ? (
-              <EmptyState text="Nenhum envio previsto — aprove clientes em Clientes ativos" />
+              <EmptyState text="Nenhum envio previsto — aprove clientes em Clientes ativos para começar a esteira" />
             ) : (
               <PosVendaList items={posVenda} />
             )}
           </TabsContent>
 
-          {/* ── Conversão ── */}
-          <TabsContent value="conversao" className="space-y-4 mt-0">
+          {/* ── Reaquecimento (junta antiga aba Conversão + Follow-up bot) ── */}
+          <TabsContent value="reaquecimento" className="space-y-4 mt-0">
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex gap-2">
+              <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              <p className="text-[11px] text-foreground">
+                Só leads do WhatsApp e cadastros manuais. Cliente da carteira nunca recebe reaquecimento.
+              </p>
+            </div>
+
             <div className="rounded-xl border border-border/50 p-4 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-sm font-bold">Reaquecimento automático</p>
@@ -433,11 +487,11 @@ export function AgendamentosHub({
               </div>
               <div className="grid sm:grid-cols-2 gap-2 text-[11px]">
                 <ConfigChip label="Automático" value={reactivationSettings.auto_enabled ? "Ligado" : "Desligado"} />
-                <ConfigChip label="Templates auto" value={`${autoReactivateTemplates} ativos`} />
-                <ConfigChip label="Primeiro envio" value={`${reactivationSettings.horas_ate_primeiro_followup}h após parar`} />
-                <ConfigChip label="Janela" value={`${reactivationSettings.janela_inicio}h–${reactivationSettings.janela_fim}h`} />
-                <ConfigChip label="Máx. envios" value={String(reactivationSettings.max_envios)} />
-                <ConfigChip label="Intervalo" value={`${reactivationSettings.horas_entre_envios}h`} />
+                <ConfigChip label="Mensagens prontas ativas" value={`${autoReactivateTemplates}`} />
+                <ConfigChip label="Primeira mensagem" value={`${reactivationSettings.horas_ate_primeiro_followup}h depois de parar`} />
+                <ConfigChip label="Horário permitido" value={`${reactivationSettings.janela_inicio}h às ${reactivationSettings.janela_fim}h`} />
+                <ConfigChip label="Máximo de tentativas" value={String(reactivationSettings.max_envios)} />
+                <ConfigChip label="Espaço entre tentativas" value={`${reactivationSettings.horas_entre_envios}h`} />
               </div>
               <Button variant="link" className="h-auto p-0 text-xs" onClick={() => dispatchAgendamentosNav({ tab: "conversao", conversaoView: "resultados" })}>
                 Ver resultados de reaquecimento →
@@ -445,17 +499,19 @@ export function AgendamentosHub({
             </div>
 
             <div>
-              <p className="text-sm font-bold mb-1">Follow-ups do bot (next_followup_at)</p>
-              <p className="text-[11px] text-muted-foreground mb-3">Agendados pelo fluxo (ex.: “me chama amanhã”). Motor: process-followups · 5 min</p>
+              <p className="text-sm font-bold mb-1">Continuações marcadas pelo bot</p>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                Quando o lead diz "me chama amanhã" ou "depois falo", o bot agenda aqui.
+              </p>
               {botFollowups.length === 0 ? (
-                <EmptyState text="Nenhum follow-up do bot agendado" />
+                <EmptyState text="Nenhuma continuação marcada pelo bot" />
               ) : (
                 <ScrollArea className="max-h-[280px]">
                   <div className="space-y-2">
                     {botFollowups.map((b) => (
                       <div key={b.id} className="rounded-xl border border-info/20 bg-info/5 px-4 py-3">
                         <p className="text-sm font-bold">{b.name || b.phone_whatsapp}</p>
-                        {b.conversation_step && <p className="text-xs text-muted-foreground">Passo: {b.conversation_step}</p>}
+                        {b.conversation_step && <p className="text-xs text-muted-foreground">Etapa: {b.conversation_step}</p>}
                         <p className="text-[11px] text-info mt-1">{formatScheduleDate(b.next_followup_at)}</p>
                       </div>
                     ))}
@@ -469,15 +525,15 @@ export function AgendamentosHub({
             </Button>
           </TabsContent>
 
-          {/* ── Bulk ── */}
-          <TabsContent value="bulk" className="space-y-4 mt-0">
+          {/* ── Campanhas em massa ── */}
+          <TabsContent value="campanhas" className="space-y-4 mt-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <p className="text-sm font-bold">Campanhas Disparo PRO</p>
-                <p className="text-[11px] text-muted-foreground">bulk_campaigns · motor bulk-scheduler</p>
+                <p className="text-sm font-bold">Campanhas em massa</p>
+                <p className="text-[11px] text-muted-foreground">Disparos para várias pessoas de uma vez (antigo Disparo PRO).</p>
               </div>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => dispatchAgendamentosNav({ tab: "whatsapp", whatsappSub: "envio_massa" })}>
-                <Megaphone className="w-3.5 h-3.5" /> Ir para Disparo PRO
+                <Megaphone className="w-3.5 h-3.5" /> Criar campanha
               </Button>
             </div>
             {bulkCampaigns.length === 0 ? (
@@ -488,11 +544,11 @@ export function AgendamentosHub({
                   <div key={c.id} className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-sm font-bold">{c.name}</span>
-                      <Badge variant="secondary" className="text-[9px]">{c.status}</Badge>
+                      <Badge variant="secondary" className="text-[9px]">{c.status === "running" ? "Enviando" : "Agendada"}</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground">{c.sent}/{c.total} enviados · {c.failed} falhas</p>
+                    <p className="text-xs text-muted-foreground">{c.sent} de {c.total} enviados · {c.failed} com erro</p>
                     {c.scheduled_at && (
-                      <p className="text-[11px] text-muted-foreground mt-1">Agendado: {formatScheduleDate(c.scheduled_at)}</p>
+                      <p className="text-[11px] text-muted-foreground mt-1">Sai em: {formatScheduleDate(c.scheduled_at)}</p>
                     )}
                   </div>
                 ))}
@@ -503,7 +559,7 @@ export function AgendamentosHub({
           {/* ── Histórico ── */}
           <TabsContent value="historico" className="mt-0">
             <p className="text-[11px] text-muted-foreground mb-3">
-              Envios já realizados — pós-venda (customer_auto_message_log) e CRM leads (crm_auto_message_log)
+              Mensagens que já saíram — pós-venda automático, CRM (ao mover card) e demais envios.
             </p>
             <Suspense fallback={<LoadingRow />}>
               <AutoMessageLog consultantId={consultantId} />
@@ -599,9 +655,4 @@ function MessageList({
       </div>
     </ScrollArea>
   );
-}
-
-/** Compat: WhatsApp sub-aba continua importando SchedulePanel */
-export function SchedulePanel(props: { consultantId: string; instanceName: string }) {
-  return <AgendamentosHub {...props} showAdminShortcut />;
 }

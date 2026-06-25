@@ -23,7 +23,11 @@ import {
 // Heavy panels — load only when their sub-tab is opened
 const BulkProPanel = lazy(() => import("./bulk-pro/BulkProPanel").then(m => ({ default: m.BulkProPanel })));
 const TemplateManager = lazy(() => import("./TemplateManager").then(m => ({ default: m.TemplateManager })));
-const SchedulePanel = lazy(() => import("./SchedulePanel").then(m => ({ default: m.SchedulePanel })));
+const SchedulePanel = lazy(() => import("./AgendamentosHub").then(m => ({
+  default: (props: { consultantId: string; instanceName: string }) => (
+    <m.AgendamentosHub {...props} showAdminShortcut />
+  ),
+})));
 const WhatsAppDashboard = lazy(() => import("./WhatsAppDashboard").then(m => ({ default: m.WhatsAppDashboard })));
 const AIAgentTab = lazy(() => import("@/components/admin/AIAgentTab").then(m => ({ default: m.AIAgentTab })));
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then(m => ({ default: m.AutoMessageLog })));
