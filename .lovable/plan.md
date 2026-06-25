@@ -1,36 +1,87 @@
-# Limpeza de duplicatas em `flow_router_rules`
+# Correção do Flow D — Cadastro Rápido não pode cair na simulação
 
-## Objetivo
-Remover 6 regras duplicadas idênticas que apontam para `fluxo_a_cadastro` com a keyword `"fazer o cadastro"`, mantendo apenas a regra com label completo.
+## O que encontrei
+O erro não veio da limpeza de `flow_router_rules`. O problema está dentro da configuração do próprio Flow D.
 
-## Por que é seguro
-- **Flow D (Cadastro Rápido) não usa `flow_router_rules`** — é disparado por OCR de foto da conta de luz. Intocado.
-- O router (`_shared/flow-router.ts`) **retorna no primeiro match**, então as 6 duplicatas nunca são alcançadas. São código morto.
-- Todas as 7 linhas têm `priority`, `target_flow_key`, `trigger_keywords` e `consultant_id` idênticos — comportamento pós-limpeza é bit-a-bit igual.
-- Nenhum código em `_shared/`, `whapi-webhook/` ou `evolution-webhook/` referencia os UUIDs específicos das regras.
+Hoje, no passo inicial `d_welcome`, o botão visível **“⚡ Cadastro rápido”** está configurado errado:
 
-## Ação única
-Executar um `DELETE` na tabela `flow_router_rules`:
+- O botão aparece como **Cadastro rápido**, mas o `id` interno está como `humano`.
+- A transição desse botão aponta para um passo de **simulação/conta de luz** (`d_simular_pedir_conta` / `capture_conta`).
+- As palavras da transição incluem `Cadastro rápido!`, `rápido!` e `humano`, ou seja: clicar em Cadastro Rápido manda para o caminho de simulação, exatamente o bug que você viu.
 
-```sql
-DELETE FROM flow_router_rules
-WHERE target_flow_key = 'fluxo_a_cadastro'
-  AND id <> '3a993b41-8263-4c96-b128-3a0fbccdcb50';
+Também vi que no `d_resultado` falta blindagem suficiente para textos/botões como **“Cadastrar e finalizar”** e **“Cadastro rápido”** sempre irem para documento.
+
+## Como vou corrigir
+
+### 1. Corrigir os dados do Flow D no banco
+Atualizar todos os Flow D ativos para que:
+
+- Botão **Cadastro rápido** não use mais `id: humano`.
+- O botão passe a usar um ID claro, por exemplo `cadastro_rapido`.
+- A transição de **Cadastro rápido** aponte para o passo de documento do mesmo fluxo:
+  - `d_pedir_documento`
+  - tipo `capture_documento`
+
+Resultado esperado:
+
+```text
+Cadastro rápido → pedir documento com foto
+não → escolher simulação
+não → simulação rápida
+não → humano
 ```
 
-Mantém a regra `3a993b41-8263-4c96-b128-3a0fbccdcb50` (label `"Fluxo A — Cadastro direto"`) e apaga as outras 6.
+### 2. Corrigir as palavras-chave do CTA de cadastro
+No passo `d_resultado`, garantir que qualquer uma destas entradas vá para documento:
 
-## O que NÃO muda
-- Código de Flow D, Flow A, Flow B, Flow PJ — nenhum arquivo editado.
-- Guard `in_cadastro_pipeline` no router — preservado.
-- Regex de intenção (`NON_NAME_RESPONSES`, `isPositiveCheckinIntent`) — preservadas.
-- Schema da tabela — sem migration, só dados.
-
-## Verificação pós-execução
-Query de confirmação:
-```sql
-SELECT id, target_flow_label, trigger_keywords
-FROM flow_router_rules
-WHERE target_flow_key = 'fluxo_a_cadastro';
+```text
+cadastrar
+quero me cadastrar
+cadastrar e finalizar
+cadastro rápido
+cadastro_rapido
 ```
-Deve retornar exatamente 1 linha.
+
+E remover gatilhos perigosos/genéricos como:
+
+```text
+rápido!
+humano
+```
+
+porque `humano` não deve significar cadastro rápido.
+
+### 3. Adicionar uma trava no código dos webhooks
+Além de corrigir o banco, vou blindar o código em:
+
+- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
+- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
+
+Regra nova:
+
+```text
+Se Flow D receber botão/texto de Cadastro Rápido ou Cadastrar e Finalizar,
+forçar destino para documento, nunca para simulação.
+```
+
+Isso evita que o bug volte mesmo se alguém editar errado o FlowBuilder depois.
+
+### 4. Não mexer no que está certo
+Não vou alterar:
+
+- `flow_router_rules`
+- Flow A
+- OCR da conta
+- OCR do documento
+- OTP
+- Portal
+- limpeza de duplicatas já feita
+
+## Validação depois da correção
+Vou consultar novamente o banco e confirmar:
+
+- `Cadastro rápido` aponta para `d_pedir_documento`.
+- `Cadastrar e finalizar` aponta para `d_pedir_documento`.
+- Nenhuma transição de Cadastro Rápido aponta para `d_escolher_simulacao`, `d_pedir_conta` ou `d_simular_pedir_conta`.
+
+Também vou revisar o handler para garantir que o fallback de segurança está nos dois canais: Whapi e Evolution.

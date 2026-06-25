@@ -3141,6 +3141,26 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 captures: Array.isArray((data as any).captures) ? (data as any).captures : [],
               } : null;
             };
+            const _loadStepByKey = async (stepKey: string) => {
+              const { data } = await supabase
+                .from("bot_flow_steps")
+                .select("id, step_key, step_type, position, transitions, message_text, captures")
+                .eq("flow_id", flow.id).eq("step_key", stepKey).eq("is_active", true).maybeSingle();
+              return data ? {
+                id: String(data.id), step_key: String(data.step_key),
+                step_type: String(data.step_type), position: Number(data.position),
+                transitions: Array.isArray((data as any).transitions) ? (data as any).transitions : [],
+                message_text: String((data as any).message_text || ""),
+                captures: Array.isArray((data as any).captures) ? (data as any).captures : [],
+              } : null;
+            };
+            const _flowDQuickCadastroIntent = (() => {
+              if (String((customer as any)?.flow_variant || "").toUpperCase() !== "D") return false;
+              const raw = `${buttonId || ""} ${messageText || ""}`.toLowerCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              return /cadastro[_\s-]*rapido|cadastrar\s*e\s*finalizar|quero\s*me\s*cadastrar|\bcadastrar\b/.test(raw)
+                || (String(stepRow.step_key || "") === "d_welcome" && /\bhumano\b/.test(raw));
+            })();
             const _resolveNextFromTransitions = async (txns: any[], msg: string) => {
               const arr = Array.isArray(txns) ? txns : [];
               const msgN = _norm(msg);
@@ -3183,9 +3203,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             );
             const resolved = await _resolveNextFromTransitions(txnsNow, messageText);
             let nextCustom: any = resolved.next;
+            if (_flowDQuickCadastroIntent) {
+              const docStep = await _loadStepByKey("d_pedir_documento");
+              if (docStep) {
+                console.log(`[flow-d-guard] cadastro rápido/cadastrar → ${docStep.step_key} (nunca simulação)`);
+                nextCustom = docStep;
+              }
+            }
 
             if (nextCustom?.__special) {
               const sp = String(nextCustom.__special).toLowerCase().trim();
+              if (sp === "humano" && _flowDQuickCadastroIntent) {
+                const docStep = await _loadStepByKey("d_pedir_documento");
+                if (docStep) nextCustom = docStep;
+                else return { reply: "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.", updates: { conversation_step: "aguardando_doc_auto", __inline_sent: emittedCurrent || undefined } as any };
+              } else
               if (sp === "humano") {
                 return { reply: `Tudo bem! Vou chamar ${nomeRepresentante || "um consultor"} para te ajudar por aqui 🙌`, updates: { conversation_step: "aguardando_humano", bot_paused: true, bot_paused_reason: "flow_button_humano", bot_paused_at: new Date().toISOString(), __inline_sent: emittedCurrent || undefined } as any };
               }
