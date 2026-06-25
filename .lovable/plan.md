@@ -1,108 +1,58 @@
-# Causa raiz da "confusão" entre passos iguais
+Plano para corrigir 100% a ambiguidade do Fluxo D sem remover nenhum passo:
 
-Inspecionei o Fluxo D em produção e o motor de conversa. **Não há um único bug** — há quatro pontos onde dois passos com mesma palavra/título podem se atropelar. Os sintomas que você descreve ("seleciono outra rota, mas vai pra mesma", "passos somem ao editar") batem com isso.
+1. Corrigir a causa real nos dados do Fluxo D
+- Atualizar as transições do Fluxo D ativo para manter todos os caminhos, mas separar os gatilhos por contexto.
+- Remover dos avisos/rotas as palavras genéricas que se repetem em vários passos sem serem erro real, como “cadastrar”, “humano”, “dúvida”, “primeiro”, “segunda”, quando elas aparecem em passos diferentes e não competem no mesmo momento.
+- Preservar todos os passos existentes, inclusive:
+  - `d_como_funciona`
+  - `d_como_funciona_copy_in3s`
+  - `d_como_funciona_copy_qwpu`
+  - `d_pedir_conta`
+  - `d_simular_pedir_conta`
+- Corrigir também os clones antigos/inativos do Fluxo D, para que nenhum fluxo reativado volte com o mesmo problema.
 
-## O que está acontecendo hoje
+2. Tornar o detector de conflito inteligente, não alarmista
+- Alterar `useFlowConflicts.ts` para diferenciar:
+  - conflito real: mesma frase dentro do mesmo passo apontando para destinos diferentes;
+  - risco real: identificadores/títulos muito parecidos;
+  - repetição aceitável: mesma palavra em passos diferentes, quando cada passo está em um momento diferente da conversa.
+- O banner não deve mais acusar “8 passos” por palavras globais repetidas se isso não pode fazer o runtime pegar rota errada naquele passo.
+- Quando houver conflito real, mostrar exatamente:
+  - qual passo tem o problema;
+  - qual palavra/frase está duplicada;
+  - para quais destinos ela aponta.
 
-No Fluxo D já existem passos duplicados criados por "Duplicar":
+3. Blindar o runtime contra erro mesmo com dado ruim
+- Reforçar `matchTransition` para priorizar, nesta ordem:
+  1. botão nativo/id exato;
+  2. número da opção visível no passo atual;
+  3. frase completa mais específica;
+  4. destino explícito do passo atual;
+  5. fallback seguro.
+- Se duas frases empatam de verdade no mesmo passo com destinos diferentes, o bot deve registrar conflito e cair no caminho seguro configurado, em vez de escolher uma rota errada silenciosamente.
 
-| Posição | step_key                         | Tipo           |
-| ------- | -------------------------------- | -------------- |
-| 2       | `d_pedir_conta`                  | capture_conta  |
-| 3       | `d_como_funciona`                | message        |
-| 18      | `d_simular_pedir_conta`          | capture_conta  |
-| 19      | `d_como_funciona_copy_in3s`      | message        |
-| 20      | `d_como_funciona_copy_qwpu`      | message        |
+4. Super admin deve conseguir selecionar e editar todos os passos
+- Detectar `is_super_admin` no `FluxoBuilder`.
+- Para super admin, permitir edição direta do fluxo público/modelo sem exigir “Personalizar”.
+- Garantir que filtros como “Revisar”, busca ou tipo não façam parecer que passos foram removidos: adicionar ação clara para limpar filtros e sempre manter o contador “visível/total”.
+- Ao clicar em qualquer card, saída ou conflito, abrir o passo correto pelo `id`, nunca por nome, título ou palavra-chave.
 
-Os três "Como Funciona" têm **gatilhos quase idênticos** ("2", "humano", "cadastrar"…). Os dois "Pedir Conta" também. Resultado:
+5. Validar com testes e auditoria de dados
+- Adicionar testes cobrindo:
+  - “como funciona” vs “como funciona 2”;
+  - “pedir conta 1” vs “pedir conta 2”;
+  - “primeira/primeiro” e “segunda/segundo” dentro do passo de escolha;
+  - repetição da palavra “cadastrar” em passos diferentes sem falso conflito;
+  - empate real no mesmo passo caindo em fallback seguro.
+- Rodar consulta final no Supabase para confirmar:
+  - zero conflito real dentro do mesmo passo;
+  - zero destino quebrado/inativo;
+  - todos os passos do Fluxo D continuam existentes e selecionáveis.
 
-1. **Editor sem aviso de conflito** — o título exibido é o mesmo ("Como funciona"), o usuário não consegue distinguir os três cards. Ao editar um, sente que "mexeu no outro".
-2. **Runtime — `matchTransition` (`supabase/functions/_shared/flow-router.ts`)** — quando o input cai no fallback de texto (passo d), o primeiro `trigger_phrase` que for substring vence. "conta" casa dentro de "minha conta de luz" e dispara a primeira transition, mesmo que outra mais específica ("conta de luz 2") existisse.
-3. **Runtime — `matchQA` (`supabase/functions/whapi-webhook/handlers/conversational/index.ts`)** — varre `bot_flow_qa_triggers` sem `ORDER BY`. Se duas perguntas têm o gatilho "como funciona", o Postgres devolve a que quiser; o `find()` pega a primeira.
-4. **Edição via "Duplicar"** — gera `step_key` único (`_copy_xxx`) mas mantém o `title` original. Em listas longas o usuário não percebe que existem dois.
-
-## O que será corrigido
-
-### 1) Runtime determinístico (sem regressão funcional)
-
-**`supabase/functions/_shared/flow-router.ts`** — em `matchTransition`:
-
-- Pré-ordenar as `transitions` pelo tamanho da maior `trigger_phrase` (desc) e, dentro de cada transition, pelas phrases mais longas primeiro.
-- Nos passos (a)/(b)/(d), preferir **igualdade exata** e **limite de palavra** antes do `includes` cego.
-- Empate → escolher a transition com `goto_step_id` definido em vez de `goto_special` (mais específica).
-
-Resultado: "conta de luz 2" sempre ganha de "conta"; "humano" sozinho não captura quando o texto é "falar com rafael".
-
-**`supabase/functions/whapi-webhook/handlers/conversational/index.ts`** — em `matchQA`:
-
-- Adicionar `ORDER BY created_at ASC` na query de `bot_flow_qa_triggers` (determinismo cross-deploy).
-- Coletar **todos** os triggers que casam e escolher o de maior `phrase.length`. Empate → QA mais antigo (estável).
-
-### 2) Editor com detecção de ambiguidade
-
-**Novo `src/components/admin/flow-builder/useFlowConflicts.ts`** — hook que, dado o array `steps`, devolve:
-
-- `duplicateTitles`: pares de steps com o mesmo `title` normalizado.
-- `duplicateKeys`: pares cujo `step_key` casa após remover sufixos `_copy_*` / `_2`.
-- `overlappingTriggers`: pares de steps cujas `trigger_phrases` se intersectam.
-
-**`src/components/admin/flow-builder/StepTimelineItem.tsx`** — quando o step participa de algum conflito, mostrar badge laranja "⚠ conflito" com tooltip listando os outros steps envolvidos e botão "Renomear".
-
-**`src/pages/FluxoBuilder.tsx`** — banner no topo da lista quando `useFlowConflicts` devolve algo: "N passos com possível ambiguidade — clique para revisar". Filtra a lista para mostrar só esses.
-
-### 3) Duplicar passo gera título distinto
-
-**`src/components/admin/flow-builder/useFlowStepsCrud.ts`** — ao duplicar:
-
-- `title`: `"<original> (cópia)"` (e `" (cópia 2)"`, `" (cópia 3)"`, se já existir).
-- Limpar `trigger_phrases` da cópia (deixar vazio) — o usuário precisa configurar gatilhos novos conscientemente, evitando o overlap automático.
-
-### 4) Limpeza dos duplicados existentes do Fluxo D
-
-Após aprovado o código acima, fazer um `UPDATE` em `bot_flow_steps` (via `supabase--insert`) para:
-
-- Renomear `d_como_funciona_copy_in3s` → título "Como funciona (pós-simulação rápida)" e zerar suas `trigger_phrases` que duplicam o passo 3.
-- Renomear `d_como_funciona_copy_qwpu` → título "Como funciona (pós-simulação completa)".
-- Renomear `d_simular_pedir_conta` → título "Pedir conta de luz (refluxo simulação)".
-
-Sem apagar nada: só rótulos e gatilhos. As rotas (`goto_step_id`) continuam.
-
-## Detalhes técnicos
-
-```text
-matchTransition (ordem nova)
- ┌─ a) buttonId == phrase exata          (igual)
- ├─ b) buttonId == goto_special          (igual)
- ├─ c) intent match                      (igual)
- └─ d) text fallback
-       │ phrases ordenadas por len desc
-       │ se phrase tem 1 palavra: regex \b
-       │ se phrase ≥ 2 palavras : includes
-       └ desempate: goto_step_id > goto_special
-```
-
-```text
-matchQA (ordem nova)
- SELECT ... ORDER BY created_at ASC
- reduce(triggers, melhor) onde
-   melhor = trigger cuja phrase.length é maior
-            (empate → menor created_at)
-```
-
-## Arquivos tocados
-
-- `supabase/functions/_shared/flow-router.ts` — ordenação + word boundary.
-- `supabase/functions/whapi-webhook/handlers/conversational/index.ts` — ordering em `matchQA` + escolha do mais longo.
-- `supabase/functions/evolution-webhook/handlers/conversational/index.ts` — mesmo ajuste em `matchQA` se houver cópia paralela (vou confirmar e replicar).
-- `src/components/admin/flow-builder/useFlowConflicts.ts` *(novo)*.
-- `src/components/admin/flow-builder/StepTimelineItem.tsx` — badge + tooltip.
-- `src/components/admin/flow-builder/useFlowStepsCrud.ts` — duplicar com título distinto e phrases vazias.
-- `src/pages/FluxoBuilder.tsx` — banner de conflitos.
-- Testes co-localizados: `flow-router_test.ts` (novos casos de longest-match) e `matchQA_test.ts` (caso de dois triggers iguais).
-- Migration de dados: renomear os 3 steps duplicados no Fluxo D público.
-
-## Fora deste plano
-
-- Não mexer no Fluxo D atual nem em qualquer `goto_step_id` (sua estrutura está correta).
-- Não bloquear o usuário de criar passos duplicados — só avisar e renomear por padrão.
-- Não trocar o engine (continua determinístico, sem IA decidindo rota).
+Arquivos/tabelas envolvidos:
+- `src/components/admin/flow-builder/useFlowConflicts.ts`
+- `src/pages/FluxoBuilder.tsx`
+- `src/components/admin/flow-builder/StepTimelineItem.tsx`
+- `supabase/functions/_shared/flow-router.ts`
+- testes do flow router/conflitos
+- dados existentes em `bot_flow_steps.transitions` dos Fluxos D

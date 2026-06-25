@@ -1,42 +1,39 @@
-// useFlowConflicts — detecta passos do mesmo fluxo com nome/gatilho
-// ambíguos, que historicamente confundiam o super admin ("editei o passo X
-// mas o bot continuou pegando o Y") e o runtime ("dois passos com a mesma
-// trigger_phrase, primeiro que casar ganha").
+// useFlowConflicts — detecta APENAS ambiguidades reais que podem fazer
+// o runtime do bot escolher a rota errada. Ambiguidade "global" (mesma
+// palavra usada em passos diferentes da conversa) NÃO é conflito: cada
+// passo só avalia suas próprias transitions, então "cadastrar" em um
+// passo e "cadastrar" em outro nunca competem entre si.
 //
 // Tipos de conflito reportados:
-//   - duplicateTitle:    dois ou mais passos com o MESMO `title` normalizado
-//                        (ignorando "(cópia)" e sufixos numéricos).
-//   - duplicateKey:      dois ou mais passos com o mesmo `step_key` após
-//                        remover sufixos `_copy_xxx` / `_2`.
-//   - triggerOverlap:    dois ou mais passos que compartilham pelo menos
-//                        uma `trigger_phrase` em comum.
+//   - sameStepPhrase: a MESMA frase aparece em duas transitions do MESMO
+//     passo com destinos diferentes (o runtime escolheria a primeira e
+//     ignoraria a outra — bug silencioso).
+//   - duplicateTitle: dois passos distintos com o mesmo título (após
+//     remover "(cópia)") — o super admin clica num e parece ter clicado
+//     no outro.
 //
-// O hook é puro (não acessa rede) — só refaz o cálculo quando `steps` muda.
+// O hook é puro: zero rede, recalcula só quando `steps` muda.
 
 import { useMemo } from "react";
-import type { Step } from "./flowTypes";
+import type { Step, Transition } from "./flowTypes";
 
-export type ConflictKind = "duplicateTitle" | "duplicateKey" | "triggerOverlap";
+export type ConflictKind = "sameStepPhrase" | "duplicateTitle";
 
 export interface StepConflict {
   kind: ConflictKind;
-  /** ids dos passos envolvidos (≥ 2). */
+  /** ids dos passos envolvidos (≥ 1 — sameStepPhrase usa 1 passo). */
   stepIds: string[];
   /** Texto curto que descreve o conflito. */
   label: string;
 }
 
 export interface UseFlowConflictsResult {
-  /** Todos os conflitos detectados. */
   conflicts: StepConflict[];
-  /** Mapa stepId → conflitos em que esse passo aparece. */
   byStep: Map<string, StepConflict[]>;
-  /** Total de passos envolvidos em algum conflito. */
   involvedCount: number;
 }
 
 const COPY_SUFFIX_TITLE = /\s*\(c[oó]pia(?:\s+\d+)?\)\s*$/i;
-const COPY_SUFFIX_KEY = /(?:_copy_[a-z0-9]+|_\d+)$/i;
 
 function _norm(s: string): string {
   return String(s || "")
@@ -50,29 +47,48 @@ function _baseTitle(title: string): string {
   return _norm(title.replace(COPY_SUFFIX_TITLE, ""));
 }
 
-function _baseKey(key: string | null | undefined): string {
-  return _norm((key ?? "").replace(COPY_SUFFIX_KEY, ""));
-}
-
-function _stepPhrases(step: Step): string[] {
-  const out: string[] = [];
-  for (const t of step.transitions || []) {
-    for (const p of t.trigger_phrases || []) {
-      const n = _norm(p);
-      // Frases muito curtas ("1", "2") ou stopwords são intencionalmente
-      // duplicadas entre passos paralelos (botões numerados) — não
-      // contabilizamos como conflito para não poluir a UI.
-      if (n.length >= 3) out.push(n);
-    }
-  }
-  return out;
+function _destKey(t: Transition): string {
+  return `${t.goto_step_id ?? ""}|${t.goto_special ?? ""}`;
 }
 
 export function useFlowConflicts(steps: Step[]): UseFlowConflictsResult {
   return useMemo(() => {
     const conflicts: StepConflict[] = [];
 
-    // 1) Títulos duplicados (após remover "(cópia)").
+    // 1) Conflito dentro do MESMO passo: mesma phrase em duas transitions
+    //    apontando para destinos diferentes.
+    for (const s of steps) {
+      const txs = Array.isArray(s.transitions) ? s.transitions : [];
+      if (txs.length < 2) continue;
+      const byPhrase = new Map<string, Set<string>>(); // phrase → set de destinos
+      const phraseSamples = new Map<string, string>(); // phrase normalizada → original
+      for (const t of txs) {
+        const dest = _destKey(t);
+        for (const p of t.trigger_phrases || []) {
+          const n = _norm(p);
+          if (!n || n.length < 2) continue;
+          const set = byPhrase.get(n) || new Set<string>();
+          set.add(dest);
+          byPhrase.set(n, set);
+          if (!phraseSamples.has(n)) phraseSamples.set(n, p);
+        }
+      }
+      const ambiguous: string[] = [];
+      for (const [phrase, dests] of byPhrase) {
+        if (dests.size > 1) ambiguous.push(phraseSamples.get(phrase) || phrase);
+      }
+      if (ambiguous.length) {
+        const sample = ambiguous.slice(0, 3).join('", "');
+        const more = ambiguous.length > 3 ? ` +${ambiguous.length - 3}` : "";
+        conflicts.push({
+          kind: "sameStepPhrase",
+          stepIds: [s.id],
+          label: `Mesma palavra em rotas diferentes deste passo: "${sample}"${more}`,
+        });
+      }
+    }
+
+    // 2) Títulos exatamente iguais entre passos distintos (após remover "(cópia)").
     const byTitle = new Map<string, Step[]>();
     for (const s of steps) {
       const k = _baseTitle(s.title || "");
@@ -81,59 +97,17 @@ export function useFlowConflicts(steps: Step[]): UseFlowConflictsResult {
       arr.push(s);
       byTitle.set(k, arr);
     }
-    for (const [k, group] of byTitle) {
+    for (const group of byTitle.values()) {
       if (group.length < 2) continue;
+      // Só alerta se TODOS têm exatamente o mesmo título cru (não basta a
+      // base coincidir — "Como funciona" vs "Como funciona (pós-simulação)"
+      // são distinguíveis e não confundem o super admin).
+      const rawTitles = new Set(group.map((s) => (s.title || "").trim()));
+      if (rawTitles.size > 1) continue;
       conflicts.push({
         kind: "duplicateTitle",
         stepIds: group.map((s) => s.id),
-        label: `${group.length} passos com o nome "${group[0].title.replace(COPY_SUFFIX_TITLE, "")}"`,
-      });
-    }
-
-    // 2) step_key duplicado (após remover sufixos _copy_*).
-    const byKey = new Map<string, Step[]>();
-    for (const s of steps) {
-      const k = _baseKey(s.step_key);
-      if (!k) continue;
-      const arr = byKey.get(k) || [];
-      arr.push(s);
-      byKey.set(k, arr);
-    }
-    for (const [k, group] of byKey) {
-      if (group.length < 2) continue;
-      conflicts.push({
-        kind: "duplicateKey",
-        stepIds: group.map((s) => s.id),
-        label: `${group.length} passos com identificador parecido "${k}"`,
-      });
-    }
-
-    // 3) trigger_phrases sobrepostas entre passos distintos.
-    const phraseIndex = new Map<string, Set<string>>(); // phrase → stepIds
-    for (const s of steps) {
-      for (const p of _stepPhrases(s)) {
-        const set = phraseIndex.get(p) || new Set<string>();
-        set.add(s.id);
-        phraseIndex.set(p, set);
-      }
-    }
-    // Agrupa por conjunto-de-passos para não duplicar a mesma fofoca.
-    const overlapByGroup = new Map<string, { stepIds: string[]; phrases: string[] }>();
-    for (const [phrase, idSet] of phraseIndex) {
-      if (idSet.size < 2) continue;
-      const ids = [...idSet].sort();
-      const key = ids.join("|");
-      const entry = overlapByGroup.get(key) || { stepIds: ids, phrases: [] };
-      entry.phrases.push(phrase);
-      overlapByGroup.set(key, entry);
-    }
-    for (const { stepIds, phrases } of overlapByGroup.values()) {
-      const sample = phrases.slice(0, 3).join('", "');
-      const more = phrases.length > 3 ? ` +${phrases.length - 3}` : "";
-      conflicts.push({
-        kind: "triggerOverlap",
-        stepIds,
-        label: `${stepIds.length} passos compartilham "${sample}"${more}`,
+        label: `${group.length} passos com o mesmo nome "${group[0].title}" — renomeie para distinguir`,
       });
     }
 
