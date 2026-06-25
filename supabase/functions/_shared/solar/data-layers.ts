@@ -193,6 +193,22 @@ export async function downloadTiff(url: string, apiKey: string, wantRgba: boolea
   return { width, height, values, bounds: readBounds(ifd as Record<string, unknown>) };
 }
 
+/** Diagnóstico: inspeciona georreferência/CRS de um GeoTIFF (usado pela probe). */
+export async function downloadTiffDebug(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  const u = new URL(url);
+  u.searchParams.set("key", apiKey);
+  const res = await fetch(u.toString());
+  const buf = await res.arrayBuffer();
+  const ifds = UTIF.decode(buf);
+  const ifd = ifds[0] as Record<string, unknown>;
+  UTIF.decodeImage(buf, ifd, ifds);
+  return {
+    width: ifd.width, height: ifd.height,
+    epsg: detectEpsg(ifd), bounds: readBounds(ifd),
+    t34264: ifd.t34264, t33922: ifd.t33922, t33550: ifd.t33550, t34735: ifd.t34735,
+  };
+}
+
 // ─── Paleta heatmap ─────────────────────────────────────────────────────────
 
 const IRON_PALETTE = ["00000a", "91009c", "e64616", "feb400", "fffff6"];
