@@ -77,8 +77,18 @@ export async function downloadTiffDebug(url: string, apiKey: string): Promise<Re
   const sample: Record<string, unknown> = {};
   if (data && data.byteLength >= 16) {
     const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-    sample.float32 = [dv.getFloat32(0, true), dv.getFloat32(4, true), dv.getFloat32(8, true)];
+    sample.float32le = [dv.getFloat32(0, true), dv.getFloat32(4, true), dv.getFloat32(8, true)];
+    sample.float32be = [dv.getFloat32(0, false), dv.getFloat32(4, false), dv.getFloat32(8, false)];
+    // procura o primeiro valor "sensato" (0..3000) varrendo offsets LE
+    let firstSane: { off: number; v: number } | null = null;
+    for (let o = 0; o + 4 <= Math.min(data.byteLength, 4_000_000); o += 4) {
+      const v = dv.getFloat32(o, true);
+      if (Number.isFinite(v) && v > 10 && v < 3000) { firstSane = { off: o, v }; break; }
+    }
+    sample.firstSaneLE = firstSane;
+    sample.firstBytes = Array.from(data.slice(0, 16));
     sample.dataLen = data.byteLength;
+    sample.isTyped = data.constructor.name;
   }
   return {
     width: ifd.width, height: ifd.height,
