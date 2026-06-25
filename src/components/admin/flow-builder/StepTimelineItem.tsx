@@ -50,7 +50,7 @@ interface Props {
 
 export default function StepTimelineItem({
   step, steps, selected, isStart, isLast, pulse, mediaCount, consultantName,
-  onSelect, onEdit, onDelete, onDuplicate, onJumpTo, onEditExits,
+  conflicts, onSelect, onEdit, onDelete, onDuplicate, onJumpTo, onEditExits,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
 
