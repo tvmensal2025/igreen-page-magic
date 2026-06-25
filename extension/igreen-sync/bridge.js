@@ -14,7 +14,7 @@
     const { type, id } = data;
 
     if (type === "PING") {
-      window.postMessage({ source: EXT_SOURCE, type: "PONG", id, version: "1.4.1" }, "*");
+      window.postMessage({ source: EXT_SOURCE, type: "PONG", id, version: "1.6.0" }, "*");
       return;
     }
 
