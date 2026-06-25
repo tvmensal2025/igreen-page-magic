@@ -125,6 +125,30 @@ export function useFlowStepsCrud({
   const readOnlyHerdado = syncMode === "public" && !isSuperAdmin;
 
   /**
+   * Avisa (sem bloquear) se a mutação introduziu um conflito real novo:
+   * mesma frase em duas rotas do mesmo passo, ou dois passos com título idêntico.
+   * Chamada após cada operação que muda `steps`.
+   */
+  const warnIfNewConflict = useCallback(
+    (before: Step[], after: Step[]) => {
+      try {
+        const a = detectConflicts(before).involvedCount;
+        const b = detectConflicts(after).involvedCount;
+        if (b > a) {
+          const last = detectConflicts(after).conflicts.slice(-1)[0];
+          toast.warning(
+            last?.label ?? "Esta alteração criou uma ambiguidade — revise.",
+          );
+        }
+      } catch {
+        // detector é puro — ignora se algo inesperado vier no shape.
+      }
+    },
+    [],
+  );
+
+
+  /**
    * Garante que o fluxo está editável antes de qualquer escrita. Em modo
    * público, NÃO grava — avisa o consultor para "Personalizar" primeiro. Isso
    * impede o bug silencioso de salvar onde o bot não lê. Super admin passa.
