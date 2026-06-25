@@ -11,7 +11,8 @@
 import { getAdminClient } from "../_shared/admin-client.ts";
 import { buildCors } from "../_shared/cors.ts";
 import { getGoogleApiKey, getDataLayerUrls, useMockMode } from "../_shared/solar/google-solar-client.ts";
-import { buildHdRoof } from "../_shared/solar/data-layers.ts";
+import { buildHdRoof, type PanelDraw } from "../_shared/solar/data-layers.ts";
+import { extractPanelPositions } from "../_shared/solar/economics-br.ts";
 import { checkPublicRateLimit } from "../_shared/solar/rate-limit.ts";
 
 const BUCKET = "solar-hd";
@@ -31,14 +32,16 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const analysisId = String(body.analysisId ?? "");
     const consultantId = String(body.consultantId ?? "");
+    const showFlux = body.showFlux !== false; // default: mostra heatmap
+    const panelsCount = body.panelsCount != null ? Number(body.panelsCount) : null;
     if (!analysisId) return json({ error: "analysisId obrigatório" }, 400);
 
     const admin = getAdminClient("solar-roof-hd");
 
-    // Busca a análise (lat/lng + consultor dono).
+    // Busca a análise (lat/lng + consultor dono + insights p/ desenhar painéis).
     const { data: analysis } = await admin
       .from("solar_roof_analyses")
-      .select("id, latitude, longitude, consultant_id, hd_image_path, hd_bounds")
+      .select("id, latitude, longitude, consultant_id, hd_image_path, hd_bounds, building_insights, max_panels")
       .eq("id", analysisId)
       .maybeSingle();
     if (!analysis) return json({ error: "Análise não encontrada" }, 404);
@@ -75,7 +78,30 @@ Deno.serve(async (req) => {
     if (!apiKey) return json({ error: "API Google não configurada" }, 503);
 
     const layers = await getDataLayerUrls(Number(analysis.latitude), Number(analysis.longitude), 60, apiKey);
-    const hd = await buildHdRoof(layers, apiKey, { showFlux: true, fluxOpacity: 0.5, fluxMin: 0, fluxMax: 1800 });
+
+    // Extrai os painéis reais (lat/lng + dimensão + azimute) p/ desenhar na imagem.
+    const insights = analysis.building_insights as Record<string, unknown> | null;
+    const nPanels = panelsCount ?? Math.min(14, Number(analysis.max_panels) || 14);
+    const positions = insights
+      ? extractPanelPositions(insights as never, nPanels)
+      : [];
+    const panels: PanelDraw[] = positions
+      .filter((p) => typeof p.lat === "number" && typeof p.lng === "number")
+      .map((p) => ({
+        lat: p.lat as number,
+        lng: p.lng as number,
+        widthM: p.widthM ?? 1.05,
+        heightM: p.heightM ?? 1.88,
+        azimuthDegrees: typeof p.azimuthDegrees === "number" ? p.azimuthDegrees : 0,
+      }));
+
+    const hd = await buildHdRoof(layers, apiKey, {
+      showFlux,
+      fluxOpacity: 0.35,
+      fluxMin: 0,
+      fluxMax: 1800,
+      panels,
+    });
 
     const up = await admin.storage.from(BUCKET).upload(path, hd.png, {
       contentType: "image/png",

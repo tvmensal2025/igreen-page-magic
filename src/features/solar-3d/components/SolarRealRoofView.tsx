@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Sun, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { SolarImageryView, SolarPanelPosition } from "../lib/types";
-import { buildRoofImageUrl, latLngToRelative, latLngToRelativeBounds, type LatLngBounds } from "../lib/projection";
+import { buildRoofImageUrl, latLngToRelative, type LatLngBounds } from "../lib/projection";
 import { fetchRoofHdImage } from "../lib/api";
 
 const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
@@ -76,37 +76,26 @@ export function SolarRealRoofView({
   const usingHd = !!hd?.url;
   const imageUrl = hd?.url ?? staticUrl;
 
-  // Painéis projetados: por bounds (HD) ou por Mercator (static).
+  // Painéis sobrepostos por div: SÓ no modo satélite (no HD já vêm desenhados).
   const projected = useMemo(() => {
+    if (usingHd || !imagery) return [];
     const withCoords = panelPositions.filter((p) => typeof p.lat === "number" && typeof p.lng === "number");
-    if (usingHd && hd?.bounds) {
-      const mppApprox = null; // tamanho do módulo é estimado por densidade no HD
-      return withCoords
-        .map((p) => {
-          const rel = latLngToRelativeBounds(p.lat as number, p.lng as number, hd.bounds as LatLngBounds);
-          return { index: p.index, ...rel, wPct: 1.6, hPct: 2.8, rot: p.azimuthDegrees ?? 0, mppApprox };
-        })
-        .filter((p) => p.x >= -0.02 && p.x <= 1.02 && p.y >= -0.02 && p.y <= 1.02);
-    }
-    if (imagery) {
-      const mpp = imagery.metersPerPixel ?? null;
-      const sizePct = (m: number) =>
-        mpp ? Math.max(0.6, Math.min(8, (m / mpp / imagery.sizePx) * 100)) : 2.4;
-      return withCoords
-        .map((p) => {
-          const rel = latLngToRelative(p.lat as number, p.lng as number, imagery);
-          return {
-            index: p.index,
-            ...rel,
-            wPct: sizePct(p.widthM ?? 1.05),
-            hPct: sizePct(p.heightM ?? 1.88),
-            rot: typeof p.azimuthDegrees === "number" ? p.azimuthDegrees : 0,
-          };
-        })
-        .filter((p) => p.x >= -0.05 && p.x <= 1.05 && p.y >= -0.05 && p.y <= 1.05);
-    }
-    return [];
-  }, [panelPositions, imagery, usingHd, hd]);
+    const mpp = imagery.metersPerPixel ?? null;
+    const sizePct = (m: number) =>
+      mpp ? Math.max(0.6, Math.min(8, (m / mpp / imagery.sizePx) * 100)) : 2.4;
+    return withCoords
+      .map((p) => {
+        const rel = latLngToRelative(p.lat as number, p.lng as number, imagery);
+        return {
+          index: p.index,
+          ...rel,
+          wPct: sizePct(p.widthM ?? 1.05),
+          hPct: sizePct(p.heightM ?? 1.88),
+          rot: typeof p.azimuthDegrees === "number" ? p.azimuthDegrees : 0,
+        };
+      })
+      .filter((p) => p.x >= -0.05 && p.x <= 1.05 && p.y >= -0.05 && p.y <= 1.05);
+  }, [panelPositions, imagery, usingHd]);
 
   // Enquanto tenta HD, não decide fallback ainda (evita piscar).
   if (!hdTried && analysisId) {
