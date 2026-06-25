@@ -117,7 +117,7 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
   }
 
   const resolvedOtpWorker = await resolveWorker(supabase, otpCustomer.id).catch(() => null);
-  const workerUrl = resolvedOtpWorker?.url || Deno.env.get("PORTAL2_WORKER_URL") || Deno.env.get("WORKER_PORTAL_URL") || Deno.env.get("PORTAL_WORKER_URL");
+  const workerUrl = resolvedOtpWorker?.url || Deno.env.get("PORTAL2_WORKER_URL");
   const workerSecret = resolvedOtpWorker?.secret || Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET");
   if (workerUrl) {
     try {

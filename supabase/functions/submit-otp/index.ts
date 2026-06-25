@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
     const idcliente = (customer as any)?.portal2_idcliente ? Number((customer as any).portal2_idcliente) : null;
 
     const resolved = await resolveWorker(supabase, customer_id).catch(() => null);
-    const portalWorkerUrl = (resolved?.url || Deno.env.get("PORTAL2_WORKER_URL") || Deno.env.get("PORTAL_WORKER_URL") || "").replace(/\/$/, "");
+    const portalWorkerUrl = (resolved?.url || Deno.env.get("PORTAL2_WORKER_URL") || "").replace(/\/$/, "");
     const workerSecret = resolved?.secret || Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET") || "";
 
     if (!portalWorkerUrl || !workerSecret) {

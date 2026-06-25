@@ -448,10 +448,10 @@ Deno.serve(async (req) => {
             ? Number(otpCustomer.portal2_idcliente)
             : null;
 
-          // Roteia o OTP pelo worker do portal_kind do consultor (Portal 2 = autoconexao).
+          // Roteia o OTP pelo worker resolvido (Portal 2 / autoconexão).
           const resolvedOtpWorker = await resolveWorker(supabase, otpCustomer.id).catch(() => null);
-          const workerUrl = resolvedOtpWorker?.url || settings.portal_worker_url || Deno.env.get("PORTAL_WORKER_URL") || Deno.env.get("WORKER_PORTAL_URL") || "";
-          const workerSecret = resolvedOtpWorker?.secret || settings.worker_secret || Deno.env.get("WORKER_SECRET") || "";
+          const workerUrl = resolvedOtpWorker?.url || "";
+          const workerSecret = resolvedOtpWorker?.secret || "";
 
           let workerOk = false;
           let workerErrorKind: string | null = null;

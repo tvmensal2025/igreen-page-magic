@@ -219,8 +219,8 @@ Deno.serve(async (req) => {
       .not("otp_code", "is", null)
       .limit(50);
 
-    const workerUrl = (Deno.env.get("PORTAL_WORKER_2_URL") || Deno.env.get("WORKER_PORTAL_URL") || Deno.env.get("PORTAL_WORKER_URL") || "").replace(/\/$/, "");
-    const workerSecret = Deno.env.get("WORKER_SECRET") || "";
+    const workerUrl = (Deno.env.get("PORTAL2_WORKER_URL") || "").replace(/\/$/, "");
+    const workerSecret = Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET") || "";
 
     for (const lead of pending || []) {
       if (!workerUrl || !workerSecret) {
