@@ -1,115 +1,88 @@
-# Plano detalhado — Carteira protegida + Central de Agendamentos clara
 
-## Parte A — Por que clientes da carteira recebem mensagem da IA
+## O que aconteceu na conversa do 5511971254913 (Cleuza Michelini)
 
-Auditei os 6 motores automáticos que mandam mensagem sozinhos. Só 3 respeitam a regra "carteira iGreen nunca é lead". Os outros 3 estão furando:
+Cliente entrou no **Cadastro Rápido** (Flow D, `aee7b26c-…`) e seguiu o caminho certo até a etapa do e-mail. Daí em diante:
 
+```
+13:14  Oi → Welcome → "⚡ Cadastro rápido"
+13:14  Foto da conta enviada ✅  (OCR ok: CPFL, CEP 13350000, R ERMANO MARQUES, ELIAS FAUSTO/SP)
+13:15  Confirma dados conta SIM ✅
+13:15  Resultado + pede documento
+13:15  Frente do RG ✅
+13:16  Verso do RG ✅  + confirma dados doc SIM
+13:17  "📱 Outro número" → bot pede telefone → cliente manda 19991846804
+13:18  Bot pede e-mail → cliente manda michelinicleuza@gmail.com
+13:18  ❌ Bot responde: "CEP inválido. Informe os 8 números"   ← BUG 1
+13:19  Cliente digita 13354016
+13:19  ❌ Bot dispara Flow B (b1a53333): "Você prefere simulação completa ou rápida?"  ← BUG 2
+13:20  Cliente clica "Simulação completa"
+13:20  ❌ Bot pede a foto da conta DE NOVO  ← BUG 3
+13:21  Cliente reenvia foto → bot pede CEP de novo
+13:22  "Cadastrar e finalizar"
+13:25  Cliente reenvia telefone 19991846804  ← BUG 4 (perdeu o telefone)
+13:25  portal_submitting ✅
+13:29  OTP 329225 ✅ (finalmente)
+```
 
-| Motor                        | Filtra carteira? | Cron          | O que faz                     |
-| ---------------------------- | ---------------- | ------------- | ----------------------------- |
-| `process-followups`          | ✅ Sim            | a cada 5 min  | Follow-up do bot              |
-| `bot-followup-checker`       | ✅ Sim            | a cada 30 min | Esfriar leads sem resposta    |
-| `reactivation-cron`          | ✅ Sim            | a cada 1 h    | Reaquecimento                 |
-| `**bot-stuck-recovery**`     | ❌ **NÃO**        | a cada 5 min  | IA "resgate" para lead parado |
-| `**faq-reengagement-nudge**` | ❌ **NÃO**        | a cada 5 min  | Nudge depois de FAQ           |
-| `**bot-loop-watchdog**`      | ❌ **NÃO**        | a cada 15 min | Quebra loop do bot            |
+Resultado: cadastro concluiu, mas levou 15 min com 4 perguntas desnecessárias. A regra do produto é: **conta → documento → telefone → e-mail → OTP/link**. Nada mais.
 
+## Causas (no código)
 
-Estes 3 últimos varrem `customers` sem checar `customer_origin`, então pegam clientes da carteira (`igreen_sync`) e mandam IA falar com eles.
+### Bug 1 – "CEP inválido" depois do e-mail
+- A conta OCR salvou `cep = 13350000` (terminado em `000`).
+- `_shared/conversation-helpers.ts:89` força `ask_cep` quando o CEP termina em `000`, mesmo com rua/cidade/UF presentes.
+- Em `whapi-webhook/handlers/bot-flow.ts` o `autoResolveCepIfNeeded` deveria silenciar isso (linhas 252-260, "🚫 NUNCA pedir CEP"), mas o caso B (reverse ViaCEP) e o silent fallback não estão sendo respeitados quando o lead vem do Flow D — o handler do `ask_email` acaba caindo no branch `ask_cep` e dispara o texto "❌ CEP inválido…".
 
-**Correção (sem dúvida, posso fazer já):**
+### Bug 2 – Flow B disparado no meio do Flow D
+- O input `13354016` foi tratado pelo flow-router como **keyword de entrada** do Flow B (a regex de "valor" / número grande captura CEP).
+- Falta um guard "se o lead está no funil de cadastro (Flow D, etapa pós-`aguardando_facial`/pré-`portal_submitting`), NUNCA reiniciar outro fluxo público".
 
-1. Criar `supabase/functions/_shared/origin-guard.ts` com um único helper `LEAD_ORIGIN_FILTER` (texto PostgREST) e `isLeadEligible(origin)`.
-2. Aplicar nos 3 motores furados + trocar as cópias soltas dos outros 3 pelo helper compartilhado.
-3. Adicionar teste unitário no `_shared/__tests__`.
+### Bug 3 – Pediu a foto da conta duas vezes
+- Consequência do Bug 2: Flow B começou do zero (`d_pedir_conta`) ignorando que `electricity_bill_photo_url` já estava preenchido. Faltam guards de "skip-if-have" nos steps de coleta do Flow B (alguns existem em outros pontos via `shouldSkipAsk`, mas não no `d_pedir_conta`).
 
-## Parte B — Crons duplicados e órfãos (achados ao vivo em `cron.job`)
+### Bug 4 – Telefone re-perguntado
+- Em `ask_phone`/`ask_phone_confirm` o valor `19991846804` foi salvo em `phone_landline` mas `phone_contact_confirmed` não foi marcado, então o portal-submit pediu de novo. Precisa marcar `phone_contact_confirmed=true` quando o cliente confirma "outro número" + dígita.
 
+## Mudanças propostas
 
-| #   | Cron                                                                                       | Situação                                                                                                             | Recomendação                                      |
-| --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| 1   | `ai-followup-cron-15min`                                                                   | Bate em `/functions/v1/ai-followup-cron` mas **a função não existe no repo**. Está dando 404 há tempos.              | **Remover** (é cron fantasma)                     |
-| 2   | `instance-health-cron` (jobid 43) **vs** `instance-health-cron-10min` (jobid 37)           | Mesmo endpoint, mesma cadência `*/10`. Roda em paralelo.                                                             | **Remover** o `instance-health-cron` (sem sufixo) |
-| 3   | `cleanup-webhook-dedup` (jobid 7) **vs** `cleanup-webhook-dedupe` (jobid 29)               | A tabela real chama `webhook_message_dedup` (sem "e"). O cron `cleanup-webhook-dedupe` deleta de tabela inexistente. | **Remover** o `cleanup-webhook-dedupe` (jobid 29) |
-| 4   | `facebook-creative-rotator-12h` (00h e 12h) **vs** `facebook-creative-rotator-daily` (08h) | Ambos chamam `/facebook-creative-rotator`. Resultado: o rotator roda 3× por dia (00h, 08h, 12h).                     | **Decidir comigo** (ver pergunta 1)               |
+Tudo em edge functions + helpers, sem mexer em UI. Espelhar no `evolution-webhook/handlers/bot-flow.ts` (mesmo handler duplicado).
 
+### 1. `supabase/functions/_shared/conversation-helpers.ts`
+- Aceitar CEP terminado em `000` quando `address_city`+`address_state`+`address_street` já estão preenchidos (OCR confiável). Linha 89 vira:
+  ```ts
+  if (c.cep && /000$/.test(...) && !(c.address_city && c.address_state && c.address_street)) return "ask_cep";
+  ```
+- Em modo Flow D ("cadastro rápido"), também relaxar `ask_complement`, `ask_distribuidora`, `ask_installation_number`, `ask_bill_value` — esses já vêm do OCR; se faltarem, **não bloqueiam**, vão para revisão do consultor (igual à regra do CEP).
+- Adicionar parâmetro opcional `opts.flowVariant` em `getNextMissingStep` para esse curto-circuito (sem mudar o contrato para Flow B).
 
-Os 4 itens viram **uma única migração SQL** com `cron.unschedule(...)`.
+### 2. `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (+ evolution-webhook gêmeo)
+- Em `case "ask_email"` (linha ~5320): após salvar email, se `flow_variant === 'D'` e já tem `electricity_bill_photo_url` + `document_front_url` + `phone_contact_confirmed`, ir **direto** para `finalizando` (atalho que já existe parcialmente nas linhas 5370-5372, mas só dispara se `next === 'ask_finalizar'` — generalizar para qualquer step "address/dist/bill" que poderia ser auto-resolvido).
+- `autoResolveCepIfNeeded`: quando o CEP é `XXXXX000` mas o restante do endereço está ok, **aceitar** e seguir, sem cair na re-pergunta.
+- `case "ask_phone"`: ao gravar `phone_landline`, marcar `phone_contact_confirmed=true` (já que o cliente acabou de dizer "Outro número" e digitou).
 
-## Parte C — Central de Agendamentos confusa (UI)
+### 3. Guard anti-reroteamento no flow router
+Em `_shared/flow-router.ts` (e onde o webhook decide qual flow rodar):
+- Antes de aplicar `flow_router_rules`, checar `customer.conversation_step`. Se estiver em `{aguardando_facial, portal_submitting, cadastro_em_analise, finalizando, ask_email, ask_phone, ask_phone_confirm, ask_number, ask_cep, ask_complement}` → **ignorar** triggers de Flow B/Flow D e continuar no handler determinístico do cadastro.
+- Logar em `engine_logs` um motivo `skipped_router=in_cadastro_pipeline` pra auditoria.
 
-Hoje a tela mistura linguagem técnica com nome de tabela e de cron, e tem 6 abas com sobreposição.
+### 4. Pequeno fix no `case "ask_phone"` (cadastro D)
+Atualmente ele cai em `getReplyForStep(next)` mas perde a flag de confirmação. Após `updates.phone_landline = …` adicionar `updates.phone_contact_confirmed = true`. Assim o portal-submit não pede de novo às 13:25.
 
-### Renomear o que o consultor vê
+## Validação
 
+1. **Replay no simulador**: rodar a skill `vendedora-e2e-conversations` (ou um script ad-hoc) com 1 conversa scripted reproduzindo o caminho da Cleuza (CEP 13350000) e confirmar que termina em `portal_submitting` sem passar por `ask_cep` nem por Flow B.
+2. **Query SQL pós-deploy**: nos próximos 7 dias, alertar se algum lead com `flow_variant='D'` e `electricity_bill_photo_url IS NOT NULL` recebeu uma mensagem com "CEP inválido" — adicionar contador em `engine_logs`.
+3. **Smoke**: enviar manualmente outra conta de teste cujo OCR retorne CEP 000 e confirmar fluxo até OTP.
 
-| Hoje (confuso)                                                                     | Vira (claro em PT)                                                             |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| "Fila com data fixa" / "scheduled_messages"                                        | **Agenda manual**                                                              |
-| "Pós-venda automático" + nome do cron                                              | **Pós-venda automático** (sem cron exposto)                                    |
-| "Conversão & reaquecimento" + "Follow-up bot" (são dois cards de coisas parecidas) | Um único: **Reaquecimento de leads**                                           |
-| "Disparo PRO"                                                                      | **Campanhas em massa**                                                         |
-| "CRM — ao mover coluna"                                                            | Sai da Central (é envio imediato, não agendamento). Vira nota dentro do Kanban |
-| "Resgate IA (bot-stuck-recovery · 5 min)" no rodapé                                | **IA de resgate** com selo Ligado/Desligado                                    |
-| "Pronto / atrasado"                                                                | **Vai sair agora**                                                             |
-| "Em andamento"                                                                     | **Enviando**                                                                   |
-| "Falhou"                                                                           | **Erro — clique para ver**                                                     |
-| "send-scheduled-messages · 5 min" (rodapé técnico)                                 | escondido em tooltip "Detalhes" só para admin                                  |
+## Não-objetivos
 
+- Não vou refatorar o Flow B nem mexer no editor de fluxos.
+- Não vou mudar regras de OCR (CEP 000 continua sendo gravado como tal; só não bloqueia mais).
+- Não vou apagar/editar dados desse cliente — o cadastro já completou e tem OTP.
 
-### Reduzir 6 abas para 5
+## Detalhes técnicos (para quem for revisar o PR)
 
-`Visão geral` · `Agenda manual` · `Pós-venda` · `Reaquecimento de leads` · `Campanhas em massa` · `Histórico`
-
-(A aba "Conversão" some — vira parte de "Reaquecimento de leads".)
-
-### Aviso fixo no topo
-
-> "Clientes da carteira iGreen nunca recebem reaquecimento, resgate ou nudge automático. Só leads do WhatsApp e cadastros manuais."
-
-### Limpeza de código
-
-- Apagar `src/components/whatsapp/SchedulePanel.tsx` (é só um re-export deprecated do `AgendamentosHub`) e ajustar o import lazy no `WhatsAppTab`.
-- O hook `useAgendamentosHub` continua igual; só os rótulos/abas mudam.
-
-## Parte D — Perguntas que preciso te confirmar
-
-**Pergunta 1 — Rotator do Facebook**
-O `facebook-creative-rotator` está agendado em **2 crons ao mesmo tempo**:
-
-- `facebook-creative-rotator-12h` → roda às 00:00 e 12:00
-- `facebook-creative-rotator-daily` → roda às 08:00
-
-Total: 3 rotações por dia, do mesmo endpoint. Qual destes você quer manter?
-
-- **(a)** Manter só o de 12 em 12 horas (00h e 12h) — 2 rotações/dia
-- **(b)** Manter só o diário (1× às 08h) — 1 rotação/dia
-- **(c)** Trocar tudo por **1 rotação a cada 6 horas** (00h, 06h, 12h, 18h)
-- **(d)** Deixar como está (3 por dia)  
-B DIARIO ( MAS TEM QUE ESTAR NA CENTRAL PARA CONFIGURAR E AJUSTAR )
-
-**Pergunta 2 — Mensagens automáticas ao mover card no Kanban**
-Hoje a Central de Agendamentos lista o item "CRM — ao mover coluna" junto com os agendados, mas ele não é agendado: dispara na hora que o consultor arrasta um card. Isso confunde a contagem ("X envios programados" mistura coisas que vão sair sozinhas com coisas que dependem da ação do consultor).
-
-- **(a)** Tirar da Central e deixar só dentro do Kanban (mais limpo, mas o consultor precisa lembrar de checar lá)
-- **(b)** Manter na Central, mas em uma seção separada chamada **"Dispara na hora (sem fila)"**, sem contar no total de agendados (  oque dispara na hora nao foi agendado mas entra no historico o que foi aprovado recebeu e oque vai receber daqui 30 dias entra no agendado)
-
-**Pergunta 3 — Quem dispara a IA de resgate (`bot-stuck-recovery`)**
-Esse cron usa IA para "resgatar" lead parado em algum passo do bot. Quero confirmar o escopo da correção da Parte A:
-
-- **(a)** Ignorar **qualquer cliente** com `customer_origin = 'igreen_sync'` ou `'igreen_extension'` (carteira do portal e extensão Chrome) — recomendado, é a regra que você descreveu
-- **(b)** Ignorar só `igreen_sync` (deixa a extensão dentro)  
-opacao a cliente nunca entra em nada, apenas se eu ou o consultor clicar em aprovado, mas sempre se o consultor clicar em aprovado por qlee ja ser cliente ai innicia 30 60 90 120 dias ou rerpovado, mas nao foi autoamatico e sim o consultor que clicou
-
-**Pergunta 4 — Texto do aviso fixo no topo da Central**
-Posso usar exatamente este texto?
-
-> "Clientes da carteira iGreen nunca recebem reaquecimento, resgate ou nudge automático. Só leads do WhatsApp e cadastros manuais."
-
-Se preferir outro tom, escreve aqui que coloco igual.
-
----
-
-Depois das suas respostas eu emendo o plano final e começo a implementar. Se quiser, posso **já adiantar a Parte A (tampar o vazamento da IA na carteira)** enquanto você pensa nas perguntas — é a parte mais urgente.  
-  
-pode implantar tudo de acordo com as respostas, faca a e depois analiase faca o b analise assim nao da erro
+- Arquivos: `_shared/conversation-helpers.ts`, `_shared/flow-router.ts`, `whapi-webhook/handlers/bot-flow.ts`, `evolution-webhook/handlers/bot-flow.ts`.
+- Sem migração SQL.
+- Deploy: as 4 funções afetadas são auto-deployadas via Lovable Cloud.
+- Reverter: rollback do PR; nenhum efeito colateral persistente.
