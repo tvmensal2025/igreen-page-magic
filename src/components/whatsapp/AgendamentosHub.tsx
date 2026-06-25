@@ -398,7 +398,7 @@ export function AgendamentosHub({
                       {item.action && (
                         <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={item.action}>
                           <Settings2 className="w-3.5 h-3.5" />
-                          Abrir Kanban
+                          {item.actionLabel ?? "Abrir"}
                         </Button>
                       )}
                     </div>
