@@ -1,8 +1,10 @@
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Save } from "lucide-react";
+import { Sparkles, Save, AlertCircle } from "lucide-react";
 import type { ConsultantForm } from "@/hooks/useAdminAuth";
+import { validateBrazilPhone, normalizeBrazilPhone } from "@/lib/phone";
 
 interface OnboardingGateProps {
   form: ConsultantForm;
@@ -12,32 +14,52 @@ interface OnboardingGateProps {
   children: React.ReactNode;
 }
 
+type FieldErrors = Partial<Record<"name" | "igreen_id" | "phone" | "notification_phone" | "assistant_name" | "gender", string>>;
+
+function validate(form: ConsultantForm): FieldErrors {
+  const errors: FieldErrors = {};
+  if (!form.name?.trim() || form.name.trim().length < 3) errors.name = "Digite seu nome completo";
+  const igreen = (form.igreen_id || "").replace(/\D/g, "");
+  if (!igreen || igreen.length < 4) errors.igreen_id = "ID iGreen inválido (mínimo 4 dígitos)";
+  const phoneV = validateBrazilPhone(form.phone);
+  if (!phoneV.valid) errors.phone = phoneV.message || "Telefone inválido";
+  const notifV = validateBrazilPhone(form.notification_phone);
+  if (!notifV.valid) errors.notification_phone = notifV.message || "Telefone inválido";
+  if (!form.assistant_name?.trim()) errors.assistant_name = "Dê um nome para a sua assistente";
+  if (form.gender !== "consultor" && form.gender !== "consultora") errors.gender = "Escolha consultor ou consultora";
+  return errors;
+}
+
 function isComplete(form: ConsultantForm) {
-  return (
-    !!form.name?.trim() &&
-    !!form.igreen_id?.trim() &&
-    !!form.phone?.replace(/\D/g, "") &&
-    !!form.notification_phone?.replace(/\D/g, "") &&
-    !!form.assistant_name?.trim() &&
-    (form.gender === "consultor" || form.gender === "consultora")
-  );
+  return Object.keys(validate(form)).length === 0;
 }
 
 export function OnboardingGate({ form, saving, onFormChange, onSave, children }: OnboardingGateProps) {
-  const complete = isComplete(form);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const errors = useMemo(() => validate(form), [form]);
+  const complete = Object.keys(errors).length === 0;
 
   if (complete) return <>{children}</>;
 
+  const showErr = (key: keyof FieldErrors) => (submitAttempted || touched[key]) ? errors[key] : undefined;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitAttempted(true);
+    if (Object.keys(errors).length > 0) return;
+    onSave(e);
+  };
+
   return (
     <>
-      {/* Render children behind so layout stays consistent, but block interaction */}
       <div aria-hidden="true" className="pointer-events-none opacity-30 blur-sm">
         {children}
       </div>
 
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-md p-4 overflow-y-auto">
         <form
-          onSubmit={onSave}
+          onSubmit={handleSubmit}
           className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl my-8"
         >
           <div className="text-center space-y-2">
@@ -51,11 +73,10 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
           </div>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="ob-name" className="text-sm text-muted-foreground">Nome completo</Label>
+            <Field label="Nome completo" error={showErr("name")}>
               <Input
-                id="ob-name"
                 value={form.name}
+                onBlur={() => setTouched((t) => ({ ...t, name: true }))}
                 onChange={(e) => {
                   const newName = e.target.value;
                   const slug = newName.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -63,17 +84,15 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                 }}
                 placeholder="Seu nome"
                 className="bg-secondary border-border"
-                required
               />
-            </div>
+            </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="ob-igreen" className="text-sm text-muted-foreground">ID iGreen</Label>
+            <Field label="ID iGreen" error={showErr("igreen_id")}>
               <Input
-                id="ob-igreen"
                 value={form.igreen_id}
+                onBlur={() => setTouched((t) => ({ ...t, igreen_id: true }))}
                 onChange={(e) => {
-                  const id = e.target.value;
+                  const id = e.target.value.replace(/\D/g, "").slice(0, 10);
                   onFormChange({
                     igreen_id: id,
                     cadastro_url: id ? `https://digital.igreenenergy.com.br/?id=${id}&sendcontract=true` : "",
@@ -81,85 +100,100 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                   });
                 }}
                 placeholder="ex: 126928"
+                inputMode="numeric"
                 className="bg-secondary border-border"
-                required
               />
-            </div>
+            </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="ob-phone" className="text-sm text-muted-foreground">WhatsApp principal (recebe os clientes interessados dos anúncios)</Label>
+            <Field
+              label="WhatsApp principal (recebe os clientes interessados dos anúncios)"
+              error={showErr("phone")}
+              hint="Use o mesmo número que está conectado no Evolution. Formato: DDD + 9 + 8 dígitos."
+            >
               <div className="flex">
                 <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground text-sm">+55</span>
                 <Input
-                  id="ob-phone"
                   value={form.phone.replace(/^55/, "")}
+                  onBlur={() => {
+                    setTouched((t) => ({ ...t, phone: true }));
+                    // Normaliza ao sair do campo (adiciona 9 se faltar, etc.)
+                    const norm = normalizeBrazilPhone(form.phone);
+                    if (norm && norm !== form.phone) onFormChange({ phone: norm });
+                  }}
                   onChange={(e) => {
                     const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
                     onFormChange({ phone: raw ? `55${raw}` : "" });
                   }}
                   placeholder="11989000650"
+                  inputMode="numeric"
                   className="bg-secondary border-border rounded-l-none"
-                  required
                 />
               </div>
-            </div>
+            </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="ob-notif" className="text-sm text-muted-foreground">WhatsApp para alertas (novos clientes interessados + atendimento)</Label>
+            <Field
+              label="WhatsApp para alertas (novos clientes interessados + atendimento)"
+              error={showErr("notification_phone")}
+            >
               <div className="flex">
                 <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground text-sm">+55</span>
                 <Input
-                  id="ob-notif"
                   value={form.notification_phone.replace(/^55/, "")}
+                  onBlur={() => {
+                    setTouched((t) => ({ ...t, notification_phone: true }));
+                    const norm = normalizeBrazilPhone(form.notification_phone);
+                    if (norm && norm !== form.notification_phone) onFormChange({ notification_phone: norm });
+                  }}
                   onChange={(e) => {
                     const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
                     onFormChange({ notification_phone: raw ? `55${raw}` : "" });
                   }}
                   placeholder="11989000650"
+                  inputMode="numeric"
                   className="bg-secondary border-border rounded-l-none"
-                  required
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Ao salvar, seu WhatsApp principal será ativado automaticamente como destino dos anúncios do Facebook.
-              </p>
-            </div>
+            </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="ob-assistant" className="text-sm text-muted-foreground">Nome da sua assistente virtual (a IA que vai atender os clientes)</Label>
+            <Field label="Nome da sua assistente virtual (a IA que vai atender os clientes)" error={showErr("assistant_name")}>
               <Input
-                id="ob-assistant"
                 value={form.assistant_name}
+                onBlur={() => setTouched((t) => ({ ...t, assistant_name: true }))}
                 onChange={(e) => onFormChange({ assistant_name: e.target.value })}
                 placeholder="ex: Camila"
                 className="bg-secondary border-border"
-                required
               />
               <p className="text-xs text-muted-foreground">
                 A IA vai se apresentar assim: "Oi! Aqui é a {form.assistant_name?.trim() || "Camila"}, assistente virtual {form.gender === "consultora" ? "da" : "do"} {form.name?.trim() || "(você)"}".
               </p>
-            </div>
+            </Field>
 
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Você é consultor ou consultora?</Label>
+            <Field label="Você é consultor ou consultora?" error={showErr("gender")}>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => onFormChange({ gender: "consultor" })}
+                  onClick={() => { onFormChange({ gender: "consultor" }); setTouched((t) => ({ ...t, gender: true })); }}
                   className={`h-11 rounded-xl border text-sm font-medium transition ${form.gender === "consultor" ? "border-primary bg-primary/15 text-foreground" : "border-border bg-secondary text-muted-foreground"}`}
                 >
                   Consultor
                 </button>
                 <button
                   type="button"
-                  onClick={() => onFormChange({ gender: "consultora" })}
+                  onClick={() => { onFormChange({ gender: "consultora" }); setTouched((t) => ({ ...t, gender: true })); }}
                   className={`h-11 rounded-xl border text-sm font-medium transition ${form.gender === "consultora" ? "border-primary bg-primary/15 text-foreground" : "border-border bg-secondary text-muted-foreground"}`}
                 >
                   Consultora
                 </button>
               </div>
-            </div>
+            </Field>
           </div>
+
+          {submitAttempted && Object.keys(errors).length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>Corrija os campos destacados acima para liberar o painel.</span>
+            </div>
+          )}
 
           <Button
             type="submit"
@@ -175,3 +209,22 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
     </>
   );
 }
+
+function Field({ label, error, hint, children }: { label: string; error?: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-sm text-muted-foreground">{label}</Label>
+      {children}
+      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {error && (
+        <p className="text-xs text-destructive flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Mantido para compat externa (se algum lugar importava).
+export { isComplete };
