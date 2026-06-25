@@ -373,11 +373,14 @@ export function AgendamentosHub({
                             </Badge>
                           )}
                           {typeof sys.count === "number" && (
-                            <Badge variant="outline" className="text-[10px]">{sys.count}</Badge>
+                            <Badge variant="outline" className="text-[10px]" title={sys.countLabel}>{sys.count}</Badge>
                           )}
                         </div>
                       </div>
                       <p className="text-[11px] text-muted-foreground">{sys.desc}</p>
+                      {sys.countLabel && typeof sys.count === "number" && (
+                        <p className="text-[10px] text-muted-foreground/80 italic">{sys.count} {sys.countLabel}</p>
+                      )}
                       <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={sys.action}>
                         <Settings2 className="w-3.5 h-3.5" />
                         Abrir e configurar
