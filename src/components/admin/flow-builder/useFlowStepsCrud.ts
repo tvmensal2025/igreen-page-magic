@@ -265,6 +265,17 @@ export function useFlowStepsCrud({
       const original = steps.find((s) => s.id === id);
       if (!original) return;
       const slotKey = `passo_${Date.now().toString(36)}`;
+      // Título da cópia: "(cópia)", e se já existir "(cópia 2)", "(cópia 3)"…
+      // Evita o problema de ter três passos "Como Funciona" idênticos no editor
+      // sem o super admin perceber.
+      const baseTitle = original.title.replace(/\s*\(cópia(?:\s+\d+)?\)\s*$/i, "");
+      const existingTitles = new Set(steps.map((s) => s.title));
+      let copyTitle = `${baseTitle} (cópia)`;
+      let n = 2;
+      while (existingTitles.has(copyTitle)) {
+        copyTitle = `${baseTitle} (cópia ${n})`;
+        n += 1;
+      }
       // Duplicata NÃO copia transitions (os ids apontariam para destinos antigos
       // e poderiam confundir o roteamento); o consultor reconfigura as saídas.
       const row = {
@@ -272,7 +283,7 @@ export function useFlowStepsCrud({
         position: original.position + 1,
         step_type: original.step_type,
         step_key: slotKey,
-        title: `${original.title} (cópia)`,
+        title: copyTitle,
         summary: original.summary ?? "",
         icon: original.icon,
         message_text: original.message_text ?? "",
