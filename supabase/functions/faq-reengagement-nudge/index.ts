@@ -20,6 +20,7 @@ import { resolveChannelForCustomer, isUnavailable } from "../_shared/channel-sen
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { normalizePhone } from "../_shared/utils.ts";
 import { isQuietHoursBRT } from "../_shared/bot/nudge-quiet-hours.ts";
+import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 
 const NUDGE_DELAY_MINUTES = 20;
 const NUDGE_COOLDOWN_HOURS = 4;
@@ -54,6 +55,8 @@ serve(async (_req: Request) => {
     .lt("last_bot_reply_at", cutoff)
     .or(`nudge_sent_at.is.null,nudge_sent_at.lt.${cooldown}`)
     .not("phone_whatsapp", "is", null)
+    // Regra de ouro: carteira iGreen nunca recebe nudge automático.
+    .or(LEAD_ORIGIN_FILTER)
     .limit(MAX_LEADS_PER_RUN);
 
   if (error) {

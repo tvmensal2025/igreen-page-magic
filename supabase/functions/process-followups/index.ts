@@ -13,6 +13,7 @@ import { executarFollowupCerebro } from "../_shared/cerebro/followup-hook.ts";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
+import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,10 +75,9 @@ Deno.serve(async (req) => {
       .lte("next_followup_at", now)
       .eq("bot_paused", false)
       .is("assigned_human_id", null)
-      // Carteira sincronizada do portal iGreen (igreen_sync) NÃO recebe follow-up
-      // automático: já é cliente validado/reprovado/devolutiva. Inclui leads do
-      // bot (whatsapp_lead/manual) e registros sem origem definida (null).
-      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
+      // Regra de ouro: carteira iGreen nunca recebe automação. Helper
+      // compartilhado em _shared/origin-guard.ts.
+      .or(LEAD_ORIGIN_FILTER)
       .limit(50);
     if (error) return json({ error: error.message }, 500);
 
