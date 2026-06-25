@@ -33,6 +33,8 @@ import { useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Step, Variant } from "./flowTypes";
+import { detectConflicts } from "./useFlowConflicts";
+
 
 /** Colunas de `bot_flow_steps` que o construtor pode escrever via patch. */
 const PATCHABLE_COLUMNS = [
