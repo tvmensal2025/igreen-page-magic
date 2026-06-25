@@ -1,39 +1,77 @@
-# Análise — Fluxo D / Cadastro Rápido
+# Análise Completa do Fluxo D — 3 entradas
 
-## Verificação no banco (estado atual)
+Fluxo ativo único: `b643764c-…` (Fluxo Padrão D).
 
-Existem **7 fluxos D ativos** (`bot_flows.variant='D' AND is_active=true`). Em **todos os 7**, o passo `d_welcome` tem o botão `⚡ Cadastro rápido` com `id=cadastro_rapido` e a transição correspondente aponta para um passo cujo `step_key = d_pedir_documento`. Nenhum aponta para simulação nem para `goto_special=humano`.
+## 1️⃣ 💚 Quero simular
 
-Frases-gatilho confirmadas em cada transição:
-`cadastro_rapido, cadastro rápido, cadastro rapido, ⚡ cadastro rápido, cadastrar, cadastrar e finalizar, quero me cadastrar`.
+```
+d_welcome ─► d_escolher_simulacao
+              ├─ 📸 Simulação completa ─► d_pedir_conta (foto) ─► d_resultado
+              │                                                   ├─ ✅ Continuar Cadastro ─► d_pedir_documento ✓
+              │                                                   ├─ 🎥 Como funciona  ─► d_como_funciona_copy_qwpu
+              │                                                   └─ 👨‍💼 Rafael        ─► humano ✓
+              └─ 💡 Simulação rápida   ─► d_simular_valor (digita R$) ─► d_simular_resultado
+                                                                          ├─ ✅ Quero me cadastrar ─► d_simular_pedir_conta ⚠️
+                                                                          ├─ 🎥 Como funciona      ─► d_como_funciona
+                                                                          └─ 👨‍💼 Rafael            ─► humano ✓
+```
 
-A palavra "humano/atendente/consultor" continua em transição separada com `goto_special=humano` (handoff intencional).
+**Status:** ✅ funciona. **Atenção:** Em "Simulação rápida → Quero me cadastrar", o banco aponta para `d_simular_pedir_conta` (pede foto da conta novamente). Porém o **guard do webhook** (`_flowDQuickCadastroIntent`) intercepta a frase "quero me cadastrar" e força `d_pedir_documento`, então na prática vai direto pro documento. **Consistente com Cadastro Rápido**, mas inconsistente com o que está salvo no FlowBuilder — se alguém olhar o builder, vai pensar que está errado.
 
-## Verificação no código (whapi-webhook + evolution-webhook)
+## 2️⃣ 🎥 Como funciona
 
-Em `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (linhas 3157–3219) e no equivalente em `evolution-webhook`:
+```
+d_welcome ─► d_como_funciona
+              ├─ ✅ Quero me cadastrar   ─► (banco) d_pedir_conta  /  (guard) d_pedir_documento ⚠️
+              ├─ 💬 Tenho uma pergunta   ─► d_duvidas
+              │                              ├─ cadastrar ─► d_pedir_documento ✓
+              │                              ├─ humano    ─► humano ✓
+              │                              └─ nova_pergunta ─► IA responde e volta
+              └─ 👨‍💼 Rafael               ─► humano ✓
+```
 
-1. `_flowDQuickCadastroIntent` detecta intenção quando `customer.flow_variant === 'D'` E o texto/botão casa com `/cadastro[_\s-]*rapido|cadastrar\s*e\s*finalizar|quero\s*me\s*cadastrar|\bcadastrar\b/` (ou "humano" estando em `d_welcome`).
-2. Logo após resolver `nextCustom` pelas transições, se a intenção foi detectada, **força** `nextCustom = d_pedir_documento` carregado por `step_key`.
-3. Se a resolução caísse em `__special: humano` e a intenção for cadastro, também força `d_pedir_documento`; fallback adicional retorna a mensagem "Show! Pra finalizar seu cadastro, me manda só uma foto da frente do seu documento 📄" caso o passo não exista.
+**Status:** ✅ funciona. **Mesma inconsistência**: o guard força documento direto quando o usuário diz "quero me cadastrar", mesmo que o builder diga pra pedir a conta primeiro.
 
-## Conclusão
+## 3️⃣ ⚡ Cadastro rápido
 
-Com banco + guard duplo no webhook, o Cadastro Rápido vai para documento em 100% dos caminhos previstos, mesmo se alguém editar o FlowBuilder errado depois (o guard sobrescreve a resolução).
+```
+d_welcome ─► d_pedir_documento ─► d_pedir_email ─► d_confirmar_telefone ─► d_finalizar ✓
+```
 
-### Pontos de atenção (não bloqueantes)
+**Status:** ✅ 100% correto. Banco e guard concordam.
 
-- **Lead novo sem `flow_variant` setado ainda**: o guard só dispara se `flow_variant === 'D'`. Hoje, quando o lead entra no fluxo D, o `flow_variant` é gravado antes do `d_welcome` resolver, então OK. Se um dia mudar essa ordem, o guard ficaria inerte — a rota do banco continua correta, então não causaria bug, apenas perderíamos a rede de segurança.
-- **Outros 6 fluxos D ativos**: o sistema tem 7 fluxos D simultaneamente ativos. Não é um problema de roteamento (todos foram validados), mas vale revisar se isso é intencional — normalmente só um fluxo por variant deveria estar ativo.
+---
+
+## 🟢 O que está perfeito
+- Roteamento dos 3 botões iniciais
+- Handoff "humano/Rafael" funciona em todas as telas
+- Guard duplo no webhook protege contra edições erradas
+- Apenas 1 fluxo D ativo
+
+## 🟡 Inconsistências (não quebram, mas confundem)
+
+1. **Guard sobrescreve o builder em "Quero me cadastrar"**
+   O regex `\bcadastrar\b` faz qualquer transição que contenha essa palavra ir para `d_pedir_documento`, mesmo quando o builder mandaria pedir a conta antes (d_como_funciona, d_simular_resultado). Hoje funciona, mas se você editar o builder pra "primeiro pedir conta", o guard vai ignorar.
+   **Resolver:** ou (a) atualizar o banco pra refletir o que o guard faz (todos os "Quero me cadastrar" → `d_pedir_documento`), ou (b) estreitar o guard pra disparar só com "cadastro rápido"/"cadastro_rapido", deixando "quero me cadastrar" passar pelo builder.
+
+2. **Passo dangling**: `d_como_funciona_copy_in3s` (position 19) não é alvo de ninguém. Pode ser removido.
+
+3. **Typos visíveis ao cliente**:
+   - `d_finalizar`: "Tudo certo,!" (vírgula sobrando)
+   - `d_duvidas`: "Me manda anda sua *pergunta*" ("anda" sobrando — provavelmente era "agora")
+   - `d_como_funciona_copy_qwpu`: trigger `✅Continuar Cadastro` sem espaço (não casa com o título do botão "✅ Continuar Cadastro" — só funciona porque "cadastrar" também está na lista)
+
+## 🔴 Risco real (depois de muito teste mental)
+Nenhum. Os 3 caminhos chegam ao final do cadastro. O usuário não fica preso, não recebe simulação no lugar de cadastro, não cai em humano por engano.
+
+---
 
 ## Recomendação
 
-Nenhuma alteração de código necessária. Está sólido. Se quiser, posso:
+Posso aplicar tudo de uma vez (sem mexer em código, só dados):
 
-- **Opção A**: Consolidar para apenas 1 fluxo D ativo (mais limpo, evita inconsistências futuras).
-- **Opção B**: Remover o filtro `flow_variant === 'D'` do guard, fazendo-o disparar pela palavra "cadastrar" em qualquer contexto onde o customer esteja em `d_welcome`/`d_resultado` (rede de segurança ainda mais ampla).
-- **Opção C**: Deixar como está e apenas monitorar.
+- **Fix A**: Alinhar banco com guard — todos os "✅ Quero me cadastrar / Continuar Cadastro" passam a apontar direto pra `d_pedir_documento` no builder.
+- **Fix B**: Apagar o passo dangling `d_como_funciona_copy_in3s`.
+- **Fix C**: Corrigir os typos em `d_finalizar`, `d_duvidas` e o trigger `✅Continuar Cadastro`.
 
-Me diga qual prefere (ou nenhuma). OPCAO A
-
-&nbsp;
+Confirma se aplico **A+B+C**, ou só um subset?
