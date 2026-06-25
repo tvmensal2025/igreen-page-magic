@@ -212,13 +212,14 @@ async function processLead(job) {
   // gastar token Gemini em todos os cadastros (só os primeiros N pra mapear
   // pontos cegos). Quando AI_AUDIT_LIMIT=0, desliga totalmente.
   let shouldAudit = false;
-  if (AI_AUDIT_LIMIT > 0 && SUPABASE_URL) {
+  if (!AI_AUDIT_DISABLED && AI_AUDIT_LIMIT > 0 && SUPABASE_URL) {
     try {
       const count = await getAuditCount(supabase);
       shouldAudit = count < AI_AUDIT_LIMIT;
       if (shouldAudit) console.log(`  🔍 auditoria IA ativa (${count + 1}/${AI_AUDIT_LIMIT})`);
     } catch {}
   }
+
 
   const trace = shouldAudit ? [] : null;
   const t0 = Date.now();
