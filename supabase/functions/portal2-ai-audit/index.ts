@@ -68,20 +68,38 @@ const json = (data: unknown, status = 200) =>
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Health-check: GET sem corpo pra worker testar conectividade/secret no boot.
+  if (req.method === "GET") {
+    const workerSecretSet = !!(Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET"));
+    const geminiSet = !!(Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY"));
+    return json({ ok: true, worker_secret_configured: workerSecretSet, gemini_configured: geminiSet });
+  }
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  // Auth: aceita o WORKER_SECRET do worker-portal-2 OU o service role key.
+  // Auth: aceita PORTAL2_WORKER_SECRET (preferido) ou WORKER_SECRET (compat).
+  // Aceita também via header alternativo x-worker-secret pra quem não quer
+  // mexer no Authorization (alguns gateways tratam Authorization como JWT).
   const auth = req.headers.get("authorization") || "";
-  const token = auth.replace(/^Bearer\s+/i, "");
-  const workerSecret = Deno.env.get("PORTAL2_WORKER_SECRET")
-    || Deno.env.get("WORKER_SECRET") || "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  if (!token || (token !== workerSecret && token !== serviceKey)) {
-    return json({ error: "unauthorized" }, 401);
+  const token = (auth.replace(/^Bearer\s+/i, "") || req.headers.get("x-worker-secret") || "").trim();
+  const workerSecret = (Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET") || "").trim();
+  const serviceKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+
+  if (!workerSecret && !serviceKey) {
+    console.error("[portal2-ai-audit] PORTAL2_WORKER_SECRET ausente — defina no Supabase Functions Secrets");
+    return json({ error: "audit_secret_not_configured", hint: "set PORTAL2_WORKER_SECRET in Supabase Functions Secrets" }, 503);
+  }
+  if (!token) {
+    return json({ error: "missing_authorization", hint: "send Authorization: Bearer <PORTAL2_WORKER_SECRET>" }, 401);
+  }
+  if (token !== workerSecret && token !== serviceKey) {
+    console.warn("[portal2-ai-audit] secret mismatch — worker WORKER_SECRET ≠ Supabase PORTAL2_WORKER_SECRET");
+    return json({ error: "audit_secret_mismatch", hint: "worker WORKER_SECRET must equal Supabase PORTAL2_WORKER_SECRET" }, 401);
   }
 
   const apiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY");
-  if (!apiKey) return json({ error: "gemini_not_configured" }, 500);
+  if (!apiKey) return json({ error: "gemini_not_configured", hint: "set GEMINI_API_KEY in Supabase Functions Secrets" }, 503);
+
 
   let body: { input: unknown; result: unknown; trace: unknown };
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
