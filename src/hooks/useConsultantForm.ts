@@ -3,6 +3,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 import type { ConsultantForm } from "./useAdminAuth";
+import { validateBrazilPhone } from "@/lib/phone";
+
+function describeSupabaseError(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error || "Erro desconhecido");
+  const err = error as { code?: string; message?: string; details?: string; hint?: string };
+  const msg = err.message || "";
+  if (err.code === "23505") {
+    if (msg.includes("consultants_license_key")) return "Esse nome de licença já está em uso. Vamos ajustar automaticamente, tente salvar novamente.";
+    if (msg.includes("igreen_id")) return "Esse ID iGreen já está cadastrado em outra conta.";
+    return "Já existe um registro com esses dados (chave duplicada).";
+  }
+  if (err.code === "23502") return `Campo obrigatório faltando: ${msg}`;
+  if (err.code === "42501" || msg.toLowerCase().includes("row-level security")) return "Sessão expirou ou sem permissão. Faça login novamente.";
+  if (err.code === "PGRST301" || msg.toLowerCase().includes("jwt")) return "Sessão expirou. Faça login novamente.";
+  return msg || "Erro desconhecido ao salvar";
+}
+
 
 function normalizeLicenseValue(value: string, uid: string) {
   const normalized = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
