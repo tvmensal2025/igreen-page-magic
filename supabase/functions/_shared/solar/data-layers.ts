@@ -41,11 +41,15 @@ export async function downloadTiff(url: string, apiKey: string, wantRgba: boolea
     return { width, height, rgba };
   }
 
+  // Endianness do arquivo TIFF: bytes iniciais "II"=little, "MM"=big.
+  const head = new Uint8Array(buf, 0, 2);
+  const littleEndian = head[0] === 0x49; // 'I'
+
   // Valores brutos do primeiro band (flux/mask são float32 single-band).
   const data = ifd.data as Uint8Array;
-  const spp = (ifd.t277 ? (ifd.t277 as number[])[0] : 1) || 1; // SamplesPerPixel
   const fmt = (ifd.t339 ? (ifd.t339 as number[])[0] : 1) || 1; // SampleFormat (3=float)
   const bps = (ifd.t258 ? (ifd.t258 as number[])[0] : 32) || 32; // BitsPerSample
+  const spp = (ifd.t277 ? (ifd.t277 as number[])[0] : 1) || 1; // SamplesPerPixel
   const n = width * height;
   const values = new Float32Array(n);
   const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -54,9 +58,9 @@ export async function downloadTiff(url: string, apiKey: string, wantRgba: boolea
   for (let i = 0; i < n; i++) {
     const off = i * stride;
     if (off + bytesPerSample > data.byteLength) break;
-    if (fmt === 3 && bps === 32) values[i] = dv.getFloat32(off, true);
-    else if (bps === 32) values[i] = dv.getUint32(off, true);
-    else if (bps === 16) values[i] = dv.getUint16(off, true);
+    if (fmt === 3 && bps === 32) values[i] = dv.getFloat32(off, littleEndian);
+    else if (bps === 32) values[i] = dv.getUint32(off, littleEndian);
+    else if (bps === 16) values[i] = dv.getUint16(off, littleEndian);
     else values[i] = data[off];
   }
   return { width, height, values };
