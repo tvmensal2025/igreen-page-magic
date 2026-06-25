@@ -28,7 +28,9 @@ import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalle
 import GuidedStepDialog from "@/components/admin/flow-builder/GuidedStepDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import { useFlowStepsCrud } from "@/components/admin/flow-builder/useFlowStepsCrud";
-import { useFlowConflicts } from "@/components/admin/flow-builder/useFlowConflicts";
+import { useFlowConflicts, detectConflicts } from "@/components/admin/flow-builder/useFlowConflicts";
+import { toast } from "sonner";
+
 import {
   Step, Variant, VARIANT_LABEL,
   parseTransitions, parseCaptures, parseFallback,
@@ -341,7 +343,7 @@ export default function FluxoBuilder() {
                       O perfil padrão é "auto" (precisão alta + custo baixo, escolhe modelo conforme pergunta). */}
 
                   {flowConflicts.involvedCount > 0 && !crud.readOnlyHerdado && (
-                    <div className="flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                    <div key={`conflicts-${flowId ?? "x"}`} className="flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-warning-foreground">
                           {flowConflicts.involvedCount} passos com possível ambiguidade
@@ -359,16 +361,51 @@ export default function FluxoBuilder() {
                           )}
                         </ul>
                       </div>
+                      <div className="flex shrink-0 flex-col gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowOnlyConflicts((v) => !v)}
+                        >
+                          {showOnlyConflicts ? "Ver todos" : "Revisar"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            const r = detectConflicts(steps);
+                            if (r.involvedCount === 0) {
+                              toast.success("Nenhuma ambiguidade encontrada agora.");
+                            } else {
+                              toast.warning(`${r.involvedCount} ambiguidade(s) real(is) detectada(s).`);
+                            }
+                          }}
+                        >
+                          Re-analisar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {flowConflicts.involvedCount === 0 && !crud.readOnlyHerdado && steps.length > 0 && (
+                    <div key={`ok-${flowId ?? "x"}`} className="flex items-center justify-between gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        ✓ Sem ambiguidades neste fluxo — o bot vai escolher a rota certa.
+                      </p>
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="shrink-0"
-                        onClick={() => setShowOnlyConflicts((v) => !v)}
+                        variant="ghost"
+                        className="h-7 text-[11px]"
+                        onClick={() => {
+                          const r = detectConflicts(steps);
+                          if (r.involvedCount === 0) toast.success("Confirmado: nenhuma ambiguidade.");
+                          else toast.warning(`${r.involvedCount} ambiguidade(s) detectada(s).`);
+                        }}
                       >
-                        {showOnlyConflicts ? "Ver todos" : "Revisar"}
+                        Re-analisar
                       </Button>
                     </div>
                   )}
+
 
 
                   <StepListToolbar

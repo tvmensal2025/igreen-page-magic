@@ -33,6 +33,8 @@ import { useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Step, Variant } from "./flowTypes";
+import { detectConflicts } from "./useFlowConflicts";
+
 
 /** Colunas de `bot_flow_steps` que o construtor pode escrever via patch. */
 const PATCHABLE_COLUMNS = [
@@ -123,6 +125,30 @@ export function useFlowStepsCrud({
   const readOnlyHerdado = syncMode === "public" && !isSuperAdmin;
 
   /**
+   * Avisa (sem bloquear) se a mutação introduziu um conflito real novo:
+   * mesma frase em duas rotas do mesmo passo, ou dois passos com título idêntico.
+   * Chamada após cada operação que muda `steps`.
+   */
+  const warnIfNewConflict = useCallback(
+    (before: Step[], after: Step[]) => {
+      try {
+        const a = detectConflicts(before).involvedCount;
+        const b = detectConflicts(after).involvedCount;
+        if (b > a) {
+          const last = detectConflicts(after).conflicts.slice(-1)[0];
+          toast.warning(
+            last?.label ?? "Esta alteração criou uma ambiguidade — revise.",
+          );
+        }
+      } catch {
+        // detector é puro — ignora se algo inesperado vier no shape.
+      }
+    },
+    [],
+  );
+
+
+  /**
    * Garante que o fluxo está editável antes de qualquer escrita. Em modo
    * público, NÃO grava — avisa o consultor para "Personalizar" primeiro. Isso
    * impede o bug silencioso de salvar onde o bot não lê. Super admin passa.
@@ -185,6 +211,9 @@ export function useFlowStepsCrud({
           .update(clean as never)
           .eq("id", id);
         if (error) throw error;
+        const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        warnIfNewConflict(prev, next);
+
       } catch (e) {
         setSteps(prev); // revert
         toast.error(
@@ -195,7 +224,8 @@ export function useFlowStepsCrud({
         setSaving(false);
       }
     },
-    [guardEditavel, steps, setSteps],
+    [guardEditavel, steps, setSteps, warnIfNewConflict],
+
   );
 
   const addStep = useCallback(

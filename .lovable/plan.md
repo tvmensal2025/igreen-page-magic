@@ -1,58 +1,45 @@
-Plano para corrigir 100% a ambiguidade do Fluxo D sem remover nenhum passo:
+## Objetivo
 
-1. Corrigir a causa real nos dados do Fluxo D
-- Atualizar as transições do Fluxo D ativo para manter todos os caminhos, mas separar os gatilhos por contexto.
-- Remover dos avisos/rotas as palavras genéricas que se repetem em vários passos sem serem erro real, como “cadastrar”, “humano”, “dúvida”, “primeiro”, “segunda”, quando elas aparecem em passos diferentes e não competem no mesmo momento.
-- Preservar todos os passos existentes, inclusive:
-  - `d_como_funciona`
-  - `d_como_funciona_copy_in3s`
-  - `d_como_funciona_copy_qwpu`
-  - `d_pedir_conta`
-  - `d_simular_pedir_conta`
-- Corrigir também os clones antigos/inativos do Fluxo D, para que nenhum fluxo reativado volte com o mesmo problema.
+Garantir que o aviso de ambiguidade nunca volte a aparecer por engano e que, se algum dia voltar, seja por motivo real e fácil de corrigir com 1 clique.
 
-2. Tornar o detector de conflito inteligente, não alarmista
-- Alterar `useFlowConflicts.ts` para diferenciar:
-  - conflito real: mesma frase dentro do mesmo passo apontando para destinos diferentes;
-  - risco real: identificadores/títulos muito parecidos;
-  - repetição aceitável: mesma palavra em passos diferentes, quando cada passo está em um momento diferente da conversa.
-- O banner não deve mais acusar “8 passos” por palavras globais repetidas se isso não pode fazer o runtime pegar rota errada naquele passo.
-- Quando houver conflito real, mostrar exatamente:
-  - qual passo tem o problema;
-  - qual palavra/frase está duplicada;
-  - para quais destinos ela aponta.
+## Estado atual (verificado)
 
-3. Blindar o runtime contra erro mesmo com dado ruim
-- Reforçar `matchTransition` para priorizar, nesta ordem:
-  1. botão nativo/id exato;
-  2. número da opção visível no passo atual;
-  3. frase completa mais específica;
-  4. destino explícito do passo atual;
-  5. fallback seguro.
-- Se duas frases empatam de verdade no mesmo passo com destinos diferentes, o bot deve registrar conflito e cair no caminho seguro configurado, em vez de escolher uma rota errada silenciosamente.
+- Banco: os 7 fluxos D não têm título duplicado nem mesma frase com destinos diferentes no mesmo passo. Zero conflitos reais.
+- Código: `useFlowConflicts.ts` já só reporta os dois casos que realmente quebram o bot.
+- O aviso antigo ("identificador parecido", "compartilham palavra") não existe mais no código.
 
-4. Super admin deve conseguir selecionar e editar todos os passos
-- Detectar `is_super_admin` no `FluxoBuilder`.
-- Para super admin, permitir edição direta do fluxo público/modelo sem exigir “Personalizar”.
-- Garantir que filtros como “Revisar”, busca ou tipo não façam parecer que passos foram removidos: adicionar ação clara para limpar filtros e sempre manter o contador “visível/total”.
-- Ao clicar em qualquer card, saída ou conflito, abrir o passo correto pelo `id`, nunca por nome, título ou palavra-chave.
+Então o trabalho agora é **blindagem** — não correção de bug.
 
-5. Validar com testes e auditoria de dados
-- Adicionar testes cobrindo:
-  - “como funciona” vs “como funciona 2”;
-  - “pedir conta 1” vs “pedir conta 2”;
-  - “primeira/primeiro” e “segunda/segundo” dentro do passo de escolha;
-  - repetição da palavra “cadastrar” em passos diferentes sem falso conflito;
-  - empate real no mesmo passo caindo em fallback seguro.
-- Rodar consulta final no Supabase para confirmar:
-  - zero conflito real dentro do mesmo passo;
-  - zero destino quebrado/inativo;
-  - todos os passos do Fluxo D continuam existentes e selecionáveis.
+## O que vou fazer
 
-Arquivos/tabelas envolvidos:
-- `src/components/admin/flow-builder/useFlowConflicts.ts`
-- `src/pages/FluxoBuilder.tsx`
-- `src/components/admin/flow-builder/StepTimelineItem.tsx`
-- `supabase/functions/_shared/flow-router.ts`
-- testes do flow router/conflitos
-- dados existentes em `bot_flow_steps.transitions` dos Fluxos D
+### 1. Botão "Re-analisar" no banner de conflitos
+No `FluxoBuilder.tsx`, ao lado do botão "Revisar", adicionar um botão `Re-analisar` que força recomputar e mostra um toast com o resultado ("Nenhuma ambiguidade encontrada" ou "X conflitos reais detectados"). Útil para o super admin confirmar que a tela está atualizada e não em cache.
+
+### 2. Estado explícito "sem conflitos"
+Quando `flowConflicts.involvedCount === 0`, mostrar um indicador discreto e verde no topo da lista de passos: `Sem ambiguidades neste fluxo`. Some sozinho depois de alguns segundos. Assim o super admin tem certeza visual de que o fluxo está limpo (hoje a ausência do banner amarelo pode parecer "será que não analisou?").
+
+### 3. Validação automática ao salvar passo
+No `useFlowStepsCrud.ts`, depois de cada salvar/duplicar/criar passo, rodar o detector. Se introduzir conflito real (mesma frase no mesmo passo apontando pra destinos diferentes, ou dois títulos 100% idênticos), exibir toast de aviso com o nome do conflito e link para o passo afetado. Não bloqueia o salvar — só avisa.
+
+### 4. Teste cobrindo os casos pedidos
+Adicionar `useFlowConflicts.test.ts` com:
+- 3 passos com step_key parecido (`d_como_funciona`, `d_como_funciona_copy_in3s`, `d_como_funciona_copy_qwpu`) → **0 conflitos** (step_key parecido não é conflito).
+- 2 passos com palavra "como funciona" em transições de passos diferentes → **0 conflitos**.
+- 2 passos com título exatamente igual → **1 conflito** (`duplicateTitle`).
+- 1 passo com mesma frase em duas transitions com destinos diferentes → **1 conflito** (`sameStepPhrase`).
+
+### 5. Cache-bust suave
+Adicionar `key={flowId}` no contêiner do banner para garantir que ao trocar de fluxo o estado seja descartado e recalculado do zero, evitando qualquer chance de "ficou preso" entre fluxos.
+
+## Detalhes técnicos
+
+- `useFlowConflicts.ts`: sem mudança de lógica (já está correto). Exportar uma função pura `detectConflicts(steps)` reutilizável pelo hook, pelo crud e pelo teste.
+- `FluxoBuilder.tsx`: adicionar botão "Re-analisar" + toast; mostrar indicador verde quando `involvedCount===0`.
+- `useFlowStepsCrud.ts`: chamar `detectConflicts` após cada mutação e emitir toast quando o `count` aumentar.
+- Novo arquivo: `src/components/admin/flow-builder/__tests__/useFlowConflicts.test.ts`.
+
+## Fora de escopo
+
+- Não vou tocar no runtime (`flow-router.ts`, `state-machine.ts`) — já está determinístico com longest-match e os dados estão limpos.
+- Não vou criar/remover passos no banco — nada precisa ser apagado, todos os passos D continuam ativos.
+- Não vou mudar permissão de super admin — já edita direto o fluxo público.
