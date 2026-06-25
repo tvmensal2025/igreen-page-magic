@@ -51,76 +51,79 @@ function _destKey(t: Transition): string {
   return `${t.goto_step_id ?? ""}|${t.goto_special ?? ""}`;
 }
 
-export function useFlowConflicts(steps: Step[]): UseFlowConflictsResult {
-  return useMemo(() => {
-    const conflicts: StepConflict[] = [];
+/**
+ * Função pura — calcula conflitos a partir de uma lista de passos.
+ * Reutilizada pelo hook (renderização) e pelo CRUD (validação pós-salvar).
+ */
+export function detectConflicts(steps: Step[]): UseFlowConflictsResult {
+  const conflicts: StepConflict[] = [];
 
-    // 1) Conflito dentro do MESMO passo: mesma phrase em duas transitions
-    //    apontando para destinos diferentes.
-    for (const s of steps) {
-      const txs = Array.isArray(s.transitions) ? s.transitions : [];
-      if (txs.length < 2) continue;
-      const byPhrase = new Map<string, Set<string>>(); // phrase → set de destinos
-      const phraseSamples = new Map<string, string>(); // phrase normalizada → original
-      for (const t of txs) {
-        const dest = _destKey(t);
-        for (const p of t.trigger_phrases || []) {
-          const n = _norm(p);
-          if (!n || n.length < 2) continue;
-          const set = byPhrase.get(n) || new Set<string>();
-          set.add(dest);
-          byPhrase.set(n, set);
-          if (!phraseSamples.has(n)) phraseSamples.set(n, p);
-        }
-      }
-      const ambiguous: string[] = [];
-      for (const [phrase, dests] of byPhrase) {
-        if (dests.size > 1) ambiguous.push(phraseSamples.get(phrase) || phrase);
-      }
-      if (ambiguous.length) {
-        const sample = ambiguous.slice(0, 3).join('", "');
-        const more = ambiguous.length > 3 ? ` +${ambiguous.length - 3}` : "";
-        conflicts.push({
-          kind: "sameStepPhrase",
-          stepIds: [s.id],
-          label: `Mesma palavra em rotas diferentes deste passo: "${sample}"${more}`,
-        });
+  // 1) Conflito dentro do MESMO passo: mesma phrase em duas transitions
+  //    apontando para destinos diferentes.
+  for (const s of steps) {
+    const txs = Array.isArray(s.transitions) ? s.transitions : [];
+    if (txs.length < 2) continue;
+    const byPhrase = new Map<string, Set<string>>();
+    const phraseSamples = new Map<string, string>();
+    for (const t of txs) {
+      const dest = _destKey(t);
+      for (const p of t.trigger_phrases || []) {
+        const n = _norm(p);
+        if (!n || n.length < 2) continue;
+        const set = byPhrase.get(n) || new Set<string>();
+        set.add(dest);
+        byPhrase.set(n, set);
+        if (!phraseSamples.has(n)) phraseSamples.set(n, p);
       }
     }
-
-    // 2) Títulos exatamente iguais entre passos distintos (após remover "(cópia)").
-    const byTitle = new Map<string, Step[]>();
-    for (const s of steps) {
-      const k = _baseTitle(s.title || "");
-      if (!k) continue;
-      const arr = byTitle.get(k) || [];
-      arr.push(s);
-      byTitle.set(k, arr);
+    const ambiguous: string[] = [];
+    for (const [phrase, dests] of byPhrase) {
+      if (dests.size > 1) ambiguous.push(phraseSamples.get(phrase) || phrase);
     }
-    for (const group of byTitle.values()) {
-      if (group.length < 2) continue;
-      // Só alerta se TODOS têm exatamente o mesmo título cru (não basta a
-      // base coincidir — "Como funciona" vs "Como funciona (pós-simulação)"
-      // são distinguíveis e não confundem o super admin).
-      const rawTitles = new Set(group.map((s) => (s.title || "").trim()));
-      if (rawTitles.size > 1) continue;
+    if (ambiguous.length) {
+      const sample = ambiguous.slice(0, 3).join('", "');
+      const more = ambiguous.length > 3 ? ` +${ambiguous.length - 3}` : "";
       conflicts.push({
-        kind: "duplicateTitle",
-        stepIds: group.map((s) => s.id),
-        label: `${group.length} passos com o mesmo nome "${group[0].title}" — renomeie para distinguir`,
+        kind: "sameStepPhrase",
+        stepIds: [s.id],
+        label: `Mesma palavra em rotas diferentes deste passo: "${sample}"${more}`,
       });
     }
+  }
 
-    // Index reverso: stepId → conflitos.
-    const byStep = new Map<string, StepConflict[]>();
-    for (const c of conflicts) {
-      for (const id of c.stepIds) {
-        const arr = byStep.get(id) || [];
-        arr.push(c);
-        byStep.set(id, arr);
-      }
+  // 2) Títulos exatamente iguais entre passos distintos.
+  const byTitle = new Map<string, Step[]>();
+  for (const s of steps) {
+    const k = _baseTitle(s.title || "");
+    if (!k) continue;
+    const arr = byTitle.get(k) || [];
+    arr.push(s);
+    byTitle.set(k, arr);
+  }
+  for (const group of byTitle.values()) {
+    if (group.length < 2) continue;
+    const rawTitles = new Set(group.map((s) => (s.title || "").trim()));
+    if (rawTitles.size > 1) continue;
+    conflicts.push({
+      kind: "duplicateTitle",
+      stepIds: group.map((s) => s.id),
+      label: `${group.length} passos com o mesmo nome "${group[0].title}" — renomeie para distinguir`,
+    });
+  }
+
+  const byStep = new Map<string, StepConflict[]>();
+  for (const c of conflicts) {
+    for (const id of c.stepIds) {
+      const arr = byStep.get(id) || [];
+      arr.push(c);
+      byStep.set(id, arr);
     }
+  }
 
-    return { conflicts, byStep, involvedCount: byStep.size };
-  }, [steps]);
+  return { conflicts, byStep, involvedCount: byStep.size };
 }
+
+export function useFlowConflicts(steps: Step[]): UseFlowConflictsResult {
+  return useMemo(() => detectConflicts(steps), [steps]);
+}
+
