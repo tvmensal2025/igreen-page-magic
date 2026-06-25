@@ -393,6 +393,7 @@ export default function FluxoBuilder() {
                             selected={inspectorId === s.id}
                             isStart={i === 0 && !listQuery && typeFilter.size === 0}
                             isLast={i === filteredSteps.length - 1}
+                            conflicts={flowConflicts.byStep.get(s.id)}
                             onSelect={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
                             onEdit={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
                             onDelete={() => { void crud.deleteStep(s.id); if (inspectorId === s.id) setInspectorId(null); }}
