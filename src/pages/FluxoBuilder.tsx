@@ -82,6 +82,7 @@ export default function FluxoBuilder() {
   const { isNarrow } = useViewportWidth();
   const validation = useFlowValidation(steps);
   const flowConflicts = useFlowConflicts(steps);
+  const { isSuperAdmin } = useUserRole(userId);
   const [showOnlyConflicts, setShowOnlyConflicts] = useState(false);
 
   const setViewMode = useCallback((next: ViewMode) => {
@@ -182,6 +183,7 @@ export default function FluxoBuilder() {
     steps,
     setSteps,
     reload: () => loadData(editingVariant),
+    isSuperAdmin,
   });
 
   const handleDragEnd = (event: DragEndEvent) => {
