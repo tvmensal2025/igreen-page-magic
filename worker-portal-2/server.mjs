@@ -1032,18 +1032,85 @@ function _buildDadosObject(c, consultant, partner, igreenId,
 }
 
 app.post('/confirm-otp', authRequired, async (req, res) => {
-  const { idconsultor, idcliente, code, customer_id } = req.body || {};
-  if (!idconsultor || !idcliente || !code) {
-    return res.status(400).json({ ok: false, error: 'idconsultor, idcliente, code obrigatórios' });
+  const body = req.body || {};
+  let { idconsultor, idcliente, customer_id } = body;
+  const code = body.code || body.otp_code;
+
+  if (!code) {
+    return res.status(400).json({ ok: false, error: 'code obrigatório', error_kind: 'missing_code' });
   }
+
+  // Tolerância: se o webhook mandou só customer_id, resolvemos os IDs do
+  // iGreen direto do Supabase. Assim o /confirm-otp nunca falha por payload
+  // incompleto vindo de integrações futuras.
+  if ((!idconsultor || !idcliente) && customer_id && supabase) {
+    try {
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('portal2_idcliente, consultant_id, consultants:consultant_id(igreen_id)')
+        .eq('id', customer_id)
+        .maybeSingle();
+      if (!idcliente && cust?.portal2_idcliente) idcliente = Number(cust.portal2_idcliente);
+      if (!idconsultor && cust?.consultants?.igreen_id) idconsultor = Number(cust.consultants.igreen_id);
+    } catch (e) {
+      console.warn(`  ⚠ /confirm-otp lookup customer falhou: ${e.message}`);
+    }
+  }
+
+  if (!idconsultor || !idcliente) {
+    // Cadastro ainda não terminou no Portal 2. Persiste o código pra
+    // recover-stuck-otp reprocessar quando o idcliente chegar.
+    if (supabase && customer_id) {
+      await supabase.from('customers').update({
+        otp_code: String(code).slice(0, 12),
+        otp_pending_replay: true,
+        otp_received_at: new Date().toISOString(),
+      }).eq('id', customer_id).then(() => {}, () => {});
+    }
+    return res.status(202).json({
+      ok: false,
+      queued_for_replay: true,
+      error: 'idcliente/idconsultor ainda não disponíveis — código guardado',
+      error_kind: 'awaiting_portal_idcliente',
+    });
+  }
+
+  // Como o código NÃO expira, fazemos retry curto contra a iGreen pra
+  // absorver instabilidade transitória do backend.
+  let lastErr = null;
+  let result = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const c = new Portal2Client({ idconsultor });
+      result = await c.validateVerificationCode({ idcliente, code });
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      console.warn(`  ⚠ /confirm-otp tentativa ${attempt}/3 falhou: ${e.message}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1200));
+    }
+  }
+  if (lastErr) {
+    if (supabase && customer_id) {
+      await supabase.from('customers').update({
+        portal2_otp_last_error: String(lastErr.message || '').slice(0, 500),
+      }).eq('id', customer_id).then(() => {}, () => {});
+    }
+    return res.status(502).json({
+      ok: false,
+      error: lastErr.message,
+      error_kind: 'igreen_validate_failed',
+    });
+  }
+
+  console.log(`✓ OTP validado idcliente=${idcliente} customer=${customer_id}`);
+
   try {
     const c = new Portal2Client({ idconsultor });
-    const result = await c.validateVerificationCode({ idcliente, code });
-    console.log(`✓ OTP validado idcliente=${idcliente} customer=${customer_id}`);
 
-    // Após validar OTP, busca o link DIRETO de assinatura (já com facial embutida).
-    // O backend iGreen gera esse link logo após OTP+terms aceitos. Como pode ter
-    // pequena latência, fazemos polling curto antes de devolver.
+    // Busca o link DIRETO de assinatura (facial embutida). Polling curto
+    // pra absorver latência do backend iGreen.
     let signatureLink = null;
     let contractInfo = null;
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -1054,18 +1121,14 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
           || contractInfo?.linkAssinatura
           || null;
         if (signatureLink) break;
-      } catch (e) { /* segue tentando */ }
+      } catch (_) { /* segue tentando */ }
       await new Promise(r => setTimeout(r, 1500));
     }
-    // Fallback: se o backend não devolveu o link direto, usa o canônico
-    // (ele tem sendcontract=true e funciona após OTP, mas exige o cliente
-    // digitar o código de novo — não é o ideal).
     const fallbackLink = buildValidationLink(idcliente, idconsultor);
     const finalLink = signatureLink || fallbackLink;
     const linkSource = signatureLink ? 'igreen-direct' : 'fallback-canonico';
     console.log(`  🔗 link facial/assinatura (${linkSource}): ${finalLink}`);
 
-    // Best-effort: atualiza estado no banco
     if (supabase && customer_id) {
       await supabase.from('customers').update({
         portal2_status: 'otp_validated',
@@ -1075,18 +1138,19 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
         link_assinatura: finalLink,
         otp_code: String(code).slice(0, 12),
         otp_validated_at: new Date().toISOString(),
+        otp_pending_replay: false,
         status: 'awaiting_signature',
         conversation_step: 'aguardando_facial',
       }).eq('id', customer_id).then(() => {}, () => {});
     }
 
-    // Envia o link da facial pro cliente via WhatsApp (best-effort).
+    // CHAVE DE OURO: link único + mensagem calorosa.
     if (customer_id) {
       try {
         const sendResult = await sendFacialLinkToCustomer(customer_id, finalLink);
-        console.log(`  📲 link facial WhatsApp: ${JSON.stringify(sendResult)}`);
+        console.log(`  📲 chave de ouro (link facial) WhatsApp: ${JSON.stringify(sendResult)}`);
       } catch (e) {
-        console.warn(`  ⚠ envio do link facial falhou: ${e.message}`);
+        console.warn(`  ⚠ envio da chave de ouro falhou: ${e.message}`);
       }
     }
 
@@ -1098,9 +1162,10 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
       contract: contractInfo,
     });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: e.message });
+    return res.status(500).json({ ok: false, error: e.message, error_kind: 'post_validation_failed' });
   }
 });
+
 
 app.get('/lead/:idcliente/status', authRequired, async (req, res) => {
   const { idcliente } = req.params;
