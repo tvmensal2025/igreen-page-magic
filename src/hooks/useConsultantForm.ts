@@ -132,25 +132,35 @@ export function useConsultantForm(
       setForm((prev) => ({ ...prev, license: savedConsultant?.license || finalLicense }));
       if (savedConsultant?.photo_url) { setPhotoPreview(savedConsultant.photo_url); setPhotoFile(null); setLocalPhotoPreview(null); }
 
-      // Auto-ativa telefone principal como destino dos anúncios do Facebook.
-      const phoneDigits = form.phone.replace(/\D/g, "");
-      if (phoneDigits) {
+      // Auto-ativa telefone principal como destino dos anúncios — só se válido.
+      const phoneValidation = validateBrazilPhone(form.phone);
+      if (phoneValidation.valid) {
         try {
           await supabase.from("consultant_ad_settings").upsert(
-            { consultant_id: userId, whatsapp_destination_number: phoneDigits },
+            { consultant_id: userId, whatsapp_destination_number: phoneValidation.normalized },
             { onConflict: "consultant_id" },
           );
         } catch (adsErr) {
           console.warn("[useConsultantForm] falha ao sincronizar whatsapp_destination_number", adsErr);
         }
+      } else if (form.phone) {
+        console.warn("[useConsultantForm] telefone inválido, não gravado em ad_settings:", phoneValidation.reason);
+      }
+
+      // Tenta marcar como verificado se bate com o connected_phone da instância
+      try {
+        await supabase.rpc("check_consultant_phone_match", { _consultant_id: userId });
+      } catch (verifyErr) {
+        console.warn("[useConsultantForm] check_consultant_phone_match falhou", verifyErr);
       }
 
       toast({ title: "✅ Dados salvos com sucesso!", ...(licenseAdjusted ? { description: `A licença foi ajustada automaticamente para ${savedConsultant?.license || finalLicense}.` } : {}) });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error);
-      toast({ title: "Erro ao salvar", description: msg || "Erro desconhecido", variant: "destructive" });
+      console.error("[onboarding-save] failed:", error);
+      toast({ title: "Erro ao salvar", description: describeSupabaseError(error), variant: "destructive", duration: 8000 });
     } finally { setSaving(false); }
   };
+
 
   return {
     saving,
