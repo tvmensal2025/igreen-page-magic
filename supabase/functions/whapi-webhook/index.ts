@@ -415,7 +415,7 @@ Deno.serve(async (req) => {
       if (extractedOtp) {
         const { data: otpCustomer } = await supabase
           .from("customers")
-          .select("id, name, status")
+          .select("id, name, status, consultant_id, portal2_idcliente")
           .eq("phone_whatsapp", phone)
           .eq("consultant_id", superAdminConsultantId)
           .in("status", ["awaiting_otp", "portal_submitting"])
@@ -424,31 +424,79 @@ Deno.serve(async (req) => {
           .maybeSingle();
 
         if (otpCustomer) {
-          console.log(`🔑 [whapi-otp] OTP ${extractedOtp} capturado para ${otpCustomer.name} (${otpCustomer.id})`);
+          console.log(`🔑 [whapi-otp] OTP ${extractedOtp} capturado para ${otpCustomer.name} (${otpCustomer.id}) idcliente=${otpCustomer.portal2_idcliente ?? 'null'}`);
+
+          // Sempre persiste o código recebido. Se o cadastro no Portal 2 ainda
+          // não terminou (portal2_idcliente null), marca otp_pending_replay=true
+          // pra recover-stuck-otp reaproveitar quando o idcliente chegar.
           await supabase.from("customers").update({
             otp_code: extractedOtp,
             otp_received_at: new Date().toISOString(),
+            otp_pending_replay: !otpCustomer.portal2_idcliente,
             updated_at: new Date().toISOString(),
           }).eq("id", otpCustomer.id);
 
+          // Resolve idconsultor (iGreen) a partir do consultor do customer.
+          // Sem esse id, o worker rejeita o /confirm-otp com 400.
+          const { data: consultantRow } = await supabase
+            .from("consultants")
+            .select("igreen_id")
+            .eq("id", otpCustomer.consultant_id)
+            .maybeSingle();
+          const idconsultor = consultantRow?.igreen_id ? Number(consultantRow.igreen_id) : null;
+          const idcliente = otpCustomer.portal2_idcliente
+            ? Number(otpCustomer.portal2_idcliente)
+            : null;
+
           // Roteia o OTP pelo worker do portal_kind do consultor (Portal 2 = autoconexao).
-          // Fallback defensivo para Portal 1 se a resolução falhar.
           const resolvedOtpWorker = await resolveWorker(supabase, otpCustomer.id).catch(() => null);
           const workerUrl = resolvedOtpWorker?.url || settings.portal_worker_url || Deno.env.get("PORTAL_WORKER_URL") || Deno.env.get("WORKER_PORTAL_URL") || "";
           const workerSecret = resolvedOtpWorker?.secret || settings.worker_secret || Deno.env.get("WORKER_SECRET") || "";
-          if (workerUrl && workerSecret) {
+
+          let workerOk = false;
+          let workerErrorKind: string | null = null;
+          if (!workerUrl || !workerSecret) {
+            workerErrorKind = "worker_not_configured";
+            console.warn(`⚠️ [whapi-otp] worker indisponível (url=${!!workerUrl} secret=${!!workerSecret})`);
+          } else if (!idconsultor || !idcliente) {
+            // Cadastro ainda não terminou — recover-stuck-otp vai reprocessar.
+            workerErrorKind = !idcliente ? "awaiting_portal_idcliente" : "missing_idconsultor";
+            console.log(`⏳ [whapi-otp] cadastro incompleto (${workerErrorKind}); OTP guardado pra replay`);
+          } else {
+            const payload = {
+              customer_id: otpCustomer.id,
+              idconsultor,
+              idcliente,
+              code: extractedOtp,
+              otp_code: extractedOtp, // compat: aceita ambos os nomes
+            };
             try {
               const ctrl = new AbortController();
-              const timer = setTimeout(() => ctrl.abort(), 5000);
-              await fetch(`${workerUrl.replace(/\/$/, "")}/confirm-otp`, {
+              const timer = setTimeout(() => ctrl.abort(), 60_000);
+              const wr = await fetch(`${workerUrl.replace(/\/$/, "")}/confirm-otp`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${workerSecret}` },
-                body: JSON.stringify({ customer_id: otpCustomer.id, otp_code: extractedOtp }),
+                body: JSON.stringify(payload),
                 signal: ctrl.signal,
               });
               clearTimeout(timer);
-              console.log(`✅ [whapi-otp] OTP enviado ao worker`);
+              workerOk = wr.ok;
+              if (wr.ok) {
+                // Sucesso: o worker já manda a "chave de ouro" com o link
+                // direto. Limpa o flag de replay e fica em silêncio aqui pra
+                // não duplicar mensagem.
+                await supabase.from("customers").update({
+                  otp_pending_replay: false,
+                  updated_at: new Date().toISOString(),
+                }).eq("id", otpCustomer.id);
+                console.log(`✅ [whapi-otp] OTP confirmado pelo worker (chave de ouro disparada)`);
+              } else {
+                const txt = await wr.text().catch(() => "");
+                workerErrorKind = `worker_status_${wr.status}`;
+                console.warn(`⚠️ [whapi-otp] worker respondeu ${wr.status}: ${txt.slice(0, 200)}`);
+              }
             } catch (e: any) {
+              workerErrorKind = e?.name === "AbortError" ? "worker_timeout" : "worker_fetch_failed";
               console.warn(`⚠️ [whapi-otp] Falha ao notificar worker: ${e?.message}`);
             }
           }
@@ -458,22 +506,36 @@ Deno.serve(async (req) => {
             message_text: messageText, message_type: "text",
             conversation_step: "otp_received",
           });
-          try {
-            const reply = "✅ Código recebido! Estou finalizando seu cadastro, aguarde alguns segundos...";
-            await realSender.sendText(remoteJid, reply);
-            await supabase.from("conversations").insert({
-              customer_id: otpCustomer.id, message_direction: "outbound",
-              message_text: reply, message_type: "text",
-              conversation_step: "otp_received",
-            });
-          } catch (_) {}
 
-          return new Response(JSON.stringify({ ok: true, msg: "otp_intercepted", otp: extractedOtp }), {
+          // Se o worker já confirmou, ele mesmo manda a mensagem chave de ouro
+          // com o link. Aqui só falamos algo se a confirmação NÃO foi imediata
+          // (worker offline, cadastro ainda em andamento, etc.). Como o código
+          // sempre é válido, nunca dizemos "código inválido".
+          if (!workerOk) {
+            try {
+              const reply = "✅ Código recebido! Estou finalizando seu cadastro, em alguns segundos eu te confirmo aqui. 💚";
+              await realSender.sendText(remoteJid, reply);
+              await supabase.from("conversations").insert({
+                customer_id: otpCustomer.id, message_direction: "outbound",
+                message_text: reply, message_type: "text",
+                conversation_step: "otp_received",
+              });
+            } catch (_) {}
+          }
+
+          return new Response(JSON.stringify({
+            ok: true,
+            msg: "otp_intercepted",
+            otp: extractedOtp,
+            worker_ok: workerOk,
+            worker_error: workerErrorKind,
+          }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
     }
+
 
     // ─── Find or create customer ────────────────────────────────────
     // 🚨 NUNCA filtrar a busca por status — se filtrarmos, leads em
