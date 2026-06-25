@@ -286,6 +286,68 @@ Deno.test("matchTransition: buttonId only routes via goto_special when value is 
   assertEquals(t, null);
 });
 
+// ─── matchTransition: longest-match no fallback de texto (anti-ambiguidade) ─
+
+Deno.test("matchTransition: text fallback prefers the LONGEST trigger_phrase", () => {
+  // Cliente digita "quero ver minha conta de luz 2". Duas transitions casam:
+  // "conta" (curta) e "conta de luz 2" (mais específica). A mais longa ganha.
+  const tShort: FlowTransition = {
+    trigger_phrases: ["conta"],
+    goto_step_id: "step-conta-1",
+  };
+  const tLong: FlowTransition = {
+    trigger_phrases: ["conta de luz 2"],
+    goto_step_id: "step-conta-2",
+  };
+  const t = matchTransition({
+    transitions: [tShort, tLong],
+    buttonId: "",
+    messageText: "quero ver minha conta de luz 2",
+  });
+  assertEquals(t?.goto_step_id, "step-conta-2");
+});
+
+Deno.test("matchTransition: text fallback uses word boundary for short tokens", () => {
+  // "conta" não deve casar dentro de "encontrar" (palavra parcial).
+  const t = matchTransition({
+    transitions: [{ trigger_phrases: ["conta"], goto_step_id: "X" }],
+    buttonId: "",
+    messageText: "vou encontrar amanhã",
+  });
+  assertEquals(t, null);
+});
+
+Deno.test("matchTransition: text fallback ignores 'sim'/'nao'/'ok' as standalone triggers", () => {
+  // Stopwords curtíssimas casariam em quase toda mensagem — proibidas.
+  const t = matchTransition({
+    transitions: [{ trigger_phrases: ["sim"], goto_step_id: "X" }],
+    buttonId: "",
+    messageText: "sim quero",
+  });
+  assertEquals(t, null);
+});
+
+Deno.test("matchTransition: text fallback — tie-break prefers transition with goto_step_id", () => {
+  // Duas phrases de mesmo tamanho casam: a transition com goto_step_id real
+  // vence a que tem só goto_special. Mantém o desenho explícito do super admin.
+  const tSpecial: FlowTransition = {
+    trigger_phrases: ["cadastrar"],
+    goto_special: "humano",
+  };
+  const tStep: FlowTransition = {
+    trigger_phrases: ["cadastrar"],
+    goto_step_id: "step-cadastro",
+  };
+  const t = matchTransition({
+    transitions: [tSpecial, tStep],
+    buttonId: "",
+    messageText: "quero cadastrar agora",
+  });
+  assertEquals(t?.goto_step_id, "step-cadastro");
+});
+
+
+
 // ─── matchTransition: PBT (cláusula 2.15) ──────────────────────────────
 //
 // Validates: Requirements 2.15
