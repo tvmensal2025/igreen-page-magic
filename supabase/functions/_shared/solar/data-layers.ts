@@ -331,8 +331,11 @@ export function composeHdRoofPng(
       if (cx < -50 || cx > w + 50 || cy < -50 || cy > h + 50) continue;
       const halfW = (p.widthM * pxPerMx) / 2;
       const halfH = (p.heightM * pxPerMy) / 2;
-      const rot = (p.azimuthDegrees * Math.PI) / 180;
-      drawPanel(out, w, h, cx, cy, Math.max(2, halfW), Math.max(2, halfH), rot);
+      // Sem rotação por azimute: a imagem está com o norte pra cima e as
+      // coordenadas reais já posicionam cada módulo. Girar o retângulo pelo
+      // azimute do telhado deixava os módulos "tortos". Mantemos alinhados à
+      // grade da imagem, como uma instalação real vista de cima.
+      drawPanel(out, w, h, cx, cy, Math.max(2, halfW), Math.max(2, halfH), 0);
     }
   }
 
