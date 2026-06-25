@@ -32,9 +32,10 @@ type Step = "form" | "loading" | "results";
 
 const LOADING_STEPS = [
   "Localizando o imóvel no mapa…",
-  "Lendo imagens de satélite…",
-  "Calculando área útil do telhado…",
+  "Lendo imagens de satélite do telhado…",
+  "Calculando área útil e inclinação…",
   "Dimensionando módulos e economia…",
+  "Quase lá — preparando o resultado…",
 ];
 
 export function SolarAnalysisModal({
@@ -80,10 +81,12 @@ export function SolarAnalysisModal({
   useEffect(() => {
     if (step !== "loading") return;
     let i = 0;
+    setLoadingMsg(LOADING_STEPS[0]);
+    // Avança as mensagens uma vez (sem loop infinito), parando na última.
     const id = setInterval(() => {
-      i = (i + 1) % LOADING_STEPS.length;
+      i = Math.min(i + 1, LOADING_STEPS.length - 1);
       setLoadingMsg(LOADING_STEPS[i]);
-    }, 2200);
+    }, 1800);
     return () => clearInterval(id);
   }, [step]);
 
