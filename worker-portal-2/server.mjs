@@ -1208,6 +1208,29 @@ app.get('/queue/status', authRequired, async (req, res) => {
 // ─── Bootstrap ──────────────────────────────────────────────────────────────
 async function main() {
   await initQueue();
+
+  // Health-check da auditoria IA: testa SUPABASE + WORKER_SECRET + verify_jwt
+  // + GEMINI_API_KEY ANTES de aceitar tráfego. Erro NÃO derruba o worker —
+  // só loga visível e expõe em GET /health pra alertas.
+  if (!AI_AUDIT_DISABLED) {
+    try {
+      const h = await checkAuditHealth({ supabaseUrl: SUPABASE_URL, workerSecret: SECRET });
+      auditHealth = { ...h, checked_at: new Date().toISOString() };
+      if (h.healthy) {
+        console.log(`✅ AI audit OK (gemini=${h.info?.gemini_configured} secret=${h.info?.worker_secret_configured})`);
+      } else {
+        console.error(`🔴 AI AUDIT INDISPONÍVEL: ${h.error}`);
+        console.error(`   → consertar antes que cadastros passem sem análise IA.`);
+      }
+    } catch (e) {
+      auditHealth = { healthy: false, error: e.message, checked_at: new Date().toISOString() };
+      console.error(`🔴 AI AUDIT health-check falhou: ${e.message}`);
+    }
+  } else {
+    auditHealth = { healthy: false, error: 'disabled_by_flag PORTAL2_AI_AUDIT_DISABLED=true', checked_at: new Date().toISOString() };
+    console.warn(`⚠️ AI audit DESABILITADA por flag PORTAL2_AI_AUDIT_DISABLED=true`);
+  }
+
   app.listen(PORT, () => {
     console.log(`🚀 worker-portal-2 ouvindo na porta ${PORT}`);
     console.log(`   POST /submit-lead`);
@@ -1217,6 +1240,7 @@ async function main() {
     console.log(`   GET  /health`);
   });
 }
+
 
 // Graceful shutdown — fecha browser singleton
 async function shutdown(sig) {
