@@ -211,6 +211,9 @@ export function useFlowStepsCrud({
           .update(clean as never)
           .eq("id", id);
         if (error) throw error;
+        const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        warnIfNewConflict(prev, next);
+
       } catch (e) {
         setSteps(prev); // revert
         toast.error(
