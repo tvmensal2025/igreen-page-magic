@@ -15,6 +15,8 @@ import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useConsultantForm } from "@/hooks/useConsultantForm";
 import { useConsultantPresence } from "@/hooks/useConsultantPresence";
 import { OcrReviewBanner } from "@/components/captacao/OcrReviewBanner";
+import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatusBanner";
+
 import PageStatus from "@/components/common/PageStatus";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
@@ -377,6 +379,9 @@ const AdminContent = () => {
 
         {/* OCR Review Banner */}
         <OcrReviewBanner consultantId={userId} />
+        <WhatsAppPhoneStatusBanner consultantId={userId} />
+
+
 
         <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-4 border-[var(--pe-emerald)] border-t-transparent rounded-full" /></div>}>
           {activeTab === "dashboard" && userId && (
