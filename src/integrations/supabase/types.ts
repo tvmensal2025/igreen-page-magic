@@ -3624,6 +3624,7 @@ export type Database = {
           origin_consultant_id: string | null
           origin_instance_name: string | null
           otp_code: string | null
+          otp_pending_replay: boolean
           otp_received_at: string | null
           otp_test_phone: string | null
           otp_validated_at: string | null
@@ -3833,6 +3834,7 @@ export type Database = {
           origin_consultant_id?: string | null
           origin_instance_name?: string | null
           otp_code?: string | null
+          otp_pending_replay?: boolean
           otp_received_at?: string | null
           otp_test_phone?: string | null
           otp_validated_at?: string | null
@@ -4042,6 +4044,7 @@ export type Database = {
           origin_consultant_id?: string | null
           origin_instance_name?: string | null
           otp_code?: string | null
+          otp_pending_replay?: boolean
           otp_received_at?: string | null
           otp_test_phone?: string | null
           otp_validated_at?: string | null
