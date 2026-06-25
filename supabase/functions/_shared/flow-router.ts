@@ -213,19 +213,62 @@ function _norm(s: string | null | undefined): string {
 }
 
 /**
+ * Stopwords curtas/ambíguas que nunca devem disparar uma transição sozinhas
+ * via fallback de texto livre. "ok", "sim", "nao" casariam em quase qualquer
+ * frase do lead. Buttons exatos continuam funcionando — esta lista só corta
+ * o passo (d) `messageText.includes`.
+ */
+const TEXT_FALLBACK_STOPWORDS: ReadonlySet<string> = new Set([
+  "nao", "sim", "ok", "oi", "ola", "eai", "opa",
+  "e", "a", "o", "de", "da", "do",
+]);
+
+/** Compara qualquer phrase contra o texto do lead com limite de palavra para
+ *  termos curtos (≤4 chars) e substring para frases mais longas. Isso evita
+ *  que "conta" case dentro de "encontrar" e que "2" case em "2025". */
+function _phraseMatchesText(needle: string, hay: string): boolean {
+  if (!needle || !hay) return false;
+  if (TEXT_FALLBACK_STOPWORDS.has(needle)) return false;
+  if (hay === needle) return true;
+  const isShort = needle.length <= 4 || !needle.includes(" ");
+  if (isShort) {
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i");
+    return rx.test(hay);
+  }
+  return hay.includes(needle);
+}
+
+/** Tamanho da maior `trigger_phrase` normalizada da transition (0 se vazia). */
+function _maxPhraseLen(t: FlowTransition): number {
+  const phrases = Array.isArray(t.trigger_phrases) ? t.trigger_phrases : [];
+  let max = 0;
+  for (const p of phrases) {
+    const n = _norm(p).length;
+    if (n > max) max = n;
+  }
+  return max;
+}
+
+/**
  * Casa o input do cliente contra as `transitions` configuradas no step.
  *
  * Ordem de prioridade (2.15):
  *   (a) `buttonId` casa com algum item de `transition.trigger_phrases`
- *       (case-insensitive, trim);
+ *       (case-insensitive, trim) — exata;
  *   (b) `buttonId` é igual a um `goto_special` reconhecido (ex.
  *       `cadastro`, `humano`, `menu`);
  *   (c) match por intent (`trigger_intent`);
- *   (d) `messageText` contém alguma `trigger_phrase` (legacy).
+ *   (d) `messageText` casa contra alguma `trigger_phrase` — preferindo
+ *       a frase MAIS LONGA disponível (mais específica). Word boundary
+ *       para tokens curtos.
  *
- * O passo (a)+(b) ocorre apenas quando `buttonId` está presente, evitando
- * que mensagens textuais que coincidam com nomes de botões disparem
- * transições inesperadas.
+ * Ambiguidade entre dois passos com gatilhos parecidos (ex.:
+ * "Como Funciona 1" e "Como Funciona 2") era resolvida pelo "primeiro que
+ * casar", não-determinístico do ponto de vista do super admin. Agora:
+ *   - phrases dentro da transition: ordenadas por tamanho desc;
+ *   - transitions entre si (passo d): ordenadas pelo tamanho da MAIOR phrase desc;
+ *   - empate: a transition com `goto_step_id` vence a que tem só `goto_special`.
  */
 export function matchTransition(input: MatchTransitionInput): FlowTransition | null {
   const transitions = Array.isArray(input.transitions) ? input.transitions : [];
@@ -269,15 +312,40 @@ export function matchTransition(input: MatchTransitionInput): FlowTransition | n
     }
   }
 
-  // (d) messageText fallback.
+  // (d) messageText fallback — longest-match wins (determinístico).
   if (messageText) {
-    for (const t of transitions) {
-      const phrases = Array.isArray(t.trigger_phrases) ? t.trigger_phrases : [];
-      for (const p of phrases) {
-        const needle = _norm(p);
-        if (needle && messageText.includes(needle)) return t;
+    // Ordena por (maior phrase desc, depois quem tem goto_step_id desc).
+    const ranked = transitions
+      .map((t, i) => ({
+        t,
+        i,
+        maxLen: _maxPhraseLen(t),
+        hasGotoStep: t.goto_step_id ? 1 : 0,
+      }))
+      .sort((a, b) => {
+        if (b.maxLen !== a.maxLen) return b.maxLen - a.maxLen;
+        if (b.hasGotoStep !== a.hasGotoStep) return b.hasGotoStep - a.hasGotoStep;
+        return a.i - b.i; // estável
+      });
+
+    let best: { t: FlowTransition; len: number; hasGotoStep: number } | null = null;
+    for (const { t, hasGotoStep } of ranked) {
+      const phrases = (Array.isArray(t.trigger_phrases) ? t.trigger_phrases : [])
+        .map(_norm)
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+      for (const needle of phrases) {
+        if (_phraseMatchesText(needle, messageText)) {
+          // mantém a melhor entre todas as transitions
+          if (!best || needle.length > best.len ||
+              (needle.length === best.len && hasGotoStep > best.hasGotoStep)) {
+            best = { t, len: needle.length, hasGotoStep };
+          }
+          break; // próxima transition (a melhor phrase dela já casou)
+        }
       }
     }
+    if (best) return best.t;
   }
 
   return null;

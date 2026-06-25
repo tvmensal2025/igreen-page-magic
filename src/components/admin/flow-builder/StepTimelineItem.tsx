@@ -26,6 +26,7 @@ import {
   isOcrStep, isAiAnswerStep,
 } from "./flowTypes";
 import { getStepExits, type StepExit, type ExitKind } from "./flowExits";
+import type { StepConflict } from "./useFlowConflicts";
 
 interface Props {
   step: Step;
@@ -36,6 +37,8 @@ interface Props {
   pulse?: boolean;
   mediaCount?: { audio: number; image: number; video: number };
   consultantName?: string;
+  /** Conflitos em que este passo aparece (nome/identificador/gatilho duplicado). */
+  conflicts?: StepConflict[];
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -47,7 +50,7 @@ interface Props {
 
 export default function StepTimelineItem({
   step, steps, selected, isStart, isLast, pulse, mediaCount, consultantName,
-  onSelect, onEdit, onDelete, onDuplicate, onJumpTo, onEditExits,
+  conflicts, onSelect, onEdit, onDelete, onDuplicate, onJumpTo, onEditExits,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
 
@@ -118,10 +121,38 @@ export default function StepTimelineItem({
                 inativo
               </Badge>
             )}
+            {conflicts && conflicts.length > 0 && (
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className="h-4 shrink-0 cursor-help gap-0.5 border-warning/50 bg-warning/10 px-1.5 text-[9px] text-warning-foreground"
+                      onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                    >
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                      conflito
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-xs text-xs">
+                    <p className="font-medium mb-1">Possível ambiguidade:</p>
+                    <ul className="space-y-0.5">
+                      {conflicts.map((c, idx) => (
+                        <li key={idx}>• {c.label}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-[10px] text-muted-foreground">
+                      Renomeie ou ajuste os gatilhos para o bot escolher a rota certa.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             {warnings.length > 0 && (
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
             )}
           </div>
+
 
           {/* Linha 2: preview da mensagem */}
           {previewText && (

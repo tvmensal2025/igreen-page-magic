@@ -28,6 +28,7 @@ import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalle
 import GuidedStepDialog from "@/components/admin/flow-builder/GuidedStepDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import { useFlowStepsCrud } from "@/components/admin/flow-builder/useFlowStepsCrud";
+import { useFlowConflicts } from "@/components/admin/flow-builder/useFlowConflicts";
 import {
   Step, Variant, VARIANT_LABEL,
   parseTransitions, parseCaptures, parseFallback,
@@ -79,6 +80,8 @@ export default function FluxoBuilder() {
 
   const { isNarrow } = useViewportWidth();
   const validation = useFlowValidation(steps);
+  const flowConflicts = useFlowConflicts(steps);
+  const [showOnlyConflicts, setShowOnlyConflicts] = useState(false);
 
   const setViewMode = useCallback((next: ViewMode) => {
     setViewModeState(next);
@@ -159,12 +162,13 @@ export default function FluxoBuilder() {
 
   const filteredSteps = useMemo(() => {
     return steps.filter(s => {
+      if (showOnlyConflicts && !flowConflicts.byStep.has(s.id)) return false;
       if (typeFilter.size > 0 && !typeFilter.has(s.step_type)) return false;
       if (!listQuery) return true;
       const q = listQuery.toLowerCase();
       return s.title.toLowerCase().includes(q) || (s.message_text || "").toLowerCase().includes(q);
     });
-  }, [steps, listQuery, typeFilter]);
+  }, [steps, listQuery, typeFilter, showOnlyConflicts, flowConflicts.byStep]);
 
   // Persistência central dos passos (PR-1). Liga os handlers antes zerados ao
   // banco, com update otimista + revert. Em sync_mode='public' a edição fica
@@ -333,6 +337,37 @@ export default function FluxoBuilder() {
                   {/* Preferências de IA movidas para Super Admin → /super-admin (AIControlPanel).
                       O perfil padrão é "auto" (precisão alta + custo baixo, escolhe modelo conforme pergunta). */}
 
+                  {flowConflicts.involvedCount > 0 && !crud.readOnlyHerdado && (
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-warning-foreground">
+                          {flowConflicts.involvedCount} passos com possível ambiguidade
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Passos com nomes ou palavras-chave parecidas podem fazer o bot pegar a rota errada.
+                          {showOnlyConflicts ? " Mostrando apenas os passos envolvidos." : ""}
+                        </p>
+                        <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground/90">
+                          {flowConflicts.conflicts.slice(0, 3).map((c, idx) => (
+                            <li key={idx}>• {c.label}</li>
+                          ))}
+                          {flowConflicts.conflicts.length > 3 && (
+                            <li>• +{flowConflicts.conflicts.length - 3} outros</li>
+                          )}
+                        </ul>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => setShowOnlyConflicts((v) => !v)}
+                      >
+                        {showOnlyConflicts ? "Ver todos" : "Revisar"}
+                      </Button>
+                    </div>
+                  )}
+
+
                   <StepListToolbar
                     query={listQuery}
                     onQueryChange={setListQuery}
@@ -358,6 +393,7 @@ export default function FluxoBuilder() {
                             selected={inspectorId === s.id}
                             isStart={i === 0 && !listQuery && typeFilter.size === 0}
                             isLast={i === filteredSteps.length - 1}
+                            conflicts={flowConflicts.byStep.get(s.id)}
                             onSelect={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
                             onEdit={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
                             onDelete={() => { void crud.deleteStep(s.id); if (inspectorId === s.id) setInspectorId(null); }}

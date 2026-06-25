@@ -207,15 +207,27 @@ export async function matchQA(
 
     const { data: triggers } = await supabase
       .from("bot_flow_qa_triggers")
-      .select("qa_id, phrase")
-      .in("qa_id", qaIds);
-    const hit = ((triggers as any[]) || []).find((t) => {
+      .select("qa_id, phrase, created_at")
+      .in("qa_id", qaIds)
+      .order("created_at", { ascending: true });
+
+    // Longest-match wins: dois QAs com gatilhos parecidos (ex.: "como funciona"
+    // e "como funciona 2") eram resolvidos pelo "primeiro que casar", o que
+    // dependia da ordem que o Postgres devolvia. Agora escolhemos a frase
+    // mais específica (maior length normalizada); empate → trigger mais antigo.
+    let hit: { qa_id: string; phrase: string } | null = null;
+    let hitLen = -1;
+    for (const t of ((triggers as any[]) || [])) {
       const phrase = _norm(t.phrase);
-      return phraseMatchesMessage(phrase, normalized);
-    });
+      if (!phraseMatchesMessage(phrase, normalized)) continue;
+      if (phrase.length > hitLen) {
+        hit = { qa_id: t.qa_id, phrase: t.phrase };
+        hitLen = phrase.length;
+      }
+    }
     if (!hit) return null;
 
-    const qa = ((qaRows as any[]) || []).find((q) => q.id === hit.qa_id);
+    const qa = ((qaRows as any[]) || []).find((q) => q.id === hit!.qa_id);
     if (!qa) return null;
 
     const { data: mediaRows } = await supabase
