@@ -7330,9 +7330,12 @@ export type Database = {
           customer_id: string | null
           data_layers: Json | null
           expires_at: string
+          hd_bounds: Json | null
+          hd_image_path: string | null
           id: string
           imagery_date: string | null
           imagery_quality: string
+          imagery_view: Json | null
           latitude: number
           longitude: number
           max_panels: number | null
@@ -7349,9 +7352,12 @@ export type Database = {
           customer_id?: string | null
           data_layers?: Json | null
           expires_at: string
+          hd_bounds?: Json | null
+          hd_image_path?: string | null
           id?: string
           imagery_date?: string | null
           imagery_quality?: string
+          imagery_view?: Json | null
           latitude: number
           longitude: number
           max_panels?: number | null
@@ -7368,9 +7374,12 @@ export type Database = {
           customer_id?: string | null
           data_layers?: Json | null
           expires_at?: string
+          hd_bounds?: Json | null
+          hd_image_path?: string | null
           id?: string
           imagery_date?: string | null
           imagery_quality?: string
+          imagery_view?: Json | null
           latitude?: number
           longitude?: number
           max_panels?: number | null
