@@ -5,6 +5,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function generatePassword(length = 10): string {
+  // Caracteres legíveis (sem 0/O/1/l/I) para facilitar a leitura/digitação
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnpqrstuvwxyz";
+  const digits = "23456789";
+  const all = upper + lower + digits;
+  const buf = new Uint32Array(length);
+  crypto.getRandomValues(buf);
+  // Garante pelo menos 1 de cada categoria
+  const pick = (set: string, n: number) => set[n % set.length];
+  const chars = [
+    pick(upper, buf[0]),
+    pick(lower, buf[1]),
+    pick(digits, buf[2]),
+  ];
+  for (let i = 3; i < length; i++) chars.push(pick(all, buf[i]));
+  // Shuffle simples
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = buf[i] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -24,7 +48,6 @@ Deno.serve(async (req) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
 
-    // Verify caller is admin
     const token = authHeader.replace("Bearer ", "");
     const { data: { user: caller }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !caller) {
@@ -46,7 +69,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { consultant_id, redirect_url } = await req.json();
+    const { consultant_id } = await req.json();
     if (!consultant_id) {
       return new Response(JSON.stringify({ error: "consultant_id é obrigatório" }), {
         status: 400,
@@ -54,29 +77,31 @@ Deno.serve(async (req) => {
       });
     }
 
-    // The consultant ID is the same as the auth user ID
-    const { data: { user: targetUser }, error: getUserError } = await adminClient.auth.admin.getUserById(consultant_id);
-    if (getUserError || !targetUser?.email) {
-      return new Response(JSON.stringify({ error: "Usuário não encontrado ou sem email" }), {
+    const { data: { user: targetUser }, error: getUserError } =
+      await adminClient.auth.admin.getUserById(consultant_id);
+    if (getUserError || !targetUser) {
+      return new Response(JSON.stringify({ error: "Usuário não encontrado" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Generate recovery link and the email is sent automatically by Supabase
-    const { error: resetError } = await adminClient.auth.admin.generateLink({
-      type: "recovery",
-      email: targetUser.email,
-      options: {
-        redirectTo: redirect_url || `${req.headers.get("origin") || supabaseUrl}/auth`,
-      },
-    });
+    // Gera nova senha aleatória e atualiza diretamente (sem enviar link por email)
+    const newPassword = generatePassword(10);
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(
+      consultant_id,
+      { password: newPassword },
+    );
+    if (updateError) throw updateError;
 
-    if (resetError) throw resetError;
-
-    return new Response(JSON.stringify({ success: true, email: targetUser.email }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        email: targetUser.email,
+        password: newPassword,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (err) {
     return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500,

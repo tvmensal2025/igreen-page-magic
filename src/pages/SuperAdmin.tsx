@@ -203,15 +203,32 @@ const SuperAdmin = () => {
   };
 
   const handleResetPassword = async (consultantId: string, consultantName: string) => {
+    if (!window.confirm(`Gerar uma NOVA SENHA aleatória para ${consultantName}?\n\nA senha atual deixará de funcionar imediatamente.`)) {
+      return;
+    }
     setResettingId(consultantId);
     try {
       const { data, error } = await supabase.functions.invoke("admin-reset-password", {
-        body: { consultant_id: consultantId, redirect_url: `${window.location.origin}/auth` },
+        body: { consultant_id: consultantId },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast({ title: "✅ Email de redefinição enviado!", description: `Link enviado para ${data?.email || consultantName}` });
-      logAdminAction("reset_password", "consultant", consultantId, { email: data?.email });
+
+      const newPwd: string = data?.password || "";
+      const email: string = data?.email || consultantName;
+
+      try { await navigator.clipboard.writeText(newPwd); } catch { /* ignore */ }
+
+      toast({
+        title: "🔑 Nova senha gerada (copiada)",
+        description: `${email} — Senha: ${newPwd}`,
+        duration: 30000,
+      });
+      window.prompt(
+        `Nova senha de ${email}\n\nCopie e envie ao consultor. Esta tela não será mostrada de novo.`,
+        newPwd,
+      );
+      logAdminAction("reset_password", "consultant", consultantId, { email });
     } catch (err: any) {
       toast({ title: "Erro ao resetar senha", description: err.message || "Erro desconhecido", variant: "destructive" });
     }
