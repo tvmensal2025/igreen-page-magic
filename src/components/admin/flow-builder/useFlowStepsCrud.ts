@@ -224,7 +224,8 @@ export function useFlowStepsCrud({
         setSaving(false);
       }
     },
-    [guardEditavel, steps, setSteps],
+    [guardEditavel, steps, setSteps, warnIfNewConflict],
+
   );
 
   const addStep = useCallback(
