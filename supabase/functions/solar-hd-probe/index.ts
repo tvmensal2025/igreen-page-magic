@@ -36,6 +36,11 @@ Deno.serve(async (req) => {
     if (mode === "bounds") {
       return json({ ...info, bounds: hd.bounds, width: hd.width, height: hd.height, ms: Date.now() - t0 });
     }
+    if (mode === "fluxdbg") {
+      const { downloadTiffDebug } = await import("../_shared/solar/data-layers.ts");
+      const dbg = await downloadTiffDebug(layers.annualFluxUrl!, apiKey);
+      return json(dbg);
+    }
     if (mode === "dims") {
       const { downloadTiff } = await import("../_shared/solar/data-layers.ts");
       const rgb = await downloadTiff(layers.rgbUrl!, apiKey, true);

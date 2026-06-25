@@ -62,7 +62,33 @@ export async function downloadTiff(url: string, apiKey: string, wantRgba: boolea
   return { width, height, values };
 }
 
-/** Paleta "iron" — sombra (escuro) → sol pleno (claro). Igual ao demo Google. */
+/** Diagnóstico: inspeciona os campos do IFD de um GeoTIFF (flux). */
+export async function downloadTiffDebug(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  const u = new URL(url);
+  u.searchParams.set("key", apiKey);
+  const res = await fetch(u.toString());
+  const buf = await res.arrayBuffer();
+  const ifds = UTIF.decode(buf);
+  const ifd = ifds[0] as Record<string, unknown>;
+  UTIF.decodeImage(buf, ifd, ifds);
+  const data = ifd.data as Uint8Array | undefined;
+  const keys = Object.keys(ifd).filter((k) => k.startsWith("t"));
+  // tenta ler primeiros valores como float32 e uint8
+  const sample: Record<string, unknown> = {};
+  if (data && data.byteLength >= 16) {
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    sample.float32 = [dv.getFloat32(0, true), dv.getFloat32(4, true), dv.getFloat32(8, true)];
+    sample.dataLen = data.byteLength;
+  }
+  return {
+    width: ifd.width, height: ifd.height,
+    bitsPerSample: ifd.t258, sampleFormat: ifd.t339, samplesPerPixel: ifd.t277,
+    compression: ifd.t259, photometric: ifd.t262,
+    tags: keys, sample,
+  };
+}
+
+
 const IRON_PALETTE = ["00000a", "91009c", "e64616", "feb400", "fffff6"];
 
 function buildPalette(hexColors: string[]): Array<[number, number, number]> {
