@@ -35,7 +35,20 @@ export async function analyzeWithGemini({ supabaseUrl, workerSecret, payload }) 
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`audit edge ${res.status}: ${txt.slice(0, 300)}`);
+    // Mensagens acionáveis em vez de "Invalid JWT" genérico
+    let hint = '';
+    if (res.status === 401) {
+      if (txt.includes('UNAUTHORIZED_INVALID_JWT_FORMAT') || txt.includes('Invalid JWT')) {
+        hint = ' (verify_jwt do gateway ativo — confira [functions.portal2-ai-audit] verify_jwt=false em supabase/config.toml)';
+      } else if (txt.includes('audit_secret_mismatch')) {
+        hint = ' (WORKER_SECRET do container ≠ PORTAL2_WORKER_SECRET do Supabase)';
+      } else if (txt.includes('audit_secret_not_configured')) {
+        hint = ' (defina PORTAL2_WORKER_SECRET nos Functions Secrets do Supabase)';
+      }
+    } else if (res.status === 503 && txt.includes('gemini_not_configured')) {
+      hint = ' (defina GEMINI_API_KEY nos Functions Secrets do Supabase)';
+    }
+    throw new Error(`audit edge ${res.status}${hint}: ${txt.slice(0, 300)}`);
   }
   const data = await res.json();
   return {
@@ -47,6 +60,44 @@ export async function analyzeWithGemini({ supabaseUrl, workerSecret, payload }) 
     tokens_out: data.tokens_out ?? null,
   };
 }
+
+/**
+ * Health-check do pipeline IA. Chama GET /portal2-ai-audit e devolve estado
+ * pronto pra logar no boot e expor em GET /health do worker.
+ */
+export async function checkAuditHealth({ supabaseUrl, workerSecret }) {
+  if (!supabaseUrl) return { healthy: false, error: 'SUPABASE_URL ausente' };
+  if (!workerSecret) return { healthy: false, error: 'WORKER_SECRET ausente' };
+  const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/portal2-ai-audit`;
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 8_000);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${workerSecret}` },
+      signal: ctrl.signal,
+    });
+    const txt = await res.text();
+    if (!res.ok) {
+      if (res.status === 401 && (txt.includes('Invalid JWT') || txt.includes('UNAUTHORIZED_INVALID_JWT_FORMAT'))) {
+        return { healthy: false, error: 'gateway exige JWT — falta [functions.portal2-ai-audit] verify_jwt=false em supabase/config.toml' };
+      }
+      return { healthy: false, error: `status ${res.status}: ${txt.slice(0, 200)}` };
+    }
+    let data = {};
+    try { data = JSON.parse(txt); } catch {}
+    if (data.gemini_configured === false) {
+      return { healthy: false, error: 'GEMINI_API_KEY não configurada no Supabase Functions Secrets' };
+    }
+    if (data.worker_secret_configured === false) {
+      return { healthy: false, error: 'PORTAL2_WORKER_SECRET não configurado no Supabase Functions Secrets' };
+    }
+    return { healthy: true, info: data };
+  } catch (e) {
+    return { healthy: false, error: e.message };
+  } finally { clearTimeout(to); }
+}
+
 
 /**
  * Sanitiza o trace e o input antes de mandar pra IA / persistir.

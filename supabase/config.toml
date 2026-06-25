@@ -180,3 +180,9 @@ verify_jwt = false
 # sem JWT de usuário — autenticado pela apikey anon do cron interno).
 [functions.notify-superadmin-signup]
 verify_jwt = false
+
+# Auditoria IA do Portal 2 — chamada pelo worker com Bearer WORKER_SECRET.
+# Sem verify_jwt=false o gateway tenta validar o secret como JWT e devolve
+# 401 UNAUTHORIZED_INVALID_JWT_FORMAT antes da função sequer rodar.
+[functions.portal2-ai-audit]
+verify_jwt = false

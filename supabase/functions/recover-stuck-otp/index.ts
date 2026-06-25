@@ -205,6 +205,58 @@ Deno.serve(async (req) => {
     console.error("[recover-stuck-otp] finalizando branch failed:", (e as Error).message);
   }
 
+  // ─── REPLAY de OTP pendente ─────────────────────────────────────────────
+  // Casos em que o cliente respondeu o código ANTES de o Portal 2 terminar
+  // o cadastro: o webhook grava otp_code + otp_pending_replay=true e aqui
+  // disparamos /confirm-otp do worker assim que portal2_idcliente existir.
+  const replayResults: Array<{ id: string; replayed: boolean; reason?: string }> = [];
+  try {
+    const { data: pending } = await supabase
+      .from("customers")
+      .select("id, consultant_id, otp_code, portal2_idcliente, consultants:consultant_id(igreen_id)")
+      .eq("otp_pending_replay", true)
+      .not("portal2_idcliente", "is", null)
+      .not("otp_code", "is", null)
+      .limit(50);
+
+    const workerUrl = (Deno.env.get("PORTAL_WORKER_2_URL") || Deno.env.get("WORKER_PORTAL_URL") || Deno.env.get("PORTAL_WORKER_URL") || "").replace(/\/$/, "");
+    const workerSecret = Deno.env.get("WORKER_SECRET") || "";
+
+    for (const lead of pending || []) {
+      if (!workerUrl || !workerSecret) {
+        replayResults.push({ id: lead.id, replayed: false, reason: "worker_not_configured" });
+        continue;
+      }
+      const idconsultor = (lead as any)?.consultants?.igreen_id;
+      const idcliente = lead.portal2_idcliente;
+      if (!idconsultor || !idcliente) {
+        replayResults.push({ id: lead.id, replayed: false, reason: "missing_ids" });
+        continue;
+      }
+      try {
+        const r = await fetch(`${workerUrl}/confirm-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${workerSecret}` },
+          body: JSON.stringify({
+            customer_id: lead.id,
+            idconsultor: Number(idconsultor),
+            idcliente: Number(idcliente),
+            code: lead.otp_code,
+          }),
+        });
+        const ok = r.ok;
+        if (ok) {
+          await supabase.from("customers").update({ otp_pending_replay: false }).eq("id", lead.id);
+        }
+        replayResults.push({ id: lead.id, replayed: ok, reason: ok ? undefined : `worker_${r.status}` });
+      } catch (e) {
+        replayResults.push({ id: lead.id, replayed: false, reason: (e as Error).message });
+      }
+    }
+  } catch (e) {
+    console.error("[recover-stuck-otp] replay branch failed:", (e as Error).message);
+  }
+
   return new Response(
     JSON.stringify({
       ok: true,
@@ -212,9 +264,13 @@ Deno.serve(async (req) => {
       sent: results.filter((r) => r.sent).length,
       finalizando_processed: handoffResults.length,
       finalizando_notified: handoffResults.filter((r) => r.notified).length,
+      replay_processed: replayResults.length,
+      replay_succeeded: replayResults.filter((r) => r.replayed).length,
       results,
       handoffResults,
+      replayResults,
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 });
+
