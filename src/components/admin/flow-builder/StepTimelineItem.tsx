@@ -122,29 +122,31 @@ export default function StepTimelineItem({
               </Badge>
             )}
             {conflicts && conflicts.length > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge
-                    variant="outline"
-                    className="h-4 shrink-0 cursor-help gap-0.5 border-warning/50 bg-warning/10 px-1.5 text-[9px] text-warning-foreground"
-                    onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                  >
-                    <AlertTriangle className="h-2.5 w-2.5" />
-                    conflito
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent side="left" className="max-w-xs text-xs">
-                  <p className="font-medium mb-1">Possível ambiguidade:</p>
-                  <ul className="space-y-0.5">
-                    {conflicts.map((c, idx) => (
-                      <li key={idx}>• {c.label}</li>
-                    ))}
-                  </ul>
-                  <p className="mt-1.5 text-[10px] text-muted-foreground">
-                    Renomeie ou ajuste os gatilhos para o bot escolher a rota certa.
-                  </p>
-                </TooltipContent>
-              </Tooltip>
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className="h-4 shrink-0 cursor-help gap-0.5 border-warning/50 bg-warning/10 px-1.5 text-[9px] text-warning-foreground"
+                      onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                    >
+                      <AlertTriangle className="h-2.5 w-2.5" />
+                      conflito
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-xs text-xs">
+                    <p className="font-medium mb-1">Possível ambiguidade:</p>
+                    <ul className="space-y-0.5">
+                      {conflicts.map((c, idx) => (
+                        <li key={idx}>• {c.label}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-[10px] text-muted-foreground">
+                      Renomeie ou ajuste os gatilhos para o bot escolher a rota certa.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
             {warnings.length > 0 && (
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
