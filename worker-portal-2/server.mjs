@@ -19,7 +19,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { Portal2Client, fileFromPath, closeBrowser } from './portal2-api-client.mjs';
-import { runAuditPipeline, getAuditCount, sanitize } from './ai-audit.mjs';
+import { runAuditPipeline, getAuditCount, sanitize, checkAuditHealth } from './ai-audit.mjs';
 import { classifyPortalError, CORRECTION_PROMPTS } from './portal-errors.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
