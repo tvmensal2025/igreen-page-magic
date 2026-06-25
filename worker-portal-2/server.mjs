@@ -96,19 +96,19 @@ async function sendValidationLinkToCustomer(customerId, link) {
 }
 
 /**
- * MENSAGEM 2 (após OTP validado com sucesso):
- * Chave de ouro — entrega o link da facial/assinatura e fecha o ciclo.
+ * MENSAGEM 2 (após OTP validado com sucesso): CHAVE DE OURO.
+ * Calorosa, com nome, entrega o link da facial/assinatura e fecha o ciclo.
  */
 async function sendFacialLinkToCustomer(customerId, link) {
   return _sendMessageToCustomer(customerId, ({ firstName }) =>
-    `Perfeito, ${firstName}! ✅ Código validado.\n\n` +
-    `Falta só *um passo* pra ativar sua economia de energia: a ` +
-    `*assinatura digital* (com uma selfie rapidinha pra validação facial).\n\n` +
-    `🔗 Abre esse link no celular e segue o passo a passo:\n${link}\n\n` +
-    `Quando terminar, me responde aqui *PRONTO* que eu confirmo seu contrato ativo. 💚🌱\n\n` +
-    `Bem-vinda(o) à iGreen — economia + energia limpa, todo mês! 🎉`,
+    `✅ ${firstName}, código confirmado!\n\n` +
+    `Falta só *1 passinho* pra ativar sua economia 💚\n\n` +
+    `👉 Assine e faça sua validação facial (selfie rapidinha):\n${link}\n\n` +
+    `Em ~2 minutos te confirmo aqui que ficou tudo certo.\n` +
+    `Bem-vindo(a) à iGreen — energia limpa com economia todo mês! 🌱🎉`,
   );
 }
+
 
 
 /**
