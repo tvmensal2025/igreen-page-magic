@@ -653,13 +653,13 @@ function MessageList({
 }: {
   messages: import("@/lib/agendamentosHub").ScheduledMessageRow[];
   onDelete: (id: string) => void;
-  statusConfig: (s: string) => { icon: React.ReactNode; label: string; cls: string };
+  statusConfig: (s: string, scheduledAtISO?: string) => { icon: React.ReactNode; label: string; cls: string };
 }) {
   return (
     <ScrollArea className="max-h-[400px]">
       <div className="space-y-2">
         {messages.map((msg) => {
-          const sc = statusConfig(msg.status);
+          const sc = statusConfig(msg.status, msg.scheduled_at);
           const isPending = msg.status === "pending";
           return (
             <div key={msg.id} className="group rounded-xl border border-border/40 bg-secondary/20 px-4 py-3">
