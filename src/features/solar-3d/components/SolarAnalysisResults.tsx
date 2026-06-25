@@ -86,6 +86,7 @@ export function SolarAnalysisResults({
         </div>
       ) : (
         <SolarRealRoofView
+          analysisId={result.analysisId}
           imagery={result.imagery}
           panelPositions={result.panelPositions}
           className="shadow-md ring-1 ring-black/5"

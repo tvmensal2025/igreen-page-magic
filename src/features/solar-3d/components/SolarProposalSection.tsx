@@ -12,6 +12,7 @@ export function SolarProposalSection({ solar }: { solar: PublicSolarDesign }) {
       </h3>
       <SolarRealRoofView
         consultantId={solar.consultantId}
+        analysisId={solar.analysisId}
         imagery={solar.imagery}
         panelPositions={solar.panelPositions}
         fallback={<SolarMap2D panelPositions={solar.panelPositions} roofSegments={solar.roofSegments} />}

@@ -64,6 +64,17 @@ export async function fetchPublicSolarPreview(body: {
   return data;
 }
 
+/** Gera/recupera a imagem HD profissional (foto aérea + heatmap) do telhado. */
+export async function fetchRoofHdImage(body: {
+  analysisId: string;
+  consultantId?: string | null;
+}): Promise<{ url: string; cached?: boolean } | null> {
+  const { data, error } = await supabase.functions.invoke("solar-roof-hd", { body });
+  if (error) return null;
+  if (data?.error) return null;
+  return data?.url ? data : null;
+}
+
 /** Lista análises persistidas no banco para um cliente (RLS do consultor). */
 export async function listCustomerSolarAnalyses(customerId: string): Promise<
   Array<{

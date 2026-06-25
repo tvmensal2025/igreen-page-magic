@@ -60,6 +60,7 @@ export default function SolarDesignDetailPage() {
       {/* Telhado REAL de satélite com os módulos sobrepostos (visual principal) */}
       <SolarRealRoofView
         consultantId={data?.analysis?.consultantId}
+        analysisId={snap.analysisId}
         imagery={data?.analysis?.imagery}
         panelPositions={snap.panelPositions}
         fallback={

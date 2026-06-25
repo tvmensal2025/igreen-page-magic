@@ -21,6 +21,8 @@ export interface DecodedTiff {
   rgba?: Uint8Array;
   /** Valores brutos do primeiro band (float) — presente para flux/mask. */
   values?: Float32Array;
+  /** Bounding box lat/lng (quando georreferenciado). */
+  bounds?: { north: number; south: number; east: number; west: number };
 }
 
 /** Baixa e decodifica um GeoTIFF da Solar API (autenticado pela key). */
@@ -38,7 +40,7 @@ export async function downloadTiff(url: string, apiKey: string, wantRgba: boolea
 
   if (wantRgba) {
     const rgba = new Uint8Array(UTIF.toRGBA8(ifd));
-    return { width, height, rgba };
+    return { width, height, rgba, bounds: readBounds(ifd as Record<string, unknown>) };
   }
 
   // Endianness do arquivo TIFF: bytes iniciais "II"=little, "MM"=big.
@@ -188,6 +190,23 @@ export interface HdRoofResult {
   png: Uint8Array;
   width: number;
   height: number;
+  bounds?: { north: number; south: number; east: number; west: number };
+}
+
+/** Lê o bounding box (lat/lng) do GeoTIFF RGB a partir das tags GeoKeys. */
+function readBounds(ifd: Record<string, unknown>): { north: number; south: number; east: number; west: number } | undefined {
+  // ModelTiepoint (t33922) + ModelPixelScale (t33550) → georreferência.
+  const tie = ifd.t33922 as number[] | undefined;
+  const scale = ifd.t33550 as number[] | undefined;
+  const w = ifd.width as number, h = ifd.height as number;
+  if (tie && scale && tie.length >= 6 && scale.length >= 2) {
+    const originLng = tie[3], originLat = tie[4];
+    const west = originLng, north = originLat;
+    const east = originLng + scale[0] * w;
+    const south = originLat - scale[1] * h;
+    return { north, south, east, west };
+  }
+  return undefined;
 }
 
 /** Pipeline: baixa os 3 layers e devolve o PNG composto. */
@@ -203,5 +222,5 @@ export async function buildHdRoof(
     dataLayers.maskUrl ? downloadTiff(dataLayers.maskUrl, apiKey, false).catch(() => null) : null,
   ]);
   const png = composeHdRoofPng(rgb, flux, mask, opts);
-  return { png, width: rgb.width, height: rgb.height };
+  return { png, width: rgb.width, height: rgb.height, bounds: rgb.bounds };
 }

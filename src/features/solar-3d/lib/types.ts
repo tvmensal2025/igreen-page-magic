@@ -78,4 +78,5 @@ export interface PublicSolarDesign {
   disclaimer: string;
   imagery?: SolarImageryView;
   consultantId?: string | null;
+  analysisId?: string | null;
 }

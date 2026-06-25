@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
         disclaimer: SOLAR_DISCLAIMER,
         imagery: analysis?.imagery_view ?? null,
         consultantId: analysis?.consultant_id ?? null,
+        analysisId: snap.analysis_id ?? null,
       },
     });
   } catch (e) {

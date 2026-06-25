@@ -168,6 +168,10 @@ verify_jwt = false
 [functions.solar-roof-image]
 verify_jwt = false
 
+# Imagem profissional do telhado (foto aérea HD + heatmap solar) — gera e cacheia.
+[functions.solar-roof-hd]
+verify_jwt = false
+
 # Diagnóstico temporário dos Data Layers HD (remover após validação).
 [functions.solar-hd-probe]
 verify_jwt = false
