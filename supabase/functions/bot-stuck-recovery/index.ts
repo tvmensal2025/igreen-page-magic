@@ -14,7 +14,7 @@ import { captureError } from "../_shared/sentry.ts";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
-import { LEAD_ORIGIN_FILTER, isLeadEligible } from "../_shared/origin-guard.ts";
+import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

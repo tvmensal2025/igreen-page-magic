@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notifyHandoff } from "../_shared/notify-consultant.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
+import { isLeadEligible } from "../_shared/origin-guard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,11 +76,17 @@ Deno.serve(async (req) => {
         // Carrega o cliente
         const { data: customer } = await supabase
           .from("customers")
-          .select("id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, bot_paused_at, consultant_id")
+          .select("id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, bot_paused_at, consultant_id, customer_origin")
           .eq("id", row.customer_id!)
           .maybeSingle();
 
         if (!customer) continue;
+
+        // Regra de ouro: carteira iGreen nunca é tocada por automação proativa.
+        if (!isLeadEligible((customer as any).customer_origin)) {
+          stats.skipped_recent_alert++;
+          continue;
+        }
 
         // Se já está pausado por loop, não duplica alerta
         if (customer.bot_paused && (customer.bot_paused_reason || "").includes("loop")) {
