@@ -1,16 +1,17 @@
-// Shared helper to dispatch a lead to the VPS Portal Worker.
+// Shared helper to dispatch a lead to the VPS Portal Worker (Portal 2 / autoconexão).
 // Used by webhook bot-flows AND by the manual "Finalizar" button (finalize-capture).
 //
-// Roteamento:
-//   consultants.portal_kind = 'digital'    → POST /submit-lead no worker original (Playwright UI)
-//   consultants.portal_kind = 'autoconexao' → POST /submit-lead no worker-portal-2 (API direta)
+// Histórico: o Portal 1 ("digital", container `worker-portal/` via Playwright)
+// foi descontinuado em 2026-06-19. Todos os leads finalizam no Portal 2
+// (`worker-portal-2`, API direta). O campo `consultants.portal_kind` segue no
+// banco apenas para auditoria — o roteamento é sempre Portal 2.
 
 export interface DispatchResult {
   ok: boolean;
   mode: "dispatched" | "queued_offline" | "not_configured";
   status?: number;
   error?: string;
-  worker?: "digital" | "autoconexao";
+  worker?: "autoconexao";
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit & { timeout?: number } = {}) {
@@ -27,71 +28,47 @@ async function fetchWithTimeout(url: string, init: RequestInit & { timeout?: num
 interface ResolvedWorker {
   url: string;
   secret: string;
-  kind: "digital" | "autoconexao";
+  kind: "autoconexao";
 }
 
 /**
- * Resolve qual worker atende o customer baseado no `portal_kind` do consultor dele.
+ * Resolve a URL/secret do worker de cadastro (Portal 2).
  * Retorna `null` se config insuficiente.
  *
- * Exportada para que o caminho de OTP (submit-otp e os intercepts dos webhooks)
- * envie o código ao worker CORRETO (Portal 2 = autoconexao) em vez de assumir
- * sempre o Portal 1.
+ * Mantida exportada para que o caminho de OTP (submit-otp e os intercepts dos
+ * webhooks) reuse exatamente a mesma fonte de verdade.
  */
 export async function resolveWorker(supabase: any, customerId: string): Promise<ResolvedWorker | null> {
-  // Carrega settings + portal_kind do consultor do customer numa query só
-  const [{ data: settingsRows }, { data: customer }] = await Promise.all([
-    supabase.from("settings").select("*"),
-    supabase
-      .from("customers")
-      .select("consultant_id, consultants:consultant_id(portal_kind)")
-      .eq("id", customerId)
-      .maybeSingle(),
-  ]);
-
+  // Carrega settings (não precisamos mais ler portal_kind — Portal 1 desativado).
+  const { data: settingsRows } = await supabase.from("settings").select("*");
   const settings: Record<string, string> = {};
   settingsRows?.forEach((s: any) => { settings[s.key] = s.value; });
 
-  // 🔒 REGRA DE NEGÓCIO (2026-06-19): Portal 1 (digital) foi descontinuado pela
-  // empresa — todos os leads devem finalizar no Portal 2 (autoconexao).
-  // Mantemos o código do Portal 1 abaixo apenas como fallback histórico caso
-  // o Portal 1 volte no futuro, mas o roteamento sempre força 'autoconexao'.
+  // Aviso de auditoria: se algum consultor ainda estiver marcado como Portal 1,
+  // logamos pra facilitar a migração — mas o despacho continua no Portal 2.
+  const { data: customer } = await supabase
+    .from("customers")
+    .select("consultant_id, consultants:consultant_id(portal_kind)")
+    .eq("id", customerId)
+    .maybeSingle();
   const rawKind = (customer?.consultants?.portal_kind as any);
   if (rawKind && rawKind !== "autoconexao") {
-    console.warn(`[portal-worker] ⚠️ consultor com portal_kind='${rawKind}' — forçando 'autoconexao' (Portal 1 descontinuado)`);
-  }
-  const kind: "digital" | "autoconexao" = "autoconexao";
-
-  if (kind === "autoconexao") {
-    const url = (
-      settings.portal2_worker_url ||
-      Deno.env.get("PORTAL2_WORKER_URL") ||
-      "http://igreen_portal-worker-2:3101"
-    ).replace(/\/$/, "");
-    const secret =
-      settings.portal2_worker_secret ||
-      Deno.env.get("PORTAL2_WORKER_SECRET") ||
-      settings.worker_secret ||
-      Deno.env.get("WORKER_SECRET") ||
-      "";
-    if (!url || !secret) return null;
-    return { url, secret, kind };
+    console.warn(`[portal-worker] ⚠️ consultor com portal_kind='${rawKind}' (legado Portal 1) — roteando no Portal 2 mesmo assim`);
   }
 
-  // Default: Portal 1 (digital)
   const url = (
-    settings.portal_worker_url ||
-    Deno.env.get("PORTAL_WORKER_URL") ||
-    Deno.env.get("WORKER_PORTAL_URL") ||
-    ""
+    settings.portal2_worker_url ||
+    Deno.env.get("PORTAL2_WORKER_URL") ||
+    "http://igreen_portal-worker-2:3101"
   ).replace(/\/$/, "");
   const secret =
+    settings.portal2_worker_secret ||
+    Deno.env.get("PORTAL2_WORKER_SECRET") ||
     settings.worker_secret ||
-    settings.portal_worker_secret ||
     Deno.env.get("WORKER_SECRET") ||
     "";
   if (!url || !secret) return null;
-  return { url, secret, kind: "digital" };
+  return { url, secret, kind: "autoconexao" };
 }
 
 /**
