@@ -561,7 +561,7 @@ export function AgendamentosHub({
                   <div key={c.id} className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-sm font-bold">{c.name}</span>
-                      <Badge variant="secondary" className="text-[9px]">{c.status === "running" ? "Enviando" : "Agendada"}</Badge>
+                      <Badge variant="secondary" className="text-[9px]">{campaignStatusLabel(c.status)}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">{c.sent} de {c.total} enviados · {c.failed} com erro</p>
                     {c.scheduled_at && (
