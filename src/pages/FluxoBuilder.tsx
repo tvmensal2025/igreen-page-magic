@@ -337,6 +337,37 @@ export default function FluxoBuilder() {
                   {/* Preferências de IA movidas para Super Admin → /super-admin (AIControlPanel).
                       O perfil padrão é "auto" (precisão alta + custo baixo, escolhe modelo conforme pergunta). */}
 
+                  {flowConflicts.involvedCount > 0 && !crud.readOnlyHerdado && (
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-warning-foreground">
+                          {flowConflicts.involvedCount} passos com possível ambiguidade
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Passos com nomes ou palavras-chave parecidas podem fazer o bot pegar a rota errada.
+                          {showOnlyConflicts ? " Mostrando apenas os passos envolvidos." : ""}
+                        </p>
+                        <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground/90">
+                          {flowConflicts.conflicts.slice(0, 3).map((c, idx) => (
+                            <li key={idx}>• {c.label}</li>
+                          ))}
+                          {flowConflicts.conflicts.length > 3 && (
+                            <li>• +{flowConflicts.conflicts.length - 3} outros</li>
+                          )}
+                        </ul>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => setShowOnlyConflicts((v) => !v)}
+                      >
+                        {showOnlyConflicts ? "Ver todos" : "Revisar"}
+                      </Button>
+                    </div>
+                  )}
+
+
                   <StepListToolbar
                     query={listQuery}
                     onQueryChange={setListQuery}
