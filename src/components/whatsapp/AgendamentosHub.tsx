@@ -56,6 +56,20 @@ function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
   }
 }
 
+/** Status de campanha em massa em PT claro (cobre todos os estados do bulk-scheduler). */
+function campaignStatusLabel(status: string): string {
+  switch (status) {
+    case "running": return "Enviando";
+    case "scheduled": return "Agendada";
+    case "paused": return "Pausada";
+    case "completed": return "Concluída";
+    case "failed": return "Com erro";
+    case "draft": return "Rascunho";
+    case "cancelled": return "Cancelada";
+    default: return status;
+  }
+}
+
 interface AgendamentosHubProps {
   consultantId: string;
   instanceName: string;
