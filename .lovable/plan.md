@@ -1,87 +1,39 @@
-# Correção do Flow D — Cadastro Rápido não pode cair na simulação
+# Análise — Fluxo D / Cadastro Rápido
 
-## O que encontrei
-O erro não veio da limpeza de `flow_router_rules`. O problema está dentro da configuração do próprio Flow D.
+## Verificação no banco (estado atual)
 
-Hoje, no passo inicial `d_welcome`, o botão visível **“⚡ Cadastro rápido”** está configurado errado:
+Existem **7 fluxos D ativos** (`bot_flows.variant='D' AND is_active=true`). Em **todos os 7**, o passo `d_welcome` tem o botão `⚡ Cadastro rápido` com `id=cadastro_rapido` e a transição correspondente aponta para um passo cujo `step_key = d_pedir_documento`. Nenhum aponta para simulação nem para `goto_special=humano`.
 
-- O botão aparece como **Cadastro rápido**, mas o `id` interno está como `humano`.
-- A transição desse botão aponta para um passo de **simulação/conta de luz** (`d_simular_pedir_conta` / `capture_conta`).
-- As palavras da transição incluem `Cadastro rápido!`, `rápido!` e `humano`, ou seja: clicar em Cadastro Rápido manda para o caminho de simulação, exatamente o bug que você viu.
+Frases-gatilho confirmadas em cada transição:
+`cadastro_rapido, cadastro rápido, cadastro rapido, ⚡ cadastro rápido, cadastrar, cadastrar e finalizar, quero me cadastrar`.
 
-Também vi que no `d_resultado` falta blindagem suficiente para textos/botões como **“Cadastrar e finalizar”** e **“Cadastro rápido”** sempre irem para documento.
+A palavra "humano/atendente/consultor" continua em transição separada com `goto_special=humano` (handoff intencional).
 
-## Como vou corrigir
+## Verificação no código (whapi-webhook + evolution-webhook)
 
-### 1. Corrigir os dados do Flow D no banco
-Atualizar todos os Flow D ativos para que:
+Em `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (linhas 3157–3219) e no equivalente em `evolution-webhook`:
 
-- Botão **Cadastro rápido** não use mais `id: humano`.
-- O botão passe a usar um ID claro, por exemplo `cadastro_rapido`.
-- A transição de **Cadastro rápido** aponte para o passo de documento do mesmo fluxo:
-  - `d_pedir_documento`
-  - tipo `capture_documento`
+1. `_flowDQuickCadastroIntent` detecta intenção quando `customer.flow_variant === 'D'` E o texto/botão casa com `/cadastro[_\s-]*rapido|cadastrar\s*e\s*finalizar|quero\s*me\s*cadastrar|\bcadastrar\b/` (ou "humano" estando em `d_welcome`).
+2. Logo após resolver `nextCustom` pelas transições, se a intenção foi detectada, **força** `nextCustom = d_pedir_documento` carregado por `step_key`.
+3. Se a resolução caísse em `__special: humano` e a intenção for cadastro, também força `d_pedir_documento`; fallback adicional retorna a mensagem "Show! Pra finalizar seu cadastro, me manda só uma foto da frente do seu documento 📄" caso o passo não exista.
 
-Resultado esperado:
+## Conclusão
 
-```text
-Cadastro rápido → pedir documento com foto
-não → escolher simulação
-não → simulação rápida
-não → humano
-```
+Com banco + guard duplo no webhook, o Cadastro Rápido vai para documento em 100% dos caminhos previstos, mesmo se alguém editar o FlowBuilder errado depois (o guard sobrescreve a resolução).
 
-### 2. Corrigir as palavras-chave do CTA de cadastro
-No passo `d_resultado`, garantir que qualquer uma destas entradas vá para documento:
+### Pontos de atenção (não bloqueantes)
 
-```text
-cadastrar
-quero me cadastrar
-cadastrar e finalizar
-cadastro rápido
-cadastro_rapido
-```
+- **Lead novo sem `flow_variant` setado ainda**: o guard só dispara se `flow_variant === 'D'`. Hoje, quando o lead entra no fluxo D, o `flow_variant` é gravado antes do `d_welcome` resolver, então OK. Se um dia mudar essa ordem, o guard ficaria inerte — a rota do banco continua correta, então não causaria bug, apenas perderíamos a rede de segurança.
+- **Outros 6 fluxos D ativos**: o sistema tem 7 fluxos D simultaneamente ativos. Não é um problema de roteamento (todos foram validados), mas vale revisar se isso é intencional — normalmente só um fluxo por variant deveria estar ativo.
 
-E remover gatilhos perigosos/genéricos como:
+## Recomendação
 
-```text
-rápido!
-humano
-```
+Nenhuma alteração de código necessária. Está sólido. Se quiser, posso:
 
-porque `humano` não deve significar cadastro rápido.
+- **Opção A**: Consolidar para apenas 1 fluxo D ativo (mais limpo, evita inconsistências futuras).
+- **Opção B**: Remover o filtro `flow_variant === 'D'` do guard, fazendo-o disparar pela palavra "cadastrar" em qualquer contexto onde o customer esteja em `d_welcome`/`d_resultado` (rede de segurança ainda mais ampla).
+- **Opção C**: Deixar como está e apenas monitorar.
 
-### 3. Adicionar uma trava no código dos webhooks
-Além de corrigir o banco, vou blindar o código em:
+Me diga qual prefere (ou nenhuma). OPCAO A
 
-- `supabase/functions/whapi-webhook/handlers/bot-flow.ts`
-- `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
-
-Regra nova:
-
-```text
-Se Flow D receber botão/texto de Cadastro Rápido ou Cadastrar e Finalizar,
-forçar destino para documento, nunca para simulação.
-```
-
-Isso evita que o bug volte mesmo se alguém editar errado o FlowBuilder depois.
-
-### 4. Não mexer no que está certo
-Não vou alterar:
-
-- `flow_router_rules`
-- Flow A
-- OCR da conta
-- OCR do documento
-- OTP
-- Portal
-- limpeza de duplicatas já feita
-
-## Validação depois da correção
-Vou consultar novamente o banco e confirmar:
-
-- `Cadastro rápido` aponta para `d_pedir_documento`.
-- `Cadastrar e finalizar` aponta para `d_pedir_documento`.
-- Nenhuma transição de Cadastro Rápido aponta para `d_escolher_simulacao`, `d_pedir_conta` ou `d_simular_pedir_conta`.
-
-Também vou revisar o handler para garantir que o fallback de segurança está nos dois canais: Whapi e Evolution.
+&nbsp;
