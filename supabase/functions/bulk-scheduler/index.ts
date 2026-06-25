@@ -9,6 +9,8 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs } from "../_shared/anti-ban.ts";
+import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
+
 
 const MAX_CAMPAIGNS_PER_TICK = 5;
 const MAX_MSGS_PER_TICK = 25; // por campanha por execução
@@ -197,6 +199,22 @@ Deno.serve(async (req) => {
       report.push({ id: camp.id, skipped: "no_instance" });
       continue;
     }
+
+    // 🛡️ Trava de proteção: phone do consultor precisa bater com instância
+    const guard = await canSendProactive(supabase, { consultantId: camp.consultant_id, instanceName: instance });
+    if (!guard.allowed) {
+      await logProactiveBlock(supabase, {
+        consultantId: camp.consultant_id,
+        instanceName: instance,
+        reason: guard.reason,
+        context: { source: "bulk-scheduler", campaign_id: camp.id, detail: guard.detail },
+      });
+      // Pausa a campanha para o consultor reabrir o cadastro
+      await supabase.from("bulk_campaigns").update({ status: "paused" }).eq("id", camp.id);
+      report.push({ id: camp.id, paused: "phone_guard", reason: guard.reason, detail: guard.detail });
+      continue;
+    }
+
 
     // Pega próximos targets
     const { data: targets } = await supabase

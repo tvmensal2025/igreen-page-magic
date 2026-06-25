@@ -2864,6 +2864,7 @@ export type Database = {
           name: string
           notification_phone: string | null
           phone: string
+          phone_verified_at: string | null
           photo_url: string | null
           portal_kind: string
           referred_by: string | null
@@ -2906,6 +2907,7 @@ export type Database = {
           name: string
           notification_phone?: string | null
           phone: string
+          phone_verified_at?: string | null
           photo_url?: string | null
           portal_kind?: string
           referred_by?: string | null
@@ -2948,6 +2950,7 @@ export type Database = {
           name?: string
           notification_phone?: string | null
           phone?: string
+          phone_verified_at?: string | null
           photo_url?: string | null
           portal_kind?: string
           referred_by?: string | null
@@ -5532,6 +5535,33 @@ export type Database = {
           total_pontos?: number | null
           uf?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      outbound_blocked_log: {
+        Row: {
+          consultant_id: string
+          context: Json | null
+          created_at: string
+          id: string
+          instance_name: string | null
+          reason: string
+        }
+        Insert: {
+          consultant_id: string
+          context?: Json | null
+          created_at?: string
+          id?: string
+          instance_name?: string | null
+          reason: string
+        }
+        Update: {
+          consultant_id?: string
+          context?: Json | null
+          created_at?: string
+          id?: string
+          instance_name?: string | null
+          reason?: string
         }
         Relationships: []
       }
@@ -8338,6 +8368,15 @@ export type Database = {
       can_view_consultant: {
         Args: { _consultant: string; _user: string }
         Returns: boolean
+      }
+      check_consultant_phone_match: {
+        Args: { _consultant_id: string }
+        Returns: {
+          connected_phone: string
+          consultant_phone: string
+          matched: boolean
+          verified_at: string
+        }[]
       }
       check_send_quota: { Args: { p_instance: string }; Returns: Json }
       cleanup_bot_test_data: { Args: { _run_id: string }; Returns: Json }

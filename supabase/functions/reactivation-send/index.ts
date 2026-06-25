@@ -11,6 +11,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog, captureError } from "../_shared/audit.ts";
 import { checkSendQuota, registerSend, humanJitterMs } from "../_shared/anti-ban.ts";
+import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -154,9 +156,25 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // 🛡️ Trava de proteção: phone do consultor precisa bater com instância
+    const proactiveGuard = await canSendProactive(supabase, { consultantId, instanceName });
+    if (!proactiveGuard.allowed) {
+      await logProactiveBlock(supabase, {
+        consultantId, instanceName,
+        reason: proactiveGuard.reason,
+        context: { source: "reactivation-send", mode: body.mode, detail: proactiveGuard.detail },
+      });
+      return new Response(JSON.stringify({
+        error: "WhatsApp do consultor não confere com a instância conectada. Atualize o telefone no painel para liberar envios.",
+        reason: proactiveGuard.reason,
+        detail: proactiveGuard.detail,
+      }), { status: 412, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const _rawSender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
     const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
     const sender = wrapSenderWithGuard(_rawSender, { supabase, instanceName });
+
 
     // ─── Single ──────────────────────────────────────────────────────
     if (body.mode === "single") {
