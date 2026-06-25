@@ -162,12 +162,13 @@ export default function FluxoBuilder() {
 
   const filteredSteps = useMemo(() => {
     return steps.filter(s => {
+      if (showOnlyConflicts && !flowConflicts.byStep.has(s.id)) return false;
       if (typeFilter.size > 0 && !typeFilter.has(s.step_type)) return false;
       if (!listQuery) return true;
       const q = listQuery.toLowerCase();
       return s.title.toLowerCase().includes(q) || (s.message_text || "").toLowerCase().includes(q);
     });
-  }, [steps, listQuery, typeFilter]);
+  }, [steps, listQuery, typeFilter, showOnlyConflicts, flowConflicts.byStep]);
 
   // Persistência central dos passos (PR-1). Liga os handlers antes zerados ao
   // banco, com update otimista + revert. Em sync_mode='public' a edição fica
