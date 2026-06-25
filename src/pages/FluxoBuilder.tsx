@@ -80,6 +80,8 @@ export default function FluxoBuilder() {
 
   const { isNarrow } = useViewportWidth();
   const validation = useFlowValidation(steps);
+  const flowConflicts = useFlowConflicts(steps);
+  const [showOnlyConflicts, setShowOnlyConflicts] = useState(false);
 
   const setViewMode = useCallback((next: ViewMode) => {
     setViewModeState(next);
