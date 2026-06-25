@@ -31,10 +31,17 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const REDIS_URL = process.env.REDIS_URL || 'redis://evolution-api-redis:6379';
 const QUEUE_NAME = 'portal-worker-2-leads';
-// Auditoria IA dos primeiros N cadastros (default 10). Set 0 pra desligar.
-// A edge function `portal2-ai-audit` é quem chama o Gemini — o worker só
-// manda o trace e recebe a análise (assim a chave Gemini fica isolada).
-const AI_AUDIT_LIMIT = Number(process.env.PORTAL2_AI_AUDIT_LIMIT ?? 10);
+// Auditoria IA dos primeiros N cadastros. A edge function `portal2-ai-audit`
+// é quem chama o Gemini — o worker só manda o trace e recebe a análise.
+//
+// Defaults:
+//   - PORTAL2_AI_AUDIT_LIMIT vazio/inválido/0 → usa 10 (não desliga sozinho).
+//   - Pra desligar de propósito, defina PORTAL2_AI_AUDIT_DISABLED=true.
+const _rawLimit = Number(process.env.PORTAL2_AI_AUDIT_LIMIT);
+const AI_AUDIT_LIMIT = Number.isFinite(_rawLimit) && _rawLimit > 0 ? _rawLimit : 10;
+const AI_AUDIT_DISABLED = String(process.env.PORTAL2_AI_AUDIT_DISABLED || '').toLowerCase() === 'true';
+let auditHealth = { healthy: false, error: 'not_checked_yet', checked_at: null };
+
 
 const supabase = (() => {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
