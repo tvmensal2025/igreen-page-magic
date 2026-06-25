@@ -1,77 +1,81 @@
-# Análise Completa do Fluxo D — 3 entradas
+## Auditoria do Fluxo D aplicado acima
 
-Fluxo ativo único: `b643764c-…` (Fluxo Padrão D).
+Encontrei uma causa provável para a falha continuar: a correção anterior foi aplicada no fluxo errado/fora do caminho usado em produção.
 
-## 1️⃣ 💚 Quero simular
+### O que está acontecendo
 
-```
-d_welcome ─► d_escolher_simulacao
-              ├─ 📸 Simulação completa ─► d_pedir_conta (foto) ─► d_resultado
-              │                                                   ├─ ✅ Continuar Cadastro ─► d_pedir_documento ✓
-              │                                                   ├─ 🎥 Como funciona  ─► d_como_funciona_copy_qwpu
-              │                                                   └─ 👨‍💼 Rafael        ─► humano ✓
-              └─ 💡 Simulação rápida   ─► d_simular_valor (digita R$) ─► d_simular_resultado
-                                                                          ├─ ✅ Quero me cadastrar ─► d_simular_pedir_conta ⚠️
-                                                                          ├─ 🎥 Como funciona      ─► d_como_funciona
-                                                                          └─ 👨‍💼 Rafael            ─► humano ✓
-```
+1. **O Fluxo D corrigido não é o fluxo que o webhook está usando para Rafael**
+   - O consultor real dos leads recentes é `Rafael Ferreira` com `consultant_id = 0c2711ad-4836-41e6-afba-edd94f698ae3`.
+   - O `superadmin_consultant_id` também é esse mesmo ID.
+   - O fluxo D ativo corrigido é `b643764c-adb5-47cf-8951-4db109e85f39`, mas ele está com:
+     - `consultant_id = 11111111-2222-3333-4444-555555555555`
+     - `is_public = false`
+   - Resultado: o resolvedor de fluxo não encontra esse fluxo para Rafael.
 
-**Status:** ✅ funciona. **Atenção:** Em "Simulação rápida → Quero me cadastrar", o banco aponta para `d_simular_pedir_conta` (pede foto da conta novamente). Porém o **guard do webhook** (`_flowDQuickCadastroIntent`) intercepta a frase "quero me cadastrar" e força `d_pedir_documento`, então na prática vai direto pro documento. **Consistente com Cadastro Rápido**, mas inconsistente com o que está salvo no FlowBuilder — se alguém olhar o builder, vai pensar que está errado.
+2. **O Fluxo D público que os leads recentes usaram está inativo e ainda com transições antigas**
+   - O fluxo público antigo `320bf22c-e383-4f53-a3c0-b88b89b02558` está `is_public = true`, porém `is_active = false`.
+   - As transições reais dos leads recentes apontam para steps desse fluxo antigo, por exemplo:
+     - `aee7b26c...` = `d_welcome`
+     - `c87d76f8...` = `d_como_funciona`
+   - Nesse fluxo antigo, `Quero me cadastrar` ainda aponta para `aguardando_conta`, não para documento.
+   - Isso explica por que a auditoria anterior parecia correta no fluxo analisado, mas o cliente real ainda falhou.
 
-## 2️⃣ 🎥 Como funciona
+3. **Há leads D parados em etapas de cadastro**
+   - Lead recente `078a7450` ficou em `aguardando_conta` depois de “Quero me cadastrar”.
+   - Lead recente `603d6f4e` chegou em `aguardando_doc_auto`, mas permanece pendente mesmo com conta/documento/email preenchidos, indicando possível travamento no avanço posterior.
+   - Lead `75c969d1` chegou até `aguardando_facial`/assinatura, então o pipeline consegue finalizar em alguns casos, mas não está 100% confiável.
 
-```
-d_welcome ─► d_como_funciona
-              ├─ ✅ Quero me cadastrar   ─► (banco) d_pedir_conta  /  (guard) d_pedir_documento ⚠️
-              ├─ 💬 Tenho uma pergunta   ─► d_duvidas
-              │                              ├─ cadastrar ─► d_pedir_documento ✓
-              │                              ├─ humano    ─► humano ✓
-              │                              └─ nova_pergunta ─► IA responde e volta
-              └─ 👨‍💼 Rafael               ─► humano ✓
-```
+4. **Há alerta operacional separado no pós-cadastro/OTP**
+   - `portal-otp-watchdog` registra repetidamente: `quota bloqueada whapi-superadmin: instance_not_found`.
+   - Isso não é a causa do primeiro clique do Fluxo D, mas pode afetar recuperação/envios automáticos após cadastro/OTP.
 
-**Status:** ✅ funciona. **Mesma inconsistência**: o guard força documento direto quando o usuário diz "quero me cadastrar", mesmo que o builder diga pra pedir a conta primeiro.
+## Plano de correção
 
-## 3️⃣ ⚡ Cadastro rápido
+### 1. Corrigir a fonte de verdade do Fluxo D
+- Definir qual fluxo D deve ser o oficial para produção.
+- Minha recomendação: promover `b643764c-adb5-47cf-8951-4db109e85f39` como o Fluxo D público/oficial do superadmin:
+  - `consultant_id = 0c2711ad-4836-41e6-afba-edd94f698ae3`
+  - `is_public = true`
+  - `is_active = true`
+  - `variant = D`
+  - `sync_mode = custom` ou manter compatível com o resolvedor atual.
+- Desativar ou deixar claramente fora de uso o fluxo D antigo `320bf22c...` para evitar colisão.
 
-```
-d_welcome ─► d_pedir_documento ─► d_pedir_email ─► d_confirmar_telefone ─► d_finalizar ✓
-```
+### 2. Reaplicar/garantir as transições críticas no fluxo que realmente roda
+- Confirmar no fluxo oficial que todos os caminhos abaixo apontam direto para `d_pedir_documento`:
+  - `d_welcome` → `Cadastro rápido`
+  - `d_como_funciona` → `Quero me cadastrar`
+  - `d_resultado` → `Quero me cadastrar`
+  - `d_simular_resultado` → `Quero me cadastrar`
+  - `d_duvidas` → `cadastrar`
+  - `d_como_funciona_copy_qwpu` → `Continuar Cadastro`
+- Remover qualquer rota antiga que mande `Quero me cadastrar` para `aguardando_conta`, salvo quando a pessoa escolheu simulação completa e ainda não mandou conta.
 
-**Status:** ✅ 100% correto. Banco e guard concordam.
+### 3. Blindar o resolvedor para não cair no fluxo errado
+- Ajustar/validar `resolveFlowId` para que, quando `flow_ab_mode = only_D`, ele nunca caia silenciosamente em um fluxo de variante A.
+- Se não houver fluxo D público/ativo, deve registrar erro claro ou cair em um fallback D válido, não em `Cadastro` variante A.
 
----
+### 4. Corrigir leads que ficaram presos
+- Reposicionar os leads D recentes travados para o step correto conforme o que já possuem:
+  - Se já tem conta e documento/e-mail: avançar para a próxima etapa pendente segura.
+  - Se não tem documento: colocar em `aguardando_doc_auto` e pedir documento.
+  - Se só falta conta: manter em `aguardando_conta`.
+- Registrar transição em `bot_step_transitions` para auditoria.
 
-## 🟢 O que está perfeito
-- Roteamento dos 3 botões iniciais
-- Handoff "humano/Rafael" funciona em todas as telas
-- Guard duplo no webhook protege contra edições erradas
-- Apenas 1 fluxo D ativo
+### 5. Auditar o pós-cadastro/OTP
+- Verificar a configuração da instância `whapi-superadmin` usada pelo `portal-otp-watchdog`.
+- Corrigir o `instance_not_found` para garantir recuperação/envio após cadastro.
+- Validar se o erro `duplicate_phone` está sendo tratado sem bloquear a assinatura quando já existe `idcliente` e link.
 
-## 🟡 Inconsistências (não quebram, mas confundem)
+### 6. Validação final
+- Simular os 3 caminhos completos:
+  - `Quero simular` → simulação rápida → `Quero me cadastrar`
+  - `Como funciona` → `Quero me cadastrar`
+  - `Cadastro rápido`
+- Conferir no banco que todos chegam ao pipeline correto:
+  - documento → e-mail → telefone → portal → OTP/assinatura.
+- Conferir logs do webhook e tabelas `customers`/`bot_step_transitions` após a simulação.
 
-1. **Guard sobrescreve o builder em "Quero me cadastrar"**
-   O regex `\bcadastrar\b` faz qualquer transição que contenha essa palavra ir para `d_pedir_documento`, mesmo quando o builder mandaria pedir a conta antes (d_como_funciona, d_simular_resultado). Hoje funciona, mas se você editar o builder pra "primeiro pedir conta", o guard vai ignorar.
-   **Resolver:** ou (a) atualizar o banco pra refletir o que o guard faz (todos os "Quero me cadastrar" → `d_pedir_documento`), ou (b) estreitar o guard pra disparar só com "cadastro rápido"/"cadastro_rapido", deixando "quero me cadastrar" passar pelo builder.
+## Resultado esperado
 
-2. **Passo dangling**: `d_como_funciona_copy_in3s` (position 19) não é alvo de ninguém. Pode ser removido.
-
-3. **Typos visíveis ao cliente**:
-   - `d_finalizar`: "Tudo certo,!" (vírgula sobrando)
-   - `d_duvidas`: "Me manda anda sua *pergunta*" ("anda" sobrando — provavelmente era "agora")
-   - `d_como_funciona_copy_qwpu`: trigger `✅Continuar Cadastro` sem espaço (não casa com o título do botão "✅ Continuar Cadastro" — só funciona porque "cadastrar" também está na lista)
-
-## 🔴 Risco real (depois de muito teste mental)
-Nenhum. Os 3 caminhos chegam ao final do cadastro. O usuário não fica preso, não recebe simulação no lugar de cadastro, não cai em humano por engano.
-
----
-
-## Recomendação
-
-Posso aplicar tudo de uma vez (sem mexer em código, só dados):
-
-- **Fix A**: Alinhar banco com guard — todos os "✅ Quero me cadastrar / Continuar Cadastro" passam a apontar direto pra `d_pedir_documento` no builder.
-- **Fix B**: Apagar o passo dangling `d_como_funciona_copy_in3s`.
-- **Fix C**: Corrigir os typos em `d_finalizar`, `d_duvidas` e o trigger `✅Continuar Cadastro`.
-
-Confirma se aplico **A+B+C**, ou só um subset?
+Após executar esse plano, a correção passa a valer no fluxo realmente usado por Rafael/produção, e não apenas em um template isolado. Isso elimina a divergência que fez o cadastro continuar falhando.
