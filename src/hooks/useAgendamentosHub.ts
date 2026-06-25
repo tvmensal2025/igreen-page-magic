@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+import { LEAD_ORIGIN_FILTER } from "@/lib/leadOrigin";
 import {
   buildUpcomingPosVendaMessages,
   groupSentStageKeys,
@@ -67,7 +68,7 @@ export function useAgendamentosHub(consultantId: string) {
           .not("next_followup_at", "is", null)
           .eq("bot_paused", false)
           .is("assigned_human_id", null)
-          .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
+          .or(LEAD_ORIGIN_FILTER)
           .order("next_followup_at", { ascending: true })
           .limit(50),
         (supabase as any)

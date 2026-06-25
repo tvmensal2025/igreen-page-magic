@@ -56,6 +56,20 @@ function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
   }
 }
 
+/** Status de campanha em massa em PT claro (cobre todos os estados do bulk-scheduler). */
+function campaignStatusLabel(status: string): string {
+  switch (status) {
+    case "running": return "Enviando";
+    case "scheduled": return "Agendada";
+    case "paused": return "Pausada";
+    case "completed": return "Concluída";
+    case "failed": return "Com erro";
+    case "draft": return "Rascunho";
+    case "cancelled": return "Cancelada";
+    default: return status;
+  }
+}
+
 interface AgendamentosHubProps {
   consultantId: string;
   instanceName: string;
@@ -126,14 +140,21 @@ export function AgendamentosHub({
     refresh();
   };
 
-  const statusConfig = (status: string) => {
+  const statusConfig = (status: string, scheduledAtISO?: string) => {
     switch (status) {
-      case "pending":
-        return { icon: <Clock className="w-3 h-3" />, label: "Aguardando hora", cls: "bg-warning/15 text-warning border-warning/25" };
+      case "pending": {
+        // Distingue "vai sair agora" (horário já passou e ainda não enviou)
+        // de "aguardando hora" (ainda no futuro). Mesma linguagem do
+        // selo da timeline na Visão Geral.
+        const overdue = scheduledAtISO ? new Date(scheduledAtISO).getTime() <= Date.now() : false;
+        return overdue
+          ? { icon: <Clock className="w-3 h-3" />, label: "Vai sair agora", cls: "bg-warning/20 text-warning border-warning/40" }
+          : { icon: <Clock className="w-3 h-3" />, label: "Aguardando hora", cls: "bg-warning/10 text-warning border-warning/20" };
+      }
       case "sent":
         return { icon: <CheckCircle2 className="w-3 h-3" />, label: "Enviada", cls: "bg-primary/15 text-primary border-primary/25" };
       case "failed":
-        return { icon: <XCircle className="w-3 h-3" />, label: "Falhou", cls: "bg-destructive/15 text-destructive border-destructive/25" };
+        return { icon: <XCircle className="w-3 h-3" />, label: "Erro — clique para ver", cls: "bg-destructive/15 text-destructive border-destructive/25" };
       default:
         return { icon: <AlertCircle className="w-3 h-3" />, label: status, cls: "bg-secondary text-muted-foreground border-border" };
     }
@@ -156,7 +177,7 @@ export function AgendamentosHub({
     {
       id: "pos-venda" as const,
       title: "Pós-venda automático",
-      desc: "Mensagens automáticas de 30, 60, 90 e 120 dias depois que o consultor marcou o cliente como aprovado.",
+      desc: "Mensagem de boas-vindas (aprovado) ou devolutiva (reprovado) e a esteira de 30, 60, 90 e 120 dias. Só roda depois que o consultor clica em Aprovado ou Reprovado.",
       count: stats.posVendaUpcoming,
       icon: Sparkles,
       action: () => setActiveTab("pos-venda"),
@@ -166,6 +187,7 @@ export function AgendamentosHub({
       title: "Reaquecimento de leads",
       desc: "Volta a falar com leads que sumiram. Só age em leads do WhatsApp e cadastros manuais — nunca em cliente da carteira.",
       count: stats.botFollowups,
+      countLabel: "continuações marcadas pelo bot",
       icon: Flame,
       badge: reactivationSettings.auto_enabled ? "Ligado" : "Desligado",
       badgeOn: reactivationSettings.auto_enabled,
@@ -181,12 +203,17 @@ export function AgendamentosHub({
     },
   ];
 
-  /** Coisas que não são agendadas — disparam na hora. */
+  /**
+   * Coisas que não são agendadas — disparam na hora.
+   * Cada uma leva o consultor para o lugar onde dá pra ver o que aconteceu
+   * (histórico) ou configurar.
+   */
   const disparoNaHora = [
     {
       title: "CRM: ao mover card no Kanban",
       desc: "Quando o consultor arrasta o card, a mensagem configurada para aquela coluna sai na hora. Não entra na fila de agendados, mas aparece no histórico.",
       icon: LayoutGrid,
+      actionLabel: "Abrir Kanban",
       action: () => dispatchAgendamentosNav({ tab: "crm" }),
     },
     {
@@ -194,12 +221,16 @@ export function AgendamentosHub({
       desc: "Quando um lead trava no fluxo do bot, a IA tenta retomar a conversa. Roda automaticamente para leads — nunca toca cliente da carteira.",
       icon: ShieldCheck,
       badge: "Automático",
+      actionLabel: "Ver o que já saiu",
+      action: () => setActiveTab("historico"),
     },
     {
       title: "Cutucadinha pós-FAQ",
       desc: "Se o lead pergunta algo no FAQ e some por 20min, a IA dá uma cutucada. Só para leads.",
       icon: Zap,
       badge: "Automático",
+      actionLabel: "Ver o que já saiu",
+      action: () => setActiveTab("historico"),
     },
   ];
 
@@ -342,11 +373,14 @@ export function AgendamentosHub({
                             </Badge>
                           )}
                           {typeof sys.count === "number" && (
-                            <Badge variant="outline" className="text-[10px]">{sys.count}</Badge>
+                            <Badge variant="outline" className="text-[10px]" title={sys.countLabel}>{sys.count}</Badge>
                           )}
                         </div>
                       </div>
                       <p className="text-[11px] text-muted-foreground">{sys.desc}</p>
+                      {sys.countLabel && typeof sys.count === "number" && (
+                        <p className="text-[10px] text-muted-foreground/80 italic">{sys.count} {sys.countLabel}</p>
+                      )}
                       <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={sys.action}>
                         <Settings2 className="w-3.5 h-3.5" />
                         Abrir e configurar
@@ -381,7 +415,7 @@ export function AgendamentosHub({
                       {item.action && (
                         <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={item.action}>
                           <Settings2 className="w-3.5 h-3.5" />
-                          Abrir Kanban
+                          {item.actionLabel ?? "Abrir"}
                         </Button>
                       )}
                     </div>
@@ -544,7 +578,7 @@ export function AgendamentosHub({
                   <div key={c.id} className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-sm font-bold">{c.name}</span>
-                      <Badge variant="secondary" className="text-[9px]">{c.status === "running" ? "Enviando" : "Agendada"}</Badge>
+                      <Badge variant="secondary" className="text-[9px]">{campaignStatusLabel(c.status)}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">{c.sent} de {c.total} enviados · {c.failed} com erro</p>
                     {c.scheduled_at && (
@@ -622,13 +656,13 @@ function MessageList({
 }: {
   messages: import("@/lib/agendamentosHub").ScheduledMessageRow[];
   onDelete: (id: string) => void;
-  statusConfig: (s: string) => { icon: React.ReactNode; label: string; cls: string };
+  statusConfig: (s: string, scheduledAtISO?: string) => { icon: React.ReactNode; label: string; cls: string };
 }) {
   return (
     <ScrollArea className="max-h-[400px]">
       <div className="space-y-2">
         {messages.map((msg) => {
-          const sc = statusConfig(msg.status);
+          const sc = statusConfig(msg.status, msg.scheduled_at);
           const isPending = msg.status === "pending";
           return (
             <div key={msg.id} className="group rounded-xl border border-border/40 bg-secondary/20 px-4 py-3">
