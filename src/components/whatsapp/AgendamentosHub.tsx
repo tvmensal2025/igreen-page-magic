@@ -126,14 +126,21 @@ export function AgendamentosHub({
     refresh();
   };
 
-  const statusConfig = (status: string) => {
+  const statusConfig = (status: string, scheduledAtISO?: string) => {
     switch (status) {
-      case "pending":
-        return { icon: <Clock className="w-3 h-3" />, label: "Aguardando hora", cls: "bg-warning/15 text-warning border-warning/25" };
+      case "pending": {
+        // Distingue "vai sair agora" (horário já passou e ainda não enviou)
+        // de "aguardando hora" (ainda no futuro). Mesma linguagem do
+        // selo da timeline na Visão Geral.
+        const overdue = scheduledAtISO ? new Date(scheduledAtISO).getTime() <= Date.now() : false;
+        return overdue
+          ? { icon: <Clock className="w-3 h-3" />, label: "Vai sair agora", cls: "bg-warning/20 text-warning border-warning/40" }
+          : { icon: <Clock className="w-3 h-3" />, label: "Aguardando hora", cls: "bg-warning/10 text-warning border-warning/20" };
+      }
       case "sent":
         return { icon: <CheckCircle2 className="w-3 h-3" />, label: "Enviada", cls: "bg-primary/15 text-primary border-primary/25" };
       case "failed":
-        return { icon: <XCircle className="w-3 h-3" />, label: "Falhou", cls: "bg-destructive/15 text-destructive border-destructive/25" };
+        return { icon: <XCircle className="w-3 h-3" />, label: "Erro — clique para ver", cls: "bg-destructive/15 text-destructive border-destructive/25" };
       default:
         return { icon: <AlertCircle className="w-3 h-3" />, label: status, cls: "bg-secondary text-muted-foreground border-border" };
     }
@@ -156,7 +163,7 @@ export function AgendamentosHub({
     {
       id: "pos-venda" as const,
       title: "Pós-venda automático",
-      desc: "Mensagens automáticas de 30, 60, 90 e 120 dias depois que o consultor marcou o cliente como aprovado.",
+      desc: "Mensagem de boas-vindas (aprovado) ou devolutiva (reprovado) e a esteira de 30, 60, 90 e 120 dias. Só roda depois que o consultor clica em Aprovado ou Reprovado.",
       count: stats.posVendaUpcoming,
       icon: Sparkles,
       action: () => setActiveTab("pos-venda"),
@@ -166,6 +173,7 @@ export function AgendamentosHub({
       title: "Reaquecimento de leads",
       desc: "Volta a falar com leads que sumiram. Só age em leads do WhatsApp e cadastros manuais — nunca em cliente da carteira.",
       count: stats.botFollowups,
+      countLabel: "continuações marcadas pelo bot",
       icon: Flame,
       badge: reactivationSettings.auto_enabled ? "Ligado" : "Desligado",
       badgeOn: reactivationSettings.auto_enabled,
@@ -181,12 +189,17 @@ export function AgendamentosHub({
     },
   ];
 
-  /** Coisas que não são agendadas — disparam na hora. */
+  /**
+   * Coisas que não são agendadas — disparam na hora.
+   * Cada uma leva o consultor para o lugar onde dá pra ver o que aconteceu
+   * (histórico) ou configurar.
+   */
   const disparoNaHora = [
     {
       title: "CRM: ao mover card no Kanban",
       desc: "Quando o consultor arrasta o card, a mensagem configurada para aquela coluna sai na hora. Não entra na fila de agendados, mas aparece no histórico.",
       icon: LayoutGrid,
+      actionLabel: "Abrir Kanban",
       action: () => dispatchAgendamentosNav({ tab: "crm" }),
     },
     {
@@ -194,12 +207,16 @@ export function AgendamentosHub({
       desc: "Quando um lead trava no fluxo do bot, a IA tenta retomar a conversa. Roda automaticamente para leads — nunca toca cliente da carteira.",
       icon: ShieldCheck,
       badge: "Automático",
+      actionLabel: "Ver o que já saiu",
+      action: () => setActiveTab("historico"),
     },
     {
       title: "Cutucadinha pós-FAQ",
       desc: "Se o lead pergunta algo no FAQ e some por 20min, a IA dá uma cutucada. Só para leads.",
       icon: Zap,
       badge: "Automático",
+      actionLabel: "Ver o que já saiu",
+      action: () => setActiveTab("historico"),
     },
   ];
 
