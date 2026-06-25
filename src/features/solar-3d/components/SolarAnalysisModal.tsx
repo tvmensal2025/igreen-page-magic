@@ -170,7 +170,7 @@ export function SolarAnalysisModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl w-[calc(100%-1rem)] p-0 gap-0 max-h-[92dvh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-2xl w-[calc(100%-1rem)] p-0 gap-0 h-[92dvh] sm:h-[88dvh] sm:max-h-[820px] overflow-hidden flex flex-col">
         <div className="relative overflow-hidden border-b bg-gradient-to-br from-amber-500/15 via-primary/10 to-emerald-500/10 px-5 pt-5 pb-4 shrink-0">
           <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-amber-400/20 blur-2xl" />
           <DialogHeader className="relative space-y-2 text-left">
