@@ -51,6 +51,59 @@ function mercatorToLatLng(x: number, y: number): { lat: number; lng: number } {
   return { lat, lng };
 }
 
+/**
+ * UTM (WGS84) → lat/lng. zone = número da zona, north = hemisfério.
+ * Fórmula inversa padrão (Karney/USGS, precisão sub-métrica). Sem libs.
+ */
+function utmToLatLng(easting: number, northing: number, zone: number, north: boolean): { lat: number; lng: number } {
+  const a = 6378137.0;            // semi-eixo maior WGS84
+  const f = 1 / 298.257223563;    // achatamento
+  const k0 = 0.9996;
+  const e2 = f * (2 - f);
+  const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+  const x = easting - 500000;
+  const y = north ? northing : northing - 10000000;
+  const m = y / k0;
+  const mu = m / (a * (1 - e2 / 4 - (3 * e2 * e2) / 64 - (5 * e2 * e2 * e2) / 256));
+  const phi1 =
+    mu +
+    ((3 * e1) / 2 - (27 * e1 ** 3) / 32) * Math.sin(2 * mu) +
+    ((21 * e1 ** 2) / 16 - (55 * e1 ** 4) / 32) * Math.sin(4 * mu) +
+    ((151 * e1 ** 3) / 96) * Math.sin(6 * mu);
+  const ep2 = e2 / (1 - e2);
+  const c1 = ep2 * Math.cos(phi1) ** 2;
+  const t1 = Math.tan(phi1) ** 2;
+  const n1 = a / Math.sqrt(1 - e2 * Math.sin(phi1) ** 2);
+  const r1 = (a * (1 - e2)) / Math.pow(1 - e2 * Math.sin(phi1) ** 2, 1.5);
+  const d = x / (n1 * k0);
+  const lat =
+    phi1 -
+    ((n1 * Math.tan(phi1)) / r1) *
+      ((d * d) / 2 -
+        ((5 + 3 * t1 + 10 * c1 - 4 * c1 * c1 - 9 * ep2) * d ** 4) / 24 +
+        ((61 + 90 * t1 + 298 * c1 + 45 * t1 * t1 - 252 * ep2 - 3 * c1 * c1) * d ** 6) / 720);
+  const lngRad =
+    (d -
+      ((1 + 2 * t1 + c1) * d ** 3) / 6 +
+      ((5 - 2 * c1 + 28 * t1 - 3 * c1 * c1 + 8 * ep2 + 24 * t1 * t1) * d ** 5) / 120) /
+    Math.cos(phi1);
+  const lngOrigin = (zone - 1) * 6 - 180 + 3;
+  return {
+    lat: (lat * 180) / Math.PI,
+    lng: lngOrigin + (lngRad * 180) / Math.PI,
+  };
+}
+
+/** Converte um ponto da CRS detectada para WGS84. */
+function projToLatLng(x: number, y: number, epsg: number): { lat: number; lng: number } {
+  if (epsg === 4326) return { lat: y, lng: x };
+  if (epsg === 3857) return mercatorToLatLng(x, y);
+  // UTM WGS84: 326xx = norte, 327xx = sul; zona = 2 últimos dígitos.
+  if (epsg >= 32601 && epsg <= 32660) return utmToLatLng(x, y, epsg - 32600, true);
+  if (epsg >= 32701 && epsg <= 32760) return utmToLatLng(x, y, epsg - 32700, false);
+  return { lat: y, lng: x };
+}
+
 /** Detecta a CRS pelo GeoKeyDirectory (t34735): 4326 (graus) ou 3857 (metros). */
 function detectEpsg(ifd: Record<string, unknown>): number {
   const gk = ifd.t34735 as number[] | undefined;
@@ -90,9 +143,7 @@ function readBounds(ifd: Record<string, unknown>): LatLngBounds | undefined {
   if (!corners) return undefined;
 
   // Converte cantos para lat/lng conforme a CRS.
-  const toLatLng = (p: { x: number; y: number }) =>
-    epsg === 3857 ? mercatorToLatLng(p.x, p.y) : { lat: p.y, lng: p.x };
-  const ll = corners.map(toLatLng);
+  const ll = corners.map((p) => projToLatLng(p.x, p.y, epsg));
   return {
     north: Math.max(...ll.map((p) => p.lat)),
     south: Math.min(...ll.map((p) => p.lat)),
