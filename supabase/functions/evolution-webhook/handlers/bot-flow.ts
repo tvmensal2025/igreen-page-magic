@@ -982,6 +982,25 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       } else {
         const candidate = await detectFlowSwitch(supabase, customer.consultant_id, messageText, null);
         if (candidate) {
+          // 🛡️ Guard global: se o cliente está no PIPELINE de cadastro, NUNCA
+          // trocar de fluxo por palavra-chave. Caso real: lead Flow D enviou um
+          // CEP no passo ask_email e o "13354016" disparou Flow B (simulação),
+          // resetando todo o cadastro. Mantém o handler determinístico no
+          // controle até portal_submitting / handoff.
+          {
+            const curStep = String((customer as any).conversation_step || "");
+            const stripped = curStep.startsWith("flow:") ? curStep.slice(5) : curStep;
+            if (CADASTRO_STEPS.has(stripped)) {
+              console.log(`[flow-router] skipped_router=in_cadastro_pipeline step=${stripped} kw="${candidate.matched_keyword}" target=${candidate.target_flow_key}`);
+              try {
+                await supabase.from("engine_logs").insert({
+                  customer_id: customer.id,
+                  event: "skipped_router",
+                  payload: { reason: "in_cadastro_pipeline", step: stripped, matched_keyword: candidate.matched_keyword, target: candidate.target_flow_key },
+                } as any);
+              } catch {}
+              // segue silenciosamente para o handler do step atual
+            } else {
           // 🚀 ATIVAÇÃO IMEDIATA DO FLUXO A POR PALAVRA-CHAVE (sem sim/não).
           // Só ativa se: (a) não está já em A, (b) não está no meio de um passo de cadastro.
           if (candidate.target_flow_key === "fluxo_a_cadastro") {
