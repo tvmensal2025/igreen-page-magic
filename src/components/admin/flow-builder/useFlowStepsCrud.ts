@@ -82,6 +82,12 @@ export interface UseFlowStepsCrudArgs {
   setSteps: React.Dispatch<React.SetStateAction<Step[]>>;
   /** Recarrega os passos do banco (após fork ou para ressincronizar). */
   reload: () => Promise<void> | void;
+  /**
+   * Quando `true`, o usuário é super admin e pode editar QUALQUER fluxo
+   * diretamente (incluindo o público/modelo), sem precisar do fork. Para
+   * o super admin o fluxo público É o fluxo de trabalho.
+   */
+  isSuperAdmin?: boolean;
 }
 
 export interface UseFlowStepsCrudResult {
@@ -109,15 +115,17 @@ export function useFlowStepsCrud({
   steps,
   setSteps,
   reload,
+  isSuperAdmin = false,
 }: UseFlowStepsCrudArgs): UseFlowStepsCrudResult {
   const [saving, setSaving] = useState(false);
 
-  const readOnlyHerdado = syncMode === "public";
+  // Super admin nunca é bloqueado — edita direto o modelo público.
+  const readOnlyHerdado = syncMode === "public" && !isSuperAdmin;
 
   /**
    * Garante que o fluxo está editável antes de qualquer escrita. Em modo
    * público, NÃO grava — avisa o consultor para "Personalizar" primeiro. Isso
-   * impede o bug silencioso de salvar onde o bot não lê.
+   * impede o bug silencioso de salvar onde o bot não lê. Super admin passa.
    */
   const guardEditavel = useCallback((): boolean => {
     if (!flowId) {

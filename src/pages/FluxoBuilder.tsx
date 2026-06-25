@@ -38,6 +38,7 @@ import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useUserRole } from "@/hooks/useUserRole";
 
 const FlowDiagramV2 = React.lazy(() => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"));
 
