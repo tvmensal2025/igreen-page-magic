@@ -696,10 +696,13 @@ Deno.serve(async (req) => {
         _consultant_id: instanceData.consultant_id,
       });
       const newFlowVariant = (typeof assignedVariant === "string" && assignedVariant) || "A";
+      const pushNameClean = (parsed?.pushName || "").toString().trim().slice(0, 80);
+      const fallbackName = `Cliente ${phone.slice(-4)}`;
       const { data: newCustomer, error } = await supabase
         .from("customers")
         .insert({
           phone_whatsapp: phone,
+          name: pushNameClean || fallbackName,
           consultant_id: instanceData.consultant_id,
           status: "pending",
           conversation_step: "welcome",
@@ -710,6 +713,7 @@ Deno.serve(async (req) => {
           origin_consultant_id: instanceData.consultant_id,
         })
         .select().single();
+
       if (error) {
         console.error("Error creating customer:", error);
         const { data: fallback } = await supabase

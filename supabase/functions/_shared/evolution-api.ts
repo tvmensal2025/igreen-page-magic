@@ -693,8 +693,13 @@ export function parseEvolutionMessage(body: any, instanceConnectedPhone?: string
   else if (hasAudio) mediaKind = "audio";
   else if (hasVideo) mediaKind = "video";
 
+  // Nome que aparece no WhatsApp do remetente (pushName). Pode vir em
+  // data.pushName ou body.pushName conforme versão do Evolution.
+  const pushName: string | null = data.pushName || body.pushName || data.notifyName || null;
+
   return {
     remoteJid,
+    pushName,
     messageText: messageText.trim(),
     buttonId,
     hasImage,
@@ -713,6 +718,7 @@ export function parseEvolutionMessage(body: any, instanceConnectedPhone?: string
     messageTimestamp,
   };
 }
+
 
 /**
  * Extrai URL de mídia da mensagem (se disponível)
