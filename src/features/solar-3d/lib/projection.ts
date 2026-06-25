@@ -56,18 +56,3 @@ export interface LatLngBounds {
   east: number;
   west: number;
 }
-
-/**
- * Projeção linear de lat/lng dentro de um bounding box (imagem HD georreferenciada).
- * Retorna posição relativa (0..1). Para áreas pequenas (um telhado), a distorção
- * do Mercator é desprezível, então projeção linear é suficiente e precisa.
- */
-export function latLngToRelativeBounds(
-  lat: number,
-  lng: number,
-  b: LatLngBounds,
-): { x: number; y: number } {
-  const x = (lng - b.west) / (b.east - b.west);
-  const y = (b.north - lat) / (b.north - b.south);
-  return { x, y };
-}
