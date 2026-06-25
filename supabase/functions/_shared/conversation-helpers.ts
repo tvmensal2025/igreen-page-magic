@@ -85,8 +85,15 @@ export function getNextMissingStep(
     (consultorEmailNormalized && emailNormalized === consultorEmailNormalized)
   ) return "ask_email";
   if (!c.cep) return "ask_cep";
-  // CEP genérico (termina em 000) → pedir manualmente
-  if (c.cep && /000$/.test(c.cep.replace(/\D/g, ""))) return "ask_cep";
+  // CEP genérico (termina em 000) → pedir manualmente, EXCETO se o endereço
+  // já está completo (OCR confiável). Nesse caso aceitamos o CEP da cidade
+  // pra não travar o cadastro com pergunta extra (regra do produto: "Cadastro
+  // Rápido" Flow D nunca pede CEP).
+  if (
+    c.cep &&
+    /000$/.test(c.cep.replace(/\D/g, "")) &&
+    !(c.address_city && c.address_state && c.address_street)
+  ) return "ask_cep";
   if (!c.address_number) return "ask_number";
   // complemento é opcional, mas perguntar uma vez
   if (c.address_complement === null || c.address_complement === undefined) return "ask_complement";
