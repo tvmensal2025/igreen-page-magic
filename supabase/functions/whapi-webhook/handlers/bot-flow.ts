@@ -1052,6 +1052,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               updates: {},
             };
           }
+            } // /else (not in cadastro)
+          } // /guard block
         }
       }
     } catch (e) {
