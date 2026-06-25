@@ -28,6 +28,7 @@ import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalle
 import GuidedStepDialog from "@/components/admin/flow-builder/GuidedStepDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import { useFlowStepsCrud } from "@/components/admin/flow-builder/useFlowStepsCrud";
+import { useFlowConflicts } from "@/components/admin/flow-builder/useFlowConflicts";
 import {
   Step, Variant, VARIANT_LABEL,
   parseTransitions, parseCaptures, parseFallback,
