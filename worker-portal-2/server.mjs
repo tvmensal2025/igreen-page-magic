@@ -487,8 +487,16 @@ app.get('/health', (req, res) => {
     portal: 'https://green.igreenenergy.com.br/autoconexao',
     queue: queueAvailable ? 'redis-bullmq' : 'sync',
     uptime: process.uptime(),
+    ai_audit: {
+      enabled: !AI_AUDIT_DISABLED && AI_AUDIT_LIMIT > 0,
+      limit: AI_AUDIT_LIMIT,
+      healthy: auditHealth.healthy,
+      last_error: auditHealth.error,
+      checked_at: auditHealth.checked_at,
+    },
   });
 });
+
 
 app.post('/submit-lead', authRequired, async (req, res) => {
   let { customer_id, dados } = req.body || {};
