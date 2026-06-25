@@ -36,6 +36,20 @@ Deno.serve(async (req) => {
     if (mode === "bounds") {
       return json({ ...info, bounds: hd.bounds, width: hd.width, height: hd.height, ms: Date.now() - t0 });
     }
+    if (mode === "dims") {
+      const { downloadTiff } = await import("../_shared/solar/data-layers.ts");
+      const rgb = await downloadTiff(layers.rgbUrl!, apiKey, true);
+      const flux = layers.annualFluxUrl ? await downloadTiff(layers.annualFluxUrl, apiKey, false) : null;
+      const mask = layers.maskUrl ? await downloadTiff(layers.maskUrl, apiKey, false) : null;
+      let fluxMin = Infinity, fluxMax = -Infinity, roofPx = 0;
+      if (flux?.values) for (const v of flux.values) { if (Number.isFinite(v) && v > 0) { if (v < fluxMin) fluxMin = v; if (v > fluxMax) fluxMax = v; } }
+      if (mask?.values) for (const v of mask.values) if (v > 0.5) roofPx++;
+      return json({
+        rgb: { w: rgb.width, h: rgb.height },
+        flux: flux ? { w: flux.width, h: flux.height, min: Math.round(fluxMin), max: Math.round(fluxMax) } : null,
+        mask: mask ? { w: mask.width, h: mask.height, roofPx } : null,
+      });
+    }
     return new Response(hd.png, {
       status: 200,
       headers: { ...cors, "Content-Type": "image/png", "Cache-Control": "no-store" },
