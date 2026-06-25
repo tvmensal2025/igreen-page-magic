@@ -28,7 +28,9 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jsonLog } from "../_shared/audit.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
+import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
 import type { PendingOutboundItem } from "../_shared/pending-outbound-media.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -144,6 +146,22 @@ async function processRow(supabase: SupabaseClient, row: PendingRow): Promise<bo
     await scheduleRetry(supabase, row, "no_connected_instance");
     return false;
   }
+  // 🛡️ Trava: phone do consultor precisa bater com a instância
+  const proactiveGuard = await canSendProactive(supabase, {
+    consultantId: row.consultant_id,
+    instanceName: instance.instance_name || instanceName || null,
+  });
+  if (!proactiveGuard.allowed) {
+    await logProactiveBlock(supabase, {
+      consultantId: row.consultant_id,
+      instanceName: instance.instance_name || instanceName || null,
+      reason: proactiveGuard.reason,
+      context: { source: "outbound-media-flush-cron", pending_row_id: row.id, detail: proactiveGuard.detail },
+    });
+    await scheduleRetry(supabase, row, `phone_guard_${proactiveGuard.reason}`);
+    return false;
+  }
+
 
   const _raw = createEvolutionSender(
     instance.api_url,
