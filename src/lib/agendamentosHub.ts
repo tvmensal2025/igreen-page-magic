@@ -68,10 +68,10 @@ export const DEFAULT_REACTIVATION_SETTINGS: ReactivationSettingsSummary = {
 
 export type AgendamentosHubTab =
   | "overview"
-  | "fila"
+  | "manual"
   | "pos-venda"
-  | "conversao"
-  | "bulk"
+  | "reaquecimento"
+  | "campanhas"
   | "historico";
 
 export interface AgendamentosNavDetail {
@@ -104,7 +104,7 @@ export function buildAgendamentosTimeline(input: {
       preview: m.message_text,
       at,
       status: at.getTime() <= now ? "overdue" : "pending",
-      badge: "Fila manual",
+      badge: "Agenda manual",
     });
   }
 
@@ -129,7 +129,7 @@ export function buildAgendamentosTimeline(input: {
       preview: b.conversation_step ? `Passo: ${b.conversation_step}` : null,
       at,
       status: at.getTime() <= now ? "overdue" : "pending",
-      badge: "Follow-up bot",
+      badge: "Reaquecimento",
     });
   }
 
@@ -142,7 +142,7 @@ export function buildAgendamentosTimeline(input: {
       preview: `${c.sent}/${c.total} enviados`,
       at,
       status: c.status === "running" ? "running" : "pending",
-      badge: c.status === "scheduled" ? "Disparo PRO agendado" : "Disparo PRO",
+      badge: c.status === "scheduled" ? "Campanha agendada" : "Campanha em andamento",
     });
   }
 
