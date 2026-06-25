@@ -26,6 +26,7 @@ import {
   isOcrStep, isAiAnswerStep,
 } from "./flowTypes";
 import { getStepExits, type StepExit, type ExitKind } from "./flowExits";
+import type { StepConflict } from "./useFlowConflicts";
 
 interface Props {
   step: Step;
@@ -36,6 +37,8 @@ interface Props {
   pulse?: boolean;
   mediaCount?: { audio: number; image: number; video: number };
   consultantName?: string;
+  /** Conflitos em que este passo aparece (nome/identificador/gatilho duplicado). */
+  conflicts?: StepConflict[];
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
