@@ -4297,16 +4297,25 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           // messages acima) e PARA. Só quando o cliente clicar "Quero me
           // cadastrar" é que o capture_documento dispara. Nunca encadear.
           if (nextCustom.step_type === "capture_documento" || nextCustom.step_type === "capture_doc") {
-            // 🚀 Ir DIRETO pra captura do documento (sem CTA "Quero me cadastrar").
-            // Regra explícita do produto: pós-SIM da conta, dispara capture_documento
-            // imediatamente — cliente já demonstrou intenção ao confirmar os dados.
-            try {
-              await dispatchStepFromFlow(nextCustom.step_key, _vars);
-            } catch (e) {
-              console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
-              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+            // 🚦 GATE pós-simulação: se o último passo da chain (ex.: d_resultado)
+            // já tem botões interativos próprios ("Quero me cadastrar" / "Tenho
+            // dúvidas"), NÃO disparar capture_documento agora — seria atropelar
+            // o CTA e mandar "Show! ..." junto com a simulação. Aguarda o clique
+            // do lead via step `ask_quero_cadastrar`, que dispara o doc no clique.
+            const _waitForCta = (updates as any).__last_chain_had_buttons === true;
+            if (_waitForCta) {
+              console.log(`[post-confirm-conta] chain final tem botões → aguardando clique em ask_quero_cadastrar (não disparando capture_documento agora)`);
+              updates.conversation_step = "ask_quero_cadastrar";
+            } else {
+              // 🚀 Sem CTA explícito na chain → dispara capture_documento direto.
+              try {
+                await dispatchStepFromFlow(nextCustom.step_key, _vars);
+              } catch (e) {
+                console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
+                await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+              }
+              updates.conversation_step = "aguardando_doc_auto";
             }
-            updates.conversation_step = "aguardando_doc_auto";
           } else {
             // Para finalizar_cadastro NÃO usamos dispatch: o texto precisa ir
             // acoplado ao botão interativo (sendOptions).
