@@ -12,10 +12,9 @@ export function useInstancePhone(consultantId: string | undefined) {
       if (!consultantId) return null;
       try {
         const { data, error } = await supabase
-          .from("whatsapp_instances")
+          .from("whatsapp_instances_public" as any)
           .select("connected_phone")
           .eq("consultant_id", consultantId)
-          .not("connected_phone", "is", null)
           .limit(1)
           .maybeSingle();
         // Em páginas públicas o anon pode não ter acesso (RLS/401):
