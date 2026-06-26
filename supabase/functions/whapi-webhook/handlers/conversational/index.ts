@@ -2688,10 +2688,17 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           return { profile: "balanced" as const, provider: "google" as const };
         }
       })();
+      // Renderiza {{representante}}, {{nome}} etc. ANTES de mandar pro LLM
+      // — sem isso, o prompt ia literal "Você é a {{representante}}..." e a IA
+      // tentava preencher sozinha (ou se nomeava "{{representante}}").
+      const renderedSystemPrompt = renderTemplate(String(fb.ai_prompt), {
+        nome: ctx.customer.name || "",
+        representante: ctx.nomeRepresentante,
+      });
       const aiText = await generateAiAnswer({
         supabase: ctx.supabase,
         consultantId: consultantId || "global",
-        systemPrompt: String(fb.ai_prompt),
+        systemPrompt: renderedSystemPrompt,
         userQuestion: String(ctx.messageText || ""),
         knowledgeContext: { customer: ctx.customer },
         profile: profile.profile,
