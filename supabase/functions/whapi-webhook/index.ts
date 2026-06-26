@@ -382,13 +382,14 @@ Deno.serve(async (req) => {
     // ─── Identificar consultor super admin (id já validado no topo) ────
     const { data: consultantData } = await supabase
       .from("consultants")
-      .select("id, name, igreen_id, conversational_flow_enabled")
+      .select("id, name, display_name, igreen_id, conversational_flow_enabled")
       .eq("id", superAdminConsultantId)
       .single();
 
+    // Prefere display_name (nome humano cadastrado) sobre name (pode ser slug do login).
     // Usa só o PRIMEIRO NOME — soa mais natural no WhatsApp ("Rafael" em vez de "Rafael Ferreira").
-    const _fullName = consultantData?.name || "iGreen Energy";
-    const nomeRepresentante = _fullName.trim().split(/\s+/)[0] || "iGreen Energy";
+    const _fullName = (consultantData?.display_name || consultantData?.name || "iGreen Energy").trim();
+    const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
     const consultorId = consultantData?.igreen_id || "124170";
     console.log(`✅ Whapi super admin: ${nomeRepresentante} (full: ${_fullName}, iGreen ID: ${consultorId})`);
 
