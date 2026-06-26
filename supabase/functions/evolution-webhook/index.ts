@@ -35,6 +35,7 @@ import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
+import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import { summarizeWebhookBody } from "../_shared/log-redact.ts";
 import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
