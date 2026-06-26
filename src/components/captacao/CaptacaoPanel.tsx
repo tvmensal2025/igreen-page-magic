@@ -17,10 +17,14 @@ import { DragResizer } from "@/components/layout/DragResizer";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { ProgressRing } from "@/components/captacao/ProgressRing";
 import { WhatsAppStatusPill } from "@/components/captacao/WhatsAppStatusPill";
+import { CapturedLeadsPanel } from "@/components/captacao/CapturedLeadsPanel";
 
 interface Props { consultantId: string; onOpenChat?: (phone: string) => void; instanceName?: string | null; isWhapi?: boolean; }
 
 export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, isWhapi = false }: Props) {
+  // Sub-aba: "cockpit" (captação manual de um lead) | "captados" (leads
+  // multicanal: Meta/TikTok/landing/pesquisa B2B + disparo em massa).
+  const [view, setView] = useState<"cockpit" | "captados">("cockpit");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sentSteps, setSentSteps] = useState<Set<string>>(new Set());
   const [phone, setPhone] = useState<string | null>(null);
@@ -198,6 +202,27 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 rounded-lg border border-border overflow-hidden bg-background/60">
+      {/* Seletor de sub-aba */}
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border bg-card/40 shrink-0">
+        <button
+          onClick={() => setView("cockpit")}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${view === "cockpit" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
+        >
+          Cockpit de captação
+        </button>
+        <button
+          onClick={() => setView("captados")}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${view === "captados" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
+        >
+          Leads captados (Ads/B2B)
+        </button>
+      </div>
+
+      {view === "captados" ? (
+        <div className="flex-1 min-h-0 overflow-hidden p-3">
+          <CapturedLeadsPanel consultantId={consultantId} instanceName={instanceName} />
+        </div>
+      ) : (
       <div data-resize-scope className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden" style={{ "--cap-list-w": "13rem" } as React.CSSProperties}>
         {/* Lista de clientes */}
         <div className={`${selectedId ? "hidden md:flex" : "flex"} md:flex flex-col md:w-[var(--cap-list-w)] md:shrink-0 overflow-hidden`}>
@@ -328,6 +353,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           </div>
         )}
       </div>
+      )}
 
       {/* Ficha deslizante — só em telas menores (abaixo de lg); vira tela cheia no mobile */}
       <Sheet open={fichaOpen} onOpenChange={setFichaOpen}>
