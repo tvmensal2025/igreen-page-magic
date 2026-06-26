@@ -124,16 +124,16 @@ Deno.serve(async (req) => {
     let phone: string | null = null;
 
     if (consultant?.id) {
-      // 2) Telefone conectado da instância
-      const { data: inst } = await supabase
+      // 2) Telefone conectado da instância (mais recente, com phone preenchido)
+      const { data: insts } = await supabase
         .from("whatsapp_instances")
-        .select("connected_phone")
+        .select("connected_phone, updated_at")
         .eq("consultant_id", consultant.id)
         .not("connected_phone", "is", null)
-        .limit(1)
-        .maybeSingle();
+        .order("updated_at", { ascending: false })
+        .limit(1);
 
-      phone = (inst?.connected_phone as string | null) || null;
+      phone = (insts?.[0]?.connected_phone as string | null) || null;
 
       // 3) Fallback: telefone do perfil do consultor
       if (!phone && consultant.phone) {
@@ -149,13 +149,37 @@ Deno.serve(async (req) => {
       }).then(() => {});
     }
 
-    // 4) Fallback final: landing page do consultor (sem expor número pessoal).
-    //    Se o identificador veio como igreen_id numérico, a landing por slug não
-    //    resolveria — cai no site institucional base.
-    if (!phone) {
+    // Validação do phone: precisa ser BR (10-13 dígitos depois de prefixar 55).
+    // Sem isso, `wa.me/55` abre o WhatsApp em conversa nenhuma e o usuário
+    // relata "QR não abre". Cai pro site institucional com flag de erro.
+    const phoneDigits = (phone ?? "").replace(/\D/g, "");
+    const normalizedPhone = phoneDigits
+      ? (phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`)
+      : "";
+    const phoneValid = /^\d{12,13}$/.test(normalizedPhone);
+
+    if (!phone || !phoneValid) {
+      if (consultant?.id) {
+        // Log para o operador rastrear consultores com QR quebrado.
+        supabase.from("page_events").insert({
+          consultant_id: consultant.id,
+          event_type: "qr_broken",
+          event_target: "panfleto",
+          page_type: "client",
+        }).then(() => {});
+        console.warn("[qr-redirect] phone_invalid", {
+          consultant_id: consultant.id,
+          phone_raw: phone,
+          phone_digits: phoneDigits,
+        });
+      }
       if (wantsJson) return jsonResponse({ error: "no_phone" });
-      return redirectTo(/^\d+$/.test(licenca) ? SITE_URL : `${SITE_URL}/${licenca}`);
+      const fallback = /^\d+$/.test(licenca)
+        ? `${SITE_URL}?qr_error=phone_missing`
+        : `${SITE_URL}/${licenca}?qr_error=phone_missing`;
+      return redirectTo(fallback);
     }
+
 
 
     // 5) Resolve a mensagem. Prioridade do parceiro indicador:
