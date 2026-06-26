@@ -2507,6 +2507,140 @@ export type Database = {
         }
         Relationships: []
       }
+      captured_leads: {
+        Row: {
+          channel: string
+          city: string | null
+          cnpj: string | null
+          company_name: string | null
+          consent_at: string | null
+          consent_source: string | null
+          consent_text: string | null
+          consultant_id: string
+          created_at: string
+          ctwa_clid: string | null
+          customer_id: string | null
+          dedup_key: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          person_type: string
+          phone: string | null
+          pj_data: Json
+          product_interest: string | null
+          raw_payload: Json
+          sale_id: string | null
+          source_campaign_id: string | null
+          status: string
+          uf: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel?: string
+          city?: string | null
+          cnpj?: string | null
+          company_name?: string | null
+          consent_at?: string | null
+          consent_source?: string | null
+          consent_text?: string | null
+          consultant_id: string
+          created_at?: string
+          ctwa_clid?: string | null
+          customer_id?: string | null
+          dedup_key?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          person_type?: string
+          phone?: string | null
+          pj_data?: Json
+          product_interest?: string | null
+          raw_payload?: Json
+          sale_id?: string | null
+          source_campaign_id?: string | null
+          status?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          city?: string | null
+          cnpj?: string | null
+          company_name?: string | null
+          consent_at?: string | null
+          consent_source?: string | null
+          consent_text?: string | null
+          consultant_id?: string
+          created_at?: string
+          ctwa_clid?: string | null
+          customer_id?: string | null
+          dedup_key?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          person_type?: string
+          phone?: string | null
+          pj_data?: Json
+          product_interest?: string | null
+          raw_payload?: Json
+          sale_id?: string | null
+          source_campaign_id?: string | null
+          status?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "captured_leads_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "captured_leads_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "captured_leads_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "captured_leads_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "captured_leads_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "captured_leads_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "captured_leads_source_campaign_id_fkey"
+            columns: ["source_campaign_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consultant_ad_settings: {
         Row: {
           age_max: number
@@ -5281,6 +5415,75 @@ export type Database = {
           stage_scope?: string
         }
         Relationships: []
+      }
+      lead_consent_log: {
+        Row: {
+          channel: string
+          consent_text: string
+          consultant_id: string | null
+          created_at: string
+          id: string
+          ip: unknown
+          lead_id: string
+          user_agent: string | null
+        }
+        Insert: {
+          channel: string
+          consent_text: string
+          consultant_id?: string | null
+          created_at?: string
+          id?: string
+          ip?: unknown
+          lead_id: string
+          user_agent?: string | null
+        }
+        Update: {
+          channel?: string
+          consent_text?: string
+          consultant_id?: string | null
+          created_at?: string
+          id?: string
+          ip?: unknown
+          lead_id?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_consent_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "lead_consent_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_consent_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_consent_log_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "lead_consent_log_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "captured_leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lead_insights: {
         Row: {

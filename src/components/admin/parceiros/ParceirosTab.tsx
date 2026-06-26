@@ -111,7 +111,7 @@ export function ParceirosTab({
         open={!!qrPartner}
         onClose={() => setQrPartner(null)}
         partnerName={qrPartner?.nome ?? ""}
-        keyword={qrPartner?.keywords?.[0] ?? ""}
+        keyword={qrPartner?.keywords?.[0]?.trim() || qrPartner?.nome || ""}
         consultantPhone={consultantPhone}
         consultantName={consultantName}
         consultantIgreenId={consultantIgreenId}

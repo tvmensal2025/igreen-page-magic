@@ -192,11 +192,11 @@ Deno.serve(async (req) => {
     let message = msgParam || DEFAULT_MESSAGE;
 
     let partner:
-      | { keywords: unknown; qr_phrase: string | null; consultant_id: string; is_active: boolean }
+      | { nome: string; keywords: unknown; qr_phrase: string | null; consultant_id: string; is_active: boolean }
       | null = null;
 
     if (consultant?.id) {
-      const baseSelect = "keywords, qr_phrase, consultant_id, is_active";
+      const baseSelect = "nome, keywords, qr_phrase, consultant_id, is_active";
 
       if (partnerId) {
         // a) Por id explícito (?p) — maior prioridade.
@@ -245,7 +245,14 @@ Deno.serve(async (req) => {
     }
 
     if (partner) {
-      const keyword = Array.isArray(partner.keywords) ? (partner.keywords[0] ?? "") : "";
+      // Keyword principal do parceiro. Se por algum motivo o parceiro foi salvo
+      // SEM keyword (defesa em profundidade — o form do front agora exige uma),
+      // cai no NOME do parceiro como marcador único. Sem isso, a mensagem usaria
+      // só a frase genérica e o webhook poderia atribuir o lead ao parceiro
+      // ERRADO (qualquer parceiro cuja keyword fosse substring da frase padrão,
+      // tipo "energia"). Nome como fallback garante substring única do parceiro.
+      const rawKw = Array.isArray(partner.keywords) ? (partner.keywords[0] ?? "") : "";
+      const keyword = (typeof rawKw === "string" && rawKw.trim()) ? rawKw : (partner.nome ?? "");
       message = resolveQrMessage(partner.qr_phrase as string | null, keyword);
     }
 

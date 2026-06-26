@@ -40,7 +40,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const [qrPhrase, setQrPhrase] = useState("");
   const [partnerIgreenId, setPartnerIgreenId] = useState("");
   const [notificationPhone, setNotificationPhone] = useState("");
-  const [errors, setErrors] = useState<{ nome?: string; cli?: string }>({});
+  const [errors, setErrors] = useState<{ nome?: string; cli?: string; keywords?: string }>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExample, setAiExample] = useState<string | null>(null);
   const confirm = useConfirm();
@@ -140,21 +140,42 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
 
   const handleSubmit = () => {
-    const newErrors: { nome?: string; cli?: string } = {};
+    const newErrors: { nome?: string; cli?: string; keywords?: string } = {};
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório";
     // CLI só é obrigatório para parceiro indicador comum. Consultor parceiro
     // (com ID iGreen próprio) pode não ter cli.
     if (!isConsultorParceiro && !cli.trim()) newErrors.cli = "CLI é obrigatório";
+
+    // Consome o que está digitado no input mesmo se o usuário esqueceu de
+    // pressionar Enter — evita criar parceiro "sem keyword" por engano.
+    const pending = keywordInput.trim();
+    const finalKeywords = pending && !keywords.includes(pending)
+      ? [...keywords, pending]
+      : keywords;
+
+    // Palavra-chave é OBRIGATÓRIA: sem ela o webhook não consegue atribuir o
+    // lead a este parceiro (a régua do keyword-matcher é substring exata da
+    // keyword no texto). Sem keyword, o cashback nunca cai.
+    if (finalKeywords.length === 0) {
+      newErrors.keywords =
+        "Adicione pelo menos uma palavra-chave (sem ela o lead não é atribuído a este parceiro)";
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
 
+    // Atualiza o state pra refletir o que foi efetivamente salvo.
+    if (pending) {
+      setKeywords(finalKeywords);
+      setKeywordInput("");
+    }
+
     onSave({
       nome: nome.trim(),
       cli: cli.trim() || null,
-      keywords,
+      keywords: finalKeywords,
       qr_phrase: qrPhrase.trim() || null,
       partner_igreen_id: partnerIgreenId.trim() || null,
       notification_phone: notificationPhone.trim() || null,
@@ -290,7 +311,10 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               <div className="flex gap-2">
                 <Input
                   value={keywordInput}
-                  onChange={(e) => setKeywordInput(e.target.value)}
+                  onChange={(e) => {
+                    setKeywordInput(e.target.value);
+                    if (errors.keywords) setErrors((prev) => ({ ...prev, keywords: undefined }));
+                  }}
                   onKeyDown={handleKeyDown}
                   placeholder="Digite e pressione Enter"
                   className="flex-1 h-9"
@@ -315,6 +339,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   IA
                 </Button>
               </div>
+              {errors.keywords && (
+                <p className="text-[11px] text-destructive">{errors.keywords}</p>
+              )}
               {keywords.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {keywords.map((kw) => (
