@@ -36,6 +36,7 @@ import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
+import { makeIdempotentEnviarTexto } from "../_shared/bot/conversational-send-idempotency.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import { summarizeWebhookBody } from "../_shared/log-redact.ts";
 import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
@@ -1983,6 +1984,18 @@ Deno.serve(async (req) => {
           console.log(`[cerebro] freeform no cadastro step=${stepBefore} customer=${customer.id} → Cérebro readOnly`);
         }
         const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
+        // Envio idempotente: rajadas idênticas no mesmo minuto não disparam
+        // múltiplas respostas. Ver _shared/bot/conversational-send-idempotency.ts.
+        const enviarTexto = makeIdempotentEnviarTexto(
+          (jid, text, opts) => sender.sendText(jid, text, opts as any),
+          remoteJid,
+          {
+            supabase,
+            customerId: customer.id,
+            consultantId: instanceData.consultant_id,
+            step: stepBefore || "",
+          },
+        );
         const r = await responderComCerebro({
           supabase,
           customerId: customer.id,
@@ -1996,7 +2009,7 @@ Deno.serve(async (req) => {
           telefone: phone ?? null,
           // Sender REAL do canal já protegido (anti-ban + dedup + lock + rate
           // limit). Retorna false quando o guard bloqueou o envio.
-          enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+          enviarTexto,
         });
         _cerebroRespondeu = r.respondeu;
       } catch (e: any) {
