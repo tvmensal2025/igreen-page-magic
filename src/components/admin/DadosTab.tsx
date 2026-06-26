@@ -240,6 +240,19 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
             <Input id="license" value={form.license} readOnly className="bg-secondary/50 border-border text-muted-foreground cursor-not-allowed" />
             <p className="text-xs text-muted-foreground">Gerado automaticamente a partir do nome</p>
           </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="display_name" className="text-sm text-muted-foreground">Como o lead vai te chamar nas mensagens</Label>
+            <Input
+              id="display_name"
+              value={form.display_name}
+              onChange={(e) => onFormChange({ display_name: e.target.value })}
+              placeholder={form.name || "Ex.: Abel Olympio"}
+              className="bg-secondary border-border"
+            />
+            <p className="text-xs text-muted-foreground">
+              Aparece nas mensagens automáticas (ex.: "Já avisei o Abel Olympio"). Se deixar em branco, usamos o nome completo acima.
+            </p>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="phone" className="text-sm text-muted-foreground">WhatsApp principal (IA + divulgação)</Label>
             <div className="flex">
