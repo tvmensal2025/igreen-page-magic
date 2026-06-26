@@ -16,6 +16,8 @@ export type RenderVars = {
   phone?: string | null;
   cpf?: string | null;
   representante?: string | null;
+  /** Nome humano explícito do consultor (consultants.display_name). Quando preenchido, tem prioridade sobre `representante` — evita vazar username/slug. */
+  representante_display?: string | null;
   valor_conta?: number | string | null;
   extra?: Record<string, string | number | null | undefined>;
 };
