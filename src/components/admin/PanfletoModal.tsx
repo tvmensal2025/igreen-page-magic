@@ -176,8 +176,37 @@ export function PanfletoModal({
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  const redirectUrl =
-    shareUrl ?? `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
+  // Frase personalizada do WhatsApp (entra como `?msg=` no qr-redirect, que já
+  // aceita esse parâmetro). Persiste por consultor no localStorage para o
+  // usuário não perder ao reabrir o modal. Vazio = usa o DEFAULT do edge.
+  const storageKey = `panfleto_msg_${licenca}`;
+  const [phrase, setPhrase] = useState<string>("");
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      setPhrase(saved ?? "");
+    } catch {
+      setPhrase("");
+    }
+  }, [open, storageKey]);
+
+  useEffect(() => {
+    try {
+      if (phrase.trim()) localStorage.setItem(storageKey, phrase);
+      else localStorage.removeItem(storageKey);
+    } catch {
+      /* localStorage indisponível em modo privado */
+    }
+  }, [phrase, storageKey]);
+
+  const redirectUrl = useMemo(() => {
+    if (shareUrl) return shareUrl;
+    const base = `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
+    const trimmed = phrase.trim();
+    if (!trimmed) return base;
+    return `${base}&msg=${encodeURIComponent(trimmed.slice(0, QR_MESSAGE_MAX))}`;
+  }, [shareUrl, licenca, phrase]);
 
   // Posições TRAVADAS nos defaults do template
   const effQrX = template.qrX;
