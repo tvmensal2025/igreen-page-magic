@@ -16,6 +16,8 @@ export type RenderVars = {
   phone?: string | null;
   cpf?: string | null;
   representante?: string | null;
+  /** Nome humano explícito do consultor (consultants.display_name). Quando preenchido, tem prioridade sobre `representante` — evita vazar username/slug. */
+  representante_display?: string | null;
   valor_conta?: number | string | null;
   extra?: Record<string, string | number | null | undefined>;
 };
@@ -87,18 +89,23 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   // e o template "Sou a *assistente virtual* do *{{representante}}*" virava
   // "Sou a *assistente virtual* do  e vou..." (espaço duplo + asterisco órfão
   // limpo abaixo). Bug confirmado em produção (cliente JOSINETE em 23/05).
-  let rep = String(vars.representante || "").trim();
-  // 🔧 Se o consultor não preencheu um nome humano (ficou só username/slug
-  // como "abelolympio", "joaosilva123"), evita vazar o slug pro lead.
-  // Heurística: 1 token só, todo minúsculo, com dígitos OU >8 chars sem espaço
-  // → trata como slug e cai pro genérico "consultor".
-  const isSlugLike =
-    rep.length > 0 &&
-    !/\s/.test(rep) &&
-    rep === rep.toLowerCase() &&
-    (/\d/.test(rep) || rep.length >= 9);
+  //
+  // Prioridade: `representante_display` (consultants.display_name — nome
+  // humano cadastrado explicitamente) → `representante` (legacy name) →
+  // genérico. Se o legacy `name` for slug-like (ex: "abelolympio"), cai
+  // pro genérico para não vazar o username.
+  const displayName = String(vars.representante_display || "").trim();
+  let rep = displayName || String(vars.representante || "").trim();
+  if (!displayName) {
+    // Só roda a heurística slug-like se NÃO veio display_name explícito.
+    const isSlugLike =
+      rep.length > 0 &&
+      !/\s/.test(rep) &&
+      rep === rep.toLowerCase() &&
+      (/\d/.test(rep) || rep.length >= 9);
+    if (isSlugLike) rep = "consultor";
+  }
   if (!rep) rep = "iGreen Energy";
-  else if (isSlugLike) rep = "consultor";
   const billNum = typeof vars.valor_conta === "number"
     ? vars.valor_conta
     : Number(vars.valor_conta);

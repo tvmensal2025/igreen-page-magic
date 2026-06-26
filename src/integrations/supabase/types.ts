@@ -2847,6 +2847,7 @@ export type Database = {
           cerebro_ativo: string
           conversational_flow_enabled: boolean
           created_at: string | null
+          display_name: string | null
           facebook_label_id: string | null
           facebook_pixel_id: string | null
           flow_engine_v3: string
@@ -2890,6 +2891,7 @@ export type Database = {
           cerebro_ativo?: string
           conversational_flow_enabled?: boolean
           created_at?: string | null
+          display_name?: string | null
           facebook_label_id?: string | null
           facebook_pixel_id?: string | null
           flow_engine_v3?: string
@@ -2933,6 +2935,7 @@ export type Database = {
           cerebro_ativo?: string
           conversational_flow_enabled?: boolean
           created_at?: string | null
+          display_name?: string | null
           facebook_label_id?: string | null
           facebook_pixel_id?: string | null
           flow_engine_v3?: string
