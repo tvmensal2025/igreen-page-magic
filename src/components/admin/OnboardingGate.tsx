@@ -16,29 +16,40 @@ interface OnboardingGateProps {
 
 type FieldErrors = Partial<Record<"name" | "igreen_id" | "phone" | "notification_phone" | "assistant_name" | "gender", string>>;
 
+// Campos opcionais ficam apenas como avisos (não bloqueiam o painel).
+// O painel libera com o mínimo: nome + ID iGreen.
 function validate(form: ConsultantForm): FieldErrors {
   const errors: FieldErrors = {};
   if (!form.name?.trim() || form.name.trim().length < 3) errors.name = "Digite seu nome completo";
   const igreen = (form.igreen_id || "").replace(/\D/g, "");
   if (!igreen || igreen.length < 4) errors.igreen_id = "ID iGreen inválido (mínimo 4 dígitos)";
+  // Soft warnings (não bloqueiam) — telefone/IA/gênero podem ser preenchidos depois na aba Dados.
   const phoneV = validateBrazilPhone(form.phone);
-  if (!phoneV.valid) errors.phone = phoneV.message || "Telefone inválido";
+  if (form.phone && !phoneV.valid) errors.phone = phoneV.message || "Telefone inválido";
   const notifV = validateBrazilPhone(form.notification_phone);
-  if (!notifV.valid) errors.notification_phone = notifV.message || "Telefone inválido";
-  if (!form.assistant_name?.trim()) errors.assistant_name = "Dê um nome para a sua assistente";
-  if (form.gender !== "consultor" && form.gender !== "consultora") errors.gender = "Escolha consultor ou consultora";
+  if (form.notification_phone && !notifV.valid) errors.notification_phone = notifV.message || "Telefone inválido";
   return errors;
 }
 
+// Só os campos críticos bloqueiam o gate.
+function blockingErrors(form: ConsultantForm): FieldErrors {
+  const e = validate(form);
+  const out: FieldErrors = {};
+  if (e.name) out.name = e.name;
+  if (e.igreen_id) out.igreen_id = e.igreen_id;
+  return out;
+}
+
 function isComplete(form: ConsultantForm) {
-  return Object.keys(validate(form)).length === 0;
+  return Object.keys(blockingErrors(form)).length === 0;
 }
 
 export function OnboardingGate({ form, saving, onFormChange, onSave, children }: OnboardingGateProps) {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const errors = useMemo(() => validate(form), [form]);
-  const complete = Object.keys(errors).length === 0;
+  const blocking = useMemo(() => blockingErrors(form), [form]);
+  const complete = Object.keys(blocking).length === 0;
 
   if (complete) return <>{children}</>;
 
@@ -47,9 +58,10 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitAttempted(true);
-    if (Object.keys(errors).length > 0) return;
+    if (Object.keys(blocking).length > 0) return;
     onSave(e);
   };
+
 
   return (
     <>
