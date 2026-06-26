@@ -311,7 +311,10 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               <div className="flex gap-2">
                 <Input
                   value={keywordInput}
-                  onChange={(e) => setKeywordInput(e.target.value)}
+                  onChange={(e) => {
+                    setKeywordInput(e.target.value);
+                    if (errors.keywords) setErrors((prev) => ({ ...prev, keywords: undefined }));
+                  }}
                   onKeyDown={handleKeyDown}
                   placeholder="Digite e pressione Enter"
                   className="flex-1 h-9"
@@ -336,6 +339,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   IA
                 </Button>
               </div>
+              {errors.keywords && (
+                <p className="text-[11px] text-destructive">{errors.keywords}</p>
+              )}
               {keywords.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {keywords.map((kw) => (
