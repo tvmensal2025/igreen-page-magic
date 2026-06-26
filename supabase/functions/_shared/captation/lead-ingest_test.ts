@@ -23,28 +23,41 @@ function makeFakeSupabase(opts: { existingDedupKeys?: Set<string> } = {}) {
   const client = {
     from(table: string) {
       if (table === "captured_leads") {
-        let pendingRow: Record<string, unknown> | null = null;
+        // estado da query encadeada
+        const state: { dedupKey?: string | null; consultantId?: string | null } = {};
         const chain = {
-          upsert(row: Record<string, unknown>, _opts: unknown) {
-            pendingRow = row;
-            return chain;
-          },
+          // SELECT id WHERE consultant_id=.. AND dedup_key=.. (checagem de dup)
           select(_cols: string) {
             return chain;
           },
+          eq(col: string, val: string) {
+            if (col === "dedup_key") state.dedupKey = val;
+            if (col === "consultant_id") state.consultantId = val;
+            return chain;
+          },
           async maybeSingle() {
-            const row = pendingRow!;
-            const dk = row.dedup_key as string | null;
-            if (dk && existing.has(dk)) {
-              // ignoreDuplicates → linha nula (deduplicado)
-              return { data: null, error: null };
+            // Se veio de um insert pendente, resolve o insert.
+            if (pendingInsert) {
+              const row = pendingInsert;
+              pendingInsert = null;
+              const dk = row.dedup_key as string | null;
+              if (dk) existing.add(dk);
+              captured.push(row);
+              return { data: { id: `lead-${++idSeq}` }, error: null };
             }
-            if (dk) existing.add(dk);
-            captured.push(row);
-            const id = `lead-${++idSeq}`;
-            return { data: { id }, error: null };
+            // Senão é a checagem de duplicata.
+            const dk = state.dedupKey ?? null;
+            if (dk && existing.has(dk)) {
+              return { data: { id: "ja-existe" }, error: null };
+            }
+            return { data: null, error: null };
+          },
+          insert(row: Record<string, unknown>) {
+            pendingInsert = row;
+            return chain;
           },
         };
+        let pendingInsert: Record<string, unknown> | null = null;
         return chain;
       }
       if (table === "lead_consent_log") {

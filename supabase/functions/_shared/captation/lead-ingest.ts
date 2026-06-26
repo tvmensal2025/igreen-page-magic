@@ -145,23 +145,37 @@ export async function ingestLead(
       status: "new" as const,
     };
 
-    // Upsert idempotente por (consultant_id, dedup_key). Se a unique constraint
-    // bater, mantém o lead existente e não sobrescreve (ignoreDuplicates).
+    // Deduplicação idempotente por (consultant_id, dedup_key). Como a unique
+    // constraint é um índice PARCIAL (where dedup_key is not null), o ON CONFLICT
+    // do PostgREST não casa — então fazemos a checagem explícita antes do insert.
+    if (dedupKey) {
+      const { data: existing } = await supabase
+        .from("captured_leads")
+        .select("id")
+        .eq("consultant_id", input.consultantId)
+        .eq("dedup_key", dedupKey)
+        .maybeSingle();
+      if (existing?.id) {
+        return { ok: true, deduped: true };
+      }
+    }
+
     const { data, error } = await supabase
       .from("captured_leads")
-      .upsert(row, {
-        onConflict: "consultant_id,dedup_key",
-        ignoreDuplicates: true,
-      })
+      .insert(row)
       .select("id")
       .maybeSingle();
 
     if (error) {
-      console.warn("[lead-ingest] upsert falhou:", error.message);
+      // 23505 = unique_violation: corrida entre duas requisições do mesmo lead.
+      // Trata como deduplicado (a outra requisição já gravou).
+      if ((error as { code?: string }).code === "23505") {
+        return { ok: true, deduped: true };
+      }
+      console.warn("[lead-ingest] insert falhou:", error.message);
       return { ok: false, reason: error.message };
     }
 
-    // ignoreDuplicates retorna null quando já existia → lead deduplicado.
     if (!data?.id) {
       return { ok: true, deduped: true };
     }
