@@ -163,14 +163,24 @@ Deno.serve(async (req) => {
       if (!frenteDl) return json({ ok: false, error: "download_failed" }, 502);
       const versoDl = versoUrl ? await urlToBase64(versoUrl) : null;
 
+      // Detecta o tipo de documento pra escolher o prompt certo (CNH x RG).
+      // Antes era fixo "RG_NOVO", o que fazia o OCR de CNH sair errado (campos
+      // trocados/posições diferentes). CNH = sem verso ("nao_aplicavel") ou
+      // document_type contendo "cnh".
+      const isCnh =
+        String((customer as any).document_back_url || "") === "nao_aplicavel" ||
+        String((customer as any).document_type || "").toLowerCase().includes("cnh");
+      const tipoDoc = isCnh ? "CNH" : "RG_NOVO";
+
       const ocrData = await ocrDocumentoFrenteVerso(
         frenteUrl,
-        versoUrl,
-        "RG_NOVO",
+        // CNH não tem verso — não passa versoUrl pra IA não tentar ler RG no verso.
+        isCnh ? null : versoUrl,
+        tipoDoc,
         geminiApiKey,
         frenteDl.base64,
         { mimetype: frenteDl.mime },
-        versoDl?.base64,
+        isCnh ? undefined : versoDl?.base64,
       );
       if (!ocrData.sucesso || !ocrData.dados) {
         return json({ ok: false, error: "ocr_failed", detail: ocrData.erro || "" }, 200);
