@@ -963,7 +963,12 @@ Deno.serve(async (req) => {
       console.warn("[lead-source] falha ao detectar:", (e as Error).message);
     }
 
-    // ─── Keyword Detection (Detection Window: primeiras 3 mensagens) ───
+    // ─── Partner Attribution (Detection Window: primeiras 3 mensagens) ───
+    // 1º) Marcador determinístico `#R{short_code}` (inserido pelo qr-redirect).
+    //     É o caminho confiável: imune a edição da keyword, colisões e leads
+    //     que só mandam "oi" depois.
+    // 2º) Fallback: `matchKeyword` por substring da keyword no texto (legado,
+    //     usado por QRs antigos e por leads que digitaram a keyword manualmente).
     if (customer && !(customer as any).referral_partner_id && messageText && !isFile) {
       try {
         const { count: inboundCount } = await supabase
@@ -974,39 +979,73 @@ Deno.serve(async (req) => {
 
         const DETECTION_WINDOW = 3;
         if ((inboundCount ?? 0) < DETECTION_WINDOW) {
-          const { data: partners } = await supabase
-            .from("referral_partners")
-            .select("id, keywords")
-            .eq("consultant_id", instanceData.consultant_id)
-            .eq("is_active", true);
+          let matchedPartnerId: string | null = null;
+          let matchedKeyword = "";
+          let matchedScore = 1.0;
+          let matchedSource: "short_code" | "keyword" = "keyword";
 
-          if (partners?.length) {
-            const partnerKeywords: PartnerKeywords[] = partners.map((p: any) => ({
-              partnerId: p.id,
-              keywords: p.keywords || [],
-            }));
-
-            const match = matchKeyword(messageText, partnerKeywords);
-            if (match) {
-              await supabase.from("customers").update({
-                referral_partner_id: match.partnerId,
-                referral_keyword_matched: match.keyword,
-                referral_detected_at: new Date().toISOString(),
-              }).eq("id", customer.id);
-              (customer as any).referral_partner_id = match.partnerId;
-              console.log(`[keyword-match] customer=${customer.id} partner=${match.partnerId} keyword="${match.keyword}"`);
-              // Aviso EXTRA ao parceiro (se tiver notification_phone). Não bloqueia o fluxo.
-              notifyPartnerNewLead(instanceData.consultant_id, match.partnerId, {
-                id: customer.id,
-                name: (customer as any).name,
-                phone_whatsapp: (customer as any).phone_whatsapp,
-                is_sandbox: (customer as any).is_sandbox,
-              }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+          // 1º) Marcador determinístico.
+          const markerCode = extractShortCodeMarker(messageText);
+          if (markerCode) {
+            const { data: byCode } = await supabase
+              .from("referral_partners")
+              .select("id, keywords")
+              .eq("consultant_id", instanceData.consultant_id)
+              .eq("is_active", true)
+              .eq("short_code", markerCode)
+              .limit(1)
+              .maybeSingle();
+            if (byCode?.id) {
+              matchedPartnerId = byCode.id as string;
+              matchedKeyword = `#R${markerCode}`;
+              matchedSource = "short_code";
             }
+          }
+
+          // 2º) Fallback: keyword no texto.
+          if (!matchedPartnerId) {
+            const { data: partners } = await supabase
+              .from("referral_partners")
+              .select("id, keywords")
+              .eq("consultant_id", instanceData.consultant_id)
+              .eq("is_active", true);
+
+            if (partners?.length) {
+              const partnerKeywords: PartnerKeywords[] = partners.map((p: any) => ({
+                partnerId: p.id,
+                keywords: p.keywords || [],
+              }));
+              const match = matchKeyword(messageText, partnerKeywords);
+              if (match) {
+                matchedPartnerId = match.partnerId;
+                matchedKeyword = match.keyword;
+                matchedScore = match.score;
+                matchedSource = "keyword";
+              }
+            }
+          }
+
+          if (matchedPartnerId) {
+            await supabase.from("customers").update({
+              referral_partner_id: matchedPartnerId,
+              referral_keyword_matched: matchedKeyword,
+              referral_detected_at: new Date().toISOString(),
+            }).eq("id", customer.id);
+            (customer as any).referral_partner_id = matchedPartnerId;
+            console.log(
+              `[partner-match] customer=${customer.id} partner=${matchedPartnerId} source=${matchedSource} marker="${matchedKeyword}" score=${matchedScore}`,
+            );
+            // Aviso EXTRA ao parceiro (se tiver notification_phone). Não bloqueia o fluxo.
+            notifyPartnerNewLead(instanceData.consultant_id, matchedPartnerId, {
+              id: customer.id,
+              name: (customer as any).name,
+              phone_whatsapp: (customer as any).phone_whatsapp,
+              is_sandbox: (customer as any).is_sandbox,
+            }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
           }
         }
       } catch (e) {
-        console.warn("[keyword-match] falhou:", (e as Error).message);
+        console.warn("[partner-match] falhou:", (e as Error).message);
       }
     }
 
