@@ -186,3 +186,28 @@ verify_jwt = false
 # 401 UNAUTHORIZED_INVALID_JWT_FORMAT antes da função sequer rodar.
 [functions.portal2-ai-audit]
 verify_jwt = false
+
+# ── Captação de leads multicanal ──────────────────────────────────────────
+# Porta pública de entrada de leads (landing pages). Sem JWT: a landing não
+# tem sessão; a posse é resolvida pela licença do consultor no corpo.
+[functions.lead-intake]
+verify_jwt = false
+
+# Webhook do Meta Lead Ads (Facebook/Instagram). Sem JWT: o Meta assina via
+# X-Hub-Signature-256 (validado dentro da função).
+[functions.meta-leadads-webhook]
+verify_jwt = false
+
+# Webhook do TikTok Lead Generation. Sem JWT: validação por assinatura própria.
+[functions.tiktok-leadgen-webhook]
+verify_jwt = false
+
+# Pesquisa B2B de empresas pelo consultor (Google Places / OSM / Receita).
+# Autenticada: é o consultor logado que pesquisa e vira dono dos resultados.
+[functions.lead-research]
+verify_jwt = true
+
+# Seleção de leads → cria campanha de Disparo PRO (bulk_campaigns).
+# Autenticada: o consultor logado dispara para os próprios leads.
+[functions.leads-to-campaign]
+verify_jwt = true
