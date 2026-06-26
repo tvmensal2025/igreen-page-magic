@@ -15,7 +15,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
-import { buildDefaultQrPhrase } from "./qrPhrase";
+import { buildDefaultQrPhrase, isGenericKeyword } from "./qrPhrase";
 
 interface PartnerFormProps {
   open: boolean;
@@ -153,12 +153,20 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       ? [...keywords, pending]
       : keywords;
 
-    // Palavra-chave é OBRIGATÓRIA: sem ela o webhook não consegue atribuir o
-    // lead a este parceiro (a régua do keyword-matcher é substring exata da
-    // keyword no texto). Sem keyword, o cashback nunca cai.
+    // Palavra-chave é OBRIGATÓRIA: sem ela, o lead só é atribuído pelo
+    // marcador `#R{short_code}` (que cobre QRs novos). Para entrada manual
+    // e QRs legados, a keyword no texto continua sendo necessária.
     if (finalKeywords.length === 0) {
       newErrors.keywords =
         "Adicione pelo menos uma palavra-chave (sem ela o lead não é atribuído a este parceiro)";
+    } else {
+      // Bloqueia keywords genéricas que aparecem em texto natural de leads
+      // (ex.: "energia", "desconto", "oi") — atribuiriam o lead errado.
+      const generic = finalKeywords.find((k) => isGenericKeyword(k));
+      if (generic) {
+        newErrors.keywords =
+          `"${generic}" é uma palavra muito genérica e atribuiria leads errados. Use algo único deste parceiro (ex.: sobrenome + cidade).`;
+      }
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -339,8 +347,12 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   IA
                 </Button>
               </div>
-              {errors.keywords && (
+              {errors.keywords ? (
                 <p className="text-[11px] text-destructive">{errors.keywords}</p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">
+                  Use algo único deste parceiro (ex.: sobrenome + cidade). Evite palavras comuns como "energia" ou "desconto".
+                </p>
               )}
               {keywords.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
