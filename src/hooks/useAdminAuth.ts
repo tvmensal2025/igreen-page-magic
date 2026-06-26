@@ -76,6 +76,7 @@ export function useAdminAuth() {
       const regeneratedLicense = consultantName.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || (consultant.license as string) || "";
       setForm({
         ...DEFAULT_CONSULTANT_FORM, name: consultantName, license: regeneratedLicense,
+        display_name: (consultant.display_name as string) || "",
         phone: (consultant.phone as string) || "",
         notification_phone: (consultant.notification_phone as string) || "",
         igreen_id: id,
