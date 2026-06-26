@@ -8313,14 +8313,17 @@ export type Database = {
       whatsapp_instances_public: {
         Row: {
           connected_phone: string | null
+          consultant_id: string | null
           instance_name: string | null
         }
         Insert: {
           connected_phone?: string | null
+          consultant_id?: string | null
           instance_name?: string | null
         }
         Update: {
           connected_phone?: string | null
+          consultant_id?: string | null
           instance_name?: string | null
         }
         Relationships: []
