@@ -3,21 +3,14 @@
 // PROBLEMA QUE RESOLVE
 // --------------------
 // O link `wa.me` do parceiro carrega a mensagem inteira no `?text=`, codificada
-// (`encodeURIComponent`). Frases longas (ex.: as geradas como "exemplo de
-// mensagem do lead") viram URLs gigantes — cada espaço vira `%20`, cada acento
-// `%C3%xx`. O consultor reclama do tamanho do link no card abaixo do QR.
+// (`encodeURIComponent`). Frases longas viram URLs gigantes. Resolvemos com uma
+// frase PADRÃO curta + um MARCADOR determinístico `#R{short_code}` no final
+// para garantir a atribuição mesmo quando a keyword falha (ver explicação no
+// espelho Deno: `supabase/functions/_shared/qr-phrase.ts`).
 //
-// SOLUÇÃO
-// -------
-// Uma frase PADRÃO curta, montada de forma DETERMINÍSTICA (sem IA), que todo
-// parceiro recebe por padrão. Ela é propositalmente enxuta e SEMPRE contém a
-// palavra-chave do parceiro — porque é exatamente a keyword que o webhook
-// procura no texto para atribuir o lead ao parceiro (`keyword-matcher.ts`,
-// match por substring normalizada). Encurtar sem a keyword quebraria o cashback;
-// por isso a keyword é preservada.
-//
-// REGRA DE OURO: a keyword precisa continuar aparecendo na frase. Tudo o mais
-// é livre e mantido curto.
+// REGRA DE OURO: keyword permanece na frase (compatibilidade com o fallback
+// `matchKeyword` do webhook) E, quando há `shortCode`, o marcador `#R{code}`
+// é anexado para atribuição determinística.
 
 /** Comprimento máximo recomendado da frase (mantém a URL `wa.me` enxuta). */
 export const QR_PHRASE_MAX = 90;
@@ -27,12 +20,22 @@ function tidy(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/** Sanitiza o short_code para somente dígitos (3+); devolve "" se inválido. */
+function tidyShortCode(code?: string | null): string {
+  const digits = String(code ?? "").replace(/\D/g, "");
+  return /^\d{3,}$/.test(digits) ? digits : "";
+}
+
+/** Anexa o marcador `#R{short_code}` ao final, se ainda não estiver na frase. */
+function appendShortCodeMarker(phrase: string, shortCode: string): string {
+  if (!shortCode) return phrase;
+  const marker = `#R${shortCode}`;
+  if (new RegExp(`#?\\s*R\\s*${shortCode}\\b`, "i").test(phrase)) return phrase;
+  return tidy(`${phrase} ${marker}`);
+}
+
 /**
  * Frase PADRÃO curta para um parceiro, sempre contendo a `keyword`.
- *
- * - Com keyword: `Oi! Quero saber mais sobre o desconto na energia. (indicação: {keyword})`
- * - Sem keyword: frase genérica curta (parceiro sem keyword não atribui mesmo,
- *   mas o link continua válido e curto).
  */
 export function buildDefaultQrPhrase(keyword?: string | null): string {
   const kw = tidy(keyword ?? "");
@@ -42,45 +45,34 @@ export function buildDefaultQrPhrase(keyword?: string | null): string {
 }
 
 /**
- * Resolve a mensagem final do link/QR a partir do que está salvo no parceiro.
- *
- * Ordem de decisão:
- *   1. Sem `qrPhrase`, OU `qrPhrase` longa demais (acima de `QR_PHRASE_MAX`):
- *      usa a frase padrão curta (`buildDefaultQrPhrase`), que já contém a
- *      keyword. É isso que encurta o link de parceiros antigos com frase grande.
- *   2. Frase própria dentro do limite, mas SEM a keyword: anexa a keyword ao
- *      final para não perder a atribuição (o cashback depende disso) — mas, se
- *      isso estourar o limite, cai na frase padrão curta.
- *   3. Frase própria dentro do limite e com a keyword: respeita a escolha dele.
- *
- * Nunca devolve string vazia: no pior caso, a frase genérica padrão.
+ * Resolve a mensagem final do link/QR. Ver doc completa no espelho Deno.
+ * Quando `shortCode` é informado, anexa `#R{code}` ao final — marcador
+ * determinístico que o webhook usa para atribuir o lead.
  */
 export function resolveQrMessage(
   qrPhrase: string | null | undefined,
   keyword: string | null | undefined,
+  shortCode?: string | null,
 ): string {
   const kw = tidy(keyword ?? "");
   const custom = tidy(qrPhrase ?? "");
+  const code = tidyShortCode(shortCode);
 
-  // Sem frase própria OU frase longa demais → padrão curto (encurta o link).
+  let base: string;
   if (!custom || custom.length > QR_PHRASE_MAX) {
-    return buildDefaultQrPhrase(kw);
-  }
-
-  // Frase dentro do limite, mas sem a keyword: tenta anexar a keyword. Se o
-  // resultado passar do limite, prefere a frase padrão curta a alongar o link.
-  if (kw && !containsKeyword(custom, kw)) {
+    base = buildDefaultQrPhrase(kw);
+  } else if (kw && !containsKeyword(custom, kw)) {
     const withKw = tidy(`${custom} (indicação: ${kw})`);
-    return withKw.length > QR_PHRASE_MAX ? buildDefaultQrPhrase(kw) : withKw;
+    base = withKw.length > QR_PHRASE_MAX ? buildDefaultQrPhrase(kw) : withKw;
+  } else {
+    base = custom;
   }
 
-  return custom;
+  return appendShortCodeMarker(base, code);
 }
 
 /**
- * Igual à normalização do `keyword-matcher.ts` do runtime: sem acentos,
- * pontuação vira espaço, minúsculas. Usado para checar se a keyword já está
- * presente na frase do consultor (mesma régua que o webhook usa para atribuir).
+ * Mesma normalização do `keyword-matcher.ts` do runtime.
  */
 function norm(input: string): string {
   return (input || "")
@@ -95,6 +87,43 @@ function norm(input: string): string {
 /** `true` quando a keyword aparece na frase (substring após normalização). */
 export function containsKeyword(phrase: string, keyword: string): boolean {
   const k = norm(keyword);
-  if (!k) return true; // sem keyword, nada a exigir
+  if (!k) return true;
   return norm(phrase).includes(k);
+}
+
+/**
+ * Lista pequena de keywords genéricas demais para servir de marcador único.
+ * São palavras que aparecem com frequência em texto natural de leads e que,
+ * se usadas como keyword, atribuiriam o lead errado. Bloqueamos no form do
+ * parceiro. NÃO é uma lista exaustiva — só os casos óbvios.
+ */
+export const GENERIC_KEYWORD_BLOCKLIST = [
+  "energia",
+  "energy",
+  "desconto",
+  "luz",
+  "solar",
+  "igreen",
+  "i green",
+  "i-green",
+  "conta",
+  "boleto",
+  "promocao",
+  "promoção",
+  "oferta",
+  "indicacao",
+  "indicação",
+  "oi",
+  "ola",
+  "olá",
+  "bom dia",
+  "boa tarde",
+  "boa noite",
+];
+
+/** `true` quando a keyword está na blocklist (genérica/colidente). */
+export function isGenericKeyword(keyword: string): boolean {
+  const n = norm(keyword);
+  if (!n) return false;
+  return GENERIC_KEYWORD_BLOCKLIST.some((g) => norm(g) === n);
 }

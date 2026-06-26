@@ -255,10 +255,11 @@ function buildWaMeUrl(
   phone: string,
   keyword: string,
   qrPhrase?: string | null,
+  shortCode?: string | null,
 ): string {
   const digits = phone.replace(/\D/g, "");
   const normalized = digits.startsWith("55") ? digits : `55${digits}`;
-  const message = resolveQrMessage(qrPhrase, keyword);
+  const message = resolveQrMessage(qrPhrase, keyword, shortCode);
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
@@ -378,12 +379,17 @@ export function PartnerQrCode({
   shortCode,
 }: PartnerQrCodeProps) {
   // `phrase` é a mensagem que o lead vai ver no WhatsApp (exibida no card).
-  const phrase = resolveQrMessage(qrPhrase, keyword);
+  // Inclui o marcador `#R{short_code}` quando há short_code — esse é o sinal
+  // determinístico que o webhook usa para atribuir o lead a este parceiro
+  // mesmo se o lead apagar/editar o resto da mensagem.
+  const phrase = resolveQrMessage(qrPhrase, keyword, shortCode);
   // Link curto com marca: igreen.cloud/r/{ref}/{short_code}, onde ref é o ID
   // iGreen do consultor (neutro) ou a licença (fallback). Sem identificador ou
-  // código (parceiro antigo sem backfill), cai no wa.me direto como fallback.
+  // código (parceiro antigo sem backfill), cai no wa.me direto como fallback —
+  // que também carrega o marcador `#R{code}` na mensagem.
   const shortLink = buildShortLink(license, shortCode, consultantIgreenId);
-  const url = shortLink ?? buildWaMeUrl(consultantPhone, keyword, qrPhrase);
+  const url =
+    shortLink ?? buildWaMeUrl(consultantPhone, keyword, qrPhrase, shortCode);
 
   // Template selecionado (Sulfite A4 ou Banner 504×904mm).
   const [templateId, setTemplateId] = useState<TemplateId>(DEFAULT_TEMPLATE_ID);
