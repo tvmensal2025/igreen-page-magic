@@ -40,7 +40,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const [qrPhrase, setQrPhrase] = useState("");
   const [partnerIgreenId, setPartnerIgreenId] = useState("");
   const [notificationPhone, setNotificationPhone] = useState("");
-  const [errors, setErrors] = useState<{ nome?: string; cli?: string }>({});
+  const [errors, setErrors] = useState<{ nome?: string; cli?: string; keywords?: string }>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExample, setAiExample] = useState<string | null>(null);
   const confirm = useConfirm();
