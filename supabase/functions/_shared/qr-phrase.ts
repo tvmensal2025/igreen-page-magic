@@ -47,12 +47,12 @@ export function containsKeyword(phrase: string, keyword: string): boolean {
 /**
  * Frase PADRÃO curta para um parceiro, sempre contendo a `keyword`.
  *
- * - Com keyword: `Oi! Quero economizar na conta de luz. (indicação: {keyword})`
+ * - Com keyword: `Oi! Quero saber mais sobre o desconto na energia. (indicação: {keyword})`
  * - Sem keyword: frase genérica curta.
  */
 export function buildDefaultQrPhrase(keyword?: string | null): string {
   const kw = tidy(keyword ?? "");
-  const base = "Oi! Quero economizar na conta de luz.";
+  const base = "Oi! Quero saber mais sobre o desconto na energia.";
   if (!kw) return base;
   return tidy(`${base} (indicação: ${kw})`);
 }
