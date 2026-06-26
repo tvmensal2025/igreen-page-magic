@@ -27,6 +27,7 @@ import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
+import { makeIdempotentEnviarTexto } from "../_shared/bot/conversational-send-idempotency.ts";
 import { summarizeWebhookBody } from "../_shared/log-redact.ts";
 import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
 import { resolveWorker } from "../_shared/portal-worker.ts";
@@ -2057,6 +2058,20 @@ Deno.serve(async (req) => {
         const inboundMediaKind = inb.hasAudio
           ? "audio"
           : inb.hasImage ? "image" : inb.hasDocument ? "document" : null;
+        // Envio idempotente: rajadas do MESMO texto (ex.: "Golpe" 4×) não
+        // disparam 4 respostas idênticas — o slot em `outbound_message_log`
+        // dedupa por (customerId, step, content, minuto). Ver
+        // `_shared/bot/conversational-send-idempotency.ts`.
+        const enviarTexto = makeIdempotentEnviarTexto(
+          (jid, text, opts) => sender.sendText(jid, text, opts as any),
+          remoteJid,
+          {
+            supabase,
+            customerId: customer.id,
+            consultantId: superAdminConsultantId,
+            step: stepBefore || "",
+          },
+        );
         if (_fbVarCerebro === "B") {
           try {
             const { processarTurnoFluxoB } = await import("../_shared/fluxo-b-ia/agent.ts");
@@ -2069,7 +2084,7 @@ Deno.serve(async (req) => {
               inboundMediaKind,
               inboundMessageId: inb.messageId ?? null,
               telefone: phone ?? null,
-              enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+              enviarTexto,
             });
             return r.respondeu;
           } catch (e: any) {
@@ -2090,7 +2105,7 @@ Deno.serve(async (req) => {
             inboundMessageId: inb.messageId ?? null,
             channel: "whapi",
             telefone: phone ?? null,
-            enviarTexto: async (texto) => await sender.sendText(remoteJid, texto),
+            enviarTexto,
           });
           return r.respondeu;
         } catch (e: any) {
