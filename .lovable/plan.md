@@ -1,106 +1,90 @@
-## Diagnóstico — por que áudio + vídeo do `d_como_funciona` não chegaram no Evolution
+## O que muda (escopo enxuto)
 
-O Fluxo D é compartilhado: o `abelolympio` está em `sync_mode='public'` e herda mídia do dono do template público (Rafael Ferreira / `0c2711ad`). Tudo certo até aí — o problema está nos **dados** de mídia daquele slot e em **3 bugs reais** no envio.
-
-### Estado atual de `ai_media_library` para `slot_key='como_funciona'` (consultor=Rafael, dono do público)
-
-```
-kind   id          send_order  is_public  active   url
-audio  310be588    100         true       FALSE    supabase storage
-audio  fdde2dba    102         false      TRUE     supabase storage   ← único áudio "vivo"
-audio  bb478335    108         true       FALSE    minio
-audio  ad1ae922    109         true       FALSE    minio
-video  4d0a180e    101         true       FALSE    supabase storage
-video  90843fd5    106         true       TRUE     supabase storage   ← único vídeo "vivo"
-video  2d2f5229    107         true       FALSE    supabase storage
-video  24fe29ca    110         true       FALSE    supabase storage
-```
-
-6 de 8 mídias foram **auto-desativadas** pelo HEAD-check órfão de `bot-flow.ts:1611-1620` (`urlExists` → marca `active=false` no primeiro 4xx/5xx). Sobrou 1 áudio + 1 vídeo, e mesmo esses provavelmente também falham no HEAD em alguma janela, fazendo o `dispatch` cair em "sem mídia" e mandar só texto. Esse é o sintoma que o usuário viu: "como funciona" mandou texto, mas não áudio nem vídeo.
-
-### 3 bugs/fragilidades reais
-
-1. **HEAD-check órfão derruba mídia boa.** `urlExists()` chama HEAD sem retry, sem User-Agent custom, e em qualquer 4xx/5xx (CDN engasgou, MinIO timeout, Supabase Storage com latência) marca `active=false` permanentemente. É uma "soft delete" sem reversão. Resultado: o slot vai sangrando mídia até sobrar nada.
-2. **Áudio "vivo" do como_funciona está com `is_public=false`** (id `fdde2dba`). Funciona para o caller `abelolympio` só porque `mediaOwnerId` resolve para Rafael via `sync_mode='public'`. Se o resolver falhar (qualquer exceção → fallback retorna o próprio `consultantId`), o áudio some. Frágil.
-3. **Engine v3 está `'dark'`** para o `abelolympio` (`flow_engine_v3='dark'`). Só o legado emite. Qualquer melhoria de envio que esteja no v3 não toma efeito. (Não é bug, é status — vale saber.)
-
-### Por que isso só pega o `como_funciona`
-
-`boas_vindas` tem 3 áudios (provavelmente algum ainda OK), `fazenda_solar` tem 3 vídeos + 2 áudios + 1 imagem. O `como_funciona` é o que ficou mais "raspado" pelo HEAD-check. Mesma classe de bug pode atacar qualquer outro slot a qualquer momento.
+1. **Não mexer na arte** do A4 nem do Banner. Layout, footer, posições do QR — tudo intocado.
+2. Adicionar um **campo de frase personalizada** no `PanfletoModal`. Essa frase entra como `?text=` no `wa.me` que o `qr-redirect` monta, de modo que quem escaneia o QR já abre o WhatsApp **com a mensagem pré-preenchida**.
+3. Disponibilizar esse campo para **todos os perfis** que usam o panfleto: consultor, pré-consultor, admin e super admin.
+4. Corrigir os QRs que **não abrem** para alguns consultores (bug real comprovado no banco).
 
 ---
 
-## Plano
+## Passo 1 — Campo "Frase do WhatsApp" no `PanfletoModal`
 
-Ordem do mais barato (dados/SQL) para o mais caro (código + teste real).
+Arquivo: `src/components/admin/PanfletoModal.tsx` (e nada além de controles — a arte fica idêntica).
 
-### Passo 1 — Recuperação imediata dos dados (slot `como_funciona`)
+- Novo `Textarea` no painel de controles do modal: **"Frase que abre junto com o WhatsApp"**, limite 200 caracteres, placeholder `"Oi! Vi seu panfleto e quero economizar na conta de luz."`.
+- Valor inicial: lê de `localStorage[panfleto_msg_${slug}]`; vazio → usa o `DEFAULT_MESSAGE` que o `qr-redirect` já tem.
+- A cada alteração:
+  - salva em `localStorage`;
+  - atualiza `redirectUrl` para `…/qr-redirect?l={licenca}&msg={encoded}`.
+- O `qr-redirect` já aceita `?msg=` (linha "msgParam" do `index.ts`), então **não precisa mexer na edge function** para esse passo. O QR e o "Copiar link" passam a refletir a frase imediatamente.
+- Botão `Copiar link` continua copiando a URL atualizada.
+- Botão `Resetar frase padrão` ao lado do campo.
 
-UPDATE `ai_media_library` reativando as 6 mídias que foram auto-desativadas, MAS antes verificar `HEAD` de cada URL via `curl` no console para não reativar URL realmente quebrada. Critério de reativação:
+Verificação: gerar o panfleto, escanear com o celular, confirmar que o WhatsApp abre com a frase digitada já no campo de mensagem.
 
-- URL responde 200 OK no curl manual → `active=true`.
-- URL 404/410 → fica `active=false` (de fato órfã).
+## Passo 2 — Mesmo campo no `PartnerQrCode` (parceiros)
 
-Validação: rodar `SELECT kind, COUNT(*) FILTER (WHERE active) AS vivas FROM ai_media_library WHERE slot_key='como_funciona' GROUP BY kind` — esperado: ≥1 áudio + ≥1 vídeo + (se houver) imagem. Mesma varredura para `boas_vindas`, `fazenda_solar`, `prova_social`, `objecao_*` e qualquer slot `passo_*`.
+Arquivo: `src/components/admin/parceiros/PartnerQrCode.tsx`.
 
-### Passo 2 — Corrigir o `is_public` do áudio vivo
+- Parceiros já têm `qr_phrase` no banco (resolvida por `resolveQrMessage` em `_shared/qr-phrase.ts`). Reaproveita: o campo de texto edita `referral_partners.qr_phrase` (que já existe) com o mesmo limite de 200 chars (acima de `QR_PHRASE_MAX=90` cai no padrão curto — comportamento atual).
+- Sem mudança de schema, sem mudança na lógica de keyword. Só expor o `Textarea` no card do parceiro.
 
-UPDATE `ai_media_library SET is_public=true WHERE id='fdde2dba-…'`. O slot público precisa estar 100% público — `false` em conteúdo do template global é dado errado, herdado de quando o áudio foi enviado como "pessoal" antes de virar template.
+## Passo 3 — Disponibilizar para todos os perfis
 
-### Passo 3 — Fix de código: HEAD-check menos agressivo
+O `PanfletoModal` hoje aparece em:
+- `/admin` (consultor e pré-consultor — `src/pages/Admin.tsx`).
+- Onde mais o super admin/admin gera panfleto? Vou auditar: `rg "PanfletoModal" src/` já confirmou só `Admin.tsx` e `parceiros/`. Se o super admin/admin não tem botão de gerar panfleto em nenhum painel próprio, **adicionar** um botão "Gerar panfleto" na tela onde super admin abre o perfil de um consultor (provavelmente `src/components/superadmin/...`), reutilizando o mesmo `PanfletoModal` com o `slug` do consultor selecionado. Mesmo input de frase aparece automaticamente porque é parte do componente.
 
-Em `supabase/functions/_shared/url-exists.ts` (ou o módulo de `urlExists`) e em `bot-flow.ts:1609-1620`:
+Sem schema, sem RLS. Só consumo do componente já existente.
 
-- Trocar HEAD por GET com `Range: bytes=0-0` (mais compatível com MinIO e Supabase Storage).
-- 2 tentativas com backoff curto (500ms) antes de considerar morto.
-- Timeout de 5s (provavelmente hoje é menor).
-- **Nunca** marcar `active=false` automaticamente. Em vez disso, registrar `inbound_media_failures` (ou criar `outbound_media_health(media_id, last_check_at, consecutive_failures, last_status)`) e só desativar quando `consecutive_failures >= 5`. Decisão de desativar fica explícita.
-- Adicionar log estruturado: `[media-healthcheck] media_id=… url=… status=… consecutive_failures=…`.
+## Passo 4 — Corrigir QRs que não abrem (bug real)
 
-Espelhar a mudança no `whapi-webhook` (mesmo bloco).
+Diagnóstico do banco (6 consultores hoje):
 
-### Passo 4 — Garantir envio de áudio + vídeo no Evolution
+| Consultor | Problema |
+|---|---|
+| Olimpia Janete (`olimpiajanete15-1e77b5`) | `consultants.phone` vazio **e** `whatsapp_instances.connected_phone` é `5514933005667` — mesmo número do Abel. Escanear o QR dela abre o WhatsApp do Abel. |
+| Silvia Claudia (`silviaclaudiaalmeida-66fc34`) | `consultants.phone` vazio. Hoje funciona via instância; se a instância cair, vira `wa.me/55` (link quebrado). |
+| Rafael Ferreira | `needs_reconnect`, fallback para `consultants.phone` (OK). |
+| Bruna, henzofelipef | Sem instância conectada; dependem do `consultants.phone` (OK). |
 
-Em `supabase/functions/_shared/channels/evolution.ts:136-145`, validar que `sendAudio` está usando o endpoint `/message/sendWhatsAppAudio/{instance}` (não `/message/sendMedia` com kind=audio — esse manda como `audioMessage` sem PTT, e às vezes o WhatsApp engole). Confirmar via curl direto na Evolution.
+`supabase/functions/qr-redirect/index.ts`:
 
-Para vídeo: confirmar que a URL passada é resolvível pelo runtime do Evolution (a Evolution faz fetch do arquivo no servidor dela). URLs do Supabase Storage public devem funcionar; URLs `igreen-minio.d9v63q.easypanel.host` precisam estar acessíveis do container Evolution na mesma rede.
+1. **Resolução determinística de instância**: hoje faz `LIMIT 1` no `whatsapp_instances`. Ordenar por `updated_at desc` e exigir `connected_phone IS NOT NULL`. Quando duas instâncias diferentes têm o mesmo `connected_phone` (caso Abel/Olímpia), logar `console.warn('[qr-redirect] duplicate_connected_phone phone=… consultants=[…]')` e seguir com a do `consultant_id` solicitado (já é o filtro — então na verdade o bug é dado: Olímpia está apontando para a instância do Abel).
+2. **Validar phone antes de gerar `wa.me`**: regex `^\d{10,13}$` depois do `normalized = '55…'`. Se inválido → não devolve `wa.me/55`; redireciona para `SITE_URL/{license}?qr_error=phone_missing` (ou só `SITE_URL` quando o slug é numérico).
+3. **Tracking de QR quebrado**: já existe insert em `page_events` no caminho feliz; adicionar `event_type='qr_broken'` com o `consultant_id` quando cair no fallback de phone inválido. Isso alimenta um banner futuro de "seu QR está quebrado" no painel do consultor (não escopo agora).
 
-Adicionar teste de smoke (em `scripts/manual-tests/`): chama `sendMedia` com kind=audio e kind=video usando uma URL pública conhecida (ex: o vídeo `90843fd5`) e confere `ok=true`.
+Sem mudança de schema. Sem mudança em RLS. Sem novo endpoint.
 
-### Passo 5 — Validação E2E
+## Passo 5 — Fix de dados (somente o que é seguro fazer agora)
 
-Disparar manualmente no número de teste:
-1. Mensagem inicial → recebe `d_welcome`.
-2. Aperta "2" → entra em `d_como_funciona`.
-3. Conferir que chegam **na ordem** configurada: áudio → imagem (se houver) → vídeo → texto → botões.
-4. Logs do `evolution-webhook` devem mostrar 4 inserts em `conversations` (kind audio, kind video, kind text, kind buttons).
-5. Variar a variante (`flow_variant`) para garantir que as 6 variantes do step `d_como_funciona` agora rodam o mesmo caminho de mídia.
+- **Olímpia ↔ Abel**: a `whatsapp_instances` da Olímpia (`consultant_id=1e77b55a-…`) está com `connected_phone=5514933005667`, que é o número do Abel. Isso é configuração errada — alguém conectou a instância da Olímpia ao WhatsApp do Abel. **Não vou alterar dados aqui sem confirmação humana**, porque chutar o número correto da Olímpia é pior do que o estado atual. Vai virar item de verificação para o super admin no doc.
+- **Silvia, Olímpia (`consultants.phone` vazio)**: idem. Documentar como pendência operacional.
 
-### Passo 6 — Atualizar `docs/auditoria/abelolympio-2026-06-26.md`
+A correção de código do Passo 4 garante que, mesmo enquanto esses dados estiverem errados, o usuário **não cai em `wa.me/55` quebrado** — cai numa landing que pelo menos comunica algo.
 
-Adicionar seção "5.6 Rodada 4 — mídia do `como_funciona` no público" com:
-- snapshot do `ai_media_library` antes/depois,
-- bug do HEAD-check explicado,
-- evidência do E2E (logs + screenshot da conversa),
-- recomendação ao Super Admin: revisar `ai_media_library` para todo slot que tenha `>30%` de mídias `active=false`.
+## Passo 6 — Documentar
+
+`docs/auditoria/abelolympio-2026-06-26.md` → nova seção **5.7 QR + frase pré-formatada**:
+- snapshot do bug Olímpia↔Abel e a Silvia sem phone,
+- o que o código novo faz quando o phone está inválido,
+- como o consultor usa o campo de frase no panfleto,
+- checklist para o super admin resolver as pendências de dado.
 
 ---
 
 ## Arquivos tocados
 
-- **Dados** (via insert tool, sem migration):
-  - `ai_media_library` — UPDATE em ~6 linhas do slot `como_funciona` (reativar + corrigir `is_public`), e varredura nos outros slots.
-- **Código**:
-  - `supabase/functions/_shared/url-exists.ts` (ou equivalente) — HEAD → GET Range, retry, timeout.
-  - `supabase/functions/evolution-webhook/handlers/bot-flow.ts:1609-1620` — não desativar automaticamente; logar e contar falhas.
-  - `supabase/functions/whapi-webhook/handlers/bot-flow.ts` — mesmo patch.
-  - (Possível) `supabase/functions/_shared/channels/evolution.ts:136-145` — confirmar endpoint correto de áudio.
-  - `scripts/manual-tests/test-evolution-media.ts` — novo smoke test.
-- **Migration**: NÃO. Sem mudança de schema.
-- **Docs**: `docs/auditoria/abelolympio-2026-06-26.md` (nova seção 5.6).
+- `src/components/admin/PanfletoModal.tsx` — novo `Textarea` de frase + persistência em `localStorage` + atualização do `redirectUrl` com `?msg=`. **Zero mudança em canvas, posições, footer, templates.**
+- `src/components/admin/parceiros/PartnerQrCode.tsx` — expor o mesmo `Textarea` ligado a `referral_partners.qr_phrase` (já existe no schema).
+- (Se necessário) `src/components/superadmin/…` — botão "Gerar panfleto" que abre o `PanfletoModal` com o slug do consultor selecionado.
+- `supabase/functions/qr-redirect/index.ts` — validação do phone + log de duplicidade + insert em `page_events` quando QR está quebrado.
+- `docs/auditoria/abelolympio-2026-06-26.md` — seção 5.7.
+
+**Sem migration. Sem RLS. Sem mudança na arte do A4/Banner.**
 
 ## Riscos
 
-- Reativar mídia órfã de verdade pode gerar erros 404 em runtime. Mitigado pelo curl prévio de cada URL no Passo 1.
-- Mudar o HEAD-check para GET Range tem custo de banda marginal. Aceitável.
-- Engine v3 continua `'dark'`. O fix vale para o legado (que é o que emite hoje). Quando v3 virar `'on'`, herdará o mesmo `urlExists` corrigido.
+- Frase muito longa no `?text=` gera URL grande. Limite de 200 chars cabe folgadamente no `wa.me` (o WhatsApp aceita até ~1k); o QR continua escaneável até com URL longa (nível H + qrcode.react escala).
+- Mudar o `qr-redirect` para não devolver `wa.me/55` quando o phone está inválido vai mudar o comportamento para Olímpia e Silvia se a instância delas cair — mas o comportamento atual já era quebrado (abre o WhatsApp em conversa nenhuma). É melhoria.
+- Botão de panfleto no super admin: se essa tela não existir hoje, vou anexar à listagem de consultores onde já há ações por linha — sem rota nova.
