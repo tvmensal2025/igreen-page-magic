@@ -336,13 +336,14 @@ Deno.serve(async (req) => {
 
     const { data: consultantData } = await supabase
       .from("consultants")
-      .select("id, name, igreen_id, conversational_flow_enabled")
+      .select("id, name, display_name, igreen_id, conversational_flow_enabled")
       .eq("id", instanceData.consultant_id)
       .single();
 
-    console.log(`✅ Instance found: ${instanceName} (consultant: ${consultantData?.name || "unknown"})`);
-    const _fullName = consultantData?.name || "iGreen Energy";
-    const nomeRepresentante = _fullName.trim().split(/\s+/)[0] || "iGreen Energy";
+    console.log(`✅ Instance found: ${instanceName} (consultant: ${consultantData?.display_name || consultantData?.name || "unknown"})`);
+    // Prefere display_name (nome humano) sobre name (que pode ser username/slug do login).
+    const _fullName = (consultantData?.display_name || consultantData?.name || "iGreen Energy").trim();
+    const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
     const consultorId = consultantData?.igreen_id || "124170";
 
     if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
