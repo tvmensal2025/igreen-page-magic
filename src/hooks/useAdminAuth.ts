@@ -5,6 +5,10 @@ import type { Database } from "@/integrations/supabase/types";
 
 const DEFAULT_CONSULTANT_FORM = {
   name: "", license: "", phone: "", notification_phone: "", cadastro_url: "", igreen_id: "",
+  // Nome humano de exibição usado nas mensagens enviadas ao lead (ex.: "Abel Olympio").
+  // Quando vazio, o sistema cai pro `name`; se `name` for slug (ex.: "abelolympio"),
+  // usa o genérico "consultor" para não vazar username.
+  display_name: "",
   licenciada_cadastro_url: "", facebook_pixel_id: "", google_analytics_id: "",
   igreen_portal_email: "", igreen_portal_password: "",
   // Nome da assistente virtual (IA) + gênero do representante (do/da).
