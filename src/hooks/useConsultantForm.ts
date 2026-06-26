@@ -46,9 +46,13 @@ export function useConsultantForm(
     if (file) { setPhotoFile(file); setLocalPhotoPreview(URL.createObjectURL(file)); }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  // Retorna `true` quando o save concluiu sem erro e `false` quando falhou.
+  // O OnboardingGate usa esse retorno para só fechar o modal depois que os
+  // dados realmente foram gravados (antes ele fechava cedo demais e nada
+  // era salvo, obrigando o consultor a digitar tudo de novo).
+  const handleSave = async (e: React.FormEvent): Promise<boolean> => {
     e.preventDefault();
-    if (!userId) return;
+    if (!userId) return false;
     setSaving(true);
     try {
       let photo_url: string | undefined;
@@ -157,9 +161,11 @@ export function useConsultantForm(
       }
 
       toast({ title: "✅ Dados salvos com sucesso!", ...(licenseAdjusted ? { description: `A licença foi ajustada automaticamente para ${savedConsultant?.license || finalLicense}.` } : {}) });
+      return true;
     } catch (error: unknown) {
       console.error("[onboarding-save] failed:", error);
       toast({ title: "Erro ao salvar", description: describeSupabaseError(error), variant: "destructive", duration: 8000 });
+      return false;
     } finally { setSaving(false); }
   };
 

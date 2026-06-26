@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,7 @@ export function ManualStepDialog({ open, onOpenChange, consultantId, customerId,
   const [sending, setSending] = useState(false);
   const [variant, setVariant] = useState<"A" | "B" | "C" | "D" | "E">("A");
   const [variantsAvailable, setVariantsAvailable] = useState<Array<"A" | "B" | "C" | "D" | "E">>(["A"]);
-  const byVariantRef = useRef<Map<"A" | "B" | "C" | "D" | "E", string>>(new Map());
+  const [byVariant, setByVariant] = useState<Map<"A" | "B" | "C" | "D" | "E", string>>(new Map());
 
   // Efeito 1 — inicialização: define variante default a partir do cliente
   // sem reagir a mudanças posteriores em `variant` (clique manual não pode
@@ -85,27 +85,34 @@ export function ManualStepDialog({ open, onOpenChange, consultantId, customerId,
         const v = String(f.variant || "A").toUpperCase() as "A" | "B" | "C" | "D" | "E";
         if (["A", "B", "C", "D", "E"].includes(v) && !byVariant.has(v)) byVariant.set(v, f.id);
       });
-      byVariantRef.current = byVariant;
       const available = (["A", "B", "C", "D", "E"] as const).filter((v) => byVariant.has(v));
       if (!mounted) return;
+      setByVariant(byVariant);
       setVariantsAvailable(available.length > 0 ? available : ["A"]);
 
       const selected: "A" | "B" | "C" | "D" | "E" = byVariant.has(custVariant) ? custVariant : (available[0] || "A");
       setVariant(selected);
-      // Os passos serão carregados pelo Efeito 2 ao reagir a `variant`.
-      setLoading(false);
+      // IMPORTANTE: não desligar `loading` aqui quando há fluxos. O Efeito 2
+      // assume o carregamento dos passos e só então desliga o loading. Se a
+      // gente desligasse aqui, o dialog mostraria a lista, o Efeito 2 ligaria
+      // o loading de novo e a tela "piscaria" (spinner -> lista -> spinner).
+      if (byVariant.size === 0) {
+        setSteps([]);
+        setLoading(false);
+      }
     })();
     return () => { mounted = false; };
   }, [open, consultantId, customerId]);
 
   // Efeito 2 — troca manual: recarrega só os passos da variante escolhida,
-  // sem mexer em `variant` nem reler flow_variant.
+  // sem mexer em `variant` nem reler flow_variant. Depende de `byVariant`
+  // (estado) para garantir que os passos carreguem mesmo quando a variante
+  // selecionada já é a inicial (ex.: "A"), em que `setVariant` não muda nada.
   useEffect(() => {
     if (!open) return;
-    const byVariant = byVariantRef.current;
     if (byVariant.size === 0) return;
     const flowId = byVariant.get(variant);
-    if (!flowId) { setSteps([]); return; }
+    if (!flowId) { setSteps([]); setLoading(false); return; }
     let mounted = true;
     (async () => {
       setLoading(true);
@@ -127,7 +134,7 @@ export function ManualStepDialog({ open, onOpenChange, consultantId, customerId,
       }
     })();
     return () => { mounted = false; };
-  }, [open, variant, initialStepId]);
+  }, [open, variant, byVariant, initialStepId]);
 
 
 

@@ -224,6 +224,15 @@ export async function matchQA(
           .eq("consultant_id", consultantId).eq("slot_key", m.slot_key)
           .eq("active", true).limit(1).maybeSingle();
         if (personal?.url) { url = personal.url; mediaId = personal.id || mediaId; }
+        // Fallback: mídia pública (template oficial) quando o consultor não
+        // tem nada cadastrado nesse slot.
+        if (!url) {
+          const { data: pub } = await supabase
+            .from("ai_media_library").select("id, url")
+            .eq("is_public", true).eq("slot_key", m.slot_key)
+            .eq("active", true).limit(1).maybeSingle();
+          if (pub?.url) { url = pub.url; mediaId = pub.id || mediaId; }
+        }
       }
       if (url) mediaUrls.push({ url, kind, mediaId });
     }
@@ -433,13 +442,33 @@ async function sendStepMedia(
   const slotKey = step.slot_key || step.step_key || step.id;
   if (!slotKey) return { mediaSent: false, textSentInline: false };
 
-  const { data: mediaRows } = await ctx.supabase
+  // Busca a mídia do PRÓPRIO consultor primeiro; se não houver nada nesse
+  // slot, cai na mídia PÚBLICA (consultant_id NULL / is_public=true — os
+  // templates oficiais do super admin). Sem esse fallback, consultores que
+  // usam os slots públicos (ex.: `como_funciona`) não recebiam áudio/vídeo
+  // nenhum: a query só com `.eq(consultant_id)` voltava vazia e só o texto
+  // era enviado. Mesma estratégia já usada no handler bot-flow.ts.
+  const mediaSelect =
+    "id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript";
+  const { data: personalRows } = await ctx.supabase
     .from("ai_media_library")
-    .select("id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript")
+    .select(mediaSelect)
     .eq("consultant_id", consultantId)
     .eq("slot_key", slotKey)
     .eq("active", true)
     .order("send_order", { ascending: true });
+
+  let mediaRows = personalRows;
+  if (!mediaRows || mediaRows.length === 0) {
+    const { data: publicRows } = await ctx.supabase
+      .from("ai_media_library")
+      .select(mediaSelect)
+      .eq("is_public", true)
+      .eq("slot_key", slotKey)
+      .eq("active", true)
+      .order("send_order", { ascending: true });
+    mediaRows = publicRows;
+  }
 
   const variant = (ctx.customer as any)?.flow_variant || "A";
   let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);

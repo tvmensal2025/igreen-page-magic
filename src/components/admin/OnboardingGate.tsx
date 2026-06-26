@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,9 @@ interface OnboardingGateProps {
   form: ConsultantForm;
   saving: boolean;
   onFormChange: (updates: Record<string, string>) => void;
-  onSave: (e: React.FormEvent) => void;
+  // Retorna `true` quando o save gravou os dados com sucesso, `false` quando
+  // falhou. O gate usa esse retorno para só fechar DEPOIS de salvar de verdade.
+  onSave: (e: React.FormEvent) => boolean | Promise<boolean>;
   children: React.ReactNode;
 }
 
@@ -47,19 +49,58 @@ function isComplete(form: ConsultantForm) {
 export function OnboardingGate({ form, saving, onFormChange, onSave, children }: OnboardingGateProps) {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  // `dirty` = o consultor mexeu em algum campo e ainda não salvou.
+  // Enquanto estiver "sujo", o modal NÃO fecha só por estar válido — ele só
+  // fecha depois que o save grava de verdade no banco. Sem isso, o modal
+  // sumia no instante em que o último campo ficava válido (antes de salvar),
+  // os dados se perdiam e o modal voltava obrigando a digitar tudo de novo.
+  const [dirty, setDirty] = useState(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const errors = useMemo(() => validate(form), [form]);
   const blocking = useMemo(() => blockingErrors(form), [form]);
   const complete = Object.keys(blocking).length === 0;
 
-  if (complete) return <>{children}</>;
+  // Aplica mudanças marcando o formulário como "sujo" (tem alteração não salva).
+  const applyChange = (updates: Record<string, string>) => {
+    setDirty(true);
+    onFormChange(updates);
+  };
+
+  // Salva e devolve se deu certo. Em caso de sucesso, limpa o "sujo" — aí o
+  // modal pode fechar com segurança porque os dados já estão no banco.
+  const doSave = async (e: React.FormEvent): Promise<boolean> => {
+    const ok = await onSave(e);
+    if (ok) setDirty(false);
+    return ok;
+  };
+
+  // Auto-save: assim que os campos obrigatórios estão preenchidos e há algo
+  // não salvo, grava sozinho (com um pequeno atraso pra não salvar a cada
+  // tecla). É isso que faz "digitou e já fica salvo".
+  useEffect(() => {
+    if (!complete || !dirty || saving) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      void doSave({ preventDefault() {} } as React.FormEvent);
+    }, 700);
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete, dirty, saving]);
+
+  // Só libera o painel quando está completo E não há alteração pendente —
+  // ou seja, os dados completos já foram persistidos.
+  if (complete && !dirty) return <>{children}</>;
 
   const showErr = (key: keyof FieldErrors) => (submitAttempted || touched[key]) ? errors[key] : undefined;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitAttempted(true);
     if (Object.keys(blocking).length > 0) return;
-    onSave(e);
+    await doSave(e);
   };
 
 
@@ -92,7 +133,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                 onChange={(e) => {
                   const newName = e.target.value;
                   const slug = newName.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-                  onFormChange({ name: newName, license: slug });
+                  applyChange({ name: newName, license: slug });
                 }}
                 placeholder="Seu nome"
                 className="bg-secondary border-border"
@@ -105,7 +146,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                 onBlur={() => setTouched((t) => ({ ...t, igreen_id: true }))}
                 onChange={(e) => {
                   const id = e.target.value.replace(/\D/g, "").slice(0, 10);
-                  onFormChange({
+                  applyChange({
                     igreen_id: id,
                     cadastro_url: id ? `https://digital.igreenenergy.com.br/?id=${id}&sendcontract=true` : "",
                     licenciada_cadastro_url: id ? `https://expansao.igreenenergy.com.br/?id=${id}&checkout=true` : "",

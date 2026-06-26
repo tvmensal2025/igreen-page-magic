@@ -110,8 +110,15 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
         ? custVariant
         : (available[0] || "A");
       setVariant(selected);
-      // Steps serão carregados pelo Efeito 2 ao reagir à mudança de `variant`.
-      setLoading(false);
+      // IMPORTANTE: não desligar `loading` aqui quando há fluxos. O Efeito 2
+      // assume o carregamento dos passos e só então desliga o loading. Se a
+      // gente desligasse aqui, o painel mostraria o conteúdo, o Efeito 2
+      // ligaria o loading de novo e o painel encolheria/cresceria de novo —
+      // era isso que fazia o botão "expandir e voltar" ao abrir.
+      if (byVariant.size === 0) {
+        setSteps([]);
+        setLoading(false);
+      }
     })();
     return () => { mounted = false; };
   }, [open, consultantId, customerId]);
@@ -122,7 +129,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
     if (!open || !consultantId) return;
     if (byVariant.size === 0) return;
     const flowId = byVariant.get(variant);
-    if (!flowId) { setSteps([]); return; }
+    if (!flowId) { setSteps([]); setLoading(false); return; }
     let mounted = true;
     (async () => {
       setLoading(true);
@@ -221,7 +228,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={(o) => { if (o) setLoading(true); setOpen(o); }}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost" size="icon"

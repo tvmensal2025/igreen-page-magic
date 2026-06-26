@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, RefreshCw, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatBrazilPhone, phonesMatch } from "@/lib/phone";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface Props {
   consultantId: string | null;
@@ -28,6 +29,11 @@ export function WhatsAppPhoneStatusBanner({ consultantId }: Props) {
   const [state, setState] = useState<State>({ status: "loading", consultantPhone: null, connectedPhone: null, verifiedAt: null });
   const [revalidating, setRevalidating] = useState(false);
   const { toast } = useToast();
+  // Super admin usa Whapi (não Evolution). A verificação de telefone abaixo só
+  // faz sentido no canal Evolution, então não exibimos o banner para Whapi —
+  // senão ele fica pedindo para "conectar" uma instância Evolution que nunca
+  // será usada, mesmo com o WhatsApp já conectado via Whapi.
+  const { isSuperAdmin, loading: roleLoading } = useUserRole(consultantId);
 
   const load = async () => {
     if (!consultantId) return;
@@ -44,10 +50,22 @@ export function WhatsAppPhoneStatusBanner({ consultantId }: Props) {
     const consultantPhone = cons?.phone || null;
     const connectedPhone = inst?.connected_phone || null;
     const verifiedAt = cons?.phone_verified_at || null;
+
+    // Espelha a regra da trava real de envio (proactive-send-guard.ts):
+    // o telefone é considerado válido quando foi verificado há no máximo 7 dias,
+    // mesmo que naquele instante a instância esteja sem connected_phone
+    // (ex.: reconexão momentânea). Sem isso, a faixa "voltava" a aparecer para
+    // consultores já conectados/verificados toda vez que o número conectado
+    // sumia por um momento.
+    const VERIFY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+    const recentlyVerified =
+      !!verifiedAt && Date.now() - new Date(verifiedAt).getTime() < VERIFY_TTL_MS;
+
     let status: Status;
     if (!consultantPhone) status = "no_phone";
-    else if (!connectedPhone) status = "no_instance";
     else if (phonesMatch(consultantPhone, connectedPhone)) status = "ok";
+    else if (recentlyVerified) status = "ok";
+    else if (!connectedPhone) status = "no_instance";
     else status = "mismatch";
     setState({ status, consultantPhone, connectedPhone, verifiedAt });
   };
@@ -81,6 +99,9 @@ export function WhatsAppPhoneStatusBanner({ consultantId }: Props) {
 
   // Não mostra banner em status OK ou loading
   if (state.status === "loading" || state.status === "ok") return null;
+
+  // Não mostra para Whapi (super admin) — canal não usa instância Evolution.
+  if (roleLoading || isSuperAdmin) return null;
 
   const variants = {
     no_phone: {
