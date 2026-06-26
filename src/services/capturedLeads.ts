@@ -27,6 +27,7 @@ export interface CapturedLead {
   product_interest: string | null;
   company_name: string | null;
   cnpj: string | null;
+  pj_data?: Record<string, unknown> | null;
   status: LeadStatus;
   created_at: string;
 }
@@ -45,7 +46,7 @@ export async function listCapturedLeads(filter: ListLeadsFilter): Promise<Captur
   let q = supabase
     .from("captured_leads")
     .select(
-      "id, consultant_id, channel, person_type, full_name, phone, email, city, uf, product_interest, company_name, cnpj, status, created_at",
+      "id, consultant_id, channel, person_type, full_name, phone, email, city, uf, product_interest, company_name, cnpj, pj_data, status, created_at",
     )
     .eq("consultant_id", filter.consultantId)
     .order("created_at", { ascending: false })
@@ -119,28 +120,66 @@ export async function dispatchLeadsToCampaign(input: {
   return data as DispatchResult;
 }
 
-export interface ResearchResult {
+export interface ResearchItem {
+  osm_id?: string;
+  name: string;
+  phone: string | null;
+  email?: string | null;
+  category?: string | null;
+  street?: string | null;
+  housenumber?: string | null;
+  neighbourhood?: string | null;
+  city?: string | null;
+  uf?: string | null;
+  postcode?: string | null;
+  website?: string | null;
+  opening_hours?: string | null;
+  full_address?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+}
+
+export interface ResearchSearchResult {
   ok: boolean;
   city?: string;
+  uf?: string | null;
+  category?: string | null;
   found?: number;
-  ingested?: number;
-  deduped?: number;
-  skipped?: number;
+  with_phone?: number;
+  items?: ResearchItem[];
   error?: string;
 }
 
-/** Roda a pesquisa B2B de empresas (OpenStreetMap) por cidade + ramo. */
-export async function runLeadResearch(input: {
+export interface ResearchImportResult {
+  ok: boolean;
+  ingested?: number;
+  deduped?: number;
+  skipped?: number;
+  total?: number;
+  error?: string;
+}
+
+/** PRÉVIA: busca empresas no OpenStreetMap sem gravar. */
+export async function searchBusinesses(input: {
   city: string;
   uf?: string;
   category?: string;
   limit?: number;
-}): Promise<ResearchResult> {
+}): Promise<ResearchSearchResult> {
   const { data, error } = await supabase.functions.invoke("lead-research", {
-    body: input,
+    body: { action: "search", ...input },
   });
   if (error) return { ok: false, error: error.message };
-  return data as ResearchResult;
+  return data as ResearchSearchResult;
+}
+
+/** Grava os itens escolhidos como leads PJ do consultor. */
+export async function importBusinesses(items: ResearchItem[]): Promise<ResearchImportResult> {
+  const { data, error } = await supabase.functions.invoke("lead-research", {
+    body: { action: "import", items },
+  });
+  if (error) return { ok: false, error: error.message };
+  return data as ResearchImportResult;
 }
 
 /** Descarta (opt-out) um lead. */

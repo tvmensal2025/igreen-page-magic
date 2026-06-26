@@ -1,16 +1,15 @@
 // lead-research
 // ─────────────
 // Pesquisa B2B de EMPRESAS por cidade + ramo, rodada pelo próprio consultor.
-// Os resultados viram leads PJ dele (captured_leads, channel='research').
 //
-// Fonte padrão: OpenStreetMap / Overpass API — gratuita, sem chave, dado
-// público de estabelecimentos comerciais (nome, telefone, endereço). É legal
-// porque é dado público de pessoa jurídica/estabelecimento.
+// Dois modos:
+//   - action "search"  → PRÉVIA: busca no OpenStreetMap e devolve a lista rica
+//                        (nome, telefone, endereço completo, site, horário,
+//                        categoria) SEM gravar. O consultor escolhe quais quer.
+//   - action "import"  → grava os itens escolhidos como leads PJ do consultor
+//                        (captured_leads, channel='research'), com dedup.
 //
-// Upgrade opcional: se GOOGLE_PLACES_API_KEY estiver configurada, dá pra
-// trocar a fonte por Google Places (mais completa). Deixamos OSM como default
-// pra funcionar sem custo nem credencial.
-//
+// Fonte: OpenStreetMap / Overpass — gratuito, sem chave, dado público de PJ.
 // Autenticada (verify_jwt=true): o consultor logado é o dono dos resultados.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -22,49 +21,127 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
-interface Body {
-  /** Cidade alvo, ex: "Campinas". */
+const MAX_LIMIT = 200;
+
+// Categorias amigáveis → filtros OSM. "" = comércio variado.
+const CATEGORY_MAP: Record<string, string[]> = {
+  restaurante: ['amenity"="restaurant', 'amenity"="fast_food'],
+  bar: ['amenity"="bar', 'amenity"="pub'],
+  cafe: ['amenity"="cafe'],
+  padaria: ['shop"="bakery'],
+  mercado: ['shop"="supermarket', 'shop"="convenience'],
+  farmacia: ['amenity"="pharmacy'],
+  academia: ['leisure"="fitness_centre', 'sport"="fitness'],
+  salao: ['shop"="hairdresser', 'shop"="beauty'],
+  oficina: ['shop"="car_repair'],
+  loja: ['shop"="clothes', 'shop"="shoes', 'shop"="electronics'],
+  hotel: ['tourism"="hotel', 'tourism"="motel'],
+  escritorio: ['office'],
+  posto: ['amenity"="fuel'],
+};
+
+interface SearchBody {
+  action?: "search" | "import";
   city?: string;
-  /** UF, ex: "SP". */
   uf?: string;
-  /**
-   * Ramo/categoria OSM (chave amenity/shop/office). Ex.: "restaurant",
-   * "supermarket", "bakery". Default: todos os "shop".
-   */
   category?: string;
-  /** Limite de resultados a gravar (default 100, máx 500). */
   limit?: number;
+  // para import:
+  items?: ResearchItem[];
 }
 
-const MAX_LIMIT = 500;
+interface ResearchItem {
+  osm_id?: string;
+  name: string;
+  phone: string | null;
+  email?: string | null;
+  category?: string | null;
+  street?: string | null;
+  housenumber?: string | null;
+  neighbourhood?: string | null;
+  city?: string | null;
+  uf?: string | null;
+  postcode?: string | null;
+  website?: string | null;
+  opening_hours?: string | null;
+  full_address?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+}
 
-/**
- * Monta a query Overpass: busca nós/áreas com telefone dentro da área da
- * cidade. Usa `area[name=...]` para delimitar pela cidade.
- */
-function buildOverpassQuery(city: string, category: string | null, limit: number): string {
-  // Filtro de categoria: se vier, casa shop/amenity/office com o valor; senão
-  // pega qualquer "shop" que tenha telefone.
-  const catFilter = category
-    ? `(
-        node["name"]["phone"]["shop"="${category}"](area.a);
-        node["name"]["phone"]["amenity"="${category}"](area.a);
-        node["name"]["phone"]["office"="${category}"](area.a);
-      )`
-    : `(
-        node["name"]["phone"]["shop"](area.a);
-        node["name"]["phone"]["amenity"~"restaurant|cafe|pharmacy|bank|fuel"](area.a);
-      )`;
+function buildOverpassQuery(city: string, category: string, limit: number): string {
+  const filters = CATEGORY_MAP[category] ?? null;
+  let block: string;
+  if (filters) {
+    block = filters
+      .map((f) => `nwr["name"]["${f}"](area.a);`)
+      .join("\n        ");
+  } else {
+    // comércio variado com telefone
+    block = `nwr["name"]["shop"](area.a);
+        nwr["name"]["amenity"~"restaurant|cafe|bar|pharmacy|fuel|bank|fast_food"](area.a);
+        nwr["name"]["office"](area.a);`;
+  }
   return `
-    [out:json][timeout:25];
+    [out:json][timeout:30];
     area["name"="${city}"]["boundary"="administrative"]->.a;
-    ${catFilter};
-    out body ${limit};
+    (
+        ${block}
+    );
+    out center ${limit};
   `;
 }
 
 interface OsmElement {
+  type: string;
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
   tags?: Record<string, string>;
+}
+
+function mapElement(el: OsmElement, fallbackCity: string, fallbackUf: string | null): ResearchItem | null {
+  const t = el.tags ?? {};
+  const name = t.name || null;
+  const phone = t.phone || t["contact:phone"] || t.mobile || t["contact:mobile"] || null;
+  if (!name) return null;
+
+  const street = t["addr:street"] || null;
+  const num = t["addr:housenumber"] || null;
+  const bairro = t["addr:suburb"] || t["addr:neighbourhood"] || null;
+  const cidade = t["addr:city"] || fallbackCity;
+  const cep = t["addr:postcode"] || null;
+  const category = t.shop || t.amenity || t.office || t.leisure || t.tourism || t.sport || null;
+
+  const fullAddress = [
+    street ? `${street}${num ? `, ${num}` : ""}` : null,
+    bairro,
+    cidade,
+    cep,
+  ].filter(Boolean).join(" · ");
+
+  const lat = el.lat ?? el.center?.lat ?? null;
+  const lon = el.lon ?? el.center?.lon ?? null;
+
+  return {
+    osm_id: `${el.type}/${el.id}`,
+    name,
+    phone,
+    email: t.email || t["contact:email"] || null,
+    category,
+    street,
+    housenumber: num,
+    neighbourhood: bairro,
+    city: cidade,
+    uf: (t["addr:state"] || fallbackUf || null) as string | null,
+    postcode: cep,
+    website: t.website || t["contact:website"] || t.url || null,
+    opening_hours: t.opening_hours || null,
+    full_address: fullAddress || null,
+    lat,
+    lon,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -85,20 +162,63 @@ Deno.serve(async (req) => {
   if (caller.mode !== "jwt") return json(403, { error: "forbidden" });
   const consultantId = caller.consultantId;
 
-  let body: Body;
+  let body: SearchBody;
   try {
     body = await req.json();
   } catch {
     return json(400, { error: "invalid_json" });
   }
 
+  const action = body.action ?? "search";
+
+  // ── IMPORT: grava os itens escolhidos como leads PJ ──────────────────────
+  if (action === "import") {
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (items.length === 0) return json(400, { error: "no_items" });
+
+    let ingested = 0, deduped = 0, skipped = 0;
+    for (const it of items) {
+      if (!it?.phone || !it?.name) { skipped++; continue; }
+      const r = await ingestLead(admin, {
+        consultantId,
+        channel: "research",
+        personType: "pj",
+        companyName: it.name,
+        phone: it.phone,
+        city: it.city ?? null,
+        uf: it.uf ?? null,
+        productInterest: it.category ?? null,
+        pjData: {
+          ramo: it.category ?? null,
+          source: "openstreetmap",
+          osm_id: it.osm_id ?? null,
+          street: it.street ?? null,
+          housenumber: it.housenumber ?? null,
+          neighbourhood: it.neighbourhood ?? null,
+          postcode: it.postcode ?? null,
+          full_address: it.full_address ?? null,
+          website: it.website ?? null,
+          email: it.email ?? null,
+          opening_hours: it.opening_hours ?? null,
+          lat: it.lat ?? null,
+          lon: it.lon ?? null,
+        },
+        rawPayload: { research_item: it },
+      });
+      if (r.ok && r.deduped) deduped++;
+      else if (r.ok) ingested++;
+      else skipped++;
+    }
+    return json(200, { ok: true, ingested, deduped, skipped, total: items.length });
+  }
+
+  // ── SEARCH: prévia rica, sem gravar ──────────────────────────────────────
   const city = (body.city ?? "").trim();
   if (!city) return json(400, { error: "city_required" });
   const uf = (body.uf ?? "").trim().toUpperCase() || null;
-  const category = (body.category ?? "").trim() || null;
-  const limit = Math.min(Math.max(Number(body.limit) || 100, 1), MAX_LIMIT);
+  const category = (body.category ?? "").trim().toLowerCase();
+  const limit = Math.min(Math.max(Number(body.limit) || 60, 1), MAX_LIMIT);
 
-  // Consulta Overpass (OSM).
   let elements: OsmElement[] = [];
   try {
     const q = buildOverpassQuery(city, category, limit);
@@ -107,61 +227,41 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: `data=${encodeURIComponent(q)}`,
     });
-    if (!resp.ok) {
-      return json(502, { error: "overpass_failed", status: resp.status });
-    }
+    if (!resp.ok) return json(502, { error: "overpass_failed", status: resp.status });
     const data = await resp.json();
     elements = Array.isArray(data?.elements) ? data.elements : [];
   } catch (e) {
     return json(502, { error: "overpass_error", detail: (e as Error)?.message });
   }
 
-  let ingested = 0;
-  let deduped = 0;
-  let skipped = 0;
-
+  const items: ResearchItem[] = [];
+  const seen = new Set<string>();
   for (const el of elements) {
-    const t = el.tags ?? {};
-    const phone = t.phone || t["contact:phone"] || t.mobile || null;
-    const name = t.name || null;
-    if (!phone || !name) {
-      skipped++;
-      continue;
-    }
-    const ramo = t.shop || t.amenity || t.office || category || "comercio";
-    const r = await ingestLead(admin, {
-      consultantId,
-      channel: "research",
-      personType: "pj",
-      companyName: name,
-      phone,
-      city,
-      uf,
-      productInterest: body.category ?? null,
-      pjData: {
-        ramo,
-        source: "openstreetmap",
-        street: t["addr:street"] ?? null,
-        housenumber: t["addr:housenumber"] ?? null,
-        website: t.website ?? t["contact:website"] ?? null,
-      },
-      // Dado público de PJ; abordagem B2B. Sem consent_text (não é PF opt-in).
-      rawPayload: { osm_tags: t },
-    });
-    if (r.ok && r.deduped) deduped++;
-    else if (r.ok) ingested++;
-    else skipped++;
+    const m = mapElement(el, city, uf);
+    if (!m) continue;
+    // dedup local por nome+telefone
+    const key = `${(m.name || "").toLowerCase()}|${(m.phone || "").replace(/\D/g, "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(m);
   }
+
+  // ordena: com telefone primeiro, depois alfabético
+  items.sort((a, b) => {
+    if (!!a.phone !== !!b.phone) return a.phone ? -1 : 1;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+
+  const withPhone = items.filter((i) => i.phone).length;
 
   return json(200, {
     ok: true,
     city,
     uf,
-    category,
-    found: elements.length,
-    ingested,
-    deduped,
-    skipped,
+    category: category || null,
+    found: items.length,
+    with_phone: withPhone,
+    items,
     source: "openstreetmap",
   });
 });

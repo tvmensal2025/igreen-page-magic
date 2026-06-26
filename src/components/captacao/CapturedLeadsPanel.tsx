@@ -26,9 +26,10 @@ import {
   RefreshCw, Megaphone, Sparkles,
 } from "lucide-react";
 import {
-  listCapturedLeads, countLeadsByChannel, dispatchLeadsToCampaign, runLeadResearch,
+  listCapturedLeads, countLeadsByChannel, dispatchLeadsToCampaign,
   type CapturedLead, type LeadChannel, type PersonType, type LeadStatus,
 } from "@/services/capturedLeads";
+import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
 
 interface Props {
   consultantId: string;
@@ -62,12 +63,8 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [messageText, setMessageText] = useState("");
   const [dispatching, setDispatching] = useState(false);
 
-  // pesquisa B2B
+  // pesquisa B2B (modal rico)
   const [researchOpen, setResearchOpen] = useState(false);
-  const [rCity, setRCity] = useState("");
-  const [rUf, setRUf] = useState("");
-  const [rCategory, setRCategory] = useState("");
-  const [researching, setResearching] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,18 +133,8 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
     }
   };
 
-  const doResearch = async () => {
-    if (!rCity.trim()) { sonnerToast.warning("Informe a cidade."); return; }
-    setResearching(true);
-    try {
-      const r = await runLeadResearch({ city: rCity.trim(), uf: rUf.trim() || undefined, category: rCategory.trim() || undefined, limit: 100 });
-      if (!r.ok) { sonnerToast.error(r.error || "Falha na pesquisa"); return; }
-      sonnerToast.success(`Pesquisa concluída: ${r.ingested} novos, ${r.deduped} já existiam (${r.found} encontrados).`);
-      setResearchOpen(false);
-      await load();
-    } finally {
-      setResearching(false);
-    }
+  const doResearchImported = async () => {
+    await load();
   };
 
   return (
@@ -260,7 +247,10 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
                       <span className="font-medium truncate">{l.company_name || l.full_name || "—"}</span>
                     </div>
                     {l.person_type === "pj" && l.full_name && (
-                      <span className="text-[11px] text-muted-foreground ml-5">contato: {l.full_name}</span>
+                      <span className="text-[11px] text-muted-foreground ml-5 block">contato: {l.full_name}</span>
+                    )}
+                    {l.person_type === "pj" && (l.pj_data?.ramo as string) && (
+                      <span className="text-[11px] text-muted-foreground ml-5 block capitalize">{l.pj_data?.ramo as string}</span>
                     )}
                   </td>
                   <td className="p-2 hidden sm:table-cell">
@@ -270,7 +260,12 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
                     </div>
                   </td>
                   <td className="p-2 hidden md:table-cell text-[12px] text-muted-foreground">
-                    {l.city ? <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{l.city}{l.uf ? `/${l.uf}` : ""}</span> : "—"}
+                    {(() => {
+                      const addr = (l.pj_data?.full_address as string) || null;
+                      if (addr) return <span className="flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" /><span className="truncate max-w-[260px]">{addr}</span></span>;
+                      if (l.city) return <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{l.city}{l.uf ? `/${l.uf}` : ""}</span>;
+                      return "—";
+                    })()}
                   </td>
                   <td className="p-2">
                     <Badge variant="outline" className="text-[10px]">{CHANNEL_LABEL[l.channel] || l.channel}</Badge>
@@ -320,41 +315,12 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de pesquisa B2B */}
-      <Dialog open={researchOpen} onOpenChange={setResearchOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Pesquisar empresas (B2B)</DialogTitle>
-            <DialogDescription>
-              Busca estabelecimentos com telefone público (OpenStreetMap) por cidade e ramo. Os resultados viram leads PJ seus.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <Label htmlFor="r-city" className="text-xs">Cidade</Label>
-                <Input id="r-city" value={rCity} onChange={(e) => setRCity(e.target.value)} placeholder="Campinas" className="h-9" />
-              </div>
-              <div>
-                <Label htmlFor="r-uf" className="text-xs">UF</Label>
-                <Input id="r-uf" value={rUf} onChange={(e) => setRUf(e.target.value)} placeholder="SP" maxLength={2} className="h-9" />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="r-cat" className="text-xs">Ramo (opcional)</Label>
-              <Input id="r-cat" value={rCategory} onChange={(e) => setRCategory(e.target.value)} placeholder="restaurant, supermarket, bakery..." className="h-9" />
-              <p className="text-[11px] text-muted-foreground mt-1">Em branco busca comércios variados com telefone.</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResearchOpen(false)} disabled={researching}>Cancelar</Button>
-            <Button onClick={doResearch} disabled={researching} className="gap-1.5">
-              {researching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              Pesquisar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal de pesquisa de empresas (rico, estilo anúncios) */}
+      <BusinessResearchDialog
+        open={researchOpen}
+        onOpenChange={setResearchOpen}
+        onImported={doResearchImported}
+      />
     </div>
   );
 }
