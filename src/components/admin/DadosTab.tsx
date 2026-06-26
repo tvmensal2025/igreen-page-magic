@@ -16,6 +16,7 @@ import { useGreenSettings, useSaveGreenProfile } from "@/features/produtos/acomp
 interface DadosTabProps {
   form: {
     name: string;
+    display_name: string;
     license: string;
     phone: string;
     notification_phone: string;
