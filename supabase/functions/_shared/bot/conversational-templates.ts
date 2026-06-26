@@ -2,7 +2,7 @@
 // FONTE ÚNICA (Etapa 3a unificação): superset Whapi + Evolution.
 
 const FALLBACK: Record<string, string> = {
-  "welcome:saudacao": "Oi! Aqui é o Rafael, da {{representante}} 👋",
+  "welcome:saudacao": "Oi! Aqui é o {{representante}} 👋",
   "menu_inicial:reforco": "{{nome}}, ainda quer entender como funciona o desconto?",
   "qualificacao:pergunta_conta": "Qual o valor médio da sua conta de luz hoje?",
   "pos_video:checkin": "E aí, {{nome}}, ficou alguma dúvida?",
