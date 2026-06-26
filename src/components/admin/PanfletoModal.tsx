@@ -36,7 +36,7 @@ interface PanfletoModalProps {
   title?: string;
 }
 
-const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
+
 
 // ============ Dimensões nativas (na proporção física EXATA do papel) ============
 // A4 = 210×297mm (0,707) · Banner = 504×904mm (360imprimir). Manter a proporção do
@@ -202,10 +202,12 @@ export function PanfletoModal({
 
   const redirectUrl = useMemo(() => {
     if (shareUrl) return shareUrl;
-    const base = `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
+    // Link curto, no domínio próprio. Resolvido em runtime por PartnerRedirectPage
+    // (rota /r/:licenca), que chama qr-redirect?json=1 e redireciona pro wa.me.
+    const base = `https://igreen.cloud/r/${encodeURIComponent(licenca)}`;
     const trimmed = phrase.trim();
     if (!trimmed) return base;
-    return `${base}&msg=${encodeURIComponent(trimmed.slice(0, QR_MESSAGE_MAX))}`;
+    return `${base}?msg=${encodeURIComponent(trimmed.slice(0, QR_MESSAGE_MAX))}`;
   }, [shareUrl, licenca, phrase]);
 
   // Posições TRAVADAS nos defaults do template
