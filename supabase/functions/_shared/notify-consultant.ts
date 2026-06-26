@@ -231,8 +231,9 @@ export async function notifyNewLead(
     console.log(`[notify-new-lead] skip dedup-db lead=${lead.id}`);
     return false;
   }
-  // Nome configurado da IA pelo consultor (sem fallback "Camila").
-  let assistantName = "Sua IA";
+  // Nome configurado da IA pelo consultor. Sem configuração, usa "Aline"
+  // como padrão (persona oficial da iGreen) — nunca expor "Sua IA" genérico.
+  let assistantName = "Aline";
   try {
     const admin = adminClient();
     const { data: c } = await admin
@@ -248,9 +249,9 @@ export async function notifyNewLead(
     `━━━━━━━━━━━━━━━━━━\n` +
     `👤 *Nome:* ${lead.name?.trim() || "(sem nome ainda)"}\n` +
     `📱 *WhatsApp:* ${formatPhoneBR(lead.phone_whatsapp)}\n` +
-    `🕐 *Entrou em:* ${nowBRT()}\n\n` +
-    `🤖 ${assistantName} já iniciou o atendimento.\n` +
-    `Acompanhe no painel do CRM.`;
+    `🕐 *Entrou em:* ${nowBRT()}\n` +
+    `🤖 *Atendido por:* ${assistantName} (IA)\n\n` +
+    `${assistantName} já iniciou o atendimento. Acompanhe no painel do CRM.`;
   return sendRawToAlertNumber(consultantId, text);
 }
 
