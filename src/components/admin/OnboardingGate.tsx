@@ -80,7 +80,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
             </div>
             <h2 className="text-xl font-heading font-bold text-foreground">Bem-vindo ao iGreen!</h2>
             <p className="text-sm text-muted-foreground">
-              Preencha os campos abaixo para liberar o painel. Levam menos de 1 minuto.
+              Só precisamos do seu nome e ID iGreen para liberar o painel. Você completa o resto depois na aba <strong>Dados</strong>.
             </p>
           </div>
 
@@ -99,7 +99,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
               />
             </Field>
 
-            <Field label="ID iGreen" error={showErr("igreen_id")}>
+            <Field label="ID iGreen" error={showErr("igreen_id")} hint="Número do seu cadastro na iGreen (4 a 10 dígitos).">
               <Input
                 value={form.igreen_id}
                 onBlur={() => setTouched((t) => ({ ...t, igreen_id: true }))}
@@ -116,96 +116,15 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                 className="bg-secondary border-border"
               />
             </Field>
-
-            <Field
-              label="WhatsApp principal (recebe os clientes interessados dos anúncios)"
-              error={showErr("phone")}
-              hint="Use o mesmo número que está conectado no Evolution. Formato: DDD + 9 + 8 dígitos."
-            >
-              <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground text-sm">+55</span>
-                <Input
-                  value={form.phone.replace(/^55/, "")}
-                  onBlur={() => {
-                    setTouched((t) => ({ ...t, phone: true }));
-                    // Normaliza ao sair do campo (adiciona 9 se faltar, etc.)
-                    const norm = normalizeBrazilPhone(form.phone);
-                    if (norm && norm !== form.phone) onFormChange({ phone: norm });
-                  }}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
-                    onFormChange({ phone: raw ? `55${raw}` : "" });
-                  }}
-                  placeholder="11989000650"
-                  inputMode="numeric"
-                  className="bg-secondary border-border rounded-l-none"
-                />
-              </div>
-            </Field>
-
-            <Field
-              label="WhatsApp para alertas (novos clientes interessados + atendimento)"
-              error={showErr("notification_phone")}
-            >
-              <div className="flex">
-                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground text-sm">+55</span>
-                <Input
-                  value={form.notification_phone.replace(/^55/, "")}
-                  onBlur={() => {
-                    setTouched((t) => ({ ...t, notification_phone: true }));
-                    const norm = normalizeBrazilPhone(form.notification_phone);
-                    if (norm && norm !== form.notification_phone) onFormChange({ notification_phone: norm });
-                  }}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
-                    onFormChange({ notification_phone: raw ? `55${raw}` : "" });
-                  }}
-                  placeholder="11989000650"
-                  inputMode="numeric"
-                  className="bg-secondary border-border rounded-l-none"
-                />
-              </div>
-            </Field>
-
-            <Field label="Nome da sua assistente virtual (a IA que vai atender os clientes)" error={showErr("assistant_name")}>
-              <Input
-                value={form.assistant_name}
-                onBlur={() => setTouched((t) => ({ ...t, assistant_name: true }))}
-                onChange={(e) => onFormChange({ assistant_name: e.target.value })}
-                placeholder="ex: Camila"
-                className="bg-secondary border-border"
-              />
-              <p className="text-xs text-muted-foreground">
-                A IA vai se apresentar assim: "Oi! Aqui é a {form.assistant_name?.trim() || "Camila"}, assistente virtual {form.gender === "consultora" ? "da" : "do"} {form.name?.trim() || "(você)"}".
-              </p>
-            </Field>
-
-            <Field label="Você é consultor ou consultora?" error={showErr("gender")}>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => { onFormChange({ gender: "consultor" }); setTouched((t) => ({ ...t, gender: true })); }}
-                  className={`h-11 rounded-xl border text-sm font-medium transition ${form.gender === "consultor" ? "border-primary bg-primary/15 text-foreground" : "border-border bg-secondary text-muted-foreground"}`}
-                >
-                  Consultor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { onFormChange({ gender: "consultora" }); setTouched((t) => ({ ...t, gender: true })); }}
-                  className={`h-11 rounded-xl border text-sm font-medium transition ${form.gender === "consultora" ? "border-primary bg-primary/15 text-foreground" : "border-border bg-secondary text-muted-foreground"}`}
-                >
-                  Consultora
-                </button>
-              </div>
-            </Field>
           </div>
 
-          {submitAttempted && Object.keys(errors).length > 0 && (
+          {submitAttempted && Object.keys(blocking).length > 0 && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>Corrija os campos destacados acima para liberar o painel.</span>
+              <span>Preencha nome e ID iGreen para liberar o painel.</span>
             </div>
           )}
+
 
           <Button
             type="submit"
