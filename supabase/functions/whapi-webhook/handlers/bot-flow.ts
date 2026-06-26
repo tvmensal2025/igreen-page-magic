@@ -261,17 +261,35 @@ async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string
   return step;
 }
 
-// ── Quick HEAD check to confirm a media URL is reachable before sending ──
+// ── Reachability check tolerant a backends que rejeitam HEAD ──
+// 2026-06-26: Supabase Storage e alguns CDNs retornam 400 em HEAD mesmo
+// quando o objeto existe. Tenta HEAD; em qualquer falha tenta GET com
+// `Range: bytes=0-0`. 2 tentativas com backoff curto antes de desistir.
 async function urlExists(url: string): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
-    const r = await fetch(url, { method: "HEAD", signal: ctrl.signal });
-    clearTimeout(timer);
-    return r.ok;
-  } catch {
-    return false;
-  }
+  const attempt = async (method: "HEAD" | "GET"): Promise<boolean> => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const headers: Record<string, string> = {
+        "User-Agent": "igreen-bot-mediacheck/1.0",
+      };
+      if (method === "GET") headers["Range"] = "bytes=0-0";
+      const r = await fetch(url, { method, signal: ctrl.signal, headers });
+      clearTimeout(timer);
+      if (r.ok || r.status === 206 || r.status === 304) {
+        try { await r.body?.cancel(); } catch (_) { /* noop */ }
+        return true;
+      }
+      try { await r.body?.cancel(); } catch (_) { /* noop */ }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+  if (await attempt("HEAD")) return true;
+  if (await attempt("GET")) return true;
+  await new Promise((r) => setTimeout(r, 500));
+  return await attempt("GET");
 }
 
 const NON_NAME_RESPONSES = /^(oi|ola|olá|hey|opa|bom dia|boa tarde|boa noite|sim|nao|não|ok|tudo bem|pode|quero|cadastrar|humano|atendente|menu|reset|recomecar|recomeçar|nao sou eu|não sou eu|como funciona|me explica|o que é|que é isso|quanto custa|é caro|preço|valor|tem taxa|minha distribuidora|qual distribuidora|atende aqui|cidade|golpe|fraude|engana[cç][aã]o|enrola[cç][aã]o|spam|propaganda|virus|v[ií]rus|risco|seguro|confiavel|confiável|verdade|mentira|fake|falso|suspeito|pegadinha|robo|robô|bot|teste|testando|negativo|talvez|depende|nada|tanto faz|nao quero|não quero|cancelar|sair|parar|chega|esquece|esqueça|porque|pq|aff|hmm|hum|nossa|caramba|sei la|sei lá|nao sei|não sei)$/i;
