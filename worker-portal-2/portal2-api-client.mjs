@@ -392,10 +392,15 @@ export class Portal2Client {
    * Upload com multipart — usa fetch dentro da page com FormData/Blob construídos lá.
    * fileBuffer: Buffer ou Uint8Array (vamos converter pra base64 e remontar no browser).
    */
-  async _fetchMultipart(method, path, { fields = {}, file, fileField = 'file' } = {}) {
+  async _fetchMultipart(method, path, { fields = {}, file, fileField = 'file', query } = {}) {
     const t0 = Date.now();
     const page = await _ensurePage(this.idconsultor);
     const url = new URL(this.baseUrl + path);
+    // Query string (ex.: /file-upload/registration usa ?fileType=&idsolcontratovalidacao=).
+    // ⚠️ O HMAC assina SOMENTE o pathname (sem query) — mesma regra do _fetch.
+    if (query) for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== null) url.searchParams.append(k, String(v));
+    }
     const pathname = url.pathname;
     const headers = signRequest(method, pathname);
     // não setamos Content-Type — boundary é gerado pelo browser
@@ -750,6 +755,55 @@ export class Portal2Client {
     });
   }
 
+  // ──── Upload de arquivos (anexar ao dossiê) ─────────────────────────────────
+  /**
+   * Anexa FISICAMENTE um arquivo ao dossiê do cadastro (não é OCR — é o upload
+   * que o portal real faz via `qn()`/registration). Sem esta etapa, o cadastro
+   * nasce com `documentos_enviados='F'` e `caminhoarquivo*=null`, e vai pra
+   * conferência humana da iGreen (demora dias). Com ela, o backend migra o
+   * arquivo do bucket temporário pro definitivo (`documentosigreen.s3`) quando
+   * o `POST /customers` é feito com o MESMO `idsolcontratovalidacao`.
+   *
+   * Descoberto via reverse-engineering do bundle oficial + validado em chamadas
+   * reais (idcliente 1589744): documento → `caminhoarquivodoc1`, conta →
+   * `caminhoarquivo`, ambos no bucket definitivo.
+   *
+   * @param {object} p
+   * @param {Buffer|Uint8Array} p.fileBuffer
+   * @param {string} p.filename
+   * @param {string} p.mime
+   * @param {string} p.fileType  — 'personal-doc-front' | 'personal-doc-back' | 'energy-bill'
+   *   (tipos válidos do backend: personal-doc-front, personal-doc-back, energy-bill,
+   *    energy-bill-2, payment-proof, cnpj-card, social-contract, statute, procuration,
+   *    procurator-personal-doc, witness-doc-front, witness-doc-back)
+   * @param {number} p.idsolcontratovalidacao
+   * @returns {Promise<{fileId, originalName, status}>}
+   */
+  uploadFile({ fileBuffer, filename, mime = 'image/jpeg', fileType, idsolcontratovalidacao }) {
+    if (!fileType) throw new Error('uploadFile: fileType obrigatório');
+    if (!idsolcontratovalidacao) throw new Error('uploadFile: idsolcontratovalidacao obrigatório');
+    return this._fetchMultipart('POST', '/file-upload/registration', {
+      // fileType e idsolcontratovalidacao vão na QUERY STRING (não no body) —
+      // é como o portal real envia (axios `params`).
+      query: { fileType, idsolcontratovalidacao: String(idsolcontratovalidacao) },
+      file: { buffer: fileBuffer, filename, mime },
+      fileField: 'file',
+    });
+  }
+
+  /**
+   * Confirma o que está anexado a um idsol. Retorna
+   * `{ energy:{exists,hasUrl,url}, personalDoc:{exists,hasFront,hasBack,...}, receipts:[] }`.
+   */
+  verifyUpload(idsolcontratovalidacao) {
+    return this._fetch('GET', `/file-upload/verify/${idsolcontratovalidacao}`);
+  }
+
+  /** Reconcilia uploads pendentes (retry do backend) quando o verify não confirma. */
+  reconcileUpload(idsolcontratovalidacao) {
+    return this._fetch('POST', `/file-upload/reconcile/${idsolcontratovalidacao}`);
+  }
+
   // ──── Cliente ──────────────────────────────────────────────────────────────
   createCustomer(payload) { return this._fetch('POST', '/customers', { body: payload }); }
   getCustomer(id) { return this._fetch('GET', `/customers/${id}`); }
@@ -870,6 +924,67 @@ export class Portal2Client {
       isCnh: dados.isCnh,
       billAlreadyExtracted: !!dados.billAlreadyExtracted,
     });
+
+    // ─── ANEXAR ARQUIVOS AO DOSSIÊ (file-upload/registration) ─────────────────
+    // CRÍTICO p/ validação na hora: o `extract*` acima é SÓ OCR (lê os dados),
+    // NÃO salva o arquivo. Sem este upload, o cadastro nasce com
+    // `documentos_enviados='F'` e `caminhoarquivo*=null` → vai pra conferência
+    // humana da iGreen (demora dias). Com o upload no MESMO idsol, o backend
+    // migra os arquivos pro bucket definitivo quando o POST /customers roda
+    // com esse idsol (documento → caminhoarquivodoc1, conta → caminhoarquivo).
+    // Validado em chamadas reais. Tipos: personal-doc-front / -back / energy-bill.
+    //
+    // Best-effort com retry: falha de upload NÃO aborta o cadastro (o cliente
+    // ainda é criado; pior caso volta ao comportamento antigo de validação manual).
+    if (idsolcontratovalidacao) {
+      const uploads = [];
+      if (dados.docFile) uploads.push({ file: dados.docFile, fileType: 'personal-doc-front', label: 'doc-frente' });
+      if (dados.docBackFile) uploads.push({ file: dados.docBackFile, fileType: 'personal-doc-back', label: 'doc-verso' });
+      if (dados.billFile) uploads.push({ file: dados.billFile, fileType: 'energy-bill', label: 'conta' });
+
+      for (const u of uploads) {
+        let ok = false;
+        for (let tentativa = 1; tentativa <= 3 && !ok; tentativa++) {
+          try {
+            const r = await withTimeout(this.uploadFile({
+              fileBuffer: u.file.buffer,
+              filename: u.file.filename || `${u.label}.jpg`,
+              mime: u.file.mime || 'image/jpeg',
+              fileType: u.fileType,
+              idsolcontratovalidacao,
+            }), EXTRACTOR_TIMEOUT_MS, `upload(${u.fileType})`);
+            ok = r?.status === 'UPLOADED' || !!r?.fileId;
+            if (ok) console.log(`  📎 anexado ${u.fileType} (${u.label}) fileId=${r?.fileId || '?'}`);
+          } catch (e) {
+            console.warn(`  ⚠ upload ${u.fileType} tentativa ${tentativa} falhou: ${e.message}`);
+            if (tentativa < 3) await new Promise(res => setTimeout(res, 1500));
+          }
+        }
+        if (!ok) console.warn(`  ⛔ não anexou ${u.fileType} após 3 tentativas (cadastro segue, mas pode cair em validação manual)`);
+      }
+
+      // Confirma que os anexos chegaram; tenta reconcile uma vez se faltar algo.
+      try {
+        let v = await this.verifyUpload(idsolcontratovalidacao).catch(() => null);
+        const faltaDoc = dados.docFile && !(v?.personalDoc?.hasFront);
+        const faltaConta = dados.billFile && !(v?.energy?.hasUrl);
+        if (faltaDoc || faltaConta) {
+          console.warn(`  ⚠ verify incompleto (doc=${v?.personalDoc?.hasFront} energy=${v?.energy?.hasUrl}) — reconcile`);
+          await this.reconcileUpload(idsolcontratovalidacao).catch(() => {});
+          await new Promise(res => setTimeout(res, 1500));
+          v = await this.verifyUpload(idsolcontratovalidacao).catch(() => null);
+        }
+        console.log(`  ✅ verify anexos: doc.front=${v?.personalDoc?.hasFront} doc.back=${v?.personalDoc?.hasBack} energy=${v?.energy?.hasUrl}`);
+        // Anexa o resultado do verify ao extraction pra observabilidade/persistência.
+        extraction.upload = {
+          docFront: !!v?.personalDoc?.hasFront,
+          docBack: !!v?.personalDoc?.hasBack,
+          energy: !!v?.energy?.hasUrl,
+        };
+      } catch (e) {
+        console.warn(`  ⚠ verify de anexos falhou: ${e.message}`);
+      }
+    }
 
     const exists = await this.checkCustomerExists({
       email: dados.email,
