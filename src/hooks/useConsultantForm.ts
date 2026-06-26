@@ -110,6 +110,7 @@ export function useConsultantForm(
         }
         const insertPayload: Database["public"]["Tables"]["consultants"]["Insert"] = {
           id: userId, name: form.name, license: licenseToSave, phone: form.phone.replace(/\D/g, ""),
+          display_name: form.display_name?.trim() || null,
           notification_phone: form.notification_phone ? form.notification_phone.replace(/\D/g, "") : null,
           cadastro_url: form.cadastro_url, igreen_id: form.igreen_id || null,
           licenciada_cadastro_url: form.licenciada_cadastro_url || null,
