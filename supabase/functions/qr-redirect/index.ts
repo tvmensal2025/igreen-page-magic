@@ -249,10 +249,9 @@ Deno.serve(async (req) => {
       message = resolveQrMessage(partner.qr_phrase as string | null, keyword);
     }
 
-    const digits = phone.replace(/\D/g, "");
-    const normalizedPhone = digits.startsWith("55") ? digits : `55${digits}`;
     if (wantsJson) return jsonResponse({ phone: normalizedPhone, message });
-    return redirectTo(buildWhatsappUrl(phone, message));
+    return redirectTo(buildWhatsappUrl(normalizedPhone, message));
+
 
   } catch (e) {
     console.error("[qr-redirect] error:", e);
