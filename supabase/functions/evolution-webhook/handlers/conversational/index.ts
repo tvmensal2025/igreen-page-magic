@@ -257,7 +257,7 @@ async function sleepForMedia(kind: string, _durationSec?: number | null, delayBe
 // texto para que o lead veja as opções e o handler de transições consiga
 // casar pelas próprias trigger_phrases ("1", "2", "humano", etc.).
 const _NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
-export function appendButtonsToText(step: any, text: string): string {
+export function appendButtonsToText(step: any, text: string, vars?: any): string {
   try {
     if (!step) return text || "";
     const caps = Array.isArray(step.captures) ? step.captures : [];
@@ -265,11 +265,16 @@ export function appendButtonsToText(step: any, text: string): string {
     const btns: Array<{ id: string; title: string }> = [];
     if (btnCap?.value && Array.isArray(btnCap.value)) {
       for (const b of btnCap.value) {
-        if (b?.title) btns.push({ id: String(b.id || ""), title: String(b.title) });
+        if (b?.title) {
+          // 🔧 Renderiza {{representante}}/{{nome}} no título do botão também.
+          // Sem isso, "Falar com {{representante}}" vazava literal pro lead.
+          const rawTitle = String(b.title);
+          const renderedTitle = vars ? renderTemplate(rawTitle, vars) : rawTitle;
+          btns.push({ id: String(b.id || ""), title: renderedTitle });
+        }
       }
     }
     if (btns.length === 0) return text || "";
-    // Não duplica se o texto já lista as opções (heurística simples).
     const lower = String(text || "").toLowerCase();
     const alreadyHas = btns.every((b) => lower.includes(b.title.toLowerCase().slice(0, 6)));
     if (alreadyHas) return text || "";
