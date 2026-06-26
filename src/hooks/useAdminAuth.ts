@@ -91,7 +91,7 @@ export function useAdminAuth() {
       if (consultant.photo_url) setPhotoPreview(consultant.photo_url as string);
     };
     try {
-      const { data, error } = await supabase.from("consultants").select("id, igreen_id, approved, name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, assistant_name, gender, portal_kind, photo_url").eq("id", uid).maybeSingle();
+      const { data, error } = await supabase.from("consultants").select("id, igreen_id, approved, name, display_name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, assistant_name, gender, portal_kind, photo_url").eq("id", uid).maybeSingle();
       if (isStale()) return; if (error) throw error;
       if (data) { applyConsultantData(data); return; }
       const { data: userData, error: userError } = await supabase.auth.getUser();
