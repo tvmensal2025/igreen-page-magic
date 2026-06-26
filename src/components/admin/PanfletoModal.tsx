@@ -1,17 +1,25 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   drawFlyerFooter,
   clampFooterBand,
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
-import { Download, Copy, FileText, Loader2 } from "lucide-react";
+import { Download, Copy, FileText, Loader2, RotateCcw } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useToast } from "@/hooks/use-toast";
+
+/** Frase padrão usada pelo `qr-redirect` quando `?msg=` não vem. Mantida em
+ *  sincronia para o placeholder do campo refletir exatamente o que o lead
+ *  veria sem personalizar nada. */
+const DEFAULT_QR_MESSAGE =
+  "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
+const QR_MESSAGE_MAX = 200;
 
 type Format = "a4" | "banner";
 
@@ -168,8 +176,37 @@ export function PanfletoModal({
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  const redirectUrl =
-    shareUrl ?? `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
+  // Frase personalizada do WhatsApp (entra como `?msg=` no qr-redirect, que já
+  // aceita esse parâmetro). Persiste por consultor no localStorage para o
+  // usuário não perder ao reabrir o modal. Vazio = usa o DEFAULT do edge.
+  const storageKey = `panfleto_msg_${licenca}`;
+  const [phrase, setPhrase] = useState<string>("");
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      setPhrase(saved ?? "");
+    } catch {
+      setPhrase("");
+    }
+  }, [open, storageKey]);
+
+  useEffect(() => {
+    try {
+      if (phrase.trim()) localStorage.setItem(storageKey, phrase);
+      else localStorage.removeItem(storageKey);
+    } catch {
+      /* localStorage indisponível em modo privado */
+    }
+  }, [phrase, storageKey]);
+
+  const redirectUrl = useMemo(() => {
+    if (shareUrl) return shareUrl;
+    const base = `${SUPABASE_URL}/functions/v1/qr-redirect?l=${encodeURIComponent(licenca)}`;
+    const trimmed = phrase.trim();
+    if (!trimmed) return base;
+    return `${base}&msg=${encodeURIComponent(trimmed.slice(0, QR_MESSAGE_MAX))}`;
+  }, [shareUrl, licenca, phrase]);
 
   // Posições TRAVADAS nos defaults do template
   const effQrX = template.qrX;
@@ -392,10 +429,43 @@ export function PanfletoModal({
               </div>
             </div>
 
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="qr-phrase" className="text-sm">
+                  Frase que abre junto com o WhatsApp
+                </Label>
+                {phrase.trim() && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 px-2 text-xs"
+                    onClick={() => setPhrase("")}
+                  >
+                    <RotateCcw className="w-3 h-3" /> Padrão
+                  </Button>
+                )}
+              </div>
+              <Textarea
+                id="qr-phrase"
+                value={phrase}
+                onChange={(e) => setPhrase(e.target.value.slice(0, QR_MESSAGE_MAX))}
+                placeholder={DEFAULT_QR_MESSAGE}
+                rows={3}
+                maxLength={QR_MESSAGE_MAX}
+                className="text-sm"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Ao escanear o QR, o WhatsApp abre com esta mensagem já preenchida.
+                Deixe vazio para usar a frase padrão. {phrase.length}/{QR_MESSAGE_MAX}
+              </p>
+            </div>
+
             <div className="text-xs text-muted-foreground space-y-1 mt-1">
               <p className="opacity-80">Link do QR:</p>
               <p className="break-all opacity-70">{redirectUrl}</p>
             </div>
+
           </div>
         </div>
 
