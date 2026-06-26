@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sparkles, Save, AlertCircle } from "lucide-react";
 import type { ConsultantForm } from "@/hooks/useAdminAuth";
-import { validateBrazilPhone, normalizeBrazilPhone } from "@/lib/phone";
+import { validateBrazilPhone } from "@/lib/phone";
 
 interface OnboardingGateProps {
   form: ConsultantForm;
