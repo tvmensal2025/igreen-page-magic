@@ -36,7 +36,7 @@ interface PanfletoModalProps {
   title?: string;
 }
 
-const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
+
 
 // ============ Dimensões nativas (na proporção física EXATA do papel) ============
 // A4 = 210×297mm (0,707) · Banner = 504×904mm (360imprimir). Manter a proporção do
