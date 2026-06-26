@@ -461,9 +461,11 @@ export function PanfletoModal({
               </p>
             </div>
 
+            <div className="text-xs text-muted-foreground space-y-1 mt-1">
               <p className="opacity-80">Link do QR:</p>
               <p className="break-all opacity-70">{redirectUrl}</p>
             </div>
+
           </div>
         </div>
 
