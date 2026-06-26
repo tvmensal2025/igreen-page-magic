@@ -429,7 +429,38 @@ export function PanfletoModal({
               </div>
             </div>
 
-            <div className="text-xs text-muted-foreground space-y-1 mt-1">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="qr-phrase" className="text-sm">
+                  Frase que abre junto com o WhatsApp
+                </Label>
+                {phrase.trim() && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 px-2 text-xs"
+                    onClick={() => setPhrase("")}
+                  >
+                    <RotateCcw className="w-3 h-3" /> Padrão
+                  </Button>
+                )}
+              </div>
+              <Textarea
+                id="qr-phrase"
+                value={phrase}
+                onChange={(e) => setPhrase(e.target.value.slice(0, QR_MESSAGE_MAX))}
+                placeholder={DEFAULT_QR_MESSAGE}
+                rows={3}
+                maxLength={QR_MESSAGE_MAX}
+                className="text-sm"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Ao escanear o QR, o WhatsApp abre com esta mensagem já preenchida.
+                Deixe vazio para usar a frase padrão. {phrase.length}/{QR_MESSAGE_MAX}
+              </p>
+            </div>
+
               <p className="opacity-80">Link do QR:</p>
               <p className="break-all opacity-70">{redirectUrl}</p>
             </div>
