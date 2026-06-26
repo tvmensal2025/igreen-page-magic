@@ -29,7 +29,7 @@ describe("buildDefaultQrPhrase — frase padrão curta", () => {
   it("sem keyword devolve a base genérica (não vazia)", () => {
     const frase = buildDefaultQrPhrase("");
     expect(frase.length).toBeGreaterThan(0);
-    expect(frase).toBe("Oi! Quero economizar na conta de luz.");
+    expect(frase).toBe("Oi! Quero saber mais sobre o desconto na energia.");
   });
 
   it("trata keyword nula/undefined sem quebrar", () => {
