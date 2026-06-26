@@ -55,3 +55,29 @@ portal_submitting
 - `supabase/functions/evolution-webhook/handlers/conversational/index.ts` — `appendButtonsToText(step, text, vars)` agora renderiza templates nos títulos
 - `supabase/functions/_shared/render-vars.ts` — fallback "consultor" quando `representante` é slug
 - `supabase/functions/_shared/notify-consultant.ts` — alerta NOVO LEAD inclui persona da IA e default "Aline"
+
+## 5. Rodada 2 (2026-06-26 — pendências da auditoria fechadas)
+
+### 5.1 Step `d_como_funciona` (c87d76f8) corrigido
+- `message_text` substituído por explicação real do modelo iGreen (desconto direto na conta, mesma distribuidora, 8-20%, sem fidelidade, sem custo de entrada).
+- Confirmado que `fallback.mode = "goto" → d_duvidas` (38c0d101) já roteia texto livre pro passo de IA — não precisou de `ai_answer` no próprio step.
+- Limpeza: removida chave `ai_answer:true` indevida do `_buttons` capture.
+
+### 5.2 `display_name` separado do `name` em `consultants`
+- Migration adicionou coluna `display_name TEXT` (nullable) com backfill: copia `name` quando já tem espaço (nome humano real). Slugs ficam NULL para preenchimento manual.
+- `_shared/render-vars.ts`: novo campo `representante_display` na `RenderVars`; prioridade `display_name → representante → "consultor"`. Heurística slug-like só roda se `display_name` não vier.
+- `whapi-webhook/index.ts` e `evolution-webhook/index.ts`: agora selecionam `display_name` do consultor e usam como base de `nomeRepresentante` (com `display_name || name` como fallback).
+- UI (`src/components/admin/DadosTab.tsx`): novo campo "Como o lead vai te chamar nas mensagens" (col-span 2) com placeholder usando o nome completo e dica explicando o uso.
+- Hooks (`useAdminAuth`, `useConsultantForm`): leem e salvam `display_name`; default vazio no form.
+- Exemplo aplicado: consultor `f9594900-…` ficou com `display_name = "Abel Olympio"`.
+
+### 5.3 Hardcode "Rafael" residual no `d_duvidas` corrigido
+- `fallback.ai_prompt` de todos os steps `d_duvidas` (6 variantes) tinha `"Você é a Rafael, assistente da iGreen Energy…"` hardcoded — substituído por `{{representante}}` via regexp_replace.
+- ⚠️ Observação: o prompt diz "Você é a {{representante}}", mas `{{representante}}` é o consultor humano (ex.: "Abel Olympio") — a IA deveria se apresentar como a *persona* (`assistant_name`, ex.: "Aline"). Reescrita semântica do prompt fica como melhoria futura.
+
+### 5.4 Pendentes que continuam abertos
+- **Validação E2E real até portal2 → OTP → assinatura facial**: não foi executada nesta rodada (depende de teste manual com foto de conta de luz real e acompanhamento de logs do worker-portal-2 + portal_otp_watchdog). Quando rodar, documentar aqui em seção "5.5 Validação E2E".
+- **`customers.name` em conversas só-texto**: continua sendo capturado apenas via OCR ou autoidentificação.
+- **Evolution API sem botões interativos nativos**: limitação externa, sem fix possível.
+- **Prompt do `d_duvidas`**: trocar "Você é a {{representante}}" por algo como "Você é {{assistente}}, assistente virtual de {{representante}}" para a persona da IA aparecer correta.
+
