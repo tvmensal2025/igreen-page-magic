@@ -1,17 +1,25 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   drawFlyerFooter,
   clampFooterBand,
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
-import { Download, Copy, FileText, Loader2 } from "lucide-react";
+import { Download, Copy, FileText, Loader2, RotateCcw } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useToast } from "@/hooks/use-toast";
+
+/** Frase padrão usada pelo `qr-redirect` quando `?msg=` não vem. Mantida em
+ *  sincronia para o placeholder do campo refletir exatamente o que o lead
+ *  veria sem personalizar nada. */
+const DEFAULT_QR_MESSAGE =
+  "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
+const QR_MESSAGE_MAX = 200;
 
 type Format = "a4" | "banner";
 
