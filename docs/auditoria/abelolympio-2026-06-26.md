@@ -73,11 +73,20 @@ portal_submitting
 
 ### 5.3 Hardcode "Rafael" residual no `d_duvidas` corrigido
 - `fallback.ai_prompt` de todos os steps `d_duvidas` (6 variantes) tinha `"Você é a Rafael, assistente da iGreen Energy…"` hardcoded — substituído por `{{representante}}` via regexp_replace.
-- ⚠️ Observação: o prompt diz "Você é a {{representante}}", mas `{{representante}}` é o consultor humano (ex.: "Abel Olympio") — a IA deveria se apresentar como a *persona* (`assistant_name`, ex.: "Aline"). Reescrita semântica do prompt fica como melhoria futura.
 
-### 5.4 Pendentes que continuam abertos
-- **Validação E2E real até portal2 → OTP → assinatura facial**: não foi executada nesta rodada (depende de teste manual com foto de conta de luz real e acompanhamento de logs do worker-portal-2 + portal_otp_watchdog). Quando rodar, documentar aqui em seção "5.5 Validação E2E".
+### 5.4 Rodada 3 — render do `ai_prompt` e reescrita semântica
+Investigação posterior mostrou dois problemas que precisavam de fix de código + dado:
+
+1. **`fb.ai_prompt` ia LITERAL pro LLM** — em `evolution-webhook/handlers/conversational/index.ts` e `whapi-webhook/handlers/conversational/index.ts`, o `systemPrompt` era `String(fb.ai_prompt)` sem passar por `renderTemplate`. Resultado: o LLM recebia "Você é a {{representante}}..." literal e tentava preencher sozinho (às vezes se apresentando como "{{representante}}" mesmo). ✅ Corrigido: agora ambos os webhooks chamam `renderTemplate(fb.ai_prompt, { nome, representante })` antes de mandar.
+2. **Prompt estava semanticamente errado** — dizia "Você é a {{representante}}", mas `{{representante}}` é o consultor humano. ✅ Reescrito nas 6 variantes do `d_duvidas`:
+   - Novo prompt: "Você é a assistente virtual da iGreen Energy, atendendo em nome de {{representante}}."
+   - Regra explícita: "Nunca diga que você é o {{representante}} — você é a assistente dele(a)."
+   - Limite 320 chars (era 280), no máximo 1 emoji e 1 negrito por resposta.
+
+### 5.5 Pendentes que continuam abertos
+- **Validação E2E real até portal2 → OTP → assinatura facial**: não foi executada nesta rodada (depende de teste manual com foto de conta de luz real e acompanhamento de logs do worker-portal-2 + portal_otp_watchdog). Quando rodar, documentar aqui em seção "5.6 Validação E2E".
 - **`customers.name` em conversas só-texto**: continua sendo capturado apenas via OCR ou autoidentificação.
 - **Evolution API sem botões interativos nativos**: limitação externa, sem fix possível.
-- **Prompt do `d_duvidas`**: trocar "Você é a {{representante}}" por algo como "Você é {{assistente}}, assistente virtual de {{representante}}" para a persona da IA aparecer correta.
+- **3 consultores ainda com `display_name = NULL`** (`henzofelipef`, `olimpiajanete15`, `silviaclaudiaalmeida`). Cada um precisa abrir a aba Dados e preencher — auditoria deliberadamente NÃO chutou nomes humanos. Até lá, leads desses consultores recebem o termo genérico "consultor".
+
 
