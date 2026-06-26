@@ -1,0 +1,1 @@
+GRANT SELECT ON public.consultants_public TO anon, authenticated;
