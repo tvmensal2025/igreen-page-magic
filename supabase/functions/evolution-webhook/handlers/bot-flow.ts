@@ -264,17 +264,39 @@ async function autoResolveCepIfNeeded(merged: any, updates: any): Promise<string
   return step;
 }
 
-// ── Quick HEAD check to confirm a media URL is reachable before sending ──
+// ── Reachability check tolerant a backends que rejeitam HEAD ──
+// 2026-06-26: Supabase Storage e alguns CDNs retornam 400 em HEAD mesmo
+// quando o objeto existe. Tenta HEAD; em qualquer falha tenta GET com
+// `Range: bytes=0-0`. 2 tentativas com backoff curto antes de desistir.
 async function urlExists(url: string): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
-    const r = await fetch(url, { method: "HEAD", signal: ctrl.signal });
-    clearTimeout(timer);
-    return r.ok;
-  } catch {
-    return false;
-  }
+  const attempt = async (method: "HEAD" | "GET"): Promise<boolean> => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const headers: Record<string, string> = {
+        "User-Agent": "igreen-bot-mediacheck/1.0",
+      };
+      if (method === "GET") headers["Range"] = "bytes=0-0";
+      const r = await fetch(url, { method, signal: ctrl.signal, headers });
+      clearTimeout(timer);
+      // 2xx = OK, 206 (partial) = OK, 304 = OK
+      if (r.ok || r.status === 206 || r.status === 304) {
+        try { await r.body?.cancel(); } catch (_) { /* noop */ }
+        return true;
+      }
+      try { await r.body?.cancel(); } catch (_) { /* noop */ }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+  // tentativa 1: HEAD
+  if (await attempt("HEAD")) return true;
+  // tentativa 2: GET range
+  if (await attempt("GET")) return true;
+  // backoff curto e mais 1 GET range
+  await new Promise((r) => setTimeout(r, 500));
+  return await attempt("GET");
 }
 
 const NON_NAME_RESPONSES = /^(oi|ola|olá|hey|opa|bom dia|boa tarde|boa noite|sim|nao|não|ok|tudo bem|pode|quero|cadastrar|humano|atendente|menu|reset|recomecar|recomeçar|nao sou eu|não sou eu|como funciona|me explica|o que é|que é isso|quanto custa|é caro|preço|valor|tem taxa|minha distribuidora|qual distribuidora|atende aqui|cidade|golpe|fraude|engana[cç][aã]o|enrola[cç][aã]o|spam|propaganda|virus|v[ií]rus|risco|seguro|confiavel|confiável|verdade|mentira|fake|falso|suspeito|pegadinha|robo|robô|bot|teste|testando|negativo|talvez|depende|nada|tanto faz|nao quero|não quero|cancelar|sair|parar|chega|esquece|esqueça|porque|pq|aff|hmm|hum|nossa|caramba|sei la|sei lá|nao sei|não sei)$/i;
@@ -1606,19 +1628,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const delayMs = Number(m.delay_before_ms || 0);
         if (delayMs > 0) await new Promise((r) => setTimeout(r, Math.min(delayMs, 10_000)));
 
-        // R3 (2026-06-05): HEAD-check para mídia pública evita enviar URL órfã
-        // do MinIO. Em falha 4xx/5xx, marca active=false e pula o item.
+        // R3 (2026-06-26): healthcheck NÃO desativa mais a mídia automaticamente.
+        // O check antigo derrubava mídia boa quando o backend respondia 400 em
+        // HEAD (Supabase Storage faz isso) e ia "raspando" o slot até sobrar
+        // nada (bug do `como_funciona` em 2026-06-26). Agora só loga e pula
+        // este envio; a decisão de desativar fica explícita para o operador.
         try {
           const isPublic = !m.consultant_id || m.is_public === true;
           if (isPublic) {
             const reachable = await urlExists(String(m.url));
             if (!reachable) {
-              console.warn(`[dispatch:${stepKey}] ⚠️ mídia pública órfã (id=${m.id}) — desativando e pulando`);
-              try { await supabase.from("ai_media_library").update({ active: false }).eq("id", m.id); } catch (_) { /* noop */ }
+              console.warn(`[dispatch:${stepKey}] ⚠️ healthcheck falhou media_id=${m.id} kind=${kind} url=${String(m.url).slice(0, 80)} — pulando este envio, mídia permanece ativa`);
               continue;
             }
           }
-        } catch (_) { /* HEAD é best-effort */ }
+        } catch (_) { /* healthcheck é best-effort */ }
 
 
         try {

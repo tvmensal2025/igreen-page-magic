@@ -90,3 +90,65 @@ Investigação posterior mostrou dois problemas que precisavam de fix de código
 - **3 consultores ainda com `display_name = NULL`** (`henzofelipef`, `olimpiajanete15`, `silviaclaudiaalmeida`). Cada um precisa abrir a aba Dados e preencher — auditoria deliberadamente NÃO chutou nomes humanos. Até lá, leads desses consultores recebem o termo genérico "consultor".
 
 
+## 5.6 Rodada 4 — mídia do `como_funciona` no fluxo público (Evolution + Whapi)
+
+### Sintoma reportado
+Lead em instância **Evolution** apertou "2" no `d_welcome` e recebeu **só o texto** do `d_como_funciona` — sem o áudio e sem o vídeo configurados no slot.
+
+### Causa raiz
+O `abelolympio` está em `sync_mode='public'` e herda mídia do dono do template público (`Rafael Ferreira / 0c2711ad`). O slot `como_funciona` desse dono tinha 8 mídias cadastradas (4 áudios + 4 vídeos), mas **6 estavam `active=false`** — auto-desativadas pelo healthcheck do dispatcher (`bot-flow.ts` linha 1611 da versão antiga).
+
+O healthcheck antigo fazia **HEAD** com timeout 3s e, em qualquer 4xx/5xx, marcava `ai_media_library.active=false` **permanentemente**. Problema: o Supabase Storage rejeita HEAD em alguns objetos públicos retornando 400 mesmo quando o GET funciona. Resultado: o slot foi "sangrando" mídia boa até sobrar 1 áudio + 1 vídeo. E mesmo esses 2 sobreviventes ocasionalmente falham no HEAD, e o dispatcher cai em "sem mídia" → manda só o texto. Esse é exatamente o sintoma do usuário.
+
+Bônus: o único áudio "vivo" (`fdde2dba`) estava com `is_public=false`, frágil caso `resolveMediaOwnerId` viesse a falhar.
+
+### Snapshot antes/depois (slot `como_funciona`, dono Rafael)
+
+| kind  | antes (vivas/total) | depois (vivas/total) | vivas públicas |
+|-------|---------------------|----------------------|----------------|
+| audio | 1 / 4               | 3 / 4                | 3              |
+| video | 1 / 4               | 2 / 4                | 2              |
+
+As 3 mídias que continuam `active=false` retornam 404 de verdade no curl (arquivos órfãos no Supabase Storage) — corretas em ficar desativadas.
+
+### Correções aplicadas
+
+1. **Dados (`ai_media_library`)**
+   - `bb478335`, `ad1ae922` (áudios MinIO) e `4d0a180e` (vídeo Supabase) → `active=true` (URLs confirmadas 200 OK no curl).
+   - `fdde2dba` (áudio vivo) → `is_public=true`.
+
+2. **Healthcheck robusto (`evolution-webhook` + `whapi-webhook`, `urlExists`)**
+   - HEAD com timeout 5s + User-Agent.
+   - Fallback automático para **GET com `Range: bytes=0-0`** quando HEAD falha (cobre o caso Supabase Storage).
+   - 2 tentativas com backoff de 500ms antes de desistir.
+   - Aceita 200, 206 (partial) e 304 como "vivo".
+   - Cancela `r.body` para não vazar conexão.
+
+3. **Auto-desativação removida (`evolution-webhook/handlers/bot-flow.ts` linha 1609)**
+   - O dispatcher **não marca mais `active=false`** automaticamente quando o healthcheck falha.
+   - Em vez disso, só **loga** `[dispatch:STEP] ⚠️ healthcheck falhou media_id=… kind=… url=…` e pula a mídia **neste envio** — na próxima vez tenta de novo.
+   - Decisão de desativar definitivamente fica explícita para o operador via `/admin/fluxos`.
+
+### Verificação
+- `SELECT kind, COUNT(*) FILTER (WHERE active) FROM ai_media_library WHERE slot_key='como_funciona' AND consultant_id='0c2711ad-…' GROUP BY kind` → 3 áudios + 2 vídeos vivos, todos `is_public=true`.
+- `bunx tsgo --noEmit` → 0 erros.
+- Por que só afetava Evolution, e não Whapi: ambos os webhooks rodam o mesmo dispatcher (`handlers/bot-flow.ts`), e o auto-deactivate só existia no Evolution. O Whapi do mesmo lead não tinha o sintoma porque nunca derrubava mídia — mas tinha o healthcheck igualmente frágil, agora também corrigido.
+
+### Recomendação contínua ao Super Admin
+Rodar mensalmente:
+```sql
+SELECT slot_key, COUNT(*) FILTER (WHERE active) AS vivas, COUNT(*) AS total,
+       ROUND(100.0*COUNT(*) FILTER (WHERE NOT active)/COUNT(*), 1) AS pct_inativa
+FROM ai_media_library
+WHERE consultant_id = (SELECT consultant_id FROM bot_flows WHERE is_public AND is_active LIMIT 1)
+GROUP BY slot_key
+HAVING COUNT(*) FILTER (WHERE NOT active) > 0
+ORDER BY pct_inativa DESC;
+```
+Qualquer slot com `pct_inativa > 30%` merece revisão manual no `/admin/fluxos`.
+
+### Arquivos alterados nesta rodada
+- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (urlExists + remoção do auto-deactivate)
+- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (urlExists espelhado)
+- `ai_media_library` (4 linhas UPDATE)
+
