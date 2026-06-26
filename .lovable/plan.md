@@ -1,66 +1,72 @@
 ## Problema
 
-Hoje o QR do panfleto codifica esta URL:
+Hoje a atribuição de um lead a um parceiro indicador depende **só** da `keyword` do parceiro aparecer no texto da primeira mensagem (`keyword-matcher.ts` → `matchKeyword`). Isso falha silenciosamente em vários cenários reais, e o lead acaba ficando para o consultor (você):
 
+1. O lead **apaga ou edita** a mensagem pré-preenchida do `wa.me` antes de enviar (muito comum).
+2. A keyword do parceiro é **genérica** ou colide com outra (ex.: "Maria", "energia") — match volta nulo ou para o parceiro errado.
+3. O parceiro foi salvo **sem keyword** (defesa atual cai no `nome`, que pode não aparecer no texto do lead).
+4. Você escaneou um QR antigo (sem `short_code`) — o `wa.me` direto não carrega marcador algum.
+
+`partner_igreen_id` salvo no parceiro **só serve para o cashback** (lido em `submit-otp`, `portal-otp-watchdog`, `portal-worker`). Ele **não cria** atribuição — quem cria é o `referral_partner_id` da tabela `customers`, preenchido pelo webhook a partir da keyword. Sem match de keyword, o cashback nunca chega no parceiro.
+
+## Solução
+
+Adicionar um **marcador determinístico** baseado no `short_code` do parceiro na mensagem pré-preenchida do QR, e fazer o webhook resolver a atribuição por esse marcador **antes** de cair no match por keyword. O `short_code` é numérico, único por consultor, neutro (não expõe nome) e já é gerado para todo parceiro novo.
+
+Formato do marcador: `#R{short_code}` (ex.: `#R482917`). Curto, raro o suficiente para não colidir com texto natural, e fácil de detectar com regex.
+
+### Fluxo novo
+
+```text
+QR scan → qr-redirect resolve partner → message = frase_padrão + " #R{short_code}"
+       ↓
+wa.me abre WhatsApp com mensagem pré-preenchida contendo "#R482917"
+       ↓
+Lead envia (mesmo editando parte do texto, é provável manter o marcador)
+       ↓
+Webhook: 1) procura /#R(\d+)/ → resolve partner por (consultant_id, short_code)
+         2) se não achou marcador, fallback para matchKeyword (legado)
+         3) se ainda não achou, lead fica sem partner (como hoje)
 ```
-https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/qr-redirect?l={licenca}&msg=...
+
+### Defesas adicionais no formulário do parceiro
+
+- Já exigimos ≥1 keyword. Manter.
+- Avisar no UI que a keyword deve ser **única e específica** (ex.: sobrenome + cidade), não palavra comum. Pequena dica abaixo do campo.
+- Bloquear keywords claramente genéricas no submit do form: lista curta (`energia`, `desconto`, `luz`, `solar`, `iGreen`, nome do consultor) — erro inline pedindo algo mais específico. Não toca dados existentes.
+
+### O que NÃO muda
+
+- Cashback (`submit-otp`, `portal-worker`) continua lendo `referral_partners.partner_igreen_id` via FK. Sem mexer.
+- `matchKeyword` continua existindo como fallback para links antigos sem `short_code`.
+- Schema do banco: nenhuma migration necessária. `short_code` já existe em `referral_partners`.
+
+## Arquivos afetados
+
+- `supabase/functions/_shared/qr-phrase.ts` — anexar `#R{short_code}` quando fornecido; respeitar `QR_PHRASE_MAX` (pode estourar levemente se necessário — marcador é prioridade sobre o limite estético).
+- `src/components/admin/parceiros/qrPhrase.ts` — espelhar a mesma lógica (front e edge precisam render a mesma mensagem no card e no `wa.me`).
+- `src/components/admin/parceiros/PartnerQrCode.tsx` — passar `shortCode` para `resolveQrMessage` no preview e no `buildWaMeUrl` (fallback sem link curto).
+- `supabase/functions/qr-redirect/index.ts` — passar `short_code` do parceiro para `resolveQrMessage`.
+- `supabase/functions/evolution-webhook/index.ts` e `supabase/functions/whapi-webhook/index.ts` — antes do `matchKeyword`, extrair `#R(\d+)` do `messageText` e, se houver, buscar `referral_partners` por `(consultant_id, short_code, is_active)`. Em match, atualizar `customers.referral_partner_id` (mesmo update existente).
+- `src/components/admin/parceiros/PartnerForm.tsx` — bloquear keywords genéricas com erro inline + microcopy sob o campo.
+- `src/components/admin/parceiros/__tests__/qrPhrase.test.ts` — caso novo: `resolveQrMessage` inclui `#R...` quando short_code é passado.
+
+## Detalhes técnicos
+
+**Assinatura nova** (compatível, parâmetro opcional):
+```ts
+resolveQrMessage(qrPhrase, keyword, shortCode?) // shortCode anexa "#R{code}" ao fim
 ```
 
-É feia (domínio Supabase exposto), longa e, se a edge function falhar, não abre o WhatsApp. O usuário quer:
+**Regex no webhook** (executado antes do `matchKeyword`):
+```ts
+const m = normalizeText(messageText).match(/#?r\s*0*(\d{3,})/i);
+if (m) { /* SELECT referral_partners WHERE consultant_id = ? AND short_code = ? AND is_active */ }
+```
+Tolerante a `#R 482917`, `R482917`, `#r482917`.
 
-1. Link curto no domínio próprio (`igreen.cloud`).
-2. Não pode quebrar — sempre abre o WhatsApp.
-3. Continuar funcionando o `?msg=` (frase personalizada do panfleto).
+**Comprimento do link**: o marcador adiciona ~10 chars codificados (`%20%23R482917`). A frase padrão atual tem ~50 chars; total continua confortavelmente abaixo do limite prático do `wa.me`.
 
-Boa notícia: já existe a rota `/r/:licenca/:code?` (`src/App.tsx:129`) servida pelo `PartnerRedirectPage`, que resolve telefone+frase via `qr-redirect?json=1` e faz `window.location.replace("https://wa.me/...")`. Basta apontar o QR pra ela e propagar `?msg=`.
+**Backfill**: nenhum. Parceiros antigos com QR já impresso continuam funcionando pelo caminho legado (keyword no texto). Reimpressões novas já saem com o marcador.
 
----
-
-## Mudanças
-
-### 1. `src/components/admin/PanfletoModal.tsx`
-
-- Remover `SUPABASE_URL` do `redirectUrl`.
-- Novo `redirectUrl`:
-  ```ts
-  const base = `https://igreen.cloud/r/${encodeURIComponent(licenca)}`;
-  const msg = phrase.trim();
-  return msg ? `${base}?msg=${encodeURIComponent(msg.slice(0, QR_MESSAGE_MAX))}` : base;
-  ```
-- Resultado no QR: `https://igreen.cloud/r/joaoconsultor` (ou `…?msg=Oi%20vi%20seu%20panfleto`). Curto, bonito, no domínio oficial.
-- Zero mudança na arte do A4/banner. Só muda o conteúdo que o `<QRCodeCanvas value=…>` recebe.
-
-### 2. `src/pages/PartnerRedirectPage.tsx`
-
-- Ler `msg` de `useSearchParams()` e repassar para `qr-redirect?json=1&l=…&c=…&msg=…`.
-- Fallback de segurança: se o fetch JSON falhar **ou** demorar mais de 2s, em vez de cair no fallback atual (que joga pro Supabase de novo), montar `wa.me` direto usando o que tiver:
-  - Se já tivermos `phone` resolvido em fetch anterior cacheado, usar.
-  - Senão, fazer `window.location.replace(\`[https://wa.me/?text=\${encodeURIComponent](https://wa.me/?text=\${encodeURIComponent)(msg ?? DEFAULT_MESSAGE)})` — abre o WhatsApp com a mensagem mas sem destinatário (usuário escolhe). Melhor que tela branca.
-- Esconder a tela de "escolha WhatsApp/Business" — a UX desejada é "abre direto", e o código já faz `window.location.replace` antes da tela aparecer. Manter como fallback invisível só se `failed=true`.
-
-### 3. `supabase/functions/qr-redirect/index.ts`
-
-- Nenhuma mudança. Já aceita `?msg=` e `?json=1`.
-- O endpoint Supabase continua existindo como API interna chamada pelo `PartnerRedirectPage` — o usuário final nunca vê essa URL.
-
-### 4. Compatibilidade
-
-- QRs antigos já impressos continuam funcionando: a edge function permanece no ar com o mesmo contrato.
-- Novos QRs gerados a partir de agora usam `igreen.cloud/r/...`.
-
----
-
-## Arquivos tocados
-
-- `src/components/admin/PanfletoModal.tsx` — trocar `redirectUrl` para `igreen.cloud/r/{licenca}[?msg=…]`.
-- `src/pages/PartnerRedirectPage.tsx` — propagar `msg`, encurtar timeout, melhorar fallback, abrir direto (sem tela de escolha de app).
-- `docs/auditoria/abelolympio-2026-06-26.md` — atualizar seção 5.7 explicando o novo formato curto e que o domínio oficial passou a ser o público do QR.
-
-**Sem migration. Sem mudança na arte do A4/Banner. Sem mudança em RLS.**
-
-## Riscos
-
-- Se `igreen.cloud` cair (DNS/hosting), o QR para de funcionar. Hoje o QR depende do Supabase — risco apenas troca de fornecedor pelo domínio próprio, que é o que o usuário pediu.
-- O `wa.me` sem número (fallback de último caso) abre o WhatsApp na home com a mensagem no clipboard de "Nova conversa". Não é ideal, mas evita tela quebrada. Se preferir, esse fallback pode ser removido e a tela de erro mantida — me avise.  
-  
-nunca pode abrir o home e sim o whhtsapp
+**Telemetria**: logar no console do webhook qual caminho atribuiu (`partner_match_source: "short_code" | "keyword"`) para acompanhar a redução de falhas.
