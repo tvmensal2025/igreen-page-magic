@@ -160,7 +160,7 @@ export function CampaignWizardModal({ open, onClose, consultantId, onCreated }: 
               {state.savingTemplate ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar template
             </Button>
           )}
-          <button onClick={() => !state.submitting && onClose()} className="text-[hsl(var(--ads-muted))] hover:text-foreground">
+          <button onClick={() => !state.submitting && onClose()} aria-label="Fechar" title="Fechar" className="text-[hsl(var(--ads-muted))] hover:text-foreground">
             <X className="w-5 h-5" />
           </button>
         </div>
