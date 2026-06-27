@@ -272,7 +272,7 @@ export default function StepInspector({
                 <Label htmlFor="msg">Mensagem de texto</Label>
                 <InlineAiButton
                   text={step.message_text ?? ""}
-                  context={`Mensagem do passo "${step.title}" (tipo ${step.step_type})`}
+                  context={`Mensagem do passo "${step.title}"`}
                   onResult={(next) => onPatch({ message_text: next })}
                 />
               </div>
@@ -522,9 +522,9 @@ export default function StepInspector({
               />
             ) : (
               <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                Defina uma <code className="rounded bg-muted px-1">slot_key</code> na aba
+                Configure uma <strong>chave de mídia</strong> na aba
                 <br />
-                <strong>Avançado</strong> para anexar mídias.
+                <strong>Avançado</strong> para anexar arquivos a este passo.
               </div>
             )}
           </TabsContent>
@@ -581,6 +581,8 @@ export default function StepInspector({
                         <Button
                           size="icon"
                           variant="ghost"
+                          aria-label="Remover botão"
+                          title="Remover botão"
                           className="h-7 w-7 text-destructive"
                           onClick={() => setButtons(buttons.filter((_, j) => j !== i))}
                         >
@@ -689,6 +691,8 @@ export default function StepInspector({
                           <Button
                             size="icon"
                             variant="ghost"
+                            aria-label="Remover regra"
+                            title="Remover regra"
                             className="ml-auto h-7 w-7 text-destructive"
                             onClick={() => removeTransition(idx)}
                           >

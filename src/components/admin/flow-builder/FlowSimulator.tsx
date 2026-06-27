@@ -297,8 +297,8 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
               className="h-6 max-w-[170px] text-[10px]"
               title="Se preencher (55+DDD+número), o passo de confirmação envia SMS para esse telefone"
             />
-            <Button size="sm" variant="outline" onClick={() => handleReset(true)} disabled={busy} className="h-6 px-2 text-[10px]">
-              <RotateCw className="mr-1 h-3 w-3" /> Zerar
+            <Button size="sm" variant="outline" onClick={() => handleReset(true)} disabled={busy} className="h-6 px-2 text-[10px]" aria-label="Reiniciar simulação">
+              <RotateCw className="mr-1 h-3 w-3" /> Reiniciar
             </Button>
           </div>
         </div>
@@ -475,7 +475,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
                 maxLength={1000}
                 disabled={busy}
               />
-              <Button onClick={() => handleSend(freeText)} disabled={!freeText.trim() || busy}>
+              <Button onClick={() => handleSend(freeText)} disabled={!freeText.trim() || busy} aria-label="Enviar mensagem" title="Enviar mensagem">
                 {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
               </Button>
             </div>
