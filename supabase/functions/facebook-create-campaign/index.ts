@@ -583,6 +583,7 @@ Deno.serve(async (req) => {
             consultant_id: auth.id,
             url: videoUrl,
             thumb_url: thumbUrl,
+            thumb_source: body.video!.thumb_url ? "user" : "meta_preferred",
             fb_video_id: fbVideoId,
             fb_video_id_synced_at: new Date().toISOString(),
             last_used_at: new Date().toISOString(),
