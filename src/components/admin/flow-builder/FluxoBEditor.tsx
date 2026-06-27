@@ -187,7 +187,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
               placeholder="Digite como se fosse o cliente interessado..."
               disabled={sending}
             />
-            <Button onClick={sendTest} disabled={!input.trim() || sending}>
+            <Button onClick={sendTest} disabled={!input.trim() || sending} aria-label="Enviar mensagem" title="Enviar mensagem">
               <Send className="w-4 h-4" />
             </Button>
           </div>
