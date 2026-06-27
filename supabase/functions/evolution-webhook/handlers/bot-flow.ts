@@ -3941,17 +3941,25 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (nextCustom) {
           console.log(`[post-confirm-conta] next=${nextCustom.step_key} type=${nextCustom.step_type} reason=customflow`);
 
-          // 🚀 Ir DIRETO pra captura do documento (sem CTA "Quero me cadastrar").
-          // Regra explícita do produto: pós-SIM da conta, dispara capture_documento
-          // imediatamente — cliente já demonstrou intenção ao confirmar os dados.
+          // 🚦 GATE pós-simulação (PARIDADE WHAPI): se a chain anterior já
+          // tinha botões/transições próprias ("Continuar Cadastro" / "Tenho
+          // dúvidas"), NÃO disparar capture_documento agora. Aguarda
+          // resposta no step REAL enviado para honrar o goto_step_id.
           if (nextCustom.step_type === "capture_documento" || nextCustom.step_type === "capture_doc") {
-            try {
-              await dispatchStepFromFlow(nextCustom.step_key, _vars);
-            } catch (e) {
-              console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
-              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+            const _waitForCta = (updates as any).__last_chain_had_buttons === true;
+            if (_waitForCta) {
+              const waitStep = (updates as any).__post_bill_wait_step_id || "ask_quero_cadastrar";
+              console.log(`[post-confirm-conta] chain final é interativa → aguardando resposta em ${waitStep} (não disparando capture_documento agora)`);
+              updates.conversation_step = waitStep;
+            } else {
+              try {
+                await dispatchStepFromFlow(nextCustom.step_key, _vars);
+              } catch (e) {
+                console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
+                await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+              }
+              updates.conversation_step = "aguardando_doc_auto";
             }
-            updates.conversation_step = "aguardando_doc_auto";
           } else {
             const ok = nextCustom.step_type === "finalizar_cadastro"
               ? true
@@ -3987,26 +3995,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             void ok;
           }
         } else {
-          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — pedindo doc direto (sem CTA "quero me cadastrar")`);
-          try {
-            const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
-            let _dispatched = false;
-            if (_flowRow?.id) {
-              const { data: _docStep } = await supabase
-                .from("bot_flow_steps").select("step_key")
-                .eq("flow_id", (_flowRow as any).id).eq("is_active", true)
-                .in("step_type", ["capture_documento", "capture_doc"])
-                .order("position", { ascending: true }).limit(1).maybeSingle();
-              if (_docStep?.step_key) {
-                await dispatchStepFromFlow(_docStep.step_key, _vars);
-                _dispatched = true;
-              }
-            }
-            if (!_dispatched) {
-              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
-            }
-          } catch (_) { /* segue */ }
-          updates.conversation_step = "aguardando_doc_auto";
+          // PARIDADE WHAPI: sem próximo passo seguro NÃO pede doc direto —
+          // aguarda resposta no último step interativo ou repete o atual.
+          const waitStep = (updates as any).__post_bill_wait_step_id || (customer as any).conversation_step || "confirmando_dados_conta";
+          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — NÃO pedindo doc direto; aguardando resposta em ${waitStep}`);
+          updates.conversation_step = waitStep;
         }
 
         (updates as any).__inline_sent = true;
