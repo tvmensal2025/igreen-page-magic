@@ -2080,6 +2080,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                     .from("ai_media_library")
                     .select("id, url, duration_sec")
                     .eq("is_public", true)
+                    .is("consultant_id", null)
                     .eq("slot_key", m.slot_key)
                     .eq("active", true)
                     .order("send_order", { ascending: true })
