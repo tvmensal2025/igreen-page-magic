@@ -96,10 +96,15 @@ export function RechargeRequiredDialog() {
   }
 
   const inDebt = guard.reason === "balance_zero" || guard.debtCents > 0;
-  const title = inDebt ? "Carteira em débito" : "Campanhas pausadas";
+  const title = forcedShortage
+    ? "Saldo insuficiente para publicar"
+    : inDebt ? "Carteira em débito" : "Campanhas pausadas";
+  const deficitCents = forcedShortage
+    ? Math.max(0, forcedShortage.required_cents - forcedShortage.balance_cents)
+    : 0;
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) guard.snooze24h(); }}>
+    <Dialog open onOpenChange={(o) => { if (!o) { setForcedShortage(null); guard.snooze24h(); } }}>
       <DialogContent
         className="max-w-md p-0 overflow-hidden bg-card border-border/60"
         onPointerDownOutside={(e) => e.preventDefault()}
@@ -114,12 +119,25 @@ export function RechargeRequiredDialog() {
               {title}
             </DialogTitle>
             <DialogDescription className="text-center text-sm text-muted-foreground leading-relaxed">
-              {inDebt
+              {forcedShortage
+                ? `Sua campanha precisa de R$ ${(forcedShortage.required_cents / 100).toFixed(2)} para ser publicada e você tem R$ ${(forcedShortage.balance_cents / 100).toFixed(2)}. Faltam R$ ${(deficitCents / 100).toFixed(2)} — recarregue para continuar.`
+                : inDebt
                 ? `Carteira com dívida de R$ ${(guard.debtCents / 100).toFixed(2)}. Recarregue para reativar.`
                 : `${guard.pausedCampaigns.length} campanha(s) pausada(s) por saldo insuficiente.`}
             </DialogDescription>
           </DialogHeader>
         </div>
+
+        {/* Banner de alerta destacado quando é shortage de publicação */}
+        {forcedShortage && (
+          <div className="mx-6 mt-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <strong>Por que isso aconteceu?</strong> O Facebook exige o orçamento total da campanha (diário × duração + margem de segurança) reservado na carteira antes de publicar. Adicione pelo menos <strong>R$ {(deficitCents / 100).toFixed(2)}</strong> para liberar.
+            </div>
+          </div>
+        )}
+
 
         <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
           {/* Saldo */}
