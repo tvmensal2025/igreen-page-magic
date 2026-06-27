@@ -19,6 +19,25 @@ export type CreativeMode = "photo" | "video";
 export type GeoMode = "cities" | "radius";
 export type PlacementMode = "auto" | "manual";
 
+/** Participante já adicionado à lista ordenada do rodízio. */
+export interface RodizioPartnerDraft {
+  id: string; // referral_partners.id (existente ou recém-criado)
+  nome: string;
+  tipo: "consultor" | "parceiro";
+  partner_igreen_id: string | null;
+  cli: string | null;
+  notification_phone: string | null;
+}
+
+/** Form inline aberto para criar um novo participante (2 tipos). */
+export interface RodizioInlineForm {
+  tipo: "consultor" | "parceiro";
+  nome: string;
+  notification_phone: string;
+  partner_igreen_id: string; // obrigatório quando tipo=consultor
+  cli: string; // obrigatório quando tipo=parceiro
+}
+
 export interface WizardState {
   // Global / navegação
   step: WizardStep;
@@ -77,6 +96,12 @@ export interface WizardState {
   placementMode: PlacementMode;
   placements: string[];
 
+  // Step 4: Rodízio de leads (distribuição entre participantes)
+  rodizioEnabled: boolean; // toggle; inicial false
+  rodizioPartners: RodizioPartnerDraft[]; // lista ORDENADA de participantes
+  rodizioPartnersLoading: boolean; // carregando referral_partners do dono
+  rodizioInlineForm: RodizioInlineForm | null; // form inline aberto (ou null)
+
   // Step 5: Review
   quality: QualityResult | null;
   lowScoreConfirm: boolean;
@@ -134,6 +159,10 @@ const INITIAL_STATE: WizardState = {
   duration: 3,
   placementMode: "auto",
   placements: ALL_PLACEMENTS,
+  rodizioEnabled: false,
+  rodizioPartners: [],
+  rodizioPartnersLoading: false,
+  rodizioInlineForm: null,
   quality: null,
   lowScoreConfirm: false,
   preflight: null,

@@ -183,6 +183,11 @@ export interface CreateCampaignBody {
   placements?: string[];
   // Primeira mensagem que abre no WhatsApp ao clicar no anúncio. Max 160 chars.
   initial_message?: string;
+  // Rodízio de leads: quando ligado, os leads do anúncio são distribuídos em
+  // ordem circular entre os participantes (cria a pool no servidor).
+  rodizio_enabled?: boolean;
+  // Lista ORDENADA de referral_partners.id (a ordem define o rodízio).
+  rodizio_partner_ids?: string[];
 }
 export async function createCampaign(body: CreateCampaignBody) {
   const { data, error } = await supabase.functions.invoke("facebook-create-campaign", { body });

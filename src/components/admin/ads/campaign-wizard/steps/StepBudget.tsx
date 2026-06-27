@@ -8,10 +8,15 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { ALL_PLACEMENTS, PLACEMENT_GROUPS } from "../wizardHelpers";
 import type { WizardState } from "../hooks/useWizardState";
+import { RodizioBlock } from "../RodizioBlock";
 
 interface Props {
+  /** Wizard aberto? Repassado ao RodizioBlock para carregar/limpar participantes. */
+  open: boolean;
   state: WizardState;
   patch: (p: Partial<WizardState>) => void;
+  /** Atualização funcional do estado (usada pelo rodízio). */
+  patchFn: (fn: (prev: WizardState) => Partial<WizardState>) => void;
 }
 
 const PRESETS = [
@@ -20,7 +25,7 @@ const PRESETS = [
   { id: "custom", label: "Personalizado", budget: 0, days: 0, hint: "ajuste manual", icon: "🎛️" },
 ] as const;
 
-export function StepBudget({ state, patch }: Props) {
+export function StepBudget({ open, state, patch, patchFn }: Props) {
   const { budget, duration } = state;
   const isEco = budget === 15 && duration === 3;
   const isStd = budget === 25 && duration === 7;
@@ -124,6 +129,9 @@ export function StepBudget({ state, patch }: Props) {
           </div>
         )}
       </div>
+
+      {/* Rodízio de leads — logo abaixo de "Onde publicar" (mesmo padrão visual) */}
+      <RodizioBlock open={open} state={state} patch={patch} patchFn={patchFn} />
     </div>
   );
 }

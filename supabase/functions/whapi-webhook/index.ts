@@ -725,6 +725,74 @@ Deno.serve(async (req) => {
     // 2º) Fallback: `matchKeyword` por substring (legado).
     if (customer && !(customer as any).referral_partner_id && messageText && !isFile) {
       try {
+        // ─── MVP rodízio: prioridade do rodízio sobre o match por keyword ───
+        // No whapi-webhook a ordem dos blocos é invertida em relação ao
+        // evolution: o match por keyword vem ANTES da detecção de origem CTWA.
+        // Para preservar a prioridade do rodízio (Req 8), aqui fazemos o mínimo:
+        // se a campanha de origem do lead tiver uma pool de rodízio ATIVA,
+        // PULAMOS o match por keyword — assim a keyword não "rouba" um lead que
+        // pertence ao rodízio. A atribuição efetiva do rodízio no whapi fica
+        // para a tarefa separada (refator de antecipar a origem CTWA).
+        // Tudo aqui é fail-open: qualquer erro na checagem volta ao fluxo normal
+        // de keyword, sem quebrar o webhook.
+        let rodizioPoolAtiva = false;
+        try {
+          // 1) campaign_id já resolvido numa mensagem anterior?
+          let candidateCampaignId: string | null = (customer as any).source_campaign_id || null;
+
+          // 2) senão, resolve o mínimo pela mensagem atual (só sinais
+          //    determinísticos: AD ID e ctwa_clid; sem heurística cara).
+          if (!candidateCampaignId) {
+            const rawMsg: any = body?.messages?.[0] || {};
+            const referral = rawMsg.referral || rawMsg.context?.referred_product ||
+              rawMsg.context?.referral || rawMsg.ad_reply || null;
+            const ctwaClid = rawMsg.ctwa_clid || referral?.ctwa_clid || null;
+            const sourceAdId = referral?.source_id || referral?.sourceId || rawMsg.source_id || null;
+
+            if (sourceAdId) {
+              const { data: campByAd } = await supabase
+                .from("facebook_campaigns")
+                .select("id")
+                .eq("consultant_id", (customer as any).consultant_id)
+                .contains("fb_ad_ids", JSON.stringify([String(sourceAdId)]))
+                .maybeSingle();
+              if ((campByAd as any)?.id) candidateCampaignId = (campByAd as any).id;
+            }
+            if (!candidateCampaignId && ctwaClid) {
+              const { data: mapping } = await supabase
+                .from("ctwa_clid_mapping")
+                .select("campaign_id")
+                .eq("ctwa_clid", ctwaClid)
+                .maybeSingle();
+              if ((mapping as any)?.campaign_id) candidateCampaignId = (mapping as any).campaign_id;
+            }
+          }
+
+          // 3) há pool de rodízio ATIVA para essa campanha?
+          if (candidateCampaignId) {
+            const { data: pool } = await supabase
+              .from("rodizio_pools")
+              .select("id")
+              .eq("campaign_id", candidateCampaignId)
+              .eq("is_active", true)
+              .maybeSingle();
+            if ((pool as any)?.id) rodizioPoolAtiva = true;
+          }
+        } catch (e) {
+          // Fail-open: na dúvida, segue o fluxo normal de keyword.
+          console.warn(
+            "[partner-match][rodizio-guard] checagem de pool falhou, seguindo com keyword:",
+            (e as Error).message,
+          );
+          rodizioPoolAtiva = false;
+        }
+
+        if (rodizioPoolAtiva) {
+          console.log(
+            `[partner-match] customer=${customer.id} pulando keyword: campanha de origem tem pool de rodízio ativa (prioridade do rodízio)`,
+          );
+        }
+
         const { count: inboundCount } = await supabase
           .from("conversations")
           .select("id", { count: "exact", head: true })
@@ -732,7 +800,7 @@ Deno.serve(async (req) => {
           .eq("message_direction", "inbound");
 
         const DETECTION_WINDOW = 3;
-        if ((inboundCount ?? 0) < DETECTION_WINDOW) {
+        if (!rodizioPoolAtiva && (inboundCount ?? 0) < DETECTION_WINDOW) {
           let matchedPartnerId: string | null = null;
           let matchedKeyword = "";
           let matchedScore = 1.0;

@@ -137,7 +137,7 @@ export function CampaignWizardModal({ open, onClose, consultantId, onCreated }: 
       case 1: return <StepRegion state={state} patch={patch} region={region} />;
       case 2: return <StepCreative state={state} patch={patch} patchFn={patchFn} creative={creative} consultantId={consultantId} />;
       case 3: return <StepCopy state={state} derived={derived} patch={patch} copyLogic={copyLogic} />;
-      case 4: return <StepBudget state={state} patch={patch} />;
+      case 4: return <StepBudget open={open} state={state} patch={patch} patchFn={patchFn} />;
       case 5: return (
         <StepReview state={state} derived={derived} patch={patch} publish={publish}
           consultantId={consultantId} consultantPhone={consultantPhone}

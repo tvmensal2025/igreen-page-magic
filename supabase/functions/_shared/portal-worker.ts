@@ -120,7 +120,9 @@ async function checkDocsPresentForPortal2(supabase: any, customerId: string): Pr
   return { ok: missing.length === 0, missing };
 }
 
-async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
+// Exportada para teste de propriedade (Property 7 do spec rodizio-leads-anuncio).
+// É a fonte única da regra de idconsultor/indcli — NÃO duplicar em outro lugar.
+export async function buildPortal2Payload(supabase: any, customerId: string): Promise<{
   customer_id: string;
   dados: Record<string, unknown>;
 } | null> {

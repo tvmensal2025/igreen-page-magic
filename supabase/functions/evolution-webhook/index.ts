@@ -28,6 +28,7 @@ import { tryInterceptOtp } from "./handlers/otp-intercept.ts";
 import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
+import { decideRodizioAssignment } from "./rodizio-assignment.ts";
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead, notifyPartnerNewLead } from "../_shared/notify-consultant.ts";
@@ -963,6 +964,68 @@ Deno.serve(async (req) => {
       }
     } catch (e) {
       console.warn("[lead-source] falha ao detectar:", (e as Error).message);
+    }
+
+    // ─── Rodízio de leads de anúncio (round-robin) ──────────────────────
+    // Quando o lead veio de um anúncio (source_campaign_id resolvido acima) e a
+    // campanha tem uma pool de rodízio ativa, o participante da vez é escolhido
+    // de forma atômica por rodizio_next(p_campaign_id). O participante entra
+    // como referral_partner_id; o consultant_id continua o da instância central
+    // (NÃO é alterado). Quando o rodízio é aplicado, o match por keyword abaixo é
+    // ignorado para este lead — a guarda `!referral_partner_id` do bloco de
+    // keyword já cuida disso (prioridade do rodízio — Requisito 8).
+    // Fail-open: qualquer falha aqui apenas loga e segue (o lead nunca se perde);
+    // sem partner_id válido, o lead cai no consultor dono (Requisito 11).
+    const rodizioCampaignId = (customer as any)?.source_campaign_id || null;
+    if (customer && !(customer as any).referral_partner_id && rodizioCampaignId) {
+      try {
+        // Atribuição atômica: passa o id da campanha direto (sem slug).
+        const { data: rodizioRows, error: rodizioError } = await supabase.rpc(
+          "rodizio_next",
+          { p_campaign_id: rodizioCampaignId },
+        );
+        if (rodizioError) {
+          console.warn("[rodizio] rodizio_next falhou:", rodizioError.message);
+        }
+        // Decisão pura do ramo de atribuição (helper testável). A função
+        // rodizio_next retorna TABLE(partner_id, position, pool_id): 0 linhas
+        // ou partner_id inválido = fallback (não seta referral_partner_id).
+        const rodizioDecision = decideRodizioAssignment({
+          customer: customer as any,
+          rodizioRows,
+        });
+        const rodizioPartnerId = rodizioDecision.referralPartnerId;
+
+        if (rodizioDecision.applied && rodizioDecision.customerPatch) {
+          // Participante da vez → referral_partner_id. consultant_id intacto.
+          await supabase.from("customers").update({
+            ...rodizioDecision.customerPatch,
+            referral_detected_at: new Date().toISOString(),
+          }).eq("id", customer.id);
+          (customer as any).referral_partner_id = rodizioPartnerId;
+          console.log(
+            `[rodizio] customer=${customer.id} campaign=${rodizioCampaignId} partner=${rodizioPartnerId}`,
+          );
+
+          // Aviso ao participante da vez (Requisito 7.3). best-effort: a própria
+          // notifyPartnerNewLead resolve o notification_phone pelo partnerId e
+          // só envia se houver número configurado. O .catch garante que uma
+          // falha de aviso NUNCA quebra o fluxo do lead. NÃO duplicamos a regra
+          // de idconsultor/indcli (Requisito 12.4) — o pipeline existente
+          // (buildPortal2Payload) resolve isso a partir do referral_partner_id.
+          notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
+            id: customer.id,
+            name: (customer as any).name,
+            phone_whatsapp: (customer as any).phone_whatsapp,
+            is_sandbox: (customer as any).is_sandbox,
+          }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+        }
+        // Sem partner_id válido → fallback: não seta referral_partner_id; o lead
+        // segue para o consultor dono, preservando source_campaign_id.
+      } catch (e) {
+        // Fail-open (Tarefa 6.3): apenas loga e segue, como o bloco de keyword.
+        console.warn("[rodizio] falhou:", (e as Error).message);
+      }
     }
 
     // ─── Partner Attribution (Detection Window: primeiras 3 mensagens) ───

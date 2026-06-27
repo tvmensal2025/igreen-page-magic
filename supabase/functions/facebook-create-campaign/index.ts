@@ -9,6 +9,7 @@ import {
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
+import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
 
 interface Body {
   name: string;
@@ -51,6 +52,14 @@ interface Body {
   // Primeira mensagem que abre no WhatsApp ao clicar no anúncio (CTWA).
   // Texto curto, em 1ª pessoa, do ponto de vista do lead. Max 160 chars.
   initial_message?: string;
+  // Rodízio (round-robin): quando ligado, os leads deste anúncio são
+  // distribuídos em ordem circular entre os participantes em vez de irem todos
+  // para o número fixo. A criação efetiva da pool/membros acontece após o
+  // insert em facebook_campaigns (ver Tarefa 5.2).
+  rodizio_enabled?: boolean;
+  // Lista ORDENADA de ids de referral_partners participantes do rodízio.
+  // A ordem define a posição na fila circular (0, 1, 2, ...).
+  rodizio_partner_ids?: string[];
 }
 
 function buildInitialMessage(raw: string | undefined, distribuidora?: string): string {
@@ -940,36 +949,95 @@ Deno.serve(async (req) => {
           name: `${p.name || p.address_string || "Endereço"} (${Math.round(p.radius)}km)`,
         }))
       : (body.cities || []);
-    await admin.from("facebook_campaigns").insert({
-      consultant_id: auth.id,
-      fb_campaign_id: campaignId,
-      fb_adset_ids: [adsetId],
-      fb_ad_ids: adIds,
-      name: campaignName,
-      cities: citiesPersist,
-      age_min: ageMin,
-      age_max: ageMax,
-      daily_budget_cents: body.daily_budget_cents,
-      lifetime_cap_cents: lifetimeCapCents,
-      duration_days: body.duration_days ?? null,
-      status: "pending_review",
-      started_at: new Date().toISOString(),
-      distribuidora: body.distribuidora ?? null,
-      pixel_event_optimized: pixelEvent,
-      initial_message: initialMessage,
+    // Captura o id (uuid) da linha recém-criada em facebook_campaigns. Esse id
+    // é a chave usada pela pool de rodízio (rodizio_pools.campaign_id) e pela
+    // telemetria de template. Antes era refeito um SELECT por fb_campaign_id;
+    // agora o insert já devolve o id, evitando uma ida extra ao banco.
+    const { data: insertedCampaign } = await admin
+      .from("facebook_campaigns")
+      .insert({
+        consultant_id: auth.id,
+        fb_campaign_id: campaignId,
+        fb_adset_ids: [adsetId],
+        fb_ad_ids: adIds,
+        name: campaignName,
+        cities: citiesPersist,
+        age_min: ageMin,
+        age_max: ageMax,
+        daily_budget_cents: body.daily_budget_cents,
+        lifetime_cap_cents: lifetimeCapCents,
+        duration_days: body.duration_days ?? null,
+        status: "pending_review",
+        started_at: new Date().toISOString(),
+        distribuidora: body.distribuidora ?? null,
+        pixel_event_optimized: pixelEvent,
+        initial_message: initialMessage,
+      })
+      .select("id")
+      .maybeSingle();
+    const campaignRowId = (insertedCampaign as { id?: string } | null)?.id ?? null;
+
+    // ─── Rodízio: cria a pool e os membros ligados a esta campanha ──────────
+    // Só cria quando o toggle de rodízio veio ligado E há pelo menos 2
+    // participantes (o mínimo que faz a distribuição circular fazer sentido).
+    // Quando desligado, nada acontece aqui — o anúncio segue com destino único
+    // (whatsapp_destination_number), exatamente como antes.
+    //
+    // Fail-open (Requisito 6.4): a campanha CTWA já foi criada na Meta e
+    // persistida acima. Se a criação da pool falhar, NÃO revertemos a campanha;
+    // apenas logamos e avisamos o consultor dono via notifyConsultant. O dono é
+    // o consultor logado (auth.id), o mesmo que a RLS de referral_partners usa.
+    // O plano (pool + construtor de membros) e a regra "criar ou não" vivem no
+    // helper puro `rodizio-pool.ts` (testável sob Vitest). Retorna null quando o
+    // rodízio está desligado ou há < 2 participantes — nesse caso nada é criado.
+    const rodizioPlan = buildRodizioPoolPlan({
+      input: body,
+      campaignId: campaignRowId ?? "",
+      consultantId: auth.id,
+      label: campaignName,
     });
+    if (rodizioPlan) {
+      try {
+        if (!campaignRowId) {
+          throw new Error("não foi possível obter o id da campanha recém-criada");
+        }
+        // 1) Cria a pool ligada ao campaign_id, com o consultor dono.
+        const { data: pool, error: poolError } = await admin
+          .from("rodizio_pools")
+          .insert(rodizioPlan.pool)
+          .select("id")
+          .single();
+        if (poolError || !pool?.id) {
+          throw new Error(poolError?.message || "falha ao criar rodizio_pools");
+        }
+        // 2) Insere os membros na ordem recebida: position 0..n, lead_count=0.
+        const members = rodizioPlan.buildMembers(pool.id);
+        const { error: membersError } = await admin
+          .from("rodizio_pool_members")
+          .insert(members);
+        if (membersError) {
+          throw new Error(membersError.message);
+        }
+        console.log(`[fb-create] rodízio: pool ${pool.id} criada com ${members.length} membros para campanha ${campaignRowId}`);
+      } catch (e) {
+        // Fail-open: campanha permanece válida; só logamos e avisamos o dono.
+        const msg = (e as Error).message;
+        console.error("[fb-create] falha ao criar pool de rodízio (campanha mantida):", msg);
+        await notifyConsultant(
+          auth.id,
+          "warning",
+          "Rodízio não configurado",
+          `Sua campanha foi criada normalmente, mas não conseguimos ligar o rodízio de leads desta vez (${msg}). Os leads vão para o número padrão. Tente editar a campanha mais tarde ou avise o suporte.`,
+        );
+      }
+    }
 
     // Telemetria de uso do template (gallery → consultor → campanha).
     if (templateRow?.id) {
-      const { data: campRow } = await admin
-        .from("facebook_campaigns")
-        .select("id")
-        .eq("fb_campaign_id", campaignId)
-        .maybeSingle();
       await admin.from("ad_template_usages").insert({
         template_id: templateRow.id,
         consultant_id: auth.id,
-        campaign_id: campRow?.id ?? null,
+        campaign_id: campaignRowId,
       });
     }
 

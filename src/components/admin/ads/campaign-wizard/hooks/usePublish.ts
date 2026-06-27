@@ -59,6 +59,11 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
       toast({ title: "Telefone do consultor não configurado", description: "Adicione seu WhatsApp na aba Dados antes de publicar.", variant: "destructive" });
       return;
     }
+    // Rodízio ligado exige pelo menos 2 participantes para fazer sentido (Req 5.2).
+    if (state.rodizioEnabled && state.rodizioPartners.length < 2) {
+      toast({ title: "Rodízio incompleto", description: "O rodízio exige pelo menos 2 participantes.", variant: "destructive" });
+      return;
+    }
     if (state.preflight && !state.preflight.ok) {
       toast({ title: "Pré-voo em revisão", description: "Vou tentar publicar direto pela conta principal.", variant: "destructive" });
     }
@@ -112,6 +117,14 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
         placement_mode: state.placementMode,
         placements: state.placementMode === "manual" ? state.placements : undefined,
         initial_message: state.initialMessage.trim() || undefined,
+        // Rodízio: envia os participantes na ordem da lista para o servidor
+        // criar a pool. Sem o toggle, mantém o comportamento de destino único.
+        ...(state.rodizioEnabled
+          ? {
+              rodizio_enabled: true,
+              rodizio_partner_ids: state.rodizioPartners.map((p) => p.id),
+            }
+          : {}),
       };
       try {
         await createCampaign(payload);
