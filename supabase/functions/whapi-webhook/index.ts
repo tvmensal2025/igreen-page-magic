@@ -31,6 +31,7 @@ import { makeIdempotentEnviarTexto } from "../_shared/bot/conversational-send-id
 import { summarizeWebhookBody } from "../_shared/log-redact.ts";
 import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
 import { resolveWorker } from "../_shared/portal-worker.ts";
+import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
 
@@ -725,20 +726,23 @@ Deno.serve(async (req) => {
     // 2º) Fallback: `matchKeyword` por substring (legado).
     if (customer && !(customer as any).referral_partner_id && messageText && !isFile) {
       try {
-        // ─── MVP rodízio: prioridade do rodízio sobre o match por keyword ───
-        // No whapi-webhook a ordem dos blocos é invertida em relação ao
-        // evolution: o match por keyword vem ANTES da detecção de origem CTWA.
-        // Para preservar a prioridade do rodízio (Req 8), aqui fazemos o mínimo:
-        // se a campanha de origem do lead tiver uma pool de rodízio ATIVA,
-        // PULAMOS o match por keyword — assim a keyword não "rouba" um lead que
-        // pertence ao rodízio. A atribuição efetiva do rodízio no whapi fica
-        // para a tarefa separada (refator de antecipar a origem CTWA).
-        // Tudo aqui é fail-open: qualquer erro na checagem volta ao fluxo normal
-        // de keyword, sem quebrar o webhook.
+        // ─── Rodízio de leads de anúncio (round-robin) — paridade com evolution ──
+        // No whapi-webhook a detecção completa de lead-source roda mais à frente
+        // (~linha 1293), depois do partner-match. Para preservar a paridade com
+        // o evolution (que resolve lead-source ANTES e roda o rodízio aqui),
+        // fazemos a mini-resolução de campaign_id (source_campaign_id do
+        // customer; senão AD ID; senão ctwa_clid) e, se houver pool ativa,
+        // chamamos `rodizio_next` + `decideRodizioAssignment` + `notifyPartnerNewLead`,
+        // exatamente como o evolution. Persistimos `source_campaign_id` aqui
+        // para que o lead-source posterior NÃO refaça trabalho nem consuma um
+        // segundo turno da fila.
+        // Fail-open total: qualquer erro só loga e segue para o keyword.
         let rodizioPoolAtiva = false;
+        let resolvedCampaignId: string | null = null;
         try {
           // 1) campaign_id já resolvido numa mensagem anterior?
           let candidateCampaignId: string | null = (customer as any).source_campaign_id || null;
+          const campaignAlreadyPersisted = !!candidateCampaignId;
 
           // 2) senão, resolve o mínimo pela mensagem atual (só sinais
           //    determinísticos: AD ID e ctwa_clid; sem heurística cara).
@@ -776,7 +780,62 @@ Deno.serve(async (req) => {
               .eq("campaign_id", candidateCampaignId)
               .eq("is_active", true)
               .maybeSingle();
-            if ((pool as any)?.id) rodizioPoolAtiva = true;
+            if ((pool as any)?.id) {
+              rodizioPoolAtiva = true;
+              resolvedCampaignId = candidateCampaignId;
+            }
+          }
+
+          // 4) Atribuição efetiva por rodízio (paridade com evolution).
+          //    Só roda quando há pool ativa — caso contrário, fluxo normal.
+          if (rodizioPoolAtiva && resolvedCampaignId) {
+            try {
+              const { data: rodizioRows, error: rodizioError } = await supabase.rpc(
+                "rodizio_next",
+                { p_campaign_id: resolvedCampaignId },
+              );
+              if (rodizioError) {
+                console.warn("[rodizio] rodizio_next falhou:", rodizioError.message);
+              }
+              const rodizioDecision = decideRodizioAssignment({
+                customer: { ...(customer as any), source_campaign_id: resolvedCampaignId },
+                rodizioRows,
+              });
+              const rodizioPartnerId = rodizioDecision.referralPartnerId;
+
+              if (rodizioDecision.applied && rodizioDecision.customerPatch) {
+                const patch: Record<string, unknown> = {
+                  ...rodizioDecision.customerPatch,
+                  referral_detected_at: new Date().toISOString(),
+                };
+                // Persistir source_campaign_id se foi resolvido aqui pela 1ª vez,
+                // para o lead-source posterior pular sem reprocessar.
+                if (!campaignAlreadyPersisted) {
+                  patch.source_campaign_id = resolvedCampaignId;
+                }
+                await supabase.from("customers").update(patch).eq("id", customer.id);
+                (customer as any).referral_partner_id = rodizioPartnerId;
+                if (!campaignAlreadyPersisted) {
+                  (customer as any).source_campaign_id = resolvedCampaignId;
+                }
+                console.log(
+                  `[rodizio] customer=${customer.id} campaign=${resolvedCampaignId} partner=${rodizioPartnerId}`,
+                );
+
+                // Aviso ao participante da vez (best-effort).
+                notifyPartnerNewLead(superAdminConsultantId, rodizioPartnerId, {
+                  id: customer.id,
+                  name: (customer as any).name,
+                  phone_whatsapp: (customer as any).phone_whatsapp,
+                  is_sandbox: (customer as any).is_sandbox,
+                }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+              }
+              // Fallback (pool ativa mas partner_id inválido): mantém
+              // rodizioPoolAtiva=true para preservar prioridade do rodízio
+              // sobre keyword (Req 8). Lead segue para o super admin.
+            } catch (e) {
+              console.warn("[rodizio] falhou:", (e as Error).message);
+            }
           }
         } catch (e) {
           // Fail-open: na dúvida, segue o fluxo normal de keyword.
@@ -792,6 +851,7 @@ Deno.serve(async (req) => {
             `[partner-match] customer=${customer.id} pulando keyword: campanha de origem tem pool de rodízio ativa (prioridade do rodízio)`,
           );
         }
+
 
         const { count: inboundCount } = await supabase
           .from("conversations")

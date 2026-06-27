@@ -28,7 +28,7 @@ import { tryInterceptOtp } from "./handlers/otp-intercept.ts";
 import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
-import { decideRodizioAssignment } from "./rodizio-assignment.ts";
+import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead, notifyPartnerNewLead } from "../_shared/notify-consultant.ts";

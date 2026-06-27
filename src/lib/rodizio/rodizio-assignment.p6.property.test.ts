@@ -13,7 +13,7 @@
  * **Validates: Requirements 11.1, 11.2, 11.3, 11.4**
  *
  * Abordagem: reusa o helper puro
- * `supabase/functions/evolution-webhook/rodizio-assignment.ts` (criado na
+ * `supabase/functions/_shared/rodizio-assignment.ts` (criado na
  * Tarefa 6.4). Geramos retornos de `rodizio_next` representando TODOS os casos
  * de fallback — pool vazia (array `[]`), pool inativa/inexistente (0 linhas),
  * e linhas com `partner_id` nulo/undefined/vazio/forma inválida. Em todos eles,
@@ -28,7 +28,7 @@ import { describe, expect } from "vitest";
 import {
   applyRodizioDecisionToCustomer,
   decideRodizioAssignment,
-} from "../../../supabase/functions/evolution-webhook/rodizio-assignment";
+} from "../../../supabase/functions/_shared/rodizio-assignment";
 
 // ---------------------------------------------------------------------------
 // Geradores

@@ -13,7 +13,7 @@
  * **Validates: Requirements 8.1, 8.2**
  *
  * Abordagem: a decisão do ramo está isolada no helper puro
- * `supabase/functions/evolution-webhook/rodizio-assignment.ts` (criado na
+ * `supabase/functions/_shared/rodizio-assignment.ts` (criado na
  * Tarefa 6.4). O ponto-chave aqui é o campo `skipKeywordMatch`: quando o rodízio
  * é aplicado (lead elegível + participante válido), `skipKeywordMatch === true`,
  * ou seja, o chamador pula o match por keyword. Geramos mensagens contendo
@@ -27,7 +27,7 @@ import { describe, expect } from "vitest";
 import {
   applyRodizioDecisionToCustomer,
   decideRodizioAssignment,
-} from "../../../supabase/functions/evolution-webhook/rodizio-assignment";
+} from "../../../supabase/functions/_shared/rodizio-assignment";
 
 // ---------------------------------------------------------------------------
 // Geradores
