@@ -349,6 +349,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     className="h-8 w-8"
                     onClick={() => handleToggle(c)}
                     disabled={toggling === c.id}
+                    aria-label={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
                     title={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
                   >
                     {toggling === c.id
@@ -362,6 +363,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     variant="ghost"
                     className="h-8 w-8"
                     onClick={() => setExtending(c)}
+                    aria-label="Estender prazo ou alterar orçamento"
                     title="Estender prazo / mudar orçamento"
                   >
                     <CalendarClock className="w-4 h-4 text-primary" />
@@ -374,7 +376,8 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     className="h-8 w-8 text-destructive hover:bg-destructive/10"
                     onClick={() => setConfirmDelete(c)}
                     disabled={deleting === c.id}
-                    title="Apagar campanha (SuperAdmin)"
+                    aria-label="Excluir campanha"
+                    title="Excluir campanha"
                   >
                     {deleting === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </Button>
