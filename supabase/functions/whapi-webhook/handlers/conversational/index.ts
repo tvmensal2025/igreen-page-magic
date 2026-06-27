@@ -83,6 +83,25 @@ const CADASTRO_STEPS = CADASTRO_STEPS_SHARED;
 
 interface LoadedFlow { flowId: string; steps: DbStep[]; strictMode: boolean; }
 
+function stepHasInteractiveWait(st: DbStep | null | undefined): boolean {
+  const captures = Array.isArray(st?.captures) ? st!.captures as any[] : [];
+  const hasButtons = captures.some((c: any) =>
+    c?.enabled !== false && c?.field === "_buttons" && Array.isArray(c?.value) && c.value.length > 0
+  );
+  if (hasButtons) return true;
+
+  const transitions = Array.isArray(st?.transitions) ? st!.transitions as any[] : [];
+  const hasReplyTransition = transitions.some((t: any) => {
+    const intent = String(t?.trigger_intent || "").trim();
+    const phrases = Array.isArray(t?.trigger_phrases) ? t.trigger_phrases.filter(Boolean) : [];
+    return !!t?.goto_special || (!!t?.goto_step_id && (intent !== "default" || phrases.length > 0));
+  });
+  if (hasReplyTransition) return true;
+
+  const fallbackMode = String(st?.fallback?.mode || "").trim();
+  return fallbackMode === "repeat" || fallbackMode === "ai" || fallbackMode === "ai_answer";
+}
+
 async function loadFlow(supabase: any, consultantId: string, variant: string = "A"): Promise<LoadedFlow | null> {
   try {
     // Resolve via resolveFlowId para respeitar sync_mode:
@@ -2175,6 +2194,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       );
     const cursorCascades = (st: DbStep): boolean => {
       if (_hasTextCapture(st)) return false;
+      if (stepHasInteractiveWait(st)) return false;
       if (st.wait_for !== "none") return false;
       if (_looksLikeQuestion(st)) return false;
       return true;
@@ -2183,7 +2203,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // (passo vazio configurado pelo consultor), força UMA cascata mesmo se
     // wait_for !== 'none' — caso contrário o lead fica sem resposta nenhuma.
     const forceFirstHop = !replyText && !inlineSent && cursor
-      && !_hasTextCapture(cursor) && !_looksLikeQuestion(cursor);
+      && !_hasTextCapture(cursor) && !stepHasInteractiveWait(cursor) && !_looksLikeQuestion(cursor);
     for (let guard = 0; cursor && (cursorCascades(cursor) || (guard === 0 && forceFirstHop)) && guard < 3; guard++) {
       const nextStep = findCascadeNext(cursor);
       if (!nextStep) {
@@ -2197,9 +2217,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
       const cascadeCadastroStep = stepTypeToCadastro(nextStep.step_type);
       // Se o próximo passo parece pergunta, emite uma vez e para — não cascateia além.
-      const nextIsQuestion = !cascadeCadastroStep && _looksLikeQuestion(nextStep);
-      const nextWillCascade = !cascadeCadastroStep && !nextIsQuestion
-        && nextStep.wait_for === "none"
+      const nextIsQuestion = !cascadeCadastroStep && (_looksLikeQuestion(nextStep) || stepHasInteractiveWait(nextStep));
+      const nextWillCascade = !cascadeCadastroStep && cursorCascades(nextStep)
         && !!findCascadeNext(nextStep);
 
       // PERSIST FIRST: marca o lead já no nextStep ANTES de enviar mídia pesada.
@@ -2249,7 +2268,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
       if (cascadeCadastroStep) break;
       if (nextIsQuestion) {
-        console.log(`[cascade-stop] pos=${nextStep.position} step=${nextStep.step_key} motivo=pergunta(text ends with ?)`);
+        console.log(`[cascade-stop] pos=${nextStep.position} step=${nextStep.step_key} motivo=aguarda_resposta(interativo/pergunta)`);
         cursor = nextStep;
         break;
       }
