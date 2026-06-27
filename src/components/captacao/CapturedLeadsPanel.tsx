@@ -49,6 +49,20 @@ const CHANNEL_LABEL: Record<string, string> = {
   manual: "Manual",
 };
 
+const CHANNEL_STYLE: Record<string, string> = {
+  meta_leadads: "border-primary/40 text-primary bg-primary/10",
+  tiktok_leadgen: "border-accent/40 text-accent bg-accent/10",
+  ctwa: "border-success/40 text-success bg-success/10",
+  landing: "border-info/40 text-info bg-info/10",
+  research: "border-info/40 text-info bg-info/10",
+  manual: "border-muted-foreground/30 text-muted-foreground bg-muted/30",
+};
+
+const normalizePhone = (p: string | null | undefined): string => {
+  const d = String(p || "").replace(/\D/g, "");
+  return d.length >= 8 ? d.slice(-11) : "";
+};
+
 export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props) {
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
