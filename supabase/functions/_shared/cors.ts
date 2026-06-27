@@ -47,12 +47,27 @@ function allowedOrigins(): string[] {
  * @param extraAllowHeaders Headers adicionais permitidos, separados por vírgula
  *                          (ex.: "x-service-secret").
  */
+// Padrões de origens sempre liberadas (preview/sandbox do Lovable).
+// Mantemos as previews liberadas pra não quebrar testes da equipe direto do editor.
+const ORIGIN_PATTERNS: RegExp[] = [
+  /^https:\/\/([a-z0-9-]+\.)*lovable\.app$/i,
+  /^https:\/\/([a-z0-9-]+\.)*lovableproject\.com$/i,
+  /^https:\/\/([a-z0-9-]+\.)*lovable\.dev$/i,
+];
+
+function isOriginAllowed(origin: string, allow: string[]): boolean {
+  if (!origin) return false;
+  if (allow.includes(origin)) return true;
+  return ORIGIN_PATTERNS.some((re) => re.test(origin));
+}
+
 export function buildCors(req: Request, extraAllowHeaders = ""): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
   const allow = allowedOrigins();
-  // Reflete a origem quando permitida; senão devolve a primeira da allowlist
-  // (o navegador bloqueia por mismatch, que é o comportamento desejado).
-  const allowOrigin = allow.includes(origin) ? origin : allow[0];
+  // Reflete a origem quando permitida (lista fixa ou pattern de preview);
+  // senão devolve a primeira da allowlist (browser bloqueia por mismatch).
+  const allowOrigin = isOriginAllowed(origin, allow) ? origin : allow[0];
+
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
