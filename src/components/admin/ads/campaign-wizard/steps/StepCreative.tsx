@@ -143,7 +143,7 @@ function SortablePhoto({ id, file, format, aiResizing, onCrop, onAi, onRemove }:
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
       className={`relative group rounded-lg overflow-hidden border-2 ${ok ? "border-[hsl(var(--ads-emerald-2))]/50" : "border-warning/60"} bg-black/20`}>
       <div className={aspect}><img src={file.url} alt="" className="w-full h-full object-cover" /></div>
-      <button {...attributes} {...listeners} className="absolute top-1 left-1 bg-black/60 text-white rounded p-1 cursor-grab active:cursor-grabbing">
+      <button {...attributes} {...listeners} aria-label="Reordenar imagem" title="Arrastar para reordenar" className="absolute top-1 left-1 bg-black/60 text-white rounded p-1 cursor-grab active:cursor-grabbing">
         <GripVertical className="w-3 h-3" />
       </button>
       <div className="absolute bottom-0 inset-x-0 bg-black/70 text-[10px] text-white px-1.5 py-1 flex items-center justify-between">
@@ -151,13 +151,13 @@ function SortablePhoto({ id, file, format, aiResizing, onCrop, onAi, onRemove }:
         {ok ? <span className="text-primary">✓</span> : (
           <div className="flex gap-1.5">
             <button type="button" onClick={onCrop} className="text-warning underline">Cortar</button>
-            <button type="button" onClick={onAi} disabled={aiResizing} className="text-primary underline flex items-center gap-0.5">
-              {aiResizing ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />} IA
+            <button type="button" onClick={onAi} disabled={aiResizing} aria-label="Ajustar com IA" title="Ajustar enquadramento com IA" className="text-primary underline flex items-center gap-0.5">
+              {aiResizing ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />} Ajustar com IA
             </button>
           </div>
         )}
       </div>
-      <button onClick={onRemove} className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition">
+      <button onClick={onRemove} aria-label="Remover imagem" title="Remover imagem" className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition">
         <X className="w-3 h-3" />
       </button>
     </div>
