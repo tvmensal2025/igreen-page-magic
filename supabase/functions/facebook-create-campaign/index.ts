@@ -612,10 +612,11 @@ Deno.serve(async (req) => {
         }
         if (thumbUrl) {
           console.log("[fb-create] thumb auto-resolved=", thumbUrl);
-          // Persiste no cache pra próximo uso reaproveitar
+          // Persiste no cache marcando origem 'meta_preferred' — assim, se o
+          // usuário enviar uma custom no próximo publish, ela sobrescreve.
           try {
             await adminDb2.from("ad_video_library")
-              .update({ thumb_url: thumbUrl })
+              .update({ thumb_url: thumbUrl, thumb_source: "meta_preferred" })
               .eq("consultant_id", auth.id).eq("url", videoUrl);
           } catch (_) { /* best-effort */ }
         } else {
