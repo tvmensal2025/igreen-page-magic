@@ -93,7 +93,7 @@ const VARIAVEIS: { token: string; label: string }[] = [
   { token: "{{nome}}", label: "nome" },
   { token: "{{valor_conta}}", label: "valor da conta" },
   { token: "{{economia_mensal}}", label: "economia/mês" },
-  { token: "{{representante}}", label: "seu nome" },
+  { token: "{{representante}}", label: "nome do consultor" },
 ];
 
 /** Ícone padrão por tipo de passo (espelha o uso no resto do construtor). */
