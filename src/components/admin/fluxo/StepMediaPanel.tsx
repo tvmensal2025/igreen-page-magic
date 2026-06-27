@@ -751,6 +751,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </fieldset>
     </div>
   );
 }
