@@ -1103,7 +1103,7 @@ Deno.serve(async (req) => {
           .select("gross_spend_cents")
           .eq("campaign_id", ec.id);
         const ecSpent = (spentRow || []).reduce((s: number, r: any) => s + Number(r.gross_spend_cents || 0), 0);
-        const newEcCap = Math.max(1000, ecSpent + perCampaignExtra);
+        const newEcCap = Math.max(30000, ecSpent + perCampaignExtra);
         await fbFetch(`/${ec.fb_campaign_id}`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
