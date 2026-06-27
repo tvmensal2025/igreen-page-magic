@@ -1,63 +1,95 @@
+Vou rodar uma auditoria do pipeline `facebook-create-campaign → facebook-sync-metrics → carteira → Performance` e corrigir os 4 problemas que você marcou. Mexo só em edge functions; UI fica como está.
 
-## Problema
+## 1) Capa do vídeo errada (cache servindo thumb antiga)
 
-No `whapi-webhook/index.ts` (super admin), quando o lead chega de uma campanha com pool de rodízio ativa, hoje só **pulamos** o match por keyword — nunca chamamos `rodizio_next`, nunca setamos `referral_partner_id` e nunca avisamos o participante da vez. O lead fica todo no super admin, `lead_count` da pool nunca avança, e a regra diverge do `evolution-webhook` (viola "evolution e whapi não podem mudar").
+**Diagnóstico (`facebook-create-campaign` linhas 511–608):**
+- `let thumbUrl = body.video.thumb_url || null` — se o wizard NÃO mandar `thumb_url`, cai no `ad_video_library.thumb_url` cacheado pelo `url` do vídeo.
+- Se você trocou a capa mas reaproveitou o mesmo vídeo, o cache devolve a thumb ANTIGA e ela é usada no `videoData.image_url` (linha 658).
+- Pior: o fallback "auto-resolve thumbnail" só dispara quando `!thumbUrl`, então a thumb cacheada nunca é recalculada.
 
-No `evolution-webhook/index.ts` (linhas 969–1029) já existe o bloco correto, usando `decideRodizioAssignment` (helper puro em `evolution-webhook/rodizio-assignment.ts`).
+**Correção:**
+- Sempre que `body.video.thumb_url` chegar preenchido, ele tem prioridade absoluta (já tem, ok).
+- Quando NÃO chegar, parar de usar `cachedVid.thumb_url`. Em vez disso, sempre pedir `GET /{fb_video_id}/thumbnails` e pegar a `is_preferred` (que é o frame que o Meta gera da capa real do vídeo).
+- Persistir essa thumb_url no cache marcando `thumb_source = "meta_preferred"`; se o usuário enviar uma custom no próximo publish, sobrescreve.
+- Validar com HEAD que `thumbUrl` retorna 200 antes de mandar pro Meta; se 404/expirada, refaz o fetch.
 
-## Solução
+## 2) Orçamento: gasto diário nunca passar do definido + sem margem extra
 
-Portar o mesmo bloco para o whapi, **promovendo o helper para `_shared/`** para os dois webhooks consumirem exatamente a mesma decisão e nunca mais divergirem. Helper continua puro (sem rede, sem Supabase) — coberto pelas property tests P4/P5/P6 já existentes.
+**Diagnóstico:**
+- Hoje a campanha sobe com `daily_budget` (linha 388) + `spend_cap` calculado por rateio de carteira (linha 256: `Math.max(30000, liquidMetaBudget / activeCount)`), NÃO por `daily × duration_days`.
+- O Meta permite `daily_budget` flutuar até **+25 %** num dia (compensa em outros). Isso é o que faz "R$ 30/dia virar R$ 37 num dia".
+- O `spend_cap` atual pode ficar bem acima de `daily × duração` (sobra de carteira vira teto), criando margem invisível.
 
-### Passos
+**Correção:**
+- Trocar para **`lifetime_budget`** quando `duration_days` for definido: `lifetime_budget = daily_budget × duration_days` + `end_time` exato. Lifetime é teto absoluto: Meta nunca passa disso.
+- Travar o pacing: `pacing_type=["standard"]` e remover qualquer aceleração.
+- `spend_cap` da campanha = `daily × duration_days` (sem markup, sem rateio de carteira). O rateio anti-prejuízo continua, mas como **piso de saldo exigido**, não como teto inflado.
+- `end_time` exato (UTC) baseado em `started_at + duration_days × 86400`. Auto-pause no `facebook-sync-metrics` checa se `now > end_time` e pausa a campanha.
+- Se `duration_days` for null (campanha sem prazo), mantém `daily_budget` + `spend_cap = max(30000, daily × 7)` como hoje.
 
-1. **Mover helper para `_shared/`** (conteúdo idêntico):
-   - `supabase/functions/evolution-webhook/rodizio-assignment.ts` → `supabase/functions/_shared/rodizio-assignment.ts`
-   - Atualizar import em `evolution-webhook/index.ts` (linha 31).
-   - Atualizar qualquer teste/arquivo que importe o path antigo (`rg` para confirmar lista exata antes da edição).
+## 3) Cobrança da carteira = gasto Meta + taxa visível
 
-2. **whapi-webhook/index.ts — bloco do rodízio (substituir ~linhas 738–794):**
-   - Manter a mini-resolução de `candidateCampaignId` já existente (source_campaign_id do customer; senão AD ID; senão ctwa_clid) — necessária porque no whapi a detecção completa de lead-source só roda mais à frente (linha ~1293), diferente do evolution.
-   - Quando `candidateCampaignId` resolve E há pool ativa, chamar **`supabase.rpc("rodizio_next", { p_campaign_id: candidateCampaignId })`**.
-   - Passar retorno por `decideRodizioAssignment({ customer: { ...customer, source_campaign_id: candidateCampaignId }, rodizioRows })`.
-   - Se `decision.applied`: `update` em `customers` com `referral_partner_id` + `referral_detected_at` (não tocar `consultant_id`), atualizar a referência em memória, e chamar `notifyPartnerNewLead(superAdminConsultantId, partnerId, { id, name, phone_whatsapp, is_sandbox })` com `.catch` best-effort.
-   - Também persistir `source_campaign_id` no customer quando resolvido aqui pela primeira vez (evita o lead-source posterior chamar `rodizio_next` novamente e consumir um segundo turno).
-   - Manter `rodizioPoolAtiva = true` sempre que existir pool (mesmo no fallback de partner_id inválido), preservando a prioridade do rodízio sobre keyword (Req 8).
-   - Fail-open total: qualquer erro só loga e segue para keyword.
+**Diagnóstico (`facebook-sync-metrics` linhas 192–232):**
+- Lê `spend` do insights → `deltaSpend = spend - already_debited` → debita `delta × (1 + feePct)`.
+- Lógica está correta, mas tem 2 gaps:
+  - `synced_to_wallet_cents` é setado para `spend` mesmo quando o `debit_consultant_wallet` falha (linha 244 fora do try). Em falha, o delta nunca mais é recuperado → cobrança a menos.
+  - A descrição da `wallet_transactions` não mostra "taxa de plataforma R$ X" separada do gasto Meta.
 
-3. **Nada mais muda:**
-   - `rodizio_next` (RPC) é o mesmo nos dois canais → mesma fila atômica, mesmo `lead_count++`.
-   - `decideRodizioAssignment` é o mesmo helper puro.
-   - `notifyPartnerNewLead` é o mesmo (`_shared/notify-consultant.ts`).
-   - Match por keyword (linhas 796+) intocado, só roda quando NÃO há pool ativa.
-   - Fluxo D, motor conversacional, gates LGPD, anti-welcome, lock global — intocados.
-   - `facebook-create-campaign` e `rodizio-pool.ts` — intocados.
+**Correção:**
+- Mover `synced_to_wallet_cents = spend` para DENTRO do `try` do debit, só atualizar quando RPC retornar sucesso.
+- Adicionar `metadata.platform_fee_cents` explícito e usar na `description`: `"Meta R$ 12,30 + taxa R$ 2,46 = R$ 14,76"`.
+- Reconciliação noturna: nova função `facebook-balance-reconcile-daily` que compara `SUM(facebook_metrics_daily.gross_spend_cents)` × (1+fee) contra `SUM(wallet_transactions.amount_cents)` da campanha e gera um ajuste se divergir > R$ 0,10.
 
-### Coerência verificada
+## 4) Performance: spend / impressões / cliques / CTR / CPL / leads
 
-- **Imports:** `notifyPartnerNewLead` já está importado no whapi (linha 24). `supabase` (service role) já disponível no escopo. Sem novas dependências.
-- **Tipos:** `RodizioCustomerState` aceita `referral_partner_id` e `source_campaign_id` opcionais — o objeto montado `{ ...customer, source_campaign_id: candidateCampaignId }` satisfaz.
-- **Idempotência:** condição `!customer.referral_partner_id` antes do bloco impede dupla atribuição em reentrada.
-- **Detecção lead-source posterior (linha ~1293):** já tem guarda `alreadyTagged = !!source_campaign_id` — se persistirmos `source_campaign_id` no bloco do rodízio, ela pula sem reprocessar. ✅
-- **Bloco keyword posterior (linha ~803):** já tem guarda `!rodizioPoolAtiva` — continua funcionando. ✅
-- **Edge runtime (Deno):** mover arquivo para `_shared/` é padrão do projeto (vários helpers compartilhados já lá). Sem mudança de schema, sem novos secrets.
+**Diagnóstico:**
+- `useAdMetrics` lê `facebook_metrics_daily` corretamente para spend/impr/cliques/CTR.
+- `leads` vem de `customers.lead_source='meta_ads'` — pega leads de OUTRAS campanhas do mesmo consultor e dá CPL agregado errado por campanha. O sync já reconcilia `customers_acquired` por `source_campaign_id`, mas o painel não usa esse campo.
+- `messaging_conversation_started` tem 6 action_types possíveis (linhas 14–21 do sync). Estão todos somados — ok, mas o `max(leadsDirect, conv)` na hora de persistir mistura sinais e infla.
+- Cron de sync roda a cada 30min, mas se a função estoura CPU no loop de breakdown (`for (const c of campaigns)` sem `await` paralelo controlado), atualizações ficam atrasadas → painel mostra zerado.
 
-### Riscos e mitigações
+**Correção:**
+- `useAdMetrics`: trocar a soma de leads por `SUM(facebook_metrics_daily.leads)` (já reconciliado por `source_campaign_id` no sync) em vez de contar `customers.lead_source`.
+- No sync, persistir 3 colunas distintas: `meta_lead_actions` (cru), `meta_conversations` (cru), `leads` (= max dos dois pós-reconciliação CRM). Hoje o "leads" misturado dá CPL volátil.
+- Adicionar `cost_per_lead_cents` calculado SEMPRE como `gross_spend_cents / NULLIF(leads,0)` no upsert (já existe, validar consistência).
+- Confirmar via `supabase--analytics_query` que o cron `facebook-sync-metrics` está rodando a cada 30 min e o tempo de execução está < 60s. Se não, paralelizar com `Promise.allSettled` em batches de 5 campanhas.
+- Botão "Sincronizar agora" no painel — verificar se já dispara `facebook-sync-metrics` com `consultant_id` no body (já dispara).
 
-- **AD ID/ctwa_clid ausentes na 1ª mensagem:** `candidateCampaignId` fica nulo → nenhum turno consumido, cai no keyword. Sem regressão vs. hoje.
-- **Quebra de import path do helper movido:** edição mecânica validada por `tsgo` antes do deploy.
-- **Concorrência (duas mensagens simultâneas do mesmo lead):** `rodizio_next` é atômico via lock em `rodizio_pools`; a guarda `!referral_partner_id` mais o lock impedem dupla atribuição.
+## Detalhes técnicos
 
-### Validação
+```text
+edge fns alteradas:
+  supabase/functions/facebook-create-campaign/index.ts
+    - linhas 511–608: thumb sempre via Meta /thumbnails (is_preferred), cache invalidado por hash
+    - linhas 200–260: spend_cap = daily × duration_days; quando duration_days, usa lifetime_budget
+    - linhas 380–400: adicionar end_time, pacing_type=["standard"], trocar daily_budget→lifetime_budget condicional
 
-- `tsgo` nos dois webhooks.
-- Property tests P4/P5/P6 verdes apontando para o novo path em `_shared/`.
-- Deploy `whapi-webhook` + `evolution-webhook`; smoke manual: lead de campanha do super admin com pool de 2+ participantes → confirmar `customers.referral_partner_id` setado e `rodizio_pool_members.lead_count` incrementando em rodízio.
+  supabase/functions/facebook-sync-metrics/index.ts
+    - linhas 192–252: mover synced_to_wallet_cents para dentro do try; metadata.platform_fee_cents
+    - linhas 164–253: separar meta_lead_actions / meta_conversations / leads
+    - top do loop: paralelizar campanhas em batches de 5 via Promise.allSettled
+    - auto-pause: checar end_time vs now() antes de buscar insights
 
-### Arquivos tocados
+  src/hooks/useAdMetrics.ts
+    - leads = SUM(facebook_metrics_daily.leads) em vez de count(customers.lead_source)
 
-- `supabase/functions/_shared/rodizio-assignment.ts` (novo — conteúdo movido sem alteração)
-- `supabase/functions/evolution-webhook/rodizio-assignment.ts` (deletado)
-- `supabase/functions/evolution-webhook/index.ts` (1 linha — import)
-- `supabase/functions/whapi-webhook/index.ts` (~50 linhas no bloco rodízio)
-- Arquivos de teste que importam o helper (atualizar path)
+migração SQL (schema):
+  ALTER TABLE facebook_metrics_daily
+    ADD COLUMN IF NOT EXISTS meta_lead_actions int DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS meta_conversations int DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS platform_fee_cents int DEFAULT 0;
+  ALTER TABLE facebook_campaigns
+    ADD COLUMN IF NOT EXISTS end_time_utc timestamptz;
+  ALTER TABLE ad_video_library
+    ADD COLUMN IF NOT EXISTS thumb_source text DEFAULT 'user';
+
+validação (depois do deploy):
+  1. supabase--curl_edge_functions /facebook-create-campaign com payload mínimo (video + duration_days=3)
+     → conferir no Meta Ads Manager que campanha subiu com lifetime_budget e thumb correta
+  2. supabase--edge_function_logs facebook-sync-metrics → ver log "thumb auto-resolved"
+  3. supabase--read_query SUM(spend_cents) vs SUM(wallet_transactions.amount_cents) → checar reconciliação
+```
+
+## Fora de escopo
+- UI da aba Performance fica intocada — só o hook `useAdMetrics` muda fonte de dados.
+- Wizard de publicação fica como está — só passo a respeitar `thumb_url` que ele já manda.
