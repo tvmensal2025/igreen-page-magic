@@ -21,10 +21,10 @@ import {
 import { toast as sonnerToast } from "sonner";
 import {
   Users, Search, Send, Loader2, Building2, User as UserIcon, MapPin, Phone, Mail,
-  RefreshCw, Megaphone, Sparkles,
+  RefreshCw, Megaphone, Sparkles, CheckCircle2, EyeOff, Eye,
 } from "lucide-react";
 import {
-  listCapturedLeads, countLeadsByChannel,
+  listCapturedLeads, countLeadsByChannel, listAlreadyDispatchedPhones,
   type CapturedLead, type LeadChannel, type PersonType, type LeadStatus,
 } from "@/services/capturedLeads";
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
