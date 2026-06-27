@@ -522,9 +522,9 @@ export default function StepInspector({
               />
             ) : (
               <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                Defina uma <code className="rounded bg-muted px-1">slot_key</code> na aba
+                Configure uma <strong>chave de mídia</strong> na aba
                 <br />
-                <strong>Avançado</strong> para anexar mídias.
+                <strong>Avançado</strong> para anexar arquivos a este passo.
               </div>
             )}
           </TabsContent>
