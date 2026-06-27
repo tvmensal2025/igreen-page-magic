@@ -779,6 +779,24 @@ function _finalize(stepKey: string, r: BotResult): BotResult {
 }
 
 export async function runConversationalFlow(ctx: BotContext): Promise<BotResult> {
+  // PARIDADE WHAPI — LGPD opt-out: palavra-chave SAIR/PARAR encerra contato.
+  const optOut = String(ctx.messageText || "").trim().toUpperCase();
+  if (optOut === "SAIR" || optOut === "PARAR" || optOut === "STOP" || optOut === "CANCELAR") {
+    try {
+      await ctx.supabase.from("customers").update({
+        bot_paused: true,
+        bot_paused_reason: "opt_out",
+        bot_paused_at: new Date().toISOString(),
+        do_not_contact: true,
+        updated_at: new Date().toISOString(),
+      }).eq("id", ctx.customer.id);
+    } catch (e) { console.warn("[opt-out] update falhou:", (e as Error).message); }
+    return {
+      reply: "Tudo bem! Você foi removido da nossa lista de contato e não receberá mais mensagens automáticas. Se mudar de ideia, é só responder aqui. 🙏",
+      updates: { bot_paused: true, bot_paused_reason: "opt_out", do_not_contact: true } as any,
+    };
+  }
+
   let stepKey = (ctx.customer.conversation_step || "welcome") as string;
 
   // Cadastro steps are NEVER handled here — defensive guard
@@ -1100,6 +1118,37 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     cpf: (ctx.customer as any).cpf,
   };
   _setTurnStepQuestion(currentStep?.message_text || "", _turnVars);
+  if (!currentStep) {
+    // 🛡️ ANTI-WELCOME-DUPLICADO (PARIDADE WHAPI 2026-05-28): se já mandamos
+    // uma outbound de qualquer passo deste flow nos últimos 30min, NÃO reentra
+    // com o welcome inteiro. O lead já recebeu o conteúdo; deve ter sido só
+    // demora pra responder. Em vez disso, deixa o motor processar o input
+    // contra o passo atual (ou cair no QA/IA se for pergunta livre).
+    try {
+      if (ctx.customer?.id && firstActive?.step_key) {
+        const sinceIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const { data: recentOut } = await ctx.supabase
+          .from("conversations")
+          .select("conversation_step, created_at")
+          .eq("customer_id", ctx.customer.id)
+          .eq("message_direction", "outbound")
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: false })
+          .limit(5);
+        const recentSteps = new Set(((recentOut as any[]) || [])
+          .map(r => String((r as any).conversation_step || ""))
+          .filter(Boolean));
+        if (recentSteps.has(firstActive.step_key)) {
+          console.log(`[conversational] 🛡️ anti-welcome-duplicado: outbound do firstActive=${firstActive.step_key} já enviada nos últimos 30min — pulando restart e tratando msg como input do passo atual`);
+          currentStep = firstActive;
+          stepKey = firstActive.id;
+          _setTurnStepQuestion(firstActive.message_text || "", _turnVars);
+        }
+      }
+    } catch (e) {
+      console.warn(`[conversational] anti-welcome-duplicado check falhou: ${(e as Error)?.message}`);
+    }
+  }
   if (!currentStep) {
     // Unknown/legacy step → restart no primeiro step ativo.
     // REGRA DE OURO: SEMPRE seguir o /admin/fluxos. NUNCA inventar texto.

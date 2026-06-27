@@ -954,7 +954,10 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         .select("initial_delay_seconds")
         .eq("id", flowId)
         .maybeSingle();
-      const delaySec = Math.min(Number((flowRow as any)?.initial_delay_seconds || 0), 300);
+      // 🔒 PARIDADE EVOLUTION: teto reduzido para 15s — Edge Functions têm
+      // timeout de 60s e um delay maior faz o inbound ficar dedupado sem
+      // nunca enviar resposta.
+      const delaySec = Math.min(Number((flowRow as any)?.initial_delay_seconds || 0), 15);
       if (delaySec > 0) {
         console.log(JSON.stringify({ level: "info", kind: "flow_initial_delay", customer_id: ctx.customer?.id, flow_id: flowId, delay_seconds: delaySec }));
         // Envia "digitando..." durante o delay para parecer humano

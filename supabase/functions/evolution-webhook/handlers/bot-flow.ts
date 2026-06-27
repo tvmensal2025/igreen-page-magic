@@ -40,6 +40,7 @@ import {
 } from "../../_shared/utils.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
+import { detectPostponeIntent, buildPostponeReply } from "../../_shared/postpone-intent.ts";
 import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
 import {
@@ -113,6 +114,28 @@ function resolvePostBillNextStepId(
   if (fb.success_goto_step_id) return String(fb.success_goto_step_id);
   if (fb.mode === "goto" && fb.goto_step_id) return String(fb.goto_step_id);
   return null;
+}
+
+// PARIDADE WHAPI/EVO: passo é "esperar resposta" se tem botões, transições
+// com gatilho (intent/phrase) ou fallback repeat/ai. Espelha whapi-webhook
+// bot-flow.ts:134-151. Usado para bloquear auto-avanço pós-simulação.
+function stepHasInteractiveWait(row: any): boolean {
+  const captures = Array.isArray(row?.captures) ? row.captures : [];
+  const hasButtons = captures.some((c: any) =>
+    c?.enabled !== false && c?.field === "_buttons" && Array.isArray(c?.value) && c.value.length > 0
+  );
+  if (hasButtons) return true;
+
+  const transitions = Array.isArray(row?.transitions) ? row.transitions : [];
+  const hasReplyTransition = transitions.some((t: any) => {
+    const intent = String(t?.trigger_intent || "").trim();
+    const phrases = Array.isArray(t?.trigger_phrases) ? t.trigger_phrases.filter(Boolean) : [];
+    return !!t?.goto_special || (!!t?.goto_step_id && (intent !== "default" || phrases.length > 0));
+  });
+  if (hasReplyTransition) return true;
+
+  const fallbackMode = String(row?.fallback?.mode || "").trim();
+  return fallbackMode === "repeat" || fallbackMode === "ai" || fallbackMode === "ai_answer";
 }
 
 // ── Fetch URL → base64 (for OCR when proxy didn't deliver bytes) ──
@@ -2456,14 +2479,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     const txt = messageText.trim().toLowerCase();
     const segueAgora = isClubProgressIntent(txt);
     if (segueAgora) {
-      const ctaMsg = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
+      // 🔧 PARIDADE WHAPI (FIX C1): pedir CONTA DE LUZ antes do documento.
+      // Fluxo correto é conta → simulação → CTA → documento. Antes pulava
+      // direto pro doc, quebrando a ordem do funil.
+      const ctaMsg = `Perfeito! Pra eu calcular sua economia, me envia uma *foto ou PDF da sua conta de luz* 📸`;
       await sendText(remoteJid, ctaMsg);
       await supabase.from("conversations").insert({
         customer_id: customer.id, message_direction: "outbound",
         message_text: ctaMsg, message_type: "text",
-        conversation_step: "aguardando_doc_auto",
+        conversation_step: "aguardando_conta",
       });
-      return { reply: "", updates: { conversation_step: "aguardando_doc_auto", __inline_sent: true } as any };
+      return { reply: "", updates: { conversation_step: "aguardando_conta", __inline_sent: true } as any };
     }
     if (/\?|cancel|cancela|taxa|fidelidade|seguro|pagar|custa|club|clube|funciona/i.test(txt)) {
       return {
@@ -2671,6 +2697,71 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // 🕊️ INTERCEPÇÃO DE ADIAMENTO (PARIDADE WHAPI): "amanhã eu mando",
+  // "tô sem luz", "mais tarde te envio" nos passos que aguardam mídia
+  // (conta/doc). Vale para texto E para áudio transcrito — vendedor
+  // humano não repete "manda a foto" 10s depois do cliente avisar que
+  // envia amanhã.
+  //
+  // - Confirma com empatia ("Combinado, fico no aguardo amanhã cedo")
+  // - Pausa bot até pauseUntil (bot_paused_until)
+  // - Agenda follow-up (next_followup_at)
+  // - NÃO muda conversation_step → quando cliente voltar, segue do mesmo lugar.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const MEDIA_WAIT_RX = /^aguardando_(?:conta|doc(?:_auto|_frente|_verso)?)$/;
+    const isAudioTranscript = isFile && !hasImage && !hasDocument;
+    const isPlainText = !isFile && !isButton;
+    const canCheckPostpone = !!messageText && (isPlainText || isAudioTranscript);
+    if (canCheckPostpone && MEDIA_WAIT_RX.test(step)) {
+      const intent = detectPostponeIntent(messageText);
+      if (intent) {
+        const firstName = ((customer as any)?.name || "").split(/\s+/)[0] || "";
+        const waitingDoc = step.startsWith("aguardando_doc");
+        const reply = buildPostponeReply({ firstName, when: intent.when, waitingDoc });
+        console.log(`[postpone] customer=${customer.id} step=${step} when="${intent.when}" until=${intent.pauseUntil}`);
+        try {
+          await sendText(remoteJid, reply);
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "outbound",
+            message_text: reply,
+            message_type: "text",
+            conversation_step: step,
+          });
+        } catch (e) {
+          console.warn("[postpone] send falhou:", (e as any)?.message);
+        }
+        try {
+          await supabase.from("ai_decisions" as any).insert({
+            customer_id: customer.id,
+            consultant_id: customer.consultant_id || null,
+            phase: "postpone",
+            tool_called: "schedule_followup",
+            user_input: String(messageText).slice(0, 240),
+            reasoning: `Lead pediu adiamento (${intent.when}). Pausando até ${intent.pauseUntil}.`,
+            ai_output: { message: reply, when: intent.when, pause_until: intent.pauseUntil },
+          });
+        } catch (e) {
+          console.warn("[postpone] ai_decisions insert falhou:", (e as any)?.message);
+        }
+        return {
+          reply: "",
+          updates: {
+            ...updates,
+            bot_paused_until: intent.pauseUntil,
+            next_followup_at: intent.pauseUntil,
+            __inline_sent: true,
+          } as any,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[postpone] interceptor erro:", (e as any)?.message);
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════
   // G: INTERCEPÇÃO OFF-TOPIC durante coleta/edição.
   // Se o lead está em ask_*/editing_*/confirmando_*/aguardando_(conta|doc)
   // e digita uma pergunta que NÃO tem o formato esperado pelo step,
@@ -2746,6 +2837,60 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal",
   ]);
   const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 🔒 LOCK GLOBAL (PARIDADE WHAPI): consultor com fluxo custom ativo
+  // NUNCA cai nos passos legacy conversacionais. Remapeia "welcome"/
+  // "qualificacao"/"pitch_*"/"duvidas_*" para o passo equivalente do
+  // fluxo do admin. Estados de cadastro também são mapeados pelo
+  // step_type correspondente no fluxo custom — se existir. Sem
+  // mapeamento → mantém legacy (fallback seguro).
+  // ═══════════════════════════════════════════════════════════════════
+  const CONVERSATIONAL_LEGACY = new Set<string>([
+    "welcome", "menu_inicial", "qualificacao", "pos_video",
+    "pitch_conexao_club", "duvidas_pos_club", "checkin_pos_video",
+  ]);
+  const STATE_LEGACY_TO_TYPE: Record<string, string> = {
+    "aguardando_conta": "capture_conta",
+    "aguardando_doc_auto": "capture_documento",
+    "ask_email": "capture_email",
+    "ask_phone_confirm": "confirm_phone",
+    "finalizando": "finalizar_cadastro",
+  };
+  if (customer.consultant_id && (CONVERSATIONAL_LEGACY.has(step) || STATE_LEGACY_TO_TYPE[step])) {
+    try {
+      const activeFlow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
+      if (activeFlow?.id) {
+        let mapped: any = null;
+        if (CONVERSATIONAL_LEGACY.has(step)) {
+          const { data } = await supabase
+            .from("bot_flow_steps")
+            .select("id, step_key, position")
+            .eq("flow_id", (activeFlow as any).id).eq("is_active", true)
+            .order("position", { ascending: true }).limit(1);
+          mapped = Array.isArray(data) ? data[0] : null;
+        } else {
+          const wantedType = STATE_LEGACY_TO_TYPE[step];
+          const { data } = await supabase
+            .from("bot_flow_steps")
+            .select("id, step_key, position")
+            .eq("flow_id", (activeFlow as any).id).eq("is_active", true)
+            .eq("step_type", wantedType)
+            .order("position", { ascending: true }).limit(1);
+          mapped = Array.isArray(data) ? data[0] : null;
+        }
+        if (mapped?.id) {
+          console.log(`[legacy→custom] step "${step}" → ${mapped.id} (${mapped.step_key})`);
+          step = String(mapped.id);
+        } else {
+          console.log(`[legacy→custom] sem mapeamento para "${step}" no fluxo ${(activeFlow as any).id} — segue legacy`);
+        }
+      }
+    } catch (e) {
+      console.warn("[legacy→custom] erro:", (e as any)?.message);
+    }
+  }
+
   const stepIsUuid = UUID_RX.test(step);
   const stepIsCustom = !LEGACY_STEPS.has(step) && !step.startsWith("editing_") && !step.startsWith("ask_");
 
@@ -3883,6 +4028,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             }
           } else {
             console.log(`[post-confirm-conta] mantendo message "${nextCustom.step_key}" (slot=${hasSlot} btns=${hasButtons} econ=${hasEconomyVar} chars=${text.length}) — passo de simulação/conversão`);
+            // 🚦 PARIDADE WHAPI: se o passo de simulação tem botões/transições
+            // próprias ("Continuar Cadastro" / "Tenho dúvidas" / etc.), NÃO
+            // disparar capture_documento agora — seria atropelar o CTA.
+            // Aguarda resposta no step REAL para honrar o goto_step_id.
+            try {
+              if (stepHasInteractiveWait(nextCustom)) {
+                (updates as any).__last_chain_had_buttons = true;
+                (updates as any).__post_bill_wait_step_id = (nextCustom as any).id;
+                (updates as any).__post_bill_wait_step_key = (nextCustom as any).step_key;
+              }
+            } catch (_) { /* best-effort */ }
           }
         }
         const DOC_FALLBACK = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
@@ -3907,17 +4063,25 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (nextCustom) {
           console.log(`[post-confirm-conta] next=${nextCustom.step_key} type=${nextCustom.step_type} reason=customflow`);
 
-          // 🚀 Ir DIRETO pra captura do documento (sem CTA "Quero me cadastrar").
-          // Regra explícita do produto: pós-SIM da conta, dispara capture_documento
-          // imediatamente — cliente já demonstrou intenção ao confirmar os dados.
+          // 🚦 GATE pós-simulação (PARIDADE WHAPI): se a chain anterior já
+          // tinha botões/transições próprias ("Continuar Cadastro" / "Tenho
+          // dúvidas"), NÃO disparar capture_documento agora. Aguarda
+          // resposta no step REAL enviado para honrar o goto_step_id.
           if (nextCustom.step_type === "capture_documento" || nextCustom.step_type === "capture_doc") {
-            try {
-              await dispatchStepFromFlow(nextCustom.step_key, _vars);
-            } catch (e) {
-              console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
-              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+            const _waitForCta = (updates as any).__last_chain_had_buttons === true;
+            if (_waitForCta) {
+              const waitStep = (updates as any).__post_bill_wait_step_id || "ask_quero_cadastrar";
+              console.log(`[post-confirm-conta] chain final é interativa → aguardando resposta em ${waitStep} (não disparando capture_documento agora)`);
+              updates.conversation_step = waitStep;
+            } else {
+              try {
+                await dispatchStepFromFlow(nextCustom.step_key, _vars);
+              } catch (e) {
+                console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
+                await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+              }
+              updates.conversation_step = "aguardando_doc_auto";
             }
-            updates.conversation_step = "aguardando_doc_auto";
           } else {
             const ok = nextCustom.step_type === "finalizar_cadastro"
               ? true
@@ -3953,26 +4117,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             void ok;
           }
         } else {
-          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — pedindo doc direto (sem CTA "quero me cadastrar")`);
-          try {
-            const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
-            let _dispatched = false;
-            if (_flowRow?.id) {
-              const { data: _docStep } = await supabase
-                .from("bot_flow_steps").select("step_key")
-                .eq("flow_id", (_flowRow as any).id).eq("is_active", true)
-                .in("step_type", ["capture_documento", "capture_doc"])
-                .order("position", { ascending: true }).limit(1).maybeSingle();
-              if (_docStep?.step_key) {
-                await dispatchStepFromFlow(_docStep.step_key, _vars);
-                _dispatched = true;
-              }
-            }
-            if (!_dispatched) {
-              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
-            }
-          } catch (_) { /* segue */ }
-          updates.conversation_step = "aguardando_doc_auto";
+          // PARIDADE WHAPI: sem próximo passo seguro NÃO pede doc direto —
+          // aguarda resposta no último step interativo ou repete o atual.
+          const waitStep = (updates as any).__post_bill_wait_step_id || (customer as any).conversation_step || "confirmando_dados_conta";
+          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — NÃO pedindo doc direto; aguardando resposta em ${waitStep}`);
+          updates.conversation_step = waitStep;
         }
 
         (updates as any).__inline_sent = true;
