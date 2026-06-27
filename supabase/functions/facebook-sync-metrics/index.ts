@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
           // Lê linha existente pra calcular delta de gasto + atividade incremental no período
           const { data: prev } = await admin
             .from("facebook_metrics_daily")
-            .select("spend_cents,synced_to_wallet_cents,impressions,clicks,leads")
+            .select("spend_cents,synced_to_wallet_cents,impressions,clicks,leads,platform_fee_cents")
             .eq("campaign_id", c.id)
             .eq("date", date)
             .maybeSingle();
