@@ -92,17 +92,28 @@ function buildOverpassQuery(city: string, category: string, limit: number): stri
         nwr["name"]["contact:mobile"](area.b);`;
   }
   const safeCity = city.replace(/["\\]/g, "");
-  // Varre a CIDADE INTEIRA. Como o limite agora é alto (5000) e o universo real
-  // de uma cidade grande é ~1-2 mil, pega tudo sem deixar nada de fora. O filtro
-  // por bairro é aplicado depois, sobre o endereço de cada resultado.
+  // Varre a CIDADE INTEIRA, mas fixando admin_level=8 (município, padrão OSM no
+  // Brasil). Sem o nível, o nome casava com várias áreas (estado/região) e a
+  // query varria um território gigante → estourava o tempo (504). Com o nível
+  // certo a busca fica precisa e rápida. O timeout interno do Overpass cai pra
+  // 25s pra nunca ultrapassar o limite do gateway. O filtro por bairro é
+  // aplicado depois, sobre o endereço de cada resultado.
   return `
-    [out:json][timeout:60];
-    area["name"="${safeCity}"]["admin_level"]->.b;
+    [out:json][timeout:25];
+    area["name"="${safeCity}"]["admin_level"="8"]->.b;
     (
         ${block}
     );
     out center ${limit};
   `;
+}
+
+// Fallback: se o admin_level=8 não achar a cidade (mapeamento incompleto no
+// OSM), tenta sem fixar o nível. Mais lento, mas só roda quando o caminho
+// rápido volta vazio.
+function buildOverpassQueryLoose(city: string, category: string, limit: number): string {
+  const fast = buildOverpassQuery(city, category, limit);
+  return fast.replace('["admin_level"="8"]', '["admin_level"]');
 }
 
 interface OsmElement {
@@ -123,7 +134,9 @@ async function queryOverpass(query: string): Promise<OsmElement[]> {
   for (const url of OVERPASS_MIRRORS) {
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 28_000);
+      // 24s por espelho: no pior caso (3 espelhos) dá ~72s, bem abaixo do
+      // limite do gateway (que matava em 150s com 504).
+      const timer = setTimeout(() => ctrl.abort(), 24_000);
       const resp = await fetch(url, {
         method: "POST",
         headers: {
@@ -316,6 +329,12 @@ Deno.serve(async (req) => {
   try {
     const q = buildOverpassQuery(city, category, limit);
     elements = await queryOverpass(q);
+    // Caminho rápido (admin_level=8) voltou vazio? A cidade pode estar mapeada
+    // com outro nível. Tenta o fallback (sem fixar o nível) só nesse caso.
+    if (elements.length === 0) {
+      const qLoose = buildOverpassQueryLoose(city, category, limit);
+      elements = await queryOverpass(qLoose);
+    }
   } catch (e) {
     return json(502, { error: "overpass_indisponivel", detail: (e as Error)?.message });
   }
