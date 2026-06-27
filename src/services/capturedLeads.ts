@@ -85,6 +85,37 @@ export async function countLeadsByChannel(consultantId: string): Promise<Record<
   return out;
 }
 
+/**
+ * Retorna o Set de telefones (somente dígitos, últimos 11) que o consultor
+ * JÁ disparou em campanhas anteriores — usado para marcar leads já enviados
+ * na tela de captação e evitar repetir o mesmo número.
+ */
+export async function listAlreadyDispatchedPhones(consultantId: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  const { data: camps, error: e1 } = await (supabase as any)
+    .from("bulk_campaigns")
+    .select("id")
+    .eq("consultant_id", consultantId);
+  if (e1 || !camps?.length) return out;
+  const ids = (camps as { id: string }[]).map((c) => c.id);
+
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
+    const { data, error } = await (supabase as any)
+      .from("bulk_campaign_targets")
+      .select("phone, status")
+      .in("campaign_id", slice)
+      .in("status", ["sent", "sending"]);
+    if (error) continue;
+    for (const r of (data as { phone: string }[]) || []) {
+      const digits = String(r.phone || "").replace(/\D/g, "");
+      if (digits.length >= 8) out.add(digits.slice(-11));
+    }
+  }
+  return out;
+}
+
 export interface DispatchResult {
   ok: boolean;
   campaign_id?: string;
