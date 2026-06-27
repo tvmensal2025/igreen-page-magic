@@ -339,6 +339,45 @@ export default function FluxoBuilder() {
                       </Button>
                     </div>
                   )}
+                  {!crud.readOnlyHerdado && !isSuperAdmin && syncMode === "custom" && (
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                          Fluxo personalizado — não recebe mais atualizações do modelo padrão
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Você está editando uma cópia própria. Melhorias publicadas no modelo oficial
+                          (correções, novos áudios, ajustes de funil) <strong>não chegam mais</strong> aqui
+                          até você voltar para o modelo público.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 border-amber-500/50 hover:bg-amber-500/10"
+                        disabled={crud.saving}
+                        onClick={async () => {
+                          if (!userId) return;
+                          if (!window.confirm(
+                            "Voltar ao modelo público vai SUBSTITUIR seus passos personalizados pela versão oficial atual. Suas edições serão perdidas. Continuar?"
+                          )) return;
+                          const { error } = await supabase.rpc("sync_flow_from_public", {
+                            _consultant_id: userId,
+                            _variant: editingVariant,
+                          });
+                          if (error) {
+                            toast.error("Não consegui voltar ao modelo público: " + error.message);
+                            return;
+                          }
+                          toast.success("Fluxo sincronizado com o modelo público.");
+                          void loadData(editingVariant);
+                        }}
+                      >
+                        {crud.saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Voltar ao modelo público
+                      </Button>
+                    </div>
+                  )}
                   {/* Preferências de IA movidas para Super Admin → /super-admin (AIControlPanel).
                       O perfil padrão é "auto" (precisão alta + custo baixo, escolhe modelo conforme pergunta). */}
 
