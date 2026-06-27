@@ -123,7 +123,13 @@ async function queryOverpass(query: string): Promise<OsmElement[]> {
       const timer = setTimeout(() => ctrl.abort(), 28_000);
       const resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          // Overpass público exige User-Agent identificável; sem ele devolve
+          // 406/429 (que virava 502 pra nós).
+          "User-Agent": "iGreen-LeadResearch/1.0 (suporte@igreen.cloud)",
+          "Accept": "application/json",
+        },
         body: `data=${encodeURIComponent(query)}`,
         signal: ctrl.signal,
       });
@@ -132,8 +138,17 @@ async function queryOverpass(query: string): Promise<OsmElement[]> {
         lastErr = `${url} → HTTP ${resp.status}`;
         continue;
       }
-      const data = await resp.json();
-      if (Array.isArray(data?.elements)) return data.elements as OsmElement[];
+      const text = await resp.text();
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Overpass às vezes devolve HTML de erro mesmo com 200.
+        lastErr = `${url} → resposta não-JSON`;
+        continue;
+      }
+      const els = (data as { elements?: unknown })?.elements;
+      if (Array.isArray(els)) return els as OsmElement[];
       lastErr = `${url} → resposta sem elements`;
     } catch (e) {
       lastErr = `${url} → ${(e as Error)?.message || "erro"}`;
