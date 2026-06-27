@@ -621,6 +621,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
           Para personalizar, peça ao Super Admin para liberar o modo customizado.
         </div>
       )}
+      <fieldset disabled={readOnlySync} className={readOnlySync ? "opacity-70 pointer-events-none select-none" : ""}>
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold">Mídias deste passo</h4>
         {hasPendingChanges && (
