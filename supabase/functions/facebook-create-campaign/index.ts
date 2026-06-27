@@ -986,6 +986,9 @@ Deno.serve(async (req) => {
         daily_budget_cents: body.daily_budget_cents,
         lifetime_cap_cents: lifetimeCapCents,
         duration_days: body.duration_days ?? null,
+        end_time_utc: hasFixedDuration
+          ? new Date(Date.now() + (body.duration_days as number) * 86400_000).toISOString()
+          : null,
         status: "pending_review",
         started_at: new Date().toISOString(),
         distribuidora: body.distribuidora ?? null,
