@@ -14,7 +14,7 @@
  *
  * Abordagem: o ramo de atribuição vive dentro do `Deno.serve` do `index.ts` e é
  * difícil de testar diretamente sob Vitest. A DECISÃO foi isolada no helper puro
- * `supabase/functions/evolution-webhook/rodizio-assignment.ts` (mesmo padrão da
+ * `supabase/functions/_shared/rodizio-assignment.ts` (mesmo padrão da
  * Tarefa 5.3). Aqui mockamos o retorno de `rodizio_next` (Supabase) e o estado do
  * customer, exercitando a decisão pura + a aplicação ao customer.
  */
@@ -25,7 +25,7 @@ import { describe, expect } from "vitest";
 import {
   applyRodizioDecisionToCustomer,
   decideRodizioAssignment,
-} from "../../../supabase/functions/evolution-webhook/rodizio-assignment";
+} from "../../../supabase/functions/_shared/rodizio-assignment";
 
 // ---------------------------------------------------------------------------
 // Geradores (mocks de Supabase / rodizio_next e do estado do customer)
