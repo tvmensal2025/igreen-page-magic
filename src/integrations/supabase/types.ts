@@ -6846,6 +6846,126 @@ export type Database = {
         }
         Relationships: []
       }
+      rodizio_pool_members: {
+        Row: {
+          created_at: string
+          id: string
+          lead_count: number
+          partner_id: string
+          pool_id: string
+          position: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_count?: number
+          partner_id: string
+          pool_id: string
+          position: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_count?: number
+          partner_id?: string
+          pool_id?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rodizio_pool_members_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "referral_partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_pool_members_pool_id_fkey"
+            columns: ["pool_id"]
+            isOneToOne: false
+            referencedRelation: "rodizio_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rodizio_pools: {
+        Row: {
+          campaign_id: string | null
+          consultant_id: string | null
+          counter: number
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          message: string | null
+          phones: string[] | null
+          slug: string | null
+          updated_at: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          consultant_id?: string | null
+          counter?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          message?: string | null
+          phones?: string[] | null
+          slug?: string | null
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string | null
+          consultant_id?: string | null
+          counter?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          message?: string | null
+          phones?: string[] | null
+          slug?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rodizio_pools_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_pools_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "rodizio_pools_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_pools_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_pools_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
       rollout_alerts: {
         Row: {
           acknowledged: boolean
@@ -8975,6 +9095,14 @@ export type Database = {
       review_flow_template: {
         Args: { _approve: boolean; _note?: string; _submission_id: string }
         Returns: undefined
+      }
+      rodizio_next: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          partner_id: string
+          pool_id: string
+          position: number
+        }[]
       }
       seed_default_camila_flow: {
         Args: { _consultant_id: string }
