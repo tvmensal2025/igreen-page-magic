@@ -180,7 +180,7 @@ function VideoUploader({ state, patch, creative }: { state: WizardState; patch: 
         <div className="space-y-2">
           <div className="relative rounded-lg overflow-hidden border border-[hsl(var(--ads-emerald-2))]/40 bg-black max-w-[280px] mx-auto">
             <video src={state.videoUrl} controls className="w-full aspect-[9/16] object-cover" />
-            <button type="button" onClick={creative.clearVideo} className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1">
+            <button type="button" onClick={creative.clearVideo} aria-label="Remover vídeo" title="Remover vídeo" className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1">
               <X className="w-3 h-3" />
             </button>
             {state.videoMeta && (
