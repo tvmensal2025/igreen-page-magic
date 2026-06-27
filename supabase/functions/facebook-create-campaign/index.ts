@@ -252,7 +252,8 @@ Deno.serve(async (req) => {
     const activeCount = (existingCamps?.length || 0) + 1; // +1 = a nova
     const perCampaignExtra = Math.floor(liquidMetaBudget / activeCount);
     // cap da NOVA campanha = só a fatia dela (ainda não gastou nada)
-    const lifetimeCapCents = Math.max(1000, perCampaignExtra);
+    // Meta exige spend_cap mínimo de R$ 300,00 em BRL (subcode 2446307).
+    const lifetimeCapCents = Math.max(30000, perCampaignExtra);
     // realinha o cap das existentes pra elas também respeitarem o rateio
     const realignTargets = (existingCamps || []).filter((c: any) => c.fb_campaign_id);
 
@@ -1102,7 +1103,7 @@ Deno.serve(async (req) => {
           .select("gross_spend_cents")
           .eq("campaign_id", ec.id);
         const ecSpent = (spentRow || []).reduce((s: number, r: any) => s + Number(r.gross_spend_cents || 0), 0);
-        const newEcCap = Math.max(1000, ecSpent + perCampaignExtra);
+        const newEcCap = Math.max(30000, ecSpent + perCampaignExtra);
         await fbFetch(`/${ec.fb_campaign_id}`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
