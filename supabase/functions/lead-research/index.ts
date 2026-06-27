@@ -27,7 +27,7 @@ const OVERPASS_MIRRORS = [
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 
-const MAX_LIMIT = 2000;
+const MAX_LIMIT = 5000;
 
 // Categorias amigáveis → filtros OSM. "" = comércio variado.
 const CATEGORY_MAP: Record<string, string[]> = {
@@ -50,6 +50,7 @@ interface SearchBody {
   action?: "search" | "import";
   city?: string;
   uf?: string;
+  neighbourhood?: string;
   category?: string;
   limit?: number;
   // para import:
@@ -81,23 +82,22 @@ function buildOverpassQuery(city: string, category: string, limit: number): stri
   if (filters) {
     // Filtra pela categoria escolhida, em nós, vias e relações.
     block = filters
-      .map((f) => `nwr["name"]["${f}"](area.a);`)
+      .map((f) => `nwr["name"]["${f}"](area.b);`)
       .join("\n        ");
   } else {
     // "Tudo": pega O MÁXIMO possível — tudo que é local público nomeado e tem
     // telefone (empresa, igreja, escola, órgão público, clínica, etc.).
-    // Medição real: ~3x mais que filtrar por categoria. Sem exclusões.
-    block = `nwr["name"]["phone"](area.a);
-        nwr["name"]["contact:phone"](area.a);
-        nwr["name"]["contact:mobile"](area.a);`;
+    block = `nwr["name"]["phone"](area.b);
+        nwr["name"]["contact:phone"](area.b);
+        nwr["name"]["contact:mobile"](area.b);`;
   }
-  // Escapa aspas no nome da cidade (evita query inválida).
   const safeCity = city.replace(/["\\]/g, "");
-  // Resolve a área pelo nome em níveis administrativos comuns de município
-  // (8/7/6) — mais tolerante que travar só em boundary=administrative.
+  // Varre a CIDADE INTEIRA. Como o limite agora é alto (5000) e o universo real
+  // de uma cidade grande é ~1-2 mil, pega tudo sem deixar nada de fora. O filtro
+  // por bairro é aplicado depois, sobre o endereço de cada resultado.
   return `
-    [out:json][timeout:30];
-    area["name"="${safeCity}"]["admin_level"]->.a;
+    [out:json][timeout:60];
+    area["name"="${safeCity}"]["admin_level"]->.b;
     (
         ${block}
     );
@@ -308,8 +308,9 @@ Deno.serve(async (req) => {
   const city = (body.city ?? "").trim();
   if (!city) return json(400, { error: "city_required" });
   const uf = (body.uf ?? "").trim().toUpperCase() || null;
+  const neighbourhood = (body.neighbourhood ?? "").trim() || undefined;
   const category = (body.category ?? "").trim().toLowerCase();
-  const limit = Math.min(Math.max(Number(body.limit) || 60, 1), MAX_LIMIT);
+  const limit = Math.min(Math.max(Number(body.limit) || 2000, 1), MAX_LIMIT);
 
   let elements: OsmElement[] = [];
   try {
@@ -321,9 +322,15 @@ Deno.serve(async (req) => {
 
   const items: ResearchItem[] = [];
   const seen = new Set<string>();
+  // Filtro de bairro (texto): casa contra bairro OU endereço completo.
+  const bairroFilter = (neighbourhood || "").trim().toLowerCase();
   for (const el of elements) {
     const m = mapElement(el, city, uf);
     if (!m) continue;
+    if (bairroFilter) {
+      const hay = `${m.neighbourhood || ""} ${m.full_address || ""}`.toLowerCase();
+      if (!hay.includes(bairroFilter)) continue;
+    }
     // dedup local por nome+telefone
     const key = `${(m.name || "").toLowerCase()}|${(m.phone || "").replace(/\D/g, "")}`;
     if (seen.has(key)) continue;
@@ -343,6 +350,7 @@ Deno.serve(async (req) => {
     ok: true,
     city,
     uf,
+    neighbourhood: neighbourhood || null,
     category: category || null,
     found: items.length,
     with_phone: withPhone,

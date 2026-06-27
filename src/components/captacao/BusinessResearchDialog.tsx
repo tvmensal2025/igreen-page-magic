@@ -52,6 +52,7 @@ interface Props {
 export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props) {
   const [city, setCity] = useState("");
   const [uf, setUf] = useState("");
+  const [neighbourhood, setNeighbourhood] = useState("");
   const [category, setCategory] = useState("");
   const [searching, setSearching] = useState(false);
   const [items, setItems] = useState<ResearchItem[]>([]);
@@ -93,7 +94,7 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
     setSearching(true);
     setSearched(false);
     try {
-      const r = await searchBusinesses({ city: city.trim(), uf: uf.trim() || undefined, category: category || undefined, limit: 1000 });
+      const r = await searchBusinesses({ city: city.trim(), uf: uf.trim() || undefined, neighbourhood: neighbourhood.trim() || undefined, category: category || undefined, limit: 2000 });
       if (!r.ok) { sonnerToast.error(r.error || "Falha na busca"); return; }
       const list = r.items || [];
       setItems(list);
@@ -102,9 +103,11 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
       setSearched(true);
       const comTel = list.filter((i) => i.phone).length;
       if (list.length === 0) {
-        sonnerToast.info("Nenhum estabelecimento encontrado. Tente uma cidade maior ou outro ramo.");
+        sonnerToast.info("Nenhum estabelecimento encontrado. Confira o nome da cidade/bairro.");
       } else if (comTel === 0) {
-        sonnerToast.warning("Encontrei locais, mas nenhum tem telefone público cadastrado nessa cidade. Cidades maiores têm mais dados.");
+        sonnerToast.warning("Encontrei locais, mas nenhum tem telefone público cadastrado. Cidades maiores têm mais dados.");
+      } else if (list.length >= 2000) {
+        sonnerToast.info("Muitos resultados! Use o campo Bairro para varrer a cidade por partes e não perder nada.");
       }
     } finally {
       setSearching(false);
@@ -199,6 +202,12 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
                 Buscar
               </Button>
             </div>
+          </div>
+          <div>
+            <Label htmlFor="b-bairro" className="text-xs">Bairro (opcional — para cidade grande, varra por partes)</Label>
+            <Input id="b-bairro" value={neighbourhood} onChange={(e) => setNeighbourhood(e.target.value)}
+              placeholder="Ex: Cambuí, Barão Geraldo..." className="h-9"
+              onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }} />
           </div>
           <div className="flex flex-wrap gap-1.5">
             {CATEGORIES.map((c) => (

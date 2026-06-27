@@ -163,6 +163,7 @@ export interface ResearchImportResult {
 export async function searchBusinesses(input: {
   city: string;
   uf?: string;
+  neighbourhood?: string;
   category?: string;
   limit?: number;
 }): Promise<ResearchSearchResult> {
