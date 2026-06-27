@@ -8,7 +8,7 @@
 //
 // Fonte: OpenStreetMap (gratuito). Os dados são públicos de estabelecimentos.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -22,7 +22,8 @@ import {
   Search, Loader2, MapPin, Phone, Globe, Clock, Building2, Mail, CheckCheck, Download,
 } from "lucide-react";
 import {
-  searchBusinesses, importBusinesses, type ResearchItem,
+  searchBusinesses, importBusinesses, searchCityNames,
+  type ResearchItem, type CityHit,
 } from "@/services/capturedLeads";
 
 const CATEGORIES = [
@@ -57,6 +58,32 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searched, setSearched] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // autocomplete de cidades
+  const [cityHits, setCityHits] = useState<CityHit[]>([]);
+  const [showHits, setShowHits] = useState(false);
+  const [cityPicked, setCityPicked] = useState(false);
+
+  // Busca sugestões de cidade enquanto digita (debounce).
+  useEffect(() => {
+    if (cityPicked) return; // não sugere logo após escolher
+    const q = city.trim();
+    if (q.length < 2) { setCityHits([]); return; }
+    const t = setTimeout(async () => {
+      const hits = await searchCityNames(q);
+      setCityHits(hits);
+      setShowHits(hits.length > 0);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [city, cityPicked]);
+
+  const pickCity = (h: CityHit) => {
+    setCity(h.name);
+    setUf(h.uf);
+    setCityPicked(true);
+    setShowHits(false);
+    setCityHits([]);
+  };
 
   const keyOf = (it: ResearchItem) => it.osm_id || `${it.name}|${it.phone}`;
 
@@ -128,13 +155,34 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
         {/* Formulário de busca */}
         <div className="px-5 py-3 space-y-3 border-b border-border bg-card/40 shrink-0">
           <div className="flex gap-2">
-            <div className="flex-1">
+            <div className="flex-1 relative">
               <Label htmlFor="b-city" className="text-xs">Cidade</Label>
-              <Input id="b-city" value={city} onChange={(e) => setCity(e.target.value)}
-                placeholder="Ex: Campinas" className="h-9"
-                onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }} />
+              <Input id="b-city" value={city}
+                onChange={(e) => { setCity(e.target.value); setCityPicked(false); }}
+                onFocus={() => { if (cityHits.length) setShowHits(true); }}
+                placeholder="Digite 'cam' → Campinas..." className="h-9" autoComplete="off"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    if (showHits && cityHits[0]) pickCity(cityHits[0]);
+                    else doSearch();
+                  }
+                  if (e.key === "Escape") setShowHits(false);
+                }} />
+              {showHits && cityHits.length > 0 && (
+                <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-md border bg-popover shadow-lg">
+                  {cityHits.map((h) => (
+                    <button key={`${h.name}-${h.uf}`} type="button"
+                      onClick={() => pickCity(h)}
+                      className="w-full text-left px-3 py-2 hover:bg-accent text-sm flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span className="flex-1">{h.name}</span>
+                      <Badge variant="outline" className="text-[10px]">{h.uf}</Badge>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="w-20">
+            <div className="w-16">
               <Label htmlFor="b-uf" className="text-xs">UF</Label>
               <Input id="b-uf" value={uf} onChange={(e) => setUf(e.target.value.toUpperCase())}
                 placeholder="SP" maxLength={2} className="h-9" />

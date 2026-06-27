@@ -190,3 +190,25 @@ export async function discardLead(leadId: string): Promise<void> {
     .eq("id", leadId);
   if (error) throw error;
 }
+
+export interface CityHit {
+  name: string;
+  uf: string;
+}
+
+/**
+ * Autocomplete de cidades a partir da tabela fb_city_cache (601 municípios).
+ * Digite "cam" e recebe Campinas, Campina Grande, etc.
+ */
+export async function searchCityNames(query: string): Promise<CityHit[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const { data, error } = await supabase
+    .from("fb_city_cache")
+    .select("name, uf")
+    .ilike("name", `${q}%`)
+    .order("name", { ascending: true })
+    .limit(12);
+  if (error) return [];
+  return (data as CityHit[]) || [];
+}
