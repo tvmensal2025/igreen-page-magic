@@ -19,7 +19,13 @@ import { ingestLead } from "../_shared/captation/lead-ingest.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+// Espelhos públicos do Overpass. A instância principal cai/throttle com
+// frequência, então tentamos vários em ordem antes de desistir.
+const OVERPASS_MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
 
 const MAX_LIMIT = 200;
 
@@ -82,9 +88,13 @@ function buildOverpassQuery(city: string, category: string, limit: number): stri
         nwr["name"]["amenity"~"restaurant|cafe|bar|pharmacy|fuel|bank|fast_food"](area.a);
         nwr["name"]["office"](area.a);`;
   }
+  // Escapa aspas no nome da cidade (evita query inválida).
+  const safeCity = city.replace(/["\\]/g, "");
+  // Resolve a área pelo nome em níveis administrativos comuns de município
+  // (8/7/6) — mais tolerante que travar só em boundary=administrative.
   return `
     [out:json][timeout:30];
-    area["name"="${city}"]["boundary"="administrative"]->.a;
+    area["name"="${safeCity}"]["admin_level"]->.a;
     (
         ${block}
     );
@@ -99,6 +109,37 @@ interface OsmElement {
   lon?: number;
   center?: { lat: number; lon: number };
   tags?: Record<string, string>;
+}
+
+/**
+ * Consulta o Overpass tentando vários espelhos. Cada tentativa tem timeout
+ * próprio. Retorna os elementos ou lança com o último erro.
+ */
+async function queryOverpass(query: string): Promise<OsmElement[]> {
+  let lastErr = "";
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 28_000);
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (!resp.ok) {
+        lastErr = `${url} → HTTP ${resp.status}`;
+        continue;
+      }
+      const data = await resp.json();
+      if (Array.isArray(data?.elements)) return data.elements as OsmElement[];
+      lastErr = `${url} → resposta sem elements`;
+    } catch (e) {
+      lastErr = `${url} → ${(e as Error)?.message || "erro"}`;
+    }
+  }
+  throw new Error(lastErr || "todos os espelhos Overpass falharam");
 }
 
 function mapElement(el: OsmElement, fallbackCity: string, fallbackUf: string | null): ResearchItem | null {
@@ -222,16 +263,9 @@ Deno.serve(async (req) => {
   let elements: OsmElement[] = [];
   try {
     const q = buildOverpassQuery(city, category, limit);
-    const resp = await fetch(OVERPASS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(q)}`,
-    });
-    if (!resp.ok) return json(502, { error: "overpass_failed", status: resp.status });
-    const data = await resp.json();
-    elements = Array.isArray(data?.elements) ? data.elements : [];
+    elements = await queryOverpass(q);
   } catch (e) {
-    return json(502, { error: "overpass_error", detail: (e as Error)?.message });
+    return json(502, { error: "overpass_indisponivel", detail: (e as Error)?.message });
   }
 
   const items: ResearchItem[] = [];
