@@ -19,7 +19,7 @@ __resetFlowInstantModeCache();
 
 import { __test } from "./bot-flow.ts";
 
-const { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId } = __test;
+const { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId, stepHasInteractiveWait } = __test;
 
 // ─────────────────────────────────────────────────────────────────────
 // resolvePostBillNextStepId — destino pós-SIM da conta (anti-duplicação)
@@ -54,6 +54,62 @@ Deno.test("resolvePostBillNextStepId: null/sem destino → null", () => {
   assertEquals(resolvePostBillNextStepId(undefined), null);
   assertEquals(resolvePostBillNextStepId({}), null);
   assertEquals(resolvePostBillNextStepId({ mode: "retry" }), null);
+});
+
+Deno.test("stepHasInteractiveWait: d_resultado com botões deve aguardar resposta", () => {
+  assertEquals(
+    stepHasInteractiveWait({
+      step_key: "d_resultado",
+      wait_for: "none",
+      captures: [
+        {
+          enabled: true,
+          field: "_buttons",
+          value: [
+            { id: "cadastrar", title: "✅ Continuar Cadastro" },
+            { id: "duvida", title: "🎥 Como funciona" },
+          ],
+        },
+      ],
+      transitions: [],
+      fallback: { mode: "repeat" },
+    }),
+    true,
+  );
+});
+
+Deno.test("stepHasInteractiveWait: transição por palavra-chave deve parar antes do documento", () => {
+  assertEquals(
+    stepHasInteractiveWait({
+      step_key: "d_resultado",
+      wait_for: "none",
+      captures: [],
+      transitions: [
+        {
+          trigger_intent: "palavra_chave",
+          trigger_phrases: ["cadastrar", "quero me cadastrar"],
+          goto_step_id: "d_pedir_documento_id",
+        },
+      ],
+      fallback: { mode: "repeat" },
+    }),
+    true,
+  );
+});
+
+Deno.test("stepHasInteractiveWait: default goto puro pode cascatear", () => {
+  assertEquals(
+    stepHasInteractiveWait({
+      step_key: "router_tecnico",
+      wait_for: "none",
+      captures: [],
+      transitions: [
+        { trigger_intent: "default", trigger_phrases: [], goto_step_id: "proximo_id" },
+      ],
+      fallback: { mode: "goto", goto_step_id: "proximo_id" },
+    }),
+    false,
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────
