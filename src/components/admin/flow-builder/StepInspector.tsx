@@ -691,6 +691,8 @@ export default function StepInspector({
                           <Button
                             size="icon"
                             variant="ghost"
+                            aria-label="Remover regra"
+                            title="Remover regra"
                             className="ml-auto h-7 w-7 text-destructive"
                             onClick={() => removeTransition(idx)}
                           >
