@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     const lowAlertCents = Number(pSettings?.low_balance_alert_cents ?? 2000);
     let campaignsQuery = admin
       .from("facebook_campaigns")
-      .select("id, consultant_id, fb_campaign_id, status, started_at")
+      .select("id, consultant_id, fb_campaign_id, status, started_at, end_time_utc")
       .in("status", ["active", "paused", "pending_review"]);
     if (consultantFilter) campaignsQuery = campaignsQuery.eq("consultant_id", consultantFilter);
     const { data: campaigns } = await campaignsQuery;
@@ -118,6 +118,20 @@ Deno.serve(async (req) => {
           tokenCache[c.consultant_id] = conn.token;
         }
         const token = tokenCache[c.consultant_id];
+
+        // Auto-pause se passou do end_time_utc (campanha de prazo fixo terminou)
+        if (c.status === "active" && (c as any).end_time_utc) {
+          const endMs = new Date((c as any).end_time_utc).getTime();
+          if (Number.isFinite(endMs) && endMs < Date.now()) {
+            try {
+              await fbFetch(`${FB_GRAPH}/${c.fb_campaign_id}?status=PAUSED&access_token=${token}`, { method: "POST" });
+              await admin.from("facebook_campaigns").update({ status: "completed", rejection_reason: "Prazo da campanha encerrado" }).eq("id", c.id);
+              autoPaused++;
+              try { await notifyConsultant(c.consultant_id, "info", "Campanha finalizada 🏁", "O prazo definido terminou e a campanha foi pausada automaticamente."); } catch (_) {}
+              continue;
+            } catch (pe) { console.error("[fb-sync] end-time pause failed", c.fb_campaign_id, (pe as Error).message); }
+          }
+        }
 
         // Pré-checa saldo: se já está em débito ou zerou, pausa AGORA antes de buscar insights
         if (c.status === "active") {
@@ -192,7 +206,7 @@ Deno.serve(async (req) => {
           // Lê linha existente pra calcular delta de gasto + atividade incremental no período
           const { data: prev } = await admin
             .from("facebook_metrics_daily")
-            .select("spend_cents,synced_to_wallet_cents,impressions,clicks,leads")
+            .select("spend_cents,synced_to_wallet_cents,impressions,clicks,leads,platform_fee_cents")
             .eq("campaign_id", c.id)
             .eq("date", date)
             .maybeSingle();
@@ -204,8 +218,13 @@ Deno.serve(async (req) => {
           const dImpressions = Math.max(0, impressionsNow - Number((prev as any)?.impressions || 0));
           const dClicks = Math.max(0, clicksNow - Number((prev as any)?.clicks || 0));
           const dLeads = Math.max(0, leadsNow - Number((prev as any)?.leads || 0));
+          // Por padrão, mantém o synced anterior. Só avança quando o débito der OK
+          // (evita "perder" cobrança em caso de falha do RPC).
+          let syncedToWalletCents = alreadyDebited;
+          let feeCharged = 0;
           if (deltaSpend > 0) {
             const chargeCents = Math.round(deltaSpend * (1 + feePct));
+            feeCharged = chargeCents - deltaSpend;
             try {
               const time = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
               const dateBr = date.split("-").reverse().slice(0, 2).join("/");
@@ -214,7 +233,8 @@ Deno.serve(async (req) => {
                 dClicks > 0 ? `${dClicks} clique${dClicks > 1 ? "s" : ""}` : null,
                 dLeads > 0 ? `${dLeads} lead${dLeads > 1 ? "s" : ""}` : null,
               ].filter(Boolean).join(", ") || "sem novas interações";
-              const description = `${c.fb_campaign_id ? "Campanha" : "Anúncio"} • ${dateBr} ${time} • ${activity}`;
+              // Descrição transparente: gasto Meta + taxa = total cobrado
+              const description = `Campanha • ${dateBr} ${time} • Meta R$ ${(deltaSpend/100).toFixed(2)} + taxa R$ ${(feeCharged/100).toFixed(2)} = R$ ${(chargeCents/100).toFixed(2)} • ${activity}`;
               await admin.rpc("debit_consultant_wallet", {
                 _consultant_id: c.consultant_id,
                 _amount_cents: chargeCents,
@@ -222,15 +242,25 @@ Deno.serve(async (req) => {
                 _description: description,
                 _metadata: {
                   date, fb_campaign_id: c.fb_campaign_id,
-                  gross_meta_cents: deltaSpend, fee_percent: feePct,
+                  gross_meta_cents: deltaSpend,
+                  platform_fee_cents: feeCharged,
+                  fee_percent: feePct,
                   delta_impressions: dImpressions, delta_clicks: dClicks, delta_leads: dLeads,
                   synced_at: new Date().toISOString(),
                 },
                 _gross_spend_cents: deltaSpend,
               });
               walletCache[c.consultant_id] = undefined as any;
-            } catch (de) { console.error("[fb-sync] debit failed", c.id, (de as Error).message); }
+              syncedToWalletCents = spend; // só avança após sucesso
+            } catch (de) {
+              console.error("[fb-sync] debit failed", c.id, (de as Error).message);
+              // mantém syncedToWalletCents = alreadyDebited pra retry no próximo ciclo
+            }
+          } else {
+            syncedToWalletCents = spend; // sem delta, alinha pra não reprocessar
           }
+          // Acumula fee pago no dia (somando ao que já estava registrado)
+          const prevFee = Number((prev as any)?.platform_fee_cents ?? 0);
           await admin.from("facebook_metrics_daily").upsert({
             campaign_id: c.id,
             date,
@@ -241,8 +271,11 @@ Deno.serve(async (req) => {
             cpm_cents: Math.round(parseFloat(row.cpm || "0") * 100),
             spend_cents: spend,
             gross_spend_cents: spend,
-            synced_to_wallet_cents: spend,
+            synced_to_wallet_cents: syncedToWalletCents,
+            platform_fee_cents: prevFee + feeCharged,
             leads: Number(leads),
+            meta_lead_actions: Number(leadsDirect),
+            meta_conversations: Number(conv),
             messaging_conversations_started: Number(conv),
             complete_registrations: Number(regs),
             cost_per_lead_cents: cpl,

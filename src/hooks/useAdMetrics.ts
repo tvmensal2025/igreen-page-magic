@@ -56,11 +56,11 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
         .eq("consultant_id", consultantId!);
       const campaignIds = (campRows ?? []).map((c: any) => c.id as string);
 
-      // 2) Métricas reais por dia (facebook_metrics_daily, não a tabela vazia ad_spend_daily)
-      // 3) Leads REAIS de anúncio = customers com lead_source = "meta_ads" no período
-      //    (não conta a carteira iGreen sincronizada nem leads orgânicos)
-      // 4) Conexão Meta ativa
-      const [metricsRes, leadRes, fbRes] = await Promise.all([
+      // 2) Métricas reais por dia (facebook_metrics_daily, já reconciliado por
+      //    source_campaign_id no sync) — leads vêm DAQUI, não de customers.lead_source,
+      //    pra não inflar/desinflar CPL por causa de leads atribuídos a outras campanhas.
+      // 3) Conexão Meta ativa
+      const [metricsRes, fbRes] = await Promise.all([
         campaignIds.length
           ? supabase
               .from("facebook_metrics_daily")
@@ -70,13 +70,6 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
               .order("date", { ascending: true })
           : Promise.resolve({ data: [] as any[] }),
         supabase
-          .from("customers")
-          .select("created_at, lead_source")
-          .eq("consultant_id", consultantId!)
-          .not("lead_source", "is", null)
-          .gte("created_at", sinceISO)
-          .limit(10000),
-        supabase
           .from("facebook_connections")
           .select("id")
           .eq("consultant_id", consultantId!)
@@ -84,25 +77,17 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
       ]);
 
       const metricRows = (metricsRes as any).data ?? [];
-      const allLeadRows = (leadRes.data ?? []) as any[];
-      const adLeadRows = allLeadRows.filter((c) => leadSourceValue(c.lead_source) === "meta_ads");
 
-      // Agrega métricas por dia
-      const metricsByDay = new Map<string, { spend: number; impressions: number; clicks: number }>();
+      // Agrega métricas por dia (spend/impressões/cliques/leads vêm de facebook_metrics_daily)
+      const metricsByDay = new Map<string, { spend: number; impressions: number; clicks: number; leads: number }>();
       for (const r of metricRows as any[]) {
         const d = String(r.date).slice(0, 10);
-        const cur = metricsByDay.get(d) ?? { spend: 0, impressions: 0, clicks: 0 };
+        const cur = metricsByDay.get(d) ?? { spend: 0, impressions: 0, clicks: 0, leads: 0 };
         cur.spend += Number(r.spend_cents ?? 0);
         cur.impressions += Number(r.impressions ?? 0);
         cur.clicks += Number(r.clicks ?? 0);
+        cur.leads += Number(r.leads ?? 0);
         metricsByDay.set(d, cur);
-      }
-
-      // Agrega leads de anúncio por dia
-      const leadsByDay = new Map<string, number>();
-      for (const c of adLeadRows) {
-        const d = String(c.created_at).slice(0, 10);
-        leadsByDay.set(d, (leadsByDay.get(d) ?? 0) + 1);
       }
 
       // Range de dias (since → hoje)
@@ -118,7 +103,7 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
       const daily: AdMetricsDailyPoint[] = days.map((d) => {
         const m = metricsByDay.get(d);
         const spend_cents = m?.spend ?? 0;
-        const leads = leadsByDay.get(d) ?? 0;
+        const leads = m?.leads ?? 0;
         return {
           date: d,
           spend_cents,
@@ -130,7 +115,7 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
       });
 
       const spendCents = daily.reduce((s, r) => s + r.spend_cents, 0);
-      const leads = adLeadRows.length;
+      const leads = daily.reduce((s, r) => s + r.leads, 0);
       const impressions = daily.reduce((s, r) => s + r.impressions, 0);
       const clicks = daily.reduce((s, r) => s + r.clicks, 0);
       const conversations = (metricRows as any[]).reduce(

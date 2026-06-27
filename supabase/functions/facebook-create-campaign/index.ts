@@ -251,9 +251,14 @@ Deno.serve(async (req) => {
     const liquidMetaBudget = Math.floor(liquid / (1 + feePct));
     const activeCount = (existingCamps?.length || 0) + 1; // +1 = a nova
     const perCampaignExtra = Math.floor(liquidMetaBudget / activeCount);
-    // cap da NOVA campanha = só a fatia dela (ainda não gastou nada)
+    // CAP DA NOVA CAMPANHA: respeita o que o usuário pediu (daily × duration),
+    // SEM inflar com sobra de carteira. O rateio anti-prejuízo entra só como piso
+    // de saldo exigido (requiredCents) — não como teto inflado.
     // Meta exige spend_cap mínimo de R$ 300,00 em BRL (subcode 2446307).
-    const lifetimeCapCents = Math.max(30000, perCampaignExtra);
+    const durationDaysForCap = Math.max(1, body.duration_days ?? 7);
+    const exactBudgetCents = body.daily_budget_cents * durationDaysForCap;
+    // Usa o MENOR entre o que o usuário pediu e a fatia da carteira (proteção dupla).
+    const lifetimeCapCents = Math.max(30000, Math.min(exactBudgetCents, perCampaignExtra || exactBudgetCents));
     // realinha o cap das existentes pra elas também respeitarem o rateio
     const realignTargets = (existingCamps || []).filter((c: any) => c.fb_campaign_id);
 
@@ -375,7 +380,13 @@ Deno.serve(async (req) => {
     }
 
     // 1) Campaign
-    console.log("[fb-create] step=campaign_create");
+    // Se o usuário definiu duration_days, usa LIFETIME_BUDGET (teto absoluto
+    // que a Meta não estoura). Senão, daily_budget contínuo com spend_cap.
+    const hasFixedDuration = !!(body.duration_days && body.duration_days > 0);
+    const campaignBudgetParams: Record<string, string> = hasFixedDuration
+      ? { lifetime_budget: String(exactBudgetCents), spend_cap: String(lifetimeCapCents) }
+      : { daily_budget: String(body.daily_budget_cents), spend_cap: String(lifetimeCapCents) };
+    console.log("[fb-create] step=campaign_create budget=", campaignBudgetParams);
     const camp = await fbFetch(`/${accId}/campaigns`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -385,10 +396,9 @@ Deno.serve(async (req) => {
         special_ad_categories: JSON.stringify([]),
         status: "PAUSED",
         buying_type: "AUCTION",
-        daily_budget: String(body.daily_budget_cents),
-        // spend_cap = teto absoluto que a Meta vai gastar. Mesmo que nosso sync
-        // atrase, a Meta pausa sozinha quando bater nesse valor → zero prejuízo.
-        spend_cap: String(lifetimeCapCents),
+        ...campaignBudgetParams,
+        // pacing standard = entrega distribuída ao longo do período (não acelerada).
+        pacing_type: JSON.stringify(["standard"]),
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
         ...(adlabelsParam ? { adlabels: adlabelsParam } : {}),
         access_token: conn.token,
@@ -512,19 +522,25 @@ Deno.serve(async (req) => {
       console.log("[fb-create] step=video_upload url=", videoUrl);
 
       // Reusa fb_video_id se já estiver em ad_video_library (best-effort).
+      // IMPORTANTE: thumb cacheada SÓ é reaproveitada quando ela veio do USUÁRIO
+      // (thumb_source='user'). Se foi gerada pelo Meta, refazemos a busca em
+      // /thumbnails pra evitar servir frame antigo quando o vídeo/capa muda.
       let fbVideoId: string | null = null;
       try {
         const { data: cachedVid } = await adminDb2
-          .from("ad_video_library").select("id, fb_video_id, thumb_url, usage_count")
+          .from("ad_video_library").select("id, fb_video_id, thumb_url, thumb_source, usage_count")
           .eq("consultant_id", auth.id).eq("url", videoUrl).maybeSingle();
         if (cachedVid?.fb_video_id) {
           fbVideoId = cachedVid.fb_video_id;
-          if (!thumbUrl && (cachedVid as any).thumb_url) thumbUrl = (cachedVid as any).thumb_url;
+          const cachedSource = (cachedVid as any).thumb_source || "user";
+          if (!thumbUrl && cachedSource === "user" && (cachedVid as any).thumb_url) {
+            thumbUrl = (cachedVid as any).thumb_url;
+          }
           await adminDb2.from("ad_video_library").update({
             usage_count: ((cachedVid as any).usage_count ?? 0) + 1,
             last_used_at: new Date().toISOString(),
           }).eq("id", cachedVid.id);
-          console.log("[fb-create] video CACHE HIT", fbVideoId);
+          console.log("[fb-create] video CACHE HIT", fbVideoId, "thumb_source=", cachedSource);
         }
       } catch (e) { console.warn("[fb-create] video cache lookup:", (e as Error).message); }
 
@@ -567,6 +583,7 @@ Deno.serve(async (req) => {
             consultant_id: auth.id,
             url: videoUrl,
             thumb_url: thumbUrl,
+            thumb_source: body.video!.thumb_url ? "user" : "meta_preferred",
             fb_video_id: fbVideoId,
             fb_video_id_synced_at: new Date().toISOString(),
             last_used_at: new Date().toISOString(),
@@ -596,10 +613,11 @@ Deno.serve(async (req) => {
         }
         if (thumbUrl) {
           console.log("[fb-create] thumb auto-resolved=", thumbUrl);
-          // Persiste no cache pra próximo uso reaproveitar
+          // Persiste no cache marcando origem 'meta_preferred' — assim, se o
+          // usuário enviar uma custom no próximo publish, ela sobrescreve.
           try {
             await adminDb2.from("ad_video_library")
-              .update({ thumb_url: thumbUrl })
+              .update({ thumb_url: thumbUrl, thumb_source: "meta_preferred" })
               .eq("consultant_id", auth.id).eq("url", videoUrl);
           } catch (_) { /* best-effort */ }
         } else {
@@ -968,6 +986,9 @@ Deno.serve(async (req) => {
         daily_budget_cents: body.daily_budget_cents,
         lifetime_cap_cents: lifetimeCapCents,
         duration_days: body.duration_days ?? null,
+        end_time_utc: hasFixedDuration
+          ? new Date(Date.now() + (body.duration_days as number) * 86400_000).toISOString()
+          : null,
         status: "pending_review",
         started_at: new Date().toISOString(),
         distribuidora: body.distribuidora ?? null,
