@@ -4,8 +4,8 @@
 // pesquisa B2B), filtra, seleciona vários e dispara mensagem em massa — ou roda
 // uma nova pesquisa de empresas. Os leads são SEMPRE do consultor (RLS).
 //
-// O disparo reaproveita o motor de Disparo PRO (bulk_campaigns + bulk-scheduler
-// + anti-ban), via a edge function leads-to-campaign.
+// Anti-repetição: telefones que o consultor já disparou em campanhas anteriores
+// vêm marcados como "Já enviado" e ficam fora de seleção/disparo.
 
 import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,6 @@ import {
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
 import type { BulkContact } from "@/types/whatsapp";
 
-// Disparo PRO (mesmo modal do Envio em Massa) — carregado só quando abre.
 const BulkProPanel = lazy(() =>
   import("@/components/whatsapp/bulk-pro/BulkProPanel").then((m) => ({ default: m.BulkProPanel })),
 );
@@ -66,6 +65,7 @@ const normalizePhone = (p: string | null | undefined): string => {
 export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props) {
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [sentPhones, setSentPhones] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -74,23 +74,23 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [channel, setChannel] = useState<LeadChannel | "all">("all");
   const [personType, setPersonType] = useState<PersonType | "all">("all");
   const [status, setStatus] = useState<LeadStatus | "all">("new");
+  const [hideSent, setHideSent] = useState(true);
 
-  // disparo — abre o mesmo modal do Envio em Massa (Disparo PRO)
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [seedContacts, setSeedContacts] = useState<BulkContact[]>([]);
-
-  // pesquisa B2B (modal rico)
   const [researchOpen, setResearchOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rows, c] = await Promise.all([
+      const [rows, c, sent] = await Promise.all([
         listCapturedLeads({ consultantId, channel, personType, status, search }),
         countLeadsByChannel(consultantId),
+        listAlreadyDispatchedPhones(consultantId),
       ]);
       setLeads(rows);
       setCounts(c);
+      setSentPhones(sent);
     } catch (e) {
       sonnerToast.error("Falha ao carregar leads: " + (e as Error).message);
     } finally {
@@ -102,14 +102,29 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
 
   const total = useMemo(() => Object.values(counts).reduce((s, n) => s + n, 0), [counts]);
 
-  const allVisibleSelected = leads.length > 0 && leads.every((l) => selected.has(l.id));
+  // Marca cada lead como "já enviado" e aplica o filtro "Ocultar já enviados".
+  const decorated = useMemo(
+    () => leads.map((l) => ({ lead: l, alreadySent: sentPhones.has(normalizePhone(l.phone)) })),
+    [leads, sentPhones],
+  );
+  const visible = useMemo(
+    () => (hideSent ? decorated.filter((d) => !d.alreadySent) : decorated),
+    [decorated, hideSent],
+  );
+  const sentCount = useMemo(() => decorated.filter((d) => d.alreadySent).length, [decorated]);
+
+  const selectableVisible = useMemo(() => visible.filter((d) => !d.alreadySent), [visible]);
+  const allVisibleSelected =
+    selectableVisible.length > 0 && selectableVisible.every((d) => selected.has(d.lead.id));
+
   const toggleAll = () => {
-    setSelected((prev) => {
+    setSelected(() => {
       if (allVisibleSelected) return new Set();
-      return new Set(leads.map((l) => l.id));
+      return new Set(selectableVisible.map((d) => d.lead.id));
     });
   };
-  const toggleOne = (id: string) => {
+  const toggleOne = (id: string, alreadySent: boolean) => {
+    if (alreadySent) return;
     setSelected((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id); else n.add(id);
@@ -118,15 +133,17 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   };
 
   const selectedWithPhone = useMemo(
-    () => leads.filter((l) => selected.has(l.id) && l.phone),
-    [leads, selected],
+    () =>
+      leads.filter(
+        (l) => selected.has(l.id) && l.phone && !sentPhones.has(normalizePhone(l.phone)),
+      ),
+    [leads, selected, sentPhones],
   );
 
   const openDispatch = () => {
     if (selected.size === 0) { sonnerToast.warning("Selecione ao menos um lead."); return; }
-    if (selectedWithPhone.length === 0) { sonnerToast.error("Nenhum lead selecionado tem telefone."); return; }
+    if (selectedWithPhone.length === 0) { sonnerToast.error("Nenhum lead disparável selecionado."); return; }
     if (!instanceName) { sonnerToast.error("WhatsApp desconectado — reconecte para disparar."); return; }
-    // Monta os contatos no formato do Disparo PRO (mesmo modal do Envio em Massa).
     const contacts: BulkContact[] = selectedWithPhone.map((l) => ({
       id: l.id,
       name: l.full_name || l.company_name || "Lead",
@@ -137,20 +154,36 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
     setDispatchOpen(true);
   };
 
-  const doResearchImported = async () => {
-    await load();
-  };
+  const doResearchImported = async () => { await load(); };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-3">
-      {/* Cabeçalho + ações */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-primary" />
-          <h2 className="text-base font-semibold">Leads captados</h2>
-          <Badge variant="secondary">{total}</Badge>
+    <div className="flex flex-col h-full min-h-0 gap-3">
+      {/* Cabeçalho */}
+      <div className="shrink-0 flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold tracking-tight">Leads captados</h2>
+          </div>
+          <p className="text-[12px] text-muted-foreground mt-0.5">
+            <span className="font-medium text-foreground">{total.toLocaleString("pt-BR")}</span> no total
+            <span className="mx-1.5 opacity-50">·</span>
+            <span className="text-foreground">{visible.length.toLocaleString("pt-BR")}</span> visíveis
+            {sentCount > 0 && (
+              <>
+                <span className="mx-1.5 opacity-50">·</span>
+                <span className="text-success">{sentCount.toLocaleString("pt-BR")}</span> já enviados
+              </>
+            )}
+            {selected.size > 0 && (
+              <>
+                <span className="mx-1.5 opacity-50">·</span>
+                <span className="text-primary font-medium">{selected.size} selecionados</span>
+              </>
+            )}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={() => void load()} className="gap-1.5">
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
           </Button>
@@ -164,18 +197,18 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
       </div>
 
       {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="shrink-0 flex flex-wrap items-center gap-2 p-2 rounded-lg border border-border/60 bg-card/40">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar nome, telefone, empresa, cidade..."
-            className="pl-8 h-9"
+            className="pl-8 h-9 bg-background"
           />
         </div>
         <Select value={channel} onValueChange={(v) => setChannel(v as LeadChannel | "all")}>
-          <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="Canal" /></SelectTrigger>
+          <SelectTrigger className="w-[160px] h-9 bg-background"><SelectValue placeholder="Canal" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os canais</SelectItem>
             <SelectItem value="meta_leadads">Meta Lead Ads</SelectItem>
@@ -187,7 +220,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
           </SelectContent>
         </Select>
         <Select value={personType} onValueChange={(v) => setPersonType(v as PersonType | "all")}>
-          <SelectTrigger className="w-[120px] h-9"><SelectValue placeholder="Tipo" /></SelectTrigger>
+          <SelectTrigger className="w-[120px] h-9 bg-background"><SelectValue placeholder="Tipo" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">PF e PJ</SelectItem>
             <SelectItem value="pf">Pessoa física</SelectItem>
@@ -195,7 +228,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={(v) => setStatus(v as LeadStatus | "all")}>
-          <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[140px] h-9 bg-background"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="new">Novos</SelectItem>
@@ -204,84 +237,132 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
             <SelectItem value="discarded">Descartados</SelectItem>
           </SelectContent>
         </Select>
+        <Button
+          size="sm"
+          variant={hideSent ? "secondary" : "outline"}
+          onClick={() => setHideSent((v) => !v)}
+          className="gap-1.5 h-9"
+          title={hideSent ? "Mostrar leads já enviados" : "Ocultar leads já enviados"}
+        >
+          {hideSent ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          {hideSent ? "Ocultando já enviados" : "Mostrando todos"}
+        </Button>
       </div>
 
       {/* Lista */}
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-border">
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-border bg-card/30">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </div>
-        ) : leads.length === 0 ? (
+        ) : visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
             <Megaphone className="w-10 h-10 text-primary/30" strokeWidth={1} />
-            <p className="text-sm font-medium">Nenhum lead captado ainda</p>
+            <p className="text-sm font-medium">
+              {leads.length === 0 ? "Nenhum lead captado ainda" : "Nada para mostrar com esses filtros"}
+            </p>
             <p className="text-xs text-muted-foreground max-w-sm">
-              Os leads do Meta Lead Ads, TikTok e landing pages aparecem aqui. Você também pode usar "Pesquisar empresas" para gerar leads B2B.
+              {leads.length === 0
+                ? 'Os leads do Meta Lead Ads, TikTok e landing pages aparecem aqui. Você também pode usar "Pesquisar empresas" para gerar leads B2B.'
+                : sentCount > 0 && hideSent
+                  ? `${sentCount} lead(s) escondidos por já terem sido disparados. Clique em "Mostrando todos" para vê-los.`
+                  : "Ajuste os filtros para ver mais resultados."}
             </p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-card/95 backdrop-blur border-b border-border z-10">
               <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="p-2 w-10">
-                  <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} aria-label="Selecionar todos" />
+                <th className="px-3 py-2.5 w-10">
+                  <Checkbox
+                    checked={allVisibleSelected}
+                    onCheckedChange={toggleAll}
+                    disabled={selectableVisible.length === 0}
+                    aria-label="Selecionar todos visíveis"
+                  />
                 </th>
-                <th className="p-2">Nome / Empresa</th>
-                <th className="p-2 hidden sm:table-cell">Contato</th>
-                <th className="p-2 hidden md:table-cell">Cidade</th>
-                <th className="p-2">Canal</th>
+                <th className="px-3 py-2.5">Nome / Empresa</th>
+                <th className="px-3 py-2.5 hidden sm:table-cell">Contato</th>
+                <th className="px-3 py-2.5 hidden md:table-cell">Cidade</th>
+                <th className="px-3 py-2.5">Canal</th>
               </tr>
             </thead>
             <tbody>
-              {leads.map((l) => (
-                <tr
-                  key={l.id}
-                  className={`border-b border-border/40 hover:bg-secondary/30 cursor-pointer ${selected.has(l.id) ? "bg-primary/5" : ""}`}
-                  onClick={() => toggleOne(l.id)}
-                >
-                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox checked={selected.has(l.id)} onCheckedChange={() => toggleOne(l.id)} aria-label={`Selecionar ${l.full_name || l.company_name}`} />
-                  </td>
-                  <td className="p-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {l.person_type === "pj"
-                        ? <Building2 className="w-3.5 h-3.5 text-info shrink-0" />
-                        : <UserIcon className="w-3.5 h-3.5 text-primary shrink-0" />}
-                      <span className="font-medium truncate">{l.company_name || l.full_name || "—"}</span>
-                    </div>
-                    {l.person_type === "pj" && l.full_name && (
-                      <span className="text-[11px] text-muted-foreground ml-5 block">contato: {l.full_name}</span>
-                    )}
-                    {l.person_type === "pj" && (l.pj_data?.ramo as string) && (
-                      <span className="text-[11px] text-muted-foreground ml-5 block capitalize">{l.pj_data?.ramo as string}</span>
-                    )}
-                  </td>
-                  <td className="p-2 hidden sm:table-cell">
-                    <div className="flex flex-col gap-0.5 text-[12px]">
-                      {l.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-muted-foreground" />{l.phone}</span>}
-                      {l.email && <span className="flex items-center gap-1 text-muted-foreground"><Mail className="w-3 h-3" />{l.email}</span>}
-                    </div>
-                  </td>
-                  <td className="p-2 hidden md:table-cell text-[12px] text-muted-foreground">
-                    {(() => {
-                      const addr = (l.pj_data?.full_address as string) || null;
-                      if (addr) return <span className="flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" /><span className="truncate max-w-[260px]">{addr}</span></span>;
-                      if (l.city) return <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{l.city}{l.uf ? `/${l.uf}` : ""}</span>;
-                      return "—";
-                    })()}
-                  </td>
-                  <td className="p-2">
-                    <Badge variant="outline" className="text-[10px]">{CHANNEL_LABEL[l.channel] || l.channel}</Badge>
-                  </td>
-                </tr>
-              ))}
+              {visible.map(({ lead: l, alreadySent }) => {
+                const isSelected = selected.has(l.id);
+                return (
+                  <tr
+                    key={l.id}
+                    className={[
+                      "border-b border-border/30 transition-colors",
+                      alreadySent
+                        ? "opacity-60 cursor-default bg-muted/10"
+                        : "cursor-pointer hover:bg-primary/5",
+                      isSelected ? "bg-primary/10 border-l-2 border-l-primary" : "",
+                    ].join(" ")}
+                    onClick={() => toggleOne(l.id, alreadySent)}
+                  >
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleOne(l.id, alreadySent)}
+                        disabled={alreadySent}
+                        aria-label={`Selecionar ${l.full_name || l.company_name}`}
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {l.person_type === "pj"
+                          ? <Building2 className="w-3.5 h-3.5 text-info shrink-0" />
+                          : <UserIcon className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        <span className="font-medium truncate">{l.company_name || l.full_name || "—"}</span>
+                        {alreadySent && (
+                          <Badge
+                            variant="outline"
+                            className="ml-1 text-[10px] gap-1 border-success/40 text-success bg-success/10 px-1.5 py-0"
+                          >
+                            <CheckCircle2 className="w-3 h-3" /> Já enviado
+                          </Badge>
+                        )}
+                      </div>
+                      {l.person_type === "pj" && l.full_name && (
+                        <span className="text-[11px] text-muted-foreground ml-5 block">contato: {l.full_name}</span>
+                      )}
+                      {l.person_type === "pj" && (l.pj_data?.ramo as string) && (
+                        <span className="text-[11px] text-muted-foreground ml-5 block capitalize">{l.pj_data?.ramo as string}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 hidden sm:table-cell">
+                      <div className="flex flex-col gap-0.5 text-[12px]">
+                        {l.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-muted-foreground" />{l.phone}</span>}
+                        {l.email && <span className="flex items-center gap-1 text-muted-foreground"><Mail className="w-3 h-3" />{l.email}</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 hidden md:table-cell text-[12px] text-muted-foreground">
+                      {(() => {
+                        const addr = (l.pj_data?.full_address as string) || null;
+                        if (addr) return <span className="flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" /><span className="truncate max-w-[260px]">{addr}</span></span>;
+                        if (l.city) return <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{l.city}{l.uf ? `/${l.uf}` : ""}</span>;
+                        return "—";
+                      })()}
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${CHANNEL_STYLE[l.channel] || ""}`}
+                      >
+                        {CHANNEL_LABEL[l.channel] || l.channel}
+                      </Badge>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
 
-      {/* Dialog de disparo — mesmo modal do Envio em Massa (Disparo PRO) */}
+      {/* Dialog de disparo */}
       <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
           <DialogHeader className="px-5 pt-5">
@@ -312,7 +393,6 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
         </DialogContent>
       </Dialog>
 
-      {/* Modal de pesquisa de empresas (rico, estilo anúncios) */}
       <BusinessResearchDialog
         open={researchOpen}
         onOpenChange={setResearchOpen}
