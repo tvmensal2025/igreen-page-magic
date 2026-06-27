@@ -819,6 +819,7 @@ function AudioTranscriptEditor({ media, onChange }: { media: Media; onChange: (t
         </Button>
         {saving && <span className="text-[10px] text-muted-foreground">salvando…</span>}
       </div>
+      </fieldset>
     </div>
   );
 }
