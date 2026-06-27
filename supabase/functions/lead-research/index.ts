@@ -27,7 +27,7 @@ const OVERPASS_MIRRORS = [
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 
-const MAX_LIMIT = 200;
+const MAX_LIMIT = 2000;
 
 // Categorias amigáveis → filtros OSM. "" = comércio variado.
 const CATEGORY_MAP: Record<string, string[]> = {
@@ -84,16 +84,12 @@ function buildOverpassQuery(city: string, category: string, limit: number): stri
       .map((f) => `nwr["name"]["${f}"](area.a);`)
       .join("\n        ");
   } else {
-    // "Tudo": varre TUDO que é estabelecimento comercial nomeado. Em cidade
-    // pequena, varrer "amenity" amplo (menos os não-comerciais) é o que dá mais
-    // resultado com telefone. Inclui shop, ofícios, saúde, lazer, turismo.
-    block = `nwr["name"]["shop"](area.a);
-        nwr["name"]["amenity"]["amenity"!~"^(bench|waste_basket|recycling|bicycle_parking|parking|parking_space|toilets|drinking_water|fountain|grave_yard|place_of_worship|school|kindergarten|university|college|townhall|public_building|community_centre|shelter|hunting_stand|fire_station|police|post_box|telephone|clock|fuel_station)$"](area.a);
-        nwr["name"]["office"](area.a);
-        nwr["name"]["craft"](area.a);
-        nwr["name"]["leisure"~"fitness_centre|sports_centre"](area.a);
-        nwr["name"]["tourism"~"hotel|motel|guest_house"](area.a);
-        nwr["name"]["healthcare"](area.a);`;
+    // "Tudo": pega O MÁXIMO possível — tudo que é local público nomeado e tem
+    // telefone (empresa, igreja, escola, órgão público, clínica, etc.).
+    // Medição real: ~3x mais que filtrar por categoria. Sem exclusões.
+    block = `nwr["name"]["phone"](area.a);
+        nwr["name"]["contact:phone"](area.a);
+        nwr["name"]["contact:mobile"](area.a);`;
   }
   // Escapa aspas no nome da cidade (evita query inválida).
   const safeCity = city.replace(/["\\]/g, "");
@@ -164,6 +160,34 @@ async function queryOverpass(query: string): Promise<OsmElement[]> {
   throw new Error(lastErr || "todos os espelhos Overpass falharam");
 }
 
+function translateCategory(raw: string | null, tags: Record<string, string>): string | null {
+  // place_of_worship → tenta a religião/denominação
+  if (tags.amenity === "place_of_worship") {
+    const r = tags.religion === "christian" ? "Igreja" : (tags.religion || "Templo");
+    return tags.denomination ? `${r} (${tags.denomination})` : r;
+  }
+  const MAP: Record<string, string> = {
+    restaurant: "Restaurante", fast_food: "Lanchonete", cafe: "Café",
+    bar: "Bar", pub: "Bar", pharmacy: "Farmácia", fuel: "Posto",
+    bank: "Banco", school: "Escola", kindergarten: "Creche",
+    university: "Universidade", college: "Faculdade", hospital: "Hospital",
+    clinic: "Clínica", dentist: "Dentista", doctors: "Consultório",
+    veterinary: "Veterinário", supermarket: "Mercado", convenience: "Mercearia",
+    bakery: "Padaria", butcher: "Açougue", hairdresser: "Salão",
+    beauty: "Estética", car_repair: "Oficina", clothes: "Loja de roupas",
+    shoes: "Calçados", electronics: "Eletrônicos", furniture: "Móveis",
+    hardware: "Material de construção", florist: "Floricultura",
+    hotel: "Hotel", motel: "Motel", guest_house: "Pousada",
+    fitness_centre: "Academia", sports_centre: "Centro esportivo",
+    government: "Órgão público", townhall: "Prefeitura", library: "Biblioteca",
+    police: "Polícia", fire_station: "Bombeiros", post_office: "Correios",
+    car_dealer: "Concessionária", car: "Loja de carros", optician: "Ótica",
+    jewelry: "Joalheria", mobile_phone: "Celulares", computer: "Informática",
+  };
+  if (!raw) return null;
+  return MAP[raw] || raw.replace(/_/g, " ");
+}
+
 function mapElement(el: OsmElement, fallbackCity: string, fallbackUf: string | null): ResearchItem | null {
   const t = el.tags ?? {};
   const name = t.name || null;
@@ -175,7 +199,12 @@ function mapElement(el: OsmElement, fallbackCity: string, fallbackUf: string | n
   const bairro = t["addr:suburb"] || t["addr:neighbourhood"] || null;
   const cidade = t["addr:city"] || fallbackCity;
   const cep = t["addr:postcode"] || null;
-  const category = t.shop || t.amenity || t.office || t.leisure || t.tourism || t.sport || null;
+  // Identifica o tipo do local cobrindo todas as chaves OSM relevantes
+  // (inclui igreja, escola, saúde, ofício, governo).
+  const rawCategory = t.shop || t.amenity || t.office || t.leisure || t.tourism
+    || t.sport || t.craft || t.healthcare || t.club || t.government
+    || (t.building && t.building !== "yes" ? t.building : null) || null;
+  const category = translateCategory(rawCategory, t);
 
   const fullAddress = [
     street ? `${street}${num ? `, ${num}` : ""}` : null,

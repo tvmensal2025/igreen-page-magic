@@ -93,7 +93,7 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
     setSearching(true);
     setSearched(false);
     try {
-      const r = await searchBusinesses({ city: city.trim(), uf: uf.trim() || undefined, category: category || undefined, limit: 200 });
+      const r = await searchBusinesses({ city: city.trim(), uf: uf.trim() || undefined, category: category || undefined, limit: 1000 });
       if (!r.ok) { sonnerToast.error(r.error || "Falha na busca"); return; }
       const list = r.items || [];
       setItems(list);
