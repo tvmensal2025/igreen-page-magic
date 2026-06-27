@@ -131,6 +131,25 @@ function resolvePostBillNextStepId(
   return null;
 }
 
+function stepHasInteractiveWait(row: any): boolean {
+  const captures = Array.isArray(row?.captures) ? row.captures : [];
+  const hasButtons = captures.some((c: any) =>
+    c?.enabled !== false && c?.field === "_buttons" && Array.isArray(c?.value) && c.value.length > 0
+  );
+  if (hasButtons) return true;
+
+  const transitions = Array.isArray(row?.transitions) ? row.transitions : [];
+  const hasReplyTransition = transitions.some((t: any) => {
+    const intent = String(t?.trigger_intent || "").trim();
+    const phrases = Array.isArray(t?.trigger_phrases) ? t.trigger_phrases.filter(Boolean) : [];
+    return !!t?.goto_special || (!!t?.goto_step_id && (intent !== "default" || phrases.length > 0));
+  });
+  if (hasReplyTransition) return true;
+
+  const fallbackMode = String(row?.fallback?.mode || "").trim();
+  return fallbackMode === "repeat" || fallbackMode === "ai" || fallbackMode === "ai_answer";
+}
+
 // ── Fetch URL → base64 (for OCR when proxy didn't deliver bytes) ──
 async function fetchUrlToBase64(url: string, timeoutMs = 15_000): Promise<{ base64: string; mime: string } | null> {
   try {
@@ -4170,13 +4189,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           if (!isMockMode()) await new Promise((r) => setTimeout(r, 1800));
 
           // 🚦 Detecta se o passo success_goto (ex.: d_resultado) já tem botões
-          // interativos próprios. Se sim, NÃO duplicar o CTA "Quero me cadastrar"
-          // logo abaixo — o próprio passo já cumpre esse papel.
+            // interativos/transições próprias. Se sim, NÃO duplicar o CTA nem
+            // disparar documento — o próprio passo decide o próximo destino.
           try {
-            const caps = Array.isArray((nextCustom as any).captures) ? (nextCustom as any).captures : [];
-            const btnCap = caps.find((c: any) => c?.field === "_buttons" && c?.enabled !== false);
-            const hasButtons = btnCap && Array.isArray(btnCap.value) && btnCap.value.length > 0;
-            if (hasButtons) (updates as any).__last_chain_had_buttons = true;
+            const shouldWait = stepHasInteractiveWait(nextCustom);
+            if (shouldWait) {
+              (updates as any).__last_chain_had_buttons = true;
+              (updates as any).__post_bill_wait_step_id = (nextCustom as any).id;
+              (updates as any).__post_bill_wait_step_key = (nextCustom as any).step_key;
+            }
           } catch (_) { /* best-effort */ }
 
           // 2. Avança nextCustom para o próximo capture/finalizar após este step.
@@ -4244,17 +4265,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 await dispatchStepFromFlow(m.step_key, _vars);
                 if (!isMockMode()) await new Promise((r) => setTimeout(r, 1800));
               }
-              // 🚦 Detecta se o ÚLTIMO passo `message` da CHAIN já tem botões
-              // interativos configurados (ex.: d_resultado com [cadastrar]
-              // [dúvida] [falar com Rafael]). Se sim, NÃO duplicar o CTA
-              // "Quero me cadastrar" mais abaixo — o próprio step já cumpre.
+              // 🚦 Detecta se o ÚLTIMO passo `message` da CHAIN já tem botões,
+              // transições ou fallback interativo. Se sim, NÃO avança para doc:
+              // o próprio step deve aguardar resposta e seguir o goto configurado.
               try {
                 const lastMsg = messagesOnly[messagesOnly.length - 1];
                 if (lastMsg) {
-                  const caps = Array.isArray((lastMsg as any).captures) ? (lastMsg as any).captures : [];
-                  const btnCap = caps.find((c: any) => c?.field === "_buttons" && c?.enabled !== false);
-                  const hasButtons = btnCap && Array.isArray(btnCap.value) && btnCap.value.length > 0;
-                  (updates as any).__last_chain_had_buttons = !!hasButtons;
+                  const shouldWait = stepHasInteractiveWait(lastMsg);
+                  (updates as any).__last_chain_had_buttons = !!shouldWait;
+                  if (shouldWait) {
+                    (updates as any).__post_bill_wait_step_id = (lastMsg as any).id;
+                    (updates as any).__post_bill_wait_step_key = (lastMsg as any).step_key;
+                  }
                 }
               } catch (_) { /* best-effort */ }
               if (_stopIdx >= 0) {
@@ -4298,14 +4320,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           // cadastrar" é que o capture_documento dispara. Nunca encadear.
           if (nextCustom.step_type === "capture_documento" || nextCustom.step_type === "capture_doc") {
             // 🚦 GATE pós-simulação: se o último passo da chain (ex.: d_resultado)
-            // já tem botões interativos próprios ("Quero me cadastrar" / "Tenho
+            // já tem botões/transições próprias ("Continuar Cadastro" / "Tenho
             // dúvidas"), NÃO disparar capture_documento agora — seria atropelar
-            // o CTA e mandar "Show! ..." junto com a simulação. Aguarda o clique
-            // do lead via step `ask_quero_cadastrar`, que dispara o doc no clique.
+            // o CTA e mandar "Show! ..." junto com a simulação. Aguarda a resposta
+            // no step REAL enviado para honrar o goto_step_id configurado.
             const _waitForCta = (updates as any).__last_chain_had_buttons === true;
             if (_waitForCta) {
-              console.log(`[post-confirm-conta] chain final tem botões → aguardando clique em ask_quero_cadastrar (não disparando capture_documento agora)`);
-              updates.conversation_step = "ask_quero_cadastrar";
+              const waitStep = (updates as any).__post_bill_wait_step_id || "ask_quero_cadastrar";
+              console.log(`[post-confirm-conta] chain final é interativa → aguardando resposta em ${waitStep} (não disparando capture_documento agora)`);
+              updates.conversation_step = waitStep;
             } else {
               // 🚀 Sem CTA explícito na chain → dispara capture_documento direto.
               try {
@@ -4353,26 +4376,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             void ok;
           }
         } else {
-          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — pedindo doc direto (sem CTA "quero me cadastrar")`);
-          try {
-            const _flowRow = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
-            let _dispatched = false;
-            if (_flowRow?.id) {
-              const { data: _docStep } = await supabase
-                .from("bot_flow_steps").select("step_key")
-                .eq("flow_id", (_flowRow as any).id).eq("is_active", true)
-                .in("step_type", ["capture_documento", "capture_doc"])
-                .order("position", { ascending: true }).limit(1).maybeSingle();
-              if (_docStep?.step_key) {
-                await dispatchStepFromFlow(_docStep.step_key, _vars);
-                _dispatched = true;
-              }
-            }
-            if (!_dispatched) {
-              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
-            }
-          } catch (_) { /* segue */ }
-          updates.conversation_step = "aguardando_doc_auto";
+          const waitStep = (updates as any).__post_bill_wait_step_id || (customer as any).conversation_step || "confirmando_dados_conta";
+          console.warn(`[post-confirm-conta] nenhum próximo passo seguro — NÃO pedindo doc direto; aguardando resposta em ${waitStep}`);
+          updates.conversation_step = waitStep;
         }
 
         (updates as any).__inline_sent = true;
@@ -6257,5 +6263,5 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 }
 
 // ── Test-only re-exports (não alteram comportamento) ──
-export const __test = { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId };
+export const __test = { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId, stepHasInteractiveWait };
 
