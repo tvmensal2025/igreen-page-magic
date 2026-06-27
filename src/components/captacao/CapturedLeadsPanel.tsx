@@ -7,15 +7,13 @@
 // O disparo reaproveita o motor de Disparo PRO (bulk_campaigns + bulk-scheduler
 // + anti-ban), via a edge function leads-to-campaign.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -26,10 +24,16 @@ import {
   RefreshCw, Megaphone, Sparkles,
 } from "lucide-react";
 import {
-  listCapturedLeads, countLeadsByChannel, dispatchLeadsToCampaign,
+  listCapturedLeads, countLeadsByChannel,
   type CapturedLead, type LeadChannel, type PersonType, type LeadStatus,
 } from "@/services/capturedLeads";
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
+import type { BulkContact } from "@/types/whatsapp";
+
+// Disparo PRO (mesmo modal do Envio em Massa) — carregado só quando abre.
+const BulkProPanel = lazy(() =>
+  import("@/components/whatsapp/bulk-pro/BulkProPanel").then((m) => ({ default: m.BulkProPanel })),
+);
 
 interface Props {
   consultantId: string;
@@ -57,11 +61,9 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [personType, setPersonType] = useState<PersonType | "all">("all");
   const [status, setStatus] = useState<LeadStatus | "all">("new");
 
-  // disparo
+  // disparo — abre o mesmo modal do Envio em Massa (Disparo PRO)
   const [dispatchOpen, setDispatchOpen] = useState(false);
-  const [campaignName, setCampaignName] = useState("");
-  const [messageText, setMessageText] = useState("");
-  const [dispatching, setDispatching] = useState(false);
+  const [seedContacts, setSeedContacts] = useState<BulkContact[]>([]);
 
   // pesquisa B2B (modal rico)
   const [researchOpen, setResearchOpen] = useState(false);
@@ -110,27 +112,15 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
     if (selected.size === 0) { sonnerToast.warning("Selecione ao menos um lead."); return; }
     if (selectedWithPhone.length === 0) { sonnerToast.error("Nenhum lead selecionado tem telefone."); return; }
     if (!instanceName) { sonnerToast.error("WhatsApp desconectado — reconecte para disparar."); return; }
-    setCampaignName(`Disparo ${new Date().toLocaleDateString("pt-BR")}`);
+    // Monta os contatos no formato do Disparo PRO (mesmo modal do Envio em Massa).
+    const contacts: BulkContact[] = selectedWithPhone.map((l) => ({
+      id: l.id,
+      name: l.full_name || l.company_name || "Lead",
+      phone: l.phone as string,
+      source: "imported",
+    }));
+    setSeedContacts(contacts);
     setDispatchOpen(true);
-  };
-
-  const doDispatch = async () => {
-    if (!messageText.trim()) { sonnerToast.warning("Escreva a mensagem."); return; }
-    setDispatching(true);
-    try {
-      const r = await dispatchLeadsToCampaign({
-        leadIds: selectedWithPhone.map((l) => l.id),
-        campaignName,
-        messageText,
-      });
-      if (!r.ok) { sonnerToast.error(r.error || "Falha no disparo"); return; }
-      sonnerToast.success(`Campanha criada: ${r.queued} na fila. O envio respeita o anti-ban.`);
-      setDispatchOpen(false);
-      setMessageText("");
-      setSelected(new Set());
-    } finally {
-      setDispatching(false);
-    }
   };
 
   const doResearchImported = async () => {
@@ -277,41 +267,34 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
         )}
       </div>
 
-      {/* Dialog de disparo */}
+      {/* Dialog de disparo — mesmo modal do Envio em Massa (Disparo PRO) */}
       <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Disparar mensagem</DialogTitle>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+          <DialogHeader className="px-5 pt-5">
+            <DialogTitle className="flex items-center gap-2">
+              <Megaphone className="w-4 h-4 text-primary" /> Disparar para os leads selecionados
+            </DialogTitle>
             <DialogDescription>
-              {selectedWithPhone.length} contato(s) com telefone serão adicionados à fila. O envio respeita o anti-ban (aquecimento e intervalos humanos).
+              {seedContacts.length} contato(s) com telefone já estão carregados. Siga os passos do Disparo PRO (mensagem, envio e acompanhamento) — o envio respeita o anti-ban.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="campaign-name" className="text-xs">Nome da campanha</Label>
-              <Input id="campaign-name" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} className="h-9" />
-            </div>
-            <div>
-              <Label htmlFor="message-text" className="text-xs">Mensagem</Label>
-              <Textarea
-                id="message-text"
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                rows={5}
-                placeholder="Oi {primeiro_nome}, tudo bem? ..."
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Variáveis: <code>{"{primeiro_nome}"}</code>, <code>{"{nome}"}</code>, <code>{"{cidade}"}</code>. Spintax: <code>{"{oi|olá|e aí}"}</code>.
-              </p>
-            </div>
+          <div className="p-4">
+            {instanceName ? (
+              <Suspense fallback={<div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>}>
+                <BulkProPanel
+                  instanceName={instanceName}
+                  customers={[]}
+                  templates={[]}
+                  consultantId={consultantId}
+                  seedContacts={seedContacts}
+                />
+              </Suspense>
+            ) : (
+              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
+                Conecte o WhatsApp para disparar.
+              </div>
+            )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDispatchOpen(false)} disabled={dispatching}>Cancelar</Button>
-            <Button onClick={doDispatch} disabled={dispatching} className="gap-1.5">
-              {dispatching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              Disparar agora
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

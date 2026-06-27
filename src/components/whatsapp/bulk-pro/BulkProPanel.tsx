@@ -26,6 +26,9 @@ interface Props {
   customers: Customer[];
   templates: MessageTemplate[];
   consultantId: string;
+  // Quando aberto a partir de outra tela (ex.: Leads captados), já entra com
+  // estes contatos carregados. Mantém o mesmo wizard/UX do Disparo PRO.
+  seedContacts?: BulkContact[];
 }
 
 type Step = 1 | 2 | 3 | 4;
@@ -89,11 +92,21 @@ function downloadCsv(rows: CampaignTarget[]) {
   URL.revokeObjectURL(url);
 }
 
-export function BulkProPanel({ instanceName, customers, templates, consultantId }: Props) {
+export function BulkProPanel({ instanceName, customers, templates, consultantId, seedContacts }: Props) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [step, setStep] = useState<Step>(1);
-  const [contacts, setContacts] = useState<BulkContact[]>([]);
+  const [contacts, setContacts] = useState<BulkContact[]>(seedContacts ?? []);
+
+  // Quando recebe contatos de fora (ex.: Leads captados), pré-carrega no passo 1.
+  // Só roda quando a lista de seed muda — não atrapalha o uso manual.
+  const seedKey = (seedContacts ?? []).map((c) => c.id).join(",");
+  useEffect(() => {
+    if (seedContacts && seedContacts.length > 0) {
+      setContacts(seedContacts);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey]);
   const [text, setText] = useState("");
   const [media, setMedia] = useState<PreparedMedia | null>(null);
   const [config, setConfig] = useState<SendConfig>(DEFAULT_CONFIG);
