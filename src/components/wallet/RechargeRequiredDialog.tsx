@@ -30,8 +30,9 @@ export function RechargeRequiredDialog() {
         balance_cents: Number(detail.balance_cents || 0),
       });
       // Sugere valor que cobre o déficit + folga (mínimo R$ 50).
+      // Sugere valor que cobre o déficit + R$ 50 de folga (mínimo R$ 50).
       const deficit = Math.max(0, Number(detail.required_cents || 0) - Number(detail.balance_cents || 0));
-      const sugCents = Math.max(5000, Math.ceil((deficit + 2000) / 1000) * 1000);
+      const sugCents = Math.max(5000, Math.ceil((deficit + 5000) / 1000) * 1000);
       setAmount(String(sugCents / 100));
       guard.clearSnooze();
       guard.setOpen(true);
