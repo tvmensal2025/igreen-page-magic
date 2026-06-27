@@ -143,6 +143,14 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
   }
 
 
+  // Quando o fluxo do consultor está em sync_mode='public' (padrão), as
+  // mídias enviadas ao lead vêm do Super Admin (dono do flow público). O
+  // painel precisa refletir EXATAMENTE essas mídias — senão o consultor vê
+  // áudio/imagem que não é o que sai no WhatsApp. Resolvemos o "media owner"
+  // antes de carregar.
+  const [mediaOwnerId, setMediaOwnerId] = useState<string>(consultantId);
+  const [readOnlySync, setReadOnlySync] = useState<boolean>(false);
+
   useEffect(() => {
     if (!slotKeys.length) {
       setItems([]);
@@ -150,15 +158,49 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
       return;
     }
     (async () => {
+      // 1) Descobre se o flow ativo do consultor está sincronizado com o público.
+      const v = String(variant || "A").toUpperCase();
+      let ownerId = consultantId;
+      let isSync = false;
+      try {
+        const { data: own } = await supabase
+          .from("bot_flows")
+          .select("sync_mode")
+          .eq("consultant_id", consultantId)
+          .eq("is_active", true)
+          .eq("variant", v)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        const mode = String((own as any)?.sync_mode ?? "public").toLowerCase();
+        if (!own || mode === "public") {
+          const { data: pub } = await supabase
+            .from("bot_flows")
+            .select("consultant_id")
+            .eq("is_public", true)
+            .eq("is_active", true)
+            .eq("variant", v)
+            .limit(1)
+            .maybeSingle();
+          const pubOwner = (pub as any)?.consultant_id as string | undefined;
+          if (pubOwner) {
+            ownerId = pubOwner;
+            isSync = pubOwner !== consultantId;
+          }
+        }
+      } catch { /* fallback: usa o próprio consultor */ }
+      setMediaOwnerId(ownerId);
+      setReadOnlySync(isSync);
+
       const [{ data, error }, { data: cons }] = await Promise.all([
         supabase
           .from("ai_media_library")
           .select("id, kind, label, url, storage_path, slot_key, send_order, duration_sec, delay_before_ms, original_size_bytes, final_size_bytes, transcript")
-          .eq("consultant_id", consultantId)
+          .eq("consultant_id", ownerId)
           .eq("active", true)
           .in("slot_key", slotKeys)
           .order("send_order", { ascending: true }),
-        supabase.from("consultants").select("flow_step_media_order").eq("id", consultantId).maybeSingle(),
+        supabase.from("consultants").select("flow_step_media_order").eq("id", ownerId).maybeSingle(),
       ]);
       if (!error) setItems((data as Media[]) ?? []);
       // Carrega ordem salva da UI (consultants.flow_step_media_order[stepKey]) — sem isso, o painel sempre mostra o default.
@@ -572,6 +614,14 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
 
   return (
     <div className="mt-3 pt-3 border-t border-border/60 space-y-4">
+      {readOnlySync && (
+        <div className="rounded-md border border-info/40 bg-info/10 p-2 text-xs text-info">
+          🔒 Este passo está sincronizado com o Super Admin. As mídias mostradas
+          aqui são <strong>exatamente as mesmas</strong> que o bot envia ao lead.
+          Para personalizar, peça ao Super Admin para liberar o modo customizado.
+        </div>
+      )}
+      <fieldset disabled={readOnlySync} className={readOnlySync ? "opacity-70 pointer-events-none select-none" : ""}>
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold">Mídias deste passo</h4>
         {hasPendingChanges && (
@@ -701,6 +751,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </fieldset>
     </div>
   );
 }

@@ -167,39 +167,56 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
 
   const mediaOrderJson = (consultantRow?.flow_step_media_order as Record<string, unknown>) || {};
 
-  // ─── 4b. Read ai_media_library — media owner + public, active only ───
-  // Em sync_mode='public', filtra pelo consultant dono do flow público
-  // (mediaOwnerId), não pelo caller. Sem isso, consultores em modo público
-  // só recebiam o subconjunto `is_public=true` (vs. o catálogo cheio do
-  // Super Admin marcado como pessoal).
-  const { data: mediaLib } = await supabase
+  // ─── 4b. Read ai_media_library — STRICT parity com o dono do flow público ──
+  // Regra de negócio: consultor em sync_mode='public' precisa ver/enviar
+  // EXATAMENTE o mesmo conjunto de mídias que o Super Admin (dono do flow
+  // público). Nada a mais, nada a menos. Por isso filtramos APENAS pelo
+  // mediaOwnerId. Fallback para linhas órfãs (is_public=true AND
+  // consultant_id IS NULL) só ocorre se o owner não tiver nada para aquele
+  // (slot_key, kind) — assim cobrimos legado sem vazar duplicatas.
+  const { data: ownedRows } = await supabase
     .from("ai_media_library")
-    .select("id, kind, url, slot_key, send_order, duration_sec, is_public, consultant_id")
-    .or(`consultant_id.eq.${mediaOwnerId},is_public.eq.true`)
+    .select("id, kind, url, slot_key, send_order, duration_sec, is_public, consultant_id, updated_at")
+    .eq("consultant_id", mediaOwnerId)
+    .eq("active", true);
+
+  const { data: orphanRows } = await supabase
+    .from("ai_media_library")
+    .select("id, kind, url, slot_key, send_order, duration_sec, is_public, consultant_id, updated_at")
+    .is("consultant_id", null)
+    .eq("is_public", true)
     .eq("active", true);
 
   const mediaBySlotAndKind = new Map<string, Map<string, {
     url: string;
     durationSec: number | null;
     isPublic: boolean;
+    ownerMatch: boolean;
+    updatedAt: string;
   }>>();
-  for (const m of (mediaLib as any[]) || []) {
-    const slot = m.slot_key as string | null;
-    if (!slot) continue;
-    if (!mediaBySlotAndKind.has(slot)) {
-      mediaBySlotAndKind.set(slot, new Map());
+
+  const ingest = (rows: any[] | null | undefined, ownerMatch: boolean) => {
+    for (const m of rows || []) {
+      const slot = m.slot_key as string | null;
+      if (!slot) continue;
+      if (!mediaBySlotAndKind.has(slot)) mediaBySlotAndKind.set(slot, new Map());
+      const slotMap = mediaBySlotAndKind.get(slot)!;
+      const existing = slotMap.get(m.kind);
+      const updatedAt = String(m.updated_at || "");
+      // Dedup determinístico: owner sempre ganha de órfã pública. Empate
+      // (mesmo nível) → mais recente por updated_at.
+      if (!existing
+        || (!existing.ownerMatch && ownerMatch)
+        || (existing.ownerMatch === ownerMatch && updatedAt > existing.updatedAt)) {
+        slotMap.set(m.kind, {
+          url: m.url, durationSec: m.duration_sec ?? null,
+          isPublic: !!m.is_public, ownerMatch, updatedAt,
+        });
+      }
     }
-    const slotMap = mediaBySlotAndKind.get(slot)!;
-    // Personal trumps public (we may have both).
-    const existing = slotMap.get(m.kind);
-    if (!existing || (existing.isPublic && !m.is_public)) {
-      slotMap.set(m.kind, {
-        url: m.url,
-        durationSec: m.duration_sec ?? null,
-        isPublic: !!m.is_public,
-      });
-    }
-  }
+  };
+  ingest(ownedRows as any[], true);
+  ingest(orphanRows as any[], false);
 
   function resolveMediaForSlot(
     slotKey: string,
