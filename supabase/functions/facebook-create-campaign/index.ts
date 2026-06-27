@@ -251,9 +251,14 @@ Deno.serve(async (req) => {
     const liquidMetaBudget = Math.floor(liquid / (1 + feePct));
     const activeCount = (existingCamps?.length || 0) + 1; // +1 = a nova
     const perCampaignExtra = Math.floor(liquidMetaBudget / activeCount);
-    // cap da NOVA campanha = só a fatia dela (ainda não gastou nada)
+    // CAP DA NOVA CAMPANHA: respeita o que o usuário pediu (daily × duration),
+    // SEM inflar com sobra de carteira. O rateio anti-prejuízo entra só como piso
+    // de saldo exigido (requiredCents) — não como teto inflado.
     // Meta exige spend_cap mínimo de R$ 300,00 em BRL (subcode 2446307).
-    const lifetimeCapCents = Math.max(30000, perCampaignExtra);
+    const durationDaysForCap = Math.max(1, body.duration_days ?? 7);
+    const exactBudgetCents = body.daily_budget_cents * durationDaysForCap;
+    // Usa o MENOR entre o que o usuário pediu e a fatia da carteira (proteção dupla).
+    const lifetimeCapCents = Math.max(30000, Math.min(exactBudgetCents, perCampaignExtra || exactBudgetCents));
     // realinha o cap das existentes pra elas também respeitarem o rateio
     const realignTargets = (existingCamps || []).filter((c: any) => c.fb_campaign_id);
 

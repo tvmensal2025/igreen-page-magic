@@ -759,6 +759,7 @@ export type Database = {
           id: string
           last_used_at: string | null
           storage_path: string | null
+          thumb_source: string
           thumb_url: string | null
           updated_at: string
           url: string
@@ -778,6 +779,7 @@ export type Database = {
           id?: string
           last_used_at?: string | null
           storage_path?: string | null
+          thumb_source?: string
           thumb_url?: string | null
           updated_at?: string
           url: string
@@ -797,6 +799,7 @@ export type Database = {
           id?: string
           last_used_at?: string | null
           storage_path?: string | null
+          thumb_source?: string
           thumb_url?: string | null
           updated_at?: string
           url?: string
@@ -4463,6 +4466,7 @@ export type Database = {
           daily_budget_cents: number
           distribuidora: string | null
           duration_days: number | null
+          end_time_utc: string | null
           ended_at: string | null
           fb_ad_ids: Json
           fb_adset_ids: Json
@@ -4493,6 +4497,7 @@ export type Database = {
           daily_budget_cents: number
           distribuidora?: string | null
           duration_days?: number | null
+          end_time_utc?: string | null
           ended_at?: string | null
           fb_ad_ids?: Json
           fb_adset_ids?: Json
@@ -4523,6 +4528,7 @@ export type Database = {
           daily_budget_cents?: number
           distribuidora?: string | null
           duration_days?: number | null
+          end_time_utc?: string | null
           ended_at?: string | null
           fb_ad_ids?: Json
           fb_adset_ids?: Json
@@ -4740,6 +4746,9 @@ export type Database = {
           impressions: number
           leads: number
           messaging_conversations_started: number
+          meta_conversations: number
+          meta_lead_actions: number
+          platform_fee_cents: number
           reach: number
           spend_cents: number
           synced_to_wallet_cents: number
@@ -4760,6 +4769,9 @@ export type Database = {
           impressions?: number
           leads?: number
           messaging_conversations_started?: number
+          meta_conversations?: number
+          meta_lead_actions?: number
+          platform_fee_cents?: number
           reach?: number
           spend_cents?: number
           synced_to_wallet_cents?: number
@@ -4780,6 +4792,9 @@ export type Database = {
           impressions?: number
           leads?: number
           messaging_conversations_started?: number
+          meta_conversations?: number
+          meta_lead_actions?: number
+          platform_fee_cents?: number
           reach?: number
           spend_cents?: number
           synced_to_wallet_cents?: number
