@@ -581,6 +581,8 @@ export default function StepInspector({
                         <Button
                           size="icon"
                           variant="ghost"
+                          aria-label="Remover botão"
+                          title="Remover botão"
                           className="h-7 w-7 text-destructive"
                           onClick={() => setButtons(buttons.filter((_, j) => j !== i))}
                         >
