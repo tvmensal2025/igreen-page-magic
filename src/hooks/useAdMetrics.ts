@@ -56,11 +56,11 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
         .eq("consultant_id", consultantId!);
       const campaignIds = (campRows ?? []).map((c: any) => c.id as string);
 
-      // 2) Métricas reais por dia (facebook_metrics_daily, não a tabela vazia ad_spend_daily)
-      // 3) Leads REAIS de anúncio = customers com lead_source = "meta_ads" no período
-      //    (não conta a carteira iGreen sincronizada nem leads orgânicos)
-      // 4) Conexão Meta ativa
-      const [metricsRes, leadRes, fbRes] = await Promise.all([
+      // 2) Métricas reais por dia (facebook_metrics_daily, já reconciliado por
+      //    source_campaign_id no sync) — leads vêm DAQUI, não de customers.lead_source,
+      //    pra não inflar/desinflar CPL por causa de leads atribuídos a outras campanhas.
+      // 3) Conexão Meta ativa
+      const [metricsRes, fbRes] = await Promise.all([
         campaignIds.length
           ? supabase
               .from("facebook_metrics_daily")
@@ -69,13 +69,6 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
               .gte("date", sinceDate)
               .order("date", { ascending: true })
           : Promise.resolve({ data: [] as any[] }),
-        supabase
-          .from("customers")
-          .select("created_at, lead_source")
-          .eq("consultant_id", consultantId!)
-          .not("lead_source", "is", null)
-          .gte("created_at", sinceISO)
-          .limit(10000),
         supabase
           .from("facebook_connections")
           .select("id")
