@@ -119,6 +119,20 @@ Deno.serve(async (req) => {
         }
         const token = tokenCache[c.consultant_id];
 
+        // Auto-pause se passou do end_time_utc (campanha de prazo fixo terminou)
+        if (c.status === "active" && (c as any).end_time_utc) {
+          const endMs = new Date((c as any).end_time_utc).getTime();
+          if (Number.isFinite(endMs) && endMs < Date.now()) {
+            try {
+              await fbFetch(`${FB_GRAPH}/${c.fb_campaign_id}?status=PAUSED&access_token=${token}`, { method: "POST" });
+              await admin.from("facebook_campaigns").update({ status: "completed", rejection_reason: "Prazo da campanha encerrado" }).eq("id", c.id);
+              autoPaused++;
+              try { await notifyConsultant(c.consultant_id, "info", "Campanha finalizada 🏁", "O prazo definido terminou e a campanha foi pausada automaticamente."); } catch (_) {}
+              continue;
+            } catch (pe) { console.error("[fb-sync] end-time pause failed", c.fb_campaign_id, (pe as Error).message); }
+          }
+        }
+
         // Pré-checa saldo: se já está em débito ou zerou, pausa AGORA antes de buscar insights
         if (c.status === "active") {
           const wPre = await getWallet(c.consultant_id);
