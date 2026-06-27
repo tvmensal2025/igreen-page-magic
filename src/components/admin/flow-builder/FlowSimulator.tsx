@@ -475,7 +475,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
                 maxLength={1000}
                 disabled={busy}
               />
-              <Button onClick={() => handleSend(freeText)} disabled={!freeText.trim() || busy}>
+              <Button onClick={() => handleSend(freeText)} disabled={!freeText.trim() || busy} aria-label="Enviar mensagem" title="Enviar mensagem">
                 {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
               </Button>
             </div>
