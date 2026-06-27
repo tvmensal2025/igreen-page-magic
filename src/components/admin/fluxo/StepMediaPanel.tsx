@@ -614,6 +614,13 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
 
   return (
     <div className="mt-3 pt-3 border-t border-border/60 space-y-4">
+      {readOnlySync && (
+        <div className="rounded-md border border-info/40 bg-info/10 p-2 text-xs text-info">
+          🔒 Este passo está sincronizado com o Super Admin. As mídias mostradas
+          aqui são <strong>exatamente as mesmas</strong> que o bot envia ao lead.
+          Para personalizar, peça ao Super Admin para liberar o modo customizado.
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold">Mídias deste passo</h4>
         {hasPendingChanges && (
