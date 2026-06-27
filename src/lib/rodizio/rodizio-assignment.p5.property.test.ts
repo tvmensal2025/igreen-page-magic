@@ -166,7 +166,7 @@ describe("Property 5 — prioridade do rodízio sobre keyword", () => {
 
       // Decisão COM a mensagem cheia de keywords de outros participantes.
       const decisionWithMessage = decideRodizioAssignment({
-        customer: { ...baseCustomer, inbound_message: message.text },
+        customer: { ...baseCustomer, inbound_message: message.text } as Record<string, unknown>,
         rodizioRows,
       });
 

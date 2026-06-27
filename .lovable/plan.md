@@ -1,79 +1,90 @@
-## Diagnóstico profundo
+## Objetivo
 
-O problema não é só “duplicidade”; é uma mistura de duas regras conflitantes:
+Auditar se o Fluxo D entregue aos números dos consultores (Whapi ou Evolution) é **realmente o mesmo** — mesmas etapas, mesmas transições, mesmas mídias, mesmas regras — com **única diferença permitida** sendo a forma de renderizar escolhas (botão interativo no Whapi vs. lista numerada no Evolution).
 
-1. **O passo da simulação (`d_resultado`) está configurado com botões e transições**, mas no banco aparece com `wait_for: none`.
-   - Isso permite que o motor interprete o passo como “pode continuar sozinho”.
-   - O `d_resultado` tem botões como `✅ Continuar Cadastro`, `🎥 Como funciona`, `Falar com representante`, e deveria obrigatoriamente aguardar resposta.
+## Estado atual (levantamento)
 
-2. **O handler pós-confirmação da conta ainda tem caminhos que despacham documento direto.**
-   - Em `confirmando_dados_conta`, depois de enviar a simulação, existe gate para parar quando detecta botões.
-   - Mas ainda existem fallbacks que dizem “nenhum próximo passo seguro — pedindo doc direto” e mandam `capture_documento` sem clique.
-   - Isso é exatamente o comportamento que você está vendo: simulação chega e em seguida vem “Show! manda documento”.
+**1. Resolução do fluxo — OK no papel.**
+`supabase/functions/_shared/resolve-flow.ts` é único e usado pelos dois webhooks. Regra:
+- consultor com `bot_flows.sync_mode='public'` → roteia para o fluxo PÚBLICO da variante D (`is_public=true`).
+- consultor com `sync_mode='custom'` → usa o fluxo próprio.
 
-3. **O motor novo de fluxo (`conversational/index.ts`) também pode cascatear.**
-   - A função `goToStep` considera `wait_for=none` como permissão para avançar para próximo passo por posição/fallback/default.
-   - Hoje ele só para se o texto parecer pergunta, se tiver captura textual, ou se `wait_for !== none`.
-   - Mas um passo com botões/transições também deve ser tratado como “esperar resposta”, mesmo que esteja marcado como `none`.
+Banco hoje (variante D):
+- Fluxo público D: `320bf22c-…` (dono super-admin), ativo.
+- Demais 6 consultores com fluxo D ativo: todos em `sync_mode='public'` → todos resolvem para `320bf22c`. ✅
+- O fluxo público está marcado `sync_mode='custom'` (irrelevante: só importa para o dono, e o dono é o super-admin que **edita** o público).
 
-4. **O sistema está usando um step artificial (`ask_quero_cadastrar`) em alguns casos.**
-   - Isso funcionou como remendo para parar antes do documento.
-   - Mas não respeita totalmente o “ir para o passo X” configurado no próprio Flow Builder.
-   - O correto é: depois da simulação, manter o cliente no próprio passo da simulação ou no step configurado, e quando ele responder/clicar, seguir a transição configurada, não repetir sempre.
+**2. Mídias — também unificadas.**
+`resolveMediaOwnerId` redireciona o `consultant_id` das mídias para o dono do fluxo público quando `sync_mode='public'`. Ou seja, áudios/vídeos/imagens do Fluxo D vêm do super-admin para todos. ✅
 
-## Regra correta que vou aplicar
-
-Depois que a conta é confirmada e a simulação é enviada:
+**3. Motores divergem entre canais — RISCO.**
+Mesmo carregando o mesmo `flow_id`, as regras de execução vivem **duplicadas** em dois arquivos por canal:
 
 ```text
-confirmando_dados_conta
-  → envia d_resultado / simulação
-  → PARA
-  → salva conversation_step = id real do d_resultado
-  → aguarda clique/resposta do cliente
-  → se clicar Continuar Cadastro, segue goto_step_id configurado
-  → se clicar Dúvida/Como funciona, segue o passo configurado
-  → se clicar Humano, chama humano
+whapi-webhook/handlers/bot-flow.ts            6.267 linhas
+evolution-webhook/handlers/bot-flow.ts        5.804 linhas
+  → ~1.876 linhas de diff (cadastro: OCR, OTP, portal, doc, simulação)
+
+whapi-webhook/handlers/conversational/index.ts   2.867 linhas
+evolution-webhook/handlers/conversational/index.ts 2.626 linhas
+  → ~1.212 linhas de diff (motor que interpreta o fluxo desenhado)
 ```
 
-Ou seja: **não manda documento automaticamente após a simulação**, a menos que o passo de simulação não tenha botão, não tenha transição e esteja explicitamente configurado para auto-avançar.
+Já existem shims unificados em `_shared/bot/` para `state-machine`, `templates` e `step-namespace`, mas o miolo (bot-flow + conversational) ainda é duplicado. Toda correção aplicada de um lado precisa ser copiada à mão para o outro — e historicamente escapa (foi exatamente a origem dos bugs recentes de auto-avanço pós-simulação e da palavra-chave/QR do parceiro).
 
-## Plano de correção
+**4. Diferenças que DEVEM existir** (corretas, manter):
+- Renderização de `ask_choice`: Whapi usa botões (`sendButtons`, máx 3), Evolution cai para texto numerado `*1.* …`. Já modelado em `channelPreview.ts` e `_shared/channels/dispatch-choice.ts`.
+- Captura da resposta: Whapi lê `button_id`; Evolution lê dígito do texto.
 
-1. **Blindar o pós-confirmação da conta**
-   - Ajustar `supabase/functions/whapi-webhook/handlers/bot-flow.ts`.
-   - Quando o passo enviado após a conta tiver botões, transições ou destino configurado, salvar o `conversation_step` como o **id real do passo enviado** (`d_resultado`), não como `ask_quero_cadastrar`.
-   - Remover o fallback agressivo que pede documento direto quando não encontra “próximo passo seguro”; nesse caso ele deve parar no último passo enviado e aguardar.
+**5. Diferenças que NÃO deveriam existir** (focos da auditoria):
+- Ordem/intervalo de envio de mídia (`sleepForMedia`).
+- Gate pós-simulação (o fix recente de `__post_bill_wait_step_id` foi aplicado no Whapi — verificar paridade no Evolution).
+- Fallbacks `repeat` / `ai_answer` / handoff humano.
+- Atalhos globais (números 1/2/3 no welcome, “humano”, “rafael”).
+- Regra de re-welcome, silêncio pós-handoff, idempotência de buffer.
+- Resolução de `goto_step_id` inválido e auto-cura de step órfão (bloco 1707–1770 do Evolution já existe; conferir se Whapi tem o equivalente exato).
 
-2. **Fazer o motor respeitar botões/transições como “esperar resposta”**
-   - Ajustar `supabase/functions/whapi-webhook/handlers/conversational/index.ts`.
-   - A regra de cascata deve parar quando o passo tiver:
-     - botões em `captures._buttons`, ou
-     - `transitions` configuradas que dependem de resposta, ou
-     - `fallback.mode = repeat` / `ai_answer`.
-   - Assim `wait_for=none` não vai mais atropelar passos interativos.
+## Plano de auditoria (somente leitura, com relatório versionado)
 
-3. **Respeitar “ir para passo X” em vez de repetir sempre**
-   - Quando o cliente responder no passo da simulação, usar as `transitions` do próprio `d_resultado`.
-   - Se a resposta casar com “Continuar Cadastro”, ir para o `goto_step_id` configurado, que hoje aponta para `d_pedir_documento`.
-   - Se a resposta for dúvida, ir para o passo configurado de dúvidas.
-   - Se não casar, aí sim usar fallback/repeat conforme configurado.
+1. **Snapshot de configuração no banco**
+   - Listar todos os `bot_flows` ativos da variante D, com `is_public`, `sync_mode`, `consultant_id` e `flow_id` resolvido por `resolveFlowId` (simulado).
+   - Confirmar que 100% dos consultores ativos resolvem para o `flow_id` público.
+   - Listar consultores em `sync_mode='custom'` (deveriam ser zero ou só o super-admin) — qualquer outro é desvio.
 
-4. **Sincronizar Evolution se necessário**
-   - O problema principal está no Whapi/custom flow, mas vou conferir se o Evolution tem trecho equivalente.
-   - Se houver o mesmo auto-avanço, aplicar a mesma regra para manter paridade.
+2. **Diff dirigido Whapi × Evolution**
+   - Gerar `.kiro/specs/bot-engine-channel-unification/_artifacts/diff-bot-flow-D.md` e `diff-conversational-D.md` classificando cada bloco divergente em:
+     - `OK-canal` (diferença de botão/lista, esperada),
+     - `BUG-paridade` (regra de negócio divergente — precisa unificar),
+     - `MORTO` (código que nenhum dos canais ainda alcança no Fluxo D).
 
-5. **Adicionar teste de regressão**
-   - Criar/ajustar teste para garantir:
-     - depois de confirmar a conta, envia `d_resultado`;
-     - não envia `capture_documento` no mesmo turno;
-     - persiste o step real da simulação;
-     - só vai para documento após clique/resposta compatível.
+3. **Simulação de runtime para o Fluxo D** (igual ao `report.md` existente em `.kiro/specs/fluxo-d-auditoria/`, mas comparando saídas dos dois motores reais, não do emulador)
+   - Para as 11 jornadas já catalogadas (happy path FOTO/VALOR, dúvida+IA, loop 3x, handoff por texto, numéricos 1/2/3, etc.), rodar os handlers de cada canal em modo dry-run e comparar:
+     - sequência de passos atingidos,
+     - textos emitidos (ignorando o sufixo `*1.* / *2.*`),
+     - mídias enviadas (`media_id`),
+     - estado final (`conversation_step`, `flow_variant`).
+   - Qualquer divergência fora de “forma de escolha” entra no relatório como `BUG-paridade`.
 
-## Resultado esperado
+4. **Verificação dos fixes recentes**
+   - Confirmar que o gate `stepHasInteractiveWait` e `__post_bill_wait_step_id` (fix do auto-avanço após simulação) está presente também no Evolution.
+   - Confirmar que o bloco `step-mismatch-cure` (auto-cura de step órfão) é idêntico nos dois.
+   - Confirmar idempotência de buffer (`conversational-send-idempotency.ts`) é chamada igual nos dois.
 
-- O cliente recebe a simulação e o bot para.
-- O documento só é pedido depois do clique/resposta configurada.
-- Se você configurar o passo para ir para outro “passo X”, o bot segue esse passo.
-- Se você configurar para repetir, ele repete; se configurar para avançar, ele avança.
-- O fluxo deixa de depender do remendo fixo `ask_quero_cadastrar` e passa a respeitar o Flow Builder.
+5. **Entregáveis** (sem mudar código de produção)
+   - `.kiro/specs/bot-engine-channel-unification/_artifacts/parity-fluxo-D-report.md` com:
+     - tabela consultor × `flow_id` resolvido,
+     - lista de `BUG-paridade` encontrados, com linha exata Whapi vs. Evolution,
+     - veredito por canal: “Fluxo D idêntico ✅” ou “Divergente: N pontos”.
+   - Recomendação final: **manter rota de unificação já iniciada na spec `bot-engine-channel-unification`** (extrair miolo para `_shared/bot/` e deixar webhooks só com parse de inbound + adapter de canal), priorizando os `BUG-paridade` encontrados como primeiras tarefas.
+
+## Detalhes técnicos
+
+- Roda 100% read-only: nenhuma migration, nenhum deploy, nenhuma alteração de fluxo.
+- Scripts ficam em `.kiro/specs/bot-engine-channel-unification/_artifacts/` (Python para o diff classificado, TS dry-run para a simulação).
+- Resultado fica versionado em markdown; o usuário aprova antes de qualquer correção de paridade.
+
+## Fora de escopo desta tarefa
+
+- Refatorar/unificar os handlers (já é a spec `bot-engine-channel-unification`).
+- Alterar o fluxo público D em si.
+- Mexer em mídias.
