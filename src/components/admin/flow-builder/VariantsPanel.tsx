@@ -263,10 +263,10 @@ export default function VariantsPanel() {
                       <td className="py-2 px-2 text-xs">{m?.turnos ?? 0}</td>
                       <td className="py-2 px-2 text-xs">{m?.latency_avg ? `${m.latency_avg}ms` : "—"}</td>
                       <td className="py-2 pl-2 text-right whitespace-nowrap">
-                        <Button variant="ghost" size="sm" onClick={() => saveVariant(v, { weight: 0 })} disabled={v.weight === 0}>
+                        <Button variant="ghost" size="sm" onClick={() => saveVariant(v, { weight: 0 })} disabled={v.weight === 0} aria-label="Pausar esta variante" title="Pausar esta variante">
                           <Pause className="h-3 w-3" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => forcar100(v)} title="Forçar 100% do tráfego deste fluxo">
+                        <Button variant="ghost" size="sm" onClick={() => forcar100(v)} aria-label="Enviar todo o tráfego deste fluxo para esta variante" title="Forçar 100% do tráfego deste fluxo">
                           <Crown className="h-3 w-3" />
                         </Button>
                       </td>
