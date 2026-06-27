@@ -252,7 +252,8 @@ Deno.serve(async (req) => {
     const activeCount = (existingCamps?.length || 0) + 1; // +1 = a nova
     const perCampaignExtra = Math.floor(liquidMetaBudget / activeCount);
     // cap da NOVA campanha = só a fatia dela (ainda não gastou nada)
-    const lifetimeCapCents = Math.max(1000, perCampaignExtra);
+    // Meta exige spend_cap mínimo de R$ 300,00 em BRL (subcode 2446307).
+    const lifetimeCapCents = Math.max(30000, perCampaignExtra);
     // realinha o cap das existentes pra elas também respeitarem o rateio
     const realignTargets = (existingCamps || []).filter((c: any) => c.fb_campaign_id);
 
