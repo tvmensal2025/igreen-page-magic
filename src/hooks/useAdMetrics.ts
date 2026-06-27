@@ -77,25 +77,17 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
       ]);
 
       const metricRows = (metricsRes as any).data ?? [];
-      const allLeadRows = (leadRes.data ?? []) as any[];
-      const adLeadRows = allLeadRows.filter((c) => leadSourceValue(c.lead_source) === "meta_ads");
 
-      // Agrega métricas por dia
-      const metricsByDay = new Map<string, { spend: number; impressions: number; clicks: number }>();
+      // Agrega métricas por dia (spend/impressões/cliques/leads vêm de facebook_metrics_daily)
+      const metricsByDay = new Map<string, { spend: number; impressions: number; clicks: number; leads: number }>();
       for (const r of metricRows as any[]) {
         const d = String(r.date).slice(0, 10);
-        const cur = metricsByDay.get(d) ?? { spend: 0, impressions: 0, clicks: 0 };
+        const cur = metricsByDay.get(d) ?? { spend: 0, impressions: 0, clicks: 0, leads: 0 };
         cur.spend += Number(r.spend_cents ?? 0);
         cur.impressions += Number(r.impressions ?? 0);
         cur.clicks += Number(r.clicks ?? 0);
+        cur.leads += Number(r.leads ?? 0);
         metricsByDay.set(d, cur);
-      }
-
-      // Agrega leads de anúncio por dia
-      const leadsByDay = new Map<string, number>();
-      for (const c of adLeadRows) {
-        const d = String(c.created_at).slice(0, 10);
-        leadsByDay.set(d, (leadsByDay.get(d) ?? 0) + 1);
       }
 
       // Range de dias (since → hoje)
@@ -111,7 +103,7 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
       const daily: AdMetricsDailyPoint[] = days.map((d) => {
         const m = metricsByDay.get(d);
         const spend_cents = m?.spend ?? 0;
-        const leads = leadsByDay.get(d) ?? 0;
+        const leads = m?.leads ?? 0;
         return {
           date: d,
           spend_cents,
@@ -123,7 +115,7 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
       });
 
       const spendCents = daily.reduce((s, r) => s + r.spend_cents, 0);
-      const leads = adLeadRows.length;
+      const leads = daily.reduce((s, r) => s + r.leads, 0);
       const impressions = daily.reduce((s, r) => s + r.impressions, 0);
       const clicks = daily.reduce((s, r) => s + r.clicks, 0);
       const conversations = (metricRows as any[]).reduce(
