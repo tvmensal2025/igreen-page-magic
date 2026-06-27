@@ -40,6 +40,7 @@ import {
 } from "../../_shared/utils.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
+import { detectPostponeIntent, buildPostponeReply } from "../../_shared/postpone-intent.ts";
 import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
 import {
@@ -113,6 +114,28 @@ function resolvePostBillNextStepId(
   if (fb.success_goto_step_id) return String(fb.success_goto_step_id);
   if (fb.mode === "goto" && fb.goto_step_id) return String(fb.goto_step_id);
   return null;
+}
+
+// PARIDADE WHAPI/EVO: passo é "esperar resposta" se tem botões, transições
+// com gatilho (intent/phrase) ou fallback repeat/ai. Espelha whapi-webhook
+// bot-flow.ts:134-151. Usado para bloquear auto-avanço pós-simulação.
+function stepHasInteractiveWait(row: any): boolean {
+  const captures = Array.isArray(row?.captures) ? row.captures : [];
+  const hasButtons = captures.some((c: any) =>
+    c?.enabled !== false && c?.field === "_buttons" && Array.isArray(c?.value) && c.value.length > 0
+  );
+  if (hasButtons) return true;
+
+  const transitions = Array.isArray(row?.transitions) ? row.transitions : [];
+  const hasReplyTransition = transitions.some((t: any) => {
+    const intent = String(t?.trigger_intent || "").trim();
+    const phrases = Array.isArray(t?.trigger_phrases) ? t.trigger_phrases.filter(Boolean) : [];
+    return !!t?.goto_special || (!!t?.goto_step_id && (intent !== "default" || phrases.length > 0));
+  });
+  if (hasReplyTransition) return true;
+
+  const fallbackMode = String(row?.fallback?.mode || "").trim();
+  return fallbackMode === "repeat" || fallbackMode === "ai" || fallbackMode === "ai_answer";
 }
 
 // ── Fetch URL → base64 (for OCR when proxy didn't deliver bytes) ──
