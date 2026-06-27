@@ -272,7 +272,7 @@ export default function StepInspector({
                 <Label htmlFor="msg">Mensagem de texto</Label>
                 <InlineAiButton
                   text={step.message_text ?? ""}
-                  context={`Mensagem do passo "${step.title}" (tipo ${step.step_type})`}
+                  context={`Mensagem do passo "${step.title}"`}
                   onResult={(next) => onPatch({ message_text: next })}
                 />
               </div>
