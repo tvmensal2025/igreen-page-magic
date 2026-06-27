@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWalletGuard } from "@/hooks/useWalletGuard";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -18,8 +18,30 @@ export function RechargeRequiredDialog() {
   const confirm = useConfirm();
   const [amount, setAmount] = useState<string>("100");
   const [loading, setLoading] = useState(false);
+  const [forcedShortage, setForcedShortage] = useState<{ required_cents: number; balance_cents: number } | null>(null);
+
+  // Escuta evento global disparado por chamadas a edge functions que retornam
+  // 402 INSUFFICIENT_WALLET_BALANCE (ex.: facebook-create-campaign).
+  useEffect(() => {
+    function onForce(e: Event) {
+      const detail = (e as CustomEvent).detail || {};
+      setForcedShortage({
+        required_cents: Number(detail.required_cents || 0),
+        balance_cents: Number(detail.balance_cents || 0),
+      });
+      // Sugere valor que cobre o déficit + folga (mínimo R$ 50).
+      const deficit = Math.max(0, Number(detail.required_cents || 0) - Number(detail.balance_cents || 0));
+      const sugCents = Math.max(5000, Math.ceil((deficit + 2000) / 1000) * 1000);
+      setAmount(String(sugCents / 100));
+      guard.clearSnooze();
+      guard.setOpen(true);
+    }
+    window.addEventListener("wallet:force-open", onForce as EventListener);
+    return () => window.removeEventListener("wallet:force-open", onForce as EventListener);
+  }, [guard]);
 
   if (!guard.open || !guard.consultantId) return null;
+
 
   const sumDaily = guard.pausedCampaigns.reduce((s, c) => s + (c.daily_budget_cents || 0), 0);
   const suggested = Math.max(5000, sumDaily * 7);
