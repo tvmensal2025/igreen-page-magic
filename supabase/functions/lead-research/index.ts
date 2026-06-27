@@ -79,14 +79,21 @@ function buildOverpassQuery(city: string, category: string, limit: number): stri
   const filters = CATEGORY_MAP[category] ?? null;
   let block: string;
   if (filters) {
+    // Filtra pela categoria escolhida, em nós, vias e relações.
     block = filters
       .map((f) => `nwr["name"]["${f}"](area.a);`)
       .join("\n        ");
   } else {
-    // comércio variado com telefone
+    // "Tudo": varre TUDO que é estabelecimento comercial nomeado. Em cidade
+    // pequena, varrer "amenity" amplo (menos os não-comerciais) é o que dá mais
+    // resultado com telefone. Inclui shop, ofícios, saúde, lazer, turismo.
     block = `nwr["name"]["shop"](area.a);
-        nwr["name"]["amenity"~"restaurant|cafe|bar|pharmacy|fuel|bank|fast_food"](area.a);
-        nwr["name"]["office"](area.a);`;
+        nwr["name"]["amenity"]["amenity"!~"^(bench|waste_basket|recycling|bicycle_parking|parking|parking_space|toilets|drinking_water|fountain|grave_yard|place_of_worship|school|kindergarten|university|college|townhall|public_building|community_centre|shelter|hunting_stand|fire_station|police|post_box|telephone|clock|fuel_station)$"](area.a);
+        nwr["name"]["office"](area.a);
+        nwr["name"]["craft"](area.a);
+        nwr["name"]["leisure"~"fitness_centre|sports_centre"](area.a);
+        nwr["name"]["tourism"~"hotel|motel|guest_house"](area.a);
+        nwr["name"]["healthcare"](area.a);`;
   }
   // Escapa aspas no nome da cidade (evita query inválida).
   const safeCity = city.replace(/["\\]/g, "");

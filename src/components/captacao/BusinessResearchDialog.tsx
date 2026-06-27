@@ -58,6 +58,7 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searched, setSearched] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [onlyPhone, setOnlyPhone] = useState(true);
 
   // autocomplete de cidades
   const [cityHits, setCityHits] = useState<CityHit[]>([]);
@@ -92,14 +93,19 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
     setSearching(true);
     setSearched(false);
     try {
-      const r = await searchBusinesses({ city: city.trim(), uf: uf.trim() || undefined, category: category || undefined, limit: 120 });
+      const r = await searchBusinesses({ city: city.trim(), uf: uf.trim() || undefined, category: category || undefined, limit: 200 });
       if (!r.ok) { sonnerToast.error(r.error || "Falha na busca"); return; }
       const list = r.items || [];
       setItems(list);
       // pré-seleciona os que têm telefone (são os úteis para disparo)
       setSelected(new Set(list.filter((i) => i.phone).map(keyOf)));
       setSearched(true);
-      if (list.length === 0) sonnerToast.info("Nenhum estabelecimento encontrado. Tente outra cidade/ramo.");
+      const comTel = list.filter((i) => i.phone).length;
+      if (list.length === 0) {
+        sonnerToast.info("Nenhum estabelecimento encontrado. Tente uma cidade maior ou outro ramo.");
+      } else if (comTel === 0) {
+        sonnerToast.warning("Encontrei locais, mas nenhum tem telefone público cadastrado nessa cidade. Cidades maiores têm mais dados.");
+      }
     } finally {
       setSearching(false);
     }
@@ -218,17 +224,23 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between mb-2 sticky top-0 bg-background/95 backdrop-blur py-1 z-10">
+              <div className="flex items-center justify-between mb-2 sticky top-0 bg-background/95 backdrop-blur py-1 z-10 gap-2 flex-wrap">
                 <span className="text-xs text-muted-foreground">
                   {items.length} locais · {withPhone.length} com telefone
                 </span>
-                <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={toggleAllPhone}>
-                  <CheckCheck className="w-3.5 h-3.5" />
-                  {allPhoneSelected ? "Limpar seleção" : "Selecionar todos com telefone"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setOnlyPhone((v) => !v)}
+                    className={`text-[11px] px-2 py-1 rounded-full border transition ${onlyPhone ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-accent"}`}>
+                    {onlyPhone ? "Só com telefone" : "Mostrar todos"}
+                  </button>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={toggleAllPhone}>
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    {allPhoneSelected ? "Limpar" : "Selecionar todos"}
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2">
-                {items.map((it) => {
+                {(onlyPhone ? withPhone : items).map((it) => {
                   const k = keyOf(it);
                   const sel = selected.has(k);
                   return (
