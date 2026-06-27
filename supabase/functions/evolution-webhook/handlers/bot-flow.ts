@@ -3906,6 +3906,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             }
           } else {
             console.log(`[post-confirm-conta] mantendo message "${nextCustom.step_key}" (slot=${hasSlot} btns=${hasButtons} econ=${hasEconomyVar} chars=${text.length}) — passo de simulação/conversão`);
+            // 🚦 PARIDADE WHAPI: se o passo de simulação tem botões/transições
+            // próprias ("Continuar Cadastro" / "Tenho dúvidas" / etc.), NÃO
+            // disparar capture_documento agora — seria atropelar o CTA.
+            // Aguarda resposta no step REAL para honrar o goto_step_id.
+            try {
+              if (stepHasInteractiveWait(nextCustom)) {
+                (updates as any).__last_chain_had_buttons = true;
+                (updates as any).__post_bill_wait_step_id = (nextCustom as any).id;
+                (updates as any).__post_bill_wait_step_key = (nextCustom as any).step_key;
+              }
+            } catch (_) { /* best-effort */ }
           }
         }
         const DOC_FALLBACK = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
