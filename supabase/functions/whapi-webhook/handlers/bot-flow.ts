@@ -1250,7 +1250,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       const { data: stepRow } = await supabase
         .from("bot_flow_steps")
-        .select("step_key, slot_key, message_text, media_order, captures, fallback")
+        .select("step_key, slot_key, message_text, media_order, captures, transitions, step_type, fallback")
         .eq("flow_id", (flow as any).id)
         .eq("step_key", stepKey)
         .maybeSingle();
