@@ -253,7 +253,7 @@ export function RechargeRequiredDialog() {
                 className="flex-1 text-xs"
               >
                 <Archive className="mr-1.5 h-3.5 w-3.5" />
-                Arquivar
+                Arquivar campanhas pausadas
               </Button>
             )}
             <Button
