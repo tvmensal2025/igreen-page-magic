@@ -380,7 +380,13 @@ Deno.serve(async (req) => {
     }
 
     // 1) Campaign
-    console.log("[fb-create] step=campaign_create");
+    // Se o usuário definiu duration_days, usa LIFETIME_BUDGET (teto absoluto
+    // que a Meta não estoura). Senão, daily_budget contínuo com spend_cap.
+    const hasFixedDuration = !!(body.duration_days && body.duration_days > 0);
+    const campaignBudgetParams: Record<string, string> = hasFixedDuration
+      ? { lifetime_budget: String(exactBudgetCents), spend_cap: String(lifetimeCapCents) }
+      : { daily_budget: String(body.daily_budget_cents), spend_cap: String(lifetimeCapCents) };
+    console.log("[fb-create] step=campaign_create budget=", campaignBudgetParams);
     const camp = await fbFetch(`/${accId}/campaigns`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -390,10 +396,9 @@ Deno.serve(async (req) => {
         special_ad_categories: JSON.stringify([]),
         status: "PAUSED",
         buying_type: "AUCTION",
-        daily_budget: String(body.daily_budget_cents),
-        // spend_cap = teto absoluto que a Meta vai gastar. Mesmo que nosso sync
-        // atrase, a Meta pausa sozinha quando bater nesse valor → zero prejuízo.
-        spend_cap: String(lifetimeCapCents),
+        ...campaignBudgetParams,
+        // pacing standard = entrega distribuída ao longo do período (não acelerada).
+        pacing_type: JSON.stringify(["standard"]),
         bid_strategy: "LOWEST_COST_WITHOUT_CAP",
         ...(adlabelsParam ? { adlabels: adlabelsParam } : {}),
         access_token: conn.token,
