@@ -197,7 +197,7 @@ export default function VariantsPanel() {
                   {p.label}
                 </Button>
               ))}
-              <Button variant="ghost" size="icon" onClick={load}><RefreshCw className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" onClick={load} aria-label="Atualizar métricas" title="Atualizar métricas"><RefreshCw className="h-4 w-4" /></Button>
             </div>
           </div>
         </CardHeader>
