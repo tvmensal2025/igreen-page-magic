@@ -278,7 +278,7 @@ export default function FlowReviewPanel({
                             onClick={() => setAppliedIdx((prev) => new Set(prev).add(idx))}
                           >
                             <X className="h-3 w-3 mr-1" />
-                            Rejeitar
+                            Ignorar sugestão
                           </Button>
                           <Button
                             size="sm"
