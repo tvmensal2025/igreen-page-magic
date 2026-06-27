@@ -522,19 +522,25 @@ Deno.serve(async (req) => {
       console.log("[fb-create] step=video_upload url=", videoUrl);
 
       // Reusa fb_video_id se já estiver em ad_video_library (best-effort).
+      // IMPORTANTE: thumb cacheada SÓ é reaproveitada quando ela veio do USUÁRIO
+      // (thumb_source='user'). Se foi gerada pelo Meta, refazemos a busca em
+      // /thumbnails pra evitar servir frame antigo quando o vídeo/capa muda.
       let fbVideoId: string | null = null;
       try {
         const { data: cachedVid } = await adminDb2
-          .from("ad_video_library").select("id, fb_video_id, thumb_url, usage_count")
+          .from("ad_video_library").select("id, fb_video_id, thumb_url, thumb_source, usage_count")
           .eq("consultant_id", auth.id).eq("url", videoUrl).maybeSingle();
         if (cachedVid?.fb_video_id) {
           fbVideoId = cachedVid.fb_video_id;
-          if (!thumbUrl && (cachedVid as any).thumb_url) thumbUrl = (cachedVid as any).thumb_url;
+          const cachedSource = (cachedVid as any).thumb_source || "user";
+          if (!thumbUrl && cachedSource === "user" && (cachedVid as any).thumb_url) {
+            thumbUrl = (cachedVid as any).thumb_url;
+          }
           await adminDb2.from("ad_video_library").update({
             usage_count: ((cachedVid as any).usage_count ?? 0) + 1,
             last_used_at: new Date().toISOString(),
           }).eq("id", cachedVid.id);
-          console.log("[fb-create] video CACHE HIT", fbVideoId);
+          console.log("[fb-create] video CACHE HIT", fbVideoId, "thumb_source=", cachedSource);
         }
       } catch (e) { console.warn("[fb-create] video cache lookup:", (e as Error).message); }
 
