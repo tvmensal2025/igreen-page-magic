@@ -14,6 +14,20 @@ async function throwFunctionError(error: any): Promise<never> {
     }
     try {
       const payload = await response.clone().json();
+      // Saldo insuficiente → abre popup de recarga automaticamente
+      if (response.status === 402 && payload?.code === "INSUFFICIENT_WALLET_BALANCE") {
+        try {
+          window.dispatchEvent(new CustomEvent("wallet:force-open", {
+            detail: {
+              required_cents: payload.required_cents,
+              balance_cents: payload.balance_cents,
+            },
+          }));
+        } catch { /* ignore */ }
+        const need = ((payload.required_cents ?? 0) / 100).toFixed(2);
+        const have = ((payload.balance_cents ?? 0) / 100).toFixed(2);
+        throw new Error(`Saldo insuficiente: precisa R$ ${need} e você tem R$ ${have}. Abri a recarga para você.`);
+      }
       if (payload?.error) throw new Error(payload.error);
     } catch (parsed) {
       if (parsed instanceof Error && parsed.message) throw parsed;
