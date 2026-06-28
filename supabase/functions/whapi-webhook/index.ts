@@ -32,6 +32,8 @@ import { summarizeWebhookBody } from "../_shared/log-redact.ts";
 import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
 import { resolveWorker } from "../_shared/portal-worker.ts";
 import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
+import { matchesMetaCtwaPhrase, resolveSingleActivePool } from "../_shared/meta-ctwa-fallback.ts";
+import { notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
 
