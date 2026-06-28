@@ -21,7 +21,7 @@ import { captureError } from "../_shared/sentry.ts";
 import { detectHandoffIntent } from "../_shared/captureExtractors.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import { botRequestStore, isTestPhone, logTestOutbound } from "../_shared/test-mode.ts";
-import { notifyNewLead, notifyPartnerNewLead } from "../_shared/notify-consultant.ts";
+import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
@@ -33,7 +33,6 @@ import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
 import { resolveWorker } from "../_shared/portal-worker.ts";
 import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { matchesMetaCtwaPhrase, resolveSingleActivePool } from "../_shared/meta-ctwa-fallback.ts";
-import { notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
 
