@@ -5372,7 +5372,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           customerName: customer.name || "cliente", customerBirth: customer.data_nascimento, kind: "doc_verso",
         });
         updates.document_back_url = minioUrl || (fileUrl?.startsWith("http") ? fileUrl : "evolution-media:pending");
-        updates.document_back_base64 = fileBase64;
+        updates.document_back_base64 = "inline"; // OOM-FIX 2026-06-28: sentinel curto.
       } else {
         updates.document_back_url = fileUrl?.startsWith("http") ? fileUrl : "evolution-media:pending";
       }
