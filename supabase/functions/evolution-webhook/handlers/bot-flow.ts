@@ -4273,8 +4273,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       // Salva a frente recebida (sempre — independente da confiança da detecção).
       if (fileBase64) {
-        updates.document_front_url = `data:${mime};base64,${fileBase64}`;
-        updates.document_front_base64 = fileBase64;
+        // OOM-FIX 2026-06-28: nada de data: URL + base64 nas colunas do banco.
+        updates.document_front_url = "evolution-media:pending";
+        updates.document_front_base64 = "inline";
         updates.media_message_id = messageId || null;
         updates.media_storage = "inline";
       } else if (fileUrl) {
