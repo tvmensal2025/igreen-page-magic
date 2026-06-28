@@ -3570,8 +3570,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // correta já existe no processando_ocr_conta (OCR real da conta).
       if (fileBase64) {
         const mime = inboundMime;
-        updates.electricity_bill_photo_url = `data:${mime};base64,${fileBase64}`;
-        updates.bill_base64 = fileBase64;
+        // OOM-FIX 2026-06-28: não gravar `data:${mime};base64,...` nem o base64 cru
+        // em colunas do banco. A foto vai para o MinIO logo abaixo (background) e
+        // a URL real sobrescreve `electricity_bill_photo_url`. O sentinel curto
+        // mantém o `hasFile()` do portal-worker truthy enquanto a URL não chega.
+        updates.electricity_bill_photo_url = "evolution-media:pending";
+        updates.bill_base64 = "inline";
         updates.bill_message_id = messageId || null;
         updates.media_storage = "inline";
         const custId = customer.id;
@@ -4269,8 +4273,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       // Salva a frente recebida (sempre — independente da confiança da detecção).
       if (fileBase64) {
-        updates.document_front_url = `data:${mime};base64,${fileBase64}`;
-        updates.document_front_base64 = fileBase64;
+        // OOM-FIX 2026-06-28: nada de data: URL + base64 nas colunas do banco.
+        updates.document_front_url = "evolution-media:pending";
+        updates.document_front_base64 = "inline";
         updates.media_message_id = messageId || null;
         updates.media_storage = "inline";
       } else if (fileUrl) {
@@ -4436,8 +4441,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
       if (fileBase64) {
         const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
-        updates.document_front_url = `data:${mime};base64,${fileBase64}`;
-        updates.document_front_base64 = fileBase64;
+        // OOM-FIX 2026-06-28: sentinel curto; MinIO sobrescreve em background.
+        updates.document_front_url = "evolution-media:pending";
+        updates.document_front_base64 = "inline";
         updates.media_message_id = messageId || null;
         updates.media_storage = "inline";
         const custId = customer.id;
@@ -4531,8 +4537,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (!isFile) { reply = "📸 Envie o *VERSO do documento*.\n\nFormatos: JPG, PNG ou PDF"; break; }
       if (fileBase64) {
         const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
-        updates.document_back_url = `data:${mime};base64,${fileBase64}`;
-        updates.document_back_base64 = fileBase64;
+        // OOM-FIX 2026-06-28: sentinel curto; MinIO sobrescreve em background.
+        updates.document_back_url = "evolution-media:pending";
+        updates.document_back_base64 = "inline";
         const custId = customer.id;
         uploadMediaToMinio({
           fileBase64, mimeType: mime, consultantFolder: consultorId, consultantName: nomeRepresentante,
@@ -5365,7 +5372,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           customerName: customer.name || "cliente", customerBirth: customer.data_nascimento, kind: "doc_verso",
         });
         updates.document_back_url = minioUrl || (fileUrl?.startsWith("http") ? fileUrl : "evolution-media:pending");
-        updates.document_back_base64 = fileBase64;
+        updates.document_back_base64 = "inline"; // OOM-FIX 2026-06-28: sentinel curto.
       } else {
         updates.document_back_url = fileUrl?.startsWith("http") ? fileUrl : "evolution-media:pending";
       }
