@@ -784,7 +784,7 @@ Deno.serve(async (req) => {
           // 2.5) Fallback: frase-âncora do Meta CTWA (anúncios sem ctwa_clid no payload)
           //      → marca lead_source=meta_ads e, se há EXATAMENTE 1 pool ativa no
           //      superadmin, usa essa campanha como atribuição determinística.
-          if (!candidateCampaignId && messageText && !isFile && !isAudio) {
+          if (!candidateCampaignId && messageText && !isFile && !hasAudio) {
             if (matchesMetaCtwaPhrase(messageText)) {
               metaCtwaSignal = true;
               const sp = await resolveSingleActivePool(supabase, superAdminConsultantId);
