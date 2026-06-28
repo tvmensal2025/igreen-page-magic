@@ -61,7 +61,7 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
   const saveEdit = async () => {
     if (!editing) return;
     try {
-      await supabase.from("customers").update({ [editing]: editVal.trim() || null }).eq("id", customer.id);
+      await supabase.from("customers").update({ [editing]: editVal.trim() || null } as never).eq("id", customer.id);
       setEditing(null);
     } catch (e: any) {
       toast({ title: "Erro", description: e?.message || String(e), variant: "destructive" });

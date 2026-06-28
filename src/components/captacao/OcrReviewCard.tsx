@@ -93,7 +93,7 @@ export function OcrReviewCard({ customer, kind, onDecided }: Props) {
       if (editing === "electricity_bill_value") {
         val = Number(String(editVal).replace(",", ".")) || null;
       }
-      await supabase.from("customers").update({ [editing]: val }).eq("id", customer.id);
+      await supabase.from("customers").update({ [editing]: val } as never).eq("id", customer.id);
       setEditing(null);
       haptics.tap();
     } catch (e: any) {

@@ -50,7 +50,7 @@ export function SolarModulePanel() {
     setBusyId(id);
     const { error } = await supabase
       .from("consultants")
-      .update({ [field]: value } as Record<string, boolean>)
+      .update({ [field]: value } as never)
       .eq("id", id);
     if (error) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });

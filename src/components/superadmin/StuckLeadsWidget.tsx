@@ -150,7 +150,7 @@ export function StuckLeadsWidget() {
         const newStatus = pendingAction === "complete" ? "complete" : "abandoned";
         const updates: Record<string, any> = { status: newStatus };
         if (pendingAction === "complete") updates.conversation_step = null;
-        const { error } = await supabase.from("customers").update(updates).in("id", ids);
+        const { error } = await supabase.from("customers").update(updates as never).in("id", ids);
         if (error) throw error;
         toast.success(
           pendingAction === "complete"
