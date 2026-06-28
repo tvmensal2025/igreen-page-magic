@@ -1694,11 +1694,61 @@ Deno.serve(async (req) => {
 
     // Roteamento por prefixo: "flow:<id>" → conversational; nome cru → bot-flow determinístico.
     // Compat reversa: UUIDs/"passo_xxx" sem prefixo são tratados como flow.
-    const rawStep = customer.conversation_step || null;
-    const stepBefore = stripPrefix(rawStep); // valor cru consumido pelos engines
+    let rawStep = customer.conversation_step || null;
+    let stepBefore = stripPrefix(rawStep); // valor cru consumido pelos engines
 
     // Sincroniza o customer em memória com o valor cru — engines mantêm sua lógica intacta.
     (customer as any).conversation_step = stepBefore;
+
+    // ─── GUARD DE RETOMADA DE CADASTRO (espelho do evolution-webhook) ────
+    // Bug 2026-06-28 (lead JONATAS): qualquer reset para welcome/null fazia
+    // o bot pedir a foto da conta de novo mesmo com tudo já preenchido. Se
+    // o customer já está avançado no funil, pula direto pro próximo campo
+    // pendente em vez de reiniciar o fluxo.
+    try {
+      const { shouldResumeCadastro } = await import(
+        "../_shared/bot/resume-or-skip.ts"
+      );
+      const consultorEmailForGuard = (consultantData as any)?.igreen_portal_email ?? null;
+      const resumeDecision = shouldResumeCadastro(customer, {
+        currentStep: stepBefore,
+        consultorEmail: consultorEmailForGuard,
+      });
+      if (resumeDecision) {
+        console.log(
+          `🛟 [resume-guard] customer=${customer.id} step="${stepBefore}" → "${resumeDecision.nextStep}" (${resumeDecision.reason})`,
+        );
+        try {
+          await supabase
+            .from("customers")
+            .update({
+              conversation_step: resumeDecision.nextStep,
+              previous_conversation_step: stepBefore || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", customer.id);
+        } catch (e) {
+          console.warn("[resume-guard] persist falhou:", (e as Error).message);
+        }
+        try {
+          await supabase.from("bot_step_transitions").insert({
+            customer_id: customer.id,
+            consultant_id: superAdminConsultantId,
+            from_step: stepBefore || null,
+            to_step: resumeDecision.nextStep,
+            reason: resumeDecision.reason,
+            intent: "resume_guard",
+            phone,
+          });
+        } catch (_) { /* coluna pode não existir */ }
+        (customer as any).conversation_step = resumeDecision.nextStep;
+        (customer as any).previous_conversation_step = stepBefore || null;
+        rawStep = resumeDecision.nextStep;
+        stepBefore = resumeDecision.nextStep;
+      }
+    } catch (e: any) {
+      console.warn("[resume-guard] erro não-bloqueante:", e?.message);
+    }
 
     let reply: string | null = "";
     let updates: Record<string, any> = {};
