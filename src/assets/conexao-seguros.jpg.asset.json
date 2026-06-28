@@ -1,11 +1,11 @@
 {
-  "version": 1,
   "asset_id": "e11e76fd-3666-4a8b-bae3-aff7cb8a6b27",
-  "project_id": "ff3da740-c019-4ad7-b488-43fbd93eed67",
-  "url": "/__l5e/assets-v1/e11e76fd-3666-4a8b-bae3-aff7cb8a6b27/conexao-seguros.jpg",
-  "r2_key": "a/v1/ff3da740-c019-4ad7-b488-43fbd93eed67/e11e76fd-3666-4a8b-bae3-aff7cb8a6b27/conexao-seguros.jpg",
-  "original_filename": "conexao-seguros.jpg",
-  "size": 67623,
   "content_type": "image/jpeg",
-  "created_at": "2026-06-14T21:53:42Z"
+  "created_at": "2026-06-14T21:53:42Z",
+  "original_filename": "conexao-seguros.jpg",
+  "project_id": "3b3d0c8b-af52-4ad1-a44c-d389fb0bd4b2",
+  "r2_key": "a/v1/3b3d0c8b-af52-4ad1-a44c-d389fb0bd4b2/e11e76fd-3666-4a8b-bae3-aff7cb8a6b27/conexao-seguros.jpg",
+  "size": 67623,
+  "url": "/__l5e/assets-v1/e11e76fd-3666-4a8b-bae3-aff7cb8a6b27/conexao-seguros.jpg",
+  "version": 1
 }
