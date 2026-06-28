@@ -3570,8 +3570,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // correta já existe no processando_ocr_conta (OCR real da conta).
       if (fileBase64) {
         const mime = inboundMime;
-        updates.electricity_bill_photo_url = `data:${mime};base64,${fileBase64}`;
-        updates.bill_base64 = fileBase64;
+        // OOM-FIX 2026-06-28: não gravar `data:${mime};base64,...` nem o base64 cru
+        // em colunas do banco. A foto vai para o MinIO logo abaixo (background) e
+        // a URL real sobrescreve `electricity_bill_photo_url`. O sentinel curto
+        // mantém o `hasFile()` do portal-worker truthy enquanto a URL não chega.
+        updates.electricity_bill_photo_url = "evolution-media:pending";
+        updates.bill_base64 = "inline";
         updates.bill_message_id = messageId || null;
         updates.media_storage = "inline";
         const custId = customer.id;
