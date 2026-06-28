@@ -4441,8 +4441,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
       if (fileBase64) {
         const mime = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
-        updates.document_front_url = `data:${mime};base64,${fileBase64}`;
-        updates.document_front_base64 = fileBase64;
+        // OOM-FIX 2026-06-28: sentinel curto; MinIO sobrescreve em background.
+        updates.document_front_url = "evolution-media:pending";
+        updates.document_front_base64 = "inline";
         updates.media_message_id = messageId || null;
         updates.media_storage = "inline";
         const custId = customer.id;
