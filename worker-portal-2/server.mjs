@@ -328,6 +328,32 @@ async function processLead(job) {
     // não deve ser reenviado — Req 9.1).
     const { kind, recoverable } = classifyPortalError(e.message);
 
+    // Short-circuit: cliente JÁ está cadastrado na iGreen (mesmo CPF ou
+    // throw explícito do checkCustomerExists). Não é falha — é sucesso
+    // silencioso: marca como registered_igreen e não pede intervenção
+    // humana nem reenvia OTP/link. Sem mensagem ao cliente.
+    const msgLower = String(e.message ?? '').toLowerCase();
+    const isAlreadyRegistered =
+      kind === 'duplicate_document' ||
+      msgLower.includes('cliente já cadastrado') ||
+      msgLower.includes('cliente ja cadastrado');
+    if (isAlreadyRegistered && supabase && customer_id) {
+      await supabase.from('customers').update({
+        status: 'registered_igreen',
+        conversation_step: 'cadastro_em_analise',
+        portal2_status: 'already_registered',
+        portal2_error: String(e.message ?? '').slice(0, 2000),
+        portal2_error_kind: kind,
+        error_message: null,
+      }).eq('id', customer_id).then(
+        () => console.log(`  ✓ already_registered: customer=${customer_id} marcado como registered_igreen (sem mensagem)`),
+        (err) => console.warn(`  ⚠ falha ao marcar already_registered: ${err.message}`),
+      );
+      return { success: true, alreadyRegistered: true, reason: e.message };
+    }
+
+
+
     if (supabase && customer_id) {
       // Lê o contador de tentativas por classe pra decidir o roteamento do
       // status (Req 9.5/9.6 + 10.1/10.2). Best-effort: se a leitura falhar,
