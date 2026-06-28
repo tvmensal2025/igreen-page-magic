@@ -5186,16 +5186,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         .replace(/[.,;]+$/, "")
         .trim();
       const lower = txt.toLowerCase();
+      console.log(`[ask_email] customer=${customer.id} raw="${rawText}" clean="${lower}"`);
       // ⚠️ Email é OBRIGATÓRIO no portal iGreen. Não aceitar PULAR.
       if (["pular", "skip", "não tenho", "nao tenho", "sem email", "sem e-mail", "n", "não", "nao"].includes(lower)) {
+        console.log(`[ask_email] customer=${customer.id} → recusa de email, pedindo de novo`);
         reply = "📧 Esse aqui é *importante*! É o login do seu app *iGreen Club* 📱\n\nMe passa um e-mail seu — pode criar rapidinho em qualquer provedor (Gmail, Outlook, iCloud…).";
         break;
       }
       if (!isValidEmailFormat(txt)) {
+        console.log(`[ask_email] customer=${customer.id} → formato inválido "${txt}"`);
         reply = "❌ E-mail inválido. Confere o *@* e o domínio (ex: *seunome@gmail.com*):";
         break;
       }
       if (isPlaceholderEmail(txt)) {
+        console.log(`[ask_email] customer=${customer.id} → placeholder/teste "${txt}"`);
         reply = "❌ Esse e-mail parece de teste. Me manda o seu *de verdade*:";
         break;
       }
@@ -5209,6 +5213,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           .maybeSingle();
         consultorEmailForCustomer = cons?.igreen_portal_email || null;
         if (consultorEmailForCustomer && isSameContact(txt, consultorEmailForCustomer)) {
+          console.log(`[ask_email] customer=${customer.id} → email do consultor, rejeitado`);
           reply = "❌ Esse é o e-mail do consultor. Preciso de um e-mail *seu*:";
           break;
         }
@@ -5217,6 +5222,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
       updates.conversation_step = next;
+      console.log(`[ask_email] customer=${customer.id} → aceito, next_step="${next}"`);
       if (next === "ask_email") {
         reply = "❌ E-mail não aceito. Me manda *outro e-mail seu* (qualquer provedor):";
       } else {
