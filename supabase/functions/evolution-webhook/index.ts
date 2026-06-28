@@ -1044,10 +1044,11 @@ Deno.serve(async (req) => {
           }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
 
           // Se a atribuição da campanha veio do fallback (frase-âncora do
-          // Meta + pool única), avisa o consultor (super admin) para revisar
-          // o cadastro da campanha — o ctwa_clid ou a initial_message não bateram.
-          // ctwaPhraseMatch é setado no bloco lead-source acima.
-          if (typeof ctwaPhraseMatch !== "undefined" && ctwaPhraseMatch && !sourceAdId && !ctwaClid) {
+          // Meta + pool única) — sinal: temos source_campaign_id mas SEM
+          // source_ad_id E SEM source_ctwa_clid → avisa o consultor pra revisar
+          // o cadastro da campanha (Meta não propagou o ctwa_clid).
+          const cAny = customer as any;
+          if (cAny.source_campaign_id && !cAny.source_ad_id && !cAny.source_ctwa_clid) {
             let partnerName: string | null = null;
             try {
               const { data: prow } = await supabase
@@ -1061,11 +1062,11 @@ Deno.serve(async (req) => {
               instanceData.consultant_id,
               {
                 id: customer.id,
-                name: (customer as any).name,
-                phone_whatsapp: (customer as any).phone_whatsapp,
-                is_sandbox: (customer as any).is_sandbox,
+                name: cAny.name,
+                phone_whatsapp: cAny.phone_whatsapp,
+                is_sandbox: cAny.is_sandbox,
               },
-              "fallback_single_active_pool",
+              "fallback_or_initial_message_match",
               partnerName,
             ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
           }
