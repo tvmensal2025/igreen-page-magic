@@ -1679,9 +1679,62 @@ Deno.serve(async (req) => {
     // ─── 8) Run bot flow — engine routing (sys vs flow) ───────────────
     // Roteamento por prefixo: "flow:<id>" → conversational; nome cru → bot-flow determinístico.
     // Compat reversa: UUIDs/"passo_xxx" sem prefixo são tratados como flow.
-    const rawStep = customer.conversation_step || null;
-    const stepBefore = stripPrefix(rawStep);
+    let rawStep = customer.conversation_step || null;
+    let stepBefore = stripPrefix(rawStep);
     (customer as any).conversation_step = stepBefore;
+
+    // ─── 7.5) GUARD DE RETOMADA DE CADASTRO ──────────────────────────────
+    // Bug 2026-06-28 (lead JONATAS 5511971254913): qualquer reset para
+    // welcome/d_welcome/null fazia o bot pedir a foto da conta de novo,
+    // ignorando que já havia conta + doc + CPF + e-mail no banco. O guard
+    // detecta esse cenário e seta o step para o próximo campo realmente
+    // pendente (calculado por getNextMissingStep), forçando o pipeline
+    // determinístico de cadastro (bot-flow.ts) a retomar dali. Não envia
+    // nada aqui — só ajusta o step; o engine a seguir cuida da resposta.
+    try {
+      const { shouldResumeCadastro } = await import(
+        "../_shared/bot/resume-or-skip.ts"
+      );
+      const consultorEmailForGuard = (consultantData as any)?.igreen_portal_email ?? null;
+      const resumeDecision = shouldResumeCadastro(customer, {
+        currentStep: stepBefore,
+        consultorEmail: consultorEmailForGuard,
+      });
+      if (resumeDecision) {
+        console.log(
+          `🛟 [resume-guard] customer=${customer.id} step="${stepBefore}" → "${resumeDecision.nextStep}" (${resumeDecision.reason})`,
+        );
+        try {
+          await supabase
+            .from("customers")
+            .update({
+              conversation_step: resumeDecision.nextStep,
+              previous_conversation_step: stepBefore || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", customer.id);
+        } catch (e) {
+          console.warn("[resume-guard] persist falhou:", (e as Error).message);
+        }
+        try {
+          await supabase.from("bot_step_transitions").insert({
+            customer_id: customer.id,
+            consultant_id: instanceData.consultant_id,
+            from_step: stepBefore || null,
+            to_step: resumeDecision.nextStep,
+            reason: resumeDecision.reason,
+            intent: "resume_guard",
+            phone,
+          });
+        } catch (_) { /* coluna pode não existir */ }
+        (customer as any).conversation_step = resumeDecision.nextStep;
+        (customer as any).previous_conversation_step = stepBefore || null;
+        rawStep = resumeDecision.nextStep;
+        stepBefore = resumeDecision.nextStep;
+      }
+    } catch (e: any) {
+      console.warn("[resume-guard] erro não-bloqueante:", e?.message);
+    }
 
     let reply: string | null = "";
     let updates: Record<string, any> = {};
