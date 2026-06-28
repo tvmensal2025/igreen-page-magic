@@ -379,3 +379,63 @@ export async function notifyPartnerNewLead(
     return false;
   }
 }
+
+// ─── Aviso ao SUPER ADMIN quando um lead whapi não bate em campanha clara ───
+// Dispara quando o lead-attribution caiu em fallback (frase-âncora do Meta,
+// pool única) ou ficou unmatched mesmo com regex de anúncio batendo. Serve
+// pra o Rafael saber que algo no rastreio de campanhas está pendente.
+// Dedup persistente por customer_id via `outbound_message_log.idempotency_key`
+// (chave única) — nunca avisa 2x o mesmo lead.
+export async function notifySuperAdminUnmatchedLead(
+  superAdminConsultantId: string,
+  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
+  method: string,
+  assignedPartnerName?: string | null,
+): Promise<boolean> {
+  try {
+    if (!superAdminConsultantId || !lead?.id) return false;
+    if (lead?.is_sandbox) return false;
+
+    const admin = adminClient();
+    const idemKey = `superadmin_fallback_alert:${lead.id}`;
+
+    // Tenta dedup via insert idempotente. Se já existe, retorna sem enviar.
+    const { error: insErr } = await admin
+      .from("outbound_message_log")
+      .insert({
+        idempotency_key: idemKey,
+        customer_id: lead.id,
+        consultant_id: superAdminConsultantId,
+        result_status: "queued_superadmin_alert",
+      });
+    if (insErr) {
+      // conflict (23505) = já avisado, silencia
+      const code = (insErr as any)?.code;
+      if (code === "23505") {
+        console.log(`[notify-superadmin] já avisado lead=${lead.id}`);
+        return false;
+      }
+      console.warn("[notify-superadmin] insert log falhou:", insErr.message);
+      // segue mesmo assim
+    }
+
+    const assigned = assignedPartnerName
+      ? `Atribuído a: ${assignedPartnerName}`
+      : `Atribuído ao fallback (você)`;
+
+    const text =
+      `⚠️ *Lead sem campanha clara*\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
+      `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n\n` +
+      `🔎 Motivo: \`${method}\`\n` +
+      `${assigned}.\n\n` +
+      `_Confira se a campanha do anúncio está cadastrada com a frase de abertura correta._`;
+
+    return sendRawToAlertNumber(superAdminConsultantId, text);
+  } catch (e) {
+    console.warn("[notify-superadmin] erro:", (e as Error).message);
+    return false;
+  }
+}
+
