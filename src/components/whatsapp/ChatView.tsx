@@ -186,7 +186,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         const patch: Record<string, unknown> = { bot_paused: false, assigned_human_id: null };
         if (!globalAiEnabled) patch.bot_force_enabled = true;
         const { error } = await supabase.from("customers")
-          .update(patch)
+          .update(patch as never)
           .eq("id", customerId);
         if (error) throw error;
         setBotPaused(false);

@@ -147,7 +147,7 @@ export function useCaptureSession(customerId: string | null) {
     setCustomer((c) => c ? ({ ...c, [field]: value }) as CaptureCustomer : c);
     const { error } = await supabase
       .from("customers")
-      .update({ [field]: value })
+      .update({ [field]: value } as never)
       .eq("id", customerId);
     if (error) {
       // rollback

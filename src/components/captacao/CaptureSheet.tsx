@@ -221,7 +221,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   // Aplica a sugestão de um campo inválido (ex: consumo estimado a partir do valor)
   const applySuggestion = async (field: string, value: any) => {
     if (!customer) return;
-    const { error } = await supabase.from("customers").update({ [field]: value }).eq("id", customer.id);
+    const { error } = await supabase.from("customers").update({ [field]: value } as never).eq("id", customer.id);
     if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
     else toast({ title: `${field} atualizado`, description: `Valor: ${value}`, duration: 2000 });
   };
