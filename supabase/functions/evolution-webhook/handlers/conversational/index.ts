@@ -2129,7 +2129,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
     return {
       reply: replyText,
-      updates: { conversation_step: nextConversationStep, __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, __inline_sent: inlineSent || undefined, ...extra },
+      // 🔧 FIX 2026-06-28: só marca __inline_sent quando NÃO há reply pendente.
+      // Antes, passos com mídia + texto (ex.: d_como_funciona com áudio+vídeo+botões
+      // numerados) marcavam __inline_sent=true mesmo com replyText cheio → o outer
+      // handler caía em `inline_sent_skipped` e descartava os botões 1️⃣/2️⃣/3️⃣,
+      // deixando o lead sem opções para responder.
+      updates: { conversation_step: nextConversationStep, __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, __inline_sent: (inlineSent && !replyText) || undefined, ...extra },
     };
   };
 
