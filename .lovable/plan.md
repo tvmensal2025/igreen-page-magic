@@ -1,83 +1,91 @@
-## Diagnóstico — JONATAS (5511971254913, id 705e9655…)
+# Fechar o buraco do whapi: leads de anúncio caindo no Rafael sem aviso nem rodízio
 
-Timeline reconstruído de `conversations` + `bot_step_transitions`:
+## Diagnóstico (2 leads idênticos)
 
-```
-02:21:13  bot pede a conta            (aguardando_conta)
-02:21:42  cliente envia PDF da conta
-02:22:24  bot mostra resultado + botões
-02:23:35  bot pede documento          (aguardando_doc_auto)
-02:23:53  cliente envia PDF do doc
-02:24:25  confirma dados do doc (1)
-02:24:44  confirma titularidade (1)
-02:25:03  confirma telefone (Sim)     (ask_phone_confirm → ask_email)
-02:25:16  bot pede email
-02:35:23  cliente envia "rafael.teste@gmail.com"
-          ⚠️ BOT FICA EM SILÊNCIO POR 12 MIN
-02:37:15  cliente pergunta "Deu Certo?"
-02:37:27  ❌ bot RESETA para welcome e reinicia o cadastro do zero
-02:38:33  ❌ bot pede a CONTA novamente (já tinha tudo)
-```
+Marilza (5519992527139) e o novo lead (5519998743654) chegaram pelo whapi com a mesma frase: **`"Olá! Posso ter mais informações sobre isso?"`** — abertura padrão do CTWA do Meta quando o anúncio NÃO propaga `ctwa_clid` no payload. As 3 estratégias atuais de atribuição falham:
 
-Estado do `customers` neste momento já tinha: bill_photo + bill_value 2392,10, document_front+back, cpf, distribuidora CPFL, instalação 25680030, cep, email [rafael.teste@gmail.com](mailto:rafael.teste@gmail.com), bill_data_confirmed_at e doc_data_confirmed_at. Ou seja, **só faltava o portal2 disparar**.
+| Estratégia | O que faz | Por que falhou |
+|---|---|---|
+| 1. `ctwa_referral` | Lê `referral.ctwa_clid` do payload | Whapi entregou sem `referral` |
+| 2. `initial_message_match` | Jaccard ≥ 0.60 com `facebook_campaigns.initial_message` | "Olá! Posso ter mais informações sobre isso?" × "Olá! Quero saber mais sobre a redução na conta de luz." ≈ 0.30 |
+| 3. `regex_fallback` (ADS_REGEX) | Detecta texto de anúncio | Bate, mas só seta `lead_source='meta_ads'`, NÃO resolve `source_campaign_id` → rodízio nunca roda |
 
-### Causa raiz — dois bugs independentes
+Além disso, `attributeLeadSource` **só é chamado no `evolution-webhook`**, não no `whapi-webhook` — por isso o lead novo nem ficou marcado como `meta_ads`.
 
-1. `**ask_email` engoliu o email de teste sem responder.** O handler (`bot-flow.ts` linha 5198) tem `isPlaceholderEmail()` que deveria responder “esse e-mail parece de teste, me manda o seu de verdade”. Aqui ele não respondeu — o cliente ficou 12 min sem retorno. Precisa confirmar se a função realmente classifica `*.teste@*` como placeholder e se o branch chegou a executar (pode ter caído em outro caminho, p.ex. rota conversacional / Camila assumindo o turno em `ask_email`).
-2. **Re-welcome reiniciou o fluxo apagando o progresso.** Quando o cliente disse "Deu Certo?" às 02:37, alguma regra (re-welcome do whapi-style, step-mismatch-cure de `evolution-webhook/index.ts` linha 1775, ou normalização de `novo_lead`/`welcome`) zerou `conversation_step` para `welcome`. O fluxo começou de novo do `d_welcome` e às 02:38 pediu a *foto da conta* — apesar de `electricity_bill_photo_url`, `document_*_url`, `cpf`, `email`, `cep`, `numero_instalacao` já estarem todos preenchidos. **Nenhum guard "se já capturei, pula" existe na entrada do fluxo.**
+Resultado: lead fica em Rafael (superadmin), nenhum aviso ao parceiro, nenhum aviso ao Rafael, cadastro vai para o consultor errado.
 
-## Plano
+## O que vai mudar
 
-### 1. Guard de retomada no início do roteador (corrige reset → re-pedir conta)
+### 1. Plugar `attributeLeadSource` no whapi-webhook
 
-Em `supabase/functions/evolution-webhook/index.ts`, logo após o bloco de `RESUMABLE_STATUSES` (≈linha 689) e antes do fluxo principal, inserir um guard idempotente:
+Em `whapi-webhook/index.ts` (logo antes do bloco de partner-match, ~L724), chamar `attributeLeadSource(supabase, superAdminConsultantId, customer.id, messageText, rawMessage, isAudio, isFile)` se `!customer.source_campaign_id && !customer.lead_source`. Depois recarregar `customer.source_campaign_id` para uso no rodízio.
 
-```
-Se conversation_step ∈ {welcome, menu_inicial, '', null, d_welcome, primeiro step do fluxo}
-   E o customer já tem:
-        electricity_bill_photo_url + bill_data_confirmed_at
-        document_front_url + document_back_url + doc_data_confirmed_at
-        cpf + email + numero_instalacao
-   E status NÃO está em {registered_igreen, awaiting_signature, …finalizados}
-→ pula para o próximo passo pendente:
-     – se faltam só endereço/CEP → ask_cep / ask_number / ask_complement
-     – senão → enfileira portal2 (status='pending_portal2', conversation_step='cadastro_em_analise')
-   e responde algo como: "Voltando ao seu cadastro — já tenho tudo aqui, estou finalizando 👍"
-```
+### 2. Afrouxar o `initial_message_match` (Jaccard 0.60 → 0.40 + bigrama)
 
-Esse guard executa antes de qualquer engine (cadastro, conversational, flow custom), então re-welcome, step-mismatch-cure ou qualquer normalização que zere o step deixa de causar regressão.
+Em `_shared/lead-attribution.ts`:
+- Adicionar similaridade de bigramas de caracteres (Dice) junto com Jaccard de palavras; aceitar se `max(jaccard, dice) ≥ 0.40`.
+- Logar score + campanha vencedora sempre (hoje só loga no acerto).
+- Continua threshold conservador o suficiente pra não falsa-atribuir leads orgânicos.
 
-### 2. Espelhar o guard no `whapi-webhook` (paridade)
+### 3. Lista de frases-âncora do Meta CTWA
 
-Mesma checagem em `supabase/functions/whapi-webhook/index.ts`. Reusa um helper compartilhado novo: `_shared/bot/resume-or-skip.ts` exportando `shouldResumeAfterReset(customer)` + `pickNextPendingStep(customer)`. Sem isso, leads do Whapi superadmin caem no mesmo bug.
+Em `_shared/lead-attribution.ts`, nova constante `META_CTWA_OPENING_PHRASES` com as 4–5 frases genéricas que o Meta envia quando o `ctwa_clid` não passa:
+- "Olá! Posso ter mais informações sobre isso?"
+- "Quero saber mais"
+- "Tenho interesse, gostaria de mais informações"
+- "Olá, vi o anúncio"
+- "Olá! Tenho interesse"
 
-### 3. Destravar o caso `ask_email` silencioso
+Se a mensagem bater (normalizada, substring), trata como **sinal forte de Meta** (igual `ctwa_referral`): marca `lead_source='meta_ads'` e segue para a resolução de campanha (estratégia 2 com threshold relaxado, e fallback do item 4).
 
-Investigar e corrigir o silêncio do handler de email para `*.teste@*`. Plano de ação:
+### 4. Fallback "pool única ativa" do superadmin
 
-- Adicionar log explícito antes de cada `return reply` em `case "ask_email"` (placeholder, invalid, consultor, sucesso) para futuras evidências.
-- Garantir que o roteamento NÃO entrega `ask_email` à Camila/AI quando o cliente respondeu texto curto que parece e-mail (`@` presente) — forçar pipeline determinístico, igual já é feito para `aguardando_conta`/mídia.
-- Caso `isPlaceholderEmail()` esteja muito restritivo, manter a mensagem mas registrar `conversations` outbound mesmo em rate-limit (hoje a resposta pode sumir se a quota anti-ban bloquear sem fallback).
+No `whapi-webhook/index.ts` (e espelhado no `evolution-webhook/index.ts`), após `lead-attribution`, se:
+- `lead_source === 'meta_ads'` (acabou de ser detectado), **E**
+- `!source_campaign_id` (não conseguiu resolver campanha), **E**
+- o superadmin tem **exatamente 1** pool ativa (`rodizio_pools.is_active=true`),
 
-### 4. Data fix do JONATAS (depois do guard estar no ar)
+então:
+- Setar `source_campaign_id = pool.campaign_id`.
+- Chamar `rodizio_next` + `decideRodizioAssignment` normalmente.
+- Persistir `referral_partner_id` + `notifyPartnerNewLead`.
+- Logar `campaign_match_log` com `method='fallback_single_active_pool'`.
 
-Reverter o estrago: como ele já tem conta+doc+CPF+endereço+instalação, marcar `conversation_step='ask_email'` (porque o email atual é placeholder de teste) e responder uma mensagem pedindo um e-mail real. Não reenviar pedido de conta. Mensagem única, sem reset.
+Protegido por flag `app_settings.fallback_single_pool_enabled` (default `true`).
 
-Se você confirmar que `rafael.teste@gmail.com` é teste seu e o lead JONATAS *é* só teste, basta marcar como `registered_igreen` igual aos outros 4 — sem disparar portal2 nem enviar nada.
+### 5. Aviso ao superadmin (Rafael) em casos suspeitos
 
-### 5. Fora de escopo nesta rodada
+Novo helper `_shared/notify-superadmin-fallback.ts`:
+- Envia 1 mensagem ao `consultants.notification_phone` do superadmin quando:
+  - `method='fallback_single_active_pool'`, ou
+  - `lead_source='meta_ads'` mas `source_campaign_id` continuou null mesmo após o fallback, ou
+  - regex_fallback bateu sem nenhuma pool ativa.
+- Texto: `⚠️ Lead whapi sem campanha clara: {nome ou "(sem nome)"} {telefone}. Motivo: {method}. Atribuído a: {parceiro ou "Rafael (fallback)"}`.
+- Dedup por `customer_id` em `outbound_message_log` (`kind='superadmin_fallback_alert'`) — nunca avisa 2× o mesmo lead.
+- Chamado no whapi-webhook e no evolution-webhook após o bloco de rodízio.
 
-- Mudar a regra de re-welcome em si (manter `≥4h saudação / ≥24h` como hoje). Só impedir que ela cause regressão via guard do item 1.
-- Mexer em ai-agent, conversational-state-machine, flow-engine v3.
-- Tocar nos 4 leads já marcados como `registered_igreen` ontem.
+### 6. Data fix dos 2 leads atuais
+
+Para `a4049f4b…` (Marilza) e `978a8f01…` (lead novo):
+- `UPDATE customers SET source_campaign_id='ccef6919-c7ca-48f8-9d6b-a98fe9799b45', lead_source='meta_ads', source_ctwa_clid=NULL`.
+- Rodar `rodizio_next` da pool `6baa2324…` 2 vezes (uma por lead) para sortear os parceiros (Nilma e Luiz).
+- `UPDATE customers SET referral_partner_id=<partnerId>, referral_detected_at=now()` em cada lead.
+- Disparar `notifyPartnerNewLead` 1 vez por lead (best-effort).
+- Inserir 2 linhas em `campaign_match_log` com `method='manual_backfill'`.
 
 ## Detalhes técnicos
 
-- Arquivos: `supabase/functions/evolution-webhook/index.ts` (guard), `supabase/functions/whapi-webhook/index.ts` (espelho), novo `supabase/functions/_shared/bot/resume-or-skip.ts`, `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (logs + gate de roteamento no `ask_email`).
-- Nenhuma migration nem mudança de schema. Colunas usadas no guard já existem (`electricity_bill_photo_url`, `document_front_url`, `document_back_url`, `bill_data_confirmed_at`, `doc_data_confirmed_at`, `cpf`, `email`, `numero_instalacao`, `cep`).
-- Sem mudança em `_shared/cerebro/`, engine v3, evolution proxy, worker-portal-2 (já está com o tratamento de duplicidade de ontem), nem cron.
+**Arquivos editados:**
+- `supabase/functions/whapi-webhook/index.ts` — chama `attributeLeadSource`, adiciona fallback single-pool, chama notify-superadmin.
+- `supabase/functions/evolution-webhook/index.ts` — adiciona fallback single-pool + notify-superadmin (paridade).
+- `supabase/functions/_shared/lead-attribution.ts` — Dice + bigramas, `META_CTWA_OPENING_PHRASES`, threshold 0.40, logs melhores.
+- `supabase/functions/_shared/notify-superadmin-fallback.ts` (novo).
 
-## Perguntas antes de implementar
+**Sem migrations.** Tudo usa tabelas existentes (`app_settings`, `outbound_message_log`, `campaign_match_log`).
 
-1. **JONATAS (5511971254913) é teste seu?** Se sim, eu marco como `registered_igreen` igual aos 4 de ontem e *não* envio nada para ele. Se for lead real, peço o email novamente (uma única mensagem). Sim 
-2. Aplico os itens 1+2+3 juntos (guard + paridade whapi + fix do ask_email silencioso) ou prefere por etapas? Aplique todos juntos. Mas análise todo o cosigo para não far problemas r quebrar 
+**Sem mudança de bot flow.** Os 2 leads atuais continuam exatamente onde estão (Marilza em `aguardando_conta`, lead novo em `d_como_funciona`); só ganham `referral_partner_id` e os parceiros recebem o aviso que faltou.
+
+**Verificação pós-deploy:**
+1. `SELECT id, referral_partner_id, source_campaign_id, lead_source FROM customers WHERE id IN ('a4049f4b…','978a8f01…')` → todos preenchidos.
+2. Logs do whapi-webhook mostram `[lead-attribution] method=meta_ctwa_phrase` no próximo lead com a frase do Meta.
+3. Próximo lead com `"Olá! Posso ter mais informações sobre isso?"` cai automaticamente no rodízio Nilma/Luiz e dispara aviso ao parceiro + ao Rafael.

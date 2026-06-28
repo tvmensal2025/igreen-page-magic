@@ -31,7 +31,8 @@ import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
 import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
-import { notifyNewLead, notifyPartnerNewLead } from "../_shared/notify-consultant.ts";
+import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
+import { matchesMetaCtwaPhrase, resolveSingleActivePool } from "../_shared/meta-ctwa-fallback.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
@@ -910,7 +911,29 @@ Deno.serve(async (req) => {
         const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
         const textMatch = !isFile && messageText && adsRegex.test(messageText);
 
-        if (hasReferral || textMatch || sourceCampaignId) {
+        // 4.5) Fallback Meta CTWA — frase-âncora + pool única ativa do consultor.
+        //      Cobre o caso em que o anúncio NÃO propaga ctwa_clid e a
+        //      initial_message cadastrada não bate.
+        const ctwaPhraseMatch = !isFile && messageText && matchesMetaCtwaPhrase(messageText);
+        if (!sourceCampaignId && ctwaPhraseMatch) {
+          try {
+            const sp = await resolveSingleActivePool(supabase, instanceData.consultant_id);
+            if (sp?.campaign_id) {
+              sourceCampaignId = sp.campaign_id;
+              matchMethod = "exact_message"; // mapeia para método existente; reason abaixo distingue
+              jsonLog("info", "lead_source_fallback_single_pool", {
+                customer_id: customer.id,
+                consultant_id: instanceData.consultant_id,
+                campaign_id: sp.campaign_id,
+                reason: "meta_ctwa_phrase",
+              });
+            }
+          } catch (e) {
+            console.warn("[lead-source] single-pool fallback falhou:", (e as Error).message);
+          }
+        }
+
+        if (hasReferral || textMatch || sourceCampaignId || ctwaPhraseMatch) {
           const patch: Record<string, any> = { lead_source: "meta_ads" };
           if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
           if (ctwaClid) patch.source_ctwa_clid = ctwaClid;
@@ -1019,6 +1042,34 @@ Deno.serve(async (req) => {
             phone_whatsapp: (customer as any).phone_whatsapp,
             is_sandbox: (customer as any).is_sandbox,
           }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+
+          // Se a atribuição da campanha veio do fallback (frase-âncora do
+          // Meta + pool única) — sinal: temos source_campaign_id mas SEM
+          // source_ad_id E SEM source_ctwa_clid → avisa o consultor pra revisar
+          // o cadastro da campanha (Meta não propagou o ctwa_clid).
+          const cAny = customer as any;
+          if (cAny.source_campaign_id && !cAny.source_ad_id && !cAny.source_ctwa_clid) {
+            let partnerName: string | null = null;
+            try {
+              const { data: prow } = await supabase
+                .from("referral_partners")
+                .select("nome")
+                .eq("id", rodizioPartnerId)
+                .maybeSingle();
+              partnerName = (prow as any)?.nome ?? null;
+            } catch { /* ignore */ }
+            notifySuperAdminUnmatchedLead(
+              instanceData.consultant_id,
+              {
+                id: customer.id,
+                name: cAny.name,
+                phone_whatsapp: cAny.phone_whatsapp,
+                is_sandbox: cAny.is_sandbox,
+              },
+              "fallback_or_initial_message_match",
+              partnerName,
+            ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
+          }
         }
         // Sem partner_id válido → fallback: não seta referral_partner_id; o lead
         // segue para o consultor dono, preservando source_campaign_id.
