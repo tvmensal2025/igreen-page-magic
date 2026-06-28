@@ -911,6 +911,28 @@ Deno.serve(async (req) => {
         const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
         const textMatch = !isFile && messageText && adsRegex.test(messageText);
 
+        // 4.5) Fallback Meta CTWA — frase-âncora + pool única ativa do consultor.
+        //      Cobre o caso em que o anúncio NÃO propaga ctwa_clid e a
+        //      initial_message cadastrada não bate.
+        const ctwaPhraseMatch = !isFile && messageText && matchesMetaCtwaPhrase(messageText);
+        if (!sourceCampaignId && ctwaPhraseMatch) {
+          try {
+            const sp = await resolveSingleActivePool(supabase, instanceData.consultant_id);
+            if (sp?.campaign_id) {
+              sourceCampaignId = sp.campaign_id;
+              matchMethod = "exact_message"; // mapeia para método existente; reason abaixo distingue
+              jsonLog("info", "lead_source_fallback_single_pool", {
+                customer_id: customer.id,
+                consultant_id: instanceData.consultant_id,
+                campaign_id: sp.campaign_id,
+                reason: "meta_ctwa_phrase",
+              });
+            }
+          } catch (e) {
+            console.warn("[lead-source] single-pool fallback falhou:", (e as Error).message);
+          }
+        }
+
         if (hasReferral || textMatch || sourceCampaignId) {
           const patch: Record<string, any> = { lead_source: "meta_ads" };
           if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
