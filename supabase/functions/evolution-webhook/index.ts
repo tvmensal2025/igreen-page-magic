@@ -1042,6 +1042,33 @@ Deno.serve(async (req) => {
             phone_whatsapp: (customer as any).phone_whatsapp,
             is_sandbox: (customer as any).is_sandbox,
           }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+
+          // Se a atribuição da campanha veio do fallback (frase-âncora do
+          // Meta + pool única), avisa o consultor (super admin) para revisar
+          // o cadastro da campanha — o ctwa_clid ou a initial_message não bateram.
+          // ctwaPhraseMatch é setado no bloco lead-source acima.
+          if (typeof ctwaPhraseMatch !== "undefined" && ctwaPhraseMatch && !sourceAdId && !ctwaClid) {
+            let partnerName: string | null = null;
+            try {
+              const { data: prow } = await supabase
+                .from("referral_partners")
+                .select("nome")
+                .eq("id", rodizioPartnerId)
+                .maybeSingle();
+              partnerName = (prow as any)?.nome ?? null;
+            } catch { /* ignore */ }
+            notifySuperAdminUnmatchedLead(
+              instanceData.consultant_id,
+              {
+                id: customer.id,
+                name: (customer as any).name,
+                phone_whatsapp: (customer as any).phone_whatsapp,
+                is_sandbox: (customer as any).is_sandbox,
+              },
+              "fallback_single_active_pool",
+              partnerName,
+            ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
+          }
         }
         // Sem partner_id válido → fallback: não seta referral_partner_id; o lead
         // segue para o consultor dono, preservando source_campaign_id.
