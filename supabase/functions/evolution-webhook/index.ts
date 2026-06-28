@@ -933,7 +933,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        if (hasReferral || textMatch || sourceCampaignId) {
+        if (hasReferral || textMatch || sourceCampaignId || ctwaPhraseMatch) {
           const patch: Record<string, any> = { lead_source: "meta_ads" };
           if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
           if (ctwaClid) patch.source_ctwa_clid = ctwaClid;
