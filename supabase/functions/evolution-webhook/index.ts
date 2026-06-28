@@ -1246,7 +1246,12 @@ Deno.serve(async (req) => {
       fileBase64 = await sender.downloadMedia(key, message);
       if (fileBase64) {
         const mimeType = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
-        fileUrl = `data:${mimeType};base64,${fileBase64}`;
+        // OOM-FIX 2026-06-28: NÃO construir mais `data:${mime};base64,${fileBase64}` aqui.
+        // Essa string duplica o heap (base64 + data URL viviam juntos) e era a causa
+        // principal dos `Memory limit exceeded` no Edge Function (256MB).
+        // Os handlers do bot-flow já fazem fallback inteligente: usam fileBase64 quando
+        // existe e só caem em fileUrl quando ele começa com "http" (URL real).
+        fileUrl = null;
         console.log(`✅ Mídia baixada via Evolution (${mimeType}, b64 len: ${fileBase64.length})`);
 
         // Pre-declarado fora do try para o catch poder usar no enqueue de retry.
