@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import {
   listCapturedLeads, countLeadsByChannel, listAlreadyDispatchedPhones,
+  countPendingWhatsappLeads,
   type CapturedLead, type LeadChannel, type PersonType, type LeadStatus,
 } from "@/services/capturedLeads";
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
