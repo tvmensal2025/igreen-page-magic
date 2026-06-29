@@ -112,13 +112,14 @@ export function shouldResumeCadastro(
 
   if (!OPENING_STEPS.has(step)) return null;
 
-  // Sanity: precisa ter pelo menos NOME + (CPF ou foto da conta) para
-  // considerar "lead avançado". Lead 100% novo não dispara o guard.
+  // Sanity: precisa ter pelo menos NOME + (CPF ou conta REAL — não
+  // estimativa da rápida) para considerar "lead avançado". Lead 100% novo
+  // não dispara o guard.
   const hasName = !!String(customer.name || "").trim();
   const hasCpf = !!String(customer.cpf || "").trim();
-  const hasBillPhoto = !!String(customer.electricity_bill_photo_url || "").trim();
+  const hasBillReal = hasBillData(customer);
   if (!hasName) return null;
-  if (!hasCpf && !hasBillPhoto) return null;
+  if (!hasCpf && !hasBillReal) return null;
 
   let next: string;
   try {
