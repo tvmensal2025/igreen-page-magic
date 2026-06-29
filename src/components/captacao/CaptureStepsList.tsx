@@ -269,7 +269,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
                       anySent
                         ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-sm shadow-primary/30"
                         : isCurrent
-                        ? "bg-warning text-black shadow-sm shadow-amber-400/40"
+                        ? "bg-warning text-warning-foreground shadow-sm shadow-amber-400/40"
                         : "bg-muted text-muted-foreground group-hover:bg-primary/15 group-hover:text-primary"
                     }`}
                   >
