@@ -385,18 +385,41 @@ export function resolveResumeStep(customer: any): string {
 
 
 /**
- * Retorna true se já existem evidências de que a conta de luz foi recebida
- * (foto, base64, ou dados extraídos pelo OCR). Usado para bloquear o
- * disparo de capture_documento ANTES da simulação.
+ * Retorna true se já existem evidências de que a *fatura real* foi
+ * recebida — foto, base64, OCR concluído ou número de instalação extraído.
+ * Usado para bloquear o disparo de capture_documento ANTES da conta E para
+ * o `resolveResumeStep` decidir se pode pular `aguardando_conta`.
+ *
+ * ⚠️ Bug 2026-06-29 (lead 5511971254913): antes este helper tratava
+ * `electricity_bill_value >= 30` e `media_consumo > 0` como prova de
+ * conta enviada. Mas esses campos também são populados pela "Simulação
+ * rápida" (valor digitado pelo cliente, ex.: "800"). Resultado: depois
+ * da rápida o cliente clicava em "Quero me cadastrar", enviava a foto da
+ * conta, e o guard de resume pulava direto para `confirmando_dados_conta`
+ * sem rodar OCR — a imagem era descartada e o doc era pedido em cima da
+ * estimativa. Corrigido exigindo evidência REAL de fatura.
  */
 export function hasBillData(customer: any): boolean {
   if (!customer) return false;
   const url = String(customer.electricity_bill_photo_url || customer.electricity_bill_url || "").trim();
   if (url && url !== "evolution-media:pending") return true;
   if (customer.bill_base64) return true;
+  if (customer.ocr_done === true) return true;
+  if (String(customer.numero_instalacao || "").replace(/\D/g, "").length >= 7) return true;
+  return false;
+}
+
+/**
+ * True quando só temos a *estimativa* da Simulação rápida
+ * (`electricity_bill_value` / `media_consumo`) e NENHUMA evidência de
+ * fatura real. Quem chama (handler de mídia, resume guard) usa para nunca
+ * pular `aguardando_conta` só por causa da estimativa.
+ */
+export function hasBillEstimateOnly(customer: any): boolean {
+  if (!customer) return false;
+  if (hasBillData(customer)) return false;
   if (Number(customer.electricity_bill_value || 0) >= 30) return true;
   if (Number(customer.media_consumo || 0) > 0) return true;
-  if (String(customer.numero_instalacao || "").replace(/\D/g, "").length >= 7) return true;
   return false;
 }
 
