@@ -249,7 +249,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
 
   return (
     <>
-      <Popover open={open} onOpenChange={(o) => { if (o) setLoading(true); setOpen(o); }}>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost" size="icon"
@@ -257,15 +257,18 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
             disabled={disabled || !!seq || !customerId}
             title={!customerId ? "Carregando lead…" : "Enviar passo do fluxo"}
           >
-            {seq ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <Zap className="h-4 w-4" />}
+            <Zap className={`h-4 w-4 ${seq ? "opacity-30" : ""}`} />
             {seq && (
-              <span className="absolute -top-1 -right-1 text-[9px] bg-primary text-primary-foreground rounded-full px-1 leading-tight">
-                {seq.current}/{seq.total}
-              </span>
+              <>
+                <Loader2 className="h-4 w-4 animate-spin text-primary absolute inset-0 m-auto" />
+                <span className="absolute -top-1 -right-1 text-[9px] bg-primary text-primary-foreground rounded-full px-1 leading-tight pointer-events-none">
+                  {seq.current}/{seq.total}
+                </span>
+              </>
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" side="top" className="w-[22rem] p-0">
+        <PopoverContent align="start" side="top" className="w-[22rem] p-0 min-h-[320px] flex flex-col">
           <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2 bg-gradient-to-r from-primary/10 to-transparent">
             <div className="min-w-0">
               <p className="text-[11px] text-muted-foreground">Enviar passo do fluxo para</p>
