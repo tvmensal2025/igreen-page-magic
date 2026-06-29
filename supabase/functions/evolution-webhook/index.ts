@@ -974,6 +974,9 @@ Deno.serve(async (req) => {
             ctwa_clid: ctwaClid,
             match_method: matchMethod,
           });
+          // Re-espelha para promover o canal de 'manual' → 'ctwa' no painel.
+          mirrorCustomerToCaptation(supabase, customer.id)
+            .catch((e) => console.warn("[mirror-customer:tag] falhou:", (e as Error).message));
         }
 
         // Log de auditoria de match (Req 8.6) — best-effort, fail-open (Req 8.7)
