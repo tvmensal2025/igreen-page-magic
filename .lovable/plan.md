@@ -1,44 +1,30 @@
-## Causa do flicker
+## Objetivo
+Parar o efeito de expandir/encolher sem parar na prévia de envio de etapas, mantendo o fluxo e o envio exatamente como estão.
 
-A prévia de etapa em **Captação** (`CaptureStepPreview`) é um Dialog cuja `useEffect` depende do prop `step` inteiro:
+## Plano
+1. **Fixar o tamanho da janela de prévia**
+   - Dar altura mínima e máxima estáveis ao `CaptureStepPreview`.
+   - Transformar o conteúdo interno em área rolável, para mídia/texto grande não redimensionar o modal inteiro.
 
-```ts
-useEffect(() => { ...setLoading(true); fetchCustomer+Medias...; setLoading(false) }, [open, step, customerId, consultantId]);
-```
+2. **Não trocar conteúdo por “Carregando…” quando já existe prévia**
+   - Manter o último texto/mídias renderizados na tela enquanto uma nova consulta acontece.
+   - Mostrar loading apenas como overlay discreto, sem remover o conteúdo e sem mudar a altura.
 
-Os dois pais passam **um objeto novo a cada render**, então toda re-renderização do pai (e há várias por segundo via realtime/timers da listagem de captação) invalida a dependência e dispara de novo o `setLoading(true)` → fetch → `setLoading(false)`. Isso é exatamente o ciclo "mensagem aparece → Carregando… → mensagem aparece" que aparece no replay.
+3. **Cachear a prévia por lead + consultor + etapa + variante**
+   - Guardar texto renderizado, mídias e áudios ignorados em cache local do componente.
+   - Ao reabrir ou quando o pai re-renderizar, usar o cache imediatamente em vez de voltar para estado vazio.
 
-- `src/components/captacao/CaptureStepsList.tsx:331` → `step={confirmStep ? { ...confirmStep.row } : null}` (spread cria novo objeto).
-- `src/components/captacao/CaptureStepsGrid.tsx:288` → `step={{ id, title, step_key, message_text, media_order, variant }}` (literal inline).
+4. **Remover animações/layout shift dos cards de etapa durante envio**
+   - Remover a animação `animate-exec-card` dos cards enviados no grid de captação.
+   - Trocar `hover:-translate-y` e transições que mexem no tamanho/posição por estados visuais estáticos.
+   - Manter botões com largura/altura fixa enquanto alternam entre ícone de enviar, loading e check.
 
-## Correção (mínima, só presentation)
-
-### 1. `src/components/captacao/CaptureStepPreview.tsx`
-Trocar a dependência do efeito de `step` (objeto) para chaves estáveis. Assim, mesmo que o pai recrie o objeto a cada render, só recarrega quando algo realmente muda:
-
-```ts
-}, [open, step?.id, step?.variant, step?.message_text, customerId, consultantId]);
-```
-
-E não chamar `setLoading(true)` quando os dados já vieram para o mesmo `step.id` (guarda com `useRef` do último id carregado, para o caso de o pai trocar `customerId` sem trocar passo).
-
-### 2. `src/components/captacao/CaptureStepsList.tsx`
-Memoizar o objeto passado para o preview, sem `...spread`:
-
-```tsx
-const previewStep = useMemo(() => confirmStep?.row ?? null, [confirmStep?.row]);
-const previewVariants = useMemo(() => confirmStep?.group.variants, [confirmStep?.group]);
-...
-<CaptureStepPreview step={previewStep} variants={previewVariants} ... />
-```
-
-### 3. `src/components/captacao/CaptureStepsGrid.tsx`
-Mesmo tratamento — `useMemo` para o objeto montado a partir de `previewStep + variant`, dependências `[previewStep?.id, previewStep?.message_text, previewStep?.media_order, variant]`. Sem isso o literal `{{...}}` continua sendo identidade nova a cada render do grid.
+5. **Estabilizar a lista compacta de etapas**
+   - Garantir altura fixa por linha e botão de ação fixo.
+   - Evitar que badges como “atual”, check e loading alterem a largura do item.
 
 ## Validação
-
-- `bun run typecheck`
-- Abrir `/admin` → aba Captação → clicar para enviar uma etapa de um lead: o popup abre uma vez, carrega uma vez, e não pode mais alternar entre conteúdo e "Carregando…" enquanto o pai re-renderiza.
-- Conferir que mudar de variante A/B/C dentro do mesmo passo continua disparando o reload (porque `step.variant` muda) — comportamento correto.
-
-Nenhuma mudança em lógica de envio, fluxo do bot ou regras de negócio. Só estabilização de props/dependências.
+- Abrir `/admin` na Captação.
+- Clicar para enviar uma etapa.
+- Confirmar que a prévia abre uma vez, não fica alternando tamanho, e o conteúdo rola internamente quando for grande.
+- Enviar uma etapa e confirmar que os cards/linhas não pulam, não expandem e não encolhem repetidamente.

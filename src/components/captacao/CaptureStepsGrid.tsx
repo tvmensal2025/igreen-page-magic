@@ -227,11 +227,11 @@ export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sent
             return (
               <div
                 key={s.id}
-                className={`group relative rounded-md border p-1 flex flex-col h-full min-h-[72px] transition-all duration-300 ${
+                className={`group relative rounded-md border p-1 flex flex-col h-full min-h-[72px] ${
                   sent
-                    ? "border-primary/60 bg-gradient-to-br from-primary/15 to-primary/5 shadow-[0_0_10px_hsl(var(--primary)/0.18)] animate-exec-card"
+                    ? "border-primary/60 bg-gradient-to-br from-primary/15 to-primary/5 shadow-[0_0_10px_hsl(var(--primary)/0.18)]"
                     : isNext
-                        ? "border-primary bg-card hover:border-primary/80 hover:shadow-lg hover:-translate-y-0.5 ring-1 ring-primary/30"
+                        ? "border-primary bg-card hover:border-primary/80 hover:shadow-lg ring-1 ring-primary/30"
                         : "border-border bg-card hover:border-primary/40"
                 }`}
               >
@@ -266,7 +266,7 @@ export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sent
                     title={sent ? "Reenviar" : "Ver e enviar"}
                   >
                     {isSending ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <Loader2 className="w-3 h-3 animate-spin shrink-0" />
                     ) : (
                       <>
                         <Eye className="w-3 h-3 xl:mr-1 shrink-0" />

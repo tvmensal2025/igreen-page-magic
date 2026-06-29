@@ -37,6 +37,14 @@ interface MediaItem {
   send_order?: number | null;
 }
 
+interface PreviewCacheEntry {
+  medias: MediaItem[];
+  renderedText: string;
+  skippedAudios: number;
+}
+
+const PREVIEW_CACHE = new Map<string, PreviewCacheEntry>();
+
 const VARIANT_HINT: Record<string, string> = {
   A: "com áudio",
   B: "só texto",
@@ -57,6 +65,15 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
     // recria o objeto `step` a cada render mas o conteúdo é o mesmo.
     const loadKey = `${step.id}|${step.variant}|${customerId}|${consultantId}`;
     if (lastLoadedKeyRef.current === loadKey) return;
+    const cached = PREVIEW_CACHE.get(loadKey);
+    if (cached) {
+      setMedias(cached.medias);
+      setRenderedText(cached.renderedText);
+      setSkippedAudios(cached.skippedAudios);
+      setLoading(false);
+      lastLoadedKeyRef.current = loadKey;
+      return;
+    }
     let mounted = true;
     setLoading(true);
     (async () => {
@@ -102,6 +119,7 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
       }
 
       if (!mounted) return;
+      PREVIEW_CACHE.set(loadKey, { medias: rows, renderedText: txt, skippedAudios: skipped });
       setMedias(rows);
       setRenderedText(txt);
       setSkippedAudios(skipped);
@@ -133,8 +151,8 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm max-h-[70dvh] overflow-y-auto p-0">
-        <DialogHeader className="p-2.5 pb-1.5 border-b border-border space-y-1.5">
+      <DialogContent className="w-[min(calc(100vw-2rem),26rem)] max-w-none h-[min(72dvh,620px)] min-h-[420px] overflow-hidden p-0 flex flex-col">
+        <DialogHeader className="shrink-0 p-2.5 pb-1.5 border-b border-border space-y-1.5">
           <DialogTitle className="text-xs flex items-center gap-1.5">
             <span className="px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[9px] font-bold shrink-0">
               V{step.variant}
@@ -163,26 +181,26 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
           )}
         </DialogHeader>
 
-        <div className="p-2.5 space-y-2 bg-muted/20">
+        <div className="relative flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2 bg-muted/20">
           {loading && (
-            <div className="flex items-center justify-center py-4 text-muted-foreground gap-2 text-xs">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 text-muted-foreground gap-2 text-xs">
               <Loader2 className="w-3 h-3 animate-spin" /> Carregando…
             </div>
           )}
 
-          {!loading && skippedAudios > 0 && (
+          {skippedAudios > 0 && (
             <div className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[10px] text-warning">
               ℹ️ Variante B: {skippedAudios} áudio ignorado.
             </div>
           )}
 
-          {!loading && orderedMedias.length === 0 && !renderedText && (
+          {orderedMedias.length === 0 && !renderedText && !loading && (
             <p className="text-[11px] text-muted-foreground italic text-center py-4">
               Nenhuma mídia ou texto.
             </p>
           )}
 
-          {!loading && orderedMedias.map((m) => {
+          {orderedMedias.map((m) => {
             const kind = String(m.kind).toLowerCase();
             return (
               <div key={m.id} className="rounded-md bg-card border border-border p-2 space-y-1.5">
@@ -197,23 +215,23 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
                   <audio src={m.url} controls className="w-full h-8" />
                 )}
                 {kind === "image" && m.url && (
-                  <img src={m.url} alt={m.label || "preview"} className="w-full rounded-md max-h-40 object-contain bg-black/20" />
+                  <img src={m.url} alt={m.label || "preview"} className="w-full rounded-md max-h-40 object-contain bg-muted" />
                 )}
                 {kind === "video" && m.url && (
-                  <video src={m.url} controls className="w-full rounded-md max-h-40 bg-black/30" preload="metadata" />
+                  <video src={m.url} controls className="w-full rounded-md max-h-40 bg-muted" preload="metadata" />
                 )}
               </div>
             );
           })}
 
-          {!loading && renderedText && (
-            <div className="rounded-md bg-[#005c4b]/90 text-white p-2 ml-4 shadow-sm">
+          {renderedText && (
+            <div className="rounded-md bg-primary text-primary-foreground p-2 ml-4 shadow-sm">
               <p className="text-[12px] whitespace-pre-wrap leading-snug">{renderedText}</p>
             </div>
           )}
         </div>
 
-        <div className="p-2 border-t border-border bg-card sticky bottom-0 space-y-1.5">
+        <div className="shrink-0 p-2 border-t border-border bg-card space-y-1.5">
           <Button
             className="w-full h-9 gap-1.5 font-bold text-xs"
             onClick={() => onSend({ continueFlow: false })}
