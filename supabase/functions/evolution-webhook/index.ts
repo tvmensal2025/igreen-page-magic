@@ -32,6 +32,7 @@ import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
+import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { matchesMetaCtwaPhrase, resolveSingleActivePool } from "../_shared/meta-ctwa-fallback.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
