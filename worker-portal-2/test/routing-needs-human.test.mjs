@@ -74,12 +74,11 @@ function routePortalStatus(message, attempts = 0) {
 const NON_RECOVERABLE_KINDS = Object.keys(ERROR_KINDS).filter(k => !ERROR_KINDS[k].recoverable);
 const RECOVERABLE_KINDS = Object.keys(ERROR_KINDS).filter(k => ERROR_KINDS[k].recoverable);
 
-// As três classes que o Property 7 exige que vão SEMPRE a needs_human.
-// (duplicate_document, no_coverage, unknown — confirmado contra o mapa real.)
+// As classes que o Property 7 exige que vão SEMPRE a needs_human.
 assert.deepEqual(
   [...NON_RECOVERABLE_KINDS].sort(),
-  ['duplicate_document', 'no_coverage', 'unknown'],
-  'pré-condição: o conjunto não-recuperável do mapa real deve ser exatamente {duplicate_document, no_coverage, unknown}',
+  ['attachment_not_confirmed', 'duplicate_document', 'no_coverage', 'unknown', 'validation_error'],
+  'pré-condição: o conjunto não-recuperável do mapa real deve corresponder ao esperado',
 );
 
 // Contadores de tentativas a varrer: 0,1,2 (abaixo do limite), 3 (no limite),
