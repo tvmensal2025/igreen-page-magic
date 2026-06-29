@@ -59,6 +59,20 @@ export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sent
   const [customerFirstName, setCustomerFirstName] = useState<string>("amigo");
   const [billStr, setBillStr] = useState<string>("___");
 
+  // Objeto estável p/ o Dialog — só muda quando o passo ou variante muda,
+  // evitando que a CaptureStepPreview entre em loop de loading.
+  const previewStepForDialog = useMemo(() => {
+    if (!previewStep) return null;
+    return {
+      id: previewStep.id,
+      title: previewStep.title,
+      step_key: previewStep.step_key,
+      message_text: previewStep.message_text,
+      media_order: previewStep.media_order ?? null,
+      variant,
+    };
+  }, [previewStep, variant]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
