@@ -148,33 +148,56 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
         </div>
         <div className="grid gap-3 md:grid-cols-[260px_1fr]">
           <div>
-            <Label className="text-xs">Passo</Label>
-            <Select value={newStep} onValueChange={setNewStep}>
+            <Label className="text-xs">Passo do fluxo</Label>
+            <Select value={newStep} onValueChange={(v) => {
+              setNewStep(v);
+              // Pré-preenche com a sugestão oficial se a mensagem ainda estiver vazia
+              if (!newMessage.trim()) {
+                const sug = getSuggestedReactivationText(v);
+                if (sug) setNewMessage(sug);
+              }
+            }}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione um passo" />
               </SelectTrigger>
               <SelectContent>
-                {availableSteps.length === 0 ? (
-                  <SelectItem value="_none" disabled>Sem passos com clientes interessados parados</SelectItem>
-                ) : availableSteps.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                {mergedSteps.map((s) => (
+                  <SelectItem key={s} value={s}>{getStepLabel(s)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label className="text-xs">
-              Mensagem
-              <span className="ml-2 text-muted-foreground">
-                Variáveis: {`{{nome}} {{valor_conta}} {{representante}}`}
-              </span>
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">
+                Mensagem
+                <span className="ml-2 text-muted-foreground">
+                  Variáveis: {`{{valor_conta}} {{representante}}`}
+                </span>
+              </Label>
+              {newStep && getSuggestedReactivationText(newStep) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => setNewMessage(getSuggestedReactivationText(newStep))}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Usar sugerido
+                </Button>
+              )}
+            </div>
             <Textarea
               rows={3}
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Oi {{nome}}, vi que você ficou sem responder. Posso te ajudar a continuar?"
+              placeholder="Oi! Vi que você ficou sem responder. Posso te ajudar a continuar?"
             />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Dica: evite usar nome do lead — em muitos casos ele ainda não foi capturado.
+              Frases neutras funcionam melhor.
+            </p>
           </div>
         </div>
         <Button onClick={createTemplate} disabled={creating}>
