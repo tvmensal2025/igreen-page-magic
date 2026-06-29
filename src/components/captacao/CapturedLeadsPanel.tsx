@@ -73,7 +73,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<LeadChannel | "all">("all");
   const [personType, setPersonType] = useState<PersonType | "all">("all");
-  const [status, setStatus] = useState<LeadStatus | "all">("new");
+  const [status, setStatus] = useState<LeadStatus | "all">("all");
   const [hideSent, setHideSent] = useState(true);
 
   const [dispatchOpen, setDispatchOpen] = useState(false);
