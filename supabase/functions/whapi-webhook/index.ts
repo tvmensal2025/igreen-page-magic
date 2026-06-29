@@ -1605,6 +1605,9 @@ Deno.serve(async (req) => {
               : utmDetail ? `utm=${JSON.stringify(utmDetail)}`
               : `regex msg="${(messageText || "").slice(0, 80)}"`;
             console.log(`[lead-source] customer ${customer.id} tagged ${patch.lead_source} (${reason})`);
+            // Re-espelha para promover canal 'manual' → 'ctwa' no painel.
+            mirrorCustomerToCaptation(supabase, customer.id)
+              .catch((e) => console.warn("[mirror-customer:tag] falhou:", (e as Error).message));
           }
         }
       }
