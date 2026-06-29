@@ -208,13 +208,13 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           onClick={() => setView("cockpit")}
           className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${view === "cockpit" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
         >
-          Cockpit de captação
+          Cadastrar lead
         </button>
         <button
           onClick={() => setView("captados")}
           className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${view === "captados" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
         >
-          Leads captados (Ads/B2B)
+          Lista de leads
         </button>
       </div>
 

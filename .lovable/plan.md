@@ -1,65 +1,56 @@
-## Diagnóstico — por que o painel de Captação está vazio
+## Objetivo
 
-**Estado atual no banco (`captured_leads`):**
-- 1012 leads, todos com `channel = research` e `status = new` (vieram só da pesquisa OSM/B2B).
-- **Zero** leads de WhatsApp / CTWA / Meta Ads, embora nos últimos 30 dias tenham entrado **614 customers** (587 via Evolution, 18 Whapi, 9 sem canal).
-
-**Causas raiz:**
-
-1. **Os webhooks de inbound não escrevem em `captured_leads`.** Só `meta-leadads-webhook`, `tiktok-leadgen-webhook`, `lead-intake`, `lead-research` e o backfill chamam `ingestLead`. O `evolution-webhook` e o `whapi-webhook` criam linha em `customers`, mas nunca espelham para `captured_leads`. Por isso todo lead que vem do WhatsApp (tráfego CTWA, link direto, anúncio) fica invisível no painel.
-2. **`ctwa_clid` não está sendo capturado.** Tabela `ctwa_clid_mapping` está vazia e zero `customers` (em 30 dias) têm `ctwa_clid` preenchido. A âncora CTWA do Meta não está sendo persistida no inbound, então mesmo o backfill perde o sinal.
-3. **`captacao-backfill-ctwa` é restritivo demais.** O filtro `looksLikeAd()` só aceita registros com `ctwa_clid` ou `lead_source` casando regex meta/face/insta/ads. Hoje 562 customers têm `lead_source = null` + `customer_origin = igreen_sync` e 43 são `whatsapp_lead` sem marcação — todos descartados pelo backfill. Apenas os 9 com `lead_source = "meta_ads"` seriam ingeridos.
-4. **Painel não tem fonte alternativa.** O `CapturedLeadsPanel` consulta exclusivamente `captured_leads`. Sem ponte, nada aparece.
+Separar visualmente os leads que **já receberam mensagem** dos leads **ainda não contactados**, e trocar termos técnicos confusos ("Cockpit", "Ads/B2B", "CTWA", "Lead Ads") por linguagem simples.
 
 ---
 
-## Plano de melhoria
+## 1. Separação "já conversados" → painel lateral
 
-### 1. Ponte automática WhatsApp → captação (fix definitivo)
-Criar helper compartilhado `supabase/functions/_shared/captation/mirror-customer.ts` que, dado um `customer_id` recém-criado/atualizado, chama `ingestLead` com:
-- `channel`: `ctwa` se houver `ctwa_clid`/`source_ad_id`/`source_campaign_id` ou `lead_source` contém `meta/ads`; `manual` para os demais inbounds de WhatsApp.
-- `consultantId`, `fullName`, `phone`, `email`, `city` do `customers`.
-- `rawPayload` com `customer_id`, `origin_channel`, `customer_origin`, `lead_source`.
+No `CapturedLeadsPanel.tsx` hoje os leads já enviados ficam misturados na mesma tabela, apenas esmaecidos e com o filtro "Ocultar já enviados". Vamos reorganizar:
 
-Chamar esse mirror em:
-- `evolution-webhook` (após criar/atualizar customer no primeiro contato).
-- `whapi-webhook` (mesmo gancho).
-- `lead-intake` já cobre o caminho manual; manter.
+- **Lista principal (centro)** mostra **apenas leads ainda não disparados**. Some automaticamente da lista assim que o disparo é concluído (já marcado em `sentPhones`).
+- **Painel lateral colapsável à direita** ("Já conversados") — drawer/aside fixo com:
+  - contador no topo (ex.: "128 já conversados");
+  - busca rápida por nome/telefone;
+  - cada item em formato compacto (avatar + nome + canal + data do envio);
+  - botão "Reabrir conversa" → abre o cliente no chat.
+- Remover o filtro "Ocultar já enviados" e o checkbox associado — passa a ser comportamento padrão.
+- Manter o badge "Já enviado" só dentro do painel lateral.
 
-Garante idempotência via `dedup_key` existente em `ingestLead`.
+No mobile, o painel lateral vira um botão flutuante "Já conversados (N)" que abre como Sheet de baixo.
 
-### 2. Captura de `ctwa_clid` no inbound
-No parser do `evolution-webhook` e `whapi-webhook`, ler `contextInfo.externalAdReply` / `ctwaClid` da mensagem e gravar em `customers.ctwa_clid` + inserir em `ctwa_clid_mapping (phone, ctwa_clid, ad_id)`. Sem isso, nunca conseguiremos atribuir lead a campanha Meta.
+## 2. Linguagem clara — remover jargão
 
-### 3. Backfill mais inclusivo (para popular o histórico já existente)
-Em `captacao-backfill-ctwa/index.ts`:
-- Adicionar parâmetro `includeWhatsappLeads` (default `true`).
-- Expandir filtro: aceitar qualquer customer com `consultant_id` + (`phone_whatsapp` ou `email`) e `customer_origin IN ('whatsapp_lead','meta_ads','ctwa')` **ou** `origin_channel IN ('evolution','whapi')`.
-- Mapear `channel`: `ctwa` se sinal de ad presente; caso contrário `manual`.
-- Aumentar limite (paginação por `id`) para cobrir os 614 customers.
-- Renomear botão na UI para "**Sincronizar leads do WhatsApp**".
+Substituições em `CaptacaoPanel.tsx`, `CapturedLeadsPanel.tsx` e diálogos relacionados:
 
-### 4. Melhorias de UX no `CapturedLeadsPanel`
-- Mostrar um banner "X leads do WhatsApp ainda não sincronizados" quando `customers` recentes > `captured_leads` recentes (consulta count rápido), com botão direto pro backfill.
-- Adicionar coluna/badge "Origem real" quando vier de customer (mostrar `origin_channel`).
-- Filtro extra "Apenas tráfego (CTWA/Meta)" e "Apenas WhatsApp direto".
+| Atual | Novo |
+|---|---|
+| Cockpit de captação | Cadastrar lead |
+| Leads captados (Ads/B2B) | Lista de leads |
+| Meta Lead Ads | Anúncio Facebook/Instagram |
+| Click-to-WhatsApp / CTWA | Veio do anúncio |
+| Pesquisa B2B | Empresas pesquisadas |
+| TikTok Lead Gen | Anúncio TikTok |
+| Landing page | Site / Página |
+| "Sincronizar WhatsApp" (badge) | "Buscar novos do WhatsApp" |
+| Banner "lead(s) do WhatsApp ainda não estão aqui" | "Temos N novos contatos do WhatsApp esperando. Clique para trazer pra cá." |
+| Disparo PRO / anti-ban | "Envio em massa (com segurança)" |
 
-### 5. Verificação
-- Após deploy, rodar `captacao-backfill-ctwa` com `dryRun=true` e validar que `candidates` ≈ 600.
-- Rodar real e conferir contagem em `captured_leads GROUP BY channel`.
-- Disparar um teste de CTWA real e confirmar que aparece **sem** rodar backfill (ponte funcionando).
+Também limpar o subtítulo do painel: tirar "no total / visíveis / selecionados" embolado e usar três chips simples ("Novos: X" · "Selecionados: Y" · "Já conversados: Z" — esse último vira o botão que abre o lateral).
 
----
-
-## Detalhes técnicos / arquivos afetados
+## 3. Arquivos afetados
 
 ```text
-supabase/functions/_shared/captation/mirror-customer.ts   (novo)
-supabase/functions/evolution-webhook/index.ts             (chamar mirror + parser CTWA)
-supabase/functions/whapi-webhook/index.ts                 (idem)
-supabase/functions/captacao-backfill-ctwa/index.ts        (filtro inclusivo + paginação)
-src/components/captacao/CapturedLeadsPanel.tsx            (banner + filtros + label do botão)
-src/services/capturedLeads.ts                             (helper countPendingCustomers)
+src/components/captacao/CapturedLeadsPanel.tsx   (split lista + sidebar, novos rótulos)
+src/components/captacao/CaptacaoPanel.tsx        (renomear abas)
+src/components/captacao/BusinessResearchDialog.tsx (substituir "B2B" no título/descrição)
 ```
 
-Nenhuma alteração de schema necessária — `captured_leads`, `customers.ctwa_clid` e `ctwa_clid_mapping` já existem.
+Nenhuma alteração de banco, edge function ou tipos. Só UI/copy.
+
+## 4. Validação
+
+- Disparar para 1 lead → ele sai da lista principal e aparece no painel lateral imediatamente.
+- Recarregar a página → o lead continua no lateral (vem de `listAlreadyDispatchedPhones`).
+- Conferir mobile: painel lateral acessível via botão.
+- Buscar pelo nome no campo principal não traz leads do lateral (evita misturar).
