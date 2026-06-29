@@ -86,7 +86,16 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
     if (!open || !consultantId) return;
     let mounted = true;
     (async () => {
-      setLoading(true);
+      // Cache hit: aplica imediatamente, sem `loading=true`, e revalida em
+      // background. Acaba com o "encolhe e cresce" ao reabrir o popover.
+      const cachedVar = VARIANTS_CACHE.get(consultantId);
+      if (cachedVar) {
+        setByVariant(cachedVar.byVariant);
+        setVariantsAvailable(cachedVar.available.length ? cachedVar.available : ["A"]);
+        setVariant((v) => cachedVar.byVariant.has(v) ? v : cachedVar.defaultVariant);
+      } else {
+        setLoading(true);
+      }
 
       let custVariant: "A" | "B" | "C" | "D" | "E" = "A";
       if (customerId) {
@@ -102,26 +111,23 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
         .eq("consultant_id", consultantId).eq("is_active", true)
         .order("created_at", { ascending: false });
       const flowsList = ((flowsAll as Array<{ id: string; variant: string }> | null) || []);
-      const byVariant = new Map<"A" | "B" | "C" | "D" | "E", string>();
+      const byV = new Map<"A" | "B" | "C" | "D" | "E", string>();
       flowsList.forEach((f) => {
         const v = String(f.variant || "A").toUpperCase() as "A" | "B" | "C" | "D" | "E";
-        if (["A", "B", "C", "D", "E"].includes(v) && !byVariant.has(v)) byVariant.set(v, f.id);
+        if (["A", "B", "C", "D", "E"].includes(v) && !byV.has(v)) byV.set(v, f.id);
       });
-      setByVariant(byVariant);
-      const available = (["A", "B", "C", "D", "E"] as const).filter((v) => byVariant.has(v));
-      if (!mounted) return;
-      setVariantsAvailable(available.length > 0 ? available : ["A"]);
-
-      const selected: "A" | "B" | "C" | "D" | "E" = byVariant.has(custVariant)
+      const available = (["A", "B", "C", "D", "E"] as const).filter((v) => byV.has(v));
+      const defaultVariant: "A" | "B" | "C" | "D" | "E" = byV.has(custVariant)
         ? custVariant
         : (available[0] || "A");
-      setVariant(selected);
-      // IMPORTANTE: não desligar `loading` aqui quando há fluxos. O Efeito 2
-      // assume o carregamento dos passos e só então desliga o loading. Se a
-      // gente desligasse aqui, o painel mostraria o conteúdo, o Efeito 2
-      // ligaria o loading de novo e o painel encolheria/cresceria de novo —
-      // era isso que fazia o botão "expandir e voltar" ao abrir.
-      if (byVariant.size === 0) {
+      VARIANTS_CACHE.set(consultantId, { byVariant: byV, available: [...available], defaultVariant });
+      if (!mounted) return;
+      setByVariant(byV);
+      setVariantsAvailable(available.length > 0 ? available : ["A"]);
+      // Só seta a variante se ainda não veio do cache (para não sobrescrever
+      // uma escolha manual do consultor entre cache hit e revalidação).
+      if (!cachedVar) setVariant(defaultVariant);
+      if (byV.size === 0) {
         setSteps([]);
         setLoading(false);
       }
@@ -129,23 +135,32 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
     return () => { mounted = false; };
   }, [open, consultantId, customerId]);
 
-  // Efeito 2 — troca manual de variante: só recarrega os passos do fluxo
-  // correspondente, sem mexer em `variant` nem reler flow_variant do cliente.
+  // Efeito 2 — carrega passos da variante. Usa cache para evitar flicker ao
+  // alternar A/B/C ou reabrir o popover.
   useEffect(() => {
     if (!open || !consultantId) return;
     if (byVariant.size === 0) return;
     const flowId = byVariant.get(variant);
     if (!flowId) { setSteps([]); setLoading(false); return; }
+    const cacheKey = `${consultantId}|${variant}`;
+    const cached = STEPS_CACHE.get(cacheKey);
+    if (cached) {
+      setSteps(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     let mounted = true;
     (async () => {
-      setLoading(true);
       const { data } = await supabase
         .from("bot_flow_steps")
         .select("id, step_key, title, slot_key, message_text, position, captures")
         .eq("flow_id", flowId).eq("is_active", true)
         .order("position", { ascending: true });
       if (!mounted) return;
-      setSteps((data as Step[]) || []);
+      const list = (data as Step[]) || [];
+      STEPS_CACHE.set(cacheKey, list);
+      setSteps(list);
       // Limpa previews/seleções da variante anterior.
       setPreviewStep(null);
       setPreviewParts([]);
