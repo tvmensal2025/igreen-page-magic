@@ -134,6 +134,28 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaBase64 = m.stickerMessage.base64;
     mediaMimetype = m.stickerMessage.mimetype || "image/webp";
     text = "";
+  } else if (m?.buttonsResponseMessage) {
+    // Lead respondeu botão (Fluxo D) — extrai o rótulo selecionado.
+    text = m.buttonsResponseMessage.selectedDisplayText ||
+      m.buttonsResponseMessage.selectedButtonId || "▢ Resposta de botão";
+  } else if (m?.templateButtonReplyMessage) {
+    text = m.templateButtonReplyMessage.selectedDisplayText ||
+      m.templateButtonReplyMessage.selectedId || "▢ Resposta de botão";
+  } else if (m?.listResponseMessage) {
+    text = m.listResponseMessage.title ||
+      m.listResponseMessage.singleSelectReply?.selectedRowId || "▢ Resposta de lista";
+  } else if (m?.interactiveResponseMessage) {
+    const body = m.interactiveResponseMessage.body?.text;
+    text = body || "▢ Resposta interativa";
+  } else if (m?.reactionMessage) {
+    text = `Reagiu: ${m.reactionMessage.text || "👍"}`;
+  } else if (m?.locationMessage) {
+    text = "📍 Localização compartilhada";
+  } else if (m?.contactMessage || m?.contactsArrayMessage) {
+    text = "👤 Contato compartilhado";
+  } else if (m?.pollCreationMessage || m?.pollCreationMessageV3) {
+    const name = (m.pollCreationMessage || m.pollCreationMessageV3)?.name;
+    text = name ? `📊 Enquete: ${name}` : "📊 Enquete";
   } else {
     // Fallback: tipo de mensagem não suportado (localização, contato, enquete,
     // botões, reação etc.). Antes a bolha aparecia totalmente vazia — só o
@@ -209,8 +231,8 @@ export function useMessages(
 
       const [raw, clearedRow] = await Promise.all([
         isWhapi
-          ? whapiListMessagesForChat(remoteJid, altJid, 50)
-          : findMessagesForChat(instanceName!, remoteJid, altJid, 50),
+          ? whapiListMessagesForChat(remoteJid, altJid, 200)
+          : findMessagesForChat(instanceName!, remoteJid, altJid, 200),
         phoneCandidates.size > 0
           ? supabase
               .from("customers")
@@ -260,7 +282,27 @@ export function useMessages(
           return newestFirst ? b.sourceIndex - a.sourceIndex : a.sourceIndex - b.sourceIndex;
         })
         .map(({ sourceIndex: _sourceIndex, ...m }) => m);
-      setMessages(mapped);
+      // Merge incremental: preserva mensagens otimistas (id começando com "temp-")
+      // e bolhas que o provedor ainda não indexou no próximo poll, evitando
+      // flicker de "apareceu e sumiu". Mensagens com mesmo id ganham os campos
+      // mais recentes do servidor (status, mídia resolvida, etc.).
+      setMessages((prev) => {
+        const byId = new Map<string, ChatMessage>();
+        for (const m of mapped) byId.set(m.id, m);
+        const extras = prev.filter((m) => {
+          if (byId.has(m.id)) return false;
+          // Mantém otimistas recentes (últimos 60s) e mensagens fora do clearedAt.
+          const ageMs = Date.now() - m.timestamp * 1000;
+          if (m.id.startsWith("temp-") && ageMs < 60_000) return true;
+          if (clearedAtMs > 0 && m.timestamp * 1000 < clearedAtMs) return false;
+          // Mantém mensagens que sumiram do feed por estarem antes do limite (200).
+          // Quando o histórico antigo já foi carregado e o provedor encurtou a
+          // janela, conservamos o que já tínhamos pra não desaparecer do topo.
+          return ageMs < 7 * 86400_000;
+        });
+        const merged = [...extras, ...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
+        return merged;
+      });
 
 
       const fallbackSendTarget = raw.find((msg) => msg.key.remoteJidAlt)?.key.remoteJidAlt;

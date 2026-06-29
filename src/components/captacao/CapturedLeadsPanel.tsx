@@ -19,9 +19,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast as sonnerToast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Users, Search, Send, Loader2, Building2, User as UserIcon, MapPin, Phone, Mail,
-  RefreshCw, Megaphone, Sparkles, CheckCircle2, EyeOff, Eye,
+  RefreshCw, Megaphone, Sparkles, CheckCircle2, EyeOff, Eye, Radio,
 } from "lucide-react";
 import {
   listCapturedLeads, countLeadsByChannel, listAlreadyDispatchedPhones,
@@ -79,6 +80,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [seedContacts, setSeedContacts] = useState<BulkContact[]>([]);
   const [researchOpen, setResearchOpen] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,6 +99,25 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
       setLoading(false);
     }
   }, [consultantId, channel, personType, status, search]);
+
+  const backfillFromTraffic = useCallback(async () => {
+    setBackfilling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("captacao-backfill-ctwa", {
+        body: { consultantId, days: 90 },
+      });
+      if (error) throw error;
+      const r = (data ?? {}) as { ingested?: number; deduped?: number; candidates?: number };
+      sonnerToast.success(
+        `Tráfego sincronizado — ${r.ingested ?? 0} novo(s), ${r.deduped ?? 0} já existia(m).`,
+      );
+      await load();
+    } catch (e) {
+      sonnerToast.error("Falha ao sincronizar tráfego: " + (e as Error).message);
+    } finally {
+      setBackfilling(false);
+    }
+  }, [consultantId, load]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -186,6 +207,19 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={() => void load()} className="gap-1.5">
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void backfillFromTraffic()}
+            disabled={backfilling}
+            className="gap-1.5"
+            title="Importa leads de anúncios (CTWA / Meta) que ainda não estão na lista"
+          >
+            {backfilling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Radio className="w-3.5 h-3.5" />}
+            Atualizar do tráfego
           </Button>
           <Button size="sm" variant="outline" onClick={() => setResearchOpen(true)} className="gap-1.5">
             <Sparkles className="w-3.5 h-3.5" /> Pesquisar empresas
