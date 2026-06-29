@@ -68,6 +68,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [sentPhones, setSentPhones] = useState<Set<string>>(new Set());
+  const [pendingWa, setPendingWa] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
