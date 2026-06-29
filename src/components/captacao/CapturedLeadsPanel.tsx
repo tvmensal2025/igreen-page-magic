@@ -401,24 +401,14 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
             </table>
           )}
         </div>
-      </div>
+        </TabsContent>
 
-      {/* ────────── PAINEL LATERAL FIXO (desktop) ────────── */}
-      <aside className="hidden lg:flex w-72 shrink-0 flex-col rounded-lg border border-border bg-card/40 overflow-hidden">
-        {SidePanelContent}
-      </aside>
+        <TabsContent value="conversados" className="flex-1 min-h-0 mt-3 data-[state=inactive]:hidden">
+          <AlreadyContactedList leads={partitioned.jaConv} />
+        </TabsContent>
+      </Tabs>
 
-      {/* ────────── SHEET (mobile) ────────── */}
-      <Sheet open={sideOpen} onOpenChange={setSideOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-sm p-0 flex flex-col">
-          <SheetHeader className="p-3 border-b border-border/60 shrink-0">
-            <SheetTitle className="flex items-center gap-2 text-sm">
-              <MessageCircle className="w-4 h-4 text-success" /> Já conversados
-            </SheetTitle>
-          </SheetHeader>
-          <div className="flex-1 min-h-0">{SidePanelContent}</div>
-        </SheetContent>
-      </Sheet>
+
 
       {/* Dialog de disparo */}
       <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
