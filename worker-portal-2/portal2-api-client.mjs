@@ -942,11 +942,24 @@ export class Portal2Client {
       if (dados.docFile) uploads.push({ file: dados.docFile, fileType: 'personal-doc-front', label: 'doc-frente' });
       if (dados.docBackFile) uploads.push({ file: dados.docBackFile, fileType: 'personal-doc-back', label: 'doc-verso' });
       if (dados.billFile) uploads.push({ file: dados.billFile, fileType: 'energy-bill', label: 'conta' });
-      const uploadFailures = [];
+      const uploadFailures = []; // [{ fileType, attempt, reason, transient, at }]
+      const uploadAttempts = {}; // { fileType: nTentativas }
 
-      for (const u of uploads) {
-        let ok = false;
-        for (let tentativa = 1; tentativa <= 3 && !ok; tentativa++) {
+      // Backoff exponencial 2s,4s,8s,16s,30s (5 tentativas). Erros transientes
+      // (5xx, ECONNRESET, ETIMEDOUT, socket hang up, status 0) são retentados;
+      // 4xx do servidor (arquivo inválido) também — pode ser flake de upstream.
+      const BACKOFF_MS = [2000, 4000, 8000, 16000, 30000];
+      const isTransientUploadErr = (e) => {
+        const status = Number(e?.status || 0);
+        const msg = String(e?.message || '').toLowerCase();
+        if (status >= 500) return true;
+        if (status === 0 || status === 408 || status === 429) return true;
+        return /econnreset|etimedout|socket hang up|network|timeout|fetch failed|aborted/.test(msg);
+      };
+
+      const tryUploadOne = async (u, maxAttempts = 5) => {
+        for (let tentativa = 1; tentativa <= maxAttempts; tentativa++) {
+          uploadAttempts[u.fileType] = tentativa;
           try {
             const r = await withTimeout(this.uploadFile({
               fileBuffer: u.file.buffer,
@@ -955,17 +968,27 @@ export class Portal2Client {
               fileType: u.fileType,
               idsolcontratovalidacao,
             }), EXTRACTOR_TIMEOUT_MS, `upload(${u.fileType})`);
-            ok = r?.status === 'UPLOADED' || !!r?.fileId;
-            if (ok) console.log(`  📎 anexado ${u.fileType} (${u.label}) fileId=${r?.fileId || '?'}`);
+            const ok = r?.status === 'UPLOADED' || !!r?.fileId;
+            if (ok) {
+              console.log(`  📎 anexado ${u.fileType} (${u.label}) fileId=${r?.fileId || '?'} tentativa=${tentativa}`);
+              return true;
+            }
+            uploadFailures.push({ fileType: u.fileType, attempt: tentativa, reason: `resposta sem fileId: ${JSON.stringify(r).slice(0, 200)}`, transient: false, at: new Date().toISOString() });
           } catch (e) {
-            console.warn(`  ⚠ upload ${u.fileType} tentativa ${tentativa} falhou: ${e.message}`);
-            if (tentativa < 3) await new Promise(res => setTimeout(res, 1500));
+            const transient = isTransientUploadErr(e);
+            uploadFailures.push({ fileType: u.fileType, attempt: tentativa, reason: String(e?.message || e).slice(0, 300), transient, at: new Date().toISOString() });
+            console.warn(`  ⚠ upload ${u.fileType} tentativa ${tentativa}/${maxAttempts} falhou${transient ? ' (transiente)' : ''}: ${e.message}`);
+          }
+          if (tentativa < maxAttempts) {
+            await new Promise(res => setTimeout(res, BACKOFF_MS[tentativa - 1] || 30000));
           }
         }
-        if (!ok) {
-          uploadFailures.push(u.fileType);
-          console.warn(`  ⛔ não anexou ${u.fileType} após 3 tentativas`);
-        }
+        console.warn(`  ⛔ não anexou ${u.fileType} após ${maxAttempts} tentativas`);
+        return false;
+      };
+
+      for (const u of uploads) {
+        await tryUploadOne(u, 5);
       }
 
       const summarizeUpload = (v) => ({
@@ -974,8 +997,14 @@ export class Portal2Client {
         docBack: !!v?.personalDoc?.hasBack,
         energy: !!v?.energy?.hasUrl,
         verifiedAt: new Date().toISOString(),
-        uploadFailures,
+        uploadAttempts: { ...uploadAttempts },
+        uploadFailures: uploadFailures.slice(-20), // últimas 20 falhas pra auditoria
       });
+      const fileTypeToVerifyKey = {
+        'personal-doc-front': 'documento_frente',
+        'personal-doc-back': 'documento_verso',
+        'energy-bill': 'conta_energia',
+      };
       const missingFromVerify = (v) => {
         const missing = [];
         if (dados.docFile && !v?.personalDoc?.hasFront) missing.push('documento_frente');
@@ -983,19 +1012,31 @@ export class Portal2Client {
         if (dados.billFile && !v?.energy?.hasUrl) missing.push('conta_energia');
         return missing;
       };
+      const uploadsForMissing = (missing) => uploads.filter(u => missing.includes(fileTypeToVerifyKey[u.fileType]));
 
       let v = await this.verifyUpload(idsolcontratovalidacao).catch((e) => ({ __verify_error: e.message }));
       let missing = missingFromVerify(v);
-      if (missing.length) {
-        console.warn(`  ⚠ verify incompleto (${missing.join(', ')}) — reconcile`);
+
+      // Rounds de recuperação: reconcile + reverify; se ainda faltar, re-uploada
+      // só o que faltou e tenta de novo. Até 2 rounds adicionais.
+      for (let round = 1; round <= 2 && missing.length; round++) {
+        console.warn(`  ⚠ verify incompleto round=${round} (${missing.join(', ')}) — reconcile+retry`);
         await this.reconcileUpload(idsolcontratovalidacao).catch(() => {});
-        await new Promise(res => setTimeout(res, 1500));
+        await new Promise(res => setTimeout(res, 2000));
+        v = await this.verifyUpload(idsolcontratovalidacao).catch((e) => ({ __verify_error: e.message }));
+        missing = missingFromVerify(v);
+        if (!missing.length) break;
+        // Re-upload focado nos que ainda faltam, com 3 tentativas extras cada.
+        for (const u of uploadsForMissing(missing)) {
+          await tryUploadOne(u, 3);
+        }
+        await new Promise(res => setTimeout(res, 2000));
         v = await this.verifyUpload(idsolcontratovalidacao).catch((e) => ({ __verify_error: e.message }));
         missing = missingFromVerify(v);
       }
 
       extraction.upload = summarizeUpload(v);
-      console.log(`  ✅ verify anexos: doc.front=${extraction.upload.docFront} doc.back=${extraction.upload.docBack} energy=${extraction.upload.energy}`);
+      console.log(`  ✅ verify anexos: doc.front=${extraction.upload.docFront} doc.back=${extraction.upload.docBack} energy=${extraction.upload.energy} attempts=${JSON.stringify(uploadAttempts)}`);
 
       if (missing.length) {
         const err = new Error(
