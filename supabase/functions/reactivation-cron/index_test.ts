@@ -36,7 +36,7 @@ Deno.test("renderMessage: substitui {{valor_conta}} formatado pt-BR", () => {
   assert(/^R\$ 1[.,]234,50? de conta$/.test(out) || out === "R$ 1.234,50 de conta", `got: ${out}`);
 });
 
-Deno.test("renderMessage: variáveis ausentes viram string vazia", () => {
+Deno.test("renderMessage: nome ausente não deixa vírgula/espaço sobrando", () => {
   const lead = {
     id: "x",
     consultant_id: "y",
@@ -47,8 +47,18 @@ Deno.test("renderMessage: variáveis ausentes viram string vazia", () => {
     capture_mode: null,
     manual_override_reactivate: null,
   };
-  const out = renderMessage("Oi {{nome}}, R$ {{valor_conta}}", lead);
-  assertEquals(out, "Oi , R$ ");
+  // "Oi {{nome}}, tudo bem?" → sem nome deve virar "Oi! Tudo bem?"
+  const out1 = renderMessage("Oi {{nome}}, tudo bem?", lead);
+  assertEquals(out1, "Oi! Tudo bem?");
+
+  // "{{nome}}, confirma os dados" → "Confirma os dados"
+  const out2 = renderMessage("{{nome}}, confirma os dados", lead);
+  assertEquals(out2, "Confirma os dados");
+
+  // Nenhuma vírgula órfã no começo nem espaços duplos no meio
+  const out3 = renderMessage("Olá {{nome}}, valor R$ {{valor_conta}}", lead);
+  assert(!out3.startsWith(","), `não pode começar com vírgula: ${out3}`);
+  assert(!/ {2,}/.test(out3), `não pode ter espaços duplos: ${out3}`);
 });
 
 Deno.test("renderMessage: aceita formato {nome} antigo (sem chaves duplas)", () => {
