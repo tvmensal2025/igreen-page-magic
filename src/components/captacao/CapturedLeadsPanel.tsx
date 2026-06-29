@@ -18,23 +18,21 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
-import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast as sonnerToast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Users, Search, Send, Loader2, Building2, User as UserIcon, MapPin, Phone, Mail,
-  RefreshCw, Megaphone, Sparkles, CheckCircle2, Radio, MessageCircle, PanelRightOpen,
+  RefreshCw, Megaphone, Sparkles, MessageCircle,
 } from "lucide-react";
 import {
   listCapturedLeads, countLeadsByChannel, listAlreadyDispatchedPhones,
-  countPendingWhatsappLeads,
   type CapturedLead, type LeadChannel, type PersonType, type LeadStatus,
 } from "@/services/capturedLeads";
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
+import { AlreadyContactedList } from "@/components/captacao/AlreadyContactedList";
 import type { BulkContact } from "@/types/whatsapp";
 
 const BulkProPanel = lazy(() =>
