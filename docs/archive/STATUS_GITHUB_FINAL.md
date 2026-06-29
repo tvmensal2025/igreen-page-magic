@@ -1,3 +1,5 @@
+> ⚠️ **Histórico (até 28/06/2026).** Repo migrado para `tvmensal2025/igreen-page-magic`. Workers ativos aqui: `worker-portal-2`, `worker-igreen-sync`, `compress-worker`. Portal 1 (`worker-portal`) permanece em `tvmensal2025/viana-replica-vault`.
+
 # ✅ STATUS FINAL - TUDO NO GITHUB
 
 > **Confirmação de que tudo está sincronizado**
