@@ -45,8 +45,11 @@ NODE_ENV=production
 Criar novo serviço com:
 
 1. **Tipo**: App (Docker build)
-2. **Source**: GitHub deste repo, branch principal
-3. **Build path**: `worker-portal-2/`
+2. **Source**: GitHub
+   - **Proprietário**: `tvmensal2025`
+   - **Repositório**: `igreen-page-magic`
+   - **Ramo**: `main`
+3. **Build path**: `/worker-portal-2`
 4. **Dockerfile**: `Dockerfile` (default)
 5. **Porta**: 3101
 6. **Env vars**: as listadas acima — copiar `WORKER_SECRET` do `worker-portal` original ou gerar novo
