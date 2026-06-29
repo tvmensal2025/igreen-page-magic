@@ -134,6 +134,28 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaBase64 = m.stickerMessage.base64;
     mediaMimetype = m.stickerMessage.mimetype || "image/webp";
     text = "";
+  } else if (m?.buttonsResponseMessage) {
+    // Lead respondeu botão (Fluxo D) — extrai o rótulo selecionado.
+    text = m.buttonsResponseMessage.selectedDisplayText ||
+      m.buttonsResponseMessage.selectedButtonId || "▢ Resposta de botão";
+  } else if (m?.templateButtonReplyMessage) {
+    text = m.templateButtonReplyMessage.selectedDisplayText ||
+      m.templateButtonReplyMessage.selectedId || "▢ Resposta de botão";
+  } else if (m?.listResponseMessage) {
+    text = m.listResponseMessage.title ||
+      m.listResponseMessage.singleSelectReply?.selectedRowId || "▢ Resposta de lista";
+  } else if (m?.interactiveResponseMessage) {
+    const body = m.interactiveResponseMessage.body?.text;
+    text = body || "▢ Resposta interativa";
+  } else if (m?.reactionMessage) {
+    text = `Reagiu: ${m.reactionMessage.text || "👍"}`;
+  } else if (m?.locationMessage) {
+    text = "📍 Localização compartilhada";
+  } else if (m?.contactMessage || m?.contactsArrayMessage) {
+    text = "👤 Contato compartilhado";
+  } else if (m?.pollCreationMessage || m?.pollCreationMessageV3) {
+    const name = (m.pollCreationMessage || m.pollCreationMessageV3)?.name;
+    text = name ? `📊 Enquete: ${name}` : "📊 Enquete";
   } else {
     // Fallback: tipo de mensagem não suportado (localização, contato, enquete,
     // botões, reação etc.). Antes a bolha aparecia totalmente vazia — só o
