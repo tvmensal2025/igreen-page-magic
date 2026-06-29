@@ -30,6 +30,7 @@ export const ERROR_KINDS = Object.freeze({
   missing_consumo:        { recoverable: true,  field: 'media_consumo' },
   duplicate_document:     { recoverable: false },
   no_coverage:            { recoverable: false },
+  validation_error:       { recoverable: false },
   unknown:                { recoverable: false },
 });
 
