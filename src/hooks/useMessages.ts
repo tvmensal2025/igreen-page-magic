@@ -231,8 +231,8 @@ export function useMessages(
 
       const [raw, clearedRow] = await Promise.all([
         isWhapi
-          ? whapiListMessagesForChat(remoteJid, altJid, 50)
-          : findMessagesForChat(instanceName!, remoteJid, altJid, 50),
+          ? whapiListMessagesForChat(remoteJid, altJid, 200)
+          : findMessagesForChat(instanceName!, remoteJid, altJid, 200),
         phoneCandidates.size > 0
           ? supabase
               .from("customers")
