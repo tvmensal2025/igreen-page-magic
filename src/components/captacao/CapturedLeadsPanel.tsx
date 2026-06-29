@@ -19,9 +19,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast as sonnerToast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Users, Search, Send, Loader2, Building2, User as UserIcon, MapPin, Phone, Mail,
-  RefreshCw, Megaphone, Sparkles, CheckCircle2, EyeOff, Eye,
+  RefreshCw, Megaphone, Sparkles, CheckCircle2, EyeOff, Eye, Radio,
 } from "lucide-react";
 import {
   listCapturedLeads, countLeadsByChannel, listAlreadyDispatchedPhones,
