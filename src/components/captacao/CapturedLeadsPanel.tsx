@@ -142,15 +142,6 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
     return { novos, jaConv };
   }, [leads, sentPhones]);
 
-  const sideFiltered = useMemo(() => {
-    const q = sideSearch.trim().toLowerCase();
-    if (!q) return partitioned.jaConv;
-    return partitioned.jaConv.filter((l) =>
-      [l.full_name, l.company_name, l.phone, l.email]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q)),
-    );
-  }, [partitioned.jaConv, sideSearch]);
 
   const allVisibleSelected =
     partitioned.novos.length > 0 && partitioned.novos.every((l) => selected.has(l.id));
