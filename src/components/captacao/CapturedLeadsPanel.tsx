@@ -214,16 +214,21 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
           </Button>
           <Button
             size="sm"
-            variant="outline"
+            variant={pendingWa > 0 ? "default" : "outline"}
             onClick={() => void backfillFromTraffic()}
             disabled={backfilling}
             className="gap-1.5"
-            title="Importa leads de anúncios (CTWA / Meta) que ainda não estão na lista"
+            title="Importa leads do WhatsApp (tráfego CTWA, Meta Ads e contatos diretos) que ainda não estão na lista"
           >
             {backfilling
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <Radio className="w-3.5 h-3.5" />}
-            Atualizar do tráfego
+            Sincronizar WhatsApp
+            {pendingWa > 0 && (
+              <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
+                +{pendingWa}
+              </Badge>
+            )}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setResearchOpen(true)} className="gap-1.5">
             <Sparkles className="w-3.5 h-3.5" /> Pesquisar empresas
