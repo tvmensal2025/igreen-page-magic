@@ -30,6 +30,7 @@ export const ERROR_KINDS = Object.freeze({
   missing_consumo:        { recoverable: true,  field: 'media_consumo' },
   duplicate_document:     { recoverable: false },
   no_coverage:            { recoverable: false },
+  attachment_not_confirmed:{ recoverable: false },
   validation_error:       { recoverable: false },
   unknown:                { recoverable: false },
 });
@@ -107,6 +108,9 @@ export function classifyPortalError(message) {
   // no_coverage — sem cobertura ativa / UF/região não atendida. Req 6.6
   } else if (hasAny('nenhuma cobertura ativa', 'sem cobertura', 'não atendid', 'nao atendid', 'sem regra ativa', 'cobertura ativa')) {
     kind = 'no_coverage';
+  // attachment_not_confirmed — OCR leu, mas o Portal não confirmou anexo físico.
+  } else if (hasAny('portal_attachments_not_confirmed', 'attachment_not_confirmed', 'anexos obrigatórios não confirmados', 'anexos obrigatorios nao confirmados')) {
+    kind = 'attachment_not_confirmed';
 
   // ── 2) Recuperáveis ──
   // duplicate_phone — celular/telefone já cadastrado. Req 6.2

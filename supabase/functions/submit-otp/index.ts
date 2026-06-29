@@ -6,6 +6,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function isWorkerTransient(status: number, body: string): boolean {
+  const text = String(body || "").trim().toLowerCase();
+  return status === 502 || status === 503 || status === 504 || text.startsWith("<!doctype") || text.startsWith("<html");
+}
+
 /**
  * submit-otp: Recebe OTP do webhook e repassa ao Worker da VPS.
  *
@@ -113,6 +118,19 @@ Deno.serve(async (req) => {
           last_otp_dispatch_error: null,
           portal_retry_count: 0,
         }).eq("id", customer_id);
+      } else if (isWorkerTransient(res.status, data)) {
+        await supabase.from("customers").update({
+          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_error: `worker_transient HTTP ${res.status}: ${data.slice(0, 200)}`,
+        }).eq("id", customer_id);
+        return new Response(JSON.stringify({
+          success: true,
+          mode: "polling",
+          error_kind: "worker_transient",
+          message: "OTP salvo. Worker instável, watchdog tentará novamente.",
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       } else {
         await supabase.from("customers").update({
           last_otp_dispatch_at: new Date().toISOString(),

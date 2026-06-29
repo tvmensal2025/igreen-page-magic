@@ -1,61 +1,83 @@
-## Diagnóstico (lead 5511971254913, customer `95fcd3b0…`)
+## Diagnóstico revisado da Gislaine
 
-Reconstruí a conversa pelos logs do Whapi + `conversations` + estado do `customers`. O que aconteceu:
+Você está certo em cobrar: **arquivo salvo no Supabase/OCR feito não prova que o documento e a conta ficaram anexados no Portal iGreen**.
 
-```text
-20:47:19  "Oi"                        → d_welcome
-20:47:27  clicou "Quero simular"     → d_escolher_simulacao
-20:47:36  clicou "Simulação rápida"  → pede valor
-20:47:53  digitou "800"              → SALVA electricity_bill_value = 800
-20:48:02  bot mostra d_simular_resultado (R$ 64–160 economia)
-20:48:07  clicou "Quero me cadastrar" → aguardando_conta (pede a foto)
-20:48:44  ENVIOU A FOTO DA CONTA      → ignorada, OCR nunca rodou
-20:49:06  cliente digitou "✅ SIM"
-20:49:07  [resume] dispatcher quis aguardando_conta,
-          resume aponta confirmando_dados_conta — usando confirmando_dados_conta
-20:49:09  bot mostra d_resultado com o MESMO R$ 800 (sem OCR)
-20:49:26  cliente clicou "Continuar Cadastro"
-20:49:31  bot pediu RG/CNH (d_pedir_documento) — pulou OCR de fato
-```
+O que a nova análise mostrou:
 
-Estado final em `customers`: `electricity_bill_photo_url = NULL`, `bill_base64 = NULL`, `ocr_done = false`, `bill_holder_name = NULL`, `electricity_bill_value = 800` (do "rápida"), `bill_data_confirmed_at = 20:49:07`.
+- O banco tem as imagens/PDFs salvos e o OCR leu os dados.
+- O cadastro foi criado no Portal com `idcliente 1597472` e `idsolcontratovalidacao 519995`.
+- Porém a auditoria do job **não guardou o resultado do `verifyUpload**`: `result.extraction.upload = null`.
+- No código atual, quando o upload/anexo falha, aparece apenas aviso e o cadastro continua mesmo assim:
+  - `não anexou ... após 3 tentativas (cadastro segue...)`
+  - isso é exatamente o risco que você relatou: cliente criada, mas documento/conta não anexados no portal.
+- O OTP também falhou: o código `336575` foi recebido, mas `/confirm-otp` retornou `HTTP 502` em HTML pelo worker/proxy, e o watchdog chegou em `portal_retry_count = 8`; então o sistema parou em `aguardando_otp` e você teve que digitar manualmente.
 
-## Causa raiz
+## Correção que vou implementar
 
-`supabase/functions/_shared/conversation-helpers.ts` — `hasBillData()` (linhas 392–401) trata `electricity_bill_value >= 30` **e** `media_consumo > 0` como prova de que já temos a conta. Esses dois campos são preenchidos pela **Simulação rápida** (valor digitado pelo cliente), não por uma fatura real.
+### 1. Anexo no Portal passa a ser obrigatório
 
-Consequência: assim que o cliente passa por "rápida" e depois aceita cadastrar, o `resolveResumeStep` chamado em `bot-flow.ts:3110` (e demais sítios) acha que a conta já está coletada e devolve `confirmando_dados_conta`. A foto que chega depois entra em `aguardando_conta`, é re-roteada pelo guard de resume para `confirmando_dados_conta` antes do handler de mídia rodar OCR — então a imagem é descartada, o OCR não dispara, `bill_holder_name` fica vazio e o fluxo cai direto no documento usando o valor estimado.
+No `worker-portal-2/portal2-api-client.mjs`:
 
-Mesmo problema espelhado em `evolution-webhook/handlers/bot-flow.ts:2962`.
+- Depois dos uploads, chamar `verifyUpload(idsolcontratovalidacao)`.
+- Validar obrigatoriamente:
+  - conta de energia anexada (`energy.hasUrl`)
+  - documento frente anexado (`personalDoc.hasFront`)
+  - documento verso anexado quando não for CNH (`personalDoc.hasBack`)
+- Se faltar qualquer um, tentar `reconcileUpload` e verificar novamente.
+- Se ainda faltar, **não seguir como sucesso silencioso**: lançar erro `PORTAL_ATTACHMENTS_NOT_CONFIRMED`.
 
-## Fix proposto (mínimo, cirúrgico, paridade whapi/evolution)
+Resultado esperado: não vai mais dizer que o cadastro está ok se o Portal não confirmou conta/documento.
 
-1. **`_shared/conversation-helpers.ts`**
-   - `hasBillData(customer)` passa a exigir **fatura real**: `electricity_bill_photo_url` (≠ sentinel `evolution-media:pending`) **ou** `bill_base64` **ou** `numero_instalacao` com 7+ dígitos **ou** `ocr_done === true`.
-   - Remover os ramos `electricity_bill_value >= 30` e `media_consumo > 0` — eles representam *estimativa do cliente*, não conta enviada. Adicionar comentário explicando o bug do 5511971254913.
-   - Criar helper auxiliar `hasBillEstimateOnly(customer)` (retorna true se só temos `electricity_bill_value`/`media_consumo` sem foto) — útil para o ponto 3.
+### 2. Salvar evidência do anexo no banco e na auditoria
 
-2. **`_shared/bot/resume-or-skip.ts`**
-   - Trocar a checagem `hasBillPhoto = electricity_bill_photo_url` por `hasBillData(customer)` (já fica correto após o fix #1) para o gate de "lead avançado".
+Ainda no `portal2-api-client.mjs` e `worker-portal-2/server.mjs`:
 
-3. **`whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`** (bloco "RESUME determinístico", ~linha 3104/2954)
-   - Antes de aceitar o `resolveResumeStep`, se `step === "aguardando_conta"` **e** o input atual for mídia (image/document) **e** `hasBillData(customer) === false` (já estará false após fix #1), manter `aguardando_conta` para o OCR rodar. Defesa em profundidade caso o estado tenha sido populado por outro caminho legado.
+- Persistir no `portal2_ocr_doc_result` / `portal2_ocr_bill_result` ou no `result.extraction.upload` um resumo claro:
+  - `docFront: true/false`
+  - `docBack: true/false`
+  - `energy: true/false`
+  - `idsolcontratovalidacao`
+- Quando falhar, gravar `portal2_error_kind = attachment_not_confirmed` e `portal2_error` com o motivo.
 
-4. **Backfill cirúrgico do lead 5511971254913** (apenas esta linha)
-   - Resetar o customer ativo `95fcd3b0-ff80-4446-a66c-0277797ff147` para `conversation_step = 'aguardando_conta'`, limpar `bill_data_confirmed_at`, `electricity_bill_value`, `media_consumo` para que ele reenvie a foto e o fluxo D termine corretamente até o documento. Sem migração — `UPDATE` único via `supabase--read_query` não dá; usar `supabase.insert`/RPC seria over-kill, então faço via migration de um único UPDATE idempotente com WHERE id = '…'.
+Resultado esperado: pelo painel/logs será possível saber se foi só OCR ou se o Portal confirmou anexo real.
 
-## Validação
+### 3. Corrigir OTP: 502 do worker não pode travar cliente
 
-- Build automático (já roda no harness).
-- Teste unitário novo em `_shared/__tests__/has-bill-data.test.ts`: cobre (a) só `electricity_bill_value=800` → false, (b) `electricity_bill_photo_url` setado → true, (c) `bill_base64` setado → true, (d) sentinel `evolution-media:pending` → false.
-- Teste unitário novo em `_shared/__tests__/resume-step.test.ts`: customer pós-rápida (value=800, sem foto) → `aguardando_conta`; com foto e sem `bill_data_confirmed_at` → `confirmando_dados_conta`.
-- Re-rodar `reactivation-cron/index_test.ts` e demais testes Deno já existentes para garantir que nada que dependia do antigo `hasBillData` quebra (vou ajustar fixtures se precisarem).
+No `supabase/functions/submit-otp/index.ts`:
 
-## Fora de escopo
+- Se `/confirm-otp` responder `502/503/504` ou HTML (`<!DOCTYPE`), tratar como instabilidade do worker, não como erro definitivo.
+- Gravar `last_otp_dispatch_error`, mas retornar sucesso em modo `polling` para o watchdog continuar tentando.
 
-- Não mexer no motor V3, no `mirror-customer`, nem no portal2. Não tocar UI.
-- Não alterar o fluxo de "Simulação rápida" em si (continua salvando `electricity_bill_value` — só deixa de ser tratado como conta enviada).
+No `supabase/functions/portal-otp-watchdog/index.ts`:
 
-## Risco
+- Não incrementar `portal_retry_count` para 502/503/504/HTML/timeout.
+- Só contar retry para erro real da iGreen, como código inválido/expirado.
+- Continuar tentando quando o worker voltar.
 
-Baixo. A mudança restringe `hasBillData` a evidências reais de fatura — o caminho normal (cliente envia a foto direto) continua igual; o caminho "rápida → cadastrar" deixa de pular o OCR. Reverter é trivial (1 commit, 1 helper).
+Resultado esperado: quando a cliente digitar o OTP, o sistema vai insistir em digitar no portal automaticamente; não vai abandonar por proxy 502.
+
+### 4. Corrigir coluna errada no worker
+
+No `worker-portal-2/server.mjs`:
+
+- Remover o update em `portal2_otp_last_error`, pois essa coluna não existe.
+- Usar `last_otp_dispatch_error`, que existe.
+
+Resultado esperado: erro real do OTP fica registrado e não some silenciosamente.
+
+### 5. NAO MEXER Na Gislaine ( EU JA FINALIZEI )
+
+&nbsp;
+
+## Arquivos envolvidos
+
+- `worker-portal-2/portal2-api-client.mjs`
+- `worker-portal-2/server.mjs`
+- `supabase/functions/submit-otp/index.ts`
+- `supabase/functions/portal-otp-watchdog/index.ts`
+
+## O que não vou assumir mais
+
+- Não vou considerar “anexado” só porque existe URL no Supabase.
+- Só vou considerar anexado quando o `verifyUpload` do Portal confirmar.
+- O cadastro não deve continuar como sucesso quando conta/documento não forem confirmados no Portal.

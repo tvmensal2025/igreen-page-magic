@@ -85,6 +85,12 @@ function buildValidationLink(idcliente, idconsultor) {
   return `https://digital.igreenenergy.com.br/validacao-codigo/${idcliente}?id=${idconsultor}&sendcontract=true`;
 }
 
+function addUploadEvidence(result, upload) {
+  const out = result && typeof result === 'object' ? { ...result } : {};
+  if (upload) out.upload = upload;
+  return out;
+}
+
 /**
  * MENSAGEM 1 (logo após cadastro no portal):
  * Pede SÓ o código de 6 dígitos que a iGreen vai mandar.
@@ -265,8 +271,8 @@ async function processLead(job) {
       if (extraction) {
         await supabase.from('customers').update({
           portal2_extraction_mode: extraction.mode,
-          portal2_ocr_doc_result: sanitize(extraction.doc),
-          portal2_ocr_bill_result: sanitize(extraction.bill),
+          portal2_ocr_doc_result: sanitize(addUploadEvidence(extraction.doc, extraction.upload)),
+          portal2_ocr_bill_result: sanitize(addUploadEvidence(extraction.bill, extraction.upload)),
         }).eq('id', customer_id).then(
           () => {},
           (e) => console.warn(`  ⚠ persistência extração (sucesso) falhou: ${e.message}`),
@@ -396,8 +402,8 @@ async function processLead(job) {
       // Modo_Extração mesmo em falha (Req 3.3 — antes do estado terminal).
       if (e.extraction) {
         updates.portal2_extraction_mode = e.extraction.mode ?? null;
-        updates.portal2_ocr_doc_result = sanitize(e.extraction.doc);
-        updates.portal2_ocr_bill_result = sanitize(e.extraction.bill);
+        updates.portal2_ocr_doc_result = sanitize(addUploadEvidence(e.extraction.doc, e.extraction.upload));
+        updates.portal2_ocr_bill_result = sanitize(addUploadEvidence(e.extraction.bill, e.extraction.upload));
       }
       // Best-effort (Req 3.6/4.5): falha de persistência não aborta o job.
       await supabase.from('customers').update(updates).eq('id', customer_id).then(
@@ -1139,7 +1145,8 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
   if (lastErr) {
     if (supabase && customer_id) {
       await supabase.from('customers').update({
-        portal2_otp_last_error: String(lastErr.message || '').slice(0, 500),
+        last_otp_dispatch_at: new Date().toISOString(),
+        last_otp_dispatch_error: String(lastErr.message || '').slice(0, 500),
       }).eq('id', customer_id).then(() => {}, () => {});
     }
     return res.status(502).json({

@@ -934,13 +934,15 @@ export class Portal2Client {
     // com esse idsol (documento → caminhoarquivodoc1, conta → caminhoarquivo).
     // Validado em chamadas reais. Tipos: personal-doc-front / -back / energy-bill.
     //
-    // Best-effort com retry: falha de upload NÃO aborta o cadastro (o cliente
-    // ainda é criado; pior caso volta ao comportamento antigo de validação manual).
+    // Upload obrigatório com retry: OCR sozinho não prova anexo real no Portal.
+    // O cadastro só segue quando verifyUpload confirma documento + conta no
+    // dossiê do mesmo idsolcontratovalidacao.
     if (idsolcontratovalidacao) {
       const uploads = [];
       if (dados.docFile) uploads.push({ file: dados.docFile, fileType: 'personal-doc-front', label: 'doc-frente' });
       if (dados.docBackFile) uploads.push({ file: dados.docBackFile, fileType: 'personal-doc-back', label: 'doc-verso' });
       if (dados.billFile) uploads.push({ file: dados.billFile, fileType: 'energy-bill', label: 'conta' });
+      const uploadFailures = [];
 
       for (const u of uploads) {
         let ok = false;
@@ -960,29 +962,49 @@ export class Portal2Client {
             if (tentativa < 3) await new Promise(res => setTimeout(res, 1500));
           }
         }
-        if (!ok) console.warn(`  ⛔ não anexou ${u.fileType} após 3 tentativas (cadastro segue, mas pode cair em validação manual)`);
+        if (!ok) {
+          uploadFailures.push(u.fileType);
+          console.warn(`  ⛔ não anexou ${u.fileType} após 3 tentativas`);
+        }
       }
 
-      // Confirma que os anexos chegaram; tenta reconcile uma vez se faltar algo.
-      try {
-        let v = await this.verifyUpload(idsolcontratovalidacao).catch(() => null);
-        const faltaDoc = dados.docFile && !(v?.personalDoc?.hasFront);
-        const faltaConta = dados.billFile && !(v?.energy?.hasUrl);
-        if (faltaDoc || faltaConta) {
-          console.warn(`  ⚠ verify incompleto (doc=${v?.personalDoc?.hasFront} energy=${v?.energy?.hasUrl}) — reconcile`);
-          await this.reconcileUpload(idsolcontratovalidacao).catch(() => {});
-          await new Promise(res => setTimeout(res, 1500));
-          v = await this.verifyUpload(idsolcontratovalidacao).catch(() => null);
-        }
-        console.log(`  ✅ verify anexos: doc.front=${v?.personalDoc?.hasFront} doc.back=${v?.personalDoc?.hasBack} energy=${v?.energy?.hasUrl}`);
-        // Anexa o resultado do verify ao extraction pra observabilidade/persistência.
-        extraction.upload = {
-          docFront: !!v?.personalDoc?.hasFront,
-          docBack: !!v?.personalDoc?.hasBack,
-          energy: !!v?.energy?.hasUrl,
-        };
-      } catch (e) {
-        console.warn(`  ⚠ verify de anexos falhou: ${e.message}`);
+      const summarizeUpload = (v) => ({
+        idsolcontratovalidacao,
+        docFront: !!v?.personalDoc?.hasFront,
+        docBack: !!v?.personalDoc?.hasBack,
+        energy: !!v?.energy?.hasUrl,
+        verifiedAt: new Date().toISOString(),
+        uploadFailures,
+      });
+      const missingFromVerify = (v) => {
+        const missing = [];
+        if (dados.docFile && !v?.personalDoc?.hasFront) missing.push('documento_frente');
+        if (!dados.isCnh && dados.docBackFile && !v?.personalDoc?.hasBack) missing.push('documento_verso');
+        if (dados.billFile && !v?.energy?.hasUrl) missing.push('conta_energia');
+        return missing;
+      };
+
+      let v = await this.verifyUpload(idsolcontratovalidacao).catch((e) => ({ __verify_error: e.message }));
+      let missing = missingFromVerify(v);
+      if (missing.length) {
+        console.warn(`  ⚠ verify incompleto (${missing.join(', ')}) — reconcile`);
+        await this.reconcileUpload(idsolcontratovalidacao).catch(() => {});
+        await new Promise(res => setTimeout(res, 1500));
+        v = await this.verifyUpload(idsolcontratovalidacao).catch((e) => ({ __verify_error: e.message }));
+        missing = missingFromVerify(v);
+      }
+
+      extraction.upload = summarizeUpload(v);
+      console.log(`  ✅ verify anexos: doc.front=${extraction.upload.docFront} doc.back=${extraction.upload.docBack} energy=${extraction.upload.energy}`);
+
+      if (missing.length) {
+        const err = new Error(
+          `PORTAL_ATTACHMENTS_NOT_CONFIRMED: anexos obrigatórios não confirmados no Portal (${missing.join(', ')})`
+        );
+        err.code = 'PORTAL_ATTACHMENTS_NOT_CONFIRMED';
+        err.extraction = extraction;
+        err.body = { idsolcontratovalidacao, missing, upload: extraction.upload };
+        throw err;
       }
     }
 
