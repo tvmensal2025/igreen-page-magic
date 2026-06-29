@@ -390,6 +390,11 @@ async function processLead(job) {
         portal2_error: String(e.message ?? '').slice(0, 2000), // Req 6.8
         portal2_error_kind: kind,                              // Req 6.1
       };
+      // Anexo não confirmado no Portal: limpa idcliente pra permitir nova tentativa
+      // limpa (novo idsolcontratovalidacao) quando operador reprocessar o lead.
+      if (kind === 'attachment_not_confirmed') {
+        updates.portal2_idcliente = null;
+      }
       // Loop de correção (Req 7.1): se vamos pedir correção, abre o
       // `conversation_step` certo AQUI para que a próxima mensagem do cliente
       // caia direto no handler corrigir_* (e não re-pergunte). A pergunta é
@@ -410,6 +415,23 @@ async function processLead(job) {
         () => {},
         (err) => console.warn(`  ⚠ persistência erro/extração falhou: ${err.message}`),
       );
+
+      // Alerta operacional: registra em infra_metrics quando anexo não
+      // confirmou (super-admin-alerts e dashboard de saúde consomem essa
+      // chave). Best-effort.
+      if (kind === 'attachment_not_confirmed') {
+        await supabase.from('infra_metrics').insert({
+          metric_key: 'portal_attachment_failed',
+          value_num: null,
+          meta: {
+            customer_id,
+            missing: e?.body?.missing || null,
+            upload: e?.body?.upload || null,
+            error: String(e.message || '').slice(0, 500),
+            at: new Date().toISOString(),
+          },
+        }).then(() => {}, (err) => console.warn(`  ⚠ infra_metrics alert falhou: ${err.message}`));
+      }
 
       // Pergunta proativa ao cliente (Req 7.1). Best-effort: só após a
       // persistência do step, para a resposta do cliente cair no handler certo.
