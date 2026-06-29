@@ -80,6 +80,26 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [seedContacts, setSeedContacts] = useState<BulkContact[]>([]);
   const [researchOpen, setResearchOpen] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+
+  const backfillFromTraffic = useCallback(async () => {
+    setBackfilling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("captacao-backfill-ctwa", {
+        body: { consultantId, days: 90 },
+      });
+      if (error) throw error;
+      const r = (data ?? {}) as { ingested?: number; deduped?: number; candidates?: number };
+      sonnerToast.success(
+        `Tráfego sincronizado — ${r.ingested ?? 0} novo(s), ${r.deduped ?? 0} já existia(m).`,
+      );
+      await load();
+    } catch (e) {
+      sonnerToast.error("Falha ao sincronizar tráfego: " + (e as Error).message);
+    } finally {
+      setBackfilling(false);
+    }
+  }, [consultantId]);
 
   const load = useCallback(async () => {
     setLoading(true);
