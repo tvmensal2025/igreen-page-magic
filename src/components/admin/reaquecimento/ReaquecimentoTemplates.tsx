@@ -34,6 +34,17 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
   const [newStep, setNewStep] = useState<string>("");
   const [newMessage, setNewMessage] = useState<string>("");
 
+  // União: etapas com leads parados (passadas via props) + catálogo canônico
+  // de etapas conhecidas. Garante que o admin sempre veja todas as etapas,
+  // mesmo quando nenhum lead está parado no momento.
+  const mergedSteps = useMemo(() => {
+    const set = new Set<string>([
+      ...availableSteps,
+      ...KNOWN_REACTIVATION_STEPS.map((s) => s.step),
+    ]);
+    return Array.from(set);
+  }, [availableSteps]);
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
