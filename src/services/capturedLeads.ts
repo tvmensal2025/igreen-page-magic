@@ -256,3 +256,45 @@ export async function searchCityNames(query: string): Promise<CityHit[]> {
   if (error) return [];
   return (data as CityHit[]) || [];
 }
+
+/**
+ * Conta quantos `customers` recentes (WhatsApp inbound) AINDA não foram
+ * espelhados em `captured_leads`. Usado pelo banner "X leads do WhatsApp
+ * pendentes" no painel de Captação. Fonte da verdade: `customers` do consultor
+ * com telefone, criados nos últimos 30 dias, menos os que já existem como
+ * `captured_leads` para o mesmo consultor (match por telefone normalizado).
+ */
+export async function countPendingWhatsappLeads(consultantId: string): Promise<number> {
+  try {
+    const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+    const { data: cust } = await supabase
+      .from("customers")
+      .select("phone_whatsapp")
+      .eq("consultant_id", consultantId)
+      .gte("created_at", since)
+      .not("phone_whatsapp", "is", null)
+      .limit(2000);
+    const custPhones = new Set(
+      ((cust as { phone_whatsapp: string | null }[]) || [])
+        .map((c) => String(c.phone_whatsapp || "").replace(/\D/g, "").slice(-11))
+        .filter((p) => p.length >= 10),
+    );
+    if (custPhones.size === 0) return 0;
+    const { data: leads } = await supabase
+      .from("captured_leads")
+      .select("phone")
+      .eq("consultant_id", consultantId)
+      .not("phone", "is", null)
+      .limit(5000);
+    const leadPhones = new Set(
+      ((leads as { phone: string | null }[]) || [])
+        .map((l) => String(l.phone || "").replace(/\D/g, "").slice(-11))
+        .filter((p) => p.length >= 10),
+    );
+    let missing = 0;
+    for (const p of custPhones) if (!leadPhones.has(p)) missing++;
+    return missing;
+  } catch {
+    return 0;
+  }
+}
