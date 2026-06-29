@@ -18,23 +18,21 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
-import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast as sonnerToast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Users, Search, Send, Loader2, Building2, User as UserIcon, MapPin, Phone, Mail,
-  RefreshCw, Megaphone, Sparkles, CheckCircle2, Radio, MessageCircle, PanelRightOpen,
+  RefreshCw, Megaphone, Sparkles, MessageCircle,
 } from "lucide-react";
 import {
   listCapturedLeads, countLeadsByChannel, listAlreadyDispatchedPhones,
-  countPendingWhatsappLeads,
   type CapturedLead, type LeadChannel, type PersonType, type LeadStatus,
 } from "@/services/capturedLeads";
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
+import { AlreadyContactedList } from "@/components/captacao/AlreadyContactedList";
 import type { BulkContact } from "@/types/whatsapp";
 
 const BulkProPanel = lazy(() =>
@@ -73,9 +71,9 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [sentPhones, setSentPhones] = useState<Set<string>>(new Set());
-  const [pendingWa, setPendingWa] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<"novos" | "conversados">("novos");
 
   // filtros (somente lista principal)
   const [search, setSearch] = useState("");
@@ -83,28 +81,21 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [personType, setPersonType] = useState<PersonType | "all">("all");
   const [status, setStatus] = useState<LeadStatus | "all">("all");
 
-  // painel lateral
-  const [sideOpen, setSideOpen] = useState(false);
-  const [sideSearch, setSideSearch] = useState("");
-
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [seedContacts, setSeedContacts] = useState<BulkContact[]>([]);
   const [researchOpen, setResearchOpen] = useState(false);
-  const [backfilling, setBackfilling] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rows, c, sent, pending] = await Promise.all([
+      const [rows, c, sent] = await Promise.all([
         listCapturedLeads({ consultantId, channel, personType, status, search }),
         countLeadsByChannel(consultantId),
         listAlreadyDispatchedPhones(consultantId),
-        countPendingWhatsappLeads(consultantId),
       ]);
       setLeads(rows);
       setCounts(c);
       setSentPhones(sent);
-      setPendingWa(pending);
     } catch (e) {
       sonnerToast.error("Falha ao carregar leads: " + (e as Error).message);
     } finally {
@@ -112,30 +103,35 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
     }
   }, [consultantId, channel, personType, status, search]);
 
-  const backfillFromTraffic = useCallback(async () => {
-    setBackfilling(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("captacao-backfill-ctwa", {
-        body: { consultantId, days: 90 },
-      });
-      if (error) throw error;
-      const r = (data ?? {}) as { ingested?: number; deduped?: number; candidates?: number };
-      sonnerToast.success(
-        `Pronto — ${r.ingested ?? 0} novo(s) trazidos do WhatsApp, ${r.deduped ?? 0} já existia(m).`,
-      );
-      await load();
-    } catch (e) {
-      sonnerToast.error("Falha ao buscar do WhatsApp: " + (e as Error).message);
-    } finally {
-      setBackfilling(false);
-    }
-  }, [consultantId, load]);
-
   useEffect(() => { void load(); }, [load]);
+
+  // Backfill silencioso de leads vindos do WhatsApp/CTWA — roda 1x no mount,
+  // sem botão e sem banner. Se trouxer novidades, recarrega a lista.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("captacao-backfill-ctwa", {
+          body: { consultantId, days: 90 },
+        });
+        if (cancelled || error) return;
+        const r = (data ?? {}) as { ingested?: number };
+        if ((r.ingested ?? 0) > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[captacao] backfill silencioso trouxe ${r.ingested} lead(s) do WhatsApp`);
+          await load();
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn("[captacao] backfill silencioso falhou:", (e as Error).message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [consultantId, load]);
 
   const total = useMemo(() => Object.values(counts).reduce((s, n) => s + n, 0), [counts]);
 
-  // Divide entre "novos" (lista) e "já conversados" (lateral).
+  // Divide entre "novos" (aba principal) e "já conversados" (aba secundária).
   const partitioned = useMemo(() => {
     const novos: CapturedLead[] = [];
     const jaConv: CapturedLead[] = [];
@@ -146,15 +142,6 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
     return { novos, jaConv };
   }, [leads, sentPhones]);
 
-  const sideFiltered = useMemo(() => {
-    const q = sideSearch.trim().toLowerCase();
-    if (!q) return partitioned.jaConv;
-    return partitioned.jaConv.filter((l) =>
-      [l.full_name, l.company_name, l.phone, l.email]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q)),
-    );
-  }, [partitioned.jaConv, sideSearch]);
 
   const allVisibleSelected =
     partitioned.novos.length > 0 && partitioned.novos.every((l) => selected.has(l.id));
@@ -194,164 +181,59 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
 
   const doResearchImported = async () => { await load(); };
 
-  // ─── Side panel content ────────────────────────────────────────
-  const SidePanelContent = (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="p-3 border-b border-border/60 space-y-2 shrink-0">
-        <div className="flex items-center gap-2 text-sm">
-          <MessageCircle className="w-4 h-4 text-success" />
-          <span className="font-semibold">{partitioned.jaConv.length}</span>
-          <span className="text-muted-foreground">já conversados</span>
-        </div>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            value={sideSearch}
-            onChange={(e) => setSideSearch(e.target.value)}
-            placeholder="Buscar conversado..."
-            className="pl-8 h-8 text-xs bg-background"
-          />
-        </div>
-        <p className="text-[11px] text-muted-foreground leading-snug">
-          Estes leads já receberam mensagem sua. Ficam aqui para não repetir o disparo.
-        </p>
-      </div>
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {sideFiltered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center px-4">
-            <MessageCircle className="w-8 h-8 text-muted-foreground/30" strokeWidth={1} />
-            <p className="text-xs text-muted-foreground">
-              {partitioned.jaConv.length === 0
-                ? "Ninguém aqui ainda. Quando você disparar para um lead, ele aparece neste lado."
-                : "Nenhum resultado para essa busca."}
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-border/30">
-            {sideFiltered.map((l) => (
-              <li key={l.id} className="p-2.5 hover:bg-muted/30 transition-colors">
-                <div className="flex items-start gap-2">
-                  {l.person_type === "pj"
-                    ? <Building2 className="w-3.5 h-3.5 text-info shrink-0 mt-0.5" />
-                    : <UserIcon className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />}
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium truncate">
-                      {l.company_name || l.full_name || "—"}
-                    </div>
-                    {l.phone && (
-                      <div className="text-[11px] text-muted-foreground flex items-center gap-1">
-                        <Phone className="w-2.5 h-2.5" />{l.phone}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <Badge variant="outline" className="text-[9px] gap-0.5 border-success/40 text-success bg-success/10 px-1 py-0">
-                        <CheckCircle2 className="w-2.5 h-2.5" /> Enviado
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground truncate">
-                        {CHANNEL_LABEL[l.channel] || l.channel}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-
   return (
-    <div className="flex h-full min-h-0 gap-3">
-      {/* ────────── COLUNA PRINCIPAL ────────── */}
-      <div className="flex flex-col flex-1 min-w-0 min-h-0 gap-3">
-        {/* Cabeçalho */}
-        <div className="shrink-0 flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-semibold tracking-tight">Lista de leads</h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-              <Badge variant="secondary" className="gap-1 font-normal">
-                <span className="text-foreground font-semibold">{partitioned.novos.length}</span>
-                <span className="text-muted-foreground">novos</span>
-              </Badge>
-              {selected.size > 0 && (
-                <Badge variant="default" className="gap-1 font-normal">
-                  <span className="font-semibold">{selected.size}</span>
-                  <span>selecionados</span>
-                </Badge>
-              )}
-              {/* Botão "já conversados" abre o lateral no mobile */}
-              <button
-                type="button"
-                onClick={() => setSideOpen(true)}
-                className="lg:hidden inline-flex items-center gap-1 rounded-md border border-success/40 bg-success/10 text-success px-2 py-0.5 text-xs hover:bg-success/20 transition"
-              >
-                <MessageCircle className="w-3 h-3" />
-                <span className="font-semibold">{partitioned.jaConv.length}</span>
-                <span>já conversados</span>
-              </button>
-              <span className="text-[11px] text-muted-foreground ml-1">
-                {total.toLocaleString("pt-BR")} no total
-              </span>
-            </div>
+    <div className="flex flex-col h-full min-h-0 gap-3">
+      {/* Cabeçalho */}
+      <div className="shrink-0 flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold tracking-tight">Lista de leads</h2>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" variant="outline" onClick={() => void load()} className="gap-1.5">
-              <RefreshCw className="w-3.5 h-3.5" /> Atualizar
-            </Button>
-            <Button
-              size="sm"
-              variant={pendingWa > 0 ? "default" : "outline"}
-              onClick={() => void backfillFromTraffic()}
-              disabled={backfilling}
-              className="gap-1.5"
-              title="Traz para esta lista os contatos do WhatsApp que ainda não estão aqui"
-            >
-              {backfilling
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Radio className="w-3.5 h-3.5" />}
-              Buscar novos do WhatsApp
-              {pendingWa > 0 && (
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
-                  +{pendingWa}
-                </Badge>
-              )}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setResearchOpen(true)} className="gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> Pesquisar empresas
-            </Button>
-            <Button size="sm" onClick={openDispatch} disabled={selected.size === 0} className="gap-1.5">
-              <Send className="w-3.5 h-3.5" /> Enviar mensagem ({selected.size})
-            </Button>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <Badge variant="secondary" className="gap-1 font-normal">
+              <span className="text-foreground font-semibold">{partitioned.novos.length}</span>
+              <span className="text-muted-foreground">novos</span>
+            </Badge>
+            {selected.size > 0 && (
+              <Badge variant="default" className="gap-1 font-normal">
+                <span className="font-semibold">{selected.size}</span>
+                <span>selecionados</span>
+              </Badge>
+            )}
+            <span className="text-[11px] text-muted-foreground ml-1">
+              {total.toLocaleString("pt-BR")} no total
+            </span>
           </div>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => void load()} className="gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setResearchOpen(true)} className="gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" /> Pesquisar empresas
+          </Button>
+          <Button size="sm" onClick={openDispatch} disabled={selected.size === 0} className="gap-1.5">
+            <Send className="w-3.5 h-3.5" /> Enviar mensagem ({selected.size})
+          </Button>
+        </div>
+      </div>
 
-        {pendingWa > 0 && (
-          <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-primary/40 bg-primary/5">
-            <div className="flex items-center gap-2 text-sm">
-              <Radio className="w-4 h-4 text-primary" />
-              <span>
-                Temos <span className="font-semibold text-primary">{pendingWa}</span> novo(s)
-                contato(s) do WhatsApp esperando. Clique para trazer pra cá.
-              </span>
-            </div>
-            <Button
-              size="sm"
-              onClick={() => void backfillFromTraffic()}
-              disabled={backfilling}
-              className="gap-1.5"
-            >
-              {backfilling
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Radio className="w-3.5 h-3.5" />}
-              Trazer agora
-            </Button>
-          </div>
-        )}
+      {/* Abas: Novos / Já conversados */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "novos" | "conversados")} className="flex-1 min-h-0 flex flex-col">
+        <TabsList className="shrink-0 w-fit">
+          <TabsTrigger value="novos" className="gap-1.5">
+            Novos leads
+            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{partitioned.novos.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="conversados" className="gap-1.5">
+            <MessageCircle className="w-3.5 h-3.5" />
+            Já conversados
+            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{partitioned.jaConv.length}</Badge>
+          </TabsTrigger>
+        </TabsList>
 
+        <TabsContent value="novos" className="flex-1 min-h-0 flex flex-col gap-3 mt-3 data-[state=inactive]:hidden">
         {/* Filtros */}
         <div className="shrink-0 flex flex-wrap items-center gap-2 p-2 rounded-lg border border-border/60 bg-card/40">
           <div className="relative flex-1 min-w-[200px]">
@@ -498,24 +380,14 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
             </table>
           )}
         </div>
-      </div>
+        </TabsContent>
 
-      {/* ────────── PAINEL LATERAL FIXO (desktop) ────────── */}
-      <aside className="hidden lg:flex w-72 shrink-0 flex-col rounded-lg border border-border bg-card/40 overflow-hidden">
-        {SidePanelContent}
-      </aside>
+        <TabsContent value="conversados" className="flex-1 min-h-0 mt-3 data-[state=inactive]:hidden">
+          <AlreadyContactedList leads={partitioned.jaConv} />
+        </TabsContent>
+      </Tabs>
 
-      {/* ────────── SHEET (mobile) ────────── */}
-      <Sheet open={sideOpen} onOpenChange={setSideOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-sm p-0 flex flex-col">
-          <SheetHeader className="p-3 border-b border-border/60 shrink-0">
-            <SheetTitle className="flex items-center gap-2 text-sm">
-              <MessageCircle className="w-4 h-4 text-success" /> Já conversados
-            </SheetTitle>
-          </SheetHeader>
-          <div className="flex-1 min-h-0">{SidePanelContent}</div>
-        </SheetContent>
-      </Sheet>
+
 
       {/* Dialog de disparo */}
       <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
