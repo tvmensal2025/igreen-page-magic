@@ -69,7 +69,15 @@ Deno.serve(async (req) => {
     }
 
     const quota = await checkSendQuota(supabase, channel.instanceName);
-    if (!quota.allowed) return json({ ok: false, error: "rate_limited", detail: quota.reason }, 429);
+    // Reenvio manual pelo consultor: não bloqueia em instâncias compartilhadas
+    // (ex.: whapi superadmin não tem linha em whatsapp_instances → instance_not_found).
+    const bypassQuota = channel.kind === "whapi" ||
+      quota.reason === "instance_not_found" ||
+      quota.reason === "rpc_error" ||
+      quota.reason === "exception";
+    if (!quota.allowed && !bypassQuota) {
+      return json({ ok: false, error: "rate_limited", detail: quota.reason }, 429);
+    }
 
     const firstName = String(customer.name || "").trim().split(/\s+/)[0] || "";
     const text =
