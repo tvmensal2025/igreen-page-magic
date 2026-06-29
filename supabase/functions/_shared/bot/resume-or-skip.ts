@@ -20,7 +20,7 @@
  * Quem chama decide o que persistir (update + transition log).
  */
 
-import { getNextMissingStep } from "../conversation-helpers.ts";
+import { getNextMissingStep, hasBillData } from "../conversation-helpers.ts";
 
 // Steps que indicam "fluxo voltou para a abertura" e portanto candidatos a
 // pular para o cadastro se o lead já tem dados. NÃO inclui passos do meio do
