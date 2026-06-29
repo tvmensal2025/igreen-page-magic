@@ -1,88 +1,61 @@
-## Objetivo
+## Diagnóstico (lead 5511971254913, customer `95fcd3b0…`)
 
-Deixar **todas as frases de reaquecimento** (catálogo do sistema + templates por etapa) **prontas, coerentes, profissionais e sem `{{nome}}`** — porque em muitos leads o nome não foi capturado e a frase fica esquisita ("Oi , vi que…"). Também tornar mais fácil para quem edita: comentários claros + variáveis previsíveis.
+Reconstruí a conversa pelos logs do Whapi + `conversations` + estado do `customers`. O que aconteceu:
 
-## Diagnóstico do que está faltando hoje
+```text
+20:47:19  "Oi"                        → d_welcome
+20:47:27  clicou "Quero simular"     → d_escolher_simulacao
+20:47:36  clicou "Simulação rápida"  → pede valor
+20:47:53  digitou "800"              → SALVA electricity_bill_value = 800
+20:48:02  bot mostra d_simular_resultado (R$ 64–160 economia)
+20:48:07  clicou "Quero me cadastrar" → aguardando_conta (pede a foto)
+20:48:44  ENVIOU A FOTO DA CONTA      → ignorada, OCR nunca rodou
+20:49:06  cliente digitou "✅ SIM"
+20:49:07  [resume] dispatcher quis aguardando_conta,
+          resume aponta confirmando_dados_conta — usando confirmando_dados_conta
+20:49:09  bot mostra d_resultado com o MESMO R$ 800 (sem OCR)
+20:49:26  cliente clicou "Continuar Cadastro"
+20:49:31  bot pediu RG/CNH (d_pedir_documento) — pulou OCR de fato
+```
 
-1. **Catálogo embarcado** (`supabase/functions/_shared/conversion/phrase-catalog.ts`)
-   - 30 frases (follow-up, welcome, objeções, por etapa, hot/warm).
-   - **Todas** usam `{{nome}}` no começo → quando o nome não foi capturado vira `"Oi , vi que…"` ou `", confirma os dados"`.
-   - Algumas etapas não têm frase de reaquecimento (ex.: `simulacao_apresentada`, `corrigir_celular_portal`, `como_funciona`, `completa_ou_rapida`, `boas_vindas_botoes` — visíveis no print).
+Estado final em `customers`: `electricity_bill_photo_url = NULL`, `bill_base64 = NULL`, `ocr_done = false`, `bill_holder_name = NULL`, `electricity_bill_value = 800` (do "rápida"), `bill_data_confirmed_at = 20:49:07`.
 
-2. **Templates por consultor** (tabela `reactivation_templates`, UI em `ReaquecimentoTemplates.tsx`)
-   - Hoje só mostra os steps **que têm leads parados**. Se nunca houve lead parado naquela etapa, ela some da lista e o admin não consegue pré-preparar a frase.
-   - Label da variável `{{nome}}` ainda aparece como sugestão no helper.
+## Causa raiz
 
-3. **Renderizador** (`renderPhraseText` e `renderMessage`)
-   - Quando `name` é vazio, substitui por string vazia → gera vírgula/espaço solto (`"Oi , tudo bem?"`).
+`supabase/functions/_shared/conversation-helpers.ts` — `hasBillData()` (linhas 392–401) trata `electricity_bill_value >= 30` **e** `media_consumo > 0` como prova de que já temos a conta. Esses dois campos são preenchidos pela **Simulação rápida** (valor digitado pelo cliente), não por uma fatura real.
 
-## O que vai ser feito
+Consequência: assim que o cliente passa por "rápida" e depois aceita cadastrar, o `resolveResumeStep` chamado em `bot-flow.ts:3110` (e demais sítios) acha que a conta já está coletada e devolve `confirmando_dados_conta`. A foto que chega depois entra em `aguardando_conta`, é re-roteada pelo guard de resume para `confirmando_dados_conta` antes do handler de mídia rodar OCR — então a imagem é descartada, o OCR não dispara, `bill_holder_name` fica vazio e o fluxo cai direto no documento usando o valor estimado.
 
-### A) Catálogo (`phrase-catalog.ts`) — reescrita das 30 frases
-- Remover `{{nome}}` de **todas** as mensagens.
-- Reescrever em tom profissional e neutro (sem depender de nome). Mantém `{{valor_conta}}` e `{{representante}}` quando úteis.
-- Acrescentar frases para as etapas que faltam, cobrindo o fluxo completo visto no editor:
-  - `boas_vindas_botoes`
-  - `como_funciona`
-  - `completa_ou_rapida`
-  - `aguardando_valor_conta`
-  - `simulacao_apresentada` / `resultado_simulacao_sim` / `resultado_simulacao_nao`
-  - `aguardando_conta` (já existe — só revisar)
-  - `aguardando_foto_conta` (já existe)
-  - `confirmando_dados` (já existe)
-  - `aguardando_doc` (já existe)
-  - `aguardando_facial` (já existe)
-  - `corrigir_celular_portal`
-  - `portal_submitting` (já existe)
-  - `aguardando_humano` (já existe)
+Mesmo problema espelhado em `evolution-webhook/handlers/bot-flow.ts:2962`.
 
-### B) Renderizador robusto
-- Em `renderPhraseText` e `reactivation-cron/renderMessage`:
-  - Se a frase contiver `{{nome}}` e o nome estiver vazio, **omitir limpo** (sem vírgula/espaço sobrando).
-  - Colapsar espaços duplos e vírgulas órfãs (`", "` no início → remove).
-  - Mantém compatibilidade com templates antigos do banco que ainda têm `{{nome}}`.
+## Fix proposto (mínimo, cirúrgico, paridade whapi/evolution)
 
-### C) Painel de Templates (`ReaquecimentoTemplates.tsx`)
-- Lista de etapas disponíveis passa a ser a **união** de:
-  1. Etapas com leads parados (como hoje).
-  2. Catálogo canônico de etapas conhecidas (lista fixa).
-- Remover `{{nome}}` da dica de variáveis do textarea; deixar só `{{valor_conta}}` e `{{representante}}` com um aviso curto: "Sem variáveis de nome — funcionam mesmo quando o nome ainda não foi capturado."
-- Botão "Restaurar texto sugerido" por etapa (preenche o textarea com a frase oficial do catálogo).
+1. **`_shared/conversation-helpers.ts`**
+   - `hasBillData(customer)` passa a exigir **fatura real**: `electricity_bill_photo_url` (≠ sentinel `evolution-media:pending`) **ou** `bill_base64` **ou** `numero_instalacao` com 7+ dígitos **ou** `ocr_done === true`.
+   - Remover os ramos `electricity_bill_value >= 30` e `media_consumo > 0` — eles representam *estimativa do cliente*, não conta enviada. Adicionar comentário explicando o bug do 5511971254913.
+   - Criar helper auxiliar `hasBillEstimateOnly(customer)` (retorna true se só temos `electricity_bill_value`/`media_consumo` sem foto) — útil para o ponto 3.
 
-### D) Documentação curta no topo do `phrase-catalog.ts`
-- Bloco de comentário explicando, em português simples:
-  - O que é cada categoria (follow-up, welcome, objeção, step, hot).
-  - Quais variáveis existem (`{{valor_conta}}`, `{{representante}}`) e por que **não** usamos mais `{{nome}}`.
-  - Como adicionar uma frase nova (passo a passo: copiar, mudar `shortcut`, escrever texto curto, salvar).
+2. **`_shared/bot/resume-or-skip.ts`**
+   - Trocar a checagem `hasBillPhoto = electricity_bill_photo_url` por `hasBillData(customer)` (já fica correto após o fix #1) para o gate de "lead avançado".
 
-## Exemplos da reescrita (antes → depois)
+3. **`whapi-webhook/handlers/bot-flow.ts` e `evolution-webhook/handlers/bot-flow.ts`** (bloco "RESUME determinístico", ~linha 3104/2954)
+   - Antes de aceitar o `resolveResumeStep`, se `step === "aguardando_conta"` **e** o input atual for mídia (image/document) **e** `hasBillData(customer) === false` (já estará false após fix #1), manter `aguardando_conta` para o OCR rodar. Defesa em profundidade caso o estado tenha sido populado por outro caminho legado.
 
-| Etapa | Antes | Depois |
-|---|---|---|
-| `/fup24h` | `{{nome}}, ontem você perguntou sobre desconto…` | `Ontem conversamos sobre o desconto na conta de luz. Posso te enviar a simulação agora — só preciso do valor médio da conta 📊` |
-| `/step_aguardando_foto_conta` | `{{nome}}, sem a foto da conta não consigo simular…` | `Sem a foto da conta de luz não consigo simular o desconto. Pode tirar uma foto bem legível e enviar aqui? 📸` |
-| `/step_confirmando_dados` | `{{nome}}, confirma se os dados…` | `Os dados da conta estão certinhos? Se sim, responde "sim" que seguimos com o cadastro 👍` |
-| novo `/step_corrigir_celular_portal` | — | `Vi que paramos na etapa de confirmar o celular no portal. Pode me enviar o número correto com DDD pra eu corrigir e seguir o cadastro?` |
-| novo `/step_simulacao_apresentada` | — | `Vi que você parou logo após a simulação. Faz sentido o desconto que apresentei? Posso te explicar qualquer parte 💚` |
+4. **Backfill cirúrgico do lead 5511971254913** (apenas esta linha)
+   - Resetar o customer ativo `95fcd3b0-ff80-4446-a66c-0277797ff147` para `conversation_step = 'aguardando_conta'`, limpar `bill_data_confirmed_at`, `electricity_bill_value`, `media_consumo` para que ele reenvie a foto e o fluxo D termine corretamente até o documento. Sem migração — `UPDATE` único via `supabase--read_query` não dá; usar `supabase.insert`/RPC seria over-kill, então faço via migration de um único UPDATE idempotente com WHERE id = '…'.
 
-## Arquivos afetados
+## Validação
 
-- `supabase/functions/_shared/conversion/phrase-catalog.ts` — reescrever todas as frases + adicionar novas + render robusto + comentário-guia.
-- `supabase/functions/reactivation-cron/index.ts` — endurecer `renderMessage` (limpar vírgula/espaço quando nome ausente).
-- `supabase/functions/reactivation-cron/index_test.ts` — atualizar/adicionar testes: nome ausente não deixa vírgula órfã.
-- `src/components/admin/reaquecimento/ReaquecimentoTemplates.tsx` — união de etapas + remover hint de `{{nome}}` + botão "Restaurar sugerido".
+- Build automático (já roda no harness).
+- Teste unitário novo em `_shared/__tests__/has-bill-data.test.ts`: cobre (a) só `electricity_bill_value=800` → false, (b) `electricity_bill_photo_url` setado → true, (c) `bill_base64` setado → true, (d) sentinel `evolution-media:pending` → false.
+- Teste unitário novo em `_shared/__tests__/resume-step.test.ts`: customer pós-rápida (value=800, sem foto) → `aguardando_conta`; com foto e sem `bill_data_confirmed_at` → `confirmando_dados_conta`.
+- Re-rodar `reactivation-cron/index_test.ts` e demais testes Deno já existentes para garantir que nada que dependia do antigo `hasBillData` quebra (vou ajustar fixtures se precisarem).
 
-## Detalhes técnicos
+## Fora de escopo
 
-- `renderPhraseText`: pré-processar a string trocando padrões `"{{nome}}, "`, `", {{nome}}"`, `"Oi {{nome}}!"` por versão sem nome quando `firstName` vazio. Depois rodar o `replaceAll` normal.
-- `reactivation-cron/renderMessage`: aplicar a mesma normalização (helper compartilhado para evitar duplicação).
-- Catálogo canônico de etapas (frontend): exportar `KNOWN_REACTIVATION_STEPS` de um único lugar (`src/lib/reactivation-steps.ts`) consumido pelo painel.
-- Sem migração de banco. Templates antigos (com `{{nome}}`) continuam funcionando porque o render fica tolerante.
+- Não mexer no motor V3, no `mirror-customer`, nem no portal2. Não tocar UI.
+- Não alterar o fluxo de "Simulação rápida" em si (continua salvando `electricity_bill_value` — só deixa de ser tratado como conta enviada).
 
-## Critérios de aceite
+## Risco
 
-- Nenhuma frase do catálogo contém `{{nome}}`.
-- Render de qualquer frase com `name=null` não gera vírgula/espaço sobrando.
-- Painel Admin → Reaquecimento → Templates mostra **todas** as etapas conhecidas, mesmo sem lead parado.
-- Cobertura completa: cada etapa do fluxo (do print) tem 1 frase de reaquecimento profissional padrão.
-- Testes em `index_test.ts` passam, incluindo novo caso "nome ausente".
+Baixo. A mudança restringe `hasBillData` a evidências reais de fatura — o caminho normal (cliente envia a foto direto) continua igual; o caminho "rápida → cadastrar" deixa de pular o OCR. Reverter é trivial (1 commit, 1 helper).

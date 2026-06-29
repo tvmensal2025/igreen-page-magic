@@ -20,7 +20,7 @@
  * Quem chama decide o que persistir (update + transition log).
  */
 
-import { getNextMissingStep } from "../conversation-helpers.ts";
+import { getNextMissingStep, hasBillData } from "../conversation-helpers.ts";
 
 // Steps que indicam "fluxo voltou para a abertura" e portanto candidatos a
 // pular para o cadastro se o lead já tem dados. NÃO inclui passos do meio do
@@ -112,13 +112,14 @@ export function shouldResumeCadastro(
 
   if (!OPENING_STEPS.has(step)) return null;
 
-  // Sanity: precisa ter pelo menos NOME + (CPF ou foto da conta) para
-  // considerar "lead avançado". Lead 100% novo não dispara o guard.
+  // Sanity: precisa ter pelo menos NOME + (CPF ou conta REAL — não
+  // estimativa da rápida) para considerar "lead avançado". Lead 100% novo
+  // não dispara o guard.
   const hasName = !!String(customer.name || "").trim();
   const hasCpf = !!String(customer.cpf || "").trim();
-  const hasBillPhoto = !!String(customer.electricity_bill_photo_url || "").trim();
+  const hasBillReal = hasBillData(customer);
   if (!hasName) return null;
-  if (!hasCpf && !hasBillPhoto) return null;
+  if (!hasCpf && !hasBillReal) return null;
 
   let next: string;
   try {
