@@ -217,7 +217,8 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-muted px-2 py-0.5 text-xs font-mono">{t.conversation_step}</span>
+                  <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium">{getStepLabel(t.conversation_step)}</span>
+                  <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{t.conversation_step}</span>
                   {t.is_active && <span className="text-[10px] font-medium text-primary">ATIVO</span>}
                   {!t.is_active && <span className="text-[10px] font-medium text-muted-foreground">INATIVO</span>}
                 </div>
@@ -225,16 +226,30 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
                   Criado em {new Date(t.created_at).toLocaleDateString("pt-BR")}
                 </p>
               </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive"
-                onClick={() => deleteTemplate(t.id)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex items-center gap-1">
+                {getSuggestedReactivationText(t.conversation_step) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 text-xs"
+                    onClick={() => updateTemplate(t.id, { message_text: getSuggestedReactivationText(t.conversation_step) })}
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Restaurar sugerido
+                  </Button>
+                )}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-destructive"
+                  onClick={() => deleteTemplate(t.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
             <Textarea
+              key={t.message_text}
               rows={3}
               defaultValue={t.message_text}
               onBlur={(e) => {
