@@ -42,6 +42,11 @@ function backoffOk(retryCount: number, lastAt: string | null): boolean {
   return Date.now() - lastMs >= waitMs;
 }
 
+function isWorkerTransient(status: number, body: string): boolean {
+  const text = String(body || "").trim().toLowerCase();
+  return status === 502 || status === 503 || status === 504 || text.startsWith("<!doctype") || text.startsWith("<html");
+}
+
 async function resolveIds(supabase: any, customerId: string): Promise<{
   idconsultor: number | null;
   idcliente: number | null;
@@ -227,6 +232,14 @@ async function bucketB(supabase: any) {
         continue;
       }
 
+      if (isWorkerTransient(res.status, txt)) {
+        await supabase.from("customers").update({
+          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_error: `worker_transient HTTP ${res.status}: ${txt.slice(0, 200)}`,
+        }).eq("id", r.id);
+        continue;
+      }
+
       // Detecta OTP expirado/inválido → para de retentar e pede novo código
       const isExpired = OTP_EXPIRED_PATTERNS.some((re) => re.test(txt));
       if (isExpired) {
@@ -279,8 +292,7 @@ async function bucketB(supabase: any) {
     } catch (e: any) {
       await supabase.from("customers").update({
         last_otp_dispatch_at: new Date().toISOString(),
-        last_otp_dispatch_error: (e?.message || String(e)).slice(0, 200),
-        portal_retry_count: retries + 1,
+        last_otp_dispatch_error: `worker_transient: ${(e?.message || String(e)).slice(0, 200)}`,
       }).eq("id", r.id);
     }
   }
