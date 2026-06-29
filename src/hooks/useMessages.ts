@@ -282,7 +282,27 @@ export function useMessages(
           return newestFirst ? b.sourceIndex - a.sourceIndex : a.sourceIndex - b.sourceIndex;
         })
         .map(({ sourceIndex: _sourceIndex, ...m }) => m);
-      setMessages(mapped);
+      // Merge incremental: preserva mensagens otimistas (id começando com "temp-")
+      // e bolhas que o provedor ainda não indexou no próximo poll, evitando
+      // flicker de "apareceu e sumiu". Mensagens com mesmo id ganham os campos
+      // mais recentes do servidor (status, mídia resolvida, etc.).
+      setMessages((prev) => {
+        const byId = new Map<string, ChatMessage>();
+        for (const m of mapped) byId.set(m.id, m);
+        const extras = prev.filter((m) => {
+          if (byId.has(m.id)) return false;
+          // Mantém otimistas recentes (últimos 60s) e mensagens fora do clearedAt.
+          const ageMs = Date.now() - m.timestamp * 1000;
+          if (m.id.startsWith("temp-") && ageMs < 60_000) return true;
+          if (clearedAtMs > 0 && m.timestamp * 1000 < clearedAtMs) return false;
+          // Mantém mensagens que sumiram do feed por estarem antes do limite (200).
+          // Quando o histórico antigo já foi carregado e o provedor encurtou a
+          // janela, conservamos o que já tínhamos pra não desaparecer do topo.
+          return ageMs < 7 * 86400_000;
+        });
+        const merged = [...extras, ...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
+        return merged;
+      });
 
 
       const fallbackSendTarget = raw.find((msg) => msg.key.remoteJidAlt)?.key.remoteJidAlt;
