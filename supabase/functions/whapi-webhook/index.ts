@@ -22,6 +22,7 @@ import { detectHandoffIntent } from "../_shared/captureExtractors.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import { botRequestStore, isTestPhone, logTestOutbound } from "../_shared/test-mode.ts";
 import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
+import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
@@ -651,6 +652,9 @@ Deno.serve(async (req) => {
           name: newCustomer.name,
           phone_whatsapp: newCustomer.phone_whatsapp,
         }).catch((e) => console.warn("[notify-new-lead] falhou:", (e as Error).message));
+        // Espelha para captured_leads → painel de Captação enxerga o lead.
+        mirrorCustomerToCaptation(supabase, newCustomer.id)
+          .catch((e) => console.warn("[mirror-customer] falhou:", (e as Error).message));
       }
     } else {
       // ─── Notificação de "novo lead" também quando o customer já existe ───
@@ -1601,6 +1605,9 @@ Deno.serve(async (req) => {
               : utmDetail ? `utm=${JSON.stringify(utmDetail)}`
               : `regex msg="${(messageText || "").slice(0, 80)}"`;
             console.log(`[lead-source] customer ${customer.id} tagged ${patch.lead_source} (${reason})`);
+            // Re-espelha para promover canal 'manual' → 'ctwa' no painel.
+            mirrorCustomerToCaptation(supabase, customer.id)
+              .catch((e) => console.warn("[mirror-customer:tag] falhou:", (e as Error).message));
           }
         }
       }

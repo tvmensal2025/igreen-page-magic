@@ -32,6 +32,7 @@ import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
+import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { matchesMetaCtwaPhrase, resolveSingleActivePool } from "../_shared/meta-ctwa-fallback.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
@@ -749,6 +750,9 @@ Deno.serve(async (req) => {
           name: newCustomer.name,
           phone_whatsapp: newCustomer.phone_whatsapp,
         }).catch((e) => console.warn("[notify-new-lead] falhou:", (e as Error).message));
+        // Espelha para captured_leads → painel de Captação enxerga o lead.
+        mirrorCustomerToCaptation(supabase, newCustomer.id)
+          .catch((e) => console.warn("[mirror-customer] falhou:", (e as Error).message));
       }
     } else {
       // Reentrada: cliente já existe mas voltou após >24h sem inbound → notifica novamente.
@@ -970,6 +974,9 @@ Deno.serve(async (req) => {
             ctwa_clid: ctwaClid,
             match_method: matchMethod,
           });
+          // Re-espelha para promover o canal de 'manual' → 'ctwa' no painel.
+          mirrorCustomerToCaptation(supabase, customer.id)
+            .catch((e) => console.warn("[mirror-customer:tag] falhou:", (e as Error).message));
         }
 
         // Log de auditoria de match (Req 8.6) — best-effort, fail-open (Req 8.7)

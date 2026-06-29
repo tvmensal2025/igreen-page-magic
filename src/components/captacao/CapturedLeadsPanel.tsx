@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import {
   listCapturedLeads, countLeadsByChannel, listAlreadyDispatchedPhones,
+  countPendingWhatsappLeads,
   type CapturedLead, type LeadChannel, type PersonType, type LeadStatus,
 } from "@/services/capturedLeads";
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
@@ -67,6 +68,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [sentPhones, setSentPhones] = useState<Set<string>>(new Set());
+  const [pendingWa, setPendingWa] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -85,14 +87,16 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rows, c, sent] = await Promise.all([
+      const [rows, c, sent, pending] = await Promise.all([
         listCapturedLeads({ consultantId, channel, personType, status, search }),
         countLeadsByChannel(consultantId),
         listAlreadyDispatchedPhones(consultantId),
+        countPendingWhatsappLeads(consultantId),
       ]);
       setLeads(rows);
       setCounts(c);
       setSentPhones(sent);
+      setPendingWa(pending);
     } catch (e) {
       sonnerToast.error("Falha ao carregar leads: " + (e as Error).message);
     } finally {
@@ -210,16 +214,21 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
           </Button>
           <Button
             size="sm"
-            variant="outline"
+            variant={pendingWa > 0 ? "default" : "outline"}
             onClick={() => void backfillFromTraffic()}
             disabled={backfilling}
             className="gap-1.5"
-            title="Importa leads de anúncios (CTWA / Meta) que ainda não estão na lista"
+            title="Importa leads do WhatsApp (tráfego CTWA, Meta Ads e contatos diretos) que ainda não estão na lista"
           >
             {backfilling
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <Radio className="w-3.5 h-3.5" />}
-            Atualizar do tráfego
+            Sincronizar WhatsApp
+            {pendingWa > 0 && (
+              <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
+                +{pendingWa}
+              </Badge>
+            )}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setResearchOpen(true)} className="gap-1.5">
             <Sparkles className="w-3.5 h-3.5" /> Pesquisar empresas
@@ -229,6 +238,29 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
           </Button>
         </div>
       </div>
+
+      {pendingWa > 0 && (
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-primary/40 bg-primary/5">
+          <div className="flex items-center gap-2 text-sm">
+            <Radio className="w-4 h-4 text-primary" />
+            <span>
+              <span className="font-semibold text-primary">{pendingWa}</span> lead(s) do
+              WhatsApp ainda não estão aqui — clique em <strong>Sincronizar WhatsApp</strong> para importar.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => void backfillFromTraffic()}
+            disabled={backfilling}
+            className="gap-1.5"
+          >
+            {backfilling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Radio className="w-3.5 h-3.5" />}
+            Sincronizar agora
+          </Button>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="shrink-0 flex flex-wrap items-center gap-2 p-2 rounded-lg border border-border/60 bg-card/40">
