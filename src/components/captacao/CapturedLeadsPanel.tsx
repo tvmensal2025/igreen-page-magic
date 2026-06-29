@@ -71,9 +71,9 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [sentPhones, setSentPhones] = useState<Set<string>>(new Set());
-  const [pendingWa, setPendingWa] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<"novos" | "conversados">("novos");
 
   // filtros (somente lista principal)
   const [search, setSearch] = useState("");
@@ -81,28 +81,21 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [personType, setPersonType] = useState<PersonType | "all">("all");
   const [status, setStatus] = useState<LeadStatus | "all">("all");
 
-  // painel lateral
-  const [sideOpen, setSideOpen] = useState(false);
-  const [sideSearch, setSideSearch] = useState("");
-
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [seedContacts, setSeedContacts] = useState<BulkContact[]>([]);
   const [researchOpen, setResearchOpen] = useState(false);
-  const [backfilling, setBackfilling] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rows, c, sent, pending] = await Promise.all([
+      const [rows, c, sent] = await Promise.all([
         listCapturedLeads({ consultantId, channel, personType, status, search }),
         countLeadsByChannel(consultantId),
         listAlreadyDispatchedPhones(consultantId),
-        countPendingWhatsappLeads(consultantId),
       ]);
       setLeads(rows);
       setCounts(c);
       setSentPhones(sent);
-      setPendingWa(pending);
     } catch (e) {
       sonnerToast.error("Falha ao carregar leads: " + (e as Error).message);
     } finally {
@@ -110,30 +103,35 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
     }
   }, [consultantId, channel, personType, status, search]);
 
-  const backfillFromTraffic = useCallback(async () => {
-    setBackfilling(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("captacao-backfill-ctwa", {
-        body: { consultantId, days: 90 },
-      });
-      if (error) throw error;
-      const r = (data ?? {}) as { ingested?: number; deduped?: number; candidates?: number };
-      sonnerToast.success(
-        `Pronto — ${r.ingested ?? 0} novo(s) trazidos do WhatsApp, ${r.deduped ?? 0} já existia(m).`,
-      );
-      await load();
-    } catch (e) {
-      sonnerToast.error("Falha ao buscar do WhatsApp: " + (e as Error).message);
-    } finally {
-      setBackfilling(false);
-    }
-  }, [consultantId, load]);
-
   useEffect(() => { void load(); }, [load]);
+
+  // Backfill silencioso de leads vindos do WhatsApp/CTWA — roda 1x no mount,
+  // sem botão e sem banner. Se trouxer novidades, recarrega a lista.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("captacao-backfill-ctwa", {
+          body: { consultantId, days: 90 },
+        });
+        if (cancelled || error) return;
+        const r = (data ?? {}) as { ingested?: number };
+        if ((r.ingested ?? 0) > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[captacao] backfill silencioso trouxe ${r.ingested} lead(s) do WhatsApp`);
+          await load();
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn("[captacao] backfill silencioso falhou:", (e as Error).message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [consultantId, load]);
 
   const total = useMemo(() => Object.values(counts).reduce((s, n) => s + n, 0), [counts]);
 
-  // Divide entre "novos" (lista) e "já conversados" (lateral).
+  // Divide entre "novos" (aba principal) e "já conversados" (aba secundária).
   const partitioned = useMemo(() => {
     const novos: CapturedLead[] = [];
     const jaConv: CapturedLead[] = [];
