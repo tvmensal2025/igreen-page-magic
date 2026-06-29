@@ -1,92 +1,69 @@
-# Auditoria: O que muda na infraestrutura externa após o Remix
+# Auditoria profunda do Fluxo D — garantir paridade pública e respostas sem erro
 
-O Remix criou um **novo projeto Lovable** (ID `3b3d0c8b-af52-4ad1-a44c-d389fb0bd4b2`) mas **continua apontando para o mesmo Supabase de produção** (`zlzasfhcxcznaprrragl`). Isso define o que precisa ou não mudar em cada serviço externo.
+## Objetivo
 
----
+Verificar se o Fluxo D (público, base de todos os consultores) está respondendo:
 
-## 1. Supabase ✅ Nada muda
+- Sem **pular passos**
+- Sem **duplicar mensagens**
+- Sem **resposta errada** (passo trocado / contexto perdido)
+- **Idêntico** entre Whapi (super admin) e Evolution (consultores)
 
-Mesmo project ref, mesmas Edge Functions, mesmos 49 segredos, mesmos crons. O Remix herdou tudo automaticamente.
-**Ação:** apenas confirmar que `TWOCAPTCHA_API_KEY` e `ELEVENLABS_API_KEY` foram atualizados (você já fez).
+## Escopo da análise (read-only)
 
----
+Vou inspecionar os 4 pontos onde esses bugs nascem:
 
-## 2. GitHub ⚠️ Precisa decidir
+### 1. Dedup de entrada (evita resposta duplicada)
 
-O Remix gera um **novo repositório separado** quando você conectar ao GitHub. O repo original (`tvmensal2025/viana-replica-vault`) continua existindo apontando para o projeto antigo.
+- `_shared/bot/dedupe.ts` + `webhook_message_dedup` (TTL, race condition entre Whapi/Evolution)
+- `_shared/customer-lock.ts` (lock por telefone — verifica se está liberando em caso de erro)
+- `whatsapp_message_buffer` (debounce de mensagens em rajada)
 
-**Cenários:**
+### 2. Resume-or-skip (evita pular passo / pedir dado que já tem)
 
-- **Se este Remix é só um espelho de leitura/teste** → não conectar GitHub, deixar como está.
-- **Se vai virar o projeto oficial** → conectar a um novo repo (ex: `igreen-cloud-v2`) e arquivar o antigo. Os workflows `.github/workflows/deploy-edge-functions.yml` continuarão funcionando porque apontam para o mesmo Supabase ref.
+- `_shared/bot/resume-or-skip.ts`
+- `customer_flow_state` vs `customers.bot_current_step`
+- Guard de retomada inserido nos webhooks
 
----
+### 3. Engine de despacho (evita resposta errada / passo trocado)
 
-## 3. MinIO ✅ Nada muda
+- `_shared/engine/engine.ts` (avanço de step)
+- `_shared/engine/decision.ts` (escolha de próximo step)
+- `_shared/engine/dispatcher.ts` (envio único — `conversational-send-idempotency`)
+- `_shared/engine/loader.ts` (carregamento do Fluxo D público vs override do dono)
+- `step-namespace.ts` (isolamento de slots por consultor)
 
-Bucket `igreen` no `igreen-minio.d9v63q.easypanel.host` é acessado via Edge Functions usando `MINIO_*` secrets no Supabase. Como o Supabase é o mesmo, **continua funcionando sem alteração**.
-**Ação:** zero.
+### 4. Paridade Whapi ↔ Evolution
 
----
+- Comparar `evolution-webhook/index.ts` vs `whapi-webhook/index.ts` (2.850 vs 2.583 linhas) — checar se ambos chamam o mesmo `webhook-entry.ts` com os mesmos guards
+- `bot_flow_steps` do Fluxo D público (sync_mode='public')
+- `loader.ts` regra: mídia do dono vence fallback público
 
-## 4. Easypanel ⚠️ Verificar 3 workers
+### 5. Testes existentes
 
-Os containers em Easypanel chamam as Edge Functions via webhook. Como o Supabase é o mesmo:
+Rodar (sem deploy):
 
+- `engine_test.ts`
+- `dedupe_test.ts`
+- `reemit-buttons_test.ts`
+- `resume-or-skip` (se houver)
+- `customer-lock_test.ts`
 
-| Worker                                 | URL/Endpoint                     | Muda? |
-| -------------------------------------- | -------------------------------- | ----- |
-| `worker-portal-2` (cadastro iGreen)    | `PORTAL2_WORKER_URL` no Supabase | ❌ não |
-| `compress-worker` (vídeo/ffmpeg)       | chamado pelas funções            | ❌ não |
-| `worker-igreen-sync` (extensão Chrome) | bridge local                     | ❌ não |
-| `igreen-evolution-api` (WhatsApp)      | `EVOLUTION_API_URL`              | ❌ não |
-| `igreen-minio`                         | `MINIO_SERVER_URL`               | ❌ não |
+## Entrega
 
+Relatório em `/mnt/documents/fluxo-d-audit.md` contendo:
 
-**Ação:** apenas verificar se todos estão **online** no Easypanel (especialmente Evolution da Olímpia que estava com lock).
+- ✅/❌ por categoria (dedup, resume, dispatch, paridade)
+- Lista de bugs encontrados com arquivo:linha
+- Diff sugerido para cada bug (sem aplicar)
+- Veredito final: "Fluxo D está consistente" OU "precisa corrigir X, Y, Z"
 
----
+## Após o relatório
 
-## 5. Domínio `igreen.cloud` 🔴 Precisa republicar
+Você decide o que corrigir. Eu **não vou aplicar mudança** automática — só depois da sua aprovação por correção, porque qualquer ajuste no engine impacta produção imediatamente (Supabase compartilhado).
 
-O domínio customizado está vinculado ao **projeto Lovable antigo**, não a este Remix. Hoje `igreen.cloud` serve o app antigo.
+**Tempo estimado:** 2-3 chamadas de análise, sem deploy.
 
-**Decisão necessária:**
+Posso prosseguir com a auditoria? SIM
 
-- **(A)** Manter `igreen.cloud` apontando para o projeto antigo e usar `igreen-page-magic.lovable.app` para este Remix (teste).
-- **(B)** Migrar `igreen.cloud` para este Remix: remover do projeto antigo → publicar este → reconectar domínio (com SSL re-emitido em ~15min).
-
----
-
-## 6. Facebook / Meta App ✅ Nada muda
-
-App ID, tokens OAuth dos consultores, CAPI pixel — tudo vive no Supabase. **Zero alteração.**
-
----
-
-## 7. Stripe / Whapi / ElevenLabs / 2Captcha / Gemini ✅ Nada muda
-
-Todos lidos via `Deno.env.get()` nas Edge Functions do Supabase compartilhado.
-
----
-
-## Resumo Executivo
-
-
-| Serviço                 | Ação necessária                               |
-| ----------------------- | --------------------------------------------- |
-| Supabase                | ✅ Nenhuma                                     |
-| MinIO                   | ✅ Nenhuma                                     |
-| Easypanel (5 workers)   | 🟡 Só checar status online                    |
-| Facebook/Meta/Stripe/IA | ✅ Nenhuma                                     |
-| GitHub                  | ⚠️ Decidir: conectar novo repo ou não         |
-| Domínio `igreen.cloud`  | 🔴 Decidir: ficar no projeto antigo ou migrar |
-
-
-**Conclusão:** infraestrutura externa **não precisa de mudança técnica** — o Remix herdou tudo via Supabase compartilhado. As duas únicas decisões são organizacionais: **GitHub** (novo repo?) e **domínio** (qual projeto serve `igreen.cloud`?).
-
-Me diga como quer prosseguir nesses dois pontos e eu executo.  
-  
-O GITHUB AGORA É ESSE [https://github.com/tvmensal2025/igreen-page-magic](https://github.com/tvmensal2025/igreen-page-magic)  
-  
-E O DOMINIO JA ESTA ATIVO IGREEN.CLOUD
+&nbsp;
