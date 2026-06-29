@@ -253,18 +253,6 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
               placeholder="Buscar nome, telefone, empresa, cidade..."
               className="pl-8 h-9 bg-background"
             />
-
-
-        {/* Filtros */}
-        <div className="shrink-0 flex flex-wrap items-center gap-2 p-2 rounded-lg border border-border/60 bg-card/40">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar nome, telefone, empresa, cidade..."
-              className="pl-8 h-9 bg-background"
-            />
           </div>
           <Select value={channel} onValueChange={(v) => setChannel(v as LeadChannel | "all")}>
             <SelectTrigger className="w-[200px] h-9 bg-background"><SelectValue placeholder="Origem" /></SelectTrigger>
