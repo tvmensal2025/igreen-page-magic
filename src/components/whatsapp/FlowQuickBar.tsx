@@ -55,6 +55,12 @@ async function loadStepParts(consultantId: string, step: Step): Promise<Part[]> 
   return items;
 }
 
+// Cache em módulo (sobrevive a fechar/abrir o popover dentro da mesma sessão).
+// Evita o flicker "encolhe e cresce" quando o consultor reabre o ⚡ no mesmo
+// lead/variante. Chave: `${consultantId}|${variant}`.
+const STEPS_CACHE = new Map<string, Step[]>();
+const VARIANTS_CACHE = new Map<string, { byVariant: Map<"A" | "B" | "C" | "D" | "E", string>; available: Array<"A" | "B" | "C" | "D" | "E">; defaultVariant: "A" | "B" | "C" | "D" | "E" }>();
+
 export function FlowQuickBar({ consultantId, customerId, customerName, disabled }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
