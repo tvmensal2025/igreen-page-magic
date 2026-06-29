@@ -1,69 +1,111 @@
-# Auditoria profunda do Fluxo D — garantir paridade pública e respostas sem erro
-
 ## Objetivo
 
-Verificar se o Fluxo D (público, base de todos os consultores) está respondendo:
+Oficializar `tvmensal2025/igreen-page-magic` como repo-fonte dos workers que **existem aqui** no Easypanel, atualizar documentação, auditar secrets — **sem quebrar Portal 1**, que continua no repo antigo.
 
-- Sem **pular passos**
-- Sem **duplicar mensagens**
-- Sem **resposta errada** (passo trocado / contexto perdido)
-- **Idêntico** entre Whapi (super admin) e Evolution (consultores)
+## Descoberta crítica (read-only)
 
-## Escopo da análise (read-only)
 
-Vou inspecionar os 4 pontos onde esses bugs nascem:
+| Worker                       | Pasta no `igreen-page-magic`? | Ação Easypanel                                |
+| ---------------------------- | ----------------------------- | --------------------------------------------- |
+| `worker-portal-2` (Portal 2) | ✅ existe                      | reapontar                                     |
+| `worker-igreen-sync`         | ✅ existe                      | reapontar                                     |
+| `compress-worker`            | ✅ existe                      | reapontar                                     |
+| `worker-portal` (Portal 1)   | ❌ **NÃO existe**              | **NÃO MEXER** — fica em `viana-replica-vault` |
 
-### 1. Dedup de entrada (evita resposta duplicada)
 
-- `_shared/bot/dedupe.ts` + `webhook_message_dedup` (TTL, race condition entre Whapi/Evolution)
-- `_shared/customer-lock.ts` (lock por telefone — verifica se está liberando em caso de erro)
-- `whatsapp_message_buffer` (debounce de mensagens em rajada)
+Nenhum código vivo (Dockerfile, server.mjs, edge functions, package.json, .env, settings) referencia `viana-replica-vault` — só docs históricos. Risco de quebrar produção = nulo na parte de código.
 
-### 2. Resume-or-skip (evita pular passo / pedir dado que já tem)
+## Escopo
 
-- `_shared/bot/resume-or-skip.ts`
-- `customer_flow_state` vs `customers.bot_current_step`
-- Guard de retomada inserido nos webhooks
+### 1. Documentação — troca de repo (12 arquivos)
 
-### 3. Engine de despacho (evita resposta errada / passo trocado)
+**Vivo (1):**
 
-- `_shared/engine/engine.ts` (avanço de step)
-- `_shared/engine/decision.ts` (escolha de próximo step)
-- `_shared/engine/dispatcher.ts` (envio único — `conversational-send-idempotency`)
-- `_shared/engine/loader.ts` (carregamento do Fluxo D público vs override do dono)
-- `step-namespace.ts` (isolamento de slots por consultor)
+- `worker-portal-2/README.md` — seção "Como subir no Easypanel": `viana-replica-vault` → `igreen-page-magic`, build path `/worker-portal-2`.
 
-### 4. Paridade Whapi ↔ Evolution
+**Arquivo histórico (11):** adicionar nota de cabeçalho `> ⚠️ Histórico (até 28/06/2026). Repo migrado para tvmensal2025/igreen-page-magic. Portal 1 permanece em viana-replica-vault.` em vez de reescrever conteúdo:
 
-- Comparar `evolution-webhook/index.ts` vs `whapi-webhook/index.ts` (2.850 vs 2.583 linhas) — checar se ambos chamam o mesmo `webhook-entry.ts` com os mesmos guards
-- `bot_flow_steps` do Fluxo D público (sync_mode='public')
-- `loader.ts` regra: mídia do dono vence fallback público
+- `docs/archive/PORTAL_WORKER_CRIADO.md`
+- `docs/archive/INICIO_AQUI_PORTAL_WORKER.md`
+- `docs/archive/PASSO_A_PASSO_GITHUB.md`
+- `docs/archive/RESUMO_CORRECAO_PORTAL_WORKER.md`
+- `docs/archive/STATUS_GITHUB_FINAL.md`
+- `docs/archive/RESUMO_SESSAO_COMPLETA.md`
+- `docs/archive/PLANO_INTEGRACAO_WHAPI.md`
+- `docs/archive/ATUALIZACOES_RECEBIDAS.md`
+- `docs/archive/ANALISE_REPOSITORIO_COMPLETA.md`
+- `ANALISE_COMPLETA_CODIGO.md`
+- `docs/archive/CORRIGIR_PORTAL_WORKER.md`
 
-### 5. Testes existentes
+### 2. Passo-a-passo Easypanel (chat, sem código)
 
-Rodar (sem deploy):
+Para os **3 workers que vivem aqui**:
 
-- `engine_test.ts`
-- `dedupe_test.ts`
-- `reemit-buttons_test.ts`
-- `resume-or-skip` (se houver)
-- `customer-lock_test.ts`
+```text
+Easypanel → <serviço> → Source
+  Proprietário: tvmensal2025
+  Repositório:  igreen-page-magic
+  Ramo:         main
+  Build path:   <ver tabela>
+→ Salvar → Rebuild (não Restart)
+```
+
+
+| Serviço Easypanel  | Build path            |
+| ------------------ | --------------------- |
+| portal-worker-2    | `/worker-portal-2`    |
+| igreen-sync-worker | `/worker-igreen-sync` |
+| compress-worker    | `/compress-worker`    |
+
+
+**portal-worker (Portal 1):** NÃO tocar. Continua em `viana-replica-vault` → `/worker-portal`.
+
+Validação pós-deploy de cada um:
+
+- `curl https://<host>/health`  → `{"ok":true}`
+- Easypanel "Logs" sem erro de build path / git auth
+
+### 3. Auditoria de secrets (read-only)
+
+Consultar `public.settings` e `fetch_secrets` para confirmar (sem alterar nada):
+
+
+| Chave                                                                     | Onde                  | Esperado          |
+| ------------------------------------------------------------------------- | --------------------- | ----------------- |
+| `portal_worker_url` / `worker_secret`                                     | `settings`            | Portal 1 —mexer   |
+| `portal2_worker_url` / `portal2_worker_secret`                            | `settings`            | Portal 2 — manter |
+| `igreen_sync_worker_url` / `igreen_sync_worker_secret`                    | `settings`            | Sync — manter     |
+| `PORTAL2_WORKER_URL/SECRET`, `WORKER_SECRET`, `IGREEN_SYNC_WORKER_SECRET` | Edge Function Secrets | Manter            |
+
+
+Relato em tabela no chat com ✅/⚠️. Mudar valor só com confirmação explícita.
+
+### 4. Webhooks GitHub (instrução pro usuário)
+
+Se o Easypanel tinha webhook de auto-deploy no `viana-replica-vault` para os 3 workers migrados, recriar em:
+`https://github.com/tvmensal2025/igreen-page-magic/settings/hooks`
+
+## Fora de escopo (não mexer)
+
+- `worker-portal` **(Portal 1)** —ja ajuste ele
+- Conteúdo dos Dockerfiles, server.mjs, fila BullMQ, Redis
+- Valores de `WORKER_SECRET`, URLs em produção, anon key
+- `supabase/migrations/*` (imutável)
+- MinIO, Evolution API, Whapi, edge functions
+
+## Riscos e mitigações
+
+- **Quebrar Portal 1**: mitigado — Portal 1 explicitamente excluído.
+- **Easypanel cache**: usar "Rebuild", não "Restart".
+- **Branch errada**: confirmar `main` no novo repo antes de salvar Source.
+- **Auto-deploy parado**: recriar webhook GitHub após troca.
+- **Rollback**: se algum dos 3 quebrar, basta voltar Source para `viana-replica-vault` + mesmo build path; secrets/env não mudam, então rollback é instantâneo.
 
 ## Entrega
 
-Relatório em `/mnt/documents/fluxo-d-audit.md` contendo:
-
-- ✅/❌ por categoria (dedup, resume, dispatch, paridade)
-- Lista de bugs encontrados com arquivo:linha
-- Diff sugerido para cada bug (sem aplicar)
-- Veredito final: "Fluxo D está consistente" OU "precisa corrigir X, Y, Z"
-
-## Após o relatório
-
-Você decide o que corrigir. Eu **não vou aplicar mudança** automática — só depois da sua aprovação por correção, porque qualquer ajuste no engine impacta produção imediatamente (Supabase compartilhado).
-
-**Tempo estimado:** 2-3 chamadas de análise, sem deploy.
-
-Posso prosseguir com a auditoria? SIM
-
-&nbsp;
+1. Diff de 12 arquivos de documentação (sem tocar código vivo)
+2. Bloco no chat com:
+  - Tabela de mapeamento worker → repo → build path (incluindo Portal 1 = NÃO MEXER)
+  - Passo-a-passo Easypanel para os 3 serviços
+  - Tabela de status dos 8 secrets/settings auditados
+  - Lista de webhooks GitHub a recriar
