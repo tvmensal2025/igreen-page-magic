@@ -87,14 +87,16 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rows, c, sent] = await Promise.all([
+      const [rows, c, sent, pending] = await Promise.all([
         listCapturedLeads({ consultantId, channel, personType, status, search }),
         countLeadsByChannel(consultantId),
         listAlreadyDispatchedPhones(consultantId),
+        countPendingWhatsappLeads(consultantId),
       ]);
       setLeads(rows);
       setCounts(c);
       setSentPhones(sent);
+      setPendingWa(pending);
     } catch (e) {
       sonnerToast.error("Falha ao carregar leads: " + (e as Error).message);
     } finally {
