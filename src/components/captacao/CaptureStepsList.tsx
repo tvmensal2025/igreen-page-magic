@@ -328,7 +328,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
         onOpenChange={(o) => !o && setConfirmStep(null)}
         consultantId={consultantId}
         customerId={customerId}
-        step={confirmStep ? { ...confirmStep.row } : null}
+        step={confirmStep?.row ?? null}
         variants={confirmStep?.group.variants}
         onVariantChange={changeVariant}
         sending={!!sending}

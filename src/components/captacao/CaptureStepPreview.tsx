@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -49,8 +49,14 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
   const [loading, setLoading] = useState(false);
   const [skippedAudios, setSkippedAudios] = useState(0);
 
+  const lastLoadedKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!open || !step) return;
+    // Chave do que já carregamos: evita re-fetch e flicker quando o pai
+    // recria o objeto `step` a cada render mas o conteúdo é o mesmo.
+    const loadKey = `${step.id}|${step.variant}|${customerId}|${consultantId}`;
+    if (lastLoadedKeyRef.current === loadKey) return;
     let mounted = true;
     setLoading(true);
     (async () => {
@@ -100,9 +106,16 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
       setRenderedText(txt);
       setSkippedAudios(skipped);
       setLoading(false);
+      lastLoadedKeyRef.current = loadKey;
     })();
     return () => { mounted = false; };
-  }, [open, step, customerId, consultantId]);
+  }, [open, step?.id, step?.variant, step?.step_key, step?.message_text, customerId, consultantId]);
+
+  // Reset cache key quando o dialog fecha, pra recarregar na próxima abertura.
+  useEffect(() => {
+    if (!open) lastLoadedKeyRef.current = null;
+  }, [open]);
+
 
   if (!step) return null;
 
