@@ -253,7 +253,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
           return (
             <li key={g.step_key}>
               <div
-                className={`group rounded-xl border flex items-center gap-2 pl-1.5 pr-1.5 py-1.5 transition-all duration-200 ${
+                className={`group rounded-xl border flex items-center gap-2 pl-1.5 pr-1.5 py-1.5 h-10 overflow-hidden ${
                   isError
                     ? "border-destructive/60 bg-destructive/10"
                     : isCurrent
@@ -265,7 +265,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
               >
                 <div className="relative shrink-0">
                   <span
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums transition-all ${
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold tabular-nums shrink-0 ${
                       anySent
                         ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-sm shadow-primary/30"
                         : isCurrent
@@ -284,7 +284,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
                     {g.title || g.step_key || `Passo ${num}`}
                   </p>
                   {isCurrent && (
-                    <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded-full bg-warning text-black shrink-0">
+                    <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-px rounded-full bg-warning text-warning-foreground shrink-0">
                       atual
                     </span>
                   )}
@@ -299,12 +299,12 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
                   disabled={isSending || !defaultRow}
                   onClick={() => defaultRow && setConfirmStep({ group: g, row: defaultRow })}
                   title={isError ? "Falhou — clique pra tentar de novo" : "Ver prévia e enviar"}
-                  className={`relative shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all disabled:opacity-50 ${
+                  className={`relative shrink-0 w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-50 ${
                     isError
                       ? "bg-destructive text-destructive-foreground shadow-sm shadow-destructive/30"
                       : anySent
-                      ? "border border-primary/40 text-primary hover:bg-primary/10 hover:scale-105"
-                      : "bg-gradient-to-br from-primary to-primary/85 text-primary-foreground shadow-sm shadow-primary/30 hover:shadow-md hover:shadow-primary/40 hover:scale-105"
+                      ? "border border-primary/40 text-primary hover:bg-primary/10"
+                      : "bg-gradient-to-br from-primary to-primary/85 text-primary-foreground shadow-sm shadow-primary/30 hover:shadow-md hover:shadow-primary/40"
                   }`}
                 >
                   {isSending ? (
