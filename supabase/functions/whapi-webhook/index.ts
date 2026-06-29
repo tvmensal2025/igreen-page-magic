@@ -652,6 +652,9 @@ Deno.serve(async (req) => {
           name: newCustomer.name,
           phone_whatsapp: newCustomer.phone_whatsapp,
         }).catch((e) => console.warn("[notify-new-lead] falhou:", (e as Error).message));
+        // Espelha para captured_leads → painel de Captação enxerga o lead.
+        mirrorCustomerToCaptation(supabase, newCustomer.id)
+          .catch((e) => console.warn("[mirror-customer] falhou:", (e as Error).message));
       }
     } else {
       // ─── Notificação de "novo lead" também quando o customer já existe ───
