@@ -56,6 +56,12 @@ const REAL_MESSAGE_TABLE = [
   ['UF não atendida',                                        'no_coverage',            false],
   ['sem regra ativa para a distribuidora',                   'no_coverage',            false],
 
+  ['POST /customers -> 400: Erro de validação | detail=Too small: expected string to have >=14 characters', 'validation_error', false],
+  ['Erro de validação',                                      'validation_error',       false],
+  ['Too small: expected string to have >=14 characters',     'validation_error',       false],
+  ['expected string, received number',                       'validation_error',       false],
+  ['validation failed for field celular',                    'validation_error',       false],
+
   ['internal server error 500',                              'unknown',                false],
   ['timeout ao conectar no portal',                          'unknown',                false],
   ['',                                                       'unknown',                false],

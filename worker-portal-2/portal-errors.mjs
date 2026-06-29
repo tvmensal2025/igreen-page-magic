@@ -30,6 +30,7 @@ export const ERROR_KINDS = Object.freeze({
   missing_consumo:        { recoverable: true,  field: 'media_consumo' },
   duplicate_document:     { recoverable: false },
   no_coverage:            { recoverable: false },
+  validation_error:       { recoverable: false },
   unknown:                { recoverable: false },
 });
 
@@ -124,7 +125,17 @@ export function classifyPortalError(message) {
   } else if (has('consumo') && hasAny('não informado', 'nao informado')) {
     kind = 'missing_consumo';
 
-  // ── 3) Desconhecido → não-recuperável (Req 6.7) ──
+  // ── 3) Erro de validação de payload (400/422) — não-recuperável, sem retry.
+  // Qualquer mismatch de schema (Too small / expected string / etc) cai aqui
+  // pra evitar loop infinito do BullMQ no mesmo lead.
+  } else if (
+    hasAny('erro de validação', 'erro de validacao', 'too small', 'too big',
+           'expected string', 'expected number', 'unprocessable', 'invalid input',
+           'validation failed')
+  ) {
+    kind = 'validation_error';
+
+  // ── 4) Desconhecido → não-recuperável (Req 6.7) ──
   } else {
     kind = 'unknown';
   }

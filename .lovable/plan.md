@@ -1,81 +1,55 @@
-## Objetivo
+## Problema observado nos logs
 
-Replicar a config de Easypanel do `portal-worker-2` exatamente como estava na screenshot, **trocando apenas o nome do repo** `igreen-official-portal` → `igreen-page-magic`. Resolver o erro "Cannot access repository or branch main doesn't exist" sem mexer em mais nada (mesma aba Git/SSH, mesmo branch, mesmo build path).
-
-## Diagnóstico do erro
-
-Easypanel usa a aba **Git** com URL SSH (`git@github.com:...`). Pra acessar um repo privado via SSH, o GitHub precisa ter a **Deploy Key pública** do Easypanel cadastrada — uma por repo. Quando o repo era `igreen-official-portal` a chave já estava lá; o `igreen-page-magic` é repo novo e ainda não tem essa chave, então `git fetch` falha com "Cannot access repository".
-
-Branch `main` provavelmente existe — a mensagem genérica do Easypanel cobre os 2 casos (sem acesso OU sem branch). Sem acesso, ele nem consegue listar branches.
-
-## Ação (no painel, sem código)
-
-### 1. Pegar a Deploy Key do Easypanel
-
-No Easypanel, no serviço `portal-worker-2`:
-1. Aba **Fonte → Git**
-2. Procurar bloco **SSH Key** ou **Deploy Key** (geralmente abaixo do campo "URL do Repositório" ou em **Configurações → SSH**)
-3. **Copiar a chave pública** (começa com `ssh-ed25519` ou `ssh-rsa`)
-
-Se não achar no serviço, é por projeto: `Easypanel → Settings → Git → SSH Public Key`.
-
-### 2. Cadastrar a chave no novo repo
-
-1. Abrir: `https://github.com/tvmensal2025/igreen-page-magic/settings/keys/new`
-2. **Title**: `easypanel-portal-worker-2`
-3. **Key**: colar a chave pública copiada
-4. **Allow write access**: deixar **desmarcado** (Easypanel só faz pull)
-5. **Add key**
-
-### 3. Confirmar a config no Easypanel (igual à screenshot)
+O job 47/48/49/50 do worker `worker-portal-2` ficou em loop infinito de retry com a mesma mensagem:
 
 ```
-Aba: Git
-URL do Repositório: git@github.com:tvmensal2025/igreen-page-magic.git
-Ramo:               main
-Caminho de Build:   /worker-portal-2
+POST /customers -> 400: Erro de validação | detail=Too small: expected string to have >=14 characters
+worker fail job=47: ... (e BullMQ tenta de novo, e de novo)
 ```
 
-→ **Salvar** → **Implantar** (Rebuild).
+Causa: `classifyPortalError` não tem regra para "Erro de validação / Too small / expected string" → cai em `kind='unknown'` → o `server.mjs` **re-lança o erro** (linha 446), o BullMQ faz retry, e o cadastro tenta de novo com o mesmo payload inválido para sempre. Resultado: a fila trava no mesmo lead e o próximo cliente fica esperando.
 
-### 4. Repetir pros outros 2 workers
+Casos como `duplicate_phone` já funcionam (kind ≠ unknown → não re-lança → marca status e libera a fila).
 
-Mesma Deploy Key serve pro mesmo repo. Então cadastrar **uma vez só** no GitHub já vale pros 3:
+## Fix proposto (mínimo, 2 arquivos)
 
-| Serviço | Build path |
-|---|---|
-| `portal-worker-2` | `/worker-portal-2` |
-| `worker-igreen` (sync) | `/worker-igreen-sync` |
-| `compress-worker` | `/compress-worker` |
+### 1) `worker-portal-2/portal-errors.mjs`
 
-Para cada um: aba **Git** → mesma URL SSH → `main` → build path da tabela → **Salvar** → **Implantar**.
+- Adicionar nova classe `validation_error` em `ERROR_KINDS` (recoverable:false).
+- Em `classifyPortalError`, adicionar regra ANTES do `unknown` para detectar:
+  - `erro de validação`
+  - `too small`, `too big`, `expected string`, `expected number`
+  - `unprocessable`, `invalid input`
+  → retorna `{ kind: 'validation_error', recoverable: false }`.
 
-### 5. `portal-worker` (Portal 1)
+### 2) `worker-portal-2/server.mjs` — defesa em profundidade
 
-**NÃO MEXER.** Continua apontando pra `git@github.com:tvmensal2025/igreen-official-portal.git` (ou o repo anterior), build path `/worker-portal`. Pasta `worker-portal/` não existe em `igreen-page-magic` — trocar quebraria.
+Trocar a condição de retry (linha 445) de:
+```js
+if (kind === 'unknown') throw e;
+```
+para:
+```js
+// Só re-lança quando for genuinamente transporte/instabilidade.
+// Qualquer 400 do portal é payload inválido — retry não resolve.
+const isTransient = kind === 'unknown' && !/\b(400|422)\b/.test(e.message);
+if (isTransient) throw e;
+```
 
-## Validação
+Isso garante que mesmo se aparecer um novo formato de erro 400 não previsto, o job termina e libera a fila (vai para `needs_human` ou `awaiting_correction`).
 
-Após "Implantar", em **Implantações** verificar:
-- Log mostra `Cloning git@github.com:tvmensal2025/igreen-page-magic.git` sem erro de auth
-- Build path encontra `Dockerfile` em `/worker-portal-2`
-- Container sobe e `GET /health` retorna 200
+### 3) Atualizar teste
 
-## Plano B — se Deploy Key não funcionar
+Acrescentar 1-2 casos em `worker-portal-2/test/` (se existir suite de portal-errors) cobrindo "Erro de validação | Too small".
 
-Se o Easypanel não expõe SSH key por serviço, alternativa é trocar pra **HTTPS com token**:
-- URL: `https://oauth2:<GITHUB_PAT>@github.com/tvmensal2025/igreen-page-magic.git`
-- Criar PAT em `https://github.com/settings/tokens` com escopo `repo`
-- Mesma branch/build path
+## Resultado esperado
 
-Ou usar a **aba Github** (App) em vez de Git: clicar **Github** → autorizar app → escolher repo → salvar. Mais simples se tiver o app já instalado.
+- Lead com payload inválido (ex.: celular com <14 chars) é classificado como `validation_error`, marcado `portal2_status='needs_human'`, e a fila libera imediatamente para o próximo job.
+- Nenhum impacto nos fluxos `duplicate_phone` / `duplicate_email` / `duplicate_installation` (continuam recuperáveis com loop de correção).
+- Erros realmente transitórios (ECONNRESET, 5xx, timeout) continuam fazendo retry como hoje.
 
-## Fora de escopo
+## Fora de escopo (apenas observar)
 
-- Código, secrets, edge functions, migrations
-- `portal-worker` (Portal 1)
-- Renomear repo, mover arquivos entre repos
-
-## Entrega
-
-Instruções passo-a-passo no chat (sem mudança de código). Documentação atualizada anteriormente já reflete `igreen-page-magic` — fica como está.
+Os logs mostram dois bugs adjacentes que **não vou tocar agora** (peça se quiser):
+1. **Loop de jobs duplicados (47, 47, 47…)** → o `attempts: 3` do BullMQ está mascarando 3 retries do mesmo job; após o fix acima, esse loop desaparece naturalmente.
+2. **Lead "CNH de A com conta de B"** → a IA já detectou (`Nome do titular da fatura divergente`). Existe `name_mismatch_flag` em `customers`, mas o portal2 não está bloqueando antes do POST. Posso adicionar um gate em `ensureDocumentsAttachedAndGate` que rejeita com `kind='name_mismatch'` (recoverable:false) se quiser — me confirme.
