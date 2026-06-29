@@ -1,83 +1,87 @@
-## Diagnóstico revisado da Gislaine
+## Plano: garantir anexo de Documento + Conta de Energia no Portal iGreen (zero falha silenciosa)
 
-Você está certo em cobrar: **arquivo salvo no Supabase/OCR feito não prova que o documento e a conta ficaram anexados no Portal iGreen**.
+O caso da Gislaine aconteceu porque o worker tratava upload como "best-effort": se falhasse, ele apenas logava aviso e seguia o cadastro como concluído. Vou tornar o anexo **obrigatório, verificado e auto-corrigido**, com falha explícita quando o portal não confirmar.
 
-O que a nova análise mostrou:
+---
 
-- O banco tem as imagens/PDFs salvos e o OCR leu os dados.
-- O cadastro foi criado no Portal com `idcliente 1597472` e `idsolcontratovalidacao 519995`.
-- Porém a auditoria do job **não guardou o resultado do `verifyUpload**`: `result.extraction.upload = null`.
-- No código atual, quando o upload/anexo falha, aparece apenas aviso e o cadastro continua mesmo assim:
-  - `não anexou ... após 3 tentativas (cadastro segue...)`
-  - isso é exatamente o risco que você relatou: cliente criada, mas documento/conta não anexados no portal.
-- O OTP também falhou: o código `336575` foi recebido, mas `/confirm-otp` retornou `HTTP 502` em HTML pelo worker/proxy, e o watchdog chegou em `portal_retry_count = 8`; então o sistema parou em `aguardando_otp` e você teve que digitar manualmente.
+### 1. Upload obrigatório com retry robusto (`worker-portal-2/portal2-api-client.mjs`)
 
-## Correção que vou implementar
+Para cada arquivo (doc frente, doc verso quando não-CNH, conta de energia):
 
-### 1. Anexo no Portal passa a ser obrigatório
+- Tentar `uploadDocument` **até 5 vezes** com backoff exponencial (2s, 4s, 8s, 16s, 30s).
+- Tratar erros transientes (HTTP 5xx, ECONNRESET, ETIMEDOUT, socket hang up) como retentáveis.
+- Validar o response do upload: precisa retornar URL/ID válido — se vier vazio, conta como falha.
+- Registrar cada tentativa em `uploadFailures[]` com timestamp e motivo.
 
-No `worker-portal-2/portal2-api-client.mjs`:
+### 2. Verificação real pós-upload (`verifyUpload`)
 
-- Depois dos uploads, chamar `verifyUpload(idsolcontratovalidacao)`.
-- Validar obrigatoriamente:
-  - conta de energia anexada (`energy.hasUrl`)
-  - documento frente anexado (`personalDoc.hasFront`)
-  - documento verso anexado quando não for CNH (`personalDoc.hasBack`)
-- Se faltar qualquer um, tentar `reconcileUpload` e verificar novamente.
-- Se ainda faltar, **não seguir como sucesso silencioso**: lançar erro `PORTAL_ATTACHMENTS_NOT_CONFIRMED`.
+Após todos os uploads:
 
-Resultado esperado: não vai mais dizer que o cadastro está ok se o Portal não confirmou conta/documento.
+- Chamar `verifyUpload(idsolcontratovalidacao)` para listar o que o Portal iGreen **realmente recebeu**.
+- Conferir obrigatoriamente:
+  - `energy.hasUrl === true`
+  - `personalDoc.hasFront === true`
+  - `personalDoc.hasBack === true` quando `docType !== 'CNH'`
+- Se faltar algo, chamar `reconcileUpload` (re-anexa arquivos órfãos no portal) e **reverificar**.
+- Se ainda faltar após o reconcile, fazer **mais 2 tentativas completas** do(s) arquivo(s) faltante(s).
 
-### 2. Salvar evidência do anexo no banco e na auditoria
+### 3. Falha explícita, sem cadastro "fantasma"
 
-Ainda no `portal2-api-client.mjs` e `worker-portal-2/server.mjs`:
+Se após todas as tentativas algum anexo continuar faltando:
 
-- Persistir no `portal2_ocr_doc_result` / `portal2_ocr_bill_result` ou no `result.extraction.upload` um resumo claro:
-  - `docFront: true/false`
-  - `docBack: true/false`
-  - `energy: true/false`
-  - `idsolcontratovalidacao`
-- Quando falhar, gravar `portal2_error_kind = attachment_not_confirmed` e `portal2_error` com o motivo.
+- Lançar `PORTAL_ATTACHMENTS_NOT_CONFIRMED` com lista de itens faltantes.
+- Worker grava no `customers`:
+  - `portal2_error_kind = 'attachment_not_confirmed'`
+  - `portal2_error = "Faltou: docFront, energy..."`
+  - `status = 'needs_human'`
+  - `portal2_idcliente = null` (para permitir nova tentativa limpa quando o operador corrigir)
+- Notificação imediata ao Super Admin via `super-admin-alerts` com o telefone do lead e os itens que faltaram.
+- `portal-errors.mjs` classifica como `recoverable: false` → BullMQ **não fica em loop**.
 
-Resultado esperado: pelo painel/logs será possível saber se foi só OCR ou se o Portal confirmou anexo real.
+### 4. Evidência persistida (auditoria sem dúvida)
 
-### 3. Corrigir OTP: 502 do worker não pode travar cliente
+Salvar em `portal2_ocr_doc_result` e `portal2_ocr_bill_result` (campo `upload`):
 
-No `supabase/functions/submit-otp/index.ts`:
+```json
+{
+  "idsolcontratovalidacao": 519995,
+  "docFront": true,
+  "docBack": true,
+  "energy": true,
+  "verifiedAt": "2026-06-29T22:30:00Z",
+  "uploadAttempts": { "docFront": 1, "docBack": 2, "energy": 1 },
+  "uploadFailures": []
+}
+```
 
-- Se `/confirm-otp` responder `502/503/504` ou HTML (`<!DOCTYPE`), tratar como instabilidade do worker, não como erro definitivo.
-- Gravar `last_otp_dispatch_error`, mas retornar sucesso em modo `polling` para o watchdog continuar tentando.
+Pelo painel dá pra ver na hora se foi anexado de verdade — não basta ter URL no Supabase.
 
-No `supabase/functions/portal-otp-watchdog/index.ts`:
+### 5. Pré-validação antes de abrir o cadastro
 
-- Não incrementar `portal_retry_count` para 502/503/504/HTML/timeout.
-- Só contar retry para erro real da iGreen, como código inválido/expirado.
-- Continuar tentando quando o worker voltar.
+Antes de chamar `cadastrarCliente`, validar localmente que os 3 arquivos (ou 2 se CNH) existem no Supabase Storage/MinIO e são acessíveis (HEAD request com 200). Se faltar arquivo no nosso lado, **nem abre o cadastro no portal** — vai direto pra `needs_human` com motivo claro, evitando criar cliente sem anexo.
 
-Resultado esperado: quando a cliente digitar o OTP, o sistema vai insistir em digitar no portal automaticamente; não vai abandonar por proxy 502.
+### 6. OTP (já no plano anterior, fica mantido)
 
-### 4. Corrigir coluna errada no worker
+- `submit-otp` e `portal-otp-watchdog` tratam 502/503/504/HTML como `worker_transient` e não queimam retries.
+- Watchdog insiste até o worker voltar e digitar o código no portal.
+- Só conta retry quando a iGreen rejeita o código.
 
-No `worker-portal-2/server.mjs`:
+### 7. Não mexer na Gislaine
 
-- Remover o update em `portal2_otp_last_error`, pois essa coluna não existe.
-- Usar `last_otp_dispatch_error`, que existe.
+Você já finalizou o cadastro dela manualmente — nenhuma alteração nos dados desse lead.
 
-Resultado esperado: erro real do OTP fica registrado e não some silenciosamente.
+---
 
-### 5. NAO MEXER Na Gislaine ( EU JA FINALIZEI )
+### Arquivos que vou editar
 
-&nbsp;
+- `worker-portal-2/portal2-api-client.mjs` — retry+verify+reconcile obrigatórios, pré-check dos arquivos.
+- `worker-portal-2/portal-errors.mjs` — `attachment_not_confirmed` como `recoverable: false`.
+- `worker-portal-2/server.mjs` — persistir `upload` evidence, corrigir coluna `last_otp_dispatch_error`, marcar `needs_human` + alertar super admin.
+- `supabase/functions/submit-otp/index.ts` — tratamento de `worker_transient` (já feito, validar).
+- `supabase/functions/portal-otp-watchdog/index.ts` — não incrementar retry em transiente (já feito, validar).
 
-## Arquivos envolvidos
+### Garantia final
 
-- `worker-portal-2/portal2-api-client.mjs`
-- `worker-portal-2/server.mjs`
-- `supabase/functions/submit-otp/index.ts`
-- `supabase/functions/portal-otp-watchdog/index.ts`
+Depois disso, **só haverá `status = sucesso**` quando o Portal iGreen confirmar via `verifyUpload` que os 3 arquivos estão lá. Não vai mais existir o cenário "cliente criada sem documento" — ou anexa de verdade, ou para em `needs_human` com alerta pra você.
 
-## O que não vou assumir mais
-
-- Não vou considerar “anexado” só porque existe URL no Supabase.
-- Só vou considerar anexado quando o `verifyUpload` do Portal confirmar.
-- O cadastro não deve continuar como sucesso quando conta/documento não forem confirmados no Portal.
+Posso aplicar? SIM, FACA TESTE ONDE TEM QUE SALVAR NO PORTAL2 ANALISE ONDE É ANEXADO A CONTA DE ENERGIA,, RG FRENTE, RGM VERSO, COMPROVANTE ENTRE OUTROS
