@@ -239,6 +239,29 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
         </div>
       </div>
 
+      {pendingWa > 0 && (
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-primary/40 bg-primary/5">
+          <div className="flex items-center gap-2 text-sm">
+            <Radio className="w-4 h-4 text-primary" />
+            <span>
+              <span className="font-semibold text-primary">{pendingWa}</span> lead(s) do
+              WhatsApp ainda não estão aqui — clique em <strong>Sincronizar WhatsApp</strong> para importar.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => void backfillFromTraffic()}
+            disabled={backfilling}
+            className="gap-1.5"
+          >
+            {backfilling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Radio className="w-3.5 h-3.5" />}
+            Sincronizar agora
+          </Button>
+        </div>
+      )}
+
       {/* Filtros */}
       <div className="shrink-0 flex flex-wrap items-center gap-2 p-2 rounded-lg border border-border/60 bg-card/40">
         <div className="relative flex-1 min-w-[200px]">
