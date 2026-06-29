@@ -208,6 +208,19 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
           <Button size="sm" variant="outline" onClick={() => void load()} className="gap-1.5">
             <RefreshCw className="w-3.5 h-3.5" /> Atualizar
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void backfillFromTraffic()}
+            disabled={backfilling}
+            className="gap-1.5"
+            title="Importa leads de anúncios (CTWA / Meta) que ainda não estão na lista"
+          >
+            {backfilling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Radio className="w-3.5 h-3.5" />}
+            Atualizar do tráfego
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setResearchOpen(true)} className="gap-1.5">
             <Sparkles className="w-3.5 h-3.5" /> Pesquisar empresas
           </Button>
