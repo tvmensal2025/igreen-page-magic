@@ -1,87 +1,72 @@
-## Plano: garantir anexo de Documento + Conta de Energia no Portal iGreen (zero falha silenciosa)
+# Auditoria do Cadastro iGreen — “o que pede × o que salvamos”
 
-O caso da Gislaine aconteceu porque o worker tratava upload como "best-effort": se falhasse, ele apenas logava aviso e seguia o cadastro como concluído. Vou tornar o anexo **obrigatório, verificado e auto-corrigido**, com falha explícita quando o portal não confirmar.
+## Por que
 
----
+A Gislaine chegou ao portal sem documento e sem conta porque o nosso worker tratava upload como best-effort e não confrontava cada campo do portal com a coluna do nosso banco. Antes de continuar mexendo no worker, precisamos de um mapa autoritativo:
 
-### 1. Upload obrigatório com retry robusto (`worker-portal-2/portal2-api-client.mjs`)
+- todos os campos que o portal pede em cada um dos 5 passos
+- todos os anexos exigidos
+- como o portal chama cada endpoint da `api-green-connection.igreenenergy.com.br`
+- e, para cada coisa pedida, **em qual coluna nossa ela já está salva** (ou está faltando).
 
-Para cada arquivo (doc frente, doc verso quando não-CNH, conta de energia):
+## O que já levantei (sessão Playwright atual)
 
-- Tentar `uploadDocument` **até 5 vezes** com backoff exponencial (2s, 4s, 8s, 16s, 30s).
-- Tratar erros transientes (HTTP 5xx, ECONNRESET, ETIMEDOUT, socket hang up) como retentáveis.
-- Validar o response do upload: precisa retornar URL/ID válido — se vier vazio, conta como falha.
-- Registrar cada tentativa em `uploadFailures[]` com timestamp e motivo.
+Entrei em `https://green.igreenenergy.com.br/autoconexao/?id=124170` (sem login — só o id do consultor) com dados fictícios. Confirmado:
 
-### 2. Verificação real pós-upload (`verifyUpload`)
+- **Landing** — plano (R$ 120 default) e duração (1 / 3 / 6 anos).
+- **PASSO 1 — Documento pessoal**
+  - Toggle “Único arquivo” × “Frente e Verso”
+  - Upload do documento (PDF/JPG/PNG)
+  - Form: CPF, NOME COMPLETO, DATA DE NASCIMENTO, ÓRGÃO EXPEDIDOR (opcional)
+  - Aviso visível: *“Validação humana ativada — análise pode levar até 5 dias úteis”* quando o OCR do portal não bate.
+- **PASSO 2 — Conta de energia (parcial)**
+  - Upload da conta
+  - Combobox “Selecione o estado”
+  - … (resto ainda não percorrido — combobox radix exige interação específica)
+- **PASSO 3, 4, 5** — não percorridos ainda (provável endereço, contato/OTP, contrato/facial).
 
-Após todos os uploads:
+## O que farei após aprovar este plano
 
-- Chamar `verifyUpload(idsolcontratovalidacao)` para listar o que o Portal iGreen **realmente recebeu**.
-- Conferir obrigatoriamente:
-  - `energy.hasUrl === true`
-  - `personalDoc.hasFront === true`
-  - `personalDoc.hasBack === true` quando `docType !== 'CNH'`
-- Se faltar algo, chamar `reconcileUpload` (re-anexa arquivos órfãos no portal) e **reverificar**.
-- Se ainda faltar após o reconcile, fazer **mais 2 tentativas completas** do(s) arquivo(s) faltante(s).
+### 1. Concluir o walk-through (Playwright, dados fictícios)
+- Tratar combobox radix (clicar trigger + selecionar opção).
+- Capturar **screenshot + JSON** de cada passo (`PASSO 1..5`), com `label`, `placeholder`, `type`, `required` de cada input.
+- Capturar todos os requests para `api-green-connection.igreenenergy.com.br` (URL, método, payload, resposta) — sem clicar em “Cadastrar” final, só até a tela imediatamente anterior, conforme você pediu.
+- Mapear validações inline (“Campo obrigatório”, máscara CPF, CEP, data, e-mail, telefone).
 
-### 3. Falha explícita, sem cadastro "fantasma"
+Saída: `/tmp/browser/igreen/walk3/` com `01..05_view.json`, `api.log`, `net.txt` + relatório consolidado em `/mnt/documents/igreen-portal-map.md`.
 
-Se após todas as tentativas algum anexo continuar faltando:
+### 2. Mapear payload real do worker
+Ler `worker-portal-2/portal2-api-client.mjs` e listar, por endpoint chamado (`/cliente`, `/upload`, `/otp`, `/confirm-otp`, etc.), exatamente quais chaves enviamos hoje e de onde vêm.
 
-- Lançar `PORTAL_ATTACHMENTS_NOT_CONFIRMED` com lista de itens faltantes.
-- Worker grava no `customers`:
-  - `portal2_error_kind = 'attachment_not_confirmed'`
-  - `portal2_error = "Faltou: docFront, energy..."`
-  - `status = 'needs_human'`
-  - `portal2_idcliente = null` (para permitir nova tentativa limpa quando o operador corrigir)
-- Notificação imediata ao Super Admin via `super-admin-alerts` com o telefone do lead e os itens que faltaram.
-- `portal-errors.mjs` classifica como `recoverable: false` → BullMQ **não fica em loop**.
+### 3. Mapear colunas no Supabase
+Para cada campo do portal, encontrar a coluna correspondente em:
+- `customers` (208 colunas — vou listar as relevantes: `cpf`, `nome`, `data_nascimento`, `rg`, `orgao_expedidor`, `email`, `celular`, `cep`, `numero`, `complemento`, `cidade`, `estado`, `valor_conta`, `concessionaria`, `numero_instalacao`, `doc_front_url`, `doc_back_url`, `energy_bill_url`, `portal2_idcliente`, `otp_code`, `portal_retry_count`, `last_otp_dispatch_error`, etc.)
+- `portal2_audit_traces` (rastreio de cada tentativa de cadastro)
+- `storage_migration_log` / MinIO (URLs físicas dos anexos)
 
-### 4. Evidência persistida (auditoria sem dúvida)
+### 4. Entregar matriz “Portal × Worker × Banco”
+Tabela única com 4 colunas:
 
-Salvar em `portal2_ocr_doc_result` e `portal2_ocr_bill_result` (campo `upload`):
-
-```json
-{
-  "idsolcontratovalidacao": 519995,
-  "docFront": true,
-  "docBack": true,
-  "energy": true,
-  "verifiedAt": "2026-06-29T22:30:00Z",
-  "uploadAttempts": { "docFront": 1, "docBack": 2, "energy": 1 },
-  "uploadFailures": []
-}
+```text
+Campo no Portal | Endpoint que envia | Chave no payload do worker | Coluna no Supabase | Status (OK / Faltando / Divergente)
 ```
 
-Pelo painel dá pra ver na hora se foi anexado de verdade — não basta ter URL no Supabase.
+Mais um bloco final listando:
+- **Campos pedidos pelo portal que não temos salvos.**
+- **Campos que salvamos mas o portal não usa.**
+- **Anexos que o portal exige × confirmação real via `verifyUpload`.**
+- **Eventos do OTP / facial e onde gravamos cada estado.**
 
-### 5. Pré-validação antes de abrir o cadastro
+### 5. Recomendações (somente texto, nenhuma alteração de código nesta etapa)
+Lista priorizada do que precisa ser ajustado no worker / schema, para te aprovar antes de qualquer mudança.
 
-Antes de chamar `cadastrarCliente`, validar localmente que os 3 arquivos (ou 2 se CNH) existem no Supabase Storage/MinIO e são acessíveis (HEAD request com 200). Se faltar arquivo no nosso lado, **nem abre o cadastro no portal** — vai direto pra `needs_human` com motivo claro, evitando criar cliente sem anexo.
+## O que NÃO farei
 
-### 6. OTP (já no plano anterior, fica mantido)
+- Não clicarei em “Cadastrar” final em nenhum momento.
+- Não submeterei OCR/OTP/facial reais.
+- Não alterarei código nem schema neste passo — esta etapa é puramente de levantamento e relatório.
 
-- `submit-otp` e `portal-otp-watchdog` tratam 502/503/504/HTML como `worker_transient` e não queimam retries.
-- Watchdog insiste até o worker voltar e digitar o código no portal.
-- Só conta retry quando a iGreen rejeita o código.
+## Entregáveis
 
-### 7. Não mexer na Gislaine
-
-Você já finalizou o cadastro dela manualmente — nenhuma alteração nos dados desse lead.
-
----
-
-### Arquivos que vou editar
-
-- `worker-portal-2/portal2-api-client.mjs` — retry+verify+reconcile obrigatórios, pré-check dos arquivos.
-- `worker-portal-2/portal-errors.mjs` — `attachment_not_confirmed` como `recoverable: false`.
-- `worker-portal-2/server.mjs` — persistir `upload` evidence, corrigir coluna `last_otp_dispatch_error`, marcar `needs_human` + alertar super admin.
-- `supabase/functions/submit-otp/index.ts` — tratamento de `worker_transient` (já feito, validar).
-- `supabase/functions/portal-otp-watchdog/index.ts` — não incrementar retry em transiente (já feito, validar).
-
-### Garantia final
-
-Depois disso, **só haverá `status = sucesso**` quando o Portal iGreen confirmar via `verifyUpload` que os 3 arquivos estão lá. Não vai mais existir o cenário "cliente criada sem documento" — ou anexa de verdade, ou para em `needs_human` com alerta pra você.
-
-Posso aplicar? SIM, FACA TESTE ONDE TEM QUE SALVAR NO PORTAL2 ANALISE ONDE É ANEXADO A CONTA DE ENERGIA,, RG FRENTE, RGM VERSO, COMPROVANTE ENTRE OUTROS
+1. `/mnt/documents/igreen-portal-map.md` — relatório com screenshots referenciados, lista de campos por passo, e a matriz Portal × Worker × Banco.
+2. Resumo no chat com as 3–5 lacunas mais críticas encontradas, para você decidir o que corrigir primeiro.
