@@ -73,7 +73,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<LeadChannel | "all">("all");
   const [personType, setPersonType] = useState<PersonType | "all">("all");
-  const [status, setStatus] = useState<LeadStatus | "all">("new");
+  const [status, setStatus] = useState<LeadStatus | "all">("all");
   const [hideSent, setHideSent] = useState(true);
 
   const [dispatchOpen, setDispatchOpen] = useState(false);
@@ -256,7 +256,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </div>
         ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-center px-6">
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center px-6">
             <Megaphone className="w-10 h-10 text-primary/30" strokeWidth={1} />
             <p className="text-sm font-medium">
               {leads.length === 0 ? "Nenhum lead captado ainda" : "Nada para mostrar com esses filtros"}
@@ -265,9 +265,14 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
               {leads.length === 0
                 ? 'Os leads do Meta Lead Ads, TikTok e landing pages aparecem aqui. Você também pode usar "Pesquisar empresas" para gerar leads B2B.'
                 : sentCount > 0 && hideSent
-                  ? `${sentCount} lead(s) escondidos por já terem sido disparados. Clique em "Mostrando todos" para vê-los.`
+                  ? `${sentCount} lead(s) escondidos por já terem sido disparados.`
                   : "Ajuste os filtros para ver mais resultados."}
             </p>
+            {sentCount > 0 && hideSent && (
+              <Button size="sm" variant="secondary" onClick={() => setHideSent(false)} className="gap-1.5">
+                <Eye className="w-3.5 h-3.5" /> Mostrar já enviados
+              </Button>
+            )}
           </div>
         ) : (
           <table className="w-full text-sm">

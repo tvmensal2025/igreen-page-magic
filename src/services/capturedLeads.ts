@@ -102,15 +102,27 @@ export async function listAlreadyDispatchedPhones(consultantId: string): Promise
   const CHUNK = 200;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const slice = ids.slice(i, i + CHUNK);
-    const { data, error } = await (supabase as any)
-      .from("bulk_campaign_targets")
-      .select("phone, status")
-      .in("campaign_id", slice)
-      .in("status", ["sent", "sending"]);
-    if (error) continue;
-    for (const r of (data as { phone: string }[]) || []) {
-      const digits = String(r.phone || "").replace(/\D/g, "");
-      if (digits.length >= 8) out.add(digits.slice(-11));
+    // Paginação manual: o supabase-js limita 1000 linhas por chamada por
+    // padrão. Em consultor com muitas campanhas grandes, isso truncava o
+    // anti-repetição e leads "já enviados" voltavam selecionáveis.
+    const PAGE = 1000;
+    let from = 0;
+    // hard cap para não rodar para sempre em caso de bug
+    for (let p = 0; p < 200; p++) {
+      const { data, error } = await (supabase as any)
+        .from("bulk_campaign_targets")
+        .select("phone, status")
+        .in("campaign_id", slice)
+        .in("status", ["sent", "sending"])
+        .range(from, from + PAGE - 1);
+      if (error) break;
+      const rows = (data as { phone: string }[]) || [];
+      for (const r of rows) {
+        const digits = String(r.phone || "").replace(/\D/g, "");
+        if (digits.length >= 8) out.add(digits.slice(-11));
+      }
+      if (rows.length < PAGE) break;
+      from += PAGE;
     }
   }
   return out;

@@ -1,55 +1,63 @@
-## Problema observado nos logs
+# Plano — composer estável + leads de tráfego em Captação
 
-O job 47/48/49/50 do worker `worker-portal-2` ficou em loop infinito de retry com a mesma mensagem:
+Três frentes, todas pequenas e isoladas. Nenhuma muda regra de negócio nem fluxo do bot.
 
+## 1) Acabar com o "expande e carrega" ao enviar etapa
+
+O culpado é o `FlowQuickBar` (botão ⚡ Enviar passo do fluxo) dentro do `MessageComposer`. Hoje:
+
+- Toda vez que o popover abre, `onOpenChange` chama `setLoading(true)` **antes** do estado interno saber se já tem dados em cache → o painel encolhe (spinner) e cresce de novo.
+- O Efeito 1 (variantes) e o Efeito 2 (passos) disparam em sequência e cada um liga/desliga `loading`, gerando duplo flicker.
+- O botão trigger troca o ícone `Zap` por `Loader2` + badge `1/1` enquanto envia → a barra de ferramentas inteira do composer reflowa (largura do botão muda) e o textarea ao lado "pula".
+- Quando o envio termina, o popover fecha → composer reflowa de volta. Se o usuário reabre, o ciclo se repete.
+
+Correções:
+
+- **Cache por consultor/variante** dentro do `FlowQuickBar` (Map em ref): ao reabrir o popover, mostra imediatamente os passos já carregados; revalida em background sem mexer no `loading` visível.
+- **Um único `loading`** controlado pelo Efeito 2 (carregar passos). Remover o `setLoading(true)` do `onOpenChange` e o `setLoading(false)` solto do Efeito 1.
+- **Trigger com largura fixa**: o botão ⚡ fica sempre `h-9 w-9` (já é), mas trocar `Loader2` por um overlay absoluto sobre o `Zap` em vez de substituir o ícone, para não mudar o tamanho. O badge `1/1` continua `absolute -top-1 -right-1`, sem afetar layout.
+- **Altura mínima fixa do `PopoverContent`** (`min-h-[280px]`) para não "pular" entre estado de loading e lista carregada.
+- **Composer não reflowa durante envio**: enquanto `sending` for true, manter `min-h` do shell e não desmontar a barra de chips de anexo/imagem pendente (só desabilitar). Hoje `file.attachedFile` some logo após o `await onSendMedia`, mudando a altura no meio do envio.
+
+## 2) Leads de tráfego não aparecem em Captação
+
+Diagnóstico no banco:
+
+- `captured_leads` só tem 1.012 registros, **100% canal `research`** (pesquisa B2B). Zero de `meta_leadads`, `ctwa`, `landing`.
+- `customers` tem 8 com `lead_source` de anúncio e 51 leads de WhatsApp; **nenhum tem `ctwa_clid`** populado.
+- O `meta-leadads-webhook` está implementado e grava em `captured_leads` via `ingestLead`, mas só dispara se o Meta tiver o webhook `leadgen` assinado **e** `PAGE_ACCESS_TOKEN` + `META_VERIFY_TOKEN` + `FACEBOOK_APP_SECRET` configurados. Hoje nada chega.
+- Leads que vêm de anúncio CTWA caem direto no `customers` via `evolution-webhook` / `whapi-webhook` e nunca passam por `captured_leads` — por isso a aba Captação aparece vazia mesmo com leads novos chegando.
+
+Correções:
+
+- **Espelhar lead de tráfego em `captured_leads`** quando o webhook do WhatsApp identificar origem de anúncio (campos `referral`/`ctwa_clid`/`source_id` do payload Evolution+Whapi ou frase-âncora detectada pelo `meta-ctwa-fallback`). Chama o `ingestLead` com `channel: "ctwa"`, mesmo `consultant_id` que recebeu o lead, e marca `status: "converted"` se já virou conversa — assim o painel mostra o histórico e o anti-repetição funciona.
+- **Backfill leve**: edge function pontual `captacao-backfill-ctwa` que varre `customers` dos últimos 60 dias com `lead_source` de anúncio ou `ctwa_clid` e popula `captured_leads` (idempotente — `ingestLead` já deduplica).
+- **Exibir o canal "WhatsApp (anúncio)" no painel**: o `CapturedLeadsPanel` já tem `ctwa` no enum, só falta um filtro padrão menos restritivo (hoje começa em `status=new`, escondendo os convertidos vindos do WhatsApp). Mudar default para `status=all` e deixar "Novos" como atalho.
+- **Diagnóstico visível**: se `meta-leadads-webhook` não estiver recebendo há >7 dias, mostrar aviso no topo do painel com link para o `IntelDiagnostic` que já existe na aba Captação do superadmin.
+
+## 3) Outros pontos que apareceram na auditoria
+
+- **`DialogContent` sem `DialogDescription`** (warning de a11y nos logs) no `CapturedLeadsPanel` — já tem `<DialogDescription>` no dialog principal, mas o `BusinessResearchDialog` ou um outro filho dispara o warning. Adicionar descrição ou `aria-describedby={undefined}` explícito.
+- **`bulk_campaign_targets` paginado**: `listAlreadyDispatchedPhones` busca `status in ('sent','sending')` sem `limit` — em consultor com muita campanha pode estourar 1000 linhas (default do supabase-js). Paginar em loop de 1000.
+- **Empty state confuso**: quando `hideSent` está ligado e tudo virou "já enviado", o texto explica, mas o botão para alternar fica longe. Adicionar CTA inline no empty state.
+
+## Arquivos previstos
+
+```text
+src/components/whatsapp/FlowQuickBar.tsx        # cache + 1 loading + trigger sem reflow
+src/components/whatsapp/MessageComposer.tsx     # min-h do shell durante sending
+src/components/captacao/CapturedLeadsPanel.tsx  # default status=all, empty state, dialog a11y
+src/services/capturedLeads.ts                   # paginação em listAlreadyDispatchedPhones
+supabase/functions/evolution-webhook/...        # espelhar lead ads → captured_leads
+supabase/functions/whapi-webhook/...            # idem
+supabase/functions/captacao-backfill-ctwa/      # nova edge (backfill idempotente)
 ```
-POST /customers -> 400: Erro de validação | detail=Too small: expected string to have >=14 characters
-worker fail job=47: ... (e BullMQ tenta de novo, e de novo)
-```
 
-Causa: `classifyPortalError` não tem regra para "Erro de validação / Too small / expected string" → cai em `kind='unknown'` → o `server.mjs` **re-lança o erro** (linha 446), o BullMQ faz retry, e o cadastro tenta de novo com o mesmo payload inválido para sempre. Resultado: a fila trava no mesmo lead e o próximo cliente fica esperando.
+Nenhuma migration de schema — `captured_leads` já aceita `channel='ctwa'` e `status='converted'`.
 
-Casos como `duplicate_phone` já funcionam (kind ≠ unknown → não re-lança → marca status e libera a fila).
+## Validação
 
-## Fix proposto (mínimo, 2 arquivos)
-
-### 1) `worker-portal-2/portal-errors.mjs`
-
-- Adicionar nova classe `validation_error` em `ERROR_KINDS` (recoverable:false).
-- Em `classifyPortalError`, adicionar regra ANTES do `unknown` para detectar:
-  - `erro de validação`
-  - `too small`, `too big`, `expected string`, `expected number`
-  - `unprocessable`, `invalid input`
-  → retorna `{ kind: 'validation_error', recoverable: false }`.
-
-### 2) `worker-portal-2/server.mjs` — defesa em profundidade
-
-Trocar a condição de retry (linha 445) de:
-```js
-if (kind === 'unknown') throw e;
-```
-para:
-```js
-// Só re-lança quando for genuinamente transporte/instabilidade.
-// Qualquer 400 do portal é payload inválido — retry não resolve.
-const isTransient = kind === 'unknown' && !/\b(400|422)\b/.test(e.message);
-if (isTransient) throw e;
-```
-
-Isso garante que mesmo se aparecer um novo formato de erro 400 não previsto, o job termina e libera a fila (vai para `needs_human` ou `awaiting_correction`).
-
-### 3) Atualizar teste
-
-Acrescentar 1-2 casos em `worker-portal-2/test/` (se existir suite de portal-errors) cobrindo "Erro de validação | Too small".
-
-## Resultado esperado
-
-- Lead com payload inválido (ex.: celular com <14 chars) é classificado como `validation_error`, marcado `portal2_status='needs_human'`, e a fila libera imediatamente para o próximo job.
-- Nenhum impacto nos fluxos `duplicate_phone` / `duplicate_email` / `duplicate_installation` (continuam recuperáveis com loop de correção).
-- Erros realmente transitórios (ECONNRESET, 5xx, timeout) continuam fazendo retry como hoje.
-
-## Fora de escopo (apenas observar)
-
-Os logs mostram dois bugs adjacentes que **não vou tocar agora** (peça se quiser):
-1. **Loop de jobs duplicados (47, 47, 47…)** → o `attempts: 3` do BullMQ está mascarando 3 retries do mesmo job; após o fix acima, esse loop desaparece naturalmente.
-2. **Lead "CNH de A com conta de B"** → a IA já detectou (`Nome do titular da fatura divergente`). Existe `name_mismatch_flag` em `customers`, mas o portal2 não está bloqueando antes do POST. Posso adicionar um gate em `ensureDocumentsAttachedAndGate` que rejeita com `kind='name_mismatch'` (recoverable:false) se quiser — me confirme.
+- Build + typecheck.
+- Abrir `/admin` → aba WhatsApp → clicar ⚡ várias vezes, alternar A/B/C/D, enviar passo: painel não pode "piscar de tamanho" nem mover o composer.
+- Aba Captação: chamar a edge de backfill, conferir que leads com `lead_source` de anúncio passam a aparecer.
+- Reexecutar `listAlreadyDispatchedPhones` num consultor com >1k disparos e confirmar que todos os telefones vêm marcados.
