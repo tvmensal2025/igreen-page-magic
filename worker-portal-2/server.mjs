@@ -438,15 +438,18 @@ async function processLead(job) {
     }
 
     // Decisão de retry do BullMQ (Req 9.1):
-    //   - erro classificado determinístico (≠ unknown) → NÃO re-lança; o
-    //     re-despacho passa a ser do loop de correção / intervenção humana.
-    //   - `unknown` (transporte/worker_offline/instabilidade) → re-lança pra o
-    //     BullMQ tentar de novo (retry é útil aqui).
-    if (kind === 'unknown') {
+    //   - erro classificado determinístico (≠ unknown) → NÃO re-lança.
+    //   - `unknown` em cima de 400/422 = payload inválido → também NÃO re-lança
+    //     (retry não corrige schema). Só re-lança quando for genuinamente
+    //     transporte/instabilidade (ECONNRESET, 5xx, timeout, etc).
+    const msg = String(e.message ?? '');
+    const isPayload4xx = /->\s*4\d\d:/.test(msg);
+    const isTransient = kind === 'unknown' && !isPayload4xx;
+    if (isTransient) {
       throw e; // bullmq faz retry
     }
-    console.log(`  ↪ erro classificado (${kind}) — sem retry BullMQ; roteado pelo status`);
-    return { success: false, error_kind: kind, recoverable, message: String(e.message ?? '').slice(0, 2000) };
+    console.log(`  ↪ erro classificado (${kind}${isPayload4xx && kind === 'unknown' ? ',payload4xx' : ''}) — sem retry BullMQ; roteado pelo status`);
+    return { success: false, error_kind: kind, recoverable, message: msg.slice(0, 2000) };
   }
 }
 
