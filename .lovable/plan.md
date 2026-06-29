@@ -1,111 +1,81 @@
 ## Objetivo
 
-Oficializar `tvmensal2025/igreen-page-magic` como repo-fonte dos workers que **existem aqui** no Easypanel, atualizar documentação, auditar secrets — **sem quebrar Portal 1**, que continua no repo antigo.
+Replicar a config de Easypanel do `portal-worker-2` exatamente como estava na screenshot, **trocando apenas o nome do repo** `igreen-official-portal` → `igreen-page-magic`. Resolver o erro "Cannot access repository or branch main doesn't exist" sem mexer em mais nada (mesma aba Git/SSH, mesmo branch, mesmo build path).
 
-## Descoberta crítica (read-only)
+## Diagnóstico do erro
 
+Easypanel usa a aba **Git** com URL SSH (`git@github.com:...`). Pra acessar um repo privado via SSH, o GitHub precisa ter a **Deploy Key pública** do Easypanel cadastrada — uma por repo. Quando o repo era `igreen-official-portal` a chave já estava lá; o `igreen-page-magic` é repo novo e ainda não tem essa chave, então `git fetch` falha com "Cannot access repository".
 
-| Worker                       | Pasta no `igreen-page-magic`? | Ação Easypanel                                |
-| ---------------------------- | ----------------------------- | --------------------------------------------- |
-| `worker-portal-2` (Portal 2) | ✅ existe                      | reapontar                                     |
-| `worker-igreen-sync`         | ✅ existe                      | reapontar                                     |
-| `compress-worker`            | ✅ existe                      | reapontar                                     |
-| `worker-portal` (Portal 1)   | ❌ **NÃO existe**              | **NÃO MEXER** — fica em `viana-replica-vault` |
+Branch `main` provavelmente existe — a mensagem genérica do Easypanel cobre os 2 casos (sem acesso OU sem branch). Sem acesso, ele nem consegue listar branches.
 
+## Ação (no painel, sem código)
 
-Nenhum código vivo (Dockerfile, server.mjs, edge functions, package.json, .env, settings) referencia `viana-replica-vault` — só docs históricos. Risco de quebrar produção = nulo na parte de código.
+### 1. Pegar a Deploy Key do Easypanel
 
-## Escopo
+No Easypanel, no serviço `portal-worker-2`:
+1. Aba **Fonte → Git**
+2. Procurar bloco **SSH Key** ou **Deploy Key** (geralmente abaixo do campo "URL do Repositório" ou em **Configurações → SSH**)
+3. **Copiar a chave pública** (começa com `ssh-ed25519` ou `ssh-rsa`)
 
-### 1. Documentação — troca de repo (12 arquivos)
+Se não achar no serviço, é por projeto: `Easypanel → Settings → Git → SSH Public Key`.
 
-**Vivo (1):**
+### 2. Cadastrar a chave no novo repo
 
-- `worker-portal-2/README.md` — seção "Como subir no Easypanel": `viana-replica-vault` → `igreen-page-magic`, build path `/worker-portal-2`.
+1. Abrir: `https://github.com/tvmensal2025/igreen-page-magic/settings/keys/new`
+2. **Title**: `easypanel-portal-worker-2`
+3. **Key**: colar a chave pública copiada
+4. **Allow write access**: deixar **desmarcado** (Easypanel só faz pull)
+5. **Add key**
 
-**Arquivo histórico (11):** adicionar nota de cabeçalho `> ⚠️ Histórico (até 28/06/2026). Repo migrado para tvmensal2025/igreen-page-magic. Portal 1 permanece em viana-replica-vault.` em vez de reescrever conteúdo:
+### 3. Confirmar a config no Easypanel (igual à screenshot)
 
-- `docs/archive/PORTAL_WORKER_CRIADO.md`
-- `docs/archive/INICIO_AQUI_PORTAL_WORKER.md`
-- `docs/archive/PASSO_A_PASSO_GITHUB.md`
-- `docs/archive/RESUMO_CORRECAO_PORTAL_WORKER.md`
-- `docs/archive/STATUS_GITHUB_FINAL.md`
-- `docs/archive/RESUMO_SESSAO_COMPLETA.md`
-- `docs/archive/PLANO_INTEGRACAO_WHAPI.md`
-- `docs/archive/ATUALIZACOES_RECEBIDAS.md`
-- `docs/archive/ANALISE_REPOSITORIO_COMPLETA.md`
-- `ANALISE_COMPLETA_CODIGO.md`
-- `docs/archive/CORRIGIR_PORTAL_WORKER.md`
-
-### 2. Passo-a-passo Easypanel (chat, sem código)
-
-Para os **3 workers que vivem aqui**:
-
-```text
-Easypanel → <serviço> → Source
-  Proprietário: tvmensal2025
-  Repositório:  igreen-page-magic
-  Ramo:         main
-  Build path:   <ver tabela>
-→ Salvar → Rebuild (não Restart)
+```
+Aba: Git
+URL do Repositório: git@github.com:tvmensal2025/igreen-page-magic.git
+Ramo:               main
+Caminho de Build:   /worker-portal-2
 ```
 
+→ **Salvar** → **Implantar** (Rebuild).
 
-| Serviço Easypanel  | Build path            |
-| ------------------ | --------------------- |
-| portal-worker-2    | `/worker-portal-2`    |
-| igreen-sync-worker | `/worker-igreen-sync` |
-| compress-worker    | `/compress-worker`    |
+### 4. Repetir pros outros 2 workers
 
+Mesma Deploy Key serve pro mesmo repo. Então cadastrar **uma vez só** no GitHub já vale pros 3:
 
-**portal-worker (Portal 1):** NÃO tocar. Continua em `viana-replica-vault` → `/worker-portal`.
+| Serviço | Build path |
+|---|---|
+| `portal-worker-2` | `/worker-portal-2` |
+| `worker-igreen` (sync) | `/worker-igreen-sync` |
+| `compress-worker` | `/compress-worker` |
 
-Validação pós-deploy de cada um:
+Para cada um: aba **Git** → mesma URL SSH → `main` → build path da tabela → **Salvar** → **Implantar**.
 
-- `curl https://<host>/health`  → `{"ok":true}`
-- Easypanel "Logs" sem erro de build path / git auth
+### 5. `portal-worker` (Portal 1)
 
-### 3. Auditoria de secrets (read-only)
+**NÃO MEXER.** Continua apontando pra `git@github.com:tvmensal2025/igreen-official-portal.git` (ou o repo anterior), build path `/worker-portal`. Pasta `worker-portal/` não existe em `igreen-page-magic` — trocar quebraria.
 
-Consultar `public.settings` e `fetch_secrets` para confirmar (sem alterar nada):
+## Validação
 
+Após "Implantar", em **Implantações** verificar:
+- Log mostra `Cloning git@github.com:tvmensal2025/igreen-page-magic.git` sem erro de auth
+- Build path encontra `Dockerfile` em `/worker-portal-2`
+- Container sobe e `GET /health` retorna 200
 
-| Chave                                                                     | Onde                  | Esperado          |
-| ------------------------------------------------------------------------- | --------------------- | ----------------- |
-| `portal_worker_url` / `worker_secret`                                     | `settings`            | Portal 1 —mexer   |
-| `portal2_worker_url` / `portal2_worker_secret`                            | `settings`            | Portal 2 — manter |
-| `igreen_sync_worker_url` / `igreen_sync_worker_secret`                    | `settings`            | Sync — manter     |
-| `PORTAL2_WORKER_URL/SECRET`, `WORKER_SECRET`, `IGREEN_SYNC_WORKER_SECRET` | Edge Function Secrets | Manter            |
+## Plano B — se Deploy Key não funcionar
 
+Se o Easypanel não expõe SSH key por serviço, alternativa é trocar pra **HTTPS com token**:
+- URL: `https://oauth2:<GITHUB_PAT>@github.com/tvmensal2025/igreen-page-magic.git`
+- Criar PAT em `https://github.com/settings/tokens` com escopo `repo`
+- Mesma branch/build path
 
-Relato em tabela no chat com ✅/⚠️. Mudar valor só com confirmação explícita.
+Ou usar a **aba Github** (App) em vez de Git: clicar **Github** → autorizar app → escolher repo → salvar. Mais simples se tiver o app já instalado.
 
-### 4. Webhooks GitHub (instrução pro usuário)
+## Fora de escopo
 
-Se o Easypanel tinha webhook de auto-deploy no `viana-replica-vault` para os 3 workers migrados, recriar em:
-`https://github.com/tvmensal2025/igreen-page-magic/settings/hooks`
-
-## Fora de escopo (não mexer)
-
-- `worker-portal` **(Portal 1)** —ja ajuste ele
-- Conteúdo dos Dockerfiles, server.mjs, fila BullMQ, Redis
-- Valores de `WORKER_SECRET`, URLs em produção, anon key
-- `supabase/migrations/*` (imutável)
-- MinIO, Evolution API, Whapi, edge functions
-
-## Riscos e mitigações
-
-- **Quebrar Portal 1**: mitigado — Portal 1 explicitamente excluído.
-- **Easypanel cache**: usar "Rebuild", não "Restart".
-- **Branch errada**: confirmar `main` no novo repo antes de salvar Source.
-- **Auto-deploy parado**: recriar webhook GitHub após troca.
-- **Rollback**: se algum dos 3 quebrar, basta voltar Source para `viana-replica-vault` + mesmo build path; secrets/env não mudam, então rollback é instantâneo.
+- Código, secrets, edge functions, migrations
+- `portal-worker` (Portal 1)
+- Renomear repo, mover arquivos entre repos
 
 ## Entrega
 
-1. Diff de 12 arquivos de documentação (sem tocar código vivo)
-2. Bloco no chat com:
-  - Tabela de mapeamento worker → repo → build path (incluindo Portal 1 = NÃO MEXER)
-  - Passo-a-passo Easypanel para os 3 serviços
-  - Tabela de status dos 8 secrets/settings auditados
-  - Lista de webhooks GitHub a recriar
+Instruções passo-a-passo no chat (sem mudança de código). Documentação atualizada anteriormente já reflete `igreen-page-magic` — fica como está.
