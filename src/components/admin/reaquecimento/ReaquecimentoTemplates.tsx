@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Save, Loader2 } from "lucide-react";
+import { Plus, Trash2, Save, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { KNOWN_REACTIVATION_STEPS, getSuggestedReactivationText, getStepLabel } from "@/lib/reactivation-steps";
 
 interface Template {
   id: string;
@@ -33,6 +33,17 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
   const [creating, setCreating] = useState(false);
   const [newStep, setNewStep] = useState<string>("");
   const [newMessage, setNewMessage] = useState<string>("");
+
+  // União: etapas com leads parados (passadas via props) + catálogo canônico
+  // de etapas conhecidas. Garante que o admin sempre veja todas as etapas,
+  // mesmo quando nenhum lead está parado no momento.
+  const mergedSteps = useMemo(() => {
+    const set = new Set<string>([
+      ...availableSteps,
+      ...KNOWN_REACTIVATION_STEPS.map((s) => s.step),
+    ]);
+    return Array.from(set);
+  }, [availableSteps]);
 
   useEffect(() => {
     load();
@@ -137,33 +148,56 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
         </div>
         <div className="grid gap-3 md:grid-cols-[260px_1fr]">
           <div>
-            <Label className="text-xs">Passo</Label>
-            <Select value={newStep} onValueChange={setNewStep}>
+            <Label className="text-xs">Passo do fluxo</Label>
+            <Select value={newStep} onValueChange={(v) => {
+              setNewStep(v);
+              // Pré-preenche com a sugestão oficial se a mensagem ainda estiver vazia
+              if (!newMessage.trim()) {
+                const sug = getSuggestedReactivationText(v);
+                if (sug) setNewMessage(sug);
+              }
+            }}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione um passo" />
               </SelectTrigger>
               <SelectContent>
-                {availableSteps.length === 0 ? (
-                  <SelectItem value="_none" disabled>Sem passos com clientes interessados parados</SelectItem>
-                ) : availableSteps.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                {mergedSteps.map((s) => (
+                  <SelectItem key={s} value={s}>{getStepLabel(s)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label className="text-xs">
-              Mensagem
-              <span className="ml-2 text-muted-foreground">
-                Variáveis: {`{{nome}} {{valor_conta}} {{representante}}`}
-              </span>
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">
+                Mensagem
+                <span className="ml-2 text-muted-foreground">
+                  Variáveis: {`{{valor_conta}} {{representante}}`}
+                </span>
+              </Label>
+              {newStep && getSuggestedReactivationText(newStep) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => setNewMessage(getSuggestedReactivationText(newStep))}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Usar sugerido
+                </Button>
+              )}
+            </div>
             <Textarea
               rows={3}
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Oi {{nome}}, vi que você ficou sem responder. Posso te ajudar a continuar?"
+              placeholder="Oi! Vi que você ficou sem responder. Posso te ajudar a continuar?"
             />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Dica: evite usar nome do lead — em muitos casos ele ainda não foi capturado.
+              Frases neutras funcionam melhor.
+            </p>
           </div>
         </div>
         <Button onClick={createTemplate} disabled={creating}>
@@ -183,7 +217,8 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-muted px-2 py-0.5 text-xs font-mono">{t.conversation_step}</span>
+                  <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium">{getStepLabel(t.conversation_step)}</span>
+                  <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{t.conversation_step}</span>
                   {t.is_active && <span className="text-[10px] font-medium text-primary">ATIVO</span>}
                   {!t.is_active && <span className="text-[10px] font-medium text-muted-foreground">INATIVO</span>}
                 </div>
@@ -191,16 +226,30 @@ export function ReaquecimentoTemplates({ consultantId, availableSteps }: Props) 
                   Criado em {new Date(t.created_at).toLocaleDateString("pt-BR")}
                 </p>
               </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive"
-                onClick={() => deleteTemplate(t.id)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex items-center gap-1">
+                {getSuggestedReactivationText(t.conversation_step) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 gap-1 text-xs"
+                    onClick={() => updateTemplate(t.id, { message_text: getSuggestedReactivationText(t.conversation_step) })}
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Restaurar sugerido
+                  </Button>
+                )}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-destructive"
+                  onClick={() => deleteTemplate(t.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
             <Textarea
+              key={t.message_text}
               rows={3}
               defaultValue={t.message_text}
               onBlur={(e) => {

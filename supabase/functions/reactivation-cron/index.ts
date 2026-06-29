@@ -101,8 +101,9 @@ export function isInsideWindow(
 
 /**
  * Substitui variáveis `{{nome}}`, `{{valor_conta}}`, `{{representante}}`
- * pelos dados do lead. Variáveis ausentes viram string vazia.
- * Aceita tanto `{{var}}` quanto `{var}` (formato legado).
+ * pelos dados do lead. Quando o nome está vazio (frequente), remove a
+ * variável SEM deixar vírgula ou espaço sobrando ("Oi , tudo bem?" vira
+ * "Oi! Tudo bem?"). Aceita tanto `{{var}}` quanto `{var}` (formato legado).
  */
 export function renderMessage(
   template: string,
@@ -121,16 +122,39 @@ export function renderMessage(
         maximumFractionDigits: 2,
       })
     : "";
-  return template
+
+  let out = template;
+
+  // Sem nome: neutraliza padrões antes de substituir.
+  if (!firstName) {
+    out = out
+      .replace(/\{\{?nome\}?\}\s*,\s*/g, "")
+      .replace(/\{\{?first_name\}?\}\s*,\s*/g, "")
+      .replace(/,\s*\{\{?nome\}?\}/g, "")
+      .replace(/\s+\{\{?nome\}?\}/g, "");
+  }
+
+  out = out
     .replaceAll("{{nome}}", firstName)
     .replaceAll("{{valor_conta}}", valor)
     .replaceAll("{{representante}}", consultantName)
     .replaceAll("{nome}", firstName)
     .replaceAll("{valor_conta}", valor)
     .replaceAll("{representante}", consultantName)
-    // Remove quaisquer variáveis não substituídas para não vazar `{{campo}}`
     .replace(/\{\{[a-zA-Z_]+\}\}/g, "")
     .replace(/\{[a-zA-Z_]+\}/g, "");
+
+  // Limpeza de sobras quando o nome estava vazio.
+  if (!firstName) {
+    out = out.replace(/^(Oi|Olá|Ei|E aí)\s*[,!\.]\s*/i, (m) => {
+      const verb = m.trim().replace(/[,!\.]/g, "");
+      return `${verb}! `;
+    });
+    out = out.replace(/^\s*,\s*/, "");
+  }
+  out = out.replace(/\s+,/g, ",").replace(/,\s*,/g, ",").replace(/[ \t]{2,}/g, " ");
+  out = out.replace(/^([a-zà-ú])/, (c) => c.toUpperCase());
+  return out.trim();
 }
 
 // ─── Lógica principal ─────────────────────────────────────────────────────────
