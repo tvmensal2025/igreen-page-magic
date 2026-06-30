@@ -1,17 +1,37 @@
-## Auditoria do que já foi aplicado
+## Problema 1 — dropdown "Validar / 30·60·90·120 dias" abre por baixo do diálogo
 
-### ✅ Aplicado em código (vai ao ar no próximo deploy automático das Edge Functions)
+Confirmei a causa olhando os tokens de z-index dos componentes shadcn do projeto:
 
-1. `**supabase/functions/_shared/whapi-api.ts` (linhas 455-476)** — `parseWhapiMessage` agora usa allowlist estrita de `source` humano (`app`, `iphone`, `android`, `web`, `desktop`, `mobile`). Qualquer outro valor (`ai`, `bot`, `sdk`, vazio, novo…) é tratado como eco de API e retorna `null` com log `from_me_unknown_source`. **Verificado no arquivo.**
-2. `**supabase/functions/whapi-webhook/index.ts` (bloco outboundHuman)** — adicionadas duas guardas antes do pause:
-  - Guard 1: consulta `outbound_message_log.evolution_message_id` nos últimos 120s. Se bater → `ignored_self_echo`, sem pausar.
-  - Guard 2: se `customers.last_bot_reply_at` ≤ 30s → `takeover_skipped_recent_bot_reply`, sem pausar.
-3. `**supabase/functions/_shared/evolution-api.ts` (linhas 624-637)** — `parseEvolutionMessage` ganhou detecção de takeover REAL (`outboundHuman`) sob mesma allowlist; eco de API continua retornando `null`.
-4. `**supabase/functions/evolution-webhook/index.ts` (logo após `parseEvolutionMessage`)** — mesmo bloco de cross-check do Whapi: echo de 120s + janela de 30s de `last_bot_reply_at` antes de pausar.
+- `src/components/ui/dialog.tsx` → overlay e conteúdo do diálogo usam `z-[120]`
+- `src/components/ui/dropdown-menu.tsx` → `DropdownMenuContent` usa `z-50`
 
-### ⚠️ Pendente (interrompido na última execução) BAO DESTRAVAR, JA FOI FINALIADO MANUAL
+Como o botão "Validar ▾" do `PendingApprovalDialog.tsx` (linhas 557-592) vive **dentro** de um `Dialog`, o menu suspenso fica numa camada inferior à do diálogo e por isso aparece "atrás" — quase impossível de clicar nos itens 30/60/90/120.
 
-## xecutar
+### Correção (mínima, só no PendingApprovalDialog)
 
-- Posso rodar a **Ação A** (1 UPDATE no lead específico)?
-- Posso rodar a **Ação B** (primeiro o SELECT diagnóstico, te mostro o resultado, e só depois o UPDATE em massa)?
+Adicionar `className="z-[130] w-56"` ao `<DropdownMenuContent>` desse bloco para subir acima do `z-[120]` do diálogo. Não mexer no componente base `ui/dropdown-menu.tsx` para não afetar outros menus do app.
+
+Também aplicar o mesmo `z-[130]` nos outros menus que vivem dentro deste mesmo diálogo, se existirem (vou rastrear todos os `DropdownMenuContent` em `PendingApprovalDialog.tsx` e padronizar).
+
+Resultado esperado: ao clicar em ▾ ao lado de "Validar", o menu abre **por cima** do card, com 30/60/90/120 dias clicáveis normalmente.
+
+---
+
+## Problema 2 — "analise se já está todas as mídias certas para concluir o sistema"
+
+Aqui preciso entender o que você quer auditar antes de mexer. "Mídias" no projeto pode significar coisas bem diferentes, e cada uma tem um lugar próprio:
+
+1. **Mídias do Fluxo D / Super Admin** (áudios, imagens, vídeos de cada passo do bot do WhatsApp) — verificar se todos os passos têm a mídia oficial do Super Admin e se os consultores estão herdando sem duplicar.
+2. **Mídias das mensagens automáticas de pós-venda** (Aprovado, Reprovado, 30/60/90/120 dias) — verificar se cada estágio do Kanban tem o template/áudio configurado em `kanban_stages` ou no template de pós-venda.
+3. **Mídias de reaquecimento / nudge** (frases + áudio das automações proativas) — verificar se o catálogo está completo.
+4. **Mídias dos templates de campanha / CTWA** (anúncios do Facebook) — verificar criativos.
+
+Só vou tocar nessa parte depois de você me dizer qual escopo. Pelo contexto do print (CRM → Validar cliente → 30/60/90/120) meu palpite é **#2 (mensagens automáticas de pós-venda)**, mas confirmo antes para não auditar a coisa errada.
+
+---
+
+## Resumo do que será feito agora (se aprovado)
+
+- Editar **apenas** `src/components/whatsapp/PendingApprovalDialog.tsx`: adicionar `z-[130]` em cada `DropdownMenuContent` desse arquivo.
+- **Não** mexer no `ui/dropdown-menu.tsx` (evita efeito colateral em outros menus).
+- Aguardar sua resposta sobre qual conjunto de mídias auditar antes de seguir para o item 2.
