@@ -566,7 +566,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                               <ChevronDown className="w-3.5 h-3.5" />
                                             </Button>
                                           </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end" className="w-56">
+                                          <DropdownMenuContent align="end" sideOffset={4} className="w-56 z-[130]">
                                             <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
                                               <CalendarClock className="w-3 h-3 inline mr-1" />
                                               Validar e jogar direto em…
