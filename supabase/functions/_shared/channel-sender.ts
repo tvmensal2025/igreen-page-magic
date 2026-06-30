@@ -298,6 +298,35 @@ interface MsgConfig {
   voice_template_id?: string | null;
 }
 
+export interface SendResult {
+  preview: string;
+  image_ok: boolean | null;  // null = não havia imagem
+  audio_ok: boolean | null;  // null = não havia áudio
+  text_ok: boolean | null;   // null = não havia texto
+}
+
+function emptyResult(): SendResult {
+  return { preview: "", image_ok: null, audio_ok: null, text_ok: null };
+}
+
+export function formatSendStatus(r: SendResult): { status: string; tag: string } {
+  const parts: string[] = [];
+  if (r.image_ok !== null) parts.push(`img:${r.image_ok ? "ok" : "fail"}`);
+  if (r.audio_ok !== null) parts.push(`audio:${r.audio_ok ? "ok" : "fail"}`);
+  if (r.text_ok !== null) parts.push(`text:${r.text_ok ? "ok" : "fail"}`);
+  const tag = parts.length ? `[${parts.join("|")}]` : "";
+
+  const fails: string[] = [];
+  if (r.image_ok === false) fails.push("image");
+  if (r.audio_ok === false) fails.push("audio");
+  if (r.text_ok === false) fails.push("text");
+  const total = [r.image_ok, r.audio_ok, r.text_ok].filter((v) => v !== null).length;
+  if (total === 0) return { status: "no_content", tag };
+  if (fails.length === 0) return { status: "sent", tag };
+  if (fails.length === total) return { status: "failed", tag };
+  return { status: `partial:${fails.join("+")}_missing`, tag };
+}
+
 async function sendSingleMessage(
   supabase: any,
   channel: ResolvedChannel,
@@ -306,15 +335,18 @@ async function sendSingleMessage(
   msg: MsgConfig,
   sendCtx: SendContext,
   customerName?: string,
-): Promise<string> {
+): Promise<SendResult> {
   const displayName = customerName || phone;
   const messageText = (msg.message_text || "")
     .replace(/\{\{nome\}\}/g, displayName)
     .replace(/\{\{telefone\}\}/g, phone);
   const msgType = msg.message_type || "text";
 
+  const result: SendResult = emptyResult();
+
+  // Imagem "extra" quando msgType=audio com image_url anexada.
   if (msg.image_url && msgType !== "image") {
-    await sendMedia(supabase, channel, jid, msg.image_url, "", "image", sendCtx);
+    result.image_ok = await sendMedia(supabase, channel, jid, msg.image_url, "", "image", sendCtx);
   }
 
   let audioUrl = msg.media_url;
@@ -324,17 +356,42 @@ async function sendSingleMessage(
   }
 
   if (msgType === "audio" && audioUrl) {
-    await sendAudio(supabase, channel, jid, audioUrl, sendCtx);
-    if (messageText) await sendText(supabase, channel, jid, messageText, sendCtx);
+    result.audio_ok = await sendAudioWithRetry(supabase, channel, jid, audioUrl, sendCtx);
+    // Fallback: se áudio falhou definitivamente, manda link curto para o cliente
+    // ainda conseguir ouvir (sem trocar de canal).
+    if (result.audio_ok === false) {
+      await sendText(supabase, channel, jid, `🎧 Áudio: ${audioUrl}`, sendCtx);
+    }
+    if (messageText) {
+      result.text_ok = await sendText(supabase, channel, jid, messageText, sendCtx);
+    }
   } else if (msgType === "image" && msg.media_url) {
-    await sendMedia(supabase, channel, jid, msg.media_url, messageText, "image", sendCtx);
+    result.image_ok = await sendMedia(supabase, channel, jid, msg.media_url, messageText, "image", sendCtx);
+    if (messageText) result.text_ok = result.image_ok; // caption embutido
   } else if (msgType === "video" && msg.media_url) {
-    await sendMedia(supabase, channel, jid, msg.media_url, messageText, "video", sendCtx);
+    const ok = await sendMedia(supabase, channel, jid, msg.media_url, messageText, "video", sendCtx);
+    result.image_ok = ok;
+    if (messageText) result.text_ok = ok;
   } else if (messageText) {
-    await sendText(supabase, channel, jid, messageText, sendCtx);
+    result.text_ok = await sendText(supabase, channel, jid, messageText, sendCtx);
   }
 
-  return messageText || "[mídia]";
+  result.preview = messageText || "[mídia]";
+  return result;
+}
+
+function mergeResults(a: SendResult, b: SendResult): SendResult {
+  const merge = (x: boolean | null, y: boolean | null): boolean | null => {
+    if (x === null) return y;
+    if (y === null) return x;
+    return x && y;
+  };
+  return {
+    preview: b.preview || a.preview,
+    image_ok: merge(a.image_ok, b.image_ok),
+    audio_ok: merge(a.audio_ok, b.audio_ok),
+    text_ok: merge(a.text_ok, b.text_ok),
+  };
 }
 
 export async function sendStageAutoMessages(
@@ -348,7 +405,7 @@ export async function sendStageAutoMessages(
   rejectionReason?: string | null,
   dealOrigin?: string | null,
   customerName?: string,
-): Promise<string> {
+): Promise<SendResult> {
   const sendCtx = ctx(consultantId, customerId, stageData.stage_key);
 
   const { data: multiMsgs } = await supabase
@@ -363,7 +420,7 @@ export async function sendStageAutoMessages(
     return reasonMatch && originMatch;
   });
 
-  let preview = "";
+  let acc: SendResult = emptyResult();
 
   if (filtered.length > 0) {
     for (let i = 0; i < filtered.length; i++) {
@@ -371,12 +428,13 @@ export async function sendStageAutoMessages(
       if (i > 0 && msg.delay_seconds > 0) {
         await new Promise((r) => setTimeout(r, msg.delay_seconds * 1000));
       }
-      preview = await sendSingleMessage(supabase, channel, jid, phone, msg, sendCtx, customerName);
+      const r = await sendSingleMessage(supabase, channel, jid, phone, msg, sendCtx, customerName);
+      acc = mergeResults(acc, r);
     }
   } else {
     const hasContent = stageData.auto_message_text || stageData.auto_message_media_url || stageData.auto_message_image_url;
-    if (!hasContent) return "";
-    preview = await sendSingleMessage(supabase, channel, jid, phone, {
+    if (!hasContent) return acc;
+    acc = await sendSingleMessage(supabase, channel, jid, phone, {
       message_type: stageData.auto_message_type,
       message_text: stageData.auto_message_text,
       media_url: stageData.auto_message_media_url,
@@ -384,8 +442,9 @@ export async function sendStageAutoMessages(
     }, sendCtx, customerName);
   }
 
-  return preview;
+  return acc;
 }
+
 
 export function isValidJid(jid: string): boolean {
   if (!jid) return false;
