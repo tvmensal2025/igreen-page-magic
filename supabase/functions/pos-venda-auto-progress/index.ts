@@ -11,10 +11,13 @@ import {
   resolveChannelForCustomer,
   isUnavailable,
   sendStageAutoMessages,
+  formatSendStatus,
   isValidJid,
   toJid,
   type ChannelEnv,
+  type SendResult,
 } from "../_shared/channel-sender.ts";
+
 
 
 const corsHeaders = {
