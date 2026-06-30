@@ -1,115 +1,42 @@
-# Plano auditado — Fechar lacunas do cadastro iGreen sem quebrar produção
+## Vai funcionar? Sim. O que muda na prática:
 
-Auditoria confirmou no banco real: nenhuma das colunas alvo existe (`orgao_expedidor`, `fornecedora`, `contaunica`, `possui_placas`, `transferir_titularidade`, `logindistribuidora`, `senhadistribuidora`, `pj_jsonb`, `procurador_jsonb`, `terms_accepted_at`). O worker (`portal2-api-client.mjs`) **já lê** essas chaves de `d.*` no `montarPayloadCadastro` — só estão chegando como `undefined`, virando defaults `false`/`""`. Ou seja, criar as colunas + alimentar o `dados` já fecha o gap.
+### PR 1 — Banco (já aplicado)
+Adicionei 10 colunas em `customers` que faltavam para refletir 100% do formulário do Portal iGreen:
+`orgao_expedidor`, `fornecedora`, `contaunica`, `possui_placas`, `transferir_titularidade`, `logindistribuidora`, `senhadistribuidora`, `pj_jsonb`, `procurador_jsonb`, `terms_accepted_at` + espelho `data_nascimento_iso`.
 
-## Princípios de segurança (não negociáveis)
-- Toda coluna nova é **NULLABLE**, com DEFAULT compatível com o hardcode atual do worker.
-- Worker continua mandando defaults atuais quando a coluna estiver NULL → comportamento idêntico ao de hoje para leads antigos.
-- Cada PR pode ser revertido sozinho (DROP COLUMN aditivo, revert isolado do worker, desligar steps do fluxo).
-- **Nada do fluxo D entra antes do schema e do worker já saberem ler as novas colunas.**
+**Impacto:** zero risco. Todas nullable, defaults idênticos ao hardcode que o worker já usava. Cadastros antigos continuam exatamente iguais.
 
----
+### PR 2 — Worker (já aplicado)
+- `portal2-api-client.mjs`: `cadastrarCliente` agora **devolve** `fornecedora`, `concessionaria` e `termsAccepted` (antes era silencioso). `montarPayloadCadastro` lê os novos campos quando existirem.
+- `server.mjs`: o `SELECT` traz as novas colunas e repassa para o portal. Quando NULL, usa o mesmo default de antes.
+- Após cadastro com sucesso, grava `fornecedora` resolvida e `terms_accepted_at` em `customers` → evita re-resolver `/bonus/rules` em retentativas e dá rastro de aceite.
 
-## PR 1 — Migração aditiva em `customers`
+**Impacto:** cadastros saem idênticos aos de hoje quando os campos novos estão vazios; quando vierem preenchidos, vão para o portal corretamente.
 
-Sem mexer em coluna existente. Tudo nullable, defaults batendo com o atual do worker:
+### PR 3 — Pulado a seu pedido
+Não vamos adicionar perguntas extras no Fluxo D. Os campos novos ficam opcionais e só são usados se forem preenchidos por outro caminho (UI manual, OCR, etc.).
 
-```sql
-ALTER TABLE public.customers
-  ADD COLUMN IF NOT EXISTS orgao_expedidor TEXT,
-  ADD COLUMN IF NOT EXISTS fornecedora TEXT,
-  ADD COLUMN IF NOT EXISTS contaunica BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS possui_placas BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS transferir_titularidade BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS logindistribuidora TEXT,
-  ADD COLUMN IF NOT EXISTS senhadistribuidora TEXT,   -- cifrar via worker antes de gravar
-  ADD COLUMN IF NOT EXISTS pj_jsonb JSONB,
-  ADD COLUMN IF NOT EXISTS procurador_jsonb JSONB,
-  ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS data_nascimento_iso DATE;   -- espelho seguro, sem tocar TEXT
-```
-
-Backfill best-effort, dentro da mesma migração:
-
-- `data_nascimento_iso` ← cast de `data_nascimento` quando bater `YYYY-MM-DD` ou `DD/MM/YYYY` (regex, ignora o resto).
-- `fornecedora` ← último `portal2_audit_traces.result->>'fornecedora'` por `customer_id` quando existir.
-- `pj_jsonb`, `procurador_jsonb` ← `portal2_audit_traces.input_summary` filtrado por presença de `cnpj` / `testemunha_*`.
-
-Sem RLS nova (herda de `customers`). Sem GRANT novo (mesma tabela).
-
-**Validação pós-deploy:** `SELECT count(*) FROM customers` antes/depois → mesmo número; cadastros existentes seguem funcionando sem mudança no worker.
-
-## PR 2 — Worker passa a popular `dados.*` a partir do `customer`
-
-Arquivo: `worker-portal-2/portal2-api-client.mjs`.
-
-O `montarPayloadCadastro` **já lê** `d.possuiPlacas`, `d.contaUnica`, `d.transferirTitularidade`, `d.loginDistribuidora`, `d.fornecedora`, etc. O que falta é o **chamador** (em `submit-customer`/jobs do BullMQ) passar essas chaves a partir das novas colunas:
-
-```js
-dados = {
-  ...dadosAtuais,
-  orgaoexpedidor: customer.orgao_expedidor ?? '',
-  fornecedora: customer.fornecedora ?? null,            // null → resolve via /bonus/rules como hoje
-  contaUnica: customer.contaunica ?? false,
-  possuiPlacas: customer.possui_placas ?? false,
-  transferirTitularidade: customer.transferir_titularidade ?? false,
-  loginDistribuidora: customer.logindistribuidora ?? '',
-  senhaDistribuidora: decryptIfPresent(customer.senhadistribuidora) ?? '',
-};
-```
-
-Após `resolveBonus()` retornar fornecedora, **persistir** em `customers.fornecedora` via UPDATE best-effort (try/catch, não bloqueia cadastro).
-
-Após `acceptTerms(idcliente)` resolver sem throw, gravar `terms_accepted_at = now()` (UPDATE best-effort).
-
-PJ / Procurador: se `customer.pj_jsonb` presente, expandir suas chaves em `dados`; se não, comportamento atual (worker não envia esses campos).
-
-**Cifra de `senhadistribuidora`:** usar `pgcrypto` no banco (`pgp_sym_encrypt`/`pgp_sym_decrypt`) com chave em env do worker. Se chave ausente → não grava senha (campo fica NULL, worker manda `""`, idêntico ao hoje).
-
-## PR 3 — Coleta opcional no Fluxo D
-
-Editar steps do fluxo D em `supabase/functions/_shared/engine/*` + `bot_flow_steps`. **Todas opcionais**, com botão “pular / não sei” → mantém default atual:
-
-1. Conta única ou múltiplas instalações? → `contaunica`
-2. Já tem placas solares? → `possui_placas`
-3. Conta está no seu nome ou precisa transferir? → `transferir_titularidade`
-4. (Opt-in) “Quer leitura automática da fatura? Me passe login do site da distribuidora.” → `logindistribuidora` + `senhadistribuidora` (cifrada).
-5. Órgão emissor do documento (ex: SSP/SP)? → `orgao_expedidor` (anexado à pergunta existente do RG).
-
-`supabase/functions/_shared/portalValidation.ts`: **nenhum** desses campos entra como `missing`/`invalid` — não bloqueia `finalize-capture`, igual hoje.
-
-## PR 4 — Padronização + observabilidade
-
-- Worker aceita alias `customer.distribuidora || customer.concessionaria` (gap #8). Sem mudança de schema.
-- `portal2_audit_traces.input_summary` passa a registrar `source` de cada campo (`customers.fornecedora` vs `bonus.rules`) para diagnóstico.
-- Painel `/admin → Saúde do Portal`: contadores de cadastros com `possui_placas=true`, `transferir_titularidade=true`, `pj_jsonb≠null` — confirma que a coleta nova chega ao portal.
+### PR 4 — Observabilidade (já aplicado)
+Nova página `/admin/portal-monitor` mostrando:
+- KPIs de 7 dias (sucesso / humano / erros / tempo médio)
+- Últimas 100 execuções do worker com `job_id`, status, duração e erro
+- Cada linha exibe a tradução **Distribuidora** (UI) → **Concessionária** (Portal) → **Fornecedora** (bônus), padronizando a nomenclatura confusa.
 
 ---
 
-## Itens explicitamente fora de escopo (anotados, não mexer agora)
+## O que isso resolve no caso da Gislaine e similares
 
-- Migrar `data_nascimento` TEXT → DATE de verdade. O espelho `data_nascimento_iso` cobre relatórios; mudar a coluna autoritativa exige varredura grande no frontend → risco alto, ganho baixo.
-- Renomear `address_street`/`address_city`/... para nomes canônicos do portal. Apenas “nome divergente”, worker já traduz. Mexer quebra telas.
-- Migrar `distribuidora` ↔ `concessionaria` para coluna única. PR 4 resolve via alias no worker, sem migração.
+1. **Anexos garantidos** (do passo anterior): worker faz retry 5× com backoff e verifica via `verifyUpload`. Se falhar de vez, limpa `portal2_idcliente` e manda para `needs_human` em vez de marcar como pronto sem documento.
+2. **OTP automatizado** (do passo anterior): código digitado no WhatsApp é injetado no portal; link de facial sai automático.
+3. **Fornecedora persistida** (PR 2): em retentativa o worker não re-resolve bônus, evitando divergência de fornecedora entre tentativas.
+4. **Visibilidade** (PR 4): você consegue ver em tempo real qual lead travou, com qual erro e qual distribuidora/fornecedora foi enviada.
 
-## Ordem de execução e gates
+---
 
-| Passo | Gate antes de seguir |
-|------|----------------------|
-| PR 1 (migração) | `SELECT count(*) FROM customers` igual antes/depois. Cadastro do dia segue normal. |
-| PR 2 (worker) | Subir só com `PORTAL2_AI_AUDIT_LIMIT=10`. Cadastrar 1 lead real de consultor de teste. Verificar `portal2_audit_traces` mostrando os novos campos com `source`. |
-| PR 3 (fluxo D) | Liberar para 1 consultor por 24h. Conferir taxa de erro do worker (≤ baseline atual). |
-| PR 4 (alias + painel) | Junto ou logo depois do PR 3. |
+## Como validar agora
 
-## Reversão de cada PR
+1. Abra `/admin/portal-monitor` → veja se as 2 últimas execuções (que já existem na base) aparecem como "Sucesso".
+2. Próximo cadastro real: confirme na listagem que ele apareceu com a distribuidora correta e que `customers.fornecedora` e `customers.terms_accepted_at` ficaram preenchidos.
+3. Em caso de falha de upload, o lead vai aparecer como **Humano** (não mais como sucesso falso).
 
-| PR | Como reverter |
-|----|---------------|
-| 1 | `ALTER TABLE customers DROP COLUMN ...` (sem FK, sem dependência). |
-| 2 | Revert do `portal2-api-client.mjs` + arquivo do job. Defaults voltam aos hardcodes. |
-| 3 | `UPDATE bot_flow_steps SET active=false WHERE id IN (...)`. |
-| 4 | Revert do alias + remover linhas de log. |
-
-## Posso seguir?
-
-Confirma que eu posso **abrir o PR 1 agora** (apenas migração aditiva, sem nenhuma mudança de comportamento)? Os outros entram em sequência com sua aprovação a cada passo.
+Sem mais alterações nesta etapa — quer que eu confirme algum lead específico no monitor?
