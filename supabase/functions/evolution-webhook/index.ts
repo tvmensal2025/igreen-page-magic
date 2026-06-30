@@ -444,6 +444,68 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── Outbound humano (consultor digitou no app oficial) ─
+    if ((parsed as any).outboundHuman) {
+      const outChatId: string = (parsed as any).chatId || "";
+      const outSource: string = (parsed as any).source || "";
+      const outMessageId: string = (parsed as any).messageId || "";
+      const outPhone = String(outChatId).replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/\D/g, "");
+      console.log(`👤 [evolution] Outbound humano (source=${outSource}) → verificando antes de pausar bot para ${outPhone}`);
+      try {
+        if (outMessageId) {
+          const { data: echo } = await supabase
+            .from("outbound_message_log")
+            .select("idempotency_key")
+            .eq("evolution_message_id", outMessageId)
+            .gte("created_at", new Date(Date.now() - 120_000).toISOString())
+            .limit(1)
+            .maybeSingle();
+          if (echo) {
+            console.log(`↩️ [evolution] ignored_self_echo messageId=${outMessageId}`);
+            return new Response(JSON.stringify({ ok: true, msg: "ignored_self_echo" }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+        const { data: cust } = await supabase
+          .from("customers")
+          .select("id, bot_paused, assigned_human_id, consultant_id, last_bot_reply_at")
+          .eq("phone_whatsapp", outPhone)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cust?.last_bot_reply_at) {
+          const ageMs = Date.now() - new Date(cust.last_bot_reply_at).getTime();
+          if (ageMs >= 0 && ageMs <= 30_000) {
+            console.log(`↩️ [evolution] takeover_skipped_recent_bot_reply age_ms=${ageMs}`);
+            return new Response(JSON.stringify({ ok: true, msg: "takeover_skipped_recent_bot_reply" }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+        if (cust && (!cust.bot_paused || !cust.assigned_human_id)) {
+          await supabase
+            .from("customers")
+            .update({
+              bot_paused: true,
+              bot_paused_reason: "humano_assumiu_whatsapp",
+              bot_paused_at: new Date().toISOString(),
+              bot_paused_until: null,
+              assigned_human_id: cust.consultant_id ?? cust.assigned_human_id ?? null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", cust.id);
+          console.log(`✅ [evolution] Bot pausado para ${outPhone} (customer ${cust.id})`);
+        }
+      } catch (e) {
+        console.error("⚠️ [evolution] Falha ao pausar bot via outbound humano:", e);
+      }
+      return new Response(JSON.stringify({ ok: true, msg: "outbound_human_takeover" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+
     const messageId = body.data?.key?.id || "";
     // Type cast: dedupe.ts pins @supabase/supabase-js@2.49.4 while this file
     // pins @2; the runtime is identical but TS sees two protected-property
