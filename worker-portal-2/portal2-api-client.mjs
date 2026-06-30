@@ -1141,9 +1141,25 @@ export class Portal2Client {
     const idcliente = created?.idcliente;
     if (!idcliente) throw new Error(`createCustomer retornou sem idcliente: ${JSON.stringify(created)}`);
 
-    await this.acceptTerms(idcliente).catch(() => {});
+    // PR2: track acceptTerms outcome so caller pode persistir terms_accepted_at
+    // Mantém o catch silencioso (não falha o cadastro), mas devolve a flag.
+    let termsAccepted = false;
+    try {
+      await this.acceptTerms(idcliente);
+      termsAccepted = true;
+    } catch (e) {
+      console.warn(`  ⚠ acceptTerms falhou (não bloqueia cadastro): ${e.message}`);
+    }
 
-    return { idcliente, idsolcontratovalidacao, extraction };
+    return {
+      idcliente,
+      idsolcontratovalidacao,
+      extraction,
+      // PR2: devolvido para o caller persistir em customers.* (best-effort)
+      fornecedora: fornecedora || null,
+      concessionaria: concessionaria || null,
+      termsAccepted,
+    };
   }
 
   montarPayloadCadastro(d) {
