@@ -137,10 +137,10 @@ async function processCustomer(
   const jid = toJid(phone);
   const dealOrigin = targetStage === "reprovado" ? "reprovado" : "aprovado";
 
-  let preview: string;
+  let result: SendResult;
   if (consultantHasContent) {
     // Caminho normal: usa a config do consultor (multi-msg ou legacy do kanban).
-    preview = await sendStageAutoMessages(
+    result = await sendStageAutoMessages(
       supabase,
       channel,
       jid,
@@ -163,7 +163,7 @@ async function processCustomer(
       auto_message_media_url: def.media_url || null,
       auto_message_image_url: def.image_url || null,
     };
-    preview = await sendStageAutoMessages(
+    result = await sendStageAutoMessages(
       supabase,
       channel,
       jid,
@@ -177,17 +177,23 @@ async function processCustomer(
     );
   }
 
+  const { status, tag } = formatSendStatus(result);
+  const previewText = result.preview
+    ? `[${channel.kind}]${tag ? ` ${tag}` : ""} ${result.preview}`.slice(0, 200)
+    : `[${channel.kind}]${tag ? ` ${tag}` : ""}`;
+
   await supabase.from("customer_auto_message_log").insert({
     customer_id: customer.id,
     consultant_id: ownerId,
     stage_key: stageKey,
     remote_jid: jid,
     customer_name: customer.name,
-    message_preview: preview ? `[${channel.kind}] ${preview}`.slice(0, 200) : `[${channel.kind}]`,
-    status: "sent",
+    message_preview: previewText,
+    status,
   });
 
-  return { moved: true, sent: true };
+  return { moved: true, sent: status === "sent" || status.startsWith("partial") };
+
 }
 
 Deno.serve(async (req) => {
