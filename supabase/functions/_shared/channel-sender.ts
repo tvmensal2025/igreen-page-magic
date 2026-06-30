@@ -191,11 +191,20 @@ async function sendText(
   jid: string,
   text: string,
   sendCtx: SendContext,
-) {
-  if (!(await guardOk(supabase, channel.instanceName, "text"))) return;
-  const r = await channel.adapter.sendText(jid, text, { ...sendCtx, supabase });
-  if (!r.ok) console.error(`[${channel.kind}] sendText falhou:`, (r as any).detail);
-  else await registerSend(supabase, channel.instanceName);
+): Promise<boolean> {
+  if (!(await guardOk(supabase, channel.instanceName, "text"))) return false;
+  try {
+    const r = await channel.adapter.sendText(jid, text, { ...sendCtx, supabase });
+    if (!r.ok) {
+      console.error(`[${channel.kind}] sendText falhou:`, (r as any).detail);
+      return false;
+    }
+    await registerSend(supabase, channel.instanceName);
+    return true;
+  } catch (e) {
+    console.error(`[${channel.kind}] sendText exception:`, (e as Error)?.message);
+    return false;
+  }
 }
 
 async function sendMedia(
@@ -206,15 +215,24 @@ async function sendMedia(
   caption: string,
   kind: "image" | "video" | "document",
   sendCtx: SendContext,
-) {
-  if (!(await guardOk(supabase, channel.instanceName, kind))) return;
+): Promise<boolean> {
+  if (!(await guardOk(supabase, channel.instanceName, kind))) return false;
   const media =
     kind === "document"
       ? { kind, url, filename: "arquivo", caption }
       : { kind, url, caption };
-  const r = await channel.adapter.sendMedia(jid, media as any, sendCtx);
-  if (!r.ok) console.error(`[${channel.kind}] sendMedia(${kind}) falhou:`, (r as any).detail);
-  else await registerSend(supabase, channel.instanceName);
+  try {
+    const r = await channel.adapter.sendMedia(jid, media as any, sendCtx);
+    if (!r.ok) {
+      console.error(`[${channel.kind}] sendMedia(${kind}) falhou:`, (r as any).detail);
+      return false;
+    }
+    await registerSend(supabase, channel.instanceName);
+    return true;
+  } catch (e) {
+    console.error(`[${channel.kind}] sendMedia(${kind}) exception:`, (e as Error)?.message);
+    return false;
+  }
 }
 
 async function sendAudio(
@@ -223,12 +241,37 @@ async function sendAudio(
   jid: string,
   url: string,
   sendCtx: SendContext,
-) {
-  if (!(await guardOk(supabase, channel.instanceName, "audio"))) return;
-  const r = await channel.adapter.sendMedia(jid, { kind: "audio", url, ptt: true }, sendCtx);
-  if (!r.ok) console.error(`[${channel.kind}] sendAudio falhou:`, (r as any).detail);
-  else await registerSend(supabase, channel.instanceName);
+): Promise<boolean> {
+  if (!(await guardOk(supabase, channel.instanceName, "audio"))) return false;
+  try {
+    const r = await channel.adapter.sendMedia(jid, { kind: "audio", url, ptt: true }, sendCtx);
+    if (!r.ok) {
+      console.error(`[${channel.kind}] sendAudio falhou:`, (r as any).detail);
+      return false;
+    }
+    await registerSend(supabase, channel.instanceName);
+    return true;
+  } catch (e) {
+    console.error(`[${channel.kind}] sendAudio exception:`, (e as Error)?.message);
+    return false;
+  }
 }
+
+async function sendAudioWithRetry(
+  supabase: any,
+  channel: ResolvedChannel,
+  jid: string,
+  url: string,
+  sendCtx: SendContext,
+): Promise<boolean> {
+  const ok = await sendAudio(supabase, channel, jid, url, sendCtx);
+  if (ok) return true;
+  if (channel.kind !== "evolution") return false;
+  // Evolution: 1 retry leve com backoff curto (áudio .ogg falha intermitente).
+  await new Promise((r) => setTimeout(r, 1500));
+  return await sendAudio(supabase, channel, jid, url, sendCtx);
+}
+
 
 async function renderVoiceTemplate(
   supabase: any,
