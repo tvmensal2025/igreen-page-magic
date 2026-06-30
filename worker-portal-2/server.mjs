@@ -883,6 +883,9 @@ async function fetchDadosFromSupabase(customerId) {
       bill_base64, electricity_bill_photo_url,
       document_front_base64, document_front_url,
       document_back_base64, document_back_url,
+      orgao_expedidor, fornecedora, contaunica, possui_placas,
+      transferir_titularidade, logindistribuidora, senhadistribuidora,
+      pj_jsonb, procurador_jsonb,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
       referral_partners:referral_partner_id(cli, partner_igreen_id)
