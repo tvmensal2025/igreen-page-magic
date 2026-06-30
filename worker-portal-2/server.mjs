@@ -1102,8 +1102,20 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     docBackFile: docBackFile || undefined,
     isCnh: _isCnhCustomer(c),
     idsolcontratovalidacao: idsolcontratovalidacao || undefined,
-    possuiPlacas: false,
     sendcontract: true,
+    // PR2: novas colunas (todas opcionais — defaults compatíveis com o hardcode anterior).
+    // Quando NULL no banco, caem nos defaults atuais do montarPayloadCadastro.
+    orgaoExpedidor: c?.orgao_expedidor || '',
+    fornecedora: c?.fornecedora || undefined,            // undefined → cadastrarCliente resolve via /bonus/rules
+    possuiPlacas: c?.possui_placas ?? false,
+    contaUnica: c?.contaunica ?? false,
+    transferirTitularidade: c?.transferir_titularidade ?? false,
+    loginDistribuidora: c?.logindistribuidora || '',
+    // senhadistribuidora hoje vem TEXT pura do banco (a coleta cifrada
+    // chega no PR3). Se vier vazio/null, o worker envia '' — comportamento atual.
+    senhaDistribuidora: c?.senhadistribuidora || '',
+    pj: c?.pj_jsonb || undefined,
+    procurador: c?.procurador_jsonb || undefined,
   };
 }
 
