@@ -1141,9 +1141,25 @@ export class Portal2Client {
     const idcliente = created?.idcliente;
     if (!idcliente) throw new Error(`createCustomer retornou sem idcliente: ${JSON.stringify(created)}`);
 
-    await this.acceptTerms(idcliente).catch(() => {});
+    // PR2: track acceptTerms outcome so caller pode persistir terms_accepted_at
+    // Mantém o catch silencioso (não falha o cadastro), mas devolve a flag.
+    let termsAccepted = false;
+    try {
+      await this.acceptTerms(idcliente);
+      termsAccepted = true;
+    } catch (e) {
+      console.warn(`  ⚠ acceptTerms falhou (não bloqueia cadastro): ${e.message}`);
+    }
 
-    return { idcliente, idsolcontratovalidacao, extraction };
+    return {
+      idcliente,
+      idsolcontratovalidacao,
+      extraction,
+      // PR2: devolvido para o caller persistir em customers.* (best-effort)
+      fornecedora: fornecedora || null,
+      concessionaria: concessionaria || null,
+      termsAccepted,
+    };
   }
 
   montarPayloadCadastro(d) {
@@ -1162,7 +1178,8 @@ export class Portal2Client {
       bairro: d.bairro || '',
       cidade: d.cidade || '',
       uf: d.uf || '',
-      concessionaria: d.concessionaria || '',
+      // PR4: alias — aceita distribuidora como sinônimo de concessionaria
+      concessionaria: d.concessionaria || d.distribuidora || '',
       fornecedora: d.fornecedora || '',
       consumomedio: Number(d.consumoMedio) || 0,
       desconto_cliente: d.desconto_cliente != null ? Number(d.desconto_cliente) : undefined,
@@ -1176,24 +1193,32 @@ export class Portal2Client {
       idsolcontratovalidacao: d.idsolcontratovalidacao || undefined,
     };
 
-    if (d.titularidade === 'pj' && d.cnpj) {
+    // PR2: órgão emissor do documento, quando coletado no fluxo D
+    if (d.orgaoExpedidor) out.orgaoexpedidor = String(d.orgaoExpedidor).trim();
+
+    // PR2: PJ — aceita tanto campos soltos (d.cnpj) quanto objeto d.pj (vindo de pj_jsonb)
+    const pj = d.pj && typeof d.pj === 'object' ? d.pj : null;
+    const cnpjValor = d.cnpj || pj?.cnpj;
+    if ((d.titularidade === 'pj' || pj) && cnpjValor) {
+      const src = pj || d;
       Object.assign(out, {
-        cnpj: onlyDigits(d.cnpj),
-        razao: d.razaoSocial || '',
-        fantasia: d.nomeFantasia || '',
-        ...(d.naturezaJuridica && { naturezajuridica: d.naturezaJuridica }),
-        ...(d.cargo && { cargo: d.cargo }),
-        ...(d.ie && { ie: d.ie }),
-        ...(d.localRegistro && { localregistro: d.localRegistro }),
+        cnpj: onlyDigits(cnpjValor),
+        razao: src.razaoSocial || src.razao_social || src.razao || '',
+        fantasia: src.nomeFantasia || src.nome_fantasia || src.fantasia || '',
+        ...((src.naturezaJuridica || src.natureza_juridica) && { naturezajuridica: src.naturezaJuridica || src.natureza_juridica }),
+        ...(src.cargo && { cargo: src.cargo }),
+        ...(src.ie && { ie: src.ie }),
+        ...((src.localRegistro || src.local_registro) && { localregistro: src.localRegistro || src.local_registro }),
       });
     }
 
+    // PR2: Procurador — d.procurador (objeto) ou procurador_jsonb mapeado
     if (d.procurador && d.procurador.nome) {
       const p = d.procurador;
       Object.assign(out, {
         testemunha_nome: p.nome,
         testemunha_cpf: onlyDigits(p.cpf),
-        testemunha_datanasc: toIsoDate(p.dataNascimento),
+        testemunha_datanasc: toIsoDate(p.dataNascimento || p.data_nascimento),
         testemunha_email: p.email || '',
         testemunha_celular: formatPhone(p.celular),
       });
@@ -1201,6 +1226,7 @@ export class Portal2Client {
     return out;
   }
 }
+
 
 // ─── Helpers exportados ─────────────────────────────────────────────────────
 export { onlyDigits, toIsoDate, formatCep, formatPhone };

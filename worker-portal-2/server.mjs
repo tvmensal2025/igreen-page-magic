@@ -258,6 +258,10 @@ async function processLead(job) {
         conversation_step: 'aguardando_otp',
         portal_submitted_at: new Date().toISOString(),
       };
+      // PR2: persistir fornecedora resolvida (evita re-resolver via /bonus/rules
+      // em retries futuros) e terms_accepted_at quando acceptTerms confirmou.
+      if (cadastroResult.fornecedora) updates.fornecedora = cadastroResult.fornecedora;
+      if (cadastroResult.termsAccepted) updates.terms_accepted_at = new Date().toISOString();
       await supabase.from('customers').update(updates).eq('id', customer_id).then(
         () => {},
         (e) => console.warn(`  ⚠ supabase update falhou: ${e.message}`),
@@ -883,6 +887,9 @@ async function fetchDadosFromSupabase(customerId) {
       bill_base64, electricity_bill_photo_url,
       document_front_base64, document_front_url,
       document_back_base64, document_back_url,
+      orgao_expedidor, fornecedora, contaunica, possui_placas,
+      transferir_titularidade, logindistribuidora, senhadistribuidora,
+      pj_jsonb, procurador_jsonb,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
       referral_partners:referral_partner_id(cli, partner_igreen_id)
@@ -1099,8 +1106,20 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     docBackFile: docBackFile || undefined,
     isCnh: _isCnhCustomer(c),
     idsolcontratovalidacao: idsolcontratovalidacao || undefined,
-    possuiPlacas: false,
     sendcontract: true,
+    // PR2: novas colunas (todas opcionais — defaults compatíveis com o hardcode anterior).
+    // Quando NULL no banco, caem nos defaults atuais do montarPayloadCadastro.
+    orgaoExpedidor: c?.orgao_expedidor || '',
+    fornecedora: c?.fornecedora || undefined,            // undefined → cadastrarCliente resolve via /bonus/rules
+    possuiPlacas: c?.possui_placas ?? false,
+    contaUnica: c?.contaunica ?? false,
+    transferirTitularidade: c?.transferir_titularidade ?? false,
+    loginDistribuidora: c?.logindistribuidora || '',
+    // senhadistribuidora hoje vem TEXT pura do banco (a coleta cifrada
+    // chega no PR3). Se vier vazio/null, o worker envia '' — comportamento atual.
+    senhaDistribuidora: c?.senhadistribuidora || '',
+    pj: c?.pj_jsonb || undefined,
+    procurador: c?.procurador_jsonb || undefined,
   };
 }
 
