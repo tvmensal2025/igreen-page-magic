@@ -3654,6 +3654,7 @@ export type Database = {
           commission_rate: number | null
           consultant_id: string | null
           conta_pdf_protegida: boolean | null
+          contaunica: boolean | null
           conversation_step: string | null
           conversation_summary: string | null
           conversational_flow_enabled: boolean | null
@@ -3672,6 +3673,7 @@ export type Database = {
           data_cadastro: string | null
           data_cadastro_igreen: string | null
           data_nascimento: string | null
+          data_nascimento_iso: string | null
           data_validado: string | null
           data_validado_igreen: string | null
           debitos_aberto: boolean | null
@@ -3702,6 +3704,7 @@ export type Database = {
           fluxo_b_variant: string
           followup_count: number
           followup_hook: string | null
+          fornecedora: string | null
           id: string
           igreen_code: string | null
           igreen_link: string | null
@@ -3734,6 +3737,7 @@ export type Database = {
           link_assinatura: string | null
           link_facial: string | null
           link_facial_sent_at: string | null
+          logindistribuidora: string | null
           manual_override_reactivate: boolean
           media_consumo: number | null
           media_message_id: string | null
@@ -3763,6 +3767,7 @@ export type Database = {
           ocr_review_decided_by: string | null
           ocr_review_pending: string | null
           ocr_review_started_at: string | null
+          orgao_expedidor: string | null
           origin_channel: string | null
           origin_consultant_id: string | null
           origin_instance_name: string | null
@@ -3779,6 +3784,7 @@ export type Database = {
           phone_contact_confirmed: boolean
           phone_landline: string | null
           phone_whatsapp: string
+          pj_jsonb: Json | null
           portal_last_retry_at: string | null
           portal_retry_count: number
           portal_submitted_at: string | null
@@ -3802,8 +3808,10 @@ export type Database = {
           pos_venda_pending_stage: string | null
           pos_venda_reason: string | null
           pos_venda_stage: string | null
+          possui_placas: boolean | null
           possui_procurador: boolean | null
           previous_conversation_step: string | null
+          procurador_jsonb: Json | null
           qualification_score: number | null
           referral_detected_at: string | null
           referral_keyword_matched: string | null
@@ -3814,6 +3822,7 @@ export type Database = {
           rg: string | null
           sales_phase: string | null
           senha_pdf: string | null
+          senhadistribuidora: string | null
           source_ad_id: string | null
           source_campaign_id: string | null
           source_ctwa_clid: string | null
@@ -3821,7 +3830,9 @@ export type Database = {
           status: string
           status_financeiro: string | null
           summary_updated_at: string | null
+          terms_accepted_at: string | null
           tipo_produto: string
+          transferir_titularidade: boolean | null
           updated_at: string
           variant_id: string | null
         }
@@ -3864,6 +3875,7 @@ export type Database = {
           commission_rate?: number | null
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
+          contaunica?: boolean | null
           conversation_step?: string | null
           conversation_summary?: string | null
           conversational_flow_enabled?: boolean | null
@@ -3882,6 +3894,7 @@ export type Database = {
           data_cadastro?: string | null
           data_cadastro_igreen?: string | null
           data_nascimento?: string | null
+          data_nascimento_iso?: string | null
           data_validado?: string | null
           data_validado_igreen?: string | null
           debitos_aberto?: boolean | null
@@ -3912,6 +3925,7 @@ export type Database = {
           fluxo_b_variant?: string
           followup_count?: number
           followup_hook?: string | null
+          fornecedora?: string | null
           id?: string
           igreen_code?: string | null
           igreen_link?: string | null
@@ -3944,6 +3958,7 @@ export type Database = {
           link_assinatura?: string | null
           link_facial?: string | null
           link_facial_sent_at?: string | null
+          logindistribuidora?: string | null
           manual_override_reactivate?: boolean
           media_consumo?: number | null
           media_message_id?: string | null
@@ -3973,6 +3988,7 @@ export type Database = {
           ocr_review_decided_by?: string | null
           ocr_review_pending?: string | null
           ocr_review_started_at?: string | null
+          orgao_expedidor?: string | null
           origin_channel?: string | null
           origin_consultant_id?: string | null
           origin_instance_name?: string | null
@@ -3989,6 +4005,7 @@ export type Database = {
           phone_contact_confirmed?: boolean
           phone_landline?: string | null
           phone_whatsapp: string
+          pj_jsonb?: Json | null
           portal_last_retry_at?: string | null
           portal_retry_count?: number
           portal_submitted_at?: string | null
@@ -4012,8 +4029,10 @@ export type Database = {
           pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
           pos_venda_stage?: string | null
+          possui_placas?: boolean | null
           possui_procurador?: boolean | null
           previous_conversation_step?: string | null
+          procurador_jsonb?: Json | null
           qualification_score?: number | null
           referral_detected_at?: string | null
           referral_keyword_matched?: string | null
@@ -4024,6 +4043,7 @@ export type Database = {
           rg?: string | null
           sales_phase?: string | null
           senha_pdf?: string | null
+          senhadistribuidora?: string | null
           source_ad_id?: string | null
           source_campaign_id?: string | null
           source_ctwa_clid?: string | null
@@ -4031,7 +4051,9 @@ export type Database = {
           status?: string
           status_financeiro?: string | null
           summary_updated_at?: string | null
+          terms_accepted_at?: string | null
           tipo_produto?: string
+          transferir_titularidade?: boolean | null
           updated_at?: string
           variant_id?: string | null
         }
@@ -4074,6 +4096,7 @@ export type Database = {
           commission_rate?: number | null
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
+          contaunica?: boolean | null
           conversation_step?: string | null
           conversation_summary?: string | null
           conversational_flow_enabled?: boolean | null
@@ -4092,6 +4115,7 @@ export type Database = {
           data_cadastro?: string | null
           data_cadastro_igreen?: string | null
           data_nascimento?: string | null
+          data_nascimento_iso?: string | null
           data_validado?: string | null
           data_validado_igreen?: string | null
           debitos_aberto?: boolean | null
@@ -4122,6 +4146,7 @@ export type Database = {
           fluxo_b_variant?: string
           followup_count?: number
           followup_hook?: string | null
+          fornecedora?: string | null
           id?: string
           igreen_code?: string | null
           igreen_link?: string | null
@@ -4154,6 +4179,7 @@ export type Database = {
           link_assinatura?: string | null
           link_facial?: string | null
           link_facial_sent_at?: string | null
+          logindistribuidora?: string | null
           manual_override_reactivate?: boolean
           media_consumo?: number | null
           media_message_id?: string | null
@@ -4183,6 +4209,7 @@ export type Database = {
           ocr_review_decided_by?: string | null
           ocr_review_pending?: string | null
           ocr_review_started_at?: string | null
+          orgao_expedidor?: string | null
           origin_channel?: string | null
           origin_consultant_id?: string | null
           origin_instance_name?: string | null
@@ -4199,6 +4226,7 @@ export type Database = {
           phone_contact_confirmed?: boolean
           phone_landline?: string | null
           phone_whatsapp?: string
+          pj_jsonb?: Json | null
           portal_last_retry_at?: string | null
           portal_retry_count?: number
           portal_submitted_at?: string | null
@@ -4222,8 +4250,10 @@ export type Database = {
           pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
           pos_venda_stage?: string | null
+          possui_placas?: boolean | null
           possui_procurador?: boolean | null
           previous_conversation_step?: string | null
+          procurador_jsonb?: Json | null
           qualification_score?: number | null
           referral_detected_at?: string | null
           referral_keyword_matched?: string | null
@@ -4234,6 +4264,7 @@ export type Database = {
           rg?: string | null
           sales_phase?: string | null
           senha_pdf?: string | null
+          senhadistribuidora?: string | null
           source_ad_id?: string | null
           source_campaign_id?: string | null
           source_ctwa_clid?: string | null
@@ -4241,7 +4272,9 @@ export type Database = {
           status?: string
           status_financeiro?: string | null
           summary_updated_at?: string | null
+          terms_accepted_at?: string | null
           tipo_produto?: string
+          transferir_titularidade?: boolean | null
           updated_at?: string
           variant_id?: string | null
         }
