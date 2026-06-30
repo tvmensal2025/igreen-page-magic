@@ -621,8 +621,19 @@ export function parseEvolutionMessage(body: any, instanceConnectedPhone?: string
   const remoteJid = key.remoteJid || "";
   const fromMe = key.fromMe || false;
 
-  // Ignorar mensagens enviadas por nós
+  // Mensagens enviadas por nós: sinalizar takeover humano somente quando o
+  // source vier de um app/dispositivo humano comprovado. Echo de API → ignora.
   if (fromMe) {
+    const source = String((data as any)?.source || (body as any)?.source || "").toLowerCase();
+    const HUMAN_SOURCES = new Set(["app", "iphone", "android", "web", "desktop", "mobile"]);
+    if (HUMAN_SOURCES.has(source)) {
+      return {
+        outboundHuman: true,
+        chatId: remoteJid,
+        source,
+        messageId: key.id || "",
+      } as any;
+    }
     return null;
   }
 

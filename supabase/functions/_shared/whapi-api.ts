@@ -454,11 +454,17 @@ export function parseWhapiMessage(body: any) {
 
   // Mensagem enviada por nós: se foi via API (bot/painel), ignorar.
   // Se foi digitada no app/web/desktop do WhatsApp pelo consultor, sinalizar
-  // takeover humano para o webhook pausar o bot.
+  // takeover humano. ALLOWLIST estrita para evitar pause-fantasma quando o
+  // Whapi devolve o eco da própria mensagem do bot com source diferente de "api".
   if (msg.from_me) {
     const source = String(msg.source || "").toLowerCase();
+    const HUMAN_SOURCES = new Set(["app", "iphone", "android", "web", "desktop", "mobile"]);
     if (source === "api" || source === "") {
       console.log(`[parseWhapiMessage] null reason=from_me_api source=${source}`);
+      return null;
+    }
+    if (!HUMAN_SOURCES.has(source)) {
+      console.log(`[parseWhapiMessage] null reason=from_me_unknown_source source=${source}`);
       return null;
     }
     return {

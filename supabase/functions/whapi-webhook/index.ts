@@ -131,17 +131,48 @@ Deno.serve(async (req) => {
     if ((parsed as any).outboundHuman) {
       const outChatId: string = (parsed as any).chatId || "";
       const outSource: string = (parsed as any).source || "";
+      const outMessageId: string = (parsed as any).messageId || "";
       const outPhone = normalizePhone(outChatId.replace("@s.whatsapp.net", "")).replace(/\D/g, "");
-      console.log(`👤 Outbound humano detectado (source=${outSource}) → pausando bot para ${outPhone}`);
+      console.log(`👤 Outbound humano detectado (source=${outSource}) → verificando antes de pausar bot para ${outPhone}`);
       try {
+        // Guard 1: eco do próprio bot — se este messageId já foi registrado em
+        // outbound_message_log nos últimos 120s, é a nossa própria mensagem voltando.
+        if (outMessageId) {
+          const { data: echo } = await supabase
+            .from("outbound_message_log")
+            .select("idempotency_key")
+            .eq("evolution_message_id", outMessageId)
+            .gte("created_at", new Date(Date.now() - 120_000).toISOString())
+            .limit(1)
+            .maybeSingle();
+          if (echo) {
+            console.log(`↩️ ignored_self_echo messageId=${outMessageId} — não pausando`);
+            return new Response(JSON.stringify({ ok: true, msg: "ignored_self_echo" }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+
         const { data: cust, error: selErr } = await supabase
           .from("customers")
-          .select("id, bot_paused, assigned_human_id, consultant_id")
+          .select("id, bot_paused, assigned_human_id, consultant_id, last_bot_reply_at")
           .eq("phone_whatsapp", outPhone)
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
         if (selErr) console.error("⚠️ select customer (outboundHuman):", selErr);
+
+        // Guard 2: bot acabou de responder (≤30s) → muito provavelmente é eco
+        if (cust?.last_bot_reply_at) {
+          const ageMs = Date.now() - new Date(cust.last_bot_reply_at).getTime();
+          if (ageMs >= 0 && ageMs <= 30_000) {
+            console.log(`↩️ takeover_skipped_recent_bot_reply age_ms=${ageMs} customer=${cust.id}`);
+            return new Response(JSON.stringify({ ok: true, msg: "takeover_skipped_recent_bot_reply" }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+
         if (cust && (!cust.bot_paused || !cust.assigned_human_id)) {
           const { error: updErr } = await supabase
             .from("customers")
