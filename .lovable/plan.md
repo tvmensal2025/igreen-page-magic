@@ -1,24 +1,51 @@
-## Teste real de envio (texto + áudio + imagem) do pós-venda
+## Auditoria — mídias pós-venda na base
 
-### Como vou testar sem bagunçar dados
+Tabela `pos_venda_default_media` (fallback institucional usado quando o consultor não customizou):
 
-1. **Descobrir seu número de admin** consultando `auth.users` + `consultants` para pegar o `phone_whatsapp` cadastrado.
-2. **Criar um customer de teste** apontando para o seu próprio número, marcando `customer_origin='manual'` e `pos_venda_stage='espera'` (não polui métricas de carteira).
-3. **Disparar `pos-venda-auto-progress**` via `supabase--curl_edge_functions` em modo dirigido — passando o `customer_id` e `target_stage=d30` (se a function não suportar parâmetro, faço update direto em `customers.pos_venda_stage='d30'` + `pos_venda_approved_at=now()` e chamo o cron, que detecta e envia).
-4. **Verificar no seu WhatsApp** se chegaram as 3 mídias do estágio d30 (texto, áudio, imagem) — e conferir o registro em `customer_auto_message_log` com `status='sent'`.
-5. **Cleanup**: apagar o customer de teste e a linha do log.
+| Estágio | Texto | Áudio | Imagem | Ativo |
+|---|---|---|---|---|
+| aprovado | ✅ | ✅ | ✅ | ✅ |
+| reprovado | ✅ | ✅ | ✅ | ✅ |
+| d30 | ✅ | ✅ | ✅ | ✅ |
+| d60 | ✅ | ✅ | ✅ | ✅ |
+| d90 | ✅ | ✅ | ✅ | ✅ |
+| d120 | ✅ | ✅ | ✅ | ✅ |
 
-### O que vou precisar confirmar de você antes
+Os 6 estágios estão completos (texto + áudio `.ogg` + imagem `.jpg`).
 
-- Seu número de WhatsApp (formato `5511989000650`) **OU** autorização para eu pegar o que está no seu cadastro de consultant.
-- Qual estágio testar primeiro: **d30** (recomendado) ou outro?
+## Regra de canal (conforme pedido do usuário)
 
-### Risco
+- **Cada consultor envia pela própria Evolution** (comportamento atual de `resolveChannelForCustomer`).
+- Whapi só é usado quando o próprio usuário/consultor está configurado em Whapi (ex.: Super Admin).
+- **Não vamos forçar Whapi** no pós-venda.
 
-Nulo para os clientes reais — o registro de teste é isolado, não conta como aprovação de carteira, é deletado ao final, e o envio respeita as regras normais de horário e canal (Evolution/Whapi do seu consultant).
+## Diagnóstico do "chegou só a imagem"
 
-### Saída esperada
+`sendSingleMessage` (`_shared/channel-sender.ts` linhas 258–295) já tenta imagem → áudio → texto quando o estágio é tipo `audio` com `image_url`. A lógica está correta, mas na Evolution o `sendAudio` falha silenciosamente em parte dos envios (sem exception, sem log útil) e o log final marca `status: sent` mesmo assim, escondendo o problema.
 
-Te respondo com: número usado, prints dos logs da edge function, e confirmação de que chegou no seu WhatsApp. Se algo falhar (canal off, áudio quebrado, etc.) eu já corrijo na sequência.  
-  
-pode mandar para o 11989000650
+## Plano de correção (sem enviar nada agora)
+
+### 1. Tornar o envio das 3 peças observável
+`sendSingleMessage` passa a embrulhar cada peça (imagem / áudio / texto) em `try/catch` próprio e retorna um objeto `{ image_ok, audio_ok, text_ok, errors }`.
+
+### 2. Retry leve só para áudio na Evolution
+Quando `channel.kind === "evolution"` e `sendAudio` falhar (exception OU resposta sem messageId), aguardar 1,5s e tentar 1 vez de novo. Imagem e texto não precisam — quase nunca falham.
+
+### 3. Log honesto em `customer_auto_message_log`
+Trocar o `status: "sent"` cego por:
+- `sent` → todas as peças OK.
+- `partial:audio_missing` / `partial:image_missing` → faltou algo. `message_preview` ganha `[img:ok|audio:fail|text:ok]`.
+- `failed` → nada chegou.
+Assim o painel `/admin/portal-monitor` mostra exatamente onde a Evolution falhou, por consultor.
+
+### 4. Fallback final do áudio
+Se mesmo com retry o áudio falhar na Evolution, enviar uma 4ª mensagem curta de texto: "🎧 Áudio: <link>" usando a URL pública do MinIO. Garante que o conteúdo do áudio chegue de alguma forma sem trocar o canal do consultor.
+
+### 5. Nenhum disparo agora
+As mudanças só passam a valer no próximo disparo natural (aprovação real ou cron diário d30/60/90/120). Sem teste manual.
+
+## Arquivos alterados
+- `supabase/functions/_shared/channel-sender.ts` — `sendSingleMessage` com try/catch por peça + retry de áudio + fallback link.
+- `supabase/functions/pos-venda-auto-progress/index.ts` — usar o novo retorno e gravar status detalhado em `customer_auto_message_log`.
+
+Nenhuma mudança de schema, nenhuma mudança de canal, nenhum envio de teste.
