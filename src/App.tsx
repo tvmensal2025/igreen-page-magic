@@ -27,6 +27,7 @@ const AdminConversao = lazy(() => import("./pages/AdminConversao"));
 const AdminMetaAds = lazy(() => import("./pages/AdminMetaAds"));
 const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
 const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
+const AdminPortalMonitor = lazy(() => import("./pages/AdminPortalMonitor"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
@@ -86,6 +87,7 @@ const App = () => (
               <Route path="/admin/fluxo-b" element={<ProtectedRoute><AdminFluxoB /></ProtectedRoute>} />
               <Route path="/admin/saude-bot" element={<ProtectedRoute><SaudeBot /></ProtectedRoute>} />
               <Route path="/admin/saude-producao" element={<ProtectedRoute><SaudeProducao /></ProtectedRoute>} />
+              <Route path="/admin/portal-monitor" element={<ProtectedRoute><AdminPortalMonitor /></ProtectedRoute>} />
               <Route path="/admin/conhecimento" element={<ProtectedRoute><AdminKnowledge /></ProtectedRoute>} />
               <Route path="/admin/reaquecimento" element={<ProtectedRoute><AdminReaquecimento /></ProtectedRoute>} />
               <Route path="/admin/conversao" element={<ProtectedRoute><AdminConversao /></ProtectedRoute>} />
