@@ -258,6 +258,10 @@ async function processLead(job) {
         conversation_step: 'aguardando_otp',
         portal_submitted_at: new Date().toISOString(),
       };
+      // PR2: persistir fornecedora resolvida (evita re-resolver via /bonus/rules
+      // em retries futuros) e terms_accepted_at quando acceptTerms confirmou.
+      if (cadastroResult.fornecedora) updates.fornecedora = cadastroResult.fornecedora;
+      if (cadastroResult.termsAccepted) updates.terms_accepted_at = new Date().toISOString();
       await supabase.from('customers').update(updates).eq('id', customer_id).then(
         () => {},
         (e) => console.warn(`  ⚠ supabase update falhou: ${e.message}`),
