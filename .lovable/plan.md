@@ -1,37 +1,24 @@
-## Problema 1 — dropdown "Validar / 30·60·90·120 dias" abre por baixo do diálogo
+## Teste real de envio (texto + áudio + imagem) do pós-venda
 
-Confirmei a causa olhando os tokens de z-index dos componentes shadcn do projeto:
+### Como vou testar sem bagunçar dados
 
-- `src/components/ui/dialog.tsx` → overlay e conteúdo do diálogo usam `z-[120]`
-- `src/components/ui/dropdown-menu.tsx` → `DropdownMenuContent` usa `z-50`
+1. **Descobrir seu número de admin** consultando `auth.users` + `consultants` para pegar o `phone_whatsapp` cadastrado.
+2. **Criar um customer de teste** apontando para o seu próprio número, marcando `customer_origin='manual'` e `pos_venda_stage='espera'` (não polui métricas de carteira).
+3. **Disparar `pos-venda-auto-progress**` via `supabase--curl_edge_functions` em modo dirigido — passando o `customer_id` e `target_stage=d30` (se a function não suportar parâmetro, faço update direto em `customers.pos_venda_stage='d30'` + `pos_venda_approved_at=now()` e chamo o cron, que detecta e envia).
+4. **Verificar no seu WhatsApp** se chegaram as 3 mídias do estágio d30 (texto, áudio, imagem) — e conferir o registro em `customer_auto_message_log` com `status='sent'`.
+5. **Cleanup**: apagar o customer de teste e a linha do log.
 
-Como o botão "Validar ▾" do `PendingApprovalDialog.tsx` (linhas 557-592) vive **dentro** de um `Dialog`, o menu suspenso fica numa camada inferior à do diálogo e por isso aparece "atrás" — quase impossível de clicar nos itens 30/60/90/120.
+### O que vou precisar confirmar de você antes
 
-### Correção (mínima, só no PendingApprovalDialog)
+- Seu número de WhatsApp (formato `5511989000650`) **OU** autorização para eu pegar o que está no seu cadastro de consultant.
+- Qual estágio testar primeiro: **d30** (recomendado) ou outro?
 
-Adicionar `className="z-[130] w-56"` ao `<DropdownMenuContent>` desse bloco para subir acima do `z-[120]` do diálogo. Não mexer no componente base `ui/dropdown-menu.tsx` para não afetar outros menus do app.
+### Risco
 
-Também aplicar o mesmo `z-[130]` nos outros menus que vivem dentro deste mesmo diálogo, se existirem (vou rastrear todos os `DropdownMenuContent` em `PendingApprovalDialog.tsx` e padronizar).
+Nulo para os clientes reais — o registro de teste é isolado, não conta como aprovação de carteira, é deletado ao final, e o envio respeita as regras normais de horário e canal (Evolution/Whapi do seu consultant).
 
-Resultado esperado: ao clicar em ▾ ao lado de "Validar", o menu abre **por cima** do card, com 30/60/90/120 dias clicáveis normalmente.
+### Saída esperada
 
----
-
-## Problema 2 — "analise se já está todas as mídias certas para concluir o sistema"
-
-Aqui preciso entender o que você quer auditar antes de mexer. "Mídias" no projeto pode significar coisas bem diferentes, e cada uma tem um lugar próprio:
-
-1. **Mídias do Fluxo D / Super Admin** (áudios, imagens, vídeos de cada passo do bot do WhatsApp) — verificar se todos os passos têm a mídia oficial do Super Admin e se os consultores estão herdando sem duplicar.
-2. **Mídias das mensagens automáticas de pós-venda** (Aprovado, Reprovado, 30/60/90/120 dias) — verificar se cada estágio do Kanban tem o template/áudio configurado em `kanban_stages` ou no template de pós-venda.
-3. **Mídias de reaquecimento / nudge** (frases + áudio das automações proativas) — verificar se o catálogo está completo.
-4. **Mídias dos templates de campanha / CTWA** (anúncios do Facebook) — verificar criativos.
-
-Só vou tocar nessa parte depois de você me dizer qual escopo. Pelo contexto do print (CRM → Validar cliente → 30/60/90/120) meu palpite é **#2 (mensagens automáticas de pós-venda)**, mas confirmo antes para não auditar a coisa errada.
-
----
-
-## Resumo do que será feito agora (se aprovado)
-
-- Editar **apenas** `src/components/whatsapp/PendingApprovalDialog.tsx`: adicionar `z-[130]` em cada `DropdownMenuContent` desse arquivo.
-- **Não** mexer no `ui/dropdown-menu.tsx` (evita efeito colateral em outros menus).
-- Aguardar sua resposta sobre qual conjunto de mídias auditar antes de seguir para o item 2.
+Te respondo com: número usado, prints dos logs da edge function, e confirmação de que chegou no seu WhatsApp. Se algo falhar (canal off, áudio quebrado, etc.) eu já corrijo na sequência.  
+  
+pode mandar para o 11989000650
