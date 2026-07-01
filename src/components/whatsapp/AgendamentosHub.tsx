@@ -204,6 +204,15 @@ export function AgendamentosHub({
       icon: Megaphone,
       action: () => setActiveTab("campanhas"),
     },
+    {
+      id: "igreen" as const,
+      title: "Automações iGreen",
+      desc: "Captura de boletos, devolutivas, telecom, seguros e cashback (sempre salvando). Alertas e envios proativos por WhatsApp.",
+      icon: Bot,
+      badge: "Sempre salvando",
+      badgeOn: true,
+      action: () => setActiveTab("igreen"),
+    },
   ];
 
   /**
