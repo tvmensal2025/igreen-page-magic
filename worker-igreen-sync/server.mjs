@@ -896,7 +896,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+api-vo-v16',
+        mode: 'tor+playwright+api-vo-v17',
         api_base: API_BASE,
         worker_token_configured: Boolean(WORKER_TOKEN),
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
@@ -1022,7 +1022,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v16 (tor+playwright+api-vo) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v17 (tor+playwright+api-vo) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
