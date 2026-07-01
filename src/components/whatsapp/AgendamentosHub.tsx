@@ -23,6 +23,9 @@ import {
 } from "lucide-react";
 
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
+const AutomacaoIgreenCard = lazy(() =>
+  import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
+);
 
 function formatScheduleDate(dateStr: string | Date) {
   try {
@@ -201,6 +204,15 @@ export function AgendamentosHub({
       icon: Megaphone,
       action: () => setActiveTab("campanhas"),
     },
+    {
+      id: "igreen" as const,
+      title: "Automações iGreen",
+      desc: "Captura de boletos, devolutivas, telecom, seguros e cashback (sempre salvando). Alertas e envios proativos por WhatsApp.",
+      icon: Bot,
+      badge: "Sempre salvando",
+      badgeOn: true,
+      action: () => setActiveTab("igreen"),
+    },
   ];
 
   /**
@@ -305,6 +317,7 @@ export function AgendamentosHub({
             <TabsTrigger value="pos-venda" className="text-xs">Pós-venda</TabsTrigger>
             <TabsTrigger value="reaquecimento" className="text-xs">Reaquecimento</TabsTrigger>
             <TabsTrigger value="campanhas" className="text-xs">Campanhas</TabsTrigger>
+            <TabsTrigger value="igreen" className="text-xs">Automações iGreen</TabsTrigger>
             <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
           </TabsList>
 
@@ -588,6 +601,17 @@ export function AgendamentosHub({
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* ── Automações iGreen ── */}
+          <TabsContent value="igreen" className="mt-0">
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Captura de dados do escritório iGreen (boletos, devolutivas, telecom, seguros, cashback) é obrigatória e sempre salva.
+              Automações que enviam mensagem ao cliente permanecem desligadas — ative com cuidado.
+            </p>
+            <Suspense fallback={<LoadingRow />}>
+              <AutomacaoIgreenCard consultantId={consultantId} />
+            </Suspense>
           </TabsContent>
 
           {/* ── Histórico ── */}

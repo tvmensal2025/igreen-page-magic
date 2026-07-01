@@ -23,15 +23,16 @@ export interface AutomationSettings {
 }
 
 const DEFAULTS: Omit<AutomationSettings, "consultant_id"> = {
-  capture_devolutivas: false,
-  capture_cashback: false,
-  capture_boletos: false,
-  capture_telecom: false,
-  capture_seguros: false,
-  alert_boletos_vencendo: false,
-  alert_devolutivas: false,
-  alert_licencas_expirando: false,
-  rotinas_tarefas: false,
+  // Capturas: SEMPRE ligadas — o sync do iGreen tem que buscar e salvar tudo.
+  capture_devolutivas: true,
+  capture_cashback: true,
+  capture_boletos: true,
+  capture_telecom: true,
+  capture_seguros: true,
+  alert_boletos_vencendo: true,
+  alert_devolutivas: true,
+  alert_licencas_expirando: true,
+  rotinas_tarefas: true,
   auto_wa_boleto_vencendo: false,
   auto_wa_aniversariante: false,
   cross_sell_bot: false,

@@ -10,10 +10,11 @@ import {
 
 type Key = keyof Omit<AutomationSettings, "consultant_id">;
 
-const GROUPS: { title: string; hint: string; items: { key: Key; label: string; desc: string }[] }[] = [
+const GROUPS: { title: string; hint: string; locked?: boolean; items: { key: Key; label: string; desc: string }[] }[] = [
   {
-    title: "Captura de dados",
-    hint: "O que o sync do iGreen coleta e guarda na sua carteira.",
+    title: "Captura de dados (sempre ativo)",
+    hint: "O sync do iGreen busca e salva estes dados a cada sincronização — não dá pra desligar.",
+    locked: true,
     items: [
       { key: "capture_boletos", label: "Boletos dos clientes", desc: "Valores, vencimento, status e PDF." },
       { key: "capture_devolutivas", label: "Devolutivas detalhadas", desc: "Categoria, motivo, se é impeditiva." },
@@ -63,7 +64,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       <div>
         <h3 className="font-semibold text-sm">Automações iGreen</h3>
         <p className="text-xs text-muted-foreground mt-1">
-          <strong>Captura e alertas já começam ligados</strong> para novos consultores (boletos, devolutivas, telecom, seguros, cashback, licenças). Automações que enviam mensagem ao cliente permanecem desligadas — ative com cuidado.
+          <strong>Captura de dados é obrigatória e sempre salva</strong> (boletos, devolutivas, telecom, seguros, cashback). Alertas já vêm ligados. Automações que enviam mensagem ao cliente permanecem desligadas — ative com cuidado.
         </p>
       </div>
 
@@ -88,9 +89,10 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                     </div>
                     <Switch
                       id={it.key}
-                      checked={!!settings?.[it.key]}
-                      disabled={update.isPending}
-                      onCheckedChange={(v) => onToggle(it.key, v)}
+                      checked={g.locked ? true : !!settings?.[it.key]}
+                      disabled={g.locked || update.isPending}
+                      onCheckedChange={(v) => { if (!g.locked) onToggle(it.key, v); }}
+                      title={g.locked ? "Captura obrigatória — sempre salvando" : undefined}
                     />
                   </div>
                 ))}

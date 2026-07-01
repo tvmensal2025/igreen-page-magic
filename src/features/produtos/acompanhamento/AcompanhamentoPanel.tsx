@@ -39,7 +39,7 @@ import { loadLocalGreenSettings } from "./greenData";
 import { formatBRLFromCents } from "../lib/money";
 import { VendasEmAndamentoPanel } from "./VendasEmAndamentoPanel";
 import { MultiprodutoCard } from "./MultiprodutoCard";
-import { AutomacaoIgreenCard } from "./AutomacaoIgreenCard";
+// AutomacaoIgreenCard foi movido para a Central de Agendamentos.
 import { CrossSellCard } from "./CrossSellCard";
 
 
@@ -144,8 +144,7 @@ export function AcompanhamentoPanel({
       {/* Cross-sell manual: energia → telecom/seguros (consultor decide enviar) */}
       <CrossSellCard consultantId={consultantId} />
 
-      {/* Toggles de automação iGreen (tudo começa desligado) */}
-      <AutomacaoIgreenCard consultantId={consultantId} />
+      {/* Automações iGreen agora moram na Central de Agendamentos (aba "Automações iGreen"). */}
 
       {/* Onboarding / alertas de configuração */}
       {(needsGraduacaoSetup || needsEntradaRules) && (
