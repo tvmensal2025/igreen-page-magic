@@ -1,79 +1,53 @@
 ## Objetivo
+Fechar as lacunas restantes da sincronização com o escritório iGreen — hoje trazemos clientes, rede, boletos, telecom, seguros, devolutivas, métricas e cashback (GREEN/TELECOM). Ainda faltam blocos inteiros do portal novo e enriquecimento de fichas.
 
-Fechar as lacunas de dados iGreen encontradas na auditoria. Hoje o worker captura 20 endpoints mas ~14 estão em "probe only" (não persistem), e ~30 colunas populadas no banco não aparecem em nenhuma tela. Vamos priorizar valor imediato: métricas do consultor, detalhes de telecom/seguros por cliente, campos faltantes em boleto, cashback SEGUROS e alertas.
+## Lacunas identificadas
+1. **Cashback Seguros**: `/cashback/resumo?origem=SEGUROS` retorna 400 (não existe). Precisamos descobrir o endpoint real de comissões de apólices (hoje só tem 3 tentativas às cegas).
+2. **Telecom** — só puxamos o Kanban `/crm/telecom` e faturas. Falta: resumo por linha (`/telecom/linhas`), portabilidade, recargas, comissões mensais.
+3. **Seguros** — só puxamos o Kanban de 5 apólices. Falta: sinistros, endosso, renovações próximas, comissão paga/pendente.
+4. **Financeiro do consultor** — não puxamos extrato de comissões, saques, saldo disponível, notas fiscais emitidas.
+5. **Rede / Onboarding** — trazemos `/network-map/data` mas não puxamos: histórico de qualificações, upgrades de licenciados, eventos de graduação, aniversariantes de licenças.
+6. **Devolutivas** — trazemos 5, mas não trazemos o histórico resolvido nem o detalhe por lead (motivo em texto longo, anexos).
+7. **Detalhamento de cliente (`/crm/green/{id}`)** — hoje enriquecemos 66/66 fichas mas os campos ricos (contrato assinado, data de ativação de injeção, histórico de kWh, número da UC, distribuidora ID) não estão sendo persistidos em `customers`.
+8. **Rotinas de tarefas** — puxamos `diaria/semanal/mensal` mas não gravamos como tarefas acionáveis (aniversário, boleto vencendo, licença expirando) numa tabela consultável.
+9. **Sem diagnóstico**: quando um endpoint falha (como o cashback SEGUROS), o erro só aparece no log do worker — a UI nunca informa. Sem observabilidade não sabemos o que está faltando.
 
-## Escopo (5 fases sem quebrar o que já funciona)
+## Plano em 4 fases
 
-### Fase 1 — Backend (worker + edge): capturar o que falta
+### Fase 1 — Descoberta segura (probe estendido)
+- Ampliar `PROBE_ALLOWLIST` em `worker-igreen-sync/server.mjs` com candidatos:
+  `/seguros/comissoes`, `/seguros/sinistros`, `/seguros/renovacoes`,
+  `/telecom/linhas`, `/telecom/recargas`, `/telecom/comissoes`,
+  `/financeiro/extrato`, `/financeiro/saques`, `/financeiro/saldo`,
+  `/rede/qualificacoes`, `/rede/graduacoes`, `/rede/aniversariantes`,
+  `/clientes-green/{id}/historico`, `/clientes-green/{id}/kwh`.
+- Rodar 1x, salvar shape em `worker_phase_logs` para consulta.
+- Nenhum código de negócio é escrito antes de sabermos qual endpoint responde 200.
 
-Alvo: `worker-igreen-sync/server.mjs` e `supabase/functions/sync-igreen-customers/index.ts`.
+### Fase 2 — Persistência dos novos blocos
+Com base nos endpoints validados na Fase 1:
+- Novas tabelas (schema aditivo): `igreen_telecom_linhas`, `igreen_seguros_comissoes`, `igreen_seguros_sinistros`, `igreen_financeiro_extrato`, `igreen_rede_qualificacoes`, `igreen_rotinas_tarefas` (unificada).
+- Colunas novas em `customers` para os campos ricos do detalhe: `uc_numero`, `contrato_assinado_em`, `injecao_ativa_em`, `distribuidora_id`, `historico_kwh_jsonb`.
+- Todas com RLS por consultor + `GRANT` explícitos.
 
-1. Adicionar em `fetchCashback()` a origem `SEGUROS` (junto com GREEN/TELECOM) → grava em nova coluna `cashback_seguros_saldo` de `igreen_consultant_metrics`.
-2. Promover de "probe only" para "captura + persistência" os endpoints de maior valor:
-  - `GET /painel/onboarding` → JSON em nova coluna `painel_onboarding_json`
-  - `GET /painel/inativos` → `painel_inativos_json`
-  - `GET /painel/top-expansao` + `/ranking-movements` → `painel_ranking_json`
-  - `GET /telecom/resumo-geral` e `/seguros/resumo-geral` → colunas achatadas (`telecom_resumo_json`, `seguros_resumo_json`)
-  - `GET /telecom/faturas` já existe → passar a persistir `fatura_status`, `fatura_mes_referencia`, `fatura_valor` no `igreen_telecom_customers` (já tem colunas, só faltava mapear no upsert)
-3. Guardar timestamp `last_sync_at` por módulo (`igreen_automation_settings` → colunas `last_sync_*`) para o painel mostrar quando cada bloco foi atualizado.
+### Fase 3 — Worker + edge function
+- `worker-igreen-sync`: novas funções `fetchTelecomLinhas`, `fetchSegurosComissoes`, `fetchFinanceiro`, `fetchRedeQualificacoes`, `enrichCustomerRich`. Incluir todas no `/sync-all` com `only[]` opcional.
+- `supabase/functions/sync-igreen-customers`: mapear os novos payloads para as tabelas da Fase 2. Um endpoint = uma função de persistência isolada, cada uma tolerante a falha (não derruba as outras).
 
-### Fase 2 — Schema aditivo (migration)
-
-Alterações puramente aditivas (não quebra nada existente):
-
-```sql
-ALTER TABLE igreen_consultant_metrics
-  ADD COLUMN IF NOT EXISTS cashback_seguros_saldo numeric,
-  ADD COLUMN IF NOT EXISTS painel_onboarding_json jsonb,
-  ADD COLUMN IF NOT EXISTS painel_inativos_json jsonb,
-  ADD COLUMN IF NOT EXISTS painel_ranking_json jsonb,
-  ADD COLUMN IF NOT EXISTS telecom_resumo_json jsonb,
-  ADD COLUMN IF NOT EXISTS seguros_resumo_json jsonb;
--- customers: campo do cadastro que estava faltando
-ALTER TABLE customers
-  ADD COLUMN IF NOT EXISTS possui_placas boolean;
-```
-
-Nada de mudar/remover colunas ou constraints.
-
-### Fase 3 — UI: expor os campos que já existem mas ninguém vê
-
-Alvo: `src/features/produtos/acompanhamento/CarteiraGreenPanel.tsx` e componentes filhos.
-
-1. **BoletosList.tsx** — adicionar: `valor_fornecedora`, `valor_distribuidora`, `tipo_pagamento` e botão "NF" (url_invoice) ao lado de "Boleto".
-2. **Novo `ConsultantMetricsCard.tsx**` dentro do Carteira iGreen — exibe (do `igreen_consultant_metrics`):
-  - Clientes: total / green / telecom / seguros
-  - Rede: licenciados ativos, diretos ativos, GP/GI do mês, tamanho da rede
-  - Cadastros: validados / aguardando / devolutivas / cancelados / reprovados / ag. assinatura + kWh validados
-  - Cashback: GREEN + TELECOM + SEGUROS (saldo)
-3. **Novo `TelecomClientesList.tsx**` e `**SegurosClientesList.tsx**` — tabela expandível por cliente (nome, cidade/UF, licenciado, status, valor mensal, mês ref) usando `igreen_telecom_customers` / `igreen_seguros_customers`. Substitui o mero contador do `MultiprodutoCard`.
-4. `**RotinasPanel.tsx**` — lê `rotina_diaria/semanal/mensal` (jsonb) e transforma em cards de tarefas (aniversariantes, esfriando, licenças expirando). Fallback: se estrutura desconhecida, renderiza JSON pretty.
-5. `**RedeDashboardCard.tsx**` — usa `painel_onboarding_json`, `painel_inativos_json`, `painel_ranking_json` para 3 mini-blocos (novos, inativos, ranking).
-6. Rodapé do painel: badge "Última sync: X min atrás" por módulo.
-
-### Fase 4 — Alertas ligados por padrão (opt-in existente)
-
-`igreen_automation_settings` já tem `auto_wa_boleto_vencendo`, `cross_sell_bot`, `rotinas_tarefas`. Trocar defaults para `true` na coluna default e no fallback `DEFAULT_ON` da edge (mesmo padrão que já foi aplicado nas outras). Nenhum override manual é sobrescrito.
-
-### Fase 5 — Observabilidade
-
-Adicionar aba "Diagnóstico" no `CarteiraGreenPanel` mostrando, para cada um dos 20+ endpoints: última execução, sucesso/erro, latência, registros ingeridos. Fonte: `worker_phase_logs` (já existe).
-
-## Fora de escopo (documentado para depois)
-
-- Pro-builder/analise-pro/analise-retencao/estatisticas-pro — endpoints ainda instáveis; manter em probe.
-- OCR de documentos físicos (RG/conta/contrato) — API iGreen retorna 404.
-- Extrato financeiro/comissão do consultor — endpoint inexistente.
-
-## Riscos e mitigação
-
-- **Rota do worker** pode retornar shape inesperado nos endpoints novos → cada `fetch*` já grava `raw_json`, então mesmo se o parsing achatado falhar, o dado bruto fica salvo.
-- **Timeout** — sync já é assíncrono (`EdgeRuntime.waitUntil`), não muda nada.
-- **RLS** das novas colunas — são aditivas em tabelas já com policies; nada a ajustar.
-- **Realtime types** — `src/integrations/supabase/types.ts` é auto-gerado; após migration ele atualiza sozinho.
+### Fase 4 — UI + Diagnóstico
+- Painel `CarteiraGreenPanel`: novas seções condicionadas a dados presentes (`FinanceiroCard`, `TelecomLinhasList`, `SegurosDetalhesCard`, `RedeQualificacoesCard`).
+- Aba nova "Diagnóstico" no painel: lê `worker_phase_logs` e mostra em verde/vermelho quais endpoints responderam na última sync, com timestamp e amostra do shape. Assim qualquer novo bloco que a iGreen adicionar aparece imediatamente para decidirmos integrar.
 
 ## Ordem de execução
+1. Fase 1 (probe) — sozinha, sem risco. Aguardar output antes de continuar.
+2. Fase 2 (migration) — só depois de saber o shape real de cada endpoint.
+3. Fase 3 (worker + edge) — depende do schema.
+4. Fase 4 (UI) — depende dos dados populados.
 
-1. Migration (Fase 2) → 2. Worker + Edge (Fase 1) → 3. UI blocos existentes (Fase 3.1, 3.2) → 4. UI listas telecom/seguros (Fase 3.3) → 5. Rotinas + Rede (3.4, 3.5) → 6. Defaults automação (Fase 4) → 7. Diagnóstico (Fase 5).
+## Riscos
+- Endpoints da API nova podem exigir `?consultor_id=` ou headers extras — a Fase 1 vai revelar.
+- `SESSION_TTL_MS` de 30min é suficiente para o probe (todos os endpoints numa sessão).
+- Zero impacto no fluxo D / WhatsApp — trabalho isolado no worker `igreen-sync` e na aba Clientes.
 
-Cada etapa é independente e pode ser publicada isoladamente. FACA TODAS
+## Observação sobre `.lovable/`
+O diretório `.lovable/` está no seu `.gitignore` — o `plan.md` que este tool grava não vai persistir no próximo snapshot. Se quiser guardar o plano, me diga que removo a entrada.
