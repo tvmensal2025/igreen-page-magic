@@ -475,17 +475,20 @@ async function generateAlerts(supabase: any, consultantId: string | null, toggle
       });
     }
   }
-  // Licenças expirando (1 alerta agregado por sync, sem idcliente)
+  // Licenças expirando (1 alerta agregado por sync, sem idcliente).
+  // Preferência: /painel/licencas-expirando (mais rico); fallback: overview.alertas.licencas.
   if (toggles.alert_licencas_expirando) {
-    const lic = data?.metrics?.overview?.alertas?.licencas || {};
-    const total = Number(lic.aVencer || 0) + Number(lic.vencida || 0) + Number(lic.expirada || 0);
+    const licExp = data?.metrics?.licencas_expirando || null;
+    const licFallback = data?.metrics?.overview?.alertas?.licencas || {};
+    const counts = licExp?.counts || licFallback || {};
+    const total = Number(counts.aVencer || 0) + Number(counts.vencida || 0) + Number(counts.expirada || 0);
     if (total > 0) {
       pushOnce("igreen_licencas_expirando", null, {
         consultant_id: consultantId,
         alert_type: "igreen_licencas_expirando",
-        reason: `Licenças na rede: ${lic.aVencer || 0} a vencer, ${lic.vencida || 0} vencidas, ${lic.expirada || 0} expiradas`,
+        reason: `Licenças na rede: ${counts.aVencer || 0} a vencer, ${counts.vencida || 0} vencidas, ${counts.expirada || 0} expiradas`,
         phone: null,
-        metadata: lic,
+        metadata: { counts, itens: licExp?.itens ? licExp.itens.slice(0, 50) : undefined },
       });
     }
   }
