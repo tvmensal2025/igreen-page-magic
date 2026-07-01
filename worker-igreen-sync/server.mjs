@@ -608,44 +608,114 @@ async function fetchMetrics(session, month) {
 }
 
 
-// Probe genérico: testa uma allowlist de paths e devolve {status, keys}. Útil
-// para descoberta segura de endpoints Pro/análises sem escrever integração.
+// =============================================================================
+// Probe genérico de endpoints da API iGreen (api-vo).
+// - PROBE_ALLOWLIST: paths antigos, mantido para `/probe-endpoints` (retorna shape).
+// - PROBE_FULL_CATALOG: catálogo consolidado do SPA + do worker; usado no
+//   `/probe-all` para produzir status/tempo/tamanho/amostra por endpoint.
+// Nenhum POST/PUT/DELETE é disparado — só GET seguro, uma vez cada.
+// =============================================================================
 const PROBE_ALLOWLIST = [
-  // já conhecidos
-  '/painel/licencas-expirando',
-  '/painel/onboarding',
-  '/painel/inativos',
-  '/painel/eventos',
-  '/painel/top-expansao',
-  '/painel/ranking-movements',
-  '/pro-builder',
-  '/analise-pro/summary',
-  '/analise-retencao/summary',
-  '/estatisticas-pro',
-  '/telecom/resumo-geral',
-  '/telecom/licenciados',
-  '/seguros/resumo-geral',
-  '/seguros/licenciados',
-  // Fase 1 — candidatos para cobrir lacunas
-  '/seguros/comissoes',
-  '/seguros/sinistros',
-  '/seguros/renovacoes',
-  '/seguros/cashback/resumo',
-  '/crm/seguros/resumo',
-  '/telecom/linhas',
-  '/telecom/recargas',
-  '/telecom/comissoes',
-  '/telecom/portabilidade',
-  '/financeiro/extrato',
-  '/financeiro/saques',
-  '/financeiro/saldo',
-  '/financeiro/notas-fiscais',
-  '/rede/qualificacoes',
-  '/rede/graduacoes',
-  '/rede/aniversariantes',
-  '/rede/upgrades',
+  '/painel/licencas-expirando', '/painel/onboarding', '/painel/inativos',
+  '/painel/eventos', '/painel/top-expansao', '/painel/ranking-movements',
+  '/pro-builder', '/analise-pro/summary', '/analise-retencao/summary',
+  '/estatisticas-pro', '/telecom/resumo-geral', '/telecom/licenciados',
+  '/seguros/resumo-geral', '/seguros/licenciados',
+  '/seguros/comissoes', '/seguros/sinistros', '/seguros/renovacoes',
+  '/seguros/cashback/resumo', '/crm/seguros/resumo',
+  '/telecom/linhas', '/telecom/recargas', '/telecom/comissoes', '/telecom/portabilidade',
+  '/financeiro/extrato', '/financeiro/saques', '/financeiro/saldo', '/financeiro/notas-fiscais',
+  '/rede/qualificacoes', '/rede/graduacoes', '/rede/aniversariantes', '/rede/upgrades',
   '/clientes-green/devolutivas-resolvidas',
 ];
+
+// Catálogo consolidado a partir dos bundles Vite reais do SPA
+// (ClientesGreenPage, CrmPage, RotinasPage, PainelPage, RedePage, SegurosPage,
+//  TelecomPage, FinanceiroLicenciadoPage, IgreenDigitalPage, LeaderProPage,
+//  ProBuilderPage, PreSeniorPage, NetworkMapPage, BonusExtractPage,
+//  EstatisticasPage, AnaliseRetencaoPage, RankingRedePage, ConnectionExpressPage,
+//  ClientMapPage, TelecomClientMapPage, TelecomBonusExtractPage).
+const PROBE_FULL_CATALOG = [
+  { m: 'GET', p: '/consultant',                            cat: 'consultant' },
+  { m: 'GET', p: '/consultant/activation-code',            cat: 'consultant' },
+  { m: 'GET', p: '/dashboard/daily-analysis',              cat: 'dashboard' },
+  { m: 'GET', p: '/dashboard/customers-by-region',         cat: 'dashboard' },
+  { m: 'GET', p: '/painel/licencas-expirando',             cat: 'painel' },
+  { m: 'GET', p: '/painel/onboarding',                     cat: 'painel' },
+  { m: 'GET', p: '/painel/inativos',                       cat: 'painel' },
+  { m: 'GET', p: '/painel/eventos',                        cat: 'painel' },
+  { m: 'GET', p: '/painel/top-expansao',                   cat: 'painel' },
+  { m: 'GET', p: '/painel/ranking-movements',              cat: 'painel' },
+  { m: 'GET', p: '/painel/aniversariantes',                cat: 'painel' },
+  { m: 'GET', p: '/painel/qualificacoes',                  cat: 'painel' },
+  { m: 'GET', p: '/painel/graduacoes',                     cat: 'painel' },
+  { m: 'GET', p: '/clientes-green',                        cat: 'clientes-green' },
+  { m: 'GET', p: '/clientes-green/summary',                cat: 'clientes-green' },
+  { m: 'GET', p: '/clientes-green/devolutivas',            cat: 'clientes-green' },
+  { m: 'GET', p: '/clientes-green/devolutivas-resolvidas', cat: 'clientes-green' },
+  { m: 'GET', p: '/clientes-green/boletos',                cat: 'clientes-green' },
+  { m: 'GET', p: '/clientes-green/faturas',                cat: 'clientes-green' },
+  { m: 'GET', p: '/clientes-green/injecao',                cat: 'clientes-green' },
+  { m: 'GET', p: '/crm',                                   cat: 'crm' },
+  { m: 'GET', p: '/crm/summary',                           cat: 'crm' },
+  { m: 'GET', p: '/crm/leads',                             cat: 'crm' },
+  { m: 'GET', p: '/crm/seguros/resumo',                    cat: 'crm' },
+  { m: 'GET', p: '/crm/telecom/resumo',                    cat: 'crm' },
+  { m: 'GET', p: '/rotinas',                               cat: 'rotinas' },
+  { m: 'GET', p: '/rotinas/summary',                       cat: 'rotinas' },
+  { m: 'GET', p: '/rotinas/tarefas',                       cat: 'rotinas' },
+  { m: 'GET', p: '/rotinas/aniversariantes',               cat: 'rotinas' },
+  { m: 'GET', p: '/rotinas/vencimentos',                   cat: 'rotinas' },
+  { m: 'GET', p: '/rede-lider',                            cat: 'rede' },
+  { m: 'GET', p: '/rede-lider/summary',                    cat: 'rede' },
+  { m: 'GET', p: '/rede/qualificacoes',                    cat: 'rede' },
+  { m: 'GET', p: '/rede/graduacoes',                       cat: 'rede' },
+  { m: 'GET', p: '/rede/aniversariantes',                  cat: 'rede' },
+  { m: 'GET', p: '/rede/upgrades',                         cat: 'rede' },
+  { m: 'GET', p: '/rede/map',                              cat: 'rede' },
+  { m: 'GET', p: '/rede/ranking',                          cat: 'rede' },
+  { m: 'GET', p: '/network-map',                           cat: 'rede' },
+  { m: 'GET', p: '/network-map/summary',                   cat: 'rede' },
+  { m: 'GET', p: '/pro-builder',                           cat: 'pro' },
+  { m: 'GET', p: '/pro-maker',                             cat: 'pro' },
+  { m: 'GET', p: '/pro-maker/metas',                       cat: 'pro' },
+  { m: 'GET', p: '/pre-senior',                            cat: 'pro' },
+  { m: 'GET', p: '/pre-senior/summary',                    cat: 'pro' },
+  { m: 'GET', p: '/produtos/telecom',                      cat: 'telecom' },
+  { m: 'GET', p: '/telecom/resumo-geral',                  cat: 'telecom' },
+  { m: 'GET', p: '/telecom/licenciados',                   cat: 'telecom' },
+  { m: 'GET', p: '/telecom/linhas',                        cat: 'telecom' },
+  { m: 'GET', p: '/telecom/recargas',                      cat: 'telecom' },
+  { m: 'GET', p: '/telecom/comissoes',                     cat: 'telecom' },
+  { m: 'GET', p: '/telecom/portabilidade',                 cat: 'telecom' },
+  { m: 'GET', p: '/telecom/bonus',                         cat: 'telecom' },
+  { m: 'GET', p: '/telecom/client-map',                    cat: 'telecom' },
+  { m: 'GET', p: '/telecom/clientes',                      cat: 'telecom' },
+  { m: 'GET', p: '/seguros',                               cat: 'seguros' },
+  { m: 'GET', p: '/seguros/resumo-geral',                  cat: 'seguros' },
+  { m: 'GET', p: '/seguros/licenciados',                   cat: 'seguros' },
+  { m: 'GET', p: '/seguros/comissoes',                     cat: 'seguros' },
+  { m: 'GET', p: '/seguros/sinistros',                     cat: 'seguros' },
+  { m: 'GET', p: '/seguros/renovacoes',                    cat: 'seguros' },
+  { m: 'GET', p: '/seguros/cashback/resumo',               cat: 'seguros' },
+  { m: 'GET', p: '/seguros/apolices',                      cat: 'seguros' },
+  { m: 'GET', p: '/seguros/clientes',                      cat: 'seguros' },
+  { m: 'GET', p: '/financeiro',                            cat: 'financeiro' },
+  { m: 'GET', p: '/financeiro/extrato',                    cat: 'financeiro' },
+  { m: 'GET', p: '/financeiro/saques',                     cat: 'financeiro' },
+  { m: 'GET', p: '/financeiro/saldo',                      cat: 'financeiro' },
+  { m: 'GET', p: '/financeiro/notas-fiscais',              cat: 'financeiro' },
+  { m: 'GET', p: '/financeiro/bonus',                      cat: 'financeiro' },
+  { m: 'GET', p: '/cashback/resumo?origem=GREEN',          cat: 'cashback' },
+  { m: 'GET', p: '/cashback/resumo?origem=TELECOM',        cat: 'cashback' },
+  { m: 'GET', p: '/igreen-digital',                        cat: 'digital' },
+  { m: 'GET', p: '/igreen-digital/summary',                cat: 'digital' },
+  { m: 'GET', p: '/estatisticas-pro',                      cat: 'estatisticas' },
+  { m: 'GET', p: '/analise-pro/summary',                   cat: 'estatisticas' },
+  { m: 'GET', p: '/analise-retencao/summary',              cat: 'estatisticas' },
+  { m: 'GET', p: '/connection-express',                    cat: 'connection' },
+];
+
 async function probeEndpoints(session, paths) {
   const list = Array.isArray(paths) && paths.length ? paths.filter((p) => PROBE_ALLOWLIST.includes(p)) : PROBE_ALLOWLIST;
   const results = [];
@@ -665,6 +735,50 @@ async function probeEndpoints(session, paths) {
     await new Promise((r) => setTimeout(r, 300));
   }
   return results;
+}
+
+// /probe-all: roda o catálogo consolidado (só GET) uma vez cada.
+// Retorna status/tempo/tamanho/amostra por endpoint; alimenta a tabela
+// `igreen_endpoint_discovery`. Não grava body de rotas de /auth/*.
+async function probeAll(session) {
+  const started = Date.now();
+  const results = [];
+  for (const cand of PROBE_FULL_CATALOG) {
+    const t0 = Date.now();
+    let status = 0, ct = null, bytes = 0, sample = '', notes = '';
+    try {
+      const url = `${API_BASE}${cand.p}`;
+      const res = await fetch(url, {
+        method: cand.m,
+        headers: { Authorization: `Bearer ${session.token}`, Accept: 'application/json' },
+      });
+      status = res.status;
+      ct = res.headers.get('content-type') || null;
+      const txt = await res.text();
+      bytes = Buffer.byteLength(txt);
+      if (!/\/auth\//.test(cand.p)) sample = txt.slice(0, 500);
+    } catch (e) {
+      status = 0;
+      notes = String(e?.message || e).slice(0, 200);
+    }
+    const ms = Date.now() - t0;
+    const isAlive = status >= 200 && status < 300;
+    let bucket;
+    if (isAlive) bucket = 'ok';
+    else if (status === 401 || status === 403) bucket = 'denied';
+    else if (status === 404) bucket = 'missing';
+    else if (status === 400 || status === 422) bucket = 'bad_request';
+    else if (status >= 500) bucket = 'error_5xx';
+    else bucket = 'unknown';
+    results.push({
+      method: cand.m, path: cand.p, category: cand.cat,
+      status, content_type: ct, bytes, ms, sample_body: sample,
+      is_alive: isAlive, bucket, notes,
+    });
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const summary = results.reduce((acc, r) => { acc[r.bucket] = (acc[r.bucket] || 0) + 1; return acc; }, {});
+  return { results, summary, total: results.length, elapsed_ms: Date.now() - started };
 }
 
 // ---------- HTTP ----------
