@@ -1,73 +1,95 @@
-# Auditoria iGreen — o que capturamos hoje e o que ainda falta
+## Diagnóstico
 
-## Contexto
-
-Tentei logar no `escritorio.igreenenergy.com.br` daqui para varrer os endpoints ao vivo, mas o Cloudflare bloqueou o IP do sandbox (é justamente por isso que o `worker-igreen-sync` roda com Tor na VPS). A auditoria abaixo cruza o **código real** do worker/edge (fonte da verdade do que sincronizamos) com os relatórios `ANALISE_GAPS_PLATAFORMA.md` e `ANALISE_PRODUTOS_IGREEN.md`. O que precisa de olho no portal ao vivo eu proponho fazer via job dedicado no próprio worker Tor (item 6).
-
-## Situação atual da captura (por área)
+O worker no Easypanel (`worker-igreen-sync/server.mjs`) **já sabe puxar tudo o que o portal expõe hoje**. Endpoints ativos no `/sync-all` (1 login por consultor):
 
 
-| Área                                  | Endpoint(s) portal                                                              | Capturado?                   | Onde grava                           |
-| ------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------ |
-| Clientes energia                      | `/crm/green`                                                                    | ✅                            | `customers` + `igreen_customer_*`    |
-| Rede                                  | `/network-map/data?month=`                                                      | ✅                            | `igreen_network_members`             |
-| Painel/rotinas                        | `/painel/*`, `/rotinas/{diaria,semanal,mensal}`, `/clientes-green/resumo-geral` | ✅ (raw)                      | `igreen_consultant_metrics.raw_json` |
-| Boletos energia                       | `/clientes-green/boletos` + `/clientes-green/boletos/{id}`                      | ✅                            | `igreen_customer_boletos`            |
-| Devolutivas                           | `/rotinas/devolutivas-novas`, `/clientes-green/devolutivas`                     | ✅                            | `igreen_customer_devolutivas`        |
-| Cashback                              | `/cashback/resumo?origem=GREEN|TELECOM|SEGUROS`                                 | ✅ (colunas + json)           | `igreen_consultant_metrics`          |
-| Telecom                               | `/crm/telecom` + `/telecom/faturas`                                             | ✅                            | `igreen_telecom_customers`           |
-| Seguros                               | `/crm/seguros`                                                                  | ✅                            | `igreen_seguros_customers`           |
-| Licenças expirando                    | `/painel/licencas-expirando`                                                    | ⚠️ só via `overview.alertas` | falta alerta acionável               |
-| Cross-sell energia→telecom/seguros    | (derivado)                                                                      | ❌                            | não implementado                     |
-| Pro-builder / análises                | `/pro-builder`, `/analise-pro/summary`, `/analise-retencao/summary`             | ❌                            | —                                    |
-| Docs do cliente (RG, conta, contrato) | não expostos pela API                                                           | 🚫 confirmado 404            | n/a                                  |
-| Extrato financeiro do consultor       | não existe endpoint                                                             | 🚫                           | n/a                                  |
+| Área                                                                          | Endpoint                                                                                                                           | Worker             | Edge grava em                     |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------ | --------------------------------- |
+| Clientes (Kanban: aguardando/validado/**devolutiva**/**reprovado**/cancelado) | `/crm/green`                                                                                                                       | `fetchCustomers`   | `customers` + `igreen_customer_*` |
+| Rede                                                                          | `/network-map/data`                                                                                                                | `fetchNetwork`     | `network_members`                 |
+| Painel + rotinas                                                              | `/painel/{overview,producao}` · `/rotinas/{diaria,semanal,mensal}` · `/clientes-green/resumo-geral` · `/painel/licencas-expirando` | `fetchMetrics`     | `igreen_consultant_metrics`       |
+| Boletos                                                                       | `/clientes-green/boletos` (+ detalhe por id)                                                                                       | `fetchBoletos`     | `igreen_customer_boletos`         |
+| Telecom                                                                       | `/crm/telecom` + `/telecom/faturas`                                                                                                | `fetchTelecom`     | `igreen_telecom_customers`        |
+| Seguros                                                                       | `/crm/seguros`                                                                                                                     | `fetchSeguros`     | `igreen_seguros_customers`        |
+| Devolutivas ricas                                                             | `/rotinas/devolutivas-novas` + `/clientes-green/devolutivas`                                                                       | `fetchDevolutivas` | `igreen_customer_devolutivas`     |
+| Cashback                                                                      | `/cashback/resumo?origem=GREEN                                                                                                     | TELECOM            | SEGUROS`                          |
 
 
-Conclusão: **todos os endpoints com dado útil já estão sendo puxados**. O que resta são melhorias de **uso** (alertas, cross-sell, tarefas) e áreas Pro/análises que ainda não subimos.
+**Reprovado/Devolutiva já vêm** no `/crm/green`: cada card traz `status_coluna` (`validado`, `devolutiva`, `reprovado`, `cancelado`…) e o campo `devolutiva` texto, mapeados em `persistCustomers` → `customers.status_coluna` + `customers.devolutiva`.
 
-## Plano proposto
+## Onde está o gargalo
 
-### 1. Sanity check ao vivo (via worker Tor, sem tocar código)
+Toda a tabela `igreen_automation_settings` tem `DEFAULT false`. A edge `sync-igreen-customers` só chama os `persist*` quando o toggle correspondente está ligado. Consultor novo entra e o sync grava **só clientes + rede + métricas**; boletos, devolutivas ricas, telecom, seguros, cashback e alertas ficam de fora até alguém abrir o card "Automações iGreen" e ativar manualmente. É esse "não puxa tudo" que você está sentindo.
 
-- Rodar `POST /sync-all` no `worker-igreen-sync` de produção com a conta `rafael.ids@icloud.com` e comparar o retorno com a última linha em `igreen_consultant_metrics.raw_json`.
-- Ler `/last-debug` do worker para confirmar que não há 403/429 nas rotas ativas.
-- Objetivo: provar que nenhum endpoint atual está silenciosamente falhando.
+Além disso vi 3 pontos operacionais menores:
 
-### 2. Probe de descoberta de novos endpoints
+1. Log do Easypanel que você mandou mostra `[warn] The current consensus has no exit nodes` no Tor. Se persistir, os fetches saem por circuito interno e caem em 403/timeout. Precisamos um health-check periódico que reinicie o container quando o Tor não tiver saídas.
+2. Se o toggle `capture_boletos` estiver desligado mas `alert_boletos_vencendo` ligado, a edge tenta gerar alerta sem dado — vira ruído. Precisamos amarrar o alerta ao respectivo capture (auto-enable).
+3. O `probe-endpoints` do worker já lista rotas Pro (`/pro-builder`, `/analise-pro/summary`, `/analise-retencao/summary`, `/telecom/resumo-geral`, `/seguros/resumo-geral`, `/telecom/licenciados`, `/seguros/licenciados`), mas nunca foi disparado em produção. Sem esse retorno não dá para saber se compensa gravar dados Pro.
 
-- Adicionar um handler `POST /probe-endpoints` no worker (Tor + sessão logada) que testa uma allowlist de rotas candidatas (`/pro-builder`, `/analise-pro/summary`, `/analise-retencao/summary`, `/estatisticas-pro`, `/painel/licencas-expirando`, `/telecom/resumo-geral`, `/seguros/resumo-geral`, `/telecom/licenciados`, `/seguros/licenciados`).
-- Retorna `{path, status, shape}` para cada.
-- Roda uma vez por consultor Super Admin; resultado vai para um novo `.tmp/igreen-endpoint-map.json`.
+## O que vou fazer
 
-### 3. Alerta de licença expirando (item aberto do gap doc)
+### 1. Ligar captura completa por padrão (sem quebrar quem já configurou)
 
-- Nova coluna toggle `alert_licencas_expirando` já existe em `igreen_automation_settings`.
-- Falta o job: edge `igreen-licencas-alerts` que lê `raw_json.alertas.licencas` (ou o novo `/painel/licencas-expirando` se o probe do item 2 confirmar) e cria itens em `bot_handoff_alerts` (prioriza `vencida > aVencer`).
+Migração aditiva: mudar o `DEFAULT` das colunas de **captura** e **alertas** para `true` e fazer um `UPDATE` seletivo só nas linhas onde **todos** os toggles de captura ainda estão `false` (indica consultor que nunca abriu a tela). Quem já mexeu mantém a escolha.
 
-### 4. Cross-sell energia → telecom/seguros no bot
+```sql
+ALTER TABLE public.igreen_automation_settings
+  ALTER COLUMN capture_boletos SET DEFAULT true,
+  ALTER COLUMN capture_devolutivas SET DEFAULT true,
+  ALTER COLUMN capture_telecom SET DEFAULT true,
+  ALTER COLUMN capture_seguros SET DEFAULT true,
+  ALTER COLUMN capture_cashback SET DEFAULT true,
+  ALTER COLUMN alert_boletos_vencendo SET DEFAULT true,
+  ALTER COLUMN alert_devolutivas SET DEFAULT true,
+  ALTER COLUMN alert_licencas_expirando SET DEFAULT true;
 
-- Novo helper `_shared/xsell/igreen-multiprod.ts`: cruza telefone do lead com `igreen_telecom_customers`/`igreen_seguros_customers` do mesmo consultor.
-- No `pos-venda-auto-progress`, quando lead chega em `pv_aprovado` sem produto telecom, engata ramo opcional de oferta (usa mídia default se existir; senão texto neutro).
-- Toggle: `cross_sell_bot` (já existe).
+UPDATE public.igreen_automation_settings
+   SET capture_boletos=true, capture_devolutivas=true, capture_telecom=true,
+       capture_seguros=true, capture_cashback=true,
+       alert_boletos_vencendo=true, alert_devolutivas=true, alert_licencas_expirando=true
+ WHERE capture_boletos=false AND capture_devolutivas=false AND capture_telecom=false
+   AND capture_seguros=false AND capture_cashback=false;
+```
 
-### 5. Ingestão Pro-builder / análises (só se probe confirmar payload útil)
+Automação proativa no WhatsApp (`auto_wa_*`, `cross_sell_bot`) **permanece false** — nada dispara para cliente sem você mandar.
 
-- Se o item 2 mostrar dados úteis, adicionar `fetchProAnalytics()` ao worker e uma tabela `igreen_pro_metrics` (JSON por mês). Prioridade baixa.
+### 2. Fallback na edge: se não existir linha em `igreen_automation_settings`, tratar como "tudo ligado" para captura
 
-### 6. Documentação
+Hoje se a linha não existe, `toggles = {}` e nada é gravado. Vou trocar o default in-code para `{ capture_*: true, alert_*: true, auto_wa_*: false, cross_sell_bot: false }` para eliminar a corrida entre criar o consultor e configurar toggles.
 
-- Atualizar `ANALISE_GAPS_PLATAFORMA.md` marcando os itens que já foram fechados desde a última auditoria (devolutivas, cashback, boletos, multiproduto).
-- Adicionar seção "verificado ao vivo em 01/07/2026 pela conta rafael.ids".
+### 3. Consistência captura↔alerta
 
-## Escopo técnico resumido
+Na edge, se `alert_X` estiver on e `capture_X` off, forçar `capture_X = true` para aquela rodada (log em `raw_json._auto_enabled`). Sem migração destrutiva.
 
-- Sem migrações destrutivas. Apenas `ALTER TABLE ADD COLUMN IF NOT EXISTS` em `igreen_consultant_metrics` (caso item 2 traga novos campos) e nova tabela opcional `igreen_pro_metrics` (RLS por dono, GRANT padrão).
-- Sem mudanças no frontend nesta rodada (só backend + docs). Painel do consultor já mostra tudo que capturamos.
-- Zero risco de quebrar fluxo D / CEMIG: nenhum toque em `_shared/engine/*` nem em webhooks.
+### 4. Health-check do Tor no worker
+
+Adicionar rota `GET /health` já retornar `tor_exits: number` (parseando o log de bootstrap). No `sync-all`, se `apiGet` cair em 403/timeout duas vezes seguidas com Tor sem exits, retornar `error_code: "tor_no_exits"` para a edge marcar o run como transient (não spammar alerta).
+
+### 5. UI: card "Automações iGreen"
+
+Atualizar o texto de topo para "Tudo começa **ligado** para captura. Automações que enviam mensagem ao cliente continuam desligadas." e destacar visualmente o grupo "Captura de dados" como já ativo. Sem mudança de lógica além do label.
+
+### 6. Rodar `probe-endpoints` uma vez em produção
+
+Documentar o `curl` no `.tmp/igreen-endpoint-map.json` para termos a resposta real das rotas Pro. Se algum devolver payload útil, entra em issue separada — **não** promete ingestão nesta rodada (evita quebrar o `sync-all`).
+
+## Arquivos afetados
+
+- `supabase/migrations/<novo>_igreen_defaults_on.sql` — migração aditiva acima.
+- `supabase/functions/sync-igreen-customers/index.ts` — defaults in-code (item 2) + auto-enable captura quando alerta (item 3).
+- `worker-igreen-sync/server.mjs` — health-check com `tor_exits` e classificação `tor_no_exits` (item 4).
+- `src/features/produtos/acompanhamento/AutomacaoIgreenCard.tsx` — apenas copy (item 5).
+- `.tmp/igreen-endpoint-map.json` — resultado do probe (item 6, sem código de produção).
+
+## Impacto e risco
+
+- **Zero mudança no motor de fluxo (D/CEMIG), webhooks, portal-worker.**
+- Consultores que já configuraram manualmente ficam intactos (o `UPDATE` só afeta linhas 100% zeradas).
+- Volume de escrita aumenta em `igreen_customer_boletos`, `igreen_customer_devolutivas`, `igreen_telecom_customers`, `igreen_seguros_customers` — todas com upsert por chave natural, sem risco de duplicar.
+- Alertas em `bot_handoff_alerts` também sobem, mas a dedup por `alert_type + idcliente` já existe.
 
 ## Perguntas antes de executar
 
-1. Posso avançar com **todos os 6 itens**, ou você quer priorizar só o sanity check + alerta de licença (rápido, 1 dia) e deixar cross-sell/Pro-builder para depois? FACA TUDO, MAS ANALISE O CODIGO PARA NAO QUEBRAR
-2. &nbsp;
-3. O cross-sell (item 4) deve disparar automaticamente ao aprovar, ou só marcar oportunidade no CRM para o consultor decidir enviar? O CONSULTOR ENVIAR, SEM AUTOMATICO, IREMOS TESTAR FUTURAMENTE AJUSTAMOS
+1. Ligar defaults para **todos** os consultores existentes que ainda estão zerados, ou só para novos que forem criados daqui pra frente?  NOVOS DAQUI PARA FRENTE
+2. O toggle `rotinas_tarefas` (que transforma aniversariantes/inativos em tarefas no seu painel) entra no pacote "ligado por padrão" ou fica manual? DEIXA O TOGGLE MANUAL, FUTURAMENTE EU ARRUMO
