@@ -174,6 +174,8 @@ async function solveRecaptcha(sitekey = RECAPTCHA_SITEKEY) {
 
 // ---------- Login Playwright ----------
 const sessions = new Map(); // email → { token, consultorId, browser, context, createdAt }
+const loginLocks = new Map();
+const operationLocks = new Map();
 
 async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
@@ -369,13 +371,53 @@ async function loginWithPlaywright(email, password) {
 }
 
 async function getOrCreateSession(email, password) {
-  const now = Date.now();
-  const s = sessions.get(email);
-  if (s && (now - s.createdAt) < SESSION_TTL_MS) return s;
-  if (s) { try { await s.browser.close(); } catch {} sessions.delete(email); }
-  const fresh = await loginWithPlaywright(email, password);
-  sessions.set(email, fresh);
-  return fresh;
+  const key = String(email || '').toLowerCase();
+  const prev = loginLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  loginLocks.set(key, prev.catch(() => {}).then(() => current));
+  await prev.catch(() => {});
+
+  try {
+    const now = Date.now();
+    const s = sessions.get(email);
+    if (s && (now - s.createdAt) < SESSION_TTL_MS) return s;
+    if (s) { try { await s.browser.close(); } catch {} sessions.delete(email); }
+    let lastErr = null;
+    const attempts = Math.max(1, LOGIN_MAX_ATTEMPTS);
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        if (attempt > 1) dbg(`[login] tentativa ${attempt}/${attempts} após falha transitória`);
+        const fresh = await loginWithPlaywright(email, password);
+        sessions.set(email, fresh);
+        return fresh;
+      } catch (e) {
+        lastErr = e;
+        const transient = ['portal_login_timeout', 'network_fetch_failed', 'no_login_response', 'igreen_waf_blocked', 'tor_no_exits'].includes(e?.code);
+        if (!transient || attempt >= attempts) throw e;
+        await new Promise((r) => setTimeout(r, 2500 * attempt));
+      }
+    }
+    throw lastErr || new HttpError(500, 'Falha ao criar sessão iGreen');
+  } finally {
+    try { release(); } catch {}
+    if (loginLocks.get(key) === current) loginLocks.delete(key);
+  }
+}
+
+async function withEmailOperationLock(email, fn) {
+  const key = String(email || '').toLowerCase();
+  const prev = operationLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  operationLocks.set(key, prev.catch(() => {}).then(() => current));
+  await prev.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    try { release(); } catch {}
+    if (operationLocks.get(key) === current) operationLocks.delete(key);
+  }
 }
 
 // ===== Coleta de dados na nova API (api-vo) =====
