@@ -3652,6 +3652,7 @@ export type Database = {
           cep: string | null
           chat_cleared_at: string | null
           commission_rate: number | null
+          concessionaria: string | null
           consultant_id: string | null
           conta_pdf_protegida: boolean | null
           contaunica: boolean | null
@@ -3672,6 +3673,7 @@ export type Database = {
           data_ativo_igreen: string | null
           data_cadastro: string | null
           data_cadastro_igreen: string | null
+          data_injecao_igreen: string | null
           data_nascimento: string | null
           data_nascimento_iso: string | null
           data_validado: string | null
@@ -3754,6 +3756,7 @@ export type Database = {
           nome_mae: string | null
           nome_pai: string | null
           nudge_sent_at: string | null
+          num_cliente_distribuidora: string | null
           numero_instalacao: string | null
           observacao: string | null
           observacao_igreen: string | null
@@ -3823,6 +3826,7 @@ export type Database = {
           sales_phase: string | null
           senha_pdf: string | null
           senhadistribuidora: string | null
+          situacao_igreen: string | null
           source_ad_id: string | null
           source_campaign_id: string | null
           source_ctwa_clid: string | null
@@ -3873,6 +3877,7 @@ export type Database = {
           cep?: string | null
           chat_cleared_at?: string | null
           commission_rate?: number | null
+          concessionaria?: string | null
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
           contaunica?: boolean | null
@@ -3893,6 +3898,7 @@ export type Database = {
           data_ativo_igreen?: string | null
           data_cadastro?: string | null
           data_cadastro_igreen?: string | null
+          data_injecao_igreen?: string | null
           data_nascimento?: string | null
           data_nascimento_iso?: string | null
           data_validado?: string | null
@@ -3975,6 +3981,7 @@ export type Database = {
           nome_mae?: string | null
           nome_pai?: string | null
           nudge_sent_at?: string | null
+          num_cliente_distribuidora?: string | null
           numero_instalacao?: string | null
           observacao?: string | null
           observacao_igreen?: string | null
@@ -4044,6 +4051,7 @@ export type Database = {
           sales_phase?: string | null
           senha_pdf?: string | null
           senhadistribuidora?: string | null
+          situacao_igreen?: string | null
           source_ad_id?: string | null
           source_campaign_id?: string | null
           source_ctwa_clid?: string | null
@@ -4094,6 +4102,7 @@ export type Database = {
           cep?: string | null
           chat_cleared_at?: string | null
           commission_rate?: number | null
+          concessionaria?: string | null
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
           contaunica?: boolean | null
@@ -4114,6 +4123,7 @@ export type Database = {
           data_ativo_igreen?: string | null
           data_cadastro?: string | null
           data_cadastro_igreen?: string | null
+          data_injecao_igreen?: string | null
           data_nascimento?: string | null
           data_nascimento_iso?: string | null
           data_validado?: string | null
@@ -4196,6 +4206,7 @@ export type Database = {
           nome_mae?: string | null
           nome_pai?: string | null
           nudge_sent_at?: string | null
+          num_cliente_distribuidora?: string | null
           numero_instalacao?: string | null
           observacao?: string | null
           observacao_igreen?: string | null
@@ -4265,6 +4276,7 @@ export type Database = {
           sales_phase?: string | null
           senha_pdf?: string | null
           senhadistribuidora?: string | null
+          situacao_igreen?: string | null
           source_ad_id?: string | null
           source_campaign_id?: string | null
           source_ctwa_clid?: string | null
@@ -5188,47 +5200,634 @@ export type Database = {
         }
         Relationships: []
       }
-      igreen_extension_tokens: {
+      igreen_automation_settings: {
         Row: {
+          alert_boletos_vencendo: boolean
+          alert_devolutivas: boolean
+          alert_licencas_expirando: boolean
+          auto_wa_aniversariante: boolean
+          auto_wa_boleto_vencendo: boolean
+          capture_boletos: boolean
+          capture_cashback: boolean
+          capture_devolutivas: boolean
+          capture_seguros: boolean
+          capture_telecom: boolean
           consultant_id: string
           created_at: string
-          expires_at: string
-          id: string
-          label: string
-          last_used_at: string | null
-          last_used_ip: string | null
-          revoked_at: string | null
-          token_hash: string
-          token_prefix: string
+          cross_sell_bot: boolean
+          rotinas_tarefas: boolean
           updated_at: string
         }
         Insert: {
+          alert_boletos_vencendo?: boolean
+          alert_devolutivas?: boolean
+          alert_licencas_expirando?: boolean
+          auto_wa_aniversariante?: boolean
+          auto_wa_boleto_vencendo?: boolean
+          capture_boletos?: boolean
+          capture_cashback?: boolean
+          capture_devolutivas?: boolean
+          capture_seguros?: boolean
+          capture_telecom?: boolean
           consultant_id: string
           created_at?: string
-          expires_at?: string
-          id?: string
-          label?: string
-          last_used_at?: string | null
-          last_used_ip?: string | null
-          revoked_at?: string | null
-          token_hash: string
-          token_prefix: string
+          cross_sell_bot?: boolean
+          rotinas_tarefas?: boolean
           updated_at?: string
         }
         Update: {
+          alert_boletos_vencendo?: boolean
+          alert_devolutivas?: boolean
+          alert_licencas_expirando?: boolean
+          auto_wa_aniversariante?: boolean
+          auto_wa_boleto_vencendo?: boolean
+          capture_boletos?: boolean
+          capture_cashback?: boolean
+          capture_devolutivas?: boolean
+          capture_seguros?: boolean
+          capture_telecom?: boolean
           consultant_id?: string
           created_at?: string
-          expires_at?: string
-          id?: string
-          label?: string
-          last_used_at?: string | null
-          last_used_ip?: string | null
-          revoked_at?: string | null
-          token_hash?: string
-          token_prefix?: string
+          cross_sell_bot?: boolean
+          rotinas_tarefas?: boolean
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "igreen_automation_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_automation_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_automation_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_automation_settings_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      igreen_consultant_metrics: {
+        Row: {
+          ag_assinatura_n: number | null
+          aguardando_n: number | null
+          cancelados_n: number | null
+          cashback_green_saldo: number | null
+          cashback_json: Json | null
+          cashback_telecom_saldo: number | null
+          clientes_green: number | null
+          clientes_seguros: number | null
+          clientes_telecom: number | null
+          clientes_total: number | null
+          consultant_id: string
+          created_at: string
+          devolutivas_n: number | null
+          diretos: number | null
+          diretos_ativos: number | null
+          gi_mes: number | null
+          gp_mes: number | null
+          id: string
+          kwh_validados: number | null
+          licenciados_ativos: number | null
+          licenciados_total: number | null
+          mes_ref: string
+          mwh: number | null
+          raw_json: Json | null
+          rede_tamanho: number | null
+          reprovados_n: number | null
+          rotina_diaria: Json | null
+          rotina_mensal: Json | null
+          rotina_semanal: Json | null
+          synced_at: string
+          total_cadastros: number | null
+          updated_at: string
+          validados_n: number | null
+        }
+        Insert: {
+          ag_assinatura_n?: number | null
+          aguardando_n?: number | null
+          cancelados_n?: number | null
+          cashback_green_saldo?: number | null
+          cashback_json?: Json | null
+          cashback_telecom_saldo?: number | null
+          clientes_green?: number | null
+          clientes_seguros?: number | null
+          clientes_telecom?: number | null
+          clientes_total?: number | null
+          consultant_id: string
+          created_at?: string
+          devolutivas_n?: number | null
+          diretos?: number | null
+          diretos_ativos?: number | null
+          gi_mes?: number | null
+          gp_mes?: number | null
+          id?: string
+          kwh_validados?: number | null
+          licenciados_ativos?: number | null
+          licenciados_total?: number | null
+          mes_ref: string
+          mwh?: number | null
+          raw_json?: Json | null
+          rede_tamanho?: number | null
+          reprovados_n?: number | null
+          rotina_diaria?: Json | null
+          rotina_mensal?: Json | null
+          rotina_semanal?: Json | null
+          synced_at?: string
+          total_cadastros?: number | null
+          updated_at?: string
+          validados_n?: number | null
+        }
+        Update: {
+          ag_assinatura_n?: number | null
+          aguardando_n?: number | null
+          cancelados_n?: number | null
+          cashback_green_saldo?: number | null
+          cashback_json?: Json | null
+          cashback_telecom_saldo?: number | null
+          clientes_green?: number | null
+          clientes_seguros?: number | null
+          clientes_telecom?: number | null
+          clientes_total?: number | null
+          consultant_id?: string
+          created_at?: string
+          devolutivas_n?: number | null
+          diretos?: number | null
+          diretos_ativos?: number | null
+          gi_mes?: number | null
+          gp_mes?: number | null
+          id?: string
+          kwh_validados?: number | null
+          licenciados_ativos?: number | null
+          licenciados_total?: number | null
+          mes_ref?: string
+          mwh?: number | null
+          raw_json?: Json | null
+          rede_tamanho?: number | null
+          reprovados_n?: number | null
+          rotina_diaria?: Json | null
+          rotina_mensal?: Json | null
+          rotina_semanal?: Json | null
+          synced_at?: string
+          total_cadastros?: number | null
+          updated_at?: string
+          validados_n?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_consultant_metrics_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_consultant_metrics_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_consultant_metrics_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_consultant_metrics_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      igreen_customer_boletos: {
+        Row: {
+          cidade: string | null
+          consultant_id: string
+          conta_unica: boolean | null
+          created_at: string
+          customer_id: string | null
+          dias_atraso: number | null
+          fornecedora: string | null
+          id: string
+          idcliente: number
+          injecao: boolean | null
+          kwh_compensado: number | null
+          mes_referencia: string | null
+          nome: string | null
+          pagamento: string | null
+          raw_json: Json | null
+          status: string | null
+          synced_at: string
+          tipo_pagamento: string | null
+          total: number | null
+          uf: string | null
+          updated_at: string
+          url_boleto: string | null
+          url_invoice: string | null
+          valor_distribuidora: number | null
+          valor_fornecedora: number | null
+          vencimento: string | null
+        }
+        Insert: {
+          cidade?: string | null
+          consultant_id: string
+          conta_unica?: boolean | null
+          created_at?: string
+          customer_id?: string | null
+          dias_atraso?: number | null
+          fornecedora?: string | null
+          id?: string
+          idcliente: number
+          injecao?: boolean | null
+          kwh_compensado?: number | null
+          mes_referencia?: string | null
+          nome?: string | null
+          pagamento?: string | null
+          raw_json?: Json | null
+          status?: string | null
+          synced_at?: string
+          tipo_pagamento?: string | null
+          total?: number | null
+          uf?: string | null
+          updated_at?: string
+          url_boleto?: string | null
+          url_invoice?: string | null
+          valor_distribuidora?: number | null
+          valor_fornecedora?: number | null
+          vencimento?: string | null
+        }
+        Update: {
+          cidade?: string | null
+          consultant_id?: string
+          conta_unica?: boolean | null
+          created_at?: string
+          customer_id?: string | null
+          dias_atraso?: number | null
+          fornecedora?: string | null
+          id?: string
+          idcliente?: number
+          injecao?: boolean | null
+          kwh_compensado?: number | null
+          mes_referencia?: string | null
+          nome?: string | null
+          pagamento?: string | null
+          raw_json?: Json | null
+          status?: string | null
+          synced_at?: string
+          tipo_pagamento?: string | null
+          total?: number | null
+          uf?: string | null
+          updated_at?: string
+          url_boleto?: string | null
+          url_invoice?: string | null
+          valor_distribuidora?: number | null
+          valor_fornecedora?: number | null
+          vencimento?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      igreen_customer_devolutivas: {
+        Row: {
+          campo: string | null
+          categoria: string | null
+          cidade: string | null
+          consultant_id: string
+          created_at: string
+          customer_id: string | null
+          data_devolutiva: string | null
+          id: string
+          idcliente: number
+          iddevolutiva: number | null
+          impeditiva: boolean | null
+          licenciado: string | null
+          motivo: string | null
+          nome: string | null
+          propria: boolean | null
+          raw_json: Json | null
+          resolvida_em: string | null
+          synced_at: string
+          uf: string | null
+          updated_at: string
+        }
+        Insert: {
+          campo?: string | null
+          categoria?: string | null
+          cidade?: string | null
+          consultant_id: string
+          created_at?: string
+          customer_id?: string | null
+          data_devolutiva?: string | null
+          id?: string
+          idcliente: number
+          iddevolutiva?: number | null
+          impeditiva?: boolean | null
+          licenciado?: string | null
+          motivo?: string | null
+          nome?: string | null
+          propria?: boolean | null
+          raw_json?: Json | null
+          resolvida_em?: string | null
+          synced_at?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Update: {
+          campo?: string | null
+          categoria?: string | null
+          cidade?: string | null
+          consultant_id?: string
+          created_at?: string
+          customer_id?: string | null
+          data_devolutiva?: string | null
+          id?: string
+          idcliente?: number
+          iddevolutiva?: number | null
+          impeditiva?: boolean | null
+          licenciado?: string | null
+          motivo?: string | null
+          nome?: string | null
+          propria?: boolean | null
+          raw_json?: Json | null
+          resolvida_em?: string | null
+          synced_at?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_customer_devolutivas_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_devolutivas_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_devolutivas_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_devolutivas_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_devolutivas_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      igreen_seguros_customers: {
+        Row: {
+          cidade: string | null
+          consultant_id: string
+          created_at: string
+          fipe: number | null
+          id: string
+          licenciado: string | null
+          mensal: number | null
+          modelo: string | null
+          placa: string | null
+          raw_json: Json | null
+          segurado: string | null
+          seguro_id: string
+          status: string | null
+          status_label: string | null
+          synced_at: string
+          uf: string | null
+          updated_at: string
+        }
+        Insert: {
+          cidade?: string | null
+          consultant_id: string
+          created_at?: string
+          fipe?: number | null
+          id?: string
+          licenciado?: string | null
+          mensal?: number | null
+          modelo?: string | null
+          placa?: string | null
+          raw_json?: Json | null
+          segurado?: string | null
+          seguro_id: string
+          status?: string | null
+          status_label?: string | null
+          synced_at?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cidade?: string | null
+          consultant_id?: string
+          created_at?: string
+          fipe?: number | null
+          id?: string
+          licenciado?: string | null
+          mensal?: number | null
+          modelo?: string | null
+          placa?: string | null
+          raw_json?: Json | null
+          segurado?: string | null
+          seguro_id?: string
+          status?: string | null
+          status_label?: string | null
+          synced_at?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_seguros_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_seguros_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_seguros_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_seguros_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      igreen_telecom_customers: {
+        Row: {
+          cidade: string | null
+          consultant_id: string
+          created_at: string
+          data: string | null
+          fatura_mes_referencia: string | null
+          fatura_status: string | null
+          fatura_valor: number | null
+          id: string
+          idcnxtelecom: number
+          licenciado: string | null
+          nome: string | null
+          numero: string | null
+          raw_json: Json | null
+          status: string | null
+          status_label: string | null
+          synced_at: string
+          uf: string | null
+          updated_at: string
+        }
+        Insert: {
+          cidade?: string | null
+          consultant_id: string
+          created_at?: string
+          data?: string | null
+          fatura_mes_referencia?: string | null
+          fatura_status?: string | null
+          fatura_valor?: number | null
+          id?: string
+          idcnxtelecom: number
+          licenciado?: string | null
+          nome?: string | null
+          numero?: string | null
+          raw_json?: Json | null
+          status?: string | null
+          status_label?: string | null
+          synced_at?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cidade?: string | null
+          consultant_id?: string
+          created_at?: string
+          data?: string | null
+          fatura_mes_referencia?: string | null
+          fatura_status?: string | null
+          fatura_valor?: number | null
+          id?: string
+          idcnxtelecom?: number
+          licenciado?: string | null
+          nome?: string | null
+          numero?: string | null
+          raw_json?: Json | null
+          status?: string | null
+          status_label?: string | null
+          synced_at?: string
+          uf?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_telecom_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_telecom_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_telecom_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_telecom_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
       }
       inbound_media_failures: {
         Row: {
