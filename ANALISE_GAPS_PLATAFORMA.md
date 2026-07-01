@@ -1,6 +1,48 @@
 # Análise de gaps: o que ainda falta capturar/ajustar (iGreen)
 
-Data: 01/07/2026 · Base: lista COMPLETA de endpoints extraída do app (fechada).
+Data: 01/07/2026 · Base: lista COMPLETA de endpoints extraída do app + verificação
+via `POST /probe-endpoints` do worker (Tor) na conta `rafael.ids@icloud.com`.
+
+## Status resumido (01/07/2026, pós-auditoria)
+
+| Área                                       | Status atual                                                   |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| Clientes energia (`/crm/green`)            | ✅ capturado + achatado                                        |
+| Rede (`/network-map/data`)                 | ✅ capturado com campos ricos                                  |
+| Boletos energia                            | ✅ capturado (`igreen_customer_boletos`) + alerta acionável    |
+| Devolutivas detalhadas                     | ✅ capturado (`igreen_customer_devolutivas`) + alerta          |
+| Cashback (green/telecom/seguros)           | ✅ capturado em `igreen_consultant_metrics`                    |
+| Telecom (`/crm/telecom` + faturas)         | ✅ tabela `igreen_telecom_customers`                           |
+| Seguros (`/crm/seguros`)                   | ✅ tabela `igreen_seguros_customers`                           |
+| Licenças expirando                         | ✅ agora lê `/painel/licencas-expirando` (+ fallback overview) |
+| Rotinas (diária/semanal/mensal)            | ✅ raw em `raw_json`; UI simplificada                          |
+| Cross-sell energia→telecom/seguros         | ✅ **manual** (CrossSellCard, sem disparo automático)          |
+| Pro-builder / análises                     | 🔎 probe adicionado — ingestão só se retorno for útil          |
+| Docs do cliente (RG, conta, contrato)      | 🚫 API não expõe                                               |
+| Extrato financeiro do consultor            | 🚫 endpoint não existe                                         |
+
+Novos endpoints capturados/consultados nesta rodada:
+- `/painel/licencas-expirando` (agora entra em `metrics.licencas_expirando`).
+- `POST /probe-endpoints` no worker: testa `/pro-builder`, `/analise-pro/summary`,
+  `/analise-retencao/summary`, `/estatisticas-pro`, `/telecom/resumo-geral`,
+  `/seguros/resumo-geral`, `/telecom/licenciados`, `/seguros/licenciados`,
+  `/painel/{onboarding,inativos,eventos,top-expansao,ranking-movements}` — retorna
+  shape sem gravar nada, para decidir se vale gravar tabela dedicada.
+
+## Como rodar o probe (uma vez por auditoria)
+
+```bash
+curl -sS -X POST "$IGREEN_SYNC_WORKER_URL/probe-endpoints" \
+  -H "X-Worker-Token: $IGREEN_SYNC_WORKER_SECRET" \
+  -H "content-type: application/json" \
+  -d '{"portal_email":"rafael.ids@icloud.com","portal_password":"***"}' | jq
+```
+
+Resultado (200/404/erro por rota + `shape` do payload) vai para decisão manual
+sobre criar ingestão dedicada. Nada é gravado no banco pelo probe.
+
+---
+
 
 ## Método
 Extraí TODOS os endpoints que o portal realmente usa (dos bundles JS). A lista
