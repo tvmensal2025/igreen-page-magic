@@ -19,6 +19,7 @@ import { RetentionCard } from "./RetentionCard";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { filterMyClients } from "@/lib/myClientsFilter";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
+import { useNetworkIgreenIds } from "@/hooks/useNetworkIgreenIds";
 import { TeamRankingTab } from "./TeamRankingTab";
 import { TeamDashboard } from "./team-dashboard/TeamDashboard";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
@@ -49,10 +50,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
     consultantName: (form?.name as string) || null,
     cadastroIgreenIds: [],
   });
+  const { data: networkIgreenIds = [] } = useNetworkIgreenIds(userId);
   const { data: analytics } = useAnalytics(
     userId,
     periodDays,
     scope === "team" && isLeader ? teamIds : null,
+    networkIgreenIds,
   );
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -92,7 +95,16 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
     if (!analytics) return null;
     let walletOnly = analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
     if (scope === "me" && myClientsSettings) {
-      walletOnly = filterMyClients(walletOnly, myClientsSettings);
+      const expandedSettings = {
+        ...myClientsSettings,
+        cadastroIgreenIds: Array.from(
+          new Set([
+            ...(myClientsSettings.cadastroIgreenIds || []),
+            ...(networkIgreenIds || []),
+          ]),
+        ),
+      };
+      walletOnly = filterMyClients(walletOnly, expandedSettings);
     }
     const filtered = selectedLicenciado === "all" ? walletOnly : walletOnly.filter((c: any) => c.registered_by_name === selectedLicenciado);
     const totalCustomers = filtered.length;
@@ -140,7 +152,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
     return { totalCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
-  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings]);
+  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds]);
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
