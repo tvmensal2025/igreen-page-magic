@@ -318,7 +318,11 @@ export function hash(content: string): string {
 export function pickVariant(variant: "A" | "B" | "C" | "D"): VariantStrategy {
   switch (variant) {
     case "A":
-      return variantA;
+      // Alias: variante A (rótulo "CEMIG" na UI) roda EXATAMENTE como D —
+      // mesmos passos, mesmas mídias, mesmos botões interativos. Sem
+      // duplicação de dados: `resolveFlowId` também redireciona A → D público
+      // quando não há template A. Ver .lovable/plan.md.
+      return variantD;
     case "B":
       // Variant B = Fluxo B (antiga Vendedora V2). No caminho do Cérebro IA,
       // o fluxo B passa a ser comandado por `bot_flow_steps` (construtor
@@ -334,3 +338,4 @@ export function pickVariant(variant: "A" | "B" | "C" | "D"): VariantStrategy {
       return variantD;
   }
 }
+
