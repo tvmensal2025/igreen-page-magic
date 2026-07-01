@@ -923,6 +923,7 @@ const server = http.createServer(async (req, res) => {
     const password = String(body.portal_password || '');
     if (!email || !password) return sendJson(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
 
+    return await withEmailOperationLock(email, async () => {
     if (req.url === '/sync-customers') {
       const s = await getOrCreateSession(email, password);
       const customers = await fetchCustomers(s);
@@ -1014,6 +1015,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, ...out });
     }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
+    });
   } catch (e) {
     const status = e?.status || 500;
     console.error(`[err] ${req.method} ${req.url} → ${status}: ${e?.message}`);
