@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useBoletosCarteira, useDevolutivasCarteira, computeCarteiraStats } from "./hooks";
 import { ConsultantMetricsCard } from "./ConsultantMetricsCard";
 import { ClientesCarteiraTable } from "./ClientesCarteiraTable";
+import { IGreenSyncStatusBadge } from "@/components/admin/IGreenSyncStatusBadge";
 
 const SYNC_STEPS = ["Clientes", "Boletos", "Devolutivas", "Métricas", "Licenças"];
 
