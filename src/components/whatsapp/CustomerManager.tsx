@@ -65,7 +65,6 @@ export function CustomerManager({
   const [syncCooldown, setSyncCooldown] = useState(0);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
-  const [showCarteira, setShowCarteira] = useState(true);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
