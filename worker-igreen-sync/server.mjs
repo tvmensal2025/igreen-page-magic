@@ -1,4 +1,4 @@
-// server.mjs — igreen-sync-worker v16 (API nova api-vo)
+// server.mjs — igreen-sync-worker v17 (API nova api-vo)
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
@@ -38,6 +38,7 @@ const API_BASE = 'https://api-vo.igreenenergy.com.br/v1';
 const AUTH_PATH = '/auth/session';
 // Sitekey só é usada se o portal voltar a exigir reCAPTCHA (hoje não exige).
 const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
+const LOGIN_MAX_ATTEMPTS = parseInt(process.env.IGREEN_LOGIN_MAX_ATTEMPTS || '2', 10);
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
@@ -76,6 +77,27 @@ function isHtmlResponse(data) {
 
 function bodyPreview(body) {
   return JSON.stringify(body || {}).slice(0, 300);
+}
+
+async function classifyPortalPage(page) {
+  try {
+    return await page.evaluate(() => {
+      const txt = (document.body?.innerText || '').slice(0, 3000);
+      const title = document.title || '';
+      const hasEmail = !!document.querySelector('input[type="email"], input[name="email"]');
+      const hay = `${title}\n${txt}`.toLowerCase();
+      if (hasEmail) return { kind: 'login', title, sample: txt.slice(0, 500) };
+      if (/cloudflare|attention required|sorry, you have been blocked|access denied|ray id|challenge/.test(hay)) {
+        return { kind: 'waf', title, sample: txt.slice(0, 500) };
+      }
+      if (/erro de rede|network error|failed to fetch|não foi possível|nao foi possivel|temporariamente indisponível|temporariamente indisponivel/.test(hay)) {
+        return { kind: 'network', title, sample: txt.slice(0, 500) };
+      }
+      return { kind: 'unknown', title, sample: txt.slice(0, 500) };
+    });
+  } catch (e) {
+    return { kind: 'unknown', title: '', sample: `evaluate failed: ${e.message}` };
+  }
 }
 
 // ---------- IA Vision (OpenAI Vision direto) ----------
@@ -152,6 +174,8 @@ async function solveRecaptcha(sitekey = RECAPTCHA_SITEKEY) {
 
 // ---------- Login Playwright ----------
 const sessions = new Map(); // email → { token, consultorId, browser, context, createdAt }
+const loginLocks = new Map();
+const operationLocks = new Map();
 
 async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
@@ -190,8 +214,24 @@ async function loginWithPlaywright(email, password) {
     });
 
     dbg('[login] abrindo página de login…');
-    await page.goto(PORTAL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 30000 });
+    try {
+      await page.goto(PORTAL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    } catch (e) {
+      throw new HttpError(502, `Falha de rede ao abrir login iGreen: ${e.message}`, 'network_fetch_failed');
+    }
+    try {
+      await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 45000 });
+    } catch (e) {
+      const info = await classifyPortalPage(page);
+      await snapStep(page, `login_sem_campo_${info.kind}`);
+      if (info.kind === 'waf') {
+        throw new HttpError(503, `Portal iGreen bloqueou a tela de login (Cloudflare/WAF). ${info.sample || ''}`.slice(0, 500), 'igreen_waf_blocked');
+      }
+      if (info.kind === 'network') {
+        throw new HttpError(502, `Portal iGreen retornou erro de rede antes do login. ${info.sample || ''}`.slice(0, 500), 'network_fetch_failed');
+      }
+      throw new HttpError(504, `Portal iGreen não exibiu o campo de e-mail dentro do prazo. Página: ${info.title || 'sem título'}`, 'portal_login_timeout');
+    }
     await snapStep(page, 'abriu_login');
 
     dbg('[login] preenchendo credenciais');
@@ -285,7 +325,12 @@ async function loginWithPlaywright(email, password) {
     }
     await snapStep(page, 'pos_submit');
 
-    if (!loginResponseData) throw new HttpError(502, `Nenhuma response ${AUTH_PATH} capturada (clique + fallback falharam)`, 'no_login_response');
+    if (!loginResponseData) {
+      const info = await classifyPortalPage(page);
+      const code = info.kind === 'waf' ? 'igreen_waf_blocked' : info.kind === 'network' ? 'network_fetch_failed' : 'no_login_response';
+      const status = info.kind === 'waf' ? 503 : info.kind === 'network' ? 502 : 502;
+      throw new HttpError(status, `Nenhuma response ${AUTH_PATH} capturada (clique + fallback falharam). Estado: ${info.kind}. ${info.sample || ''}`.slice(0, 600), code);
+    }
     dbg(`[login] response ${AUTH_PATH} status=${loginResponseData.status}${isHtmlResponse(loginResponseData) ? ' html' : ''}`);
     if (isHtmlResponse(loginResponseData)) {
       throw new HttpError(503, `Portal iGreen bloqueou o login automatizado (Cloudflare/WAF ${loginResponseData.status}). Use a importação manual enquanto o portal estiver bloqueando o worker.`, 'igreen_waf_blocked');
@@ -326,13 +371,55 @@ async function loginWithPlaywright(email, password) {
 }
 
 async function getOrCreateSession(email, password) {
-  const now = Date.now();
-  const s = sessions.get(email);
-  if (s && (now - s.createdAt) < SESSION_TTL_MS) return s;
-  if (s) { try { await s.browser.close(); } catch {} sessions.delete(email); }
-  const fresh = await loginWithPlaywright(email, password);
-  sessions.set(email, fresh);
-  return fresh;
+  const key = String(email || '').toLowerCase();
+  const prev = loginLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const chained = prev.catch(() => {}).then(() => current);
+  loginLocks.set(key, chained);
+  await prev.catch(() => {});
+
+  try {
+    const now = Date.now();
+    const s = sessions.get(email);
+    if (s && (now - s.createdAt) < SESSION_TTL_MS) return s;
+    if (s) { try { await s.browser.close(); } catch {} sessions.delete(email); }
+    let lastErr = null;
+    const attempts = Math.max(1, LOGIN_MAX_ATTEMPTS);
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        if (attempt > 1) dbg(`[login] tentativa ${attempt}/${attempts} após falha transitória`);
+        const fresh = await loginWithPlaywright(email, password);
+        sessions.set(email, fresh);
+        return fresh;
+      } catch (e) {
+        lastErr = e;
+        const transient = ['portal_login_timeout', 'network_fetch_failed', 'no_login_response', 'igreen_waf_blocked', 'tor_no_exits'].includes(e?.code);
+        if (!transient || attempt >= attempts) throw e;
+        await new Promise((r) => setTimeout(r, 2500 * attempt));
+      }
+    }
+    throw lastErr || new HttpError(500, 'Falha ao criar sessão iGreen');
+  } finally {
+    try { release(); } catch {}
+    if (loginLocks.get(key) === chained) loginLocks.delete(key);
+  }
+}
+
+async function withEmailOperationLock(email, fn) {
+  const key = String(email || '').toLowerCase();
+  const prev = operationLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const chained = prev.catch(() => {}).then(() => current);
+  operationLocks.set(key, chained);
+  await prev.catch(() => {});
+  try {
+    return await fn();
+  } finally {
+    try { release(); } catch {}
+    if (operationLocks.get(key) === chained) operationLocks.delete(key);
+  }
 }
 
 // ===== Coleta de dados na nova API (api-vo) =====
@@ -541,8 +628,9 @@ async function fetchDevolutivas(session, month) {
 }
 
 // CASHBACK por origem. A API atual só aceita GREEN|TELECOM em /cashback/resumo.
-// Para SEGUROS a API rejeita com VALIDATION_ERROR → tentamos endpoints
-// alternativos conhecidos (comissões de apólices) e falhamos em silêncio.
+// Seguros não possui endpoint público de cashback/comissão no v1; não chamamos
+// rotas inválidas para evitar 400/404 recorrente nos logs. As apólices em si
+// continuam sendo capturadas em fetchSeguros().
 async function fetchCashback(session) {
   const res = {};
   for (const o of ['GREEN', 'TELECOM']) {
@@ -551,12 +639,7 @@ async function fetchCashback(session) {
       res[o.toLowerCase()] = j?.data || null;
     } catch (e) { dbg(`[cashback] ${o}: ${e.message}`); }
   }
-  for (const path of ['/seguros/cashback/resumo', '/crm/seguros/resumo', '/seguros/comissoes/resumo']) {
-    try {
-      const j = await apiGet(session, path);
-      if (j?.data) { res.seguros = j.data; break; }
-    } catch (e) { dbg(`[cashback] seguros ${path}: ${e.message}`); }
-  }
+  res.seguros = { unsupported: true, reason: 'api_v1_sem_endpoint_cashback_seguros' };
   return res;
 }
 
@@ -813,7 +896,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+api-vo-v16',
+        mode: 'tor+playwright+api-vo-v17',
         api_base: API_BASE,
         worker_token_configured: Boolean(WORKER_TOKEN),
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
@@ -838,6 +921,7 @@ const server = http.createServer(async (req, res) => {
     const password = String(body.portal_password || '');
     if (!email || !password) return sendJson(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
 
+    return await withEmailOperationLock(email, async () => {
     if (req.url === '/sync-customers') {
       const s = await getOrCreateSession(email, password);
       const customers = await fetchCustomers(s);
@@ -929,6 +1013,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, ...out });
     }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
+    });
   } catch (e) {
     const status = e?.status || 500;
     console.error(`[err] ${req.method} ${req.url} → ${status}: ${e?.message}`);
@@ -937,7 +1022,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v16 (tor+playwright+api-vo) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v17 (tor+playwright+api-vo) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
