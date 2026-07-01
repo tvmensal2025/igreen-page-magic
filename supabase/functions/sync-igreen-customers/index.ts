@@ -405,11 +405,13 @@ async function persistCashback(supabase: any, consultantId: string | null, cashb
   const mes = new Date().toISOString().slice(0, 7);
   const green = cashback.green || {};
   const telecom = cashback.telecom || {};
+  const seguros = cashback.seguros || {};
   const { error } = await supabase
     .from("igreen_consultant_metrics")
     .update({
       cashback_green_saldo: safeNum(green.saldo),
       cashback_telecom_saldo: safeNum(telecom.saldo),
+      cashback_seguros_saldo: safeNum(seguros.saldo),
       cashback_json: cashback,
       updated_at: new Date().toISOString(),
     })
