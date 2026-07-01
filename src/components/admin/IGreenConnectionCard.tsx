@@ -29,27 +29,36 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [consultorId, setConsultorId] = useState<string | null>(null);
 
+  const [credStatus, setCredStatus] = useState<string | null>(null);
+  const [credCheckedAt, setCredCheckedAt] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+
+  const reloadStatus = async () => {
+    const { data } = await supabase
+      .from("consultants")
+      .select("igreen_portal_email, igreen_consultor_id, igreen_credential_status, igreen_credential_checked_at")
+      .eq("id", userId)
+      .maybeSingle();
+    if (data) {
+      setEmail((data.igreen_portal_email as string) || "");
+      setConsultorId((data.igreen_consultor_id as string) || null);
+      setHasSavedPassword(!!data.igreen_portal_email);
+      setCredStatus((data as { igreen_credential_status?: string }).igreen_credential_status ?? null);
+      setCredCheckedAt((data as { igreen_credential_checked_at?: string }).igreen_credential_checked_at ?? null);
+    }
+  };
+
   useEffect(() => {
     if (!userId) return;
     (async () => {
       setLoading(true);
-      // Não lemos a senha (coluna com REVOKE SELECT p/ authenticated). Só sabemos
-      // se existe via a flag igreen_consultor_id / presença anterior de sync.
-      const { data } = await supabase
-        .from("consultants")
-        .select("igreen_portal_email, igreen_consultor_id")
-        .eq("id", userId)
-        .maybeSingle();
-      if (data) {
-        setEmail((data.igreen_portal_email as string) || "");
-        setConsultorId((data.igreen_consultor_id as string) || null);
-        setHasSavedPassword(!!data.igreen_portal_email);
-      }
+      await reloadStatus();
       const { data: s } = await supabase
         .from("settings").select("value").eq("key", "last_igreen_sync").maybeSingle();
       if (s?.value) setLastSync(s.value as string);
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const save = async () => {
@@ -60,13 +69,30 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
     setSaving(true);
     try {
       const patch: Record<string, unknown> = { igreen_portal_email: email.trim().toLowerCase() };
-      // Só grava a senha se o usuário digitou uma nova (campo vem vazio por segurança).
-      if (password.trim()) patch.igreen_portal_password = password;
+      const passwordChanged = !!password.trim();
+      if (passwordChanged) patch.igreen_portal_password = password;
       const { error } = await supabase.from("consultants").update(patch as never).eq("id", userId);
       if (error) throw error;
-      if (password.trim()) setHasSavedPassword(true);
+      if (passwordChanged) setHasSavedPassword(true);
       setPassword("");
-      toast({ title: "Conexão salva", description: "Credenciais do escritório iGreen atualizadas." });
+      toast({ title: "Conexão salva", description: "Validando credenciais no portal iGreen…" });
+
+      // Validação: chama a edge em modo `validate` (login leve, sem sync completo).
+      if (passwordChanged || !credStatus) {
+        setValidating(true);
+        const res = await runIgreenSync(userId, "validate");
+        await reloadStatus();
+        if (res.ok) {
+          toast({ title: "✅ Credenciais válidas", description: "Login no escritório iGreen confirmado." });
+        } else if (res.reason === "invalid_credentials") {
+          toast({ title: "Login inválido", description: "E-mail ou senha do escritório iGreen incorretos.", variant: "destructive" });
+        } else if (res.reason === "waf_blocked") {
+          toast({ title: "Portal bloqueado agora", description: "Cloudflare bloqueou o teste. Tente novamente em alguns minutos.", variant: "destructive" });
+        } else {
+          toast({ title: "Não consegui validar", description: res.error, variant: "destructive" });
+        }
+        setValidating(false);
+      }
     } catch (e) {
       toast({ title: "Erro ao salvar", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {
