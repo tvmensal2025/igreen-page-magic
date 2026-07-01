@@ -62,7 +62,7 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
       const patch: Record<string, unknown> = { igreen_portal_email: email.trim().toLowerCase() };
       // Só grava a senha se o usuário digitou uma nova (campo vem vazio por segurança).
       if (password.trim()) patch.igreen_portal_password = password;
-      const { error } = await supabase.from("consultants").update(patch).eq("id", userId);
+      const { error } = await supabase.from("consultants").update(patch as never).eq("id", userId);
       if (error) throw error;
       if (password.trim()) setHasSavedPassword(true);
       setPassword("");
