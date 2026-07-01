@@ -542,7 +542,7 @@ async function fetchDevolutivas(session, month) {
 
 // CASHBACK por origem (GREEN/TELECOM/SEGUROS): saldo gerado/usado + ranking.
 async function fetchCashback(session) {
-  const origens = ['GREEN', 'TELECOM'];
+  const origens = ['GREEN', 'TELECOM', 'SEGUROS'];
   const res = {};
   for (const o of origens) {
     try {
@@ -553,12 +553,19 @@ async function fetchCashback(session) {
   return res;
 }
 
-// MÉTRICAS/ROTINAS: painel do líder + rotinas + resumo geral de clientes.
+// MÉTRICAS/ROTINAS: painel do líder + rotinas + resumo geral de clientes
+// + painel de rede (onboarding/inativos/ranking) + resumo telecom/seguros.
 // Cada chamada é tolerante a erro (não derruba o sync inteiro).
 async function fetchMetrics(session, month) {
   const mes = month || new Date().toISOString().slice(0, 7);
   const safe = async (p) => { try { return await apiGet(session, p); } catch (e) { dbg(`[metrics] ${p} falhou: ${e.message}`); return null; } };
-  const [overview, producao, resumoClientes, rotinaDiaria, rotinaSemanal, rotinaMensal, licencasExp] = await Promise.all([
+  const [
+    overview, producao, resumoClientes,
+    rotinaDiaria, rotinaSemanal, rotinaMensal,
+    licencasExp,
+    painelOnboarding, painelInativos, painelTopExp, painelRanking,
+    telecomResumo, segurosResumo,
+  ] = await Promise.all([
     safe('/painel/overview'),
     safe('/painel/producao'),
     safe('/clientes-green/resumo-geral'),
@@ -566,6 +573,12 @@ async function fetchMetrics(session, month) {
     safe('/rotinas/semanal'),
     safe('/rotinas/mensal'),
     safe('/painel/licencas-expirando'),
+    safe('/painel/onboarding'),
+    safe('/painel/inativos'),
+    safe('/painel/top-expansao'),
+    safe('/painel/ranking-movements'),
+    safe('/telecom/resumo-geral'),
+    safe('/seguros/resumo-geral'),
   ]);
   return {
     mes,
@@ -576,8 +589,17 @@ async function fetchMetrics(session, month) {
     rotina_semanal: rotinaSemanal?.data ?? null,
     rotina_mensal: rotinaMensal?.data ?? null,
     licencas_expirando: licencasExp?.data ?? null,
+    painel_onboarding: painelOnboarding?.data ?? null,
+    painel_inativos: painelInativos?.data ?? null,
+    painel_ranking: {
+      top_expansao: painelTopExp?.data ?? null,
+      movements: painelRanking?.data ?? null,
+    },
+    telecom_resumo: telecomResumo?.data ?? null,
+    seguros_resumo: segurosResumo?.data ?? null,
   };
 }
+
 
 // Probe genérico: testa uma allowlist de paths e devolve {status, keys}. Útil
 // para descoberta segura de endpoints Pro/análises sem escrever integração.
