@@ -63,10 +63,14 @@ export function useAnalytics(
   consultantId: string | null,
   periodDays: number = 30,
   teamIds?: string[] | null,
+  networkIgreenIds?: string[] | null,
 ) {
   const idsKey = teamIds && teamIds.length > 1 ? [...teamIds].sort().join(",") : null;
+  const netKey = networkIgreenIds && networkIgreenIds.length > 0
+    ? `n${networkIgreenIds.length}`
+    : null;
   return useQuery({
-    queryKey: ["analytics", consultantId, periodDays, idsKey],
+    queryKey: ["analytics", consultantId, periodDays, idsKey, netKey],
     enabled: !!consultantId,
     refetchOnMount: true,
     staleTime: 5 * 60_000,
