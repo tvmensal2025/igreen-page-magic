@@ -540,15 +540,22 @@ async function fetchDevolutivas(session, month) {
   return out;
 }
 
-// CASHBACK por origem (GREEN/TELECOM/SEGUROS): saldo gerado/usado + ranking.
+// CASHBACK por origem. A API atual só aceita GREEN|TELECOM em /cashback/resumo.
+// Para SEGUROS a API rejeita com VALIDATION_ERROR → tentamos endpoints
+// alternativos conhecidos (comissões de apólices) e falhamos em silêncio.
 async function fetchCashback(session) {
-  const origens = ['GREEN', 'TELECOM', 'SEGUROS'];
   const res = {};
-  for (const o of origens) {
+  for (const o of ['GREEN', 'TELECOM']) {
     try {
       const j = await apiGet(session, `/cashback/resumo?origem=${o}`);
       res[o.toLowerCase()] = j?.data || null;
     } catch (e) { dbg(`[cashback] ${o}: ${e.message}`); }
+  }
+  for (const path of ['/seguros/cashback/resumo', '/crm/seguros/resumo', '/seguros/comissoes/resumo']) {
+    try {
+      const j = await apiGet(session, path);
+      if (j?.data) { res.seguros = j.data; break; }
+    } catch (e) { dbg(`[cashback] seguros ${path}: ${e.message}`); }
   }
   return res;
 }
