@@ -9,7 +9,6 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import PosVendaKanban from "@/components/whatsapp/PosVendaKanban";
 import { CarteiraGreenPanel } from "@/features/produtos/carteira-green/CarteiraGreenPanel";
 
 const COMMISSION_RATES = [10, 20, 40, 50, 60, 70, 80, 100] as const;
@@ -330,36 +329,31 @@ export default function WhatsAppClientsPage() {
       {/* Carteira iGreen — boletos, devolutivas, injeção e sinais de pagamento */}
       {!isLeadsTab && consultantId && (
         <div className="premium-card !p-4 bg-gradient-to-br from-emerald-500/5 to-background border-emerald-500/20">
-          <div className="mb-4">
-            <h2 className="text-xl font-bold font-heading text-foreground flex items-center gap-2">
-              <Briefcase className="w-5 h-5 text-emerald-600" />
-              Carteira iGreen
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Boletos, devolutivas, injeção e sinais de pagamento — espelho do escritório iGreen.
-            </p>
+          <div className="mb-4 flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-xl font-bold font-heading text-foreground flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-emerald-600" />
+                Carteira iGreen
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Boletos, devolutivas, injeção e sinais de pagamento — espelho do escritório iGreen.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-emerald-500/40 hover:bg-emerald-500/10"
+              onClick={() => { window.location.href = "/admin?tab=crm-clientes"; }}
+            >
+              <TrendingUp className="w-4 h-4 mr-2" />
+              Abrir CRM Pós-Venda
+            </Button>
           </div>
           <CarteiraGreenPanel consultantId={consultantId} />
         </div>
       )}
 
-      {/* CRM Pós-Venda (Clientes iGreen) */}
-      {!isLeadsTab && consultantId && (
-        <div className="premium-card !p-4 bg-gradient-to-br from-background to-muted/20">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold font-heading text-foreground flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                CRM Pós-Venda
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Acompanhamento automático: Aprovado, Reprovado e ciclo de 30 a 120 dias.
-              </p>
-            </div>
-          </div>
-          <PosVendaKanban consultantId={consultantId} />
-        </div>
-      )}
+
 
 
 
