@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Search, Phone, Mail, MapPin, FileText, Calendar, Download, Users, CheckCircle, AlertTriangle, Clock, ChevronDown, ChevronUp, MessageCircle, Briefcase, BadgeDollarSign, TrendingUp } from "lucide-react";
+import { Loader2, Search, Phone, Mail, MapPin, FileText, Calendar, Download, Users, CheckCircle, AlertTriangle, Clock, ChevronDown, ChevronUp, MessageCircle, Briefcase, BadgeDollarSign } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -328,30 +328,17 @@ export default function WhatsAppClientsPage() {
 
       {/* Carteira iGreen — boletos, devolutivas, injeção e sinais de pagamento */}
       {!isLeadsTab && consultantId && (
-        <div className="premium-card !p-4 bg-gradient-to-br from-emerald-500/5 to-background border-emerald-500/20">
-          <div className="mb-4 flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <h2 className="text-xl font-bold font-heading text-foreground flex items-center gap-2">
-                <Briefcase className="w-5 h-5 text-emerald-600" />
-                Carteira iGreen
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Boletos, devolutivas, injeção e sinais de pagamento — espelho do escritório iGreen.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-emerald-500/40 hover:bg-emerald-500/10"
-              onClick={() => { window.location.href = "/admin?tab=crm-clientes"; }}
-            >
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Abrir CRM Pós-Venda
-            </Button>
+        <div className="premium-card !p-4">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold font-heading text-foreground flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-muted-foreground" />
+              Carteira iGreen
+            </h2>
           </div>
           <CarteiraGreenPanel consultantId={consultantId} />
         </div>
       )}
+
 
 
 
