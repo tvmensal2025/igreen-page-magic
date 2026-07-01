@@ -82,9 +82,7 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
         setValidating(true);
         const res = await runIgreenSync(userId, "validate");
         await reloadStatus();
-        if (res.ok) {
-          toast({ title: "✅ Credenciais válidas", description: "Login no escritório iGreen confirmado." });
-        } else {
+        if (!res.ok) {
           if (res.reason === "invalid_credentials") {
             toast({ title: "Login inválido", description: "E-mail ou senha do escritório iGreen incorretos.", variant: "destructive" });
           } else if (res.reason === "waf_blocked") {
@@ -92,6 +90,8 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
           } else {
             toast({ title: "Não consegui validar", description: res.error, variant: "destructive" });
           }
+        } else {
+          toast({ title: "✅ Credenciais válidas", description: "Login no escritório iGreen confirmado." });
         }
         setValidating(false);
       }
