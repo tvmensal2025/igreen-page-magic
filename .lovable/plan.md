@@ -1,104 +1,61 @@
-# Plano — Rodar tudo que a API iGreen aceita e listar
+## Diagnóstico
 
-## Objetivo
-Descobrir de forma **empírica** (sem chutar) quais endpoints da API `https://api-vo.igreenenergy.com.br/v1` respondem para a sessão do usuário `rafael.ids@icloud.com`, listar todos que aceitam (HTTP 200) e usar isso como fonte-da-verdade para atualizar o `worker-igreen-sync`.
+**Sync está funcionando.** O worker gravou corretamente para o consultor Rafael (`0c2711ad-…`, portal 124170):
 
-## Por que agora é possível
-- Já confirmamos que `POST /v1/auth/session` retorna 201 e emite JWT válido.
-- Já confirmamos os 6 endpoints extraídos do bundle carregado do SPA:
-  - `POST /auth/session`, `POST /auth/recaptcha`
-  - `GET /consultant`, `GET /consultant/activation-code`
-  - `GET /dashboard/daily-analysis`, `GET /dashboard/customers-by-region`
-- A base URL da API (`api-vo.igreenenergy.com.br`) **não** está sob a WAF que bloqueia `/painel` no host `escritorio.*` — chamadas diretas de servidor passam.
+| Onde | Total | Origem correta |
+|---|---|---|
+| `customers` | 611 | 562 com `customer_origin='igreen_sync'` |
+| `igreen_customer_boletos` | 21 | ✅ |
+| `igreen_customer_devolutivas` | 5 | ✅ |
+| `network_members` | 31 | ✅ |
+| `igreen_telecom_customers` | 5 | ✅ |
+| `igreen_seguros_customers` | 5 | ✅ |
 
-## Etapas
+RLS não bloqueia: Rafael tem `has_role admin` (policy `Admins read all customers`) + é dono via `consultant_id = auth.uid()`.
 
-### 1. Coleta de candidatos (fonte controlada, sem invenção)
-Fontes que serão unidas em uma única lista:
-- 6 endpoints extraídos do bundle real do SPA (confirmados).
-- 78 rotas e nomes de chunks Vite já listados em `/tmp/browser/igreen-discover/chunks.json` — cada chunk (`ClientesGreenPage`, `RotinasPage`, `CrmPage`, `RedePage`, `FinanceiroLicenciadoPage`, `SegurosPage`, `TelecomPage`, etc.) implica um conjunto de endpoints REST associado ao seu nome.
-- Endpoints que o `worker-igreen-sync/server.mjs` atual já usa em produção (histórico do repositório).
-- Registry central de endpoints usado na v16 do worker.
+Os dados **não aparecem porque a UI está escondendo por 3 motivos independentes**:
 
-### 2. Probe autenticado no worker (Node, não Playwright)
-Rodar em `worker-igreen-sync`:
-- Login uma vez → JWT.
-- Para cada candidato: `GET`/`POST` com header `Authorization: Bearer <jwt>`, timeout 10s, sem retry.
-- Registrar por candidato: `status`, `content-type`, `bytes`, primeiros 300 chars do body (para diagnóstico), tempo em ms.
-- Classificar em 4 baldes:
-  - `ok_200_json`
-  - `ok_204`
-  - `denied` (401/403)
-  - `not_found` (404)
-  - `bad_request` (400/422) — sinaliza que precisa de parâmetro; salvar mensagem para próxima iteração.
-  - `error_5xx` (marcar para retry único em outra rodada).
+1. **Aba errada**: em `WhatsAppClientsPage.tsx:94` o `originTab` default é `"whatsapp_lead"`. Os 562 iGreen só aparecem quando o usuário clica na aba **"Clientes iGreen"** (`igreen_sync`). O `<CarteiraGreenPanel>` também só é montado com `!isLeadsTab` (linha 291) — então na aba WhatsApp o painel Carteira Green nem existe.
+2. **Kanban CRM Pós-Venda**: também renderizado só com `!isLeadsTab`. Os 562 clientes iGreen ficam invisíveis quando na aba padrão.
+3. **Página `/clientes-igreen` (se existir menu direto)**: sem nada — o painel está montado dentro de `WhatsAppClientsPage`.
 
-### 3. Persistência dos resultados
-Criar tabela `igreen_endpoint_discovery` (Supabase):
-- `path`, `method`, `status`, `content_type`, `bytes`, `sample_body`, `notes`, `checked_at`, `is_alive` (bool).
-- Grants padrão + RLS: leitura só para admins autenticados; escrita só via `service_role` (worker).
+## Correção proposta
 
-### 4. Relatório visível
-- Escrever `/mnt/documents/igreen-endpoints-alive.md` com a lista final agrupada por área (Auth, Consultant, Dashboard, Clientes Green, Telecom, Seguros, Rede, Financeiro, Rotinas, CRM, Digital), mostrando shape resumido de cada resposta.
-- Aba `Diagnóstico` no `CarteiraGreenPanel.tsx` que lê `igreen_endpoint_discovery` e mostra semáforo verde/amarelo/vermelho por endpoint, com data da última verificação e botão "Reexecutar probe".
-
-### 5. Atualizar o worker com base no que passou
-- Só depois do probe: reescrever o registry central do `worker-igreen-sync/server.mjs` incluindo apenas os endpoints classificados como `ok_200_json` ou `ok_204`.
-- Endpoints em `bad_request` viram TODOs com a mensagem do servidor (ex.: "campo `mes` obrigatório").
-- `sync-all` passa a chamar somente endpoints vivos, com `Promise.allSettled`, e grava resultado por endpoint em `worker_phase_logs` (que já existe).
-
-## Detalhes técnicos
-
-### Nova Edge Function `igreen-endpoint-probe`
-- Entrada: `{portal_email, portal_password}` (ou usa segredos já salvos).
-- Faz login, roda probe da lista consolidada, persiste em `igreen_endpoint_discovery`.
-- Retorna resumo `{alive: N, denied: N, missing: N, total: N}`.
-- Timeout global: dispara em background via `EdgeRuntime.waitUntil` e responde imediatamente para não estourar 150s.
-
-### Migration
-```sql
-CREATE TABLE public.igreen_endpoint_discovery (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  path TEXT NOT NULL,
-  method TEXT NOT NULL,
-  status INT,
-  content_type TEXT,
-  bytes INT,
-  sample_body TEXT,
-  is_alive BOOLEAN NOT NULL DEFAULT false,
-  category TEXT,
-  notes TEXT,
-  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (method, path)
-);
-GRANT SELECT ON public.igreen_endpoint_discovery TO authenticated;
-GRANT ALL ON public.igreen_endpoint_discovery TO service_role;
-ALTER TABLE public.igreen_endpoint_discovery ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "admins read discovery" ON public.igreen_endpoint_discovery
-  FOR SELECT TO authenticated USING (public.has_role(auth.uid(),'admin'));
+### Fase 1 — Default correto na aba (1 linha)
+`src/pages/WhatsAppClientsPage.tsx:94`
+```tsx
+const [originTab, setOriginTab] = useState<OriginTab>("igreen_sync");
 ```
+Salvar a última aba em `localStorage("whatsapp-clients:tab")` para não perder ao navegar.
 
-### Fluxo do probe (pseudocódigo)
-```text
-login -> jwt
-for cand in candidates:
-  res = fetch(base+cand.path, {method: cand.method, headers:{Authorization}})
-  save row(cand, res)
-summary = agg by status
-```
+### Fase 2 — Contador nas abas (visibilidade imediata)
+Mostrar badge com contagem em cada `TabsTrigger`:
+- `WhatsApp / Leads (49)`  
+- `Clientes iGreen (562)`
 
-## Segurança
-- Sem chutar payloads em POST/PUT/DELETE nesta fase — probe faz apenas `GET` para candidatos desconhecidos; `POST` só nos já confirmados (auth).
-- Credenciais do portal ficam em `IGREEN_PORTAL_EMAIL` / `IGREEN_PORTAL_PASSWORD` (segredos já existentes; se não, `add_secret` antes de rodar).
-- Nada de gravar `sample_body` de endpoints de auth (filtro para não persistir JWT).
+Assim o consultor vê na hora que existem 562 e clica.
 
-## Entregáveis
-1. Migration `igreen_endpoint_discovery`.
-2. Edge Function `igreen-endpoint-probe`.
-3. Atualização do `worker-igreen-sync/server.mjs` com endpoint `POST /probe-all` que retorna o JSON completo.
-4. Aba `Diagnóstico` no `CarteiraGreenPanel` com semáforo.
-5. Relatório `/mnt/documents/igreen-endpoints-alive.md`.
+### Fase 3 — Banner "primeiro uso"
+Quando `clientesIgreen.length > 0` e `originTab === "whatsapp_lead"`, exibir alerta amarelo:  
+> "Você tem **562 clientes iGreen** sincronizados. Ver na aba Clientes iGreen →"  
+com botão que troca a aba.
 
-## Sem quebrar nada
-- Nada existente é removido. O registry atual do worker continua ativo; a nova rota `/probe-all` é aditiva.
-- A reescrita do `sync-all` só entra num PR seguinte, depois de você ver a lista viva e aprovar.
+### Fase 4 — Rota direta `/clientes-igreen`
+Adicionar rota no `App.tsx` que carrega `WhatsAppClientsPage` já com `originTab="igreen_sync"` via query param (`?tab=igreen`). Adicionar item no menu lateral "Clientes iGreen" para acesso em 1 clique.
+
+### Fase 5 — Log de "carteira vazia" (defesa)
+No `CarteiraGreenPanel`, quando `boletos.length===0` mas `customers` do consultor têm `customer_origin='igreen_sync'`, mostrar sub-mensagem explicativa em vez de "Sem dados sincronizados" — evita a impressão de que o sync não rodou.
+
+## Fora de escopo (não vou mexer agora)
+
+- Endpoints 404 de `seguros/cashback/*` — resolver via botão **"Rodar probe"** do card Diagnóstico já entregue. Só depois trocar os paths chutados pelos que a API confirmar como 200.
+- Sync individual dos consultores subordinados (Silvia, Abel etc.) — hoje só o Rafael tem credencial iGreen. Se quiser dados por consultor, cada um precisa cadastrar `igreen_portal_email/password` em `consultants`.
+
+## Arquivos afetados
+
+- `src/pages/WhatsAppClientsPage.tsx` (default tab, persistência, badges de contagem, banner)
+- `src/App.tsx` (rota `/clientes-igreen`)
+- Menu lateral (componente de navegação principal — identificar ao implementar)
+- `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` (mensagem de estado vazio)
+
+Nenhuma migração SQL, nenhum edge function, nenhuma mudança no worker.

@@ -83,6 +83,8 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/admin/whatsapp-clients" element={<ProtectedRoute><WhatsAppClientsPage /></ProtectedRoute>} />
+              <Route path="/admin/clientes-igreen" element={<Navigate to="/admin/whatsapp-clients?tab=igreen" replace />} />
+              <Route path="/clientes-igreen" element={<Navigate to="/admin/whatsapp-clients?tab=igreen" replace />} />
               <Route path="/admin/fluxos" element={<ProtectedRoute><FluxoBuilder /></ProtectedRoute>} />
               <Route path="/admin/fluxo-b" element={<ProtectedRoute><AdminFluxoB /></ProtectedRoute>} />
               <Route path="/admin/saude-bot" element={<ProtectedRoute><SaudeBot /></ProtectedRoute>} />

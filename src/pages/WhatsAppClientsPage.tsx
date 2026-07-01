@@ -85,13 +85,32 @@ const stepLabels: Record<string, string> = {
   complete: "Completo",
 };
 
+const TAB_STORAGE_KEY = "whatsapp-clients:tab";
+
+function readInitialTab(): OriginTab {
+  try {
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get("tab");
+    if (q === "igreen" || q === "igreen_sync") return "igreen_sync";
+    if (q === "whatsapp" || q === "whatsapp_lead") return "whatsapp_lead";
+    const saved = window.localStorage.getItem(TAB_STORAGE_KEY);
+    if (saved === "whatsapp_lead" || saved === "igreen_sync") return saved;
+  } catch {}
+  // Default: mostra a carteira iGreen sincronizada (evita a impressão de que o sync não trouxe nada)
+  return "igreen_sync";
+}
+
 export default function WhatsAppClientsPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [originTab, setOriginTab] = useState<OriginTab>("whatsapp_lead");
+  const [originTab, setOriginTabState] = useState<OriginTab>(() => readInitialTab());
+  const setOriginTab = (v: OriginTab) => {
+    setOriginTabState(v);
+    try { window.localStorage.setItem(TAB_STORAGE_KEY, v); } catch {}
+  };
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [consultantId, setConsultantId] = useState<string | null>(null);
 
@@ -286,6 +305,27 @@ export default function WhatsAppClientsPage() {
           </TabsTrigger>
         </TabsList>
       </Tabs>
+
+      {/* Banner: existe carteira iGreen mas o usuário está na aba WhatsApp */}
+      {isLeadsTab && clientesIgreen.length > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Briefcase className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              Você tem <strong>{clientesIgreen.length}</strong> {clientesIgreen.length === 1 ? "cliente sincronizado" : "clientes sincronizados"} do portal iGreen.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-emerald-500/40 hover:bg-emerald-500/10"
+            onClick={() => setOriginTab("igreen_sync")}
+          >
+            Ver Clientes iGreen →
+          </Button>
+        </div>
+      )}
+
 
       {/* Carteira iGreen — boletos, devolutivas, injeção e sinais de pagamento */}
       {!isLeadsTab && consultantId && (

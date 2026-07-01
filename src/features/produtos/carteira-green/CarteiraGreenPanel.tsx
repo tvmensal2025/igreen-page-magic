@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { runIgreenSync } from "@/lib/igreenSync";
 import { useBoletosCarteira, useDevolutivasCarteira, computeCarteiraStats } from "./hooks";
 import { StatusCards } from "./StatusCards";
@@ -38,11 +39,24 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const [syncing, setSyncing] = useState(false);
   const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
   const [, setTick] = useState(0);
+  const [igreenCustomerCount, setIgreenCustomerCount] = useState<number | null>(null);
   useEffect(() => {
     if (!syncing) return;
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [syncing]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { count } = await supabase
+        .from("customers")
+        .select("id", { count: "exact", head: true })
+        .eq("consultant_id", consultantId)
+        .eq("customer_origin", "igreen_sync");
+      if (alive) setIgreenCustomerCount(count ?? 0);
+    })();
+    return () => { alive = false; };
+  }, [consultantId, boletos.length]);
   const { toast } = useToast();
 
   const stats = useMemo(() => computeCarteiraStats(boletos), [boletos]);
@@ -142,7 +156,7 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
         </div>
       )}
 
-      {boletos.length === 0 ? (
+      {boletos.length === 0 && !(igreenCustomerCount && igreenCustomerCount > 0) ? (
         <div className="rounded-xl border border-dashed border-border/60 p-8 text-center space-y-2">
           <p className="text-sm font-medium">Sem dados sincronizados ainda</p>
           <p className="text-xs text-muted-foreground">
@@ -151,25 +165,33 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
         </div>
       ) : (
         <>
+          {boletos.length === 0 && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
+              <strong>{igreenCustomerCount}</strong> {igreenCustomerCount === 1 ? "cliente sincronizado" : "clientes sincronizados"} — sem boletos em aberto no momento. Métricas e listas abaixo.
+            </div>
+          )}
           <ConsultantMetricsCard consultantId={consultantId} />
-          <StatusCards stats={stats} />
-          <PaymentIntent boletos={boletos} />
+          {boletos.length > 0 && <StatusCards stats={stats} />}
+          {boletos.length > 0 && <PaymentIntent boletos={boletos} />}
           <RotinasPanel consultantId={consultantId} />
           <RedeDashboardCard consultantId={consultantId} />
-          <div className="grid gap-6 lg:grid-cols-5">
-            <div className="lg:col-span-3">
-              <BoletosList boletos={boletos} />
+          {(boletos.length > 0 || devolutivas.length > 0) && (
+            <div className="grid gap-6 lg:grid-cols-5">
+              <div className="lg:col-span-3">
+                <BoletosList boletos={boletos} />
+              </div>
+              <div className="lg:col-span-2">
+                <DevolutivasList devolutivas={devolutivas} />
+              </div>
             </div>
-            <div className="lg:col-span-2">
-              <DevolutivasList devolutivas={devolutivas} />
-            </div>
-          </div>
+          )}
           <div className="grid gap-6 lg:grid-cols-2">
             <TelecomClientesList consultantId={consultantId} />
             <SegurosClientesList consultantId={consultantId} />
           </div>
         </>
       )}
+
 
       {/* Sempre visível: permite rodar o probe mesmo antes do primeiro sync. */}
       <EndpointDiscoveryCard consultantId={consultantId} />
