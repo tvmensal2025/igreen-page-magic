@@ -18,13 +18,13 @@ export function useNetworkIgreenIds(consultantId: string | null | undefined) {
       while (true) {
         const { data, error } = await supabase
           .from("consultant_network")
-          .select("igreen_id")
+          .select("codigo_igreen")
           .eq("consultant_id", consultantId!)
-          .not("igreen_id", "is", null)
+          .not("codigo_igreen", "is", null)
           .range(page * pageSize, (page + 1) * pageSize - 1);
         if (error) throw error;
         for (const row of data ?? []) {
-          const v = (row as { igreen_id: unknown }).igreen_id;
+          const v = (row as { codigo_igreen: unknown }).codigo_igreen;
           if (v != null && String(v).length > 0) ids.add(String(v));
         }
         if (!data || data.length < pageSize) break;
