@@ -95,7 +95,16 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
     if (!analytics) return null;
     let walletOnly = analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
     if (scope === "me" && myClientsSettings) {
-      walletOnly = filterMyClients(walletOnly, myClientsSettings);
+      const expandedSettings = {
+        ...myClientsSettings,
+        cadastroIgreenIds: Array.from(
+          new Set([
+            ...(myClientsSettings.cadastroIgreenIds || []),
+            ...(networkIgreenIds || []),
+          ]),
+        ),
+      };
+      walletOnly = filterMyClients(walletOnly, expandedSettings);
     }
     const filtered = selectedLicenciado === "all" ? walletOnly : walletOnly.filter((c: any) => c.registered_by_name === selectedLicenciado);
     const totalCustomers = filtered.length;
