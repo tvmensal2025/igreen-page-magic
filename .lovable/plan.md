@@ -1,65 +1,33 @@
+## Problema
 
-## Objetivo
-Trazer para dentro do app tudo que o Escritório iGreen mostra em `/clientes-green`: boletos em aberto, vencidos, pagos, quem provavelmente vai pagar, devolutivas por categoria/motivo, injeção de energia e licenças expirando. Hoje o worker já captura tudo isso nas tabelas `igreen_customer_boletos`, `igreen_customer_devolutivas` e `igreen_consultant_metrics`, mas o front não exibe — vamos plugar.
+1. **Duplicação**: `CarteiraGreenPanel` está montado em dois lugares — `WhatsAppClientsPage.tsx` (aba "Clientes iGreen") **e** `AcompanhamentoPanel.tsx` (módulo Produtos). Precisa existir só em Clientes.
+2. **Invisível na tela de Clientes**: hoje o painel fica renderizado **depois** do `PosVendaKanban` (linha 309), então some abaixo do fold — o usuário não rola até lá e acha que sumiu.
+3. **Sync**: o botão "Sincronizar agora" chama a edge `sync-igreen-customers` com `mode: "sync_all"`. Auditando `supabase/functions/sync-igreen-customers/index.ts` (linhas 647–728), o `sync_all` já cobre: clientes, rede, métricas, boletos, **devolutivas**, telecom, seguros e licenças expirando. Está completo — só falta feedback visual claro.
 
-## O que aparece na tela (nova aba "Carteira Green")
+## Correções
 
-### 1. Status da Carteira (cards no topo)
-Espelha o print do escritório:
-- Com boleto gerado (carteira faturada)
-- Boletos pagos (% adimplência)
-- Disponível / a vencer (em aberto)
-- Vencidos (% inadimplência)
-- Injeção: com injeção / sem injeção / kWh compensados
+### 1. Remover duplicata
+- `src/features/produtos/acompanhamento/AcompanhamentoPanel.tsx`: remover `import { CarteiraGreenPanel }` (linha 44) e o `<CarteiraGreenPanel …/>` (linha 141). Fica só no fluxo de Clientes.
 
-### 2. Boletos por cliente (lista filtrável)
-Filtros iguais ao portal: Todos · Vencidos 1‑30d · 31‑60d · +60d · Disponíveis · Pagos · Com/Sem injeção · Única/Duplo.
-Cada linha: nome, cidade/UF, licenciado, vencimento, valor, status, badge de injeção, link do boleto/PDF, botão "Enviar no WhatsApp" (usa canal do consultor).
+### 2. Dar destaque ao painel dentro de "Clientes iGreen"
+No `src/pages/WhatsAppClientsPage.tsx`, quando a aba ativa for `igreen_sync`:
+- Mover o bloco `CarteiraGreenPanel` para **antes** do `PosVendaKanban` (subir para logo depois do `<TabsList>`, ~linha 289).
+- Envolver em card com título grande "**Carteira iGreen**" + subtítulo "Boletos, devolutivas, injeção e sinais de pagamento — espelho do escritório iGreen" e o botão "Sincronizar agora" já existente no próprio panel.
+- Manter o `PosVendaKanban` logo abaixo (sem alterar sua lógica).
 
-### 3. Devolutivas detalhadas
-Agrupadas por categoria (documento, titularidade, conta, etc.), com motivo, campo, se é impeditiva, data e se é "própria". Botão de resolver / enviar aviso ao cliente.
+### 3. Melhorar feedback do "Sincronizar agora"
+No `CarteiraGreenPanel.tsx`:
+- Trocar o toast único por um checklist visível durante ~20s mostrando o que está sendo puxado: **Clientes · Boletos · Devolutivas · Métricas · Rede · Telecom · Seguros · Licenças**.
+- Após o disparo, fazer `refetch` a cada 10s por até 60s (em vez do único `setTimeout` de 15s), parando quando `synced_at` mudar.
+- Mostrar a data da última sincronização com destaque (já existe, só reposicionar no header do card).
 
-### 4. Quem vai pagar (score de intenção)
-Regra determinística sobre `igreen_customer_boletos`:
-- **Alta**: pagou os 2 últimos meses no prazo e boleto atual em aberto ≤ vencimento.
-- **Média**: histórico de pagar com 1‑10 dias de atraso.
-- **Baixa**: 2+ meses sem pagar OU dias_atraso > 30.
-- **Perdido provável**: vencido > 60 dias.
-Ordena a lista e mostra chips coloridos + "próxima ação sugerida".
+### 4. Validação
+- Rodar `tsgo` no diff.
+- Abrir `/whatsapp/clientes` (ou rota equivalente que renderiza `WhatsAppClientsPage`), aba **Clientes iGreen**, confirmar que o card "Carteira iGreen" aparece **acima** do CRM Pós-Venda e que o botão dispara `sync_all` com sucesso.
 
-### 5. Licenças expirando & Cashback
-Card lateral usando `igreen_consultant_metrics.raw_json.licencas_expirando` e `cashback_json`.
+## Arquivos alterados
+- `src/features/produtos/acompanhamento/AcompanhamentoPanel.tsx` — remover import + render.
+- `src/pages/WhatsAppClientsPage.tsx` — reordenar blocos e adicionar cabeçalho do card.
+- `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` — checklist de sync + polling curto.
 
-## Backend / dados
-Nada novo no worker — os endpoints já existem (`/sync-boletos`, `/sync-devolutivas`, `/sync-all`, licenças, cashback). Apenas garantir:
-1. Botão "Sincronizar agora" chamando `sync-igreen-customers` com `mode: 'sync_all'` (já roda em background pós fix do 504).
-2. Cron diário já dispara — só exibir `last_synced_at` para o consultor saber a idade dos dados.
-3. Migration leve: view `v_boletos_carteira` juntando boleto + customer (telefone, consultor) para simplificar a query da UI e permitir realtime seguro via RLS por `consultant_id`.
-
-## Arquivos a criar/editar
-
-**Novos (frontend)**
-- `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` — layout geral com as 5 seções.
-- `src/features/produtos/carteira-green/StatusCards.tsx` — os 4 cards de topo + injeção.
-- `src/features/produtos/carteira-green/BoletosList.tsx` — filtros + tabela virtualizada.
-- `src/features/produtos/carteira-green/DevolutivasList.tsx` — agrupamento por categoria.
-- `src/features/produtos/carteira-green/PaymentIntent.tsx` — score "vai pagar".
-- `src/features/produtos/carteira-green/hooks.ts` — `useBoletos`, `useDevolutivas`, `useCarteiraStats`, `usePaymentIntent` (React Query, filtro por `consultant_id`).
-- `src/features/produtos/carteira-green/intent.ts` — função pura + testes.
-
-**Editados**
-- `src/features/produtos/acompanhamento/AcompanhamentoPanel.tsx` — inserir tab/entrada para "Carteira Green".
-- `src/features/produtos/acompanhamento/AutomacaoIgreenCard.tsx` — botão "Sincronizar agora" e exibir `synced_at`.
-
-**Migration**
-- `create view public.v_boletos_carteira as select b.*, c.phone_whatsapp, c.name as customer_name from public.igreen_customer_boletos b left join public.customers c on c.id = b.customer_id;` + `GRANT SELECT` para `authenticated` (RLS herda via `security_invoker=on`).
-
-## Fora do escopo (para não quebrar nada agora)
-- Envio automatizado de lembrete de boleto por WhatsApp (fica no toggle `auto_wa_boleto_vencendo`, já existente, desligado por padrão).
-- Alterar o worker/Tor.
-- Alterar tabelas de captura — apenas leitura.
-
-## Validação
-- Query `select count(*) from igreen_customer_boletos where consultant_id = auth.uid()` retorna dados após "Sincronizar agora".
-- Filtros batem com o portal iGreen no print enviado (21 clientes / 3 pagos / 16 disponível / 2 vencidos).
-- Testes unitários de `intent.ts` cobrindo os 4 buckets.
+Nada de banco, nada de edge function nova — o `sync_all` já traz todos os dados.

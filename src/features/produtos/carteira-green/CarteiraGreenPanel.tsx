@@ -4,7 +4,7 @@
 // capturados pelo worker `sync-igreen-customers`.
 // =============================================================================
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -15,35 +15,68 @@ import { BoletosList } from "./BoletosList";
 import { DevolutivasList } from "./DevolutivasList";
 import { PaymentIntent } from "./PaymentIntent";
 
+const SYNC_STEPS = [
+  "Clientes",
+  "Boletos",
+  "Devolutivas",
+  "Métricas",
+  "Rede",
+  "Telecom",
+  "Seguros",
+  "Licenças",
+];
+
 export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const { data: boletos = [], isLoading: loadingB, refetch: refetchB } = useBoletosCarteira(consultantId);
   const { data: devolutivas = [], isLoading: loadingD, refetch: refetchD } = useDevolutivasCarteira(consultantId);
   const [syncing, setSyncing] = useState(false);
+  const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!syncing) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [syncing]);
   const { toast } = useToast();
 
   const stats = useMemo(() => computeCarteiraStats(boletos), [boletos]);
   const lastSync = boletos[0]?.synced_at;
+  const lastSyncTs = lastSync ? new Date(lastSync).getTime() : 0;
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncStartedAt(Date.now());
     const res = await runIgreenSync(consultantId, "sync_all");
-    setSyncing(false);
-    if (res.ok) {
-      toast({
-        title: "Sincronização iniciada",
-        description: "Os dados aparecem em alguns minutos. Recarregue quando terminar.",
-      });
-      setTimeout(() => {
-        refetchB();
-        refetchD();
-      }, 15_000);
-    } else {
+    if (!res.ok) {
+      setSyncing(false);
+      setSyncStartedAt(null);
       toast({
         title: "Falha ao sincronizar",
         description: (res as { error: string }).error,
         variant: "destructive",
       });
+      return;
     }
+    toast({
+      title: "Sincronização iniciada",
+      description: "Puxando clientes, boletos, devolutivas, métricas, rede, telecom, seguros e licenças…",
+    });
+    // Polling: recarrega a cada 10s por até 60s; para quando synced_at avança.
+    const startedAt = Date.now();
+    const baseline = lastSyncTs;
+    const interval = setInterval(async () => {
+      const [b] = await Promise.all([refetchB(), refetchD()]);
+      const newTs = b.data?.[0]?.synced_at ? new Date(b.data[0].synced_at).getTime() : 0;
+      const elapsed = Date.now() - startedAt;
+      if (newTs > baseline || elapsed > 60_000) {
+        clearInterval(interval);
+        setSyncing(false);
+        setSyncStartedAt(null);
+        if (newTs > baseline) {
+          toast({ title: "Carteira atualizada", description: "Dados recém-sincronizados carregados." });
+        }
+      }
+    }, 10_000);
   };
 
   if (loadingB || loadingD) {
@@ -54,6 +87,10 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
     );
   }
 
+  // Progresso "otimista" — cada passo acende a cada ~2s enquanto o worker roda em background.
+  const elapsedSec = syncStartedAt ? Math.floor((Date.now() - syncStartedAt) / 1000) : 0;
+  const stepsDone = Math.min(SYNC_STEPS.length, Math.floor(elapsedSec / 2));
+
   return (
     <div className="space-y-6">
       <header className="flex items-center justify-between gap-3 flex-wrap">
@@ -62,15 +99,42 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
           <p className="text-xs text-muted-foreground">
             Boletos, devolutivas e injeção de energia — espelho do escritório iGreen.
             {lastSync && (
-              <> · Última sync: {new Date(lastSync).toLocaleString("pt-BR")}</>
+              <> · Última sync: <strong>{new Date(lastSync).toLocaleString("pt-BR")}</strong></>
             )}
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}>
           {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-          Sincronizar agora
+          {syncing ? "Sincronizando…" : "Sincronizar agora"}
         </Button>
       </header>
+
+      {syncing && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <p className="text-xs font-medium mb-2 text-emerald-700">
+            Puxando dados do escritório iGreen — isso leva ~30–60s.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SYNC_STEPS.map((s, i) => {
+              const done = i < stepsDone;
+              return (
+                <span
+                  key={s}
+                  className={
+                    "text-[10px] px-2 py-1 rounded-full border " +
+                    (done
+                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700"
+                      : "bg-muted/40 border-border/60 text-muted-foreground")
+                  }
+                >
+                  {done ? "✓ " : "· "}
+                  {s}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {boletos.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/60 p-8 text-center space-y-2">

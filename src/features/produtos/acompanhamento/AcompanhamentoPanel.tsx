@@ -41,7 +41,7 @@ import { VendasEmAndamentoPanel } from "./VendasEmAndamentoPanel";
 import { MultiprodutoCard } from "./MultiprodutoCard";
 import { AutomacaoIgreenCard } from "./AutomacaoIgreenCard";
 import { CrossSellCard } from "./CrossSellCard";
-import { CarteiraGreenPanel } from "../carteira-green";
+
 
 interface AcompanhamentoPanelProps {
   consultantId: string;
@@ -137,8 +137,6 @@ export function AcompanhamentoPanel({
 
   return (
     <div className="space-y-10 text-pv-ink">
-      {/* Carteira Green — boletos, devolutivas, injeção e score de pagamento */}
-      <CarteiraGreenPanel consultantId={consultantId} />
 
       {/* Carteira multiproduto (Telecom + Seguros) — sync iGreen */}
       <MultiprodutoCard consultantId={consultantId} />

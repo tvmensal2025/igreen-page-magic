@@ -287,6 +287,22 @@ export default function WhatsAppClientsPage() {
         </TabsList>
       </Tabs>
 
+      {/* Carteira iGreen — boletos, devolutivas, injeção e sinais de pagamento */}
+      {!isLeadsTab && consultantId && (
+        <div className="premium-card !p-4 bg-gradient-to-br from-emerald-500/5 to-background border-emerald-500/20">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold font-heading text-foreground flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-emerald-600" />
+              Carteira iGreen
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Boletos, devolutivas, injeção e sinais de pagamento — espelho do escritório iGreen.
+            </p>
+          </div>
+          <CarteiraGreenPanel consultantId={consultantId} />
+        </div>
+      )}
+
       {/* CRM Pós-Venda (Clientes iGreen) */}
       {!isLeadsTab && consultantId && (
         <div className="premium-card !p-4 bg-gradient-to-br from-background to-muted/20">
@@ -302,13 +318,6 @@ export default function WhatsAppClientsPage() {
             </div>
           </div>
           <PosVendaKanban consultantId={consultantId} />
-        </div>
-      )}
-
-      {/* Carteira iGreen — boletos, devolutivas e injeção */}
-      {!isLeadsTab && consultantId && (
-        <div className="premium-card !p-4 bg-gradient-to-br from-background to-muted/20">
-          <CarteiraGreenPanel consultantId={consultantId} />
         </div>
       )}
 
