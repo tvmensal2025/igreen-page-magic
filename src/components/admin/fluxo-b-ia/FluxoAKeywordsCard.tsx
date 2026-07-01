@@ -145,7 +145,7 @@ export default function FluxoAKeywordsCard({ consultantId }: Props) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <KeyRound className="w-5 h-5 text-primary" />Palavras-chave do Fluxo A
+          <KeyRound className="w-5 h-5 text-primary" />Palavras-chave do CEMIG
         </CardTitle>
         <CardDescription>
           Quando o cliente digitar uma dessas palavras, o bot pula direto para o cadastro (foto da conta de luz).
