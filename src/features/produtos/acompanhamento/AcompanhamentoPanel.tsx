@@ -39,7 +39,7 @@ import { loadLocalGreenSettings } from "./greenData";
 import { formatBRLFromCents } from "../lib/money";
 import { VendasEmAndamentoPanel } from "./VendasEmAndamentoPanel";
 import { MultiprodutoCard } from "./MultiprodutoCard";
-import { AutomacaoIgreenCard } from "./AutomacaoIgreenCard";
+// AutomacaoIgreenCard foi movido para a Central de Agendamentos.
 import { CrossSellCard } from "./CrossSellCard";
 
 
