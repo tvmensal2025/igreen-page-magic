@@ -28,6 +28,8 @@ import {
   type Customer, type StatusFilter,
   isDevolutiva, buildWhatsAppMessage,
 } from "./customerUtils";
+import { CarteiraGreenPanel } from "@/features/produtos/carteira-green/CarteiraGreenPanel";
+import { Briefcase, ChevronDown, ChevronRight } from "lucide-react";
 
 interface CustomerManagerProps {
   customers: Customer[];
