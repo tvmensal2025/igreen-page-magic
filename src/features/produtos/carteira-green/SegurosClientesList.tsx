@@ -45,64 +45,81 @@ export function SegurosClientesList({ consultantId }: { consultantId: string }) 
   });
 
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
+    const s = norm(q.trim());
     if (!s) return data;
     return data.filter((c) =>
-      `${c.segurado || ""} ${c.modelo || ""} ${c.placa || ""} ${c.cidade || ""} ${c.licenciado || ""}`
-        .toLowerCase()
-        .includes(s),
+      norm(
+        `${c.segurado || ""} ${c.modelo || ""} ${c.placa || ""} ${c.cidade || ""} ${c.uf || ""} ${c.licenciado || ""} ${c.status_label || ""}`,
+      ).includes(s),
     );
   }, [data, q]);
 
   if (data.length === 0) return null;
-  const mrr = data
+  const mrrSource = q.trim() ? filtered : data;
+  const mrr = mrrSource
     .filter((c) => (c.status || "").toLowerCase().includes("vigent"))
     .reduce((s, c) => s + Number(c.mensal || 0), 0);
+  const hasQuery = q.trim().length > 0;
 
   return (
-    <section className="rounded-xl border border-border/60 bg-card">
-      <header className="p-4 border-b border-border/60 space-y-2">
+    <section className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.03] to-card">
+      <header className="p-4 border-b border-emerald-500/15 bg-emerald-500/5 space-y-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-sm font-semibold">Apólices de Seguros · {data.length}</h3>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+              <ShieldCheck className="w-3.5 h-3.5" />
+            </span>
+            Apólices de Seguros
+            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-700">
+              {hasQuery ? `${filtered.length} de ${data.length}` : data.length}
+            </Badge>
+          </h3>
           <span className="text-[11px] text-muted-foreground">
-            MRR vigentes: <strong>{BRL(mrr)}</strong>
+            MRR {hasQuery ? "filtrado" : "vigentes"}: <strong className="text-emerald-700">{BRL(mrr)}</strong>
           </span>
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar segurado, veículo, placa…" className="pl-9" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar segurado, veículo, placa, cidade…" className="pl-9" />
         </div>
       </header>
-      <ul className="divide-y divide-border/60 max-h-[500px] overflow-y-auto">
-        {filtered.slice(0, 300).map((c) => (
-          <li key={c.id} className="p-3 hover:bg-muted/30">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-medium truncate">{c.segurado || "—"}</p>
-                  {c.status_label && (
-                    <Badge variant="outline" className="text-[10px]">
-                      {c.status_label}
-                    </Badge>
-                  )}
+      {filtered.length === 0 ? (
+        <div className="p-8 text-center text-xs text-muted-foreground">
+          Nenhum resultado para <strong>«{q}»</strong>.
+        </div>
+      ) : (
+        <ul className="divide-y divide-emerald-500/10 max-h-[500px] overflow-y-auto">
+          {filtered.slice(0, 300).map((c) => (
+            <li key={c.id} className="p-3 hover:bg-emerald-500/5 transition-colors">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium truncate">{c.segurado || "—"}</p>
+                    {c.status_label && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {c.status_label}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {c.modelo || "—"} · {c.placa || "—"} · FIPE {BRL(c.fipe)} · {c.cidade || "?"}/{c.uf || "?"} · {c.licenciado || "—"}
+                  </p>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {c.modelo || "—"} · {c.placa || "—"} · FIPE {BRL(c.fipe)} · {c.cidade || "?"}/{c.uf || "?"} · {c.licenciado || "—"}
-                </p>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-semibold">{BRL(c.mensal)}</p>
+                  <p className="text-[10px] text-muted-foreground">/mês</p>
+                </div>
               </div>
-              <div className="text-right shrink-0">
-                <p className="text-sm font-semibold">{BRL(c.mensal)}</p>
-                <p className="text-[10px] text-muted-foreground">/mês</p>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      )}
       {filtered.length > 300 && (
-        <p className="p-2 text-[10px] text-center text-muted-foreground border-t border-border/60">
+        <p className="p-2 text-[10px] text-center text-muted-foreground border-t border-emerald-500/15">
           Mostrando 300 primeiros — refine a busca.
         </p>
       )}
     </section>
   );
+
 }
