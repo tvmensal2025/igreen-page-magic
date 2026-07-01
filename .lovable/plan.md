@@ -1,65 +1,58 @@
-# Plano — Unificar Carteira iGreen dentro do Admin
+# Enxugar aba Clientes — detalhes dentro do cliente
 
 ## Objetivo
+A aba **Clientes** hoje empilha muitos blocos grandes lado a lado (Hero + 4 KPIs, Métricas do consultor com 4 sub-cards, Status da carteira, Intenção de pagamento, Boletos, Devolutivas). O usuário quer **menos ruído visual sem perder informação** — mover o que é "por cliente" para dentro do próprio cliente e deixar no topo só o que é panorâmico.
 
-- Trazer a Carteira iGreen para dentro do Admin (aba **Clientes**), com Resumo no topo + Financeiro logo abaixo + lista de clientes.
-- Remover do painel as seções **Rede**, **Produtos** e **Diagnóstico** (já existem como abas do próprio Admin).
-- Mover **Diagnóstico** para dentro do Sheet de **Configurações**.
-- Aposentar a página avulsa `/admin/whatsapp-clients` — redireciona para `/admin?tab=clientes`.
-- Manter tokens padrão da plataforma (sem preto, sem gradiente extra).
+## Princípio
+- **Topo (panorama):** poucos números, uma linha só.
+- **Meio (ação):** uma tabela unificada de clientes, com filtros.
+- **Detalhe (drawer):** ao clicar num cliente, abre um painel lateral com TODA a informação daquele cliente (boletos, devolutivas, injeção, telecom, seguros, cashback dele).
 
-## Mudanças
+## Mudanças em `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx`
 
-### 1. `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx`
+### 1. Faixa 1 — Hero enxuto (era faixa hero + KPI ribbon)
+- Manter só o título "Carteira iGreen" + timestamp de última sync.
+- Colapsar os 4 HeroKpi numa **única linha compacta** (chips inline): `159 clientes · 21 boletos abertos · 92% adimplência · 12,4k kWh`.
+- Remove `HeroKpi` cards grandes.
 
-- `SectionId` reduzido para `"resumo" | "financeiro"`.
-- `SectionNav` fica só com esses dois itens (`LayoutDashboard` e `Wallet`).
-- Remover imports/uso de `TelecomClientesList`, `SegurosClientesList`, `RedeDashboardCard`, `RotinasPanel`, `EndpointDiscoveryCard` e do estado `telecomCount`/`segurosCount`.
-- Ajustar `counts` para conter apenas `resumo` e `financeiro`.
-- Deep-link `?sec=` aceita só `financeiro`; qualquer outro cai em `resumo`.
-- Se só houver uma seção com dados úteis, sidebar ainda aparece (previsível), mas em telas pequenas continua colapsando no scroll horizontal.
+### 2. Faixa 2 — Métricas do consultor (compactar)
+- Hoje: 4 sub-cards (Clientes, Rede, Cadastros do mês, Cashback) com 4-7 linhas cada = ~20 números.
+- Novo: **1 linha de KPIs colapsável** ("Métricas do mês" — clicar expande os detalhes). Fechado por padrão.
+- `ConsultantMetricsCard` ganha prop `defaultOpen={false}` e vira `<Collapsible>`.
 
-### 2. `src/pages/Admin.tsx`
+### 3. Faixa 3 — Remover
+- `StatusCards` (Status da carteira) e `PaymentIntent` (Intenção de pagamento) são **derivados dos boletos**. Movê-los para **dentro do drawer do cliente** (mostra intenção daquele cliente) e no topo virar só os 2 chips do hero.
+- Elimina a grid 3/2 inteira da Faixa 3.
 
-- Na aba `clientes` (bloco `activeTab === "clientes"`), renderizar **acima** do `CustomerManager`:
-  ```tsx
-  {userId && <CarteiraIgreenSection consultantId={userId} />}
-  ```
-  Um wrapper leve que mostra:
-  - Cabeçalho "Carteira iGreen — resumo, financeiro e clientes sincronizados".
-  - `<CarteiraGreenPanel consultantId={userId} />` (agora só Resumo + Financeiro).
-  - Fica dentro de um `section` com `rounded-xl border border-border/60 bg-card p-4 sm:p-5` — mesma linguagem visual usada nas outras seções.
-- No Sheet de Configurações (bloco `<Sheet open={settingsOpen}>`), adicionar após `ChangePasswordCard`:
-  ```tsx
-  {userId && <EndpointDiscoveryCard consultantId={userId} />}
-  ```
-  com um `<h3>` "Diagnóstico iGreen" acima. Import via `Suspense`/direto de `@/features/produtos/carteira-green/EndpointDiscoveryCard`.
+### 4. Faixa 4 — Unificar em UMA tabela "Clientes"
+- Substituir `BoletosList` + `DevolutivasList` lado a lado por **uma tabela única `ClientesCarteiraTable`** agrupada por cliente (não por boleto):
+  - Colunas: Cliente · Cidade/UF · Status financeiro (badge derivado do último boleto) · Devolutivas pendentes (contador) · Injeção (✓/–) · Ação.
+  - Filtros no topo (chips): Todos / Vencidos / Disponíveis / Pagos / Com devolutiva.
+  - Busca única por nome/cidade/fornecedora.
+- Clicar no cliente abre um **drawer lateral** (`Sheet` shadcn já usado no projeto) `ClienteDetalheDrawer` que renderiza, para aquele `customer_id`:
+  - Cabeçalho: nome, telefone, cidade, fornecedora, botão WhatsApp.
+  - Aba **Boletos**: mini `BoletosList` filtrado por cliente (a lógica existente reaproveitada com prop `filterByCustomer`).
+  - Aba **Devolutivas**: mini `DevolutivasList` filtrado por cliente.
+  - Aba **Intenção de pagamento**: `PaymentIntent` recebendo só os boletos daquele cliente.
+  - Aba **Telecom/Seguros**: `TelecomClientesList`/`SegurosClientesList` filtrados por telefone/nome.
 
-### 3. `src/pages/WhatsAppClientsPage.tsx`
+### 5. Resultado
+- Página passa de ~6 blocos grandes para **3 blocos** (Hero linha, Métricas colapsável, Tabela clientes).
+- Toda informação continua acessível — está a 1 clique dentro do cliente.
 
-- Substituir todo o conteúdo por redirect:
-  ```tsx
-  useEffect(() => { navigate("/admin?tab=clientes", { replace: true }); }, []);
-  return null;
-  ```
-- Assim, qualquer link antigo (interno ou externo) cai direto no Admin.
+## Arquivos afetados
+- `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` — reescrever layout.
+- `src/features/produtos/carteira-green/ConsultantMetricsCard.tsx` — envolver em `Collapsible`, fechado por padrão.
+- **Novo** `src/features/produtos/carteira-green/ClientesCarteiraTable.tsx` — tabela unificada por cliente + filtros.
+- **Novo** `src/features/produtos/carteira-green/ClienteDetalheDrawer.tsx` — `Sheet` com abas (Boletos/Devolutivas/Intenção/Telecom/Seguros) do cliente selecionado.
+- `BoletosList.tsx` / `DevolutivasList.tsx` / `PaymentIntent.tsx` / `TelecomClientesList.tsx` / `SegurosClientesList.tsx` — aceitar prop opcional `customerKey` (idcliente/telefone) para filtrar por 1 cliente quando embutidos no drawer. Sem prop, seguem funcionando como hoje (para o Admin geral, se ainda usado).
 
-## Layout resultante da aba "Clientes"
+## Sem impacto
+- Nenhuma mudança de schema, hook de dados (`useBoletosCarteira`, `useDevolutivasCarteira`) ou lógica de sync.
+- Tokens de cor e tipografia (Space Grotesk + DM Sans) mantidos.
+- `RedeDashboardCard`, `RotinasPanel` e `EndpointDiscoveryCard` não são tocados (moram em outras abas).
 
-```text
-[ Header do Admin ]
-Seção "Carteira iGreen"
-  ├─ Sidebar local: Resumo · Financeiro
-  ├─ Resumo: ConsultantMetricsCard + StatusCards + PaymentIntent
-  └─ Financeiro: BoletosList + DevolutivasList
-Seção "Meus clientes" (CustomerManager já existente)
-```
-
-Rede/Produtos continuam nas abas próprias do Admin (`?tab=rede`, `?tab=produtos`), Diagnóstico só dentro de Configurações.
-
-## Não faz parte
-
-- Não mexer nas abas `rede`, `produtos`, `crm-clientes` do Admin.
-- Não mudar `CustomerManager`, `TelecomClientesList`, `SegurosClientesList` (seguem sendo usados nas suas próprias abas).
-- Não criar nova paleta nem alterar fontes.
-- Não apagar o arquivo `WhatsAppClientsPage.tsx` — só reduzir a um redirect (evita quebrar rotas registradas).
+## Confirmação antes de implementar
+Duas perguntas rápidas:
+1. Prefere o drawer **lateral (Sheet)** ou uma **linha expansível na própria tabela**? (recomendo Sheet — cabe mais informação no mobile).
+2. A faixa "Métricas do consultor" deve ficar **colapsada por padrão** (mais limpo) ou **aberta** (visão imediata)?
