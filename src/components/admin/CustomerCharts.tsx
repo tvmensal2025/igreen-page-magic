@@ -1,4 +1,4 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
+import { PieChart, Pie, Cell, Legend } from "recharts";
 import { TrendingUp, Users } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 
@@ -33,10 +33,7 @@ const BADGE_COLORS: Record<string, string> = {
   registered_igreen: "bg-primary/20 text-primary dark:text-primary", contract_sent: "bg-warning/20 text-warning dark:text-warning",
 };
 
-// Configuração de cores/labels usada pelo ChartContainer (tema claro/escuro automático)
-const licenciadosConfig = {
-  deals: { label: "Cadastros", color: "hsl(130, 100%, 40%)" },
-} satisfies ChartConfig;
+// (config antigo do BarChart removido — ranking agora é lista rica)
 
 const statusConfig = {
   value: { label: "Clientes" },
@@ -62,36 +59,35 @@ export function CustomerCharts({ filteredMetrics, topLicenciados }: CustomerChar
   const licenciadosData =
     topLicenciados && topLicenciados.length > 0 ? topLicenciados : DEMO_LICENCIADOS;
 
+  const maxDeals = licenciadosData.reduce((m, l) => Math.max(m, l.deals), 0) || 1;
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Top Licenciados */}
+      {/* Ranking de Licenciados — lista rica */}
       <div className="premium-card">
         <h3 className="font-heading font-bold text-foreground mb-1 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-primary" /> 🏆 Licenciados — Cadastros
+          <TrendingUp className="w-4 h-4 text-primary" /> 🏆 Ranking de licenciados
         </h3>
         <p className="text-xs text-muted-foreground mb-4">Top licenciados por contas cadastradas</p>
         {licenciadosData && licenciadosData.length > 0 ? (
-          <ChartContainer
-            config={licenciadosConfig}
-            className="w-full"
-            style={{ height: Math.max(200, licenciadosData.length * 36) }}
-          >
-            <BarChart data={licenciadosData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} fontSize={11} />
-              <YAxis type="category" dataKey="name" tick={(props: any) => {
-                  const { x, y, payload } = props;
-                  return (
-                    <text x={x} y={y} textAnchor="end" fontSize={11} dominantBaseline="middle" className="sensitive-name fill-muted-foreground">
-                      {payload.value}
-                    </text>
-                  );
-                }} tickLine={false} axisLine={false} width={130} />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <defs><linearGradient id="barGradientLic" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="hsl(130, 100%, 30%)" /><stop offset="100%" stopColor="hsl(130, 100%, 45%)" /></linearGradient></defs>
-              <Bar dataKey="deals" name="Cadastros" fill="url(#barGradientLic)" radius={[0, 6, 6, 0]} barSize={20} />
-            </BarChart>
-          </ChartContainer>
+          <ol className="space-y-2.5">
+            {licenciadosData.slice(0, 10).map((b, idx) => {
+              const pct = (b.deals / maxDeals) * 100;
+              return (
+                <li key={`${b.name}-${idx}`} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="truncate max-w-[220px] sensitive-name" title={b.name}>
+                      <span className="text-muted-foreground mr-1.5">{idx + 1}.</span>
+                      {b.name}
+                    </span>
+                    <span className="font-semibold tabular-nums text-foreground">{b.deals}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-primary/80" style={{ width: `${pct}%` }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-8">Nenhum licenciado vinculado ainda</p>
         )}
