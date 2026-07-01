@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { runIgreenSync } from "@/lib/igreenSync";
 import { useBoletosCarteira, useDevolutivasCarteira, computeCarteiraStats } from "./hooks";
 import { StatusCards } from "./StatusCards";
