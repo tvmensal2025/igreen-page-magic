@@ -656,6 +656,8 @@ const server = http.createServer(async (req, res) => {
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
+        tor_proxy: TOR_PROXY,
+        api_health: { ...apiHealth, tor_likely_broken: torLikelyBroken() },
       });
     }
     if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
