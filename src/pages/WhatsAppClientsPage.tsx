@@ -306,6 +306,27 @@ export default function WhatsAppClientsPage() {
         </TabsList>
       </Tabs>
 
+      {/* Banner: existe carteira iGreen mas o usuário está na aba WhatsApp */}
+      {isLeadsTab && clientesIgreen.length > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Briefcase className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              Você tem <strong>{clientesIgreen.length}</strong> {clientesIgreen.length === 1 ? "cliente sincronizado" : "clientes sincronizados"} do portal iGreen.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-emerald-500/40 hover:bg-emerald-500/10"
+            onClick={() => setOriginTab("igreen_sync")}
+          >
+            Ver Clientes iGreen →
+          </Button>
+        </div>
+      )}
+
+
       {/* Carteira iGreen — boletos, devolutivas, injeção e sinais de pagamento */}
       {!isLeadsTab && consultantId && (
         <div className="premium-card !p-4 bg-gradient-to-br from-emerald-500/5 to-background border-emerald-500/20">
