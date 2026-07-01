@@ -20,6 +20,7 @@ import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { filterMyClients } from "@/lib/myClientsFilter";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
 import { TeamRankingTab } from "./TeamRankingTab";
+import { TeamDashboard } from "./team-dashboard/TeamDashboard";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
 
 
@@ -263,8 +264,18 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
         </div>
       )}
 
+      {/* NOVO — Dashboard "Cadastros da Equipe" (agrupa por registered_by_igreen_id) */}
+      {analytics?.allCustomers && (
+        <TeamDashboard
+          leaderConsultantId={userId}
+          customers={analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin))}
+          periodDays={periodDays}
+        />
+      )}
+
       {/* CLIENTES iGREEN — 5 cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+
         <StatCard icon={<Users className="w-5 h-5" />} label="Total de Clientes" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Média kWh/cliente" value={`${(filteredMetrics?.avgKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle={`Total: ${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR")} kW`} />
         <StatCard icon={<DollarSign className="w-5 h-5" />} label="Ticket médio (conta)" value={formatCompactBRL(filteredMetrics?.avgBill ?? 0)} color="primary" subtitle="estimado pela tarifa média" />
