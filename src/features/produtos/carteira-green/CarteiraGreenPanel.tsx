@@ -168,6 +168,7 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
             <TelecomClientesList consultantId={consultantId} />
             <SegurosClientesList consultantId={consultantId} />
           </div>
+          <EndpointDiscoveryCard consultantId={consultantId} />
         </>
       )}
     </div>
