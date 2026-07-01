@@ -38,7 +38,7 @@ import { FaturasGreenPanel } from "./FaturasGreenPanel";
 import { loadLocalGreenSettings } from "./greenData";
 import { formatBRLFromCents } from "../lib/money";
 import { VendasEmAndamentoPanel } from "./VendasEmAndamentoPanel";
-import { MultiprodutoCard } from "./MultiprodutoCard";
+
 // AutomacaoIgreenCard foi movido para a Central de Agendamentos.
 import { CrossSellCard } from "./CrossSellCard";
 
@@ -138,8 +138,7 @@ export function AcompanhamentoPanel({
   return (
     <div className="space-y-10 text-pv-ink">
 
-      {/* Carteira multiproduto (Telecom + Seguros) — sync iGreen */}
-      <MultiprodutoCard consultantId={consultantId} />
+
 
       {/* Cross-sell manual: energia → telecom/seguros (consultor decide enviar) */}
       <CrossSellCard consultantId={consultantId} />
