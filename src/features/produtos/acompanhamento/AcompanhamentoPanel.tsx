@@ -40,6 +40,7 @@ import { formatBRLFromCents } from "../lib/money";
 import { VendasEmAndamentoPanel } from "./VendasEmAndamentoPanel";
 import { MultiprodutoCard } from "./MultiprodutoCard";
 import { AutomacaoIgreenCard } from "./AutomacaoIgreenCard";
+import { CrossSellCard } from "./CrossSellCard";
 
 interface AcompanhamentoPanelProps {
   consultantId: string;
