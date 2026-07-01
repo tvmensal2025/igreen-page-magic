@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS customers_phone_consultant_uniq ON public.customers (phone_whatsapp, consultant_id);
