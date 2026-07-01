@@ -279,17 +279,19 @@ export function useAnalytics(
       const customersWithConsumption = scopedWalletCustomers.filter((c) => Number(c.media_consumo) > 0);
       const avgKw = customersWithConsumption.length > 0 ? totalKw / customersWithConsumption.length : 0;
 
-      const licMap = new Map<string, number>();
+      // Ranking por licenciado — chaveia por registered_by_igreen_id quando disponível
+      const licMap = new Map<string, { name: string; deals: number }>();
       for (const c of scopedWalletCustomers) {
         const nm = (c as any).registered_by_name?.trim();
         const igid = (c as any).registered_by_igreen_id;
-        const key = nm && nm.length > 0
-          ? nm
-          : (igid ? `#${igid}` : "Sem licenciado");
-        licMap.set(key, (licMap.get(key) || 0) + 1);
+        const key = igid ? `id:${igid}` : (nm && nm.length > 0 ? `nm:${nm}` : "none");
+        const displayRaw = nm && nm.length > 0 ? nm : (igid ? `#${igid}` : "Sem licenciado");
+        const prev = licMap.get(key);
+        if (prev) prev.deals++;
+        else licMap.set(key, { name: displayRaw, deals: 1 });
       }
-      const topLicenciados: TopLicenciado[] = Array.from(licMap.entries())
-        .map(([name, deals]) => {
+      const topLicenciados: TopLicenciado[] = Array.from(licMap.values())
+        .map(({ name, deals }) => {
           const parts = name.trim().split(/\s+/);
           const shortName = parts.length > 2 ? `${parts[0]} ${parts[parts.length - 1]}` : name;
           return { name: shortName, deals };
