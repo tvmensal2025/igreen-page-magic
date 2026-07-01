@@ -1,51 +1,62 @@
-## Auditoria — mídias pós-venda na base
+# Fluxo A = espelho do Fluxo D, renomeado para "CEMIG" (foco Minas Gerais)
 
-Tabela `pos_venda_default_media` (fallback institucional usado quando o consultor não customizou):
+## Objetivo
+1. **Fluxo A** passa a rodar **100% idêntico ao Fluxo D** (mesmas mensagens, mídias, botões interativos) — sem duplicar dados no banco.
+2. Onde hoje aparece **"Fluxo A"** na UI, passa a aparecer **"CEMIG"** (foco Minas Gerais).
+3. Variante permanece `A` no banco/código (não mexe em enum, migração, dedup, seletor A/B, testes). Só o **rótulo visível** muda.
 
-| Estágio | Texto | Áudio | Imagem | Ativo |
-|---|---|---|---|---|
-| aprovado | ✅ | ✅ | ✅ | ✅ |
-| reprovado | ✅ | ✅ | ✅ | ✅ |
-| d30 | ✅ | ✅ | ✅ | ✅ |
-| d60 | ✅ | ✅ | ✅ | ✅ |
-| d90 | ✅ | ✅ | ✅ | ✅ |
-| d120 | ✅ | ✅ | ✅ | ✅ |
+## Auditoria do plano anterior — pontos que precisavam ajuste
+- ✅ `resolve-flow.ts` e `pickVariant` continuam sendo as duas únicas alterações de comportamento — correto e mínimo.
+- ⚠️ Rótulo: `src/components/admin/flow-builder/flowTypes.ts` (`VARIANT_LABELS.A = "Fluxo A (com áudio)"`) e outros lugares com texto "Fluxo A" precisam virar "CEMIG".
+- ⚠️ `flow_ab_mode` no `/admin/fluxos` hoje mostra "only_A / only_D / split" — o card `ConsultantVariantsCard.tsx` também referencia "Fluxo A" no texto do rádio.
+- ⚠️ `CaptacaoPanel.tsx` tem fallback hardcoded `{ variant: "A", name: "Fluxo A" }` — trocar para "CEMIG".
+- ⚠️ `FluxoAKeywordsCard.tsx` (title + label) usa "Fluxo A".
+- ✅ Textos "Fluxo D" **não** mudam.
+- ✅ Não há registro `bot_flows.variant='A'` no banco (verificado: 0 linhas). Logo, nenhum `bot_flows.name` a renomear via SQL. Se no futuro alguém criar um fluxo A próprio (`sync_mode='custom'`), o nome do registro é livre — o rótulo global "CEMIG" continua valendo na UI.
 
-Os 6 estágios estão completos (texto + áudio `.ogg` + imagem `.jpg`).
+## Alterações (mínimas, sem quebrar nada)
 
-## Regra de canal (conforme pedido do usuário)
+### 1) Comportamento — A roda como D
+**`supabase/functions/_shared/resolve-flow.ts`**
+- `getPublicFlowId(v)` recebe a variante; quando `v='A'` e não há público A, faz fallback para público D.
+- `resolveMediaOwnerId`: mesma regra — quando A e não há A público, retorna o dono do D público (mídias do Super Admin).
 
-- **Cada consultor envia pela própria Evolution** (comportamento atual de `resolveChannelForCustomer`).
-- Whapi só é usado quando o próprio usuário/consultor está configurado em Whapi (ex.: Super Admin).
-- **Não vamos forçar Whapi** no pós-venda.
+**`supabase/functions/_shared/engine/helpers.ts`**
+- `pickVariant("A") → variantD` (aplica overlay de botões interativos/listas idêntico ao D).
+- `B` continua `variantA`, `C` continua sentinela, `D` continua `variantD`.
 
-## Diagnóstico do "chegou só a imagem"
+### 2) Rótulo visível — "Fluxo A" vira "CEMIG"
+- `src/components/admin/flow-builder/flowTypes.ts` → `VARIANT_LABELS.A = "CEMIG"`.
+- `src/components/captacao/CaptacaoPanel.tsx` → fallback `{ variant: "A", name: "CEMIG" }`.
+- `src/components/admin/fluxo-b-ia/FluxoAKeywordsCard.tsx` → título "Palavras-chave do CEMIG", `target_flow_label = "CEMIG — Cadastro direto"`.
+- `src/components/admin/fluxo-b-ia/ConsultantVariantsCard.tsx` → textos "Fluxo A" → "CEMIG" nos rádios.
+- Grep final por `"Fluxo A"` para pegar remanescentes (badges/toasts) e trocar por "CEMIG".
 
-`sendSingleMessage` (`_shared/channel-sender.ts` linhas 258–295) já tenta imagem → áudio → texto quando o estágio é tipo `audio` com `image_url`. A lógica está correta, mas na Evolution o `sendAudio` falha silenciosamente em parte dos envios (sem exception, sem log útil) e o log final marca `status: sent` mesmo assim, escondendo o problema.
+## O que NÃO muda
+- Enum de variante (`A/B/C/D`) no banco e nos tipos TS.
+- `pickFlowVariant` / `flow_ab_mode` (split 50/50 continua funcionando; A ≡ D torna o split neutro).
+- Fluxo D em si (mensagens, mídias, botões) — permanece a fonte única de verdade.
+- Webhooks (Whapi/Evolution), worker portal, monitor, testes de `flow-selector`.
+- Nenhuma migração SQL. Nenhum dado copiado.
 
-## Plano de correção (sem enviar nada agora)
+## Segurança / rollback
+- 2 arquivos de backend + ~4 arquivos de UI. Sem migração.
+- Rollback = reverter os arquivos.
+- Consultores com fluxo próprio custom (`sync_mode='custom'`) continuam vencendo o fallback público — comportamento preservado.
+- Se o Super Admin um dia criar um fluxo A público de verdade (foco CEMIG real), ele passa a vencer o fallback D automaticamente, sem alteração de código.
 
-### 1. Tornar o envio das 3 peças observável
-`sendSingleMessage` passa a embrulhar cada peça (imagem / áudio / texto) em `try/catch` próprio e retorna um objeto `{ image_ok, audio_ok, text_ok, errors }`.
+## Validação pós-deploy
+1. `SELECT flow_variant, count(*) FROM customers GROUP BY 1` — confere distribuição.
+2. Lead de teste marcado `flow_variant='A'` no Whapi/Evolution → deve receber o passo inicial do D com botões.
+3. Abrir `/admin/fluxos` e `/admin/captacao` → badges e seletores mostram "CEMIG" no lugar de "Fluxo A".
+4. Monitor `/admin/portal-monitor` sem novos erros de "flow_id nulo".
 
-### 2. Retry leve só para áudio na Evolution
-Quando `channel.kind === "evolution"` e `sendAudio` falhar (exception OU resposta sem messageId), aguardar 1,5s e tentar 1 vez de novo. Imagem e texto não precisam — quase nunca falham.
-
-### 3. Log honesto em `customer_auto_message_log`
-Trocar o `status: "sent"` cego por:
-- `sent` → todas as peças OK.
-- `partial:audio_missing` / `partial:image_missing` → faltou algo. `message_preview` ganha `[img:ok|audio:fail|text:ok]`.
-- `failed` → nada chegou.
-Assim o painel `/admin/portal-monitor` mostra exatamente onde a Evolution falhou, por consultor.
-
-### 4. Fallback final do áudio
-Se mesmo com retry o áudio falhar na Evolution, enviar uma 4ª mensagem curta de texto: "🎧 Áudio: <link>" usando a URL pública do MinIO. Garante que o conteúdo do áudio chegue de alguma forma sem trocar o canal do consultor.
-
-### 5. Nenhum disparo agora
-As mudanças só passam a valer no próximo disparo natural (aprovação real ou cron diário d30/60/90/120). Sem teste manual.
-
-## Arquivos alterados
-- `supabase/functions/_shared/channel-sender.ts` — `sendSingleMessage` com try/catch por peça + retry de áudio + fallback link.
-- `supabase/functions/pos-venda-auto-progress/index.ts` — usar o novo retorno e gravar status detalhado em `customer_auto_message_log`.
-
-Nenhuma mudança de schema, nenhuma mudança de canal, nenhum envio de teste.
+## Arquivos alterados (resumo)
+```
+supabase/functions/_shared/resolve-flow.ts
+supabase/functions/_shared/engine/helpers.ts
+src/components/admin/flow-builder/flowTypes.ts
+src/components/captacao/CaptacaoPanel.tsx
+src/components/admin/fluxo-b-ia/FluxoAKeywordsCard.tsx
+src/components/admin/fluxo-b-ia/ConsultantVariantsCard.tsx
+```
