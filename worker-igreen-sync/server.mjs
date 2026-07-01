@@ -920,6 +920,14 @@ const server = http.createServer(async (req, res) => {
       const results = await probeEndpoints(s, body.paths);
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, results });
     }
+    // /probe-all: varre o catálogo consolidado (só GET) e devolve status,
+    // tempo, tamanho, amostra e bucket (ok/denied/missing/bad_request/error_5xx).
+    // Persistência fica a cargo da Edge Function `igreen-endpoint-probe`.
+    if (req.url === '/probe-all') {
+      const s = await getOrCreateSession(email, password);
+      const out = await probeAll(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, ...out });
+    }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
   } catch (e) {
     const status = e?.status || 500;
