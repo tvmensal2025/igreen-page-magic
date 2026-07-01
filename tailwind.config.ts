@@ -16,6 +16,8 @@ export default {
       fontFamily: {
         heading: ['Montserrat', 'sans-serif'],
         body: ['Open Sans', 'sans-serif'],
+        display: ['"Space Grotesk"', 'Montserrat', 'sans-serif'],
+        'body-alt': ['"DM Sans"', 'Open Sans', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
