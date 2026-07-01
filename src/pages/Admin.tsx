@@ -51,6 +51,8 @@ const AgendamentosHub = lazy(() => import("@/components/whatsapp/AgendamentosHub
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
+const CarteiraGreenPanel = lazy(() => import("@/features/produtos/carteira-green/CarteiraGreenPanel").then(m => ({ default: m.CarteiraGreenPanel })));
+const EndpointDiscoveryCard = lazy(() => import("@/features/produtos/carteira-green/EndpointDiscoveryCard").then(m => ({ default: m.EndpointDiscoveryCard })));
 
 import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
@@ -423,15 +425,28 @@ const AdminContent = () => {
 
 
           {userId && activeTab === "clientes" && (
-            <CustomerManager
-              customers={customers as never[]}
-              consultantId={userId}
-              consultantIgreenId={form.igreen_id || undefined}
-              consultantName={form.name || undefined}
-              onCustomersChange={fetchCustomers}
-              instanceName={instanceName}
-              onOpenChat={handleOpenChatFromCustomer}
-            />
+            <div className="space-y-6">
+              <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
+                <div className="mb-4">
+                  <h2 className="text-base font-semibold text-foreground">Carteira iGreen</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Resumo, financeiro e clientes sincronizados do escritório iGreen.
+                  </p>
+                </div>
+                <Suspense fallback={null}>
+                  <CarteiraGreenPanel consultantId={userId} />
+                </Suspense>
+              </section>
+              <CustomerManager
+                customers={customers as never[]}
+                consultantId={userId}
+                consultantIgreenId={form.igreen_id || undefined}
+                consultantName={form.name || undefined}
+                onCustomersChange={fetchCustomers}
+                instanceName={instanceName}
+                onOpenChat={handleOpenChatFromCustomer}
+              />
+            </div>
           )}
 
           {userId && activeTab === "rede" && (
@@ -542,6 +557,12 @@ const AdminContent = () => {
               {userId && <IGreenConnectionCard userId={userId} />}
               <BonusTiersAdminCard />
               <ChangePasswordCard />
+              {userId && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-foreground">Diagnóstico iGreen</h3>
+                  <EndpointDiscoveryCard consultantId={userId} />
+                </div>
+              )}
             </Suspense>
           </div>
         </SheetContent>

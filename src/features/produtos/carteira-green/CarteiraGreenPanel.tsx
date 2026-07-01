@@ -1,18 +1,11 @@
 // =============================================================================
 // Painel Carteira Green — layout com sidebar local por seção.
-// O sync é disparado em outros lugares (Início / Admin). Aqui só consumimos
-// os dados e mostramos progresso automático se detectarmos sync em andamento.
+// Apenas Resumo + Financeiro. Rede/Produtos vivem em abas próprias do Admin,
+// e Diagnóstico foi movido para o Sheet de Configurações.
 // =============================================================================
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Loader2,
-  LayoutDashboard,
-  Wallet,
-  Package,
-  Users,
-  Wrench,
-} from "lucide-react";
+import { Loader2, LayoutDashboard, Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -22,26 +15,11 @@ import { BoletosList } from "./BoletosList";
 import { DevolutivasList } from "./DevolutivasList";
 import { PaymentIntent } from "./PaymentIntent";
 import { ConsultantMetricsCard } from "./ConsultantMetricsCard";
-import { TelecomClientesList } from "./TelecomClientesList";
-import { SegurosClientesList } from "./SegurosClientesList";
-import { RedeDashboardCard } from "./RedeDashboardCard";
-import { RotinasPanel } from "./RotinasPanel";
-import { EndpointDiscoveryCard } from "./EndpointDiscoveryCard";
 
-type SectionId = "resumo" | "financeiro" | "produtos" | "rede" | "diagnostico";
+type SectionId = "resumo" | "financeiro";
 
-const SYNC_STEPS = [
-  "Clientes",
-  "Boletos",
-  "Devolutivas",
-  "Métricas",
-  "Rede",
-  "Telecom",
-  "Seguros",
-  "Licenças",
-];
+const SYNC_STEPS = ["Clientes", "Boletos", "Devolutivas", "Métricas", "Licenças"];
 
-// Sidebar de seções locais ao painel. Usa somente tokens do tema.
 function SectionNav({
   active,
   onChange,
@@ -54,13 +32,9 @@ function SectionNav({
   const items: { id: SectionId; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "resumo", label: "Resumo", icon: LayoutDashboard },
     { id: "financeiro", label: "Financeiro", icon: Wallet },
-    { id: "produtos", label: "Produtos", icon: Package },
-    { id: "rede", label: "Rede", icon: Users },
-    { id: "diagnostico", label: "Diagnóstico", icon: Wrench },
   ];
   return (
     <nav className="md:w-56 md:shrink-0">
-      {/* Mobile: horizontal scroll; Desktop: coluna */}
       <ul className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
         {items.map((it) => {
           const isActive = active === it.id;
@@ -81,10 +55,7 @@ function SectionNav({
                 <Icon className="h-4 w-4 shrink-0" />
                 <span className="flex-1">{it.label}</span>
                 {count != null && count > 0 && (
-                  <Badge
-                    variant="outline"
-                    className="h-5 px-1.5 text-[10px] font-normal"
-                  >
+                  <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
                     {count}
                   </Badge>
                 )}
@@ -104,15 +75,11 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
   const [, setTick] = useState(0);
   const [igreenCustomerCount, setIgreenCustomerCount] = useState<number | null>(null);
-  const [telecomCount, setTelecomCount] = useState<number | null>(null);
-  const [segurosCount, setSegurosCount] = useState<number | null>(null);
 
-  // Seção ativa persistida via ?sec= na URL.
   const [section, setSectionState] = useState<SectionId>(() => {
     if (typeof window === "undefined") return "resumo";
     const s = new URLSearchParams(window.location.search).get("sec");
-    if (s === "financeiro" || s === "produtos" || s === "rede" || s === "diagnostico") return s;
-    return "resumo";
+    return s === "financeiro" ? "financeiro" : "resumo";
   });
   const setSection = (s: SectionId) => {
     setSectionState(s);
@@ -129,29 +96,16 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
     return () => clearInterval(t);
   }, [syncing]);
 
-  // Contagens auxiliares para os badges do sidebar.
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [c, t, s] = await Promise.all([
-        supabase
-          .from("customers")
-          .select("id", { count: "exact", head: true })
-          .eq("consultant_id", consultantId)
-          .eq("customer_origin", "igreen_sync"),
-        supabase
-          .from("igreen_telecom_customers" as never)
-          .select("id", { count: "exact", head: true })
-          .eq("consultant_id", consultantId),
-        supabase
-          .from("igreen_seguros_customers" as never)
-          .select("id", { count: "exact", head: true })
-          .eq("consultant_id", consultantId),
-      ]);
+      const c = await supabase
+        .from("customers")
+        .select("id", { count: "exact", head: true })
+        .eq("consultant_id", consultantId)
+        .eq("customer_origin", "igreen_sync");
       if (!alive) return;
       setIgreenCustomerCount(c.count ?? 0);
-      setTelecomCount(t.count ?? 0);
-      setSegurosCount(s.count ?? 0);
     })();
     return () => { alive = false; };
   }, [consultantId, boletos.length]);
@@ -160,8 +114,6 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const lastSync = boletos[0]?.synced_at;
   const lastSyncTs = lastSync ? new Date(lastSync).getTime() : 0;
 
-  // Detecta sync em andamento em background (disparado em outra tela): faz um
-  // polling curto após montar e re-checa periodicamente se o synced_at avançou.
   useEffect(() => {
     let cancelled = false;
     let baseline = lastSyncTs;
@@ -171,7 +123,6 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
       const newTs = data?.[0]?.synced_at ? new Date(data[0].synced_at).getTime() : 0;
       if (cancelled) return;
       if (newTs > baseline) {
-        // Sync detectada — mostra chips de progresso curto
         if (!started) {
           started = true;
           setSyncing(true);
@@ -207,14 +158,10 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const counts: Record<SectionId, number | null> = {
     resumo: igreenCustomerCount,
     financeiro: boletos.length + devolutivas.length,
-    produtos: (telecomCount ?? 0) + (segurosCount ?? 0),
-    rede: null,
-    diagnostico: null,
   };
 
   return (
     <div className="space-y-4">
-      {/* Header discreto: apenas informativo, sem botões de ação */}
       <header className="flex items-baseline justify-between gap-3 flex-wrap">
         <p className="text-xs text-muted-foreground">
           Boletos, devolutivas, injeção e sinais de pagamento — espelho do escritório iGreen.
@@ -226,12 +173,9 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
         )}
       </header>
 
-      {/* Progresso automático quando detectamos sync em background */}
       {syncing && (
         <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-          <p className="text-xs font-medium mb-2 text-foreground">
-            Sincronização em andamento…
-          </p>
+          <p className="text-xs font-medium mb-2 text-foreground">Sincronização em andamento…</p>
           <div className="flex flex-wrap gap-1.5">
             {SYNC_STEPS.map((s, i) => {
               const done = i < stepsDone;
@@ -290,39 +234,15 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
                   </div>
                 </div>
               ) : (
-                <EmptySection title="Sem movimento financeiro" description="Nenhum boleto ou devolutiva sincronizado." />
+                <div className="rounded-xl border border-dashed border-border/60 p-8 text-center space-y-1">
+                  <p className="text-sm font-medium">Sem movimento financeiro</p>
+                  <p className="text-xs text-muted-foreground">Nenhum boleto ou devolutiva sincronizado.</p>
+                </div>
               )
-            )}
-
-            {section === "produtos" && (
-              <div className="grid gap-6 lg:grid-cols-2">
-                <TelecomClientesList consultantId={consultantId} />
-                <SegurosClientesList consultantId={consultantId} />
-              </div>
-            )}
-
-            {section === "rede" && (
-              <div className="grid gap-6 lg:grid-cols-2">
-                <RedeDashboardCard consultantId={consultantId} />
-                <RotinasPanel consultantId={consultantId} />
-              </div>
-            )}
-
-            {section === "diagnostico" && (
-              <EndpointDiscoveryCard consultantId={consultantId} />
             )}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function EmptySection({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border/60 p-8 text-center space-y-1">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-xs text-muted-foreground">{description}</p>
     </div>
   );
 }
