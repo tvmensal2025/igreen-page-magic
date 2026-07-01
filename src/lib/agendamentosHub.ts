@@ -72,6 +72,7 @@ export type AgendamentosHubTab =
   | "pos-venda"
   | "reaquecimento"
   | "campanhas"
+  | "igreen"
   | "historico";
 
 export interface AgendamentosNavDetail {
