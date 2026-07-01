@@ -39,11 +39,24 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const [syncing, setSyncing] = useState(false);
   const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
   const [, setTick] = useState(0);
+  const [igreenCustomerCount, setIgreenCustomerCount] = useState<number | null>(null);
   useEffect(() => {
     if (!syncing) return;
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [syncing]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { count } = await supabase
+        .from("customers")
+        .select("id", { count: "exact", head: true })
+        .eq("consultant_id", consultantId)
+        .eq("customer_origin", "igreen_sync");
+      if (alive) setIgreenCustomerCount(count ?? 0);
+    })();
+    return () => { alive = false; };
+  }, [consultantId, boletos.length]);
   const { toast } = useToast();
 
   const stats = useMemo(() => computeCarteiraStats(boletos), [boletos]);
