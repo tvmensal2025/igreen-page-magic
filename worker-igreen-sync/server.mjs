@@ -375,7 +375,8 @@ async function getOrCreateSession(email, password) {
   const prev = loginLocks.get(key) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
-  loginLocks.set(key, prev.catch(() => {}).then(() => current));
+  const chained = prev.catch(() => {}).then(() => current);
+  loginLocks.set(key, chained);
   await prev.catch(() => {});
 
   try {
@@ -401,7 +402,7 @@ async function getOrCreateSession(email, password) {
     throw lastErr || new HttpError(500, 'Falha ao criar sessão iGreen');
   } finally {
     try { release(); } catch {}
-    if (loginLocks.get(key) === current) loginLocks.delete(key);
+    if (loginLocks.get(key) === chained) loginLocks.delete(key);
   }
 }
 
@@ -410,13 +411,14 @@ async function withEmailOperationLock(email, fn) {
   const prev = operationLocks.get(key) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
-  operationLocks.set(key, prev.catch(() => {}).then(() => current));
+  const chained = prev.catch(() => {}).then(() => current);
+  operationLocks.set(key, chained);
   await prev.catch(() => {});
   try {
     return await fn();
   } finally {
     try { release(); } catch {}
-    if (operationLocks.get(key) === current) operationLocks.delete(key);
+    if (operationLocks.get(key) === chained) operationLocks.delete(key);
   }
 }
 
