@@ -209,7 +209,7 @@ export const GUIDED_CAPTURE_OPTIONS: GuidedCaptureOption[] = [
 ];
 
 const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
-  A: "Fluxo A (com áudio)",
+  A: "CEMIG",
   B: "Fluxo B (IA livre)",
   C: "Fluxo C (vídeo inicial)",
   D: "Fluxo D (padrão Camila)",
