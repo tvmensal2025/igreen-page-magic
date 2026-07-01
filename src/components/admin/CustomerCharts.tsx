@@ -39,25 +39,8 @@ const statusConfig = {
   value: { label: "Clientes" },
 } satisfies ChartConfig;
 
-// ⚠️ DADOS DE TESTE (temporário) — 10 licenciados de exemplo só para visualizar o gráfico.
-// Remover este bloco e o uso abaixo quando terminar de avaliar o visual.
-const DEMO_LICENCIADOS: LicenciadoData[] = [
-  { name: "Ana Souza", deals: 42 },
-  { name: "Bruno Lima", deals: 38 },
-  { name: "Carla Mendes", deals: 31 },
-  { name: "Diego Ramos", deals: 27 },
-  { name: "Eduarda Alves", deals: 23 },
-  { name: "Felipe Castro", deals: 19 },
-  { name: "Gabriela Rocha", deals: 15 },
-  { name: "Henrique Dias", deals: 11 },
-  { name: "Isabela Nunes", deals: 7 },
-  { name: "João Pereira", deals: 4 },
-];
-
 export function CustomerCharts({ filteredMetrics, topLicenciados }: CustomerChartsProps) {
-  // ⚠️ Usa os dados de teste quando não houver licenciados reais. Remover ao finalizar.
-  const licenciadosData =
-    topLicenciados && topLicenciados.length > 0 ? topLicenciados : DEMO_LICENCIADOS;
+  const licenciadosData = topLicenciados ?? [];
 
   const maxDeals = licenciadosData.reduce((m, l) => Math.max(m, l.deals), 0) || 1;
   return (

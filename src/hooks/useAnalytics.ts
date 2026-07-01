@@ -141,7 +141,7 @@ export function useAnalytics(
         adSpendCents = ((spendRows ?? []) as any[]).reduce((s, r) => s + Number(r.spend_cents ?? 0), 0);
       }
 
-      // Fetch ALL customers with pagination
+      // Fetch ALL customers with pagination (por consultant_id / equipe)
       const allCustomers: any[] = [];
       let page = 0;
       const pageSize = 1000;
@@ -157,6 +157,39 @@ export function useAnalytics(
         if (data) allCustomers.push(...data);
         if (!data || data.length < pageSize) break;
         page++;
+      }
+
+      // Também busca clientes da carteira iGreen por registered_by_igreen_id
+      // (inclui cadastros feitos por licenciados da rede que não têm consultant_id local)
+      const myIgreenIds = Array.from(
+        new Set(
+          [myClientsSettings.myIgreenId, ...(myClientsSettings.cadastroIgreenIds || [])]
+            .filter((v): v is string => !!v && String(v).length > 0)
+            .map(String),
+        ),
+      );
+      if (myIgreenIds.length > 0) {
+        const seen = new Set(allCustomers.map((c) => c.id));
+        let pageL = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("customers")
+            .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento")
+            .in("registered_by_igreen_id", myIgreenIds)
+            .in("customer_origin", ["igreen_sync", "igreen_extension"])
+            .range(pageL * pageSize, (pageL + 1) * pageSize - 1);
+          if (error) throw error;
+          if (data) {
+            for (const row of data) {
+              if (!seen.has(row.id)) {
+                seen.add(row.id);
+                allCustomers.push(row);
+              }
+            }
+          }
+          if (!data || data.length < pageSize) break;
+          pageL++;
+        }
       }
 
       const totalClient = views.filter((v) => v.page_type === "client").length;
@@ -218,9 +251,15 @@ export function useAnalytics(
         return o === "whatsapp_lead" || o === "manual";
       });
       const walletCustomers = allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
+      const myIgreenIdSet = new Set(myIgreenIds);
       const scopedWalletCustomers = useTeam
         ? walletCustomers
-        : filterMyClients(walletCustomers, myClientsSettings);
+        : walletCustomers.filter((c: any) => {
+            const igid = c.registered_by_igreen_id != null ? String(c.registered_by_igreen_id) : null;
+            if (igid && myIgreenIdSet.has(igid)) return true;
+            // fallback: mantém compatibilidade com filtro por nome/consultor local
+            return filterMyClients([c], myClientsSettings).length > 0;
+          });
 
       const totalCustomers = scopedWalletCustomers.length;
       const statusMap = new Map<string, number>();
@@ -240,17 +279,19 @@ export function useAnalytics(
       const customersWithConsumption = scopedWalletCustomers.filter((c) => Number(c.media_consumo) > 0);
       const avgKw = customersWithConsumption.length > 0 ? totalKw / customersWithConsumption.length : 0;
 
-      const licMap = new Map<string, number>();
+      // Ranking por licenciado — chaveia por registered_by_igreen_id quando disponível
+      const licMap = new Map<string, { name: string; deals: number }>();
       for (const c of scopedWalletCustomers) {
         const nm = (c as any).registered_by_name?.trim();
         const igid = (c as any).registered_by_igreen_id;
-        const key = nm && nm.length > 0
-          ? nm
-          : (igid ? `#${igid}` : "Sem licenciado");
-        licMap.set(key, (licMap.get(key) || 0) + 1);
+        const key = igid ? `id:${igid}` : (nm && nm.length > 0 ? `nm:${nm}` : "none");
+        const displayRaw = nm && nm.length > 0 ? nm : (igid ? `#${igid}` : "Sem licenciado");
+        const prev = licMap.get(key);
+        if (prev) prev.deals++;
+        else licMap.set(key, { name: displayRaw, deals: 1 });
       }
-      const topLicenciados: TopLicenciado[] = Array.from(licMap.entries())
-        .map(([name, deals]) => {
+      const topLicenciados: TopLicenciado[] = Array.from(licMap.values())
+        .map(({ name, deals }) => {
           const parts = name.trim().split(/\s+/);
           const shortName = parts.length > 2 ? `${parts[0]} ${parts[parts.length - 1]}` : name;
           return { name: shortName, deals };
