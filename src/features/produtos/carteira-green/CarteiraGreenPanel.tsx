@@ -158,10 +158,23 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
 
       {boletos.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/60 p-8 text-center space-y-2">
-          <p className="text-sm font-medium">Sem dados sincronizados ainda</p>
-          <p className="text-xs text-muted-foreground">
-            Clique em "Sincronizar agora" para puxar sua carteira do escritório iGreen.
-          </p>
+          {igreenCustomerCount && igreenCustomerCount > 0 ? (
+            <>
+              <p className="text-sm font-medium">
+                {igreenCustomerCount} {igreenCustomerCount === 1 ? "cliente sincronizado" : "clientes sincronizados"} — sem boletos em aberto no momento
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Sua carteira está em dia (ou os boletos ainda não foram emitidos pela iGreen). Métricas e clientes seguem abaixo.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium">Sem dados sincronizados ainda</p>
+              <p className="text-xs text-muted-foreground">
+                Clique em "Sincronizar agora" para puxar sua carteira do escritório iGreen.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <>
