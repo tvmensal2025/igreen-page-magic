@@ -1,56 +1,66 @@
-# Plano — Reorganizar Clientes iGreen com sidebar
+# Plano — Remover aba "Clientes interessados" e refinar visual
 
-Manter **tokens/cores atuais da plataforma** (nada de nova paleta, nada de dark novo) e **fontes atuais**. A mudança é só de estrutura: sair do "empilhão" vertical atual e dar uma navegação lateral entre seções.
+## Objetivo
 
-Sem botões duplicados no header: **remover "Abrir CRM Pós-Venda"** (já existe em Admin) e **remover "Sincronizar agora"** deste card (já existe no Início / topo do admin). O sync continua acontecendo em background quando disparado dos outros locais — este painel só consome os dados.
+Na página `/admin/whatsapp-clients`:
+1. **Remover** a aba "Clientes interessados WhatsApp" — ela vive agora em Conversão (junto com os demais estágios).
+2. A página vira **exclusivamente Clientes iGreen** (carteira sincronizada).
+3. Melhorar o visual: remover cor preta/negrito exagerado, alinhar com tokens padrão da plataforma (mesma linguagem visual do resto do admin).
 
-## Novo layout — sidebar de seções
+## Mudanças em `src/pages/WhatsAppClientsPage.tsx`
 
-Dentro do card "Carteira iGreen" da aba Clientes iGreen (`WhatsAppClientsPage.tsx`), substituir o empilhamento por um shell de duas colunas:
+- Excluir todo o estado/lógica de `OriginTab`, `leadsWhatsapp`, `isLeadsTab`, `toggleConverted`, `saveCommissionRate`, `convertedLeads`, banner de comissão e o bloco expandido de conversão.
+- Carregar apenas `customers` com `customer_origin = 'igreen_sync'` (filtra na query, mais leve).
+- Remover a `<Tabs>` de origem e o banner "Você tem N clientes sincronizados".
+- Header simplificado:
+  - Título `Clientes iGreen` em `text-2xl font-semibold` (sem `font-bold` pesado), cor `text-foreground`.
+  - Subtítulo `text-sm text-muted-foreground`.
+  - Botão "Exportar CSV" em `variant="outline"` padrão, sem override de borda.
+- Stats iGreen: manter 4 cards, mas usar `Card`/`premium-card` limpo. Trocar o mini-quadrado de ícone de `bg-gradient-to-br` por `bg-muted/40` liso; ícone em `text-muted-foreground` (ou `text-primary` no card principal). Números em `text-2xl font-semibold` (não bold).
+- Filtros: manter Input + Select, mas remover `bg-muted/30` custom nos inputs; usar variantes default do shadcn.
+- Lista de clientes: manter card, mas trocar avatar preto/colorido por círculo `bg-primary/10 text-primary` fixo; título em `font-medium` (não `font-bold`).
+- `InfoField`: fundo `bg-muted/40` (já está próximo) e label `text-[11px]`.
+- Deixar `CarteiraGreenPanel` como está (já foi redesenhado na etapa anterior) — ele fica logo abaixo do header.
+
+## Reorganização vertical da página
 
 ```text
-┌──────────── Carteira iGreen ─────────────────────────────────────┐
-│ [aside 200px]  │ [conteúdo da seção ativa]                       │
-│ • Resumo       │                                                 │
-│ • Financeiro   │   Só a seção selecionada renderiza aqui,        │
-│ • Produtos     │   com título e subtítulo próprios.              │
-│ • Rede         │                                                 │
-│ • Diagnóstico  │                                                 │
-└──────────────────────────────────────────────────────────────────┘
+Header (título + subtítulo + Exportar CSV)
+Carteira iGreen (painel completo com sidebar interno)
+Stats (4 cards)
+Filtros
+Lista de clientes iGreen
 ```
 
-- Sidebar em `aside` fixa à esquerda, largura `w-56`, colapsável para `w-14` (só ícones) em telas `< md`.
-- Estado da seção ativa em `useState` + `?sec=` na URL (para deep-link).
-- Item ativo usa tokens semânticos (`bg-accent text-accent-foreground` + `border-l-2 border-primary`).
-- Contadores discretos ao lado do rótulo (ex: "Financeiro · 21", "Produtos · 14"), badge outline padrão.
-- Header do card mantém só título + subtítulo + indicador "Última sync: …" — nenhum botão de ação.
+Sem tabs, sem banner de troca, sem bloco de conversão/comissão.
 
-## Seções e conteúdo
+## Onde os leads WhatsApp aparecem agora
 
-1. **Resumo** — `ConsultantMetricsCard` + `StatusCards` + `PaymentIntent` + banner de "N clientes sincronizados".
-2. **Financeiro** — `BoletosList` (col-span-3) + `DevolutivasList` (col-span-2). Empty-state próprio quando 0.
-3. **Produtos** — grid 2 col: `TelecomClientesList` + `SegurosClientesList`.
-4. **Rede** — `RedeDashboardCard` + `RotinasPanel`.
-5. **Diagnóstico** — `EndpointDiscoveryCard` (recolhido, para uso pontual).
+- Continuam em `/admin?tab=conversao` (funil de conversão) — já é a fonte oficial. Nenhuma mudança lá.
+- Adicionar um pequeno link discreto no header: "Ver clientes interessados no funil de Conversão →" apontando para `/admin?tab=conversao`, para quem chegar por links antigos.
 
-O bloco de progresso do sync (chips de passos) permanece na `CarteiraGreenPanel` — aparece automaticamente enquanto uma sincronização estiver rodando em background (state `syncing` detectado por polling do `synced_at`), mas sem o botão para dispará-lo daqui.
+## Roteamento
 
-## Padronização visual (sem mudar paleta)
+- Ignorar `?tab=whatsapp` / `?tab=whatsapp_lead` na URL — se vier, redireciona imediatamente para `/admin?tab=conversao` via `useEffect` + `navigate(..., { replace: true })`.
+- `?tab=igreen` mantém comportamento (é o único estado agora, mas o parâmetro pode ficar por compatibilidade — não precisa ler mais).
 
-- Todos os sub-cards herdam `border-border/60 bg-card` (tokens do tema), removendo variações locais `bg-emerald-500/[0.03]` inseridas antes. Cabeçalho de cada sub-card: ícone lucide em `text-muted-foreground`, título `text-sm font-semibold`, badge de contagem `variant="outline"`.
-- Divisor entre "linhas" de conteúdo dentro da seção: `border-border/40`.
-- Espaçamento uniforme: `space-y-6` dentro da seção; `gap-6` nos grids.
-- Nenhum gradiente novo. Nenhuma cor hardcoded (`text-emerald-*`, `text-amber-*` só onde já representam status semântico).
+## Padronização de cor (sem preto, sem negrito pesado)
+
+- Trocar em toda a página:
+  - `font-bold` → `font-semibold` (títulos) e `font-medium` (rótulos).
+  - `text-foreground` bold pesado → default `text-foreground` normal.
+  - Nenhuma classe `text-black`, `bg-black`, `#000` ou similar (já não há, verificar durante a edição).
+  - Gradientes `from-primary/10 to-primary/5` nos ícones dos stats → `bg-primary/10` liso.
+- Botões: usar sempre variants padrão (`default`, `outline`, `ghost`). Remover overrides como `border-border/50 hover:border-primary/30`.
+- Cards: usar `premium-card` (token do projeto) sem `!p-4` inline — deixar o padding default.
 
 ## Arquivos alterados
 
-- `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` — reescrita do JSX para o layout com sidebar; extrai um `<SectionNav />` e renderiza só a seção ativa. Remove `handleSync` UI (mantém o efeito de polling que atualiza a lista quando o `synced_at` avança).
-- `src/features/produtos/carteira-green/TelecomClientesList.tsx`, `SegurosClientesList.tsx` — reverter o esquema emerald aplicado antes; voltar aos tokens da plataforma. Manter a lógica de busca/contagem corrigida.
-- `src/pages/WhatsAppClientsPage.tsx` — remover o gradiente emerald do wrapper e o botão "Abrir CRM Pós-Venda" adicionado antes; usar `premium-card` padrão sem botões no header.
+- `src/pages/WhatsAppClientsPage.tsx` — grande refactor conforme acima; arquivo cai de ~600 para ~280 linhas.
 
 ## Não faz parte
 
-- Não instalar novas fontes (usuário pediu "igual às outras páginas").
-- Não alterar o `SidebarProvider` global do admin. O sidebar do painel é local.
-- Não mexer em rotas, hooks, queries ou lógica de sync.
-- Nenhuma outra aba da página é redesenhada.
+- Não mexer em `CarteiraGreenPanel` nem sub-componentes.
+- Não mexer no funil de Conversão (`/admin?tab=conversao`).
+- Não remover a rota `/admin/whatsapp-clients` — só redireciona `?tab=whatsapp*` para o funil.
+- Sem novas dependências, fontes ou paletas.
