@@ -305,6 +305,14 @@ export default function WhatsAppClientsPage() {
         </div>
       )}
 
+      {/* Carteira iGreen — boletos, devolutivas e injeção */}
+      {!isLeadsTab && consultantId && (
+        <div className="premium-card !p-4 bg-gradient-to-br from-background to-muted/20">
+          <CarteiraGreenPanel consultantId={consultantId} />
+        </div>
+      )}
+
+
 
       {/* Stats (Leads WhatsApp) */}
       {isLeadsTab && (
