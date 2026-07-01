@@ -170,31 +170,54 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
               <strong>{igreenCustomerCount}</strong> {igreenCustomerCount === 1 ? "cliente sincronizado" : "clientes sincronizados"} — sem boletos em aberto no momento. Métricas e listas abaixo.
             </div>
           )}
+
+          <SectionDivider label="Resumo" />
           <ConsultantMetricsCard consultantId={consultantId} />
           {boletos.length > 0 && <StatusCards stats={stats} />}
           {boletos.length > 0 && <PaymentIntent boletos={boletos} />}
-          <RotinasPanel consultantId={consultantId} />
-          <RedeDashboardCard consultantId={consultantId} />
+
           {(boletos.length > 0 || devolutivas.length > 0) && (
-            <div className="grid gap-6 lg:grid-cols-5">
-              <div className="lg:col-span-3">
-                <BoletosList boletos={boletos} />
+            <>
+              <SectionDivider label="Financeiro" />
+              <div className="grid gap-6 lg:grid-cols-5">
+                <div className="lg:col-span-3">
+                  <BoletosList boletos={boletos} />
+                </div>
+                <div className="lg:col-span-2">
+                  <DevolutivasList devolutivas={devolutivas} />
+                </div>
               </div>
-              <div className="lg:col-span-2">
-                <DevolutivasList devolutivas={devolutivas} />
-              </div>
-            </div>
+            </>
           )}
+
+          <SectionDivider label="Produtos & Rede" />
           <div className="grid gap-6 lg:grid-cols-2">
             <TelecomClientesList consultantId={consultantId} />
             <SegurosClientesList consultantId={consultantId} />
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <RedeDashboardCard consultantId={consultantId} />
+            <RotinasPanel consultantId={consultantId} />
           </div>
         </>
       )}
 
 
       {/* Sempre visível: permite rodar o probe mesmo antes do primeiro sync. */}
+      <SectionDivider label="Diagnóstico" />
       <EndpointDiscoveryCard consultantId={consultantId} />
     </div>
   );
 }
+
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-2">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700/80">
+        {label}
+      </span>
+      <div className="flex-1 h-px bg-gradient-to-r from-emerald-500/30 to-transparent" />
+    </div>
+  );
+}
+
