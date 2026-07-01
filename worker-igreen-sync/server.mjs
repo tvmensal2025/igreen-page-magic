@@ -626,8 +626,9 @@ async function fetchDevolutivas(session, month) {
 }
 
 // CASHBACK por origem. A API atual só aceita GREEN|TELECOM em /cashback/resumo.
-// Para SEGUROS a API rejeita com VALIDATION_ERROR → tentamos endpoints
-// alternativos conhecidos (comissões de apólices) e falhamos em silêncio.
+// Seguros não possui endpoint público de cashback/comissão no v1; não chamamos
+// rotas inválidas para evitar 400/404 recorrente nos logs. As apólices em si
+// continuam sendo capturadas em fetchSeguros().
 async function fetchCashback(session) {
   const res = {};
   for (const o of ['GREEN', 'TELECOM']) {
@@ -636,12 +637,7 @@ async function fetchCashback(session) {
       res[o.toLowerCase()] = j?.data || null;
     } catch (e) { dbg(`[cashback] ${o}: ${e.message}`); }
   }
-  for (const path of ['/seguros/cashback/resumo', '/crm/seguros/resumo', '/seguros/comissoes/resumo']) {
-    try {
-      const j = await apiGet(session, path);
-      if (j?.data) { res.seguros = j.data; break; }
-    } catch (e) { dbg(`[cashback] seguros ${path}: ${e.message}`); }
-  }
+  res.seguros = { unsupported: true, reason: 'api_v1_sem_endpoint_cashback_seguros' };
   return res;
 }
 
