@@ -1131,16 +1131,27 @@ Deno.serve(async (req) => {
       );
     }
 
-    const result = await syncOneConsultant(
-      supabase,
-      worker,
-      portalEmail,
-      portalPassword,
-      consultantId,
-      mode,
-    );
+    // Executa em background e responde imediato (evita IDLE_TIMEOUT de 150s).
+    const runOne = async () => {
+      try {
+        const r = await syncOneConsultant(
+          supabase, worker, portalEmail!, portalPassword!, consultantId, mode,
+        );
+        console.log(`[bg] sync single done:`, JSON.stringify(r).slice(0, 300));
+      } catch (err) {
+        console.error(`[bg] sync single error:`, err);
+      }
+    };
+    // @ts-ignore EdgeRuntime existe no Supabase edge runtime
+    try { EdgeRuntime.waitUntil(runOne()); } catch { runOne(); }
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({
+      success: true,
+      background: true,
+      mode,
+      consultant_id: consultantId,
+      message: "Sincronização iniciada em segundo plano. Os dados serão atualizados em instantes.",
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
