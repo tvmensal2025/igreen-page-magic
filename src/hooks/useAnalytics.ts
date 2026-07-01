@@ -251,9 +251,15 @@ export function useAnalytics(
         return o === "whatsapp_lead" || o === "manual";
       });
       const walletCustomers = allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
+      const myIgreenIdSet = new Set(myIgreenIds);
       const scopedWalletCustomers = useTeam
         ? walletCustomers
-        : filterMyClients(walletCustomers, myClientsSettings);
+        : walletCustomers.filter((c: any) => {
+            const igid = c.registered_by_igreen_id != null ? String(c.registered_by_igreen_id) : null;
+            if (igid && myIgreenIdSet.has(igid)) return true;
+            // fallback: mantém compatibilidade com filtro por nome/consultor local
+            return filterMyClients([c], myClientsSettings).length > 0;
+          });
 
       const totalCustomers = scopedWalletCustomers.length;
       const statusMap = new Map<string, number>();
