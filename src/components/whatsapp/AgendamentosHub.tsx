@@ -23,6 +23,9 @@ import {
 } from "lucide-react";
 
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
+const AutomacaoIgreenCard = lazy(() =>
+  import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
+);
 
 function formatScheduleDate(dateStr: string | Date) {
   try {
