@@ -10,6 +10,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PosVendaKanban from "@/components/whatsapp/PosVendaKanban";
+import { CarteiraGreenPanel } from "@/features/produtos/carteira-green/CarteiraGreenPanel";
 
 const COMMISSION_RATES = [10, 20, 40, 50, 60, 70, 80, 100] as const;
 type CommissionRate = typeof COMMISSION_RATES[number];
