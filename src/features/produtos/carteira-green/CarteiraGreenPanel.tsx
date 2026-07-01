@@ -1,50 +1,22 @@
 // =============================================================================
-// Painel Carteira Green — layout em faixas bento (sem sidebar local).
-// A navegação principal já vive na sidebar do Admin; aqui usamos faixas
-// horizontais de altura variada para dar hierarquia sem redundância.
-// Tipografia local: Space Grotesk (títulos) + DM Sans (corpo).
-// Cores: apenas tokens padrão da plataforma (bg-card, border-border, etc).
+// Painel Carteira Green — layout enxuto (3 blocos).
+// 1) Hero: título + 1 linha de KPIs inline.
+// 2) Métricas do consultor (colapsável, fechado por padrão).
+// 3) Tabela unificada "Clientes" (drawer com detalhes ao clicar).
+// Tipografia: Space Grotesk (títulos) + DM Sans (corpo). Tokens padrão da plataforma.
 // =============================================================================
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Wallet, Users, FileText, Leaf, Activity, RefreshCw } from "lucide-react";
+import { Loader2, Wallet, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { useBoletosCarteira, useDevolutivasCarteira, computeCarteiraStats } from "./hooks";
-import { StatusCards } from "./StatusCards";
-import { BoletosList } from "./BoletosList";
-import { DevolutivasList } from "./DevolutivasList";
-import { PaymentIntent } from "./PaymentIntent";
 import { ConsultantMetricsCard } from "./ConsultantMetricsCard";
+import { ClientesCarteiraTable } from "./ClientesCarteiraTable";
 
 const SYNC_STEPS = ["Clientes", "Boletos", "Devolutivas", "Métricas", "Licenças"];
 
 const N = (n: number) => n.toLocaleString("pt-BR");
-
-function HeroKpi({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: typeof Users;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex-1 min-w-[140px] rounded-lg border border-border/60 bg-background/40 px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-body-alt">
-        <Icon className="h-3 w-3" />
-        <span>{label}</span>
-      </div>
-      <p className="mt-1 font-display text-xl font-semibold leading-none tabular-nums text-foreground">
-        {value}
-      </p>
-      {hint && <p className="mt-1 text-[10px] text-muted-foreground font-body-alt">{hint}</p>}
-    </div>
-  );
-}
 
 export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const { data: boletos = [], isLoading: loadingB, refetch: refetchB } = useBoletosCarteira(consultantId);
@@ -123,27 +95,24 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   ).length;
 
   return (
-    <div className="font-body-alt space-y-5">
-      {/* ═══ Faixa 1 · Hero + KPI ribbon ═══════════════════════════════════ */}
+    <div className="font-body-alt space-y-4">
+      {/* ═══ Faixa 1 · Hero enxuto (uma linha de KPIs) ═══════════════════════ */}
       <section className="rounded-2xl border border-border/60 bg-card overflow-hidden">
-        <div className="p-5 sm:p-6 flex flex-col gap-5">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-body-alt">
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                 <Wallet className="h-3.5 w-3.5" />
                 <span>Carteira iGreen</span>
               </div>
-              <h2 className="mt-1.5 font-display text-2xl sm:text-[26px] font-semibold tracking-tight text-foreground">
-                Sua carteira em números
+              <h2 className="mt-1 font-display text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
+                Sua carteira
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
-                Boletos, devolutivas, injeção e sinais de pagamento — espelho vivo do escritório iGreen.
-              </p>
             </div>
             {lastSync && (
-              <div className="rounded-full border border-border/60 bg-background/60 px-3 py-1.5 flex items-center gap-2 text-[11px] font-body-alt">
+              <div className="rounded-full border border-border/60 bg-background/60 px-3 py-1.5 flex items-center gap-2 text-[11px]">
                 <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                <span className="text-muted-foreground">Última sincronização</span>
+                <span className="text-muted-foreground">Sincronizado</span>
                 <strong className="text-foreground font-medium">
                   {new Date(lastSync).toLocaleString("pt-BR")}
                 </strong>
@@ -152,38 +121,27 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
           </div>
 
           {!noData && (
-            <div className="flex flex-wrap gap-2.5">
-              <HeroKpi
-                icon={Users}
-                label="Clientes sincronizados"
-                value={N(igreenCustomerCount ?? 0)}
-                hint="carteira iGreen"
-              />
-              <HeroKpi
-                icon={FileText}
-                label="Boletos em aberto"
-                value={N(abertos)}
-                hint={boletos.length ? `de ${N(boletos.length)} no total` : undefined}
-              />
-              <HeroKpi
-                icon={Activity}
-                label="Adimplência"
-                value={`${stats.adimplenciaPct}%`}
-                hint={`${stats.inadimplenciaPct}% em atraso`}
-              />
-              <HeroKpi
-                icon={Leaf}
-                label="kWh compensados"
-                value={N(stats.kwhCompensados)}
-                hint={`${N(stats.comInjecao)} com injeção`}
-              />
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+              <KpiInline value={N(igreenCustomerCount ?? 0)} label="clientes" />
+              <Dot />
+              <KpiInline value={N(abertos)} label="boletos abertos" />
+              <Dot />
+              <KpiInline value={`${stats.adimplenciaPct}%`} label="adimplência" tone={stats.adimplenciaPct >= 80 ? "good" : "warn"} />
+              <Dot />
+              <KpiInline value={N(stats.kwhCompensados)} label="kWh compensados" />
+              {stats.vencidos > 0 && (
+                <>
+                  <Dot />
+                  <KpiInline value={N(stats.vencidos)} label="vencidos" tone="bad" />
+                </>
+              )}
             </div>
           )}
         </div>
 
         {syncing && (
-          <div className="border-t border-border/60 bg-muted/30 px-5 py-3">
-            <div className="flex items-center gap-2 mb-2 text-xs font-medium text-foreground">
+          <div className="border-t border-border/60 bg-muted/30 px-4 sm:px-5 py-2.5">
+            <div className="flex items-center gap-2 mb-1.5 text-xs font-medium text-foreground">
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
               Sincronização em andamento…
             </div>
@@ -194,7 +152,7 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
                   <span
                     key={s}
                     className={cn(
-                      "text-[10px] px-2 py-1 rounded-full border font-body-alt",
+                      "text-[10px] px-2 py-0.5 rounded-full border",
                       done
                         ? "bg-accent border-border text-foreground"
                         : "bg-background border-border/60 text-muted-foreground",
@@ -218,47 +176,50 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
         </section>
       ) : (
         <>
-          {/* ═══ Faixa 2 · Métricas do consultor (bento largo) ══════════════ */}
-          <section className="rounded-2xl border border-border/60 bg-card p-4 sm:p-5">
-            <ConsultantMetricsCard consultantId={consultantId} />
+          {/* ═══ Faixa 2 · Métricas do consultor (colapsável) ═══════════════ */}
+          <section className="rounded-2xl border border-border/60 bg-card p-4">
+            <ConsultantMetricsCard consultantId={consultantId} defaultOpen={false} />
           </section>
 
-          {/* ═══ Faixa 3 · Status + Intenção de pagamento (bento 3/2) ═══════ */}
-          {boletos.length > 0 && (
-            <section className="grid gap-4 lg:grid-cols-5">
-              <div className="lg:col-span-3 rounded-2xl border border-border/60 bg-card p-4 sm:p-5">
-                <div className="mb-3">
-                  <h3 className="font-display text-sm font-semibold text-foreground">Status da carteira</h3>
-                  <p className="text-[11px] text-muted-foreground">Faturamento, adimplência e injeção.</p>
-                </div>
-                <StatusCards stats={stats} />
-              </div>
-              <div className="lg:col-span-2 rounded-2xl border border-border/60 bg-card overflow-hidden">
-                <PaymentIntent boletos={boletos} />
-              </div>
-            </section>
-          )}
-
-          {/* ═══ Faixa 4 · Financeiro (bento 3/2) ═══════════════════════════ */}
-          {(boletos.length > 0 || devolutivas.length > 0) && (
-            <section className="grid gap-4 lg:grid-cols-5">
-              <div className="lg:col-span-3 rounded-2xl border border-border/60 bg-card overflow-hidden">
-                <BoletosList boletos={boletos} />
-              </div>
-              <div className="lg:col-span-2 rounded-2xl border border-border/60 bg-card overflow-hidden">
-                <DevolutivasList devolutivas={devolutivas} />
-              </div>
-            </section>
-          )}
-
-          {boletos.length === 0 && igreenCustomerCount != null && (
-            <section className="rounded-2xl border border-border/60 bg-muted/30 p-5 text-sm">
-              <strong className="font-display font-semibold">{igreenCustomerCount}</strong>{" "}
-              {igreenCustomerCount === 1 ? "cliente sincronizado" : "clientes sincronizados"} — sem boletos em aberto no momento.
-            </section>
-          )}
+          {/* ═══ Faixa 3 · Tabela unificada de clientes ═════════════════════ */}
+          <ClientesCarteiraTable
+            consultantId={consultantId}
+            boletos={boletos}
+            devolutivas={devolutivas}
+          />
         </>
       )}
     </div>
   );
+}
+
+function KpiInline({
+  value,
+  label,
+  tone,
+}: {
+  value: string;
+  label: string;
+  tone?: "good" | "warn" | "bad";
+}) {
+  const toneCls =
+    tone === "good"
+      ? "text-emerald-600"
+      : tone === "warn"
+      ? "text-amber-600"
+      : tone === "bad"
+      ? "text-red-600"
+      : "text-foreground";
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <strong className={cn("font-display font-semibold tabular-nums text-base leading-none", toneCls)}>
+        {value}
+      </strong>
+      <span className="text-[11px] text-muted-foreground uppercase tracking-wider">{label}</span>
+    </span>
+  );
+}
+
+function Dot() {
+  return <span className="h-1 w-1 rounded-full bg-border shrink-0" aria-hidden />;
 }
