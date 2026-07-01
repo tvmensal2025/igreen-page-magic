@@ -168,9 +168,11 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
             <TelecomClientesList consultantId={consultantId} />
             <SegurosClientesList consultantId={consultantId} />
           </div>
-          <EndpointDiscoveryCard consultantId={consultantId} />
         </>
       )}
+
+      {/* Sempre visível: permite rodar o probe mesmo antes do primeiro sync. */}
+      <EndpointDiscoveryCard consultantId={consultantId} />
     </div>
   );
 }
