@@ -156,47 +156,42 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
         </div>
       )}
 
-      {boletos.length === 0 ? (
+      {boletos.length === 0 && !(igreenCustomerCount && igreenCustomerCount > 0) ? (
         <div className="rounded-xl border border-dashed border-border/60 p-8 text-center space-y-2">
-          {igreenCustomerCount && igreenCustomerCount > 0 ? (
-            <>
-              <p className="text-sm font-medium">
-                {igreenCustomerCount} {igreenCustomerCount === 1 ? "cliente sincronizado" : "clientes sincronizados"} — sem boletos em aberto no momento
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Sua carteira está em dia (ou os boletos ainda não foram emitidos pela iGreen). Métricas e clientes seguem abaixo.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-medium">Sem dados sincronizados ainda</p>
-              <p className="text-xs text-muted-foreground">
-                Clique em "Sincronizar agora" para puxar sua carteira do escritório iGreen.
-              </p>
-            </>
-          )}
+          <p className="text-sm font-medium">Sem dados sincronizados ainda</p>
+          <p className="text-xs text-muted-foreground">
+            Clique em "Sincronizar agora" para puxar sua carteira do escritório iGreen.
+          </p>
         </div>
       ) : (
         <>
+          {boletos.length === 0 && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
+              <strong>{igreenCustomerCount}</strong> {igreenCustomerCount === 1 ? "cliente sincronizado" : "clientes sincronizados"} — sem boletos em aberto no momento. Métricas e listas abaixo.
+            </div>
+          )}
           <ConsultantMetricsCard consultantId={consultantId} />
-          <StatusCards stats={stats} />
-          <PaymentIntent boletos={boletos} />
+          {boletos.length > 0 && <StatusCards stats={stats} />}
+          {boletos.length > 0 && <PaymentIntent boletos={boletos} />}
           <RotinasPanel consultantId={consultantId} />
           <RedeDashboardCard consultantId={consultantId} />
-          <div className="grid gap-6 lg:grid-cols-5">
-            <div className="lg:col-span-3">
-              <BoletosList boletos={boletos} />
+          {(boletos.length > 0 || devolutivas.length > 0) && (
+            <div className="grid gap-6 lg:grid-cols-5">
+              <div className="lg:col-span-3">
+                <BoletosList boletos={boletos} />
+              </div>
+              <div className="lg:col-span-2">
+                <DevolutivasList devolutivas={devolutivas} />
+              </div>
             </div>
-            <div className="lg:col-span-2">
-              <DevolutivasList devolutivas={devolutivas} />
-            </div>
-          </div>
+          )}
           <div className="grid gap-6 lg:grid-cols-2">
             <TelecomClientesList consultantId={consultantId} />
             <SegurosClientesList consultantId={consultantId} />
           </div>
         </>
       )}
+
 
       {/* Sempre visível: permite rodar o probe mesmo antes do primeiro sync. */}
       <EndpointDiscoveryCard consultantId={consultantId} />
