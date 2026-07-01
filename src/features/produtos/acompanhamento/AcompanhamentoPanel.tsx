@@ -144,8 +144,7 @@ export function AcompanhamentoPanel({
       {/* Cross-sell manual: energia → telecom/seguros (consultor decide enviar) */}
       <CrossSellCard consultantId={consultantId} />
 
-      {/* Toggles de automação iGreen (tudo começa desligado) */}
-      <AutomacaoIgreenCard consultantId={consultantId} />
+      {/* Automações iGreen agora moram na Central de Agendamentos (aba "Automações iGreen"). */}
 
       {/* Onboarding / alertas de configuração */}
       {(needsGraduacaoSetup || needsEntradaRules) && (
