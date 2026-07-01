@@ -1157,8 +1157,10 @@ Deno.serve(async (req) => {
       const runAll = async () => {
         for (const c of usable) {
           console.log(`--- [bg] Syncing: ${c.name} (${c.igreen_portal_email}) ---`);
+          const runId = await logSyncStart(supabase, c.id, cronMode);
+          let r: Record<string, unknown> = { success: false, error: "unknown" };
           try {
-            await syncOneConsultant(
+            r = await syncOneConsultant(
               supabase,
               worker,
               c.igreen_portal_email,
@@ -1167,7 +1169,10 @@ Deno.serve(async (req) => {
               cronMode,
             );
           } catch (err) {
+            r = { success: false, error: err instanceof Error ? err.message : String(err) };
             console.error(`[bg] Error syncing ${c.name}:`, err);
+          } finally {
+            await logSyncFinish(supabase, runId, c.id, r);
           }
           await new Promise((r) => setTimeout(r, 3000));
         }
