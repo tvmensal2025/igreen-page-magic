@@ -18,6 +18,7 @@ export default {
         body: ['Open Sans', 'sans-serif'],
         display: ['"Space Grotesk"', 'Montserrat', 'sans-serif'],
         'body-alt': ['"DM Sans"', 'Open Sans', 'sans-serif'],
+        inter: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
