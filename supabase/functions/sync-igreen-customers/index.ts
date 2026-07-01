@@ -1217,15 +1217,30 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Modo validate roda inline e responde na hora (é leve).
+    if (mode === "validate") {
+      const runId = await logSyncStart(supabase, consultantId, mode);
+      const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode);
+      await logSyncFinish(supabase, runId, consultantId, r);
+      return new Response(JSON.stringify(r), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Executa em background e responde imediato (evita IDLE_TIMEOUT de 150s).
     const runOne = async () => {
+      const runId = await logSyncStart(supabase, consultantId, mode);
+      let r: Record<string, unknown> = { success: false, error: "unknown" };
       try {
-        const r = await syncOneConsultant(
+        r = await syncOneConsultant(
           supabase, worker, portalEmail!, portalPassword!, consultantId, mode,
         );
         console.log(`[bg] sync single done:`, JSON.stringify(r).slice(0, 300));
       } catch (err) {
+        r = { success: false, error: err instanceof Error ? err.message : String(err) };
         console.error(`[bg] sync single error:`, err);
+      } finally {
+        await logSyncFinish(supabase, runId, consultantId, r);
       }
     };
     // @ts-ignore EdgeRuntime existe no Supabase edge runtime
