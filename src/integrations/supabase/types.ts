@@ -9255,6 +9255,73 @@ export type Database = {
         }
         Relationships: []
       }
+      v_boletos_carteira: {
+        Row: {
+          cidade: string | null
+          consultant_id: string | null
+          conta_unica: boolean | null
+          customer_id: string | null
+          customer_name: string | null
+          dias_atraso: number | null
+          fornecedora: string | null
+          id: string | null
+          idcliente: number | null
+          injecao: boolean | null
+          kwh_compensado: number | null
+          mes_referencia: string | null
+          nome: string | null
+          pagamento: string | null
+          phone_whatsapp: string | null
+          status: string | null
+          synced_at: string | null
+          tipo_pagamento: string | null
+          total: number | null
+          uf: string | null
+          updated_at: string | null
+          url_boleto: string | null
+          url_invoice: string | null
+          valor_distribuidora: number | null
+          valor_fornecedora: number | null
+          vencimento: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_bot_engine_health: {
         Row: {
           channel: string | null
