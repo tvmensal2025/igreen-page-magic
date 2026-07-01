@@ -83,7 +83,7 @@ export default function FluxoAKeywordsCard({ consultantId }: Props) {
     const payload = {
       consultant_id: consultantId,
       target_flow_key: TARGET_KEY,
-      target_flow_label: "Fluxo A — Cadastro direto",
+      target_flow_label: "CEMIG — Cadastro direto",
       trigger_keywords: keywords,
       priority: 100,
       is_active: isActive,
