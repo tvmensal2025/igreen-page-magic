@@ -167,32 +167,44 @@ export function useAnalytics(
       // (inclui cadastros feitos por licenciados da rede que não têm consultant_id local)
       const myIgreenIds = Array.from(
         new Set(
-          [myClientsSettings.myIgreenId, ...(myClientsSettings.cadastroIgreenIds || [])]
+          [
+            myClientsSettings.myIgreenId,
+            ...(myClientsSettings.cadastroIgreenIds || []),
+            ...((networkIgreenIds ?? []) as (string | null)[]),
+          ]
             .filter((v): v is string => !!v && String(v).length > 0)
             .map(String),
         ),
       );
       if (myIgreenIds.length > 0) {
         const seen = new Set(allCustomers.map((c) => c.id));
-        let pageL = 0;
-        while (true) {
-          const { data, error } = await supabase
-            .from("customers")
-            .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento")
-            .in("registered_by_igreen_id", myIgreenIds)
-            .in("customer_origin", ["igreen_sync", "igreen_extension"])
-            .range(pageL * pageSize, (pageL + 1) * pageSize - 1);
-          if (error) throw error;
-          if (data) {
-            for (const row of data) {
-              if (!seen.has(row.id)) {
-                seen.add(row.id);
-                allCustomers.push(row);
+        // .in(...) do PostgREST pode estourar URL — fatiar em lotes
+        const BATCH = 300;
+        const batches: string[][] = [];
+        for (let i = 0; i < myIgreenIds.length; i += BATCH) {
+          batches.push(myIgreenIds.slice(i, i + BATCH));
+        }
+        for (const batch of batches) {
+          let pageL = 0;
+          while (true) {
+            const { data, error } = await supabase
+              .from("customers")
+              .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento")
+              .in("registered_by_igreen_id", batch)
+              .in("customer_origin", ["igreen_sync", "igreen_extension"])
+              .range(pageL * pageSize, (pageL + 1) * pageSize - 1);
+            if (error) throw error;
+            if (data) {
+              for (const row of data) {
+                if (!seen.has(row.id)) {
+                  seen.add(row.id);
+                  allCustomers.push(row);
+                }
               }
             }
+            if (!data || data.length < pageSize) break;
+            pageL++;
           }
-          if (!data || data.length < pageSize) break;
-          pageL++;
         }
       }
 
