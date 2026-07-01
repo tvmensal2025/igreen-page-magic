@@ -1066,34 +1066,35 @@ Deno.serve(async (req) => {
       }
 
       console.log(`Found ${usable.length} consultants with credentials.`);
-      const results: Record<string, unknown>[] = [];
 
-      for (const c of usable) {
-        console.log(`--- Syncing: ${c.name} (${c.igreen_portal_email}) ---`);
-        try {
-          const r = await syncOneConsultant(
-            supabase,
-            worker,
-            c.igreen_portal_email,
-            c.igreen_portal_password,
-            c.id,
-            cronMode,
-          );
-          results.push({ consultant: c.name, ...r });
-        } catch (err) {
-          console.error(`Error syncing ${c.name}:`, err);
-          results.push({ consultant: c.name, success: false, error: err instanceof Error ? err.message : "Erro" });
+      // Roda tudo em background para escapar do IDLE_TIMEOUT (150s) da Edge.
+      const runAll = async () => {
+        for (const c of usable) {
+          console.log(`--- [bg] Syncing: ${c.name} (${c.igreen_portal_email}) ---`);
+          try {
+            await syncOneConsultant(
+              supabase,
+              worker,
+              c.igreen_portal_email,
+              c.igreen_portal_password,
+              c.id,
+              cronMode,
+            );
+          } catch (err) {
+            console.error(`[bg] Error syncing ${c.name}:`, err);
+          }
+          await new Promise((r) => setTimeout(r, 3000));
         }
-        await new Promise((r) => setTimeout(r, 3000));
-      }
+        console.log(`[bg] cron sync finished (${usable.length} consultants)`);
+      };
+      // @ts-ignore EdgeRuntime existe no Supabase edge runtime
+      try { EdgeRuntime.waitUntil(runAll()); } catch { runAll(); }
 
-      const totalSynced = results.filter((r) => r.success).length;
       return new Response(JSON.stringify({
         success: true,
         mode: "cron_all",
+        background: true,
         total_consultants: usable.length,
-        synced: totalSynced,
-        results,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
