@@ -141,7 +141,7 @@ export function useAnalytics(
         adSpendCents = ((spendRows ?? []) as any[]).reduce((s, r) => s + Number(r.spend_cents ?? 0), 0);
       }
 
-      // Fetch ALL customers with pagination
+      // Fetch ALL customers with pagination (por consultant_id / equipe)
       const allCustomers: any[] = [];
       let page = 0;
       const pageSize = 1000;
@@ -157,6 +157,39 @@ export function useAnalytics(
         if (data) allCustomers.push(...data);
         if (!data || data.length < pageSize) break;
         page++;
+      }
+
+      // Também busca clientes da carteira iGreen por registered_by_igreen_id
+      // (inclui cadastros feitos por licenciados da rede que não têm consultant_id local)
+      const myIgreenIds = Array.from(
+        new Set(
+          [myClientsSettings.myIgreenId, ...(myClientsSettings.cadastroIgreenIds || [])]
+            .filter((v): v is string => !!v && String(v).length > 0)
+            .map(String),
+        ),
+      );
+      if (myIgreenIds.length > 0) {
+        const seen = new Set(allCustomers.map((c) => c.id));
+        let pageL = 0;
+        while (true) {
+          const { data, error } = await supabase
+            .from("customers")
+            .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento")
+            .in("registered_by_igreen_id", myIgreenIds)
+            .in("customer_origin", ["igreen_sync", "igreen_extension"])
+            .range(pageL * pageSize, (pageL + 1) * pageSize - 1);
+          if (error) throw error;
+          if (data) {
+            for (const row of data) {
+              if (!seen.has(row.id)) {
+                seen.add(row.id);
+                allCustomers.push(row);
+              }
+            }
+          }
+          if (!data || data.length < pageSize) break;
+          pageL++;
+        }
       }
 
       const totalClient = views.filter((v) => v.page_type === "client").length;
