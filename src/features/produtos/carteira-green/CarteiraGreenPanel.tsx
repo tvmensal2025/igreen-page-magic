@@ -150,8 +150,11 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
         </div>
       ) : (
         <>
+          <ConsultantMetricsCard consultantId={consultantId} />
           <StatusCards stats={stats} />
           <PaymentIntent boletos={boletos} />
+          <RotinasPanel consultantId={consultantId} />
+          <RedeDashboardCard consultantId={consultantId} />
           <div className="grid gap-6 lg:grid-cols-5">
             <div className="lg:col-span-3">
               <BoletosList boletos={boletos} />
@@ -159,6 +162,10 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
             <div className="lg:col-span-2">
               <DevolutivasList devolutivas={devolutivas} />
             </div>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <TelecomClientesList consultantId={consultantId} />
+            <SegurosClientesList consultantId={consultantId} />
           </div>
         </>
       )}
