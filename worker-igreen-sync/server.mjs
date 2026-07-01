@@ -337,6 +337,23 @@ async function getOrCreateSession(email, password) {
 
 // ===== Coleta de dados na nova API (api-vo) =====
 
+// Health rolling: últimas 20 chamadas apiGet (ok/erro). Serve para o /health
+// reportar se o Tor está entregando (proxy sem exits derruba tudo em 403/timeout).
+const apiHealth = { total: 0, ok: 0, waf: 0, err: 0, last: [] };
+function trackApi(ev) {
+  apiHealth.total++;
+  if (ev === 'ok') apiHealth.ok++;
+  else if (ev === 'waf') apiHealth.waf++;
+  else apiHealth.err++;
+  apiHealth.last.push({ t: Date.now(), ev });
+  if (apiHealth.last.length > 20) apiHealth.last.shift();
+}
+function torLikelyBroken() {
+  // Se as últimas 5 chamadas foram WAF/erro, provável Tor sem exits ou CF geral.
+  const tail = apiHealth.last.slice(-5);
+  return tail.length >= 5 && tail.every((x) => x.ev !== 'ok');
+}
+
 // Helper GET autenticado que devolve o JSON já parseado.
 async function apiGet(session, path) {
   const out = await session.page.evaluate(async (args) => {
@@ -347,15 +364,18 @@ async function apiGet(session, path) {
     } catch (e) { return { error: String((e && e.message) || e) }; }
   }, { api: API_BASE, path: path, token: session.token });
 
-  if (out.error) throw new HttpError(502, `fetch ${path} falhou: ${out.error}`);
+  if (out.error) { trackApi('err'); throw new HttpError(502, `fetch ${path} falhou: ${out.error}`); }
   if (out.status === 429) { await new Promise((s) => setTimeout(s, 15000)); return apiGet(session, path); }
   let body;
   try { body = JSON.parse(out.text); } catch { body = { raw: String(out.text || '').slice(0, 1200) }; }
   const data = { status: out.status, contentType: out.contentType, body };
   if (isHtmlResponse(data)) {
-    throw new HttpError(503, `Cloudflare bloqueou ${path}`, 'igreen_waf_blocked');
+    trackApi('waf');
+    const code = torLikelyBroken() ? 'tor_no_exits' : 'igreen_waf_blocked';
+    throw new HttpError(503, `Cloudflare bloqueou ${path}`, code);
   }
-  if (out.status >= 400) throw new HttpError(out.status, `HTTP ${out.status} em ${path}: ${bodyPreview(body)}`);
+  if (out.status >= 400) { trackApi('err'); throw new HttpError(out.status, `HTTP ${out.status} em ${path}: ${bodyPreview(body)}`); }
+  trackApi('ok');
   return body;
 }
 
@@ -636,6 +656,8 @@ const server = http.createServer(async (req, res) => {
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
+        tor_proxy: TOR_PROXY,
+        api_health: { ...apiHealth, tor_likely_broken: torLikelyBroken() },
       });
     }
     if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
