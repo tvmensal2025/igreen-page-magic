@@ -63,7 +63,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       <div>
         <h3 className="font-semibold text-sm">Automações iGreen</h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Tudo começa desligado. Ative só o que quiser usar.
+          <strong>Captura e alertas já começam ligados</strong> para novos consultores (boletos, devolutivas, telecom, seguros, cashback, licenças). Automações que enviam mensagem ao cliente permanecem desligadas — ative com cuidado.
         </p>
       </div>
 
