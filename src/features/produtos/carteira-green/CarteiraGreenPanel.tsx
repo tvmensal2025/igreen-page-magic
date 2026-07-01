@@ -40,7 +40,7 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
     } else {
       toast({
         title: "Falha ao sincronizar",
-        description: res.error,
+        description: (res as { error: string }).error,
         variant: "destructive",
       });
     }
