@@ -5693,6 +5693,60 @@ export type Database = {
           },
         ]
       }
+      igreen_endpoint_discovery: {
+        Row: {
+          bucket: string | null
+          bytes: number | null
+          category: string | null
+          checked_at: string
+          content_type: string | null
+          created_at: string
+          id: string
+          is_alive: boolean
+          method: string
+          ms: number | null
+          notes: string | null
+          path: string
+          sample_body: string | null
+          status: number | null
+          updated_at: string
+        }
+        Insert: {
+          bucket?: string | null
+          bytes?: number | null
+          category?: string | null
+          checked_at?: string
+          content_type?: string | null
+          created_at?: string
+          id?: string
+          is_alive?: boolean
+          method: string
+          ms?: number | null
+          notes?: string | null
+          path: string
+          sample_body?: string | null
+          status?: number | null
+          updated_at?: string
+        }
+        Update: {
+          bucket?: string | null
+          bytes?: number | null
+          category?: string | null
+          checked_at?: string
+          content_type?: string | null
+          created_at?: string
+          id?: string
+          is_alive?: boolean
+          method?: string
+          ms?: number | null
+          notes?: string | null
+          path?: string
+          sample_body?: string | null
+          status?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       igreen_seguros_customers: {
         Row: {
           cidade: string | null

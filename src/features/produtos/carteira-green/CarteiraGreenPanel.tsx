@@ -19,6 +19,7 @@ import { TelecomClientesList } from "./TelecomClientesList";
 import { SegurosClientesList } from "./SegurosClientesList";
 import { RedeDashboardCard } from "./RedeDashboardCard";
 import { RotinasPanel } from "./RotinasPanel";
+import { EndpointDiscoveryCard } from "./EndpointDiscoveryCard";
 
 const SYNC_STEPS = [
   "Clientes",
@@ -169,6 +170,9 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
           </div>
         </>
       )}
+
+      {/* Sempre visível: permite rodar o probe mesmo antes do primeiro sync. */}
+      <EndpointDiscoveryCard consultantId={consultantId} />
     </div>
   );
 }
