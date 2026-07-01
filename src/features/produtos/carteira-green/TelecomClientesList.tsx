@@ -1,13 +1,15 @@
 // Lista detalhada de clientes Telecom capturados do escritório iGreen.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, PhoneCall } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import { norm } from "./searchUtils";
 
 const BRL = (n: number | null | undefined) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 
 interface TelecomRow {
   id: string;
