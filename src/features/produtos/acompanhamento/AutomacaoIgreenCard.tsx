@@ -10,10 +10,11 @@ import {
 
 type Key = keyof Omit<AutomationSettings, "consultant_id">;
 
-const GROUPS: { title: string; hint: string; items: { key: Key; label: string; desc: string }[] }[] = [
+const GROUPS: { title: string; hint: string; locked?: boolean; items: { key: Key; label: string; desc: string }[] }[] = [
   {
-    title: "Captura de dados",
-    hint: "O que o sync do iGreen coleta e guarda na sua carteira.",
+    title: "Captura de dados (sempre ativo)",
+    hint: "O sync do iGreen busca e salva estes dados a cada sincronização — não dá pra desligar.",
+    locked: true,
     items: [
       { key: "capture_boletos", label: "Boletos dos clientes", desc: "Valores, vencimento, status e PDF." },
       { key: "capture_devolutivas", label: "Devolutivas detalhadas", desc: "Categoria, motivo, se é impeditiva." },
