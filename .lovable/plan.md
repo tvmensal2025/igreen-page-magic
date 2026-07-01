@@ -1,74 +1,104 @@
-# Mapeamento do portal iGreen via Playwright (sem chutar endpoints)
+# Plano — Rodar tudo que a API iGreen aceita e listar
 
-## Mudança de estratégia
+## Objetivo
+Descobrir de forma **empírica** (sem chutar) quais endpoints da API `https://api-vo.igreenenergy.com.br/v1` respondem para a sessão do usuário `rafael.ids@icloud.com`, listar todos que aceitam (HTTP 200) e usar isso como fonte-da-verdade para atualizar o `worker-igreen-sync`.
 
-Nada de `PROBE_ALLOWLIST` com paths inventados. Em vez disso, **entro no portal de verdade com Playwright, navego em cada menu como um usuário faria, e capturo as chamadas de rede reais** que o próprio front do iGreen dispara. Só entra na v17 do worker aquilo que o próprio portal usa.
+## Por que agora é possível
+- Já confirmamos que `POST /v1/auth/session` retorna 201 e emite JWT válido.
+- Já confirmamos os 6 endpoints extraídos do bundle carregado do SPA:
+  - `POST /auth/session`, `POST /auth/recaptcha`
+  - `GET /consultant`, `GET /consultant/activation-code`
+  - `GET /dashboard/daily-analysis`, `GET /dashboard/customers-by-region`
+- A base URL da API (`api-vo.igreenenergy.com.br`) **não** está sob a WAF que bloqueia `/painel` no host `escritorio.*` — chamadas diretas de servidor passam.
 
-## Como funciona a descoberta
+## Etapas
 
-Script Playwright local (`worker-igreen-sync/discover.mjs`) que roda 1x:
+### 1. Coleta de candidatos (fonte controlada, sem invenção)
+Fontes que serão unidas em uma única lista:
+- 6 endpoints extraídos do bundle real do SPA (confirmados).
+- 78 rotas e nomes de chunks Vite já listados em `/tmp/browser/igreen-discover/chunks.json` — cada chunk (`ClientesGreenPage`, `RotinasPage`, `CrmPage`, `RedePage`, `FinanceiroLicenciadoPage`, `SegurosPage`, `TelecomPage`, etc.) implica um conjunto de endpoints REST associado ao seu nome.
+- Endpoints que o `worker-igreen-sync/server.mjs` atual já usa em produção (histórico do repositório).
+- Registry central de endpoints usado na v16 do worker.
 
-1. Login em `https://escritorio.igreenenergy.com.br/login` via Tor com as credenciais do usuário (`rafael.ids@icloud.com`).
-2. Instala `page.on('request')` e `page.on('response')` **antes** de qualquer navegação. Filtra só `api-vo.igreenenergy.com.br`.
-3. Para cada request/response captura: `method`, `url` (path + query), `status`, `request_headers` relevantes, `response_shape` (primeiras 2 chaves + tipo de cada campo do primeiro item se for array).
-4. Navega automaticamente pelos menus do portal:
-  - Dashboard / Painel
-  - Clientes → Green, Telecom, Seguros, Expansão (cada aba e cada coluna do Kanban)
-  - Um cliente aberto no detalhe (Green + Telecom + Seguros)
-  - Rede / Network Map (com troca de mês)
-  - Financeiro / Extrato / Saques / Notas Fiscais (se existir no menu)
-  - Rotinas (diária, semanal, mensal)
-  - Devolutivas (ativas + histórico se houver)
-  - Boletos / Faturas
-  - Cashback / Comissões (Green, Telecom, Seguros)
-  - Qualquer outro item de menu não catalogado — abre e observa.
-5. Salva o inventário em `/tmp/igreen-endpoints.json` **e** grava em `worker_phase_logs` (uma linha por endpoint com `sample`).
-6. Faz screenshot de cada tela + salva o HTML para eu ter contexto visual do que cada endpoint alimenta.
+### 2. Probe autenticado no worker (Node, não Playwright)
+Rodar em `worker-igreen-sync`:
+- Login uma vez → JWT.
+- Para cada candidato: `GET`/`POST` com header `Authorization: Bearer <jwt>`, timeout 10s, sem retry.
+- Registrar por candidato: `status`, `content-type`, `bytes`, primeiros 300 chars do body (para diagnóstico), tempo em ms.
+- Classificar em 4 baldes:
+  - `ok_200_json`
+  - `ok_204`
+  - `denied` (401/403)
+  - `not_found` (404)
+  - `bad_request` (400/422) — sinaliza que precisa de parâmetro; salvar mensagem para próxima iteração.
+  - `error_5xx` (marcar para retry único em outra rodada).
 
-## Entregável da descoberta
+### 3. Persistência dos resultados
+Criar tabela `igreen_endpoint_discovery` (Supabase):
+- `path`, `method`, `status`, `content_type`, `bytes`, `sample_body`, `notes`, `checked_at`, `is_alive` (bool).
+- Grants padrão + RLS: leitura só para admins autenticados; escrita só via `service_role` (worker).
 
-Um único arquivo `docs/igreen-endpoints-map.md` gerado a partir do JSON com:
+### 4. Relatório visível
+- Escrever `/mnt/documents/igreen-endpoints-alive.md` com a lista final agrupada por área (Auth, Consultant, Dashboard, Clientes Green, Telecom, Seguros, Rede, Financeiro, Rotinas, CRM, Digital), mostrando shape resumido de cada resposta.
+- Aba `Diagnóstico` no `CarteiraGreenPanel.tsx` que lê `igreen_endpoint_discovery` e mostra semáforo verde/amarelo/vermelho por endpoint, com data da última verificação e botão "Reexecutar probe".
 
-- Path exato + método + params obrigatórios (deduzidos das query strings observadas)
-- Shape real do response (campos + tipos)
-- Qual tela do portal usa cada endpoint (pra saber o que é "carteira", o que é "dashboard", o que é "detalhe")
-- Status (200 real, 4xx real) — não achismo
+### 5. Atualizar o worker com base no que passou
+- Só depois do probe: reescrever o registry central do `worker-igreen-sync/server.mjs` incluindo apenas os endpoints classificados como `ok_200_json` ou `ok_204`.
+- Endpoints em `bad_request` viram TODOs com a mensagem do servidor (ex.: "campo `mes` obrigatório").
+- `sync-all` passa a chamar somente endpoints vivos, com `Promise.allSettled`, e grava resultado por endpoint em `worker_phase_logs` (que já existe).
 
-## Só depois da descoberta: reescrita do worker (v17)
+## Detalhes técnicos
 
-Com o mapa em mãos, reescrevo `server.mjs` como planejado antes:
+### Nova Edge Function `igreen-endpoint-probe`
+- Entrada: `{portal_email, portal_password}` (ou usa segredos já salvos).
+- Faz login, roda probe da lista consolidada, persiste em `igreen_endpoint_discovery`.
+- Retorna resumo `{alive: N, denied: N, missing: N, total: N}`.
+- Timeout global: dispara em background via `EdgeRuntime.waitUntil` e responde imediatamente para não estourar 150s.
 
-- Registry central `ENDPOINTS` populado só com paths **observados no portal**.
-- `safeCall` wrapper: nenhum endpoint derruba o `sync-all`.
-- `Promise.allSettled` + bloco `_diagnostics` no response.
-- `fetchCashback` sem SEGUROS (a menos que a descoberta mostre um path real).
-- `enrichCustomerRich` puxando campos ricos do detalhe do cliente e devolvendo-os no array.
-- Novos blocos (Telecom Linhas, Seguros Comissões, Financeiro, Rede Qualificações) **só entram se o portal os expuser**.
+### Migration
+```sql
+CREATE TABLE public.igreen_endpoint_discovery (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  path TEXT NOT NULL,
+  method TEXT NOT NULL,
+  status INT,
+  content_type TEXT,
+  bytes INT,
+  sample_body TEXT,
+  is_alive BOOLEAN NOT NULL DEFAULT false,
+  category TEXT,
+  notes TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (method, path)
+);
+GRANT SELECT ON public.igreen_endpoint_discovery TO authenticated;
+GRANT ALL ON public.igreen_endpoint_discovery TO service_role;
+ALTER TABLE public.igreen_endpoint_discovery ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "admins read discovery" ON public.igreen_endpoint_discovery
+  FOR SELECT TO authenticated USING (public.has_role(auth.uid(),'admin'));
+```
 
-## Migration + edge + UI
+### Fluxo do probe (pseudocódigo)
+```text
+login -> jwt
+for cand in candidates:
+  res = fetch(base+cand.path, {method: cand.method, headers:{Authorization}})
+  save row(cand, res)
+summary = agg by status
+```
 
-Depois do worker rodar e trazer dados reais:
+## Segurança
+- Sem chutar payloads em POST/PUT/DELETE nesta fase — probe faz apenas `GET` para candidatos desconhecidos; `POST` só nos já confirmados (auth).
+- Credenciais do portal ficam em `IGREEN_PORTAL_EMAIL` / `IGREEN_PORTAL_PASSWORD` (segredos já existentes; se não, `add_secret` antes de rodar).
+- Nada de gravar `sample_body` de endpoints de auth (filtro para não persistir JWT).
 
-- Migration aditiva com colunas/tabelas para os blocos confirmados.
-- Edge `sync-igreen-customers` consome `_diagnostics` e grava em `worker_phase_logs`.
-- Aba "Diagnóstico" no `CarteiraGreenPanel` mostrando verde/vermelho por endpoint.
+## Entregáveis
+1. Migration `igreen_endpoint_discovery`.
+2. Edge Function `igreen-endpoint-probe`.
+3. Atualização do `worker-igreen-sync/server.mjs` com endpoint `POST /probe-all` que retorna o JSON completo.
+4. Aba `Diagnóstico` no `CarteiraGreenPanel` com semáforo.
+5. Relatório `/mnt/documents/igreen-endpoints-alive.md`.
 
-## Ordem de execução
-
-1. **Descoberta** — escrevo e rodo `discover.mjs` no sandbox via Playwright (Tor + credenciais). Output: JSON + markdown + screenshots.
-2. Você revisa o mapa e valida se cobri tudo (ou pede pra abrir menus que faltaram).
-3. Reescrevo `server.mjs` com base 100% no observado.
-4. Migration + edge + UI de diagnóstico.
-
-## Riscos e cuidados
-
-- **Credenciais**: uso as suas (`rafael.ids@icloud.com`) só dentro do script, jamais logo/exponho.
-- **Tor**: portal exige (CF bloqueia datacenter). Sandbox tem network egress; se Tor não subir no sandbox, rodo direto (o script vai reportar CF 403 se bloquear).
-- **Zero impacto** no fluxo D/WhatsApp/portal-worker.
-- `**.lovable/**` está no `.gitignore` — este plano não persiste no próximo snapshot.
-
-## O que preciso de você
-
-Só confirmar que posso rodar a descoberta agora com as credenciais que você já mandou antes. Ao aprovar o plano, começo por `discover.mjs`.  
-  
-PODE RODAR
+## Sem quebrar nada
+- Nada existente é removido. O registry atual do worker continua ativo; a nova rota `/probe-all` é aditiva.
+- A reescrita do `sync-all` só entra num PR seguinte, depois de você ver a lista viva e aprovar.
