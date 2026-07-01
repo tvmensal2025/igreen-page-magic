@@ -19,6 +19,7 @@ import { TelecomClientesList } from "./TelecomClientesList";
 import { SegurosClientesList } from "./SegurosClientesList";
 import { RedeDashboardCard } from "./RedeDashboardCard";
 import { RotinasPanel } from "./RotinasPanel";
+import { EndpointDiscoveryCard } from "./EndpointDiscoveryCard";
 
 const SYNC_STEPS = [
   "Clientes",
