@@ -212,8 +212,24 @@ async function loginWithPlaywright(email, password) {
     });
 
     dbg('[login] abrindo página de login…');
-    await page.goto(PORTAL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 30000 });
+    try {
+      await page.goto(PORTAL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    } catch (e) {
+      throw new HttpError(502, `Falha de rede ao abrir login iGreen: ${e.message}`, 'network_fetch_failed');
+    }
+    try {
+      await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 45000 });
+    } catch (e) {
+      const info = await classifyPortalPage(page);
+      await snapStep(page, `login_sem_campo_${info.kind}`);
+      if (info.kind === 'waf') {
+        throw new HttpError(503, `Portal iGreen bloqueou a tela de login (Cloudflare/WAF). ${info.sample || ''}`.slice(0, 500), 'igreen_waf_blocked');
+      }
+      if (info.kind === 'network') {
+        throw new HttpError(502, `Portal iGreen retornou erro de rede antes do login. ${info.sample || ''}`.slice(0, 500), 'network_fetch_failed');
+      }
+      throw new HttpError(504, `Portal iGreen não exibiu o campo de e-mail dentro do prazo. Página: ${info.title || 'sem título'}`, 'portal_login_timeout');
+    }
     await snapStep(page, 'abriu_login');
 
     dbg('[login] preenchendo credenciais');
@@ -307,7 +323,12 @@ async function loginWithPlaywright(email, password) {
     }
     await snapStep(page, 'pos_submit');
 
-    if (!loginResponseData) throw new HttpError(502, `Nenhuma response ${AUTH_PATH} capturada (clique + fallback falharam)`, 'no_login_response');
+    if (!loginResponseData) {
+      const info = await classifyPortalPage(page);
+      const code = info.kind === 'waf' ? 'igreen_waf_blocked' : info.kind === 'network' ? 'network_fetch_failed' : 'no_login_response';
+      const status = info.kind === 'waf' ? 503 : info.kind === 'network' ? 502 : 502;
+      throw new HttpError(status, `Nenhuma response ${AUTH_PATH} capturada (clique + fallback falharam). Estado: ${info.kind}. ${info.sample || ''}`.slice(0, 600), code);
+    }
     dbg(`[login] response ${AUTH_PATH} status=${loginResponseData.status}${isHtmlResponse(loginResponseData) ? ' html' : ''}`);
     if (isHtmlResponse(loginResponseData)) {
       throw new HttpError(503, `Portal iGreen bloqueou o login automatizado (Cloudflare/WAF ${loginResponseData.status}). Use a importação manual enquanto o portal estiver bloqueando o worker.`, 'igreen_waf_blocked');
