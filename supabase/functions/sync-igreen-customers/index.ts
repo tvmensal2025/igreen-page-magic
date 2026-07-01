@@ -224,7 +224,9 @@ async function callWorker(
   body: Record<string, unknown>,
 ): Promise<{ ok: boolean; status: number; data?: any; error?: string }> {
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 180_000); // 3 min
+  // sync-all com enrich pode levar 4–6 min quando o portal/Tor está lento.
+  // A Edge responde em background; este timeout é só da chamada interna ao worker.
+  const timeout = setTimeout(() => ctrl.abort(), 600_000); // 10 min
   try {
     const res = await fetch(`${worker.url}${path}`, {
       method: "POST",
