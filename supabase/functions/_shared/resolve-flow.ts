@@ -8,6 +8,12 @@
 //  2) Sem fluxo próprio → fallback no template PÚBLICO (legado).
 //  3) Último fallback (legado): primeiro fluxo ativo do consultor (sem variante).
 //
+// ALIAS A ≡ D (rótulo "CEMIG" na UI): quando `variant='A'` e não há template
+// público A cadastrado, usamos o template PÚBLICO da variante D. Isso torna
+// A e D 100% idênticos em runtime sem duplicar dados. Se algum dia o Super
+// Admin publicar um fluxo A real (foco CEMIG), esse passa a vencer o
+// fallback automaticamente. Ver .lovable/plan.md.
+//
 // Uso:
 //   const flow = await resolveFlowId(supabase, consultantId, variant);
 //   if (!flow) { /* sem fluxo */ }
@@ -18,17 +24,25 @@ export async function resolveFlowId(
 ): Promise<{ id: string } | null> {
   const v = String(variant || "A").toUpperCase();
 
-  // helper: id do fluxo público da variante v
-  const getPublicFlowId = async (): Promise<string | null> => {
+  // helper: id do fluxo público de uma variante específica
+  const getPublicFlowIdFor = async (targetV: string): Promise<string | null> => {
     const { data: pub } = await supabase
       .from("bot_flows")
       .select("id")
       .eq("is_public", true)
       .eq("is_active", true)
-      .eq("variant", v)
+      .eq("variant", targetV)
       .limit(1)
       .maybeSingle();
     return (pub as any)?.id ?? null;
+  };
+
+  // Público para a variante pedida, com fallback A → D
+  const getPublicFlowId = async (): Promise<string | null> => {
+    const own = await getPublicFlowIdFor(v);
+    if (own) return own;
+    if (v === "A") return await getPublicFlowIdFor("D");
+    return null;
   };
 
   // 1) Fluxo próprio do consultor (variante correta)
@@ -57,6 +71,7 @@ export async function resolveFlowId(
   }
 
   // 2) Fallback: fluxo PÚBLICO (template vivo do superadmin) na mesma variante
+  //    (com alias A → D quando A não existe)
   const pubId = await getPublicFlowId();
   if (pubId) return { id: pubId };
 
@@ -83,6 +98,8 @@ export async function resolveFlowId(
  *   mídias vêm do dono do flow PÚBLICO (Super Admin) — assim qualquer
  *   consultor em modo público recebe os MESMOS áudios/vídeos/imagens.
  * - Quando `sync_mode='custom'`, mantém o próprio consultor.
+ * - Alias A → D: quando variante A e não há público A, usa o dono do
+ *   público D (mesma regra do `resolveFlowId`).
  *
  * Fallback seguro: retorna `consultantId` se algo falhar.
  */
@@ -106,15 +123,21 @@ export async function resolveMediaOwnerId(
       .maybeSingle();
     const mode = String((own as any)?.sync_mode ?? "public").toLowerCase();
     if (own && mode !== "public") return fallback;
-    const { data: pub } = await supabase
-      .from("bot_flows")
-      .select("consultant_id")
-      .eq("is_public", true)
-      .eq("is_active", true)
-      .eq("variant", v)
-      .limit(1)
-      .maybeSingle();
-    const pubOwner = (pub as any)?.consultant_id as string | undefined;
+
+    const pickOwner = async (targetV: string): Promise<string | null> => {
+      const { data: pub } = await supabase
+        .from("bot_flows")
+        .select("consultant_id")
+        .eq("is_public", true)
+        .eq("is_active", true)
+        .eq("variant", targetV)
+        .limit(1)
+        .maybeSingle();
+      return ((pub as any)?.consultant_id as string | undefined) || null;
+    };
+
+    let pubOwner = await pickOwner(v);
+    if (!pubOwner && v === "A") pubOwner = await pickOwner("D");
     return pubOwner || fallback;
   } catch {
     return fallback;
