@@ -721,6 +721,14 @@ async function syncOneConsultant(
     return { success: false, email: emailNorm, error: "Credenciais do portal iGreen não preenchidas." };
   }
 
+  // === VALIDATE MODE: só verifica login (chamada leve). ===
+  if (mode === "validate") {
+    const r = await callWorker(worker, "/sync-metrics", { portal_email: emailNorm, portal_password: passwordNorm });
+    if (!r.ok) return { success: false, email: emailNorm, error: r.error || "Falha ao validar", status: r.status };
+    return { success: true, mode: "validate", email: emailNorm };
+  }
+
+
   // === SYNC ALL MODE (recomendado): 1 login → tudo, respeitando os toggles ===
   if (mode === "sync_all") {
     console.log(`[worker] sync-all for ${emailNorm}`);
