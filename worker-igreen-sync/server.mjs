@@ -611,6 +611,7 @@ async function fetchMetrics(session, month) {
 // Probe genérico: testa uma allowlist de paths e devolve {status, keys}. Útil
 // para descoberta segura de endpoints Pro/análises sem escrever integração.
 const PROBE_ALLOWLIST = [
+  // já conhecidos
   '/painel/licencas-expirando',
   '/painel/onboarding',
   '/painel/inativos',
@@ -625,6 +626,25 @@ const PROBE_ALLOWLIST = [
   '/telecom/licenciados',
   '/seguros/resumo-geral',
   '/seguros/licenciados',
+  // Fase 1 — candidatos para cobrir lacunas
+  '/seguros/comissoes',
+  '/seguros/sinistros',
+  '/seguros/renovacoes',
+  '/seguros/cashback/resumo',
+  '/crm/seguros/resumo',
+  '/telecom/linhas',
+  '/telecom/recargas',
+  '/telecom/comissoes',
+  '/telecom/portabilidade',
+  '/financeiro/extrato',
+  '/financeiro/saques',
+  '/financeiro/saldo',
+  '/financeiro/notas-fiscais',
+  '/rede/qualificacoes',
+  '/rede/graduacoes',
+  '/rede/aniversariantes',
+  '/rede/upgrades',
+  '/clientes-green/devolutivas-resolvidas',
 ];
 async function probeEndpoints(session, paths) {
   const list = Array.isArray(paths) && paths.length ? paths.filter((p) => PROBE_ALLOWLIST.includes(p)) : PROBE_ALLOWLIST;
