@@ -1,4 +1,4 @@
-// server.mjs — igreen-sync-worker v16 (API nova api-vo)
+// server.mjs — igreen-sync-worker v17 (API nova api-vo)
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
