@@ -557,6 +557,12 @@ const AdminContent = () => {
               {userId && <IGreenConnectionCard userId={userId} />}
               <BonusTiersAdminCard />
               <ChangePasswordCard />
+              {userId && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-foreground">Diagnóstico iGreen</h3>
+                  <EndpointDiscoveryCard consultantId={userId} />
+                </div>
+              )}
             </Suspense>
           </div>
         </SheetContent>
