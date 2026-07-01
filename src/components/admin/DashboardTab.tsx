@@ -50,10 +50,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
     consultantName: (form?.name as string) || null,
     cadastroIgreenIds: [],
   });
+  const { data: networkIgreenIds = [] } = useNetworkIgreenIds(userId);
   const { data: analytics } = useAnalytics(
     userId,
     periodDays,
     scope === "team" && isLeader ? teamIds : null,
+    networkIgreenIds,
   );
   const { toast } = useToast();
   const confirm = useConfirm();
