@@ -666,10 +666,10 @@ async function syncOneConsultant(
       alert_boletos_vencendo: true,
       alert_devolutivas: true,
       alert_licencas_expirando: true,
-      rotinas_tarefas: false,
-      auto_wa_boleto_vencendo: false,
+      rotinas_tarefas: true,
+      auto_wa_boleto_vencendo: true,
       auto_wa_aniversariante: false,
-      cross_sell_bot: false,
+      cross_sell_bot: true,
     };
     let toggles: Record<string, boolean> = { ...DEFAULT_ON };
     if (consultantId) {
