@@ -38,6 +38,7 @@ const API_BASE = 'https://api-vo.igreenenergy.com.br/v1';
 const AUTH_PATH = '/auth/session';
 // Sitekey só é usada se o portal voltar a exigir reCAPTCHA (hoje não exige).
 const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
+const LOGIN_MAX_ATTEMPTS = parseInt(process.env.IGREEN_LOGIN_MAX_ATTEMPTS || '2', 10);
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
@@ -76,6 +77,27 @@ function isHtmlResponse(data) {
 
 function bodyPreview(body) {
   return JSON.stringify(body || {}).slice(0, 300);
+}
+
+async function classifyPortalPage(page) {
+  try {
+    return await page.evaluate(() => {
+      const txt = (document.body?.innerText || '').slice(0, 3000);
+      const title = document.title || '';
+      const hasEmail = !!document.querySelector('input[type="email"], input[name="email"]');
+      const hay = `${title}\n${txt}`.toLowerCase();
+      if (hasEmail) return { kind: 'login', title, sample: txt.slice(0, 500) };
+      if (/cloudflare|attention required|sorry, you have been blocked|access denied|ray id|challenge/.test(hay)) {
+        return { kind: 'waf', title, sample: txt.slice(0, 500) };
+      }
+      if (/erro de rede|network error|failed to fetch|não foi possível|nao foi possivel|temporariamente indisponível|temporariamente indisponivel/.test(hay)) {
+        return { kind: 'network', title, sample: txt.slice(0, 500) };
+      }
+      return { kind: 'unknown', title, sample: txt.slice(0, 500) };
+    });
+  } catch (e) {
+    return { kind: 'unknown', title: '', sample: `evaluate failed: ${e.message}` };
+  }
 }
 
 // ---------- IA Vision (OpenAI Vision direto) ----------
