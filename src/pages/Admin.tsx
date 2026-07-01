@@ -26,7 +26,7 @@ import { AppTopbar } from "@/components/layout/AppTopbar";
 const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCodeSVG })));
 const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => ({ default: m.DashboardTab })));
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
-const IGreenExtensionCard = lazy(() => import("@/components/admin/IGreenExtensionCard").then(m => ({ default: m.IGreenExtensionCard })));
+const IGreenConnectionCard = lazy(() => import("@/components/admin/IGreenConnectionCard").then(m => ({ default: m.IGreenConnectionCard })));
 const ChangePasswordCard = lazy(() => import("@/components/admin/ChangePasswordCard").then(m => ({ default: m.ChangePasswordCard })));
 const BonusTiersAdminCard = lazy(() => import("@/components/admin/BonusTiersAdminCard").then(m => ({ default: m.BonusTiersAdminCard })));
 const LinksTab = lazy(() => import("@/components/admin/LinksTab").then(m => ({ default: m.LinksTab })));
@@ -539,7 +539,7 @@ const AdminContent = () => {
           <div className="mt-6 space-y-6">
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
             <Suspense fallback={null}>
-              {userId && <IGreenExtensionCard userId={userId} />}
+              {userId && <IGreenConnectionCard userId={userId} />}
               <BonusTiersAdminCard />
               <ChangePasswordCard />
             </Suspense>

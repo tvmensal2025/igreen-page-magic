@@ -38,6 +38,21 @@ function mapStatus(andamento: string | undefined): string {
   return "pending";
 }
 
+// Mapeia o id da coluna do Kanban /crm/green para o status interno.
+// Colunas: aguardando_assinatura, aguardando, devolutiva, reprovado, validado,
+// adimplente, menos_30d, inadimplente, cancelado.
+function mapStatusColuna(col: string | undefined): string | null {
+  if (!col) return null;
+  const c = col.toLowerCase().trim();
+  if (c === "validado" || c === "adimplente" || c === "menos_30d" || c === "inadimplente") return "approved";
+  if (c === "aguardando_assinatura") return "awaiting_signature";
+  if (c === "aguardando") return "pending";
+  if (c === "devolutiva") return "devolutiva";
+  if (c === "reprovado") return "rejected";
+  if (c === "cancelado") return "rejected";
+  return null;
+}
+
 function safeStr(val: unknown): string | null {
   if (val == null || val === "") return null;
   const s = String(val).trim();
@@ -86,8 +101,14 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
   const name = safeStr(get(c, "nomeCliente", "nome", "Nome", "name", "Nome do Cliente"));
   if (name) record.name = name;
 
-  const statusRaw = safeStr(get(c, "andamento", "Andamento", "status"));
-  record.status = isPlaceholderPhone ? "contato_incompleto" : mapStatus(statusRaw || undefined);
+  const statusRaw = safeStr(get(c, "andamento", "Andamento", "status", "status_label"));
+  const statusColuna = safeStr(get(c, "status_coluna"));
+  const statusFromColuna = mapStatusColuna(statusColuna || undefined);
+  record.status = isPlaceholderPhone
+    ? "contato_incompleto"
+    : (statusFromColuna || mapStatus(statusRaw || undefined));
+  // Guarda o andamento textual (coluna do Kanban) para exibição/auditoria.
+  if (statusColuna) record.andamento_igreen = statusColuna;
 
   const cpf = safeStr(get(c, "cpf", "CPF", "documento", "Documento"));
   if (cpf) record.cpf = cpf.replace(/\D/g, "");
@@ -116,7 +137,7 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
   const icode = safeStr(get(c, "codigoIgreen", "codigo", "Código"));
   if (icode) record.igreen_code = icode;
 
-  const consumo = safeNum(get(c, "consumoMedio", "consumo_medio", "Consumo Médio"));
+  const consumo = safeNum(get(c, "consumoMedio", "consumo_medio", "Consumo Médio", "kwh", "consumo"));
   if (consumo != null) record.media_consumo = consumo;
 
   const desc = safeNum(get(c, "descontoCliente", "desconto_cliente", "Desconto"));
@@ -229,6 +250,380 @@ async function callWorker(
 // =====================================================
 // syncOneConsultant — chama o worker e processa os dados
 // =====================================================
+// =====================================================
+// Persistência de métricas (painel/rotinas) e boletos — Fase 2
+// =====================================================
+// deno-lint-ignore no-explicit-any
+async function persistMetrics(supabase: any, consultantId: string | null, metrics: any): Promise<Record<string, unknown>> {
+  if (!consultantId || !metrics) return { metrics_saved: false };
+  const mes = safeStr(metrics.mes) || new Date().toISOString().slice(0, 7);
+  const kpis = metrics.overview?.kpis || {};
+  const det = kpis.clientesDetalhe || {};
+  const rede = metrics.overview?.rede || {};
+  const resumo = metrics.resumo_clientes || {};
+  const row = {
+    consultant_id: consultantId,
+    mes_ref: mes,
+    clientes_total: kpis.clientes ?? null,
+    clientes_green: det.green ?? null,
+    clientes_telecom: det.telecom ?? null,
+    clientes_seguros: det.seguros ?? null,
+    licenciados_ativos: kpis.licenciadosAtivos ?? null,
+    licenciados_total: kpis.licenciadosTotal ?? null,
+    diretos: kpis.diretos != null ? Number(kpis.diretos) : null,
+    diretos_ativos: kpis.diretosAtivos != null ? Number(kpis.diretosAtivos) : null,
+    gp_mes: safeNum(kpis.gpMes),
+    gi_mes: safeNum(kpis.giMes),
+    rede_tamanho: rede.tamanho ?? null,
+    total_cadastros: resumo.totalCadastros ?? null,
+    mwh: safeNum(resumo.mwh),
+    validados_n: resumo.validados?.n ?? null,
+    aguardando_n: resumo.aguardando?.n ?? null,
+    devolutivas_n: resumo.devolutivas?.n ?? null,
+    cancelados_n: resumo.cancelados?.n ?? null,
+    reprovados_n: resumo.reprovados?.n ?? null,
+    ag_assinatura_n: resumo.agAssinatura?.n ?? null,
+    kwh_validados: safeNum(resumo.kwhValidados),
+    rotina_diaria: metrics.rotina_diaria ?? null,
+    rotina_semanal: metrics.rotina_semanal ?? null,
+    rotina_mensal: metrics.rotina_mensal ?? null,
+    raw_json: metrics,
+    synced_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from("igreen_consultant_metrics")
+    .upsert(row, { onConflict: "consultant_id,mes_ref", ignoreDuplicates: false });
+  if (error) { console.error("metrics upsert:", error.message); return { metrics_saved: false, metrics_error: error.message }; }
+  return { metrics_saved: true, mes_ref: mes };
+}
+
+// deno-lint-ignore no-explicit-any
+async function persistBoletos(supabase: any, consultantId: string | null, boletos: any[]): Promise<Record<string, unknown>> {
+  if (!consultantId || !Array.isArray(boletos) || boletos.length === 0) return { boletos_saved: 0 };
+  const parseDate = (v: unknown): string | null => {
+    const s = safeStr(v); if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m) { const [, d, mo, y] = m; return `${y.length === 2 ? "20" + y : y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`; }
+    return null;
+  };
+  const rows = boletos.map((b) => ({
+    consultant_id: consultantId,
+    idcliente: Number(b.idcliente),
+    nome: safeStr(b.nome),
+    cidade: safeStr(b.cidade),
+    uf: safeStr(b.uf),
+    mes_referencia: safeStr(b.mesReferencia),
+    total: safeNum(b.total),
+    valor_fornecedora: safeNum(b.valorFornecedora),
+    valor_distribuidora: safeNum(b.valorDistribuidora),
+    vencimento: parseDate(b.vencimento),
+    pagamento: parseDate(b.pagamento),
+    status: safeStr(b.status),
+    dias_atraso: b.diasAtraso != null ? Number(b.diasAtraso) : null,
+    injecao: typeof b.injecao === "boolean" ? b.injecao : null,
+    kwh_compensado: safeNum(b.kwhCompensado),
+    conta_unica: typeof b.contaUnica === "boolean" ? b.contaUnica : null,
+    fornecedora: safeStr(b.fornecedora),
+    tipo_pagamento: safeStr(b.tipoPagamento),
+    url_invoice: safeStr(b.urlinvoice),
+    url_boleto: safeStr(b.urlboleto),
+    raw_json: b,
+    synced_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })).filter((r) => Number.isFinite(r.idcliente) && r.idcliente > 0 && r.mes_referencia);
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("igreen_customer_boletos")
+      .upsert(batch, { onConflict: "consultant_id,idcliente,mes_referencia", ignoreDuplicates: false })
+      .select("id");
+    if (error) console.error("boletos upsert:", error.message);
+    else saved += data?.length || 0;
+  }
+  return { boletos_saved: saved, boletos_received: boletos.length };
+}
+
+// Persiste carteira TELECOM (Opção A — tabela dedicada).
+// deno-lint-ignore no-explicit-any
+async function persistTelecom(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
+  if (!consultantId || !Array.isArray(items) || items.length === 0) return { telecom_saved: 0 };
+  const parseDate = (v: unknown): string | null => {
+    const s = safeStr(v); if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return null;
+  };
+  const seen = new Set<number>();
+  const rows = [];
+  for (const c of items) {
+    const idc = Number(c._idcnxtelecom ?? c.idcnxtelecom ?? c.id);
+    if (!Number.isFinite(idc) || idc <= 0 || seen.has(idc)) continue;
+    seen.add(idc);
+    rows.push({
+      consultant_id: consultantId,
+      idcnxtelecom: idc,
+      nome: safeStr(c.cliente ?? c.nome),
+      cidade: safeStr(c.cidade),
+      uf: safeStr(c.uf),
+      numero: safeStr(c.numero),
+      licenciado: safeStr(c.licenciado),
+      status: safeStr(c.status_coluna),
+      status_label: safeStr(c.status_label),
+      data: parseDate(c.data),
+      fatura_valor: safeNum(c._fatura_valor),
+      fatura_status: safeStr(c._fatura_status),
+      fatura_mes_referencia: safeStr(c._fatura_mes),
+      raw_json: c,
+      synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("igreen_telecom_customers")
+      .upsert(batch, { onConflict: "consultant_id,idcnxtelecom", ignoreDuplicates: false })
+      .select("id");
+    if (error) console.error("telecom upsert:", error.message);
+    else saved += data?.length || 0;
+  }
+  return { telecom_saved: saved, telecom_received: items.length };
+}
+
+// Persiste CASHBACK por origem no snapshot de métricas (raw) + colunas de saldo.
+// deno-lint-ignore no-explicit-any
+async function persistCashback(supabase: any, consultantId: string | null, cashback: any): Promise<Record<string, unknown>> {
+  if (!consultantId || !cashback || typeof cashback !== "object") return { cashback_saved: false };
+  const mes = new Date().toISOString().slice(0, 7);
+  const green = cashback.green || {};
+  const telecom = cashback.telecom || {};
+  const { error } = await supabase
+    .from("igreen_consultant_metrics")
+    .update({
+      cashback_green_saldo: safeNum(green.saldo),
+      cashback_telecom_saldo: safeNum(telecom.saldo),
+      cashback_json: cashback,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("consultant_id", consultantId)
+    .eq("mes_ref", mes);
+  if (error) { console.error("cashback update:", error.message); return { cashback_saved: false }; }
+  return { cashback_saved: true };
+}
+
+// Gera ALERTAS acionáveis (bot_handoff_alerts) a partir dos dados sincronizados,
+// SÓ para os toggles ligados. Faz DEDUP: não recria alerta aberto (resolved_at
+// null) do mesmo tema para o mesmo cliente — evita flood no cron diário.
+// deno-lint-ignore no-explicit-any
+async function generateAlerts(supabase: any, consultantId: string | null, toggles: Record<string, boolean>, data: any): Promise<Record<string, unknown>> {
+  if (!consultantId) return { alerts_created: 0 };
+  const wantTypes: string[] = [];
+  if (toggles.alert_boletos_vencendo) wantTypes.push("igreen_boleto_vencendo");
+  if (toggles.alert_devolutivas) wantTypes.push("igreen_devolutiva", "igreen_devolutiva_impeditiva");
+  if (toggles.alert_licencas_expirando) wantTypes.push("igreen_licencas_expirando");
+  if (wantTypes.length === 0) return { alerts_created: 0 };
+
+  // Carrega alertas abertos existentes (dedup key = alert_type + idcliente).
+  const openKeys = new Set<string>();
+  const { data: existing } = await supabase
+    .from("bot_handoff_alerts")
+    .select("alert_type, metadata")
+    .eq("consultant_id", consultantId)
+    .is("resolved_at", null)
+    .in("alert_type", wantTypes);
+  for (const e of (existing || []) as Array<{ alert_type: string; metadata: Record<string, unknown> | null }>) {
+    const idc = e.metadata?.idcliente ?? "_";
+    openKeys.add(`${e.alert_type}|${idc}`);
+  }
+
+  const rows: Record<string, unknown>[] = [];
+  const pushOnce = (alert_type: string, idcliente: unknown, row: Record<string, unknown>) => {
+    const key = `${alert_type}|${idcliente ?? "_"}`;
+    if (openKeys.has(key)) return;
+    openKeys.add(key);
+    rows.push(row);
+  };
+
+  // Boletos vencidos (não alerta os "a vencer"/"disponível" — só o que já venceu).
+  if (toggles.alert_boletos_vencendo) {
+    for (const b of (data?.boletos || [])) {
+      const st = String(b.status || "").toLowerCase();
+      if (!st.includes("vencid")) continue;
+      pushOnce("igreen_boleto_vencendo", b.idcliente, {
+        consultant_id: consultantId,
+        alert_type: "igreen_boleto_vencendo",
+        reason: `Boleto ${st} de ${b.nome || "cliente"} (venc. ${b.vencimento || "?"}, R$ ${b.total ?? "?"})`,
+        phone: normalizePhone(String(b.celular || "")) || null,
+        metadata: { idcliente: b.idcliente, vencimento: b.vencimento, status: b.status, url: b.urlboleto, total: b.total },
+      });
+    }
+  }
+  // Devolutivas (prioriza impeditivas)
+  if (toggles.alert_devolutivas) {
+    for (const d of (data?.devolutivas || [])) {
+      const at = d.impeditiva ? "igreen_devolutiva_impeditiva" : "igreen_devolutiva";
+      const idc = d._codigo ?? d.codigo;
+      pushOnce(at, idc, {
+        consultant_id: consultantId,
+        alert_type: at,
+        reason: `Devolutiva${d.impeditiva ? " IMPEDITIVA" : ""}: ${d.cliente || d.nome || "cliente"} — ${d.obs || d.motivo || d._categoria || "verificar"}`,
+        phone: null,
+        metadata: { idcliente: idc, categoria: d._categoria, campo: d.campo, impeditiva: d.impeditiva },
+      });
+    }
+  }
+  // Licenças expirando (1 alerta agregado por sync, sem idcliente)
+  if (toggles.alert_licencas_expirando) {
+    const lic = data?.metrics?.overview?.alertas?.licencas || {};
+    const total = Number(lic.aVencer || 0) + Number(lic.vencida || 0) + Number(lic.expirada || 0);
+    if (total > 0) {
+      pushOnce("igreen_licencas_expirando", null, {
+        consultant_id: consultantId,
+        alert_type: "igreen_licencas_expirando",
+        reason: `Licenças na rede: ${lic.aVencer || 0} a vencer, ${lic.vencida || 0} vencidas, ${lic.expirada || 0} expiradas`,
+        phone: null,
+        metadata: lic,
+      });
+    }
+  }
+
+  if (rows.length === 0) return { alerts_created: 0 };
+  const capped = rows.slice(0, 300);
+  const { data: ins, error } = await supabase.from("bot_handoff_alerts").insert(capped).select("id");
+  if (error) { console.error("alerts insert:", error.message); return { alerts_created: 0, alerts_error: error.message }; }
+  return { alerts_created: ins?.length || 0 };
+}
+
+// Persiste carteira SEGUROS (Opção A — tabela dedicada).
+// deno-lint-ignore no-explicit-any
+async function persistSeguros(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
+  if (!consultantId || !Array.isArray(items) || items.length === 0) return { seguros_saved: 0 };
+  const seen = new Set<string>();
+  const rows = [];
+  for (const c of items) {
+    const sid = safeStr(c.id ?? c.seguro_id);
+    if (!sid || seen.has(sid)) continue;
+    seen.add(sid);
+    rows.push({
+      consultant_id: consultantId,
+      seguro_id: sid,
+      segurado: safeStr(c.segurado),
+      modelo: safeStr(c.modelo),
+      placa: safeStr(c.placa),
+      fipe: safeNum(c.fipe),
+      mensal: safeNum(c.mensal),
+      status: safeStr(c.status_coluna),
+      status_label: safeStr(c.status_label),
+      cidade: safeStr(c.cidade),
+      uf: safeStr(c.uf),
+      licenciado: safeStr(c.licenciado),
+      raw_json: c,
+      synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("igreen_seguros_customers")
+      .upsert(batch, { onConflict: "consultant_id,seguro_id", ignoreDuplicates: false })
+      .select("id");
+    if (error) console.error("seguros upsert:", error.message);
+    else saved += data?.length || 0;
+  }
+  return { seguros_saved: saved, seguros_received: items.length };
+}
+
+// Persiste DEVOLUTIVAS detalhadas (categoria/impeditiva/campo/data).
+// deno-lint-ignore no-explicit-any
+async function persistDevolutivas(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
+  if (!consultantId || !Array.isArray(items) || items.length === 0) return { devolutivas_saved: 0 };
+  // resolve customer_id por igreen_code (codigo) quando possível
+  const codes = items.map((d) => safeStr(d._codigo ?? d.codigo)).filter(Boolean) as string[];
+  const codeToCustomer = new Map<string, string>();
+  for (let i = 0; i < codes.length; i += 200) {
+    const chunk = codes.slice(i, i + 200);
+    const { data } = await supabase.from("customers").select("id, igreen_code").eq("consultant_id", consultantId).in("igreen_code", chunk);
+    for (const c of (data || []) as Array<{ id: string; igreen_code: string }>) codeToCustomer.set(c.igreen_code, c.id);
+  }
+  const seen = new Set<string>();
+  const rows = [];
+  for (const d of items) {
+    const idcliente = Number(d._codigo ?? d.codigo ?? d.idcliente ?? d.id);
+    const campo = safeStr(d.campo) || "_";
+    const categoria = safeStr(d._categoria ?? d.categoria) || "outros";
+    const dedup = `${idcliente}|${campo}|${categoria}`;
+    if (!Number.isFinite(idcliente) || idcliente <= 0 || seen.has(dedup)) continue;
+    seen.add(dedup);
+    const code = safeStr(d._codigo ?? d.codigo);
+    rows.push({
+      consultant_id: consultantId,
+      iddevolutiva: d.iddevolutiva != null ? Number(d.iddevolutiva) : null,
+      idcliente,
+      customer_id: code ? (codeToCustomer.get(code) || null) : null,
+      nome: safeStr(d.cliente ?? d.nome),
+      cidade: safeStr(d.cidade),
+      uf: safeStr(d.uf),
+      licenciado: safeStr(d._licenciado ?? d.licenciado),
+      categoria,
+      campo,
+      motivo: cleanDevolutiva(safeStr(d.obs ?? d.motivo) || ""),
+      impeditiva: typeof d.impeditiva === "boolean" ? d.impeditiva : null,
+      propria: typeof d.propria === "boolean" ? d.propria : null,
+      data_devolutiva: safeStr(d.data) || null,
+      raw_json: d,
+      synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("igreen_customer_devolutivas")
+      .upsert(batch, { onConflict: "consultant_id,idcliente,campo,categoria", ignoreDuplicates: false })
+      .select("id");
+    if (error) console.error("devolutivas upsert:", error.message);
+    else saved += data?.length || 0;
+  }
+  return { devolutivas_saved: saved, devolutivas_received: items.length };
+}
+
+// Aplica a ficha detalhada (/clientes-green/boletos/{id}) nos customers:
+// deno-lint-ignore no-explicit-any
+async function applyCustomerDetails(supabase: any, consultantId: string | null, details: any[]): Promise<Record<string, unknown>> {
+  if (!consultantId || !Array.isArray(details) || details.length === 0) return { details_applied: 0 };
+  let applied = 0;
+  for (const d of details) {
+    const code = safeStr(d.idcliente);
+    if (!code) continue;
+    const patch: Record<string, unknown> = {};
+    const cpf = safeStr(d.cpf); if (cpf) patch.cpf = cpf.replace(/\D/g, "");
+    const inst = safeStr(d.instalacao); if (inst) patch.numero_instalacao = inst;
+    const numCli = safeStr(d.numCliente); if (numCli) patch.num_cliente_distribuidora = numCli;
+    const conc = safeStr(d.concessionaria); if (conc) { patch.concessionaria = conc; patch.distribuidora = conc; }
+    const forn = safeStr(d.fornecedora); if (forn) patch.fornecedora = forn;
+    const sit = safeStr(d.situacao); if (sit) patch.situacao_igreen = sit;
+    if (typeof d.trocaTitularidade === "boolean") patch.transferir_titularidade = d.trocaTitularidade;
+    if (typeof d.contaUnica === "boolean") patch.contaunica = d.contaUnica;
+    const consumo = safeNum(d.consumo); if (consumo != null) patch.media_consumo = consumo;
+    const dAtivo = safeStr(d.dataAtivo); if (dAtivo && /^\d{4}-\d{2}-\d{2}/.test(dAtivo)) patch.data_ativo_igreen = dAtivo.slice(0, 10);
+    const dInj = safeStr(d.dataInjecao); if (dInj && /^\d{4}-\d{2}-\d{2}/.test(dInj)) patch.data_injecao_igreen = dInj.slice(0, 10);
+    if (Object.keys(patch).length === 0) continue;
+    const { error } = await supabase
+      .from("customers")
+      .update(patch)
+      .eq("consultant_id", consultantId)
+      .eq("igreen_code", code);
+    if (!error) applied++;
+  }
+  return { details_applied: applied };
+}
+
 async function syncOneConsultant(
   // deno-lint-ignore no-explicit-any
   supabase: any,
@@ -245,6 +640,108 @@ async function syncOneConsultant(
     return { success: false, email: emailNorm, error: "Credenciais do portal iGreen não preenchidas." };
   }
 
+  // === SYNC ALL MODE (recomendado): 1 login → tudo, respeitando os toggles ===
+  if (mode === "sync_all") {
+    console.log(`[worker] sync-all for ${emailNorm}`);
+
+    // Carrega os toggles de automação do consultor (tudo começa desligado).
+    // deno-lint-ignore no-explicit-any
+    let toggles: Record<string, boolean> = {};
+    if (consultantId) {
+      const { data: t } = await supabase
+        .from("igreen_automation_settings")
+        .select("*")
+        .eq("consultant_id", consultantId)
+        .maybeSingle();
+      toggles = (t as Record<string, boolean>) || {};
+    }
+    // Base sempre coletada; extras conforme toggle.
+    const only = ["customers", "network", "metrics"];
+    if (toggles.capture_boletos) only.push("boletos");
+    if (toggles.capture_telecom) only.push("telecom");
+    if (toggles.capture_seguros) only.push("seguros");
+    if (toggles.capture_devolutivas) only.push("devolutivas");
+    if (toggles.capture_cashback) only.push("cashback");
+
+    const r = await callWorker(worker, "/sync-all", {
+      portal_email: emailNorm,
+      portal_password: passwordNorm,
+      only,
+      enrich: true,
+      enrich_limit: 400,
+    });
+    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
+
+    const out: Record<string, unknown> = { success: true, mode: "sync_all", email: emailNorm, toggles };
+    // Base
+    try { out.customers = await persistCustomers(supabase, consultantId, r.data?.customers || []); }
+    catch (e) { out.customers_error = e instanceof Error ? e.message : String(e); }
+    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
+    catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
+    out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
+    out.details = await applyCustomerDetails(supabase, consultantId, r.data?.details || []);
+    // Extras (só se o toggle correspondente estiver ligado)
+    if (toggles.capture_boletos) out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
+    if (toggles.capture_telecom) out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
+    if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
+    if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
+    if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
+
+    // Alertas acionáveis (só se o toggle de alerta estiver ligado)
+    out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
+
+    const syncTimestamp = new Date().toISOString();
+    await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
+    out.synced_at = syncTimestamp;
+    return out;
+  }
+
+  // === SYNC METRICS MODE ===
+  if (mode === "sync_metrics") {
+    console.log(`[worker] sync-metrics for ${emailNorm}`);
+    const r = await callWorker(worker, "/sync-metrics", { portal_email: emailNorm, portal_password: passwordNorm });
+    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
+    const saved = await persistMetrics(supabase, consultantId, r.data?.metrics);
+    return { success: true, mode: "sync_metrics", ...saved };
+  }
+
+  // === SYNC BOLETOS MODE ===
+  if (mode === "sync_boletos") {
+    console.log(`[worker] sync-boletos for ${emailNorm}`);
+    const r = await callWorker(worker, "/sync-boletos", { portal_email: emailNorm, portal_password: passwordNorm });
+    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    const saved = await persistBoletos(supabase, consultorId ? (consultantId || null) : consultantId, r.data?.boletos || []);
+    return { success: true, mode: "sync_boletos", ...saved };
+  }
+
+  // === SYNC TELECOM MODE ===
+  if (mode === "sync_telecom") {
+    console.log(`[worker] sync-telecom for ${emailNorm}`);
+    const r = await callWorker(worker, "/sync-telecom", { portal_email: emailNorm, portal_password: passwordNorm });
+    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    const saved = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
+    return { success: true, mode: "sync_telecom", ...saved };
+  }
+
+  // === SYNC SEGUROS MODE ===
+  if (mode === "sync_seguros") {
+    console.log(`[worker] sync-seguros for ${emailNorm}`);
+    const r = await callWorker(worker, "/sync-seguros", { portal_email: emailNorm, portal_password: passwordNorm });
+    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    const saved = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
+    return { success: true, mode: "sync_seguros", ...saved };
+  }
+
   // === SYNC NETWORK MODE ===
   if (mode === "explore_network" || mode === "sync_network") {
     console.log(`[worker] sync-network for ${emailNorm}`);
@@ -255,80 +752,16 @@ async function syncOneConsultant(
     if (!r.ok) {
       return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
     }
-
     const members: Record<string, unknown>[] = r.data?.members || r.data?.data || [];
     const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
     if (consultantId && consultorId) {
       await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
     }
-
-    // Dedup
-    const deduped = new Map<number, Record<string, unknown>>();
-    for (const m of members) {
-      const id = Number(m.idconsultor || m.id);
-      if (id) deduped.set(id, m);
-    }
-    const netData = Array.from(deduped.values());
-
-    const netRecords = netData.map((m) => ({
-      consultant_id: consultantId,
-      igreen_id: Number(m.idconsultor || m.id),
-      name: String(m.nome || "Sem nome"),
-      phone: normalizePhone(String(m.celular || "")),
-      sponsor_id: m.idpatrocinador ? Number(m.idpatrocinador) : null,
-      nivel: Number(m.nivel ?? 0),
-      data_ativo: safeStr(m.data_ativo) || null,
-      cidade: safeStr(m.cidade) || null,
-      uf: safeStr(m.uf) || null,
-      clientes_ativos: Number(m.cliativo ?? 0),
-      gp: safeNum(m.gp) ?? 0,
-      gi: safeNum(m.gi) ?? 0,
-      qtde_diretos: Number(m.qtde_diretos ?? 0),
-      inicio_rapido: safeStr(m.inicio_rapido) || null,
-      diretos_inicio_rapido: Number(m.diretos_inicio_rapido ?? 0),
-      diretos_mes: Number(m.diretos_mes ?? 0),
-      total_pontos: safeNum(m.total_pontos) ?? 0,
-      gp_total: safeNum(m.gp) ?? 0,
-      gi_total: safeNum(m.gi) ?? 0,
-      updated_at: new Date().toISOString(),
-    }));
-
-    let netUpdated = 0;
-    for (let i = 0; i < netRecords.length; i += 25) {
-      const batch = netRecords.slice(i, i + 25);
-      const { data, error } = await supabase
-        .from("network_members")
-        .upsert(batch, { onConflict: "consultant_id,igreen_id", ignoreDuplicates: false })
-        .select("id");
-      if (error) console.error(`Network upsert error at ${i}:`, error);
-      else netUpdated += (data?.length || 0);
-    }
-
-    // Remove stale members
-    if (consultantId) {
-      const apiIds = netRecords.map((r) => Number(r.igreen_id));
-      const { data: existingMembers } = await supabase
-        .from("network_members")
-        .select("igreen_id")
-        .eq("consultant_id", consultantId);
-      if (existingMembers) {
-        const staleIds = (existingMembers as Array<{ igreen_id: number }>)
-          .map((m) => m.igreen_id)
-          .filter((id) => !apiIds.includes(id));
-        if (staleIds.length > 0) {
-          await supabase
-            .from("network_members")
-            .delete()
-            .eq("consultant_id", consultantId)
-            .in("igreen_id", staleIds);
-        }
-      }
-    }
-
-    return { success: true, mode: "sync_network", total_members: netData.length, updated: netUpdated };
+    const net = await persistNetwork(supabase, consultantId, members);
+    return { success: true, mode: "sync_network", ...net };
   }
 
-  // === SYNC CUSTOMERS ===
+  // === SYNC CUSTOMERS (default) ===
   console.log(`[worker] sync-customers for ${emailNorm}`);
   const r = await callWorker(worker, "/sync-customers", {
     portal_email: emailNorm,
@@ -337,17 +770,96 @@ async function syncOneConsultant(
   if (!r.ok) {
     return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
   }
-
-  const allCustomers: Record<string, unknown>[] = r.data?.customers || r.data?.data || [];
   const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
   if (consultantId && consultorId) {
     await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
   }
-
+  const allCustomers: Record<string, unknown>[] = r.data?.customers || r.data?.data || [];
   if (allCustomers.length === 0) {
     return { success: false, email: emailNorm, error: "Nenhum cliente retornado pelo worker." };
   }
+  const cust = await persistCustomers(supabase, consultantId, allCustomers);
+  const syncTimestamp = new Date().toISOString();
+  await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
+  return { success: true, email: emailNorm, synced_at: syncTimestamp, ...cust };
+}
 
+// deno-lint-ignore no-explicit-any
+async function persistNetwork(supabase: any, consultantId: string | null, members: Record<string, unknown>[]): Promise<Record<string, unknown>> {
+  // Dedup
+  const deduped = new Map<number, Record<string, unknown>>();
+  for (const m of members) {
+    const id = Number(m.idconsultor || m.id);
+    if (id) deduped.set(id, m);
+  }
+  const netData = Array.from(deduped.values());
+
+  const netRecords = netData.map((m) => ({
+    consultant_id: consultantId,
+    igreen_id: Number(m.idconsultor || m.id),
+    name: String(m.nome || "Sem nome"),
+    phone: normalizePhone(String(m.celular || "")),
+    sponsor_id: m.idpatrocinador ? Number(m.idpatrocinador) : null,
+    nivel: Number(m.nivel ?? 0),
+    data_ativo: safeStr(m.data_ativo) || null,
+    cidade: safeStr(m.cidade) || null,
+    uf: safeStr(m.uf) || null,
+    clientes_ativos: Number(m.cliativo ?? 0),
+    gp: safeNum(m.gp) ?? 0,
+    gi: safeNum(m.gi) ?? 0,
+    qtde_diretos: Number(m.qtde_diretos ?? 0),
+    inicio_rapido: safeStr(m.inicio_rapido) || null,
+    diretos_inicio_rapido: Number(m.diretos_inicio_rapido ?? 0),
+    diretos_mes: Number(m.diretos_mes ?? 0),
+    total_pontos: safeNum(m.total_pontos) ?? 0,
+    gp_total: safeNum(m.gp) ?? 0,
+    gi_total: safeNum(m.gi) ?? 0,
+    bonificavel: safeNum(m.bonificavel),
+    gt_qualificavel: safeNum(m.qualificavel),
+    graduacao: safeStr(m.graduacao) || null,
+    graduacao_expansao: safeStr(m.graduacao_expansao) || null,
+    licenciados_diretos: m.licenciados_diretos != null ? Number(m.licenciados_diretos) : null,
+    licenciados_diretos_ativos: m.licenciados_diretos_ativos != null ? Number(m.licenciados_diretos_ativos) : null,
+    pro: safeStr(m.pro) || null,
+    updated_at: new Date().toISOString(),
+  }));
+
+  let netUpdated = 0;
+  for (let i = 0; i < netRecords.length; i += 25) {
+    const batch = netRecords.slice(i, i + 25);
+    const { data, error } = await supabase
+      .from("network_members")
+      .upsert(batch, { onConflict: "consultant_id,igreen_id", ignoreDuplicates: false })
+      .select("id");
+    if (error) console.error(`Network upsert error at ${i}:`, error);
+    else netUpdated += (data?.length || 0);
+  }
+
+  // Remove stale members
+  if (consultantId) {
+    const apiIds = netRecords.map((r) => Number(r.igreen_id));
+    const { data: existingMembers } = await supabase
+      .from("network_members")
+      .select("igreen_id")
+      .eq("consultant_id", consultantId);
+    if (existingMembers) {
+      const staleIds = (existingMembers as Array<{ igreen_id: number }>)
+        .map((m) => m.igreen_id)
+        .filter((id) => !apiIds.includes(id));
+      if (staleIds.length > 0) {
+        await supabase
+          .from("network_members")
+          .delete()
+          .eq("consultant_id", consultantId)
+          .in("igreen_id", staleIds);
+      }
+    }
+  }
+  return { total_members: netData.length, updated: netUpdated };
+}
+
+// deno-lint-ignore no-explicit-any
+async function persistCustomers(supabase: any, consultantId: string | null, allCustomers: Record<string, unknown>[]): Promise<Record<string, unknown>> {
   console.log(`Worker returned ${allCustomers.length} customers`);
 
   const seenPhones = new Map<string, string>();
@@ -377,10 +889,6 @@ async function syncOneConsultant(
   // Proteção mid-conversation + detecção de leads que viram carteira
   const allPhones = records.map((r) => String(r.phone_whatsapp));
   const midConvoPhones = new Set<string>();
-  // Clientes que hoje são lead/manual e, neste sync, passam a igreen_sync.
-  // Precisam ter resíduo de temperatura (lead_insights) e de funil (crm_deals)
-  // removido: carteira validada/reprovada/devolutiva não entra nessas trilhas.
-  // Só preenchido quando o consultor é conhecido (cleanup escopado por dono).
   const flippingToWalletIds: string[] = [];
   for (let i = 0; i < allPhones.length; i += 200) {
     const chunk = allPhones.slice(i, i + 200);
@@ -388,8 +896,6 @@ async function syncOneConsultant(
       .from("customers")
       .select("id, phone_whatsapp, conversation_step, customer_origin")
       .in("phone_whatsapp", chunk);
-    // Escopa por consultor quando conhecido — evita tocar cliente homônimo
-    // (mesmo telefone) de outro consultor.
     if (consultantId) q = q.eq("consultant_id", consultantId);
     const { data: existing } = await q;
     if (existing) {
@@ -404,9 +910,6 @@ async function syncOneConsultant(
   if (midConvoPhones.size > 0) {
     console.log(`⚠️ Protecting ${midConvoPhones.size} mid-conversation leads`);
   }
-  // Mid-conversation: preserva status E origem. Um lead em atendimento não vira
-  // carteira no meio da conversa. Omitir as colunas no upsert mantém o valor
-  // atual (o registro já existe, então onConflict só atualiza o que vier).
   for (const rec of records) {
     if (midConvoPhones.has(String(rec.phone_whatsapp))) {
       delete rec.status;
@@ -431,10 +934,7 @@ async function syncOneConsultant(
     }
   }
 
-  // Cleanup de resíduo: leads que viraram carteira (igreen_sync) neste sync não
-  // podem manter linha de temperatura (lead_insights) nem card de funil
-  // (crm_deals). Escopado por consultor (flippingToWalletIds só é populado
-  // quando consultantId é conhecido). Falha aqui não invalida o sync.
+  // Cleanup de resíduo: leads que viraram carteira
   let cleanedInsights = 0;
   let cleanedDeals = 0;
   if (consultantId && flippingToWalletIds.length > 0) {
@@ -460,14 +960,7 @@ async function syncOneConsultant(
     }
   }
 
-  const syncTimestamp = new Date().toISOString();
-  await supabase
-    .from("settings")
-    .upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
-
   return {
-    success: true,
-    email: emailNorm,
     total_from_portal: allCustomers.length,
     processed: records.length,
     skipped_no_phone: skippedNoPhone,
@@ -475,7 +968,6 @@ async function syncOneConsultant(
     errors: errorCount,
     cleaned_insights: cleanedInsights,
     cleaned_deals: cleanedDeals,
-    synced_at: syncTimestamp,
   };
 }
 
@@ -524,6 +1016,8 @@ Deno.serve(async (req) => {
     // ========================================================
     if (source === "cron") {
       console.log("=== CRON MODE: Syncing ALL consultants ===");
+      // No cron, por padrão puxa TUDO (clientes + rede + métricas + boletos).
+      const cronMode = mode && mode !== "sync" ? mode : "sync_all";
       const { data: consultants, error: cErr } = await supabase
         .from("consultants")
         .select("id, name, igreen_portal_email, igreen_portal_password")
@@ -535,7 +1029,7 @@ Deno.serve(async (req) => {
 
       if (cErr || usable.length === 0) {
         if (portalEmail && portalPassword) {
-          const result = await syncOneConsultant(supabase, worker, portalEmail, portalPassword, null, mode);
+          const result = await syncOneConsultant(supabase, worker, portalEmail, portalPassword, null, cronMode);
           return new Response(JSON.stringify(result), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
@@ -558,7 +1052,7 @@ Deno.serve(async (req) => {
             c.igreen_portal_email,
             c.igreen_portal_password,
             c.id,
-            mode,
+            cronMode,
           );
           results.push({ consultant: c.name, ...r });
         } catch (err) {

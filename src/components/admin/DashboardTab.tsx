@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, Chrome, ExternalLink, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
+import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
-import { requestSync as requestExtSync, type SyncResult } from "@/lib/igreenExtensionBridge";
+import { runIgreenSync } from "@/lib/igreenSync";
 import { StatCard } from "./StatCard";
 import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
@@ -59,8 +59,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
   const [syncingDashboard, setSyncingDashboard] = useState(false);
   const [syncCooldown, setSyncCooldown] = useState(0);
   const [selectedLicenciado, setSelectedLicenciado] = useState("all");
-  const [extDialog, setExtDialog] = useState<null | "no_extension" | "no_token" | "not_logged_in" | "failed">(null);
-  const [extDialogMsg, setExtDialogMsg] = useState<string>("");
+  const [notConfigured, setNotConfigured] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [resettingPerf, setResettingPerf] = useState(false);
@@ -145,20 +144,16 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
     try {
-      const res: SyncResult = await requestExtSync();
+      const res = await runIgreenSync(userId, "sync_all");
       if (res.ok === false) {
-        if (res.reason === "no_extension") {
-          setExtDialogMsg("Não detectamos a extensão iGreen Sync neste navegador. Instale a extensão para sincronizar seus clientes e rede com 1 clique.");
-          setExtDialog("no_extension");
-        } else if (res.reason === "no_token") {
-          setExtDialogMsg("A extensão está instalada mas ainda não foi pareada. Gere um token no painel e cole na extensão.");
-          setExtDialog("no_token");
-        } else if (res.reason === "not_logged_in") {
-          setExtDialogMsg("Você precisa estar logado no escritório iGreen em outra aba deste mesmo navegador para a extensão conseguir baixar seus dados.");
-          setExtDialog("not_logged_in");
+        if (res.reason === "not_configured") {
+          setNotConfigured(true);
+        } else if (res.reason === "waf_blocked") {
+          toast({ title: "Portal temporariamente bloqueado", description: "O escritório iGreen está bloqueando o acesso automático agora. Tente de novo em alguns minutos.", variant: "destructive" });
+        } else if (res.reason === "invalid_credentials") {
+          toast({ title: "Login iGreen inválido", description: "Confira o e-mail e a senha do escritório iGreen na aba Dados.", variant: "destructive" });
         } else {
-          setExtDialogMsg(res.error || "Falha ao sincronizar. Tente novamente em alguns segundos.");
-          setExtDialog("failed");
+          toast({ title: "Erro na sincronização", description: res.error, variant: "destructive" });
         }
         return;
       }
@@ -283,38 +278,23 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
       <RetentionCard customers={filteredMetrics?.filteredCustomers} />
 
 
-      {/* Extensão iGreen Sync — diálogos de status */}
-      <Dialog open={extDialog !== null} onOpenChange={(o) => !o && setExtDialog(null)}>
+      {/* Conexão com o Escritório iGreen — pede credenciais quando não configurado */}
+      <Dialog open={notConfigured} onOpenChange={(o) => !o && setNotConfigured(false)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {extDialog === "not_logged_in" ? <KeyRound className="w-5 h-5 text-primary" /> : <Chrome className="w-5 h-5 text-primary" />}
-              {extDialog === "no_extension" && "Instale a extensão iGreen Sync"}
-              {extDialog === "no_token" && "Extensão sem pareamento"}
-              {extDialog === "not_logged_in" && "Faça login no escritório iGreen"}
-              {extDialog === "failed" && "Falha na sincronização"}
+              <KeyRound className="w-5 h-5 text-primary" /> Conecte seu Escritório iGreen
             </DialogTitle>
-            <DialogDescription className="pt-2">{extDialogMsg}</DialogDescription>
+            <DialogDescription className="pt-2">
+              Para sincronizar seus clientes e rede, informe o e-mail e a senha do
+              escritório iGreen na aba <b>Dados</b>. Depois a sincronização é automática.
+            </DialogDescription>
           </DialogHeader>
-          {extDialog === "not_logged_in" && (
-            <div className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/40 p-3">
-              <strong>Como resolver:</strong> abra <code>escritorio.igreenenergy.com.br</code> em outra aba, faça login (resolva o captcha se aparecer) e volte aqui para clicar em <b>Sincronizar</b> novamente.
-            </div>
-          )}
           <DialogFooter className="gap-2 sm:gap-2">
-            {extDialog === "not_logged_in" && (
-              <Button asChild>
-                <a href="https://escritorio.igreenenergy.com.br/" target="_blank" rel="noreferrer">
-                  <ExternalLink className="w-4 h-4 mr-2" /> Abrir escritório iGreen
-                </a>
-              </Button>
-            )}
-            {(extDialog === "no_extension" || extDialog === "no_token") && (
-              <Button onClick={() => { setExtDialog(null); window.dispatchEvent(new CustomEvent("open-admin-settings")); }}>
-                <Chrome className="w-4 h-4 mr-2" /> Abrir extensão no painel
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => setExtDialog(null)}>Fechar</Button>
+            <Button onClick={() => { setNotConfigured(false); window.dispatchEvent(new CustomEvent("open-admin-settings")); }}>
+              <KeyRound className="w-4 h-4 mr-2" /> Abrir aba Dados
+            </Button>
+            <Button variant="outline" onClick={() => setNotConfigured(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,80 +1,79 @@
-# igreen-sync-worker (v15 — Tor + Playwright + 2captcha + OpenAI Vision + WAF classification)
+# igreen-sync-worker (v16 — API nova api-vo)
 
-> **v15**: quando o Cloudflare/WAF retorna HTML 403/503 no `/v1/login`, o worker classifica
-> como `igreen_waf_blocked` (HTTP 503) e retorna `error_code` na resposta JSON. Isso para
-> o loop frágil de tentativas de bypass e deixa claro no painel que o portal está
-> bloqueando a automação, sem consumir mais 2captcha.
->
-> O fallback `context.request.post` continua existente, mas se também for bloqueado,
-> o erro agora é acionável: "Use a importação manual enquanto o portal estiver bloqueando o worker."
+> **v16 (2026-07-01):** o portal iGreen migrou de arquitetura. Não há mais
+> "Exportar Excel" nem os endpoints antigos. Agora é uma API REST em
+> `https://api-vo.igreenenergy.com.br/v1`, autenticada por JWT
+> (`POST /auth/session`). O login **não tem mais reCAPTCHA** (confirmado ao vivo).
+> O worker foi adaptado para consumir a nova API. Ver
+> `ESTRATEGIA_CAPTURA_TOTAL_IGREEN.md` na raiz.
 
-Worker dedicado à **leitura** dos dados do portal iGreen (clientes e rede).
-Consumido pela edge function `sync-igreen-customers`.
+Worker dedicado à **leitura** dos dados do portal iGreen (clientes, rede e
+métricas de gestão), individual por consultor. Consumido pela edge function
+`sync-igreen-customers`.
 
-## Por que tudo isso?
+## Por que Tor + Playwright?
 
-O endpoint `POST https://api-voffice.igreenenergy.com.br/v1/login` é defendido por:
-
-1. **Cloudflare WAF** — bloqueia IPs de datacenter (easypanel, AWS, etc.) com 403 HTML.
-2. **reCAPTCHA v2** — sitekey `6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6` (página `/login`).
-   Sem o `recaptchaToken` no body, devolve 401 "Unauthorized action".
-
-Para passar nos dois, o worker combina:
+Tanto o portal quanto a API `api-vo` ficam atrás do **Cloudflare**, que bloqueia
+IP de datacenter (EasyPanel/AWS) e requisições não-browser com **403**. Por isso:
 
 ```
-Playwright Chromium ──(via Tor SOCKS5)──► iGreen Cloudflare ✅
+Playwright Chromium ──(via Tor SOCKS5)──► Cloudflare ✅
        │
-       ├─ injeta token do 2captcha no widget reCAPTCHA
-       ├─ clica "Entrar"
-       └─ intercepta /v1/login → captura accessToken
+       ├─ preenche email/senha + clica "Entrar"
+       ├─ (reCAPTCHA só se existir — hoje não existe; 2captcha vira fallback)
+       └─ intercepta POST /v1/auth/session → captura token (data.token)
                     │
-                    ▼
-           /v1/customer-map (Bearer)
+                    ▼   (fetch DENTRO da página, herda cf_clearance)
+         /crm/green · /network-map/data · /painel/* · /rotinas/*
 ```
 
-A sessão fica cacheada 30min, então o pipeline pesado só roda uma vez por
-consultor a cada meia hora.
+**IMPORTANTE:** as chamadas de API rodam via `page.evaluate` (dentro da página
+já liberada pelo Cloudflare). Chamar via `context.request.get` toma 403.
 
-## Debug visual com IA
+A sessão fica cacheada 30min (`SESSION_TTL_MS`), então o login pesado só roda
+uma vez por consultor a cada meia hora.
 
-A cada passo crítico (`abriu_login`, `preencheu_form`, `injetou_captcha`,
-`pos_submit`) o worker tira screenshot e envia para a **OpenAI Vision
-(`gpt-4o-mini` por default)**. A resposta vira uma linha no `/last-debug`:
-
-```
-21:42:11 [step] abriu_login → "Formulário de login do portal iGreen visível, com campo de email preenchido"
-21:42:34 [step] pos_submit  → "Página de bloqueio Cloudflare 'Sorry, you have been blocked'"
-```
-
-E `GET /last-screenshot` devolve o PNG bruto do último passo para você abrir
-no navegador.
-
-## Endpoints
+## Endpoints do worker
 
 Auth: header `X-Worker-Token: <WORKER_TOKEN>`.
 
-| Método | Path                | Função                                                                  |
-|--------|---------------------|-------------------------------------------------------------------------|
-| GET    | `/health`           | `{ ok, sessions, uptime_s, mode, worker_token_configured, twocaptcha_configured, ia_vision, ia_model }` |
-| GET    | `/last-debug`       | passos + análise IA do último login                                     |
-| GET    | `/last-screenshot`  | PNG do último step                                                      |
-| POST   | `/sync-customers`   | `{ portal_email, portal_password }` → clientes (ou erro `igreen_waf_blocked`) |
-| POST   | `/sync-network`     | `{ portal_email, portal_password }` → rede                              |
+| Método | Path              | Função                                                             |
+|--------|-------------------|--------------------------------------------------------------------|
+| GET    | `/health`         | status + `api_base` + flags de config                              |
+| GET    | `/last-debug`     | passos + análise IA do último login                                |
+| GET    | `/last-screenshot`| PNG do último step                                                 |
+| POST   | `/sync-customers` | `{portal_email, portal_password}` → clientes (achatados do `/crm/green`) |
+| POST   | `/sync-network`   | `{portal_email, portal_password, month?}` → rede (`/network-map/data`)   |
+| POST   | `/sync-metrics`   | `{portal_email, portal_password, month?}` → painel + rotinas       |
+| POST   | `/sync-all`       | tudo de uma vez (1 login) — **recomendado**                        |
+
+Resposta de erro quando o Cloudflare bloqueia: `error_code: "igreen_waf_blocked"`
+(HTTP 503) — para não entrar em loop.
+
+## O que cada sync traz
+
+- **/sync-customers** (`/crm/green`): lista de clientes com `codigo, nome,
+  cidade, uf, kwh, distribuidora, celular, data, devolutiva, status_coluna`.
+- **/sync-network** (`/network-map/data?month=`): rede completa já com o de-para
+  de campos para o formato que a edge espera (idconsultor, nome, celular,
+  idpatrocinador, nivel, data_ativo, cidade, uf, cliativo, gp, gi, qtde_diretos)
+  + campos ricos (bonificavel, qualificavel, graduacao, licenciados_diretos...).
+- **/sync-metrics**: `/painel/overview`, `/painel/producao`,
+  `/clientes-green/resumo-geral`, `/rotinas/{diaria,semanal,mensal}`.
 
 ## Variáveis de ambiente
 
 | Nome                  | Obrigatória | Descrição                                                          |
 |-----------------------|-------------|--------------------------------------------------------------------|
 | `WORKER_TOKEN`        | sim         | header `X-Worker-Token` esperado                                   |
-| `TWOCAPTCHA_API_KEY`  | sim         | chave 2captcha (resolve reCAPTCHA v2)                              |
-| `OPENAI_API_KEY`      | recomendada | habilita debug visual via OpenAI Vision                            |
-| `OPENAI_VISION_MODEL` | não         | default `gpt-4o-mini` (barato). Pode ser `gpt-4o` para mais qualidade |
-| `TOR_SOCKS_PROXY`     | não         | default `socks5://127.0.0.1:9050` (Tor local)                      |
+| `TWOCAPTCHA_API_KEY`  | não*        | *só usada se o portal voltar a exigir reCAPTCHA (hoje não exige)   |
+| `OPENAI_API_KEY`      | recomendada | debug visual via OpenAI Vision                                     |
+| `OPENAI_VISION_MODEL` | não         | default `gpt-4o-mini`                                              |
+| `TOR_SOCKS_PROXY`     | não         | default `socks5://127.0.0.1:9050`. Use `none`/`direct` para desativar (teste local) |
 | `PORT`                | não         | default `3102`                                                     |
 | `SESSION_TTL_MS`      | não         | default `1800000` (30 min)                                         |
 
-## Custos por sync (com cache de 30min ativo)
+## Custos por sync
 
-- 2captcha: ~US$0,003
-- OpenAI Vision (`gpt-4o-mini`, ~4 screenshots por login): ~US$0,001
-- Total: ~R$0,02/sync
+- 2captcha: **US$0** no fluxo atual (sem reCAPTCHA).
+- OpenAI Vision (`gpt-4o-mini`, ~3 screenshots): ~US$0,001.

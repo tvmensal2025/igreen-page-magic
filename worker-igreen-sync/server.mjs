@@ -1,25 +1,24 @@
-// server.mjs — igreen-sync-worker v14
+// server.mjs — igreen-sync-worker v16 (API nova api-vo)
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
 //   2. Abre https://escritorio.igreenenergy.com.br/login           (recebe cf_clearance)
-//   3. 2captcha resolve o reCAPTCHA v2 do widget                   (~15-60s)
-//   4. Injeta o token + preenche email/senha + clica "Entrar"
-//   5. Intercepta a response do POST /v1/login; se o clique não chamar a API,
-//      faz fallback com context.request.post (fora do CORS do navegador)
-//   6. Extrai accessToken e reusa o page.context() para chamar /customer-map paginado
+//   3. (reCAPTCHA é OPCIONAL agora — só resolve via 2captcha se o widget existir)
+//   4. Preenche email/senha + clica "Entrar"
+//   5. Intercepta a response do POST /v1/auth/session; fallback context.request.post
+//   6. Extrai token (data.token) e reusa o context() para chamar a API nova:
+//        - /crm/green                → clientes (Kanban achatado)
+//        - /network-map/data?month=  → rede completa
+//        - /painel/* + /rotinas/*    → métricas e rotinas de gestão
 //
-// Debug visual (NOVO):
-//   - cada step crítico tira screenshot → envia para Lovable AI Gateway (Gemini)
-//   - resposta IA fica no /last-debug junto do passo
-//   - GET /last-screenshot devolve o PNG do último step
-//
-// Endpoints:
+// Endpoints HTTP do worker:
 //   GET  /health
 //   GET  /last-debug         JSON com steps + análise IA
 //   GET  /last-screenshot    PNG bruto do último step
 //   POST /sync-customers     { portal_email, portal_password }
-//   POST /sync-network       { portal_email, portal_password }
+//   POST /sync-network       { portal_email, portal_password, month? }
+//   POST /sync-metrics       { portal_email, portal_password, month? }
+//   POST /sync-all           { portal_email, portal_password, month? }  (recomendado)
 
 import http from 'node:http';
 import { chromium } from 'playwright-chromium';
@@ -33,7 +32,11 @@ const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
 const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050';
 
 const PORTAL_URL = 'https://escritorio.igreenenergy.com.br/login';
-const API_BASE = 'https://api-voffice.igreenenergy.com.br/v1';
+// Portal novo (Virtual Office). Antes era api-voffice + /v1/login; migrou para
+// api-vo + /v1/auth/session (sem reCAPTCHA). Ver ESTRATEGIA_CAPTURA_TOTAL_IGREEN.md.
+const API_BASE = 'https://api-vo.igreenenergy.com.br/v1';
+const AUTH_PATH = '/auth/session';
+// Sitekey só é usada se o portal voltar a exigir reCAPTCHA (hoje não exige).
 const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
@@ -119,11 +122,11 @@ async function snapStep(page, stepName) {
 }
 
 // ---------- 2captcha ----------
-async function solveRecaptcha() {
+async function solveRecaptcha(sitekey = RECAPTCHA_SITEKEY) {
   if (!TWOCAPTCHA_API_KEY) throw new HttpError(500, 'TWOCAPTCHA_API_KEY não configurada');
   dbg('[captcha] solicitando 2captcha…');
   const inUrl = `https://2captcha.com/in.php?key=${TWOCAPTCHA_API_KEY}` +
-    `&method=userrecaptcha&googlekey=${RECAPTCHA_SITEKEY}` +
+    `&method=userrecaptcha&googlekey=${sitekey}` +
     `&pageurl=${encodeURIComponent(PORTAL_URL)}&json=1`;
   const inRes = await fetch(inUrl, { signal: AbortSignal.timeout(20000) });
   const inJson = await inRes.json().catch(() => ({}));
@@ -152,13 +155,17 @@ const sessions = new Map(); // email → { token, consultorId, browser, context,
 
 async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
-  dbg(`[login] ${email} → iniciando browser via Tor (${TOR_PROXY})`);
+  // TOR_SOCKS_PROXY vazio/"none"/"direct" desativa o Tor (útil p/ teste local ou
+  // quando o IP do host já passa no Cloudflare). Em produção, manter o Tor.
+  const useTor = TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase());
+  dbg(`[login] ${email} → iniciando browser${useTor ? ` via Tor (${TOR_PROXY})` : ' (sem proxy)'}`);
 
-  const browser = await chromium.launch({
+  const launchOpts = {
     headless: true,
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
-    proxy: { server: TOR_PROXY },
-  });
+  };
+  if (useTor) launchOpts.proxy = { server: TOR_PROXY };
+  const browser = await chromium.launch(launchOpts);
 
   let context, page;
   try {
@@ -169,15 +176,15 @@ async function loginWithPlaywright(email, password) {
     });
     page = await context.newPage();
 
-    // Intercepta a response do /login para capturar o accessToken ou bloqueio HTML/CF
+    // Intercepta a response do /auth/session para capturar o token ou bloqueio HTML/CF
     let loginResponseData = null;
     page.on('response', async (resp) => {
       const url = resp.url();
-      if (url.includes('/v1/login') && resp.request().method() === 'POST') {
+      if (url.includes(AUTH_PATH) && resp.request().method() === 'POST') {
         try {
           loginResponseData = await readResponseLike(resp);
         } catch (e) {
-          dbg(`[login] não consegui ler response /v1/login: ${e.message}`);
+          dbg(`[login] não consegui ler response ${AUTH_PATH}: ${e.message}`);
         }
       }
     });
@@ -192,100 +199,94 @@ async function loginWithPlaywright(email, password) {
     await page.fill('input[type="password"], input[name="password"]', password);
     await snapStep(page, 'preencheu_form');
 
-    const captchaToken = await solveRecaptcha();
-    dbg('[login] injetando token no widget');
-    await page.evaluate((token) => {
-      const ta = document.querySelector('textarea#g-recaptcha-response') ||
-                 document.querySelector('textarea[name="g-recaptcha-response"]');
-      if (ta) { ta.value = token; ta.innerHTML = token; }
-      if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
-        const clients = window.___grecaptcha_cfg.clients;
-        for (const cid of Object.keys(clients)) {
-          const client = clients[cid];
-          for (const k of Object.keys(client)) {
-            const obj = client[k];
-            if (obj && typeof obj === 'object') {
-              for (const kk of Object.keys(obj)) {
-                if (obj[kk] && typeof obj[kk].callback === 'function') {
-                  try { obj[kk].callback(token); } catch {}
+    // reCAPTCHA é OPCIONAL no portal novo (hoje não existe). Só resolve se o
+    // widget estiver presente na página — assim não gastamos 2captcha à toa.
+    let captchaToken = null;
+    const hasRecaptcha = await page.evaluate(() => {
+      return !!(document.querySelector('.g-recaptcha, #g-recaptcha, [data-sitekey], iframe[src*="recaptcha"]') ||
+        typeof window.grecaptcha !== 'undefined');
+    }).catch(() => false);
+
+    if (hasRecaptcha) {
+      dbg('[login] reCAPTCHA detectado; resolvendo via 2captcha');
+      // tenta capturar a sitekey dinâmica (fallback para a constante)
+      const dynKey = await page.evaluate(() => {
+        const el = document.querySelector('[data-sitekey]');
+        return el ? el.getAttribute('data-sitekey') : null;
+      }).catch(() => null);
+      captchaToken = await solveRecaptcha(dynKey || RECAPTCHA_SITEKEY);
+      dbg('[login] injetando token no widget');
+      await page.evaluate((token) => {
+        const ta = document.querySelector('textarea#g-recaptcha-response') ||
+                   document.querySelector('textarea[name="g-recaptcha-response"]');
+        if (ta) { ta.value = token; ta.innerHTML = token; }
+        if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
+          const clients = window.___grecaptcha_cfg.clients;
+          for (const cid of Object.keys(clients)) {
+            const client = clients[cid];
+            for (const k of Object.keys(client)) {
+              const obj = client[k];
+              if (obj && typeof obj === 'object') {
+                for (const kk of Object.keys(obj)) {
+                  if (obj[kk] && typeof obj[kk].callback === 'function') {
+                    try { obj[kk].callback(token); } catch {}
+                  }
                 }
               }
             }
           }
         }
-      }
-    }, captchaToken);
-    await snapStep(page, 'injetou_captcha');
-
-    // Confirma se o widget aparenta estar marcado; se não, clica no checkbox
-    // antes de tentar o "Entrar". Cobre o caso em que apenas injetar o token
-    // no textarea não dispara o callback do reCAPTCHA.
-    dbg('[captcha] token injetado; verificando checkbox');
-    const tokenPresent = await page.evaluate(() => {
-      const ta = document.querySelector('textarea#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
-      return !!(ta && ta.value && ta.value.length > 20);
-    }).catch(() => false);
-
-    if (!tokenPresent) {
-      dbg('[captcha] widget ainda não marcado; clicando checkbox antes de Entrar');
-      try {
-        const frame = page.frames().find(f => /recaptcha\/api2\/anchor/.test(f.url()));
-        if (frame) {
-          await frame.click('#recaptcha-anchor, .recaptcha-checkbox', { timeout: 5000 }).catch(() => {});
-        } else {
-          await page.click('.g-recaptcha, #g-recaptcha, iframe[src*="recaptcha/api2/anchor"]', { timeout: 5000 }).catch(() => {});
-        }
-        await page.waitForTimeout(2500);
-        // Reinjeta o token caso o clique tenha resetado o widget
-        await page.evaluate((token) => {
-          const ta = document.querySelector('textarea#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
-          if (ta) { ta.value = token; ta.innerHTML = token; }
-        }, captchaToken).catch(() => {});
-      } catch (e) {
-        dbg(`[captcha] clique no checkbox falhou: ${e.message}`);
-      }
-      await snapStep(page, 'pos_click_captcha');
+      }, captchaToken);
+      await snapStep(page, 'injetou_captcha');
     } else {
-      dbg('[captcha] widget aparenta estar marcado; seguindo para Entrar');
+      dbg('[login] sem reCAPTCHA na página (portal novo); seguindo direto para Entrar');
     }
 
     dbg('[login] clicando "Entrar"');
     const [clickedLoginResp] = await Promise.all([
-      page.waitForResponse(r => r.url().includes('/v1/login'), { timeout: 15000 }).catch(() => null),
+      page.waitForResponse(r => r.url().includes(AUTH_PATH), { timeout: 15000 }).catch(() => null),
       page.click('button[type="submit"], button:has-text("Entrar")').catch(() => {}),
     ]);
     if (clickedLoginResp && !loginResponseData) {
       try { loginResponseData = await readResponseLike(clickedLoginResp); }
-      catch (e) { dbg(`[login] response /v1/login capturada mas ilegível: ${e.message}`); }
+      catch (e) { dbg(`[login] response ${AUTH_PATH} capturada mas ilegível: ${e.message}`); }
     }
     await page.waitForTimeout(1500);
 
-    // Fallback: se o clique não disparou /v1/login, fazer POST direto pelo contexto
-    // Playwright. Isso evita o CORS que causa "TypeError: Failed to fetch" no page.evaluate.
+    // Fallback: se o clique não disparou /auth/session, faz POST de dentro da
+    // página (page.evaluate) para herdar cf_clearance e evitar 403/CORS.
     if (!loginResponseData) {
-      dbg('[login] clique não gerou /v1/login; tentando fallback context.request.post com recaptchaToken');
+      dbg(`[login] clique não gerou ${AUTH_PATH}; tentando fallback fetch in-page`);
       try {
-        const fbResp = await context.request.post(`${API_BASE}/login`, {
-          headers: {
-            'Accept': 'application/json, text/plain, */*',
-            'Content-Type': 'application/json',
-            'Origin': 'https://escritorio.igreenenergy.com.br',
-            'Referer': PORTAL_URL,
-          },
-          data: { email, password, recaptchaToken: captchaToken, keepConnected: true },
-          timeout: 30000,
-        });
-        const fb = await readResponseLike(fbResp);
-        dbg(`[login] fallback status=${fb.status}${isHtmlResponse(fb) ? ' html' : ''}`);
-        loginResponseData = fb;
+        const payload = { email, password, keepConnected: true };
+        if (captchaToken) payload.recaptchaToken = captchaToken;
+        const out = await page.evaluate(async (args) => {
+          try {
+            const res = await fetch(args.url, {
+              method: 'POST',
+              headers: { 'Accept': 'application/json, text/plain, */*', 'Content-Type': 'application/json' },
+              body: JSON.stringify(args.payload),
+            });
+            const text = await res.text();
+            return { status: res.status, text, contentType: res.headers.get('content-type') || '' };
+          } catch (e) { return { error: String((e && e.message) || e) }; }
+        }, { url: `${API_BASE}${AUTH_PATH}`, payload });
+        if (out.error) {
+          dbg(`[login] fallback in-page erro: ${out.error}`);
+        } else {
+          let body; try { body = JSON.parse(out.text); } catch { body = { raw: String(out.text || '').slice(0, 1200) }; }
+          const fb = { status: out.status, contentType: out.contentType, body };
+          dbg(`[login] fallback status=${fb.status}${isHtmlResponse(fb) ? ' html' : ''}`);
+          loginResponseData = fb;
+        }
       } catch (e) {
         dbg(`[login] fallback erro: ${e.message}`);
       }
     }
     await snapStep(page, 'pos_submit');
 
-    if (!loginResponseData) throw new HttpError(502, 'Nenhuma response /v1/login capturada (clique + fallback falharam)', 'no_login_response');
-    dbg(`[login] response /login status=${loginResponseData.status}${isHtmlResponse(loginResponseData) ? ' html' : ''}`);
+    if (!loginResponseData) throw new HttpError(502, `Nenhuma response ${AUTH_PATH} capturada (clique + fallback falharam)`, 'no_login_response');
+    dbg(`[login] response ${AUTH_PATH} status=${loginResponseData.status}${isHtmlResponse(loginResponseData) ? ' html' : ''}`);
     if (isHtmlResponse(loginResponseData)) {
       throw new HttpError(503, `Portal iGreen bloqueou o login automatizado (Cloudflare/WAF ${loginResponseData.status}). Use a importação manual enquanto o portal estiver bloqueando o worker.`, 'igreen_waf_blocked');
     }
@@ -293,31 +294,31 @@ async function loginWithPlaywright(email, password) {
       throw new HttpError(401, `Login rejeitado (${loginResponseData.status}): ${bodyPreview(loginResponseData.body)}`, 'invalid_credentials');
     }
     if (loginResponseData.status >= 400) {
-      throw new HttpError(502, `API /login HTTP ${loginResponseData.status}: ${bodyPreview(loginResponseData.body)}`, 'login_api_error');
+      throw new HttpError(502, `API ${AUTH_PATH} HTTP ${loginResponseData.status}: ${bodyPreview(loginResponseData.body)}`, 'login_api_error');
     }
 
     const data = loginResponseData.body;
-    const token = data.accessToken || data.token || data.access_token ||
-      data?.data?.token || data?.data?.accessToken || null;
-    if (!token) throw new HttpError(502, 'Login OK mas sem accessToken');
+    // Portal novo devolve { success, data: { token, expiresIn } }
+    const token = data?.data?.token || data.token || data.accessToken || data.access_token ||
+      data?.data?.accessToken || null;
+    if (!token) throw new HttpError(502, 'Login OK mas sem token');
 
     let consultorId = String(
-      data?.idconsultor || data?.consultorId || data?.consultor?.id ||
-      data?.user?.idconsultor || data?.data?.idconsultor || ''
+      data?.data?.idconsultor || data?.idconsultor || data?.consultorId ||
+      data?.consultor?.id || data?.user?.idconsultor || ''
     ) || null;
 
     if (!consultorId) {
-      const c = await context.request.get(`${API_BASE}/consultant`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (c.ok()) {
-        const cj = await c.json();
-        consultorId = String(cj?.id || cj?.idconsultor || cj?.consultor?.id || cj?.data?.id || '') || null;
-      }
+      const cj = await page.evaluate(async ({ api, token }) => {
+        try { const res = await fetch(api + '/consultant', { headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' } }); return await res.json(); } catch { return null; }
+      }, { api: API_BASE, token });
+      consultorId = String(cj?.data?.idconsultor || cj?.id || cj?.idconsultor || cj?.consultor?.id || '') || null;
     }
 
     dbg(`[login] OK consultor=${consultorId}`);
-    return { token, consultorId, browser, context, createdAt: Date.now() };
+    // Guarda a `page`: as chamadas de API precisam rodar DENTRO dela (page.evaluate)
+    // para herdar o cf_clearance do Cloudflare. context.request.get toma 403.
+    return { token, consultorId, browser, context, page, createdAt: Date.now() };
   } catch (e) {
     try { await browser.close(); } catch {}
     throw e;
@@ -334,29 +335,226 @@ async function getOrCreateSession(email, password) {
   return fresh;
 }
 
-async function fetchPaginated(session, path, { pageParam = 'page', sizeParam = 'pageSize', size = 500 } = {}) {
-  const all = [];
-  for (let p = 1; p <= 200; p++) {
-    const sep = path.includes('?') ? '&' : '?';
-    const full = `${API_BASE}${path}${sep}${pageParam}=${p}&${sizeParam}=${size}`;
-    const r = await session.context.request.get(full, {
-      headers: { Authorization: `Bearer ${session.token}` },
-      timeout: 60000,
-    });
-    if (r.status() === 429) { await new Promise(s => setTimeout(s, 30000)); p--; continue; }
-    if (!r.ok()) throw new HttpError(r.status(), `HTTP ${r.status()} em ${full}`);
-    const j = await r.json();
-    const arr = Array.isArray(j) ? j :
-      Array.isArray(j?.data) ? j.data :
-      Array.isArray(j?.items) ? j.items :
-      Array.isArray(j?.customers) ? j.customers :
-      Array.isArray(j?.members) ? j.members : [];
-    all.push(...arr);
-    dbg(`  page ${p}: ${arr.length} (total: ${all.length})`);
-    const total = Number(j?.total || 0);
-    if (arr.length < size || (total && p * size >= total)) break;
+// ===== Coleta de dados na nova API (api-vo) =====
+
+// Helper GET autenticado que devolve o JSON já parseado.
+async function apiGet(session, path) {
+  const out = await session.page.evaluate(async (args) => {
+    try {
+      const res = await fetch(args.api + args.path, { headers: { Authorization: 'Bearer ' + args.token, Accept: 'application/json' } });
+      const text = await res.text();
+      return { status: res.status, text, contentType: res.headers.get('content-type') || '' };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  }, { api: API_BASE, path: path, token: session.token });
+
+  if (out.error) throw new HttpError(502, `fetch ${path} falhou: ${out.error}`);
+  if (out.status === 429) { await new Promise((s) => setTimeout(s, 15000)); return apiGet(session, path); }
+  let body;
+  try { body = JSON.parse(out.text); } catch { body = { raw: String(out.text || '').slice(0, 1200) }; }
+  const data = { status: out.status, contentType: out.contentType, body };
+  if (isHtmlResponse(data)) {
+    throw new HttpError(503, `Cloudflare bloqueou ${path}`, 'igreen_waf_blocked');
   }
+  if (out.status >= 400) throw new HttpError(out.status, `HTTP ${out.status} em ${path}: ${bodyPreview(body)}`);
+  return body;
+}
+
+// CLIENTES: /crm/green é um Kanban { data: [ {id,label,cards:[...]} ] }.
+// Achata todos os cards numa lista de clientes, anexando o status da coluna.
+async function fetchCustomers(session) {
+  const j = await apiGet(session, '/crm/green');
+  const cols = Array.isArray(j?.data) ? j.data : [];
+  const out = [];
+  for (const col of cols) {
+    for (const card of (col.cards || [])) {
+      out.push({
+        ...card,
+        status_coluna: col.id,      // ex.: validado, devolutiva, reprovado...
+        status_label: col.label,
+      });
+    }
+  }
+  dbg(`[customers] /crm/green: ${cols.length} colunas → ${out.length} clientes`);
+  return out;
+}
+
+// REDE: /network-map/data?month=YYYY-MM devolve { data: [ ...membros ] }.
+// Faz o de-para dos nomes para o formato que a edge sync-igreen-customers espera
+// (idconsultor, nome, celular, idpatrocinador, nivel, data_ativo, cidade, uf,
+//  cliativo, gp, gi, qtde_diretos, ...), preservando os campos ricos extras.
+async function fetchNetwork(session, month) {
+  const mes = month || new Date().toISOString().slice(0, 7);
+  const j = await apiGet(session, `/network-map/data?month=${mes}`);
+  const arr = Array.isArray(j?.data) ? j.data : [];
+  const members = arr.map((m) => ({
+    // campos que a edge já consome (nomes legados):
+    idconsultor: m.idconsultor,
+    nome: m.nome,
+    celular: m.celular,
+    idpatrocinador: m.patrocinador ?? m.idpatrocinador ?? null,
+    nivel: m.nivel ?? 0,
+    data_ativo: typeof m.dataAtivo === 'string' ? m.dataAtivo.slice(0, 10) : (m.data_ativo ?? null),
+    cidade: m.cidade,
+    uf: m.uf,
+    cliativo: m.clientesAtivos ?? m.cliativo ?? 0,
+    gp: m.gp ?? 0,
+    gi: m.gi ?? 0,
+    qtde_diretos: m.licenciadosDiretos ?? m.qtde_diretos ?? 0,
+    // campos ricos extras (fase 2 — a edge pode passar a gravar):
+    bonificavel: m.bonificavel ?? null,
+    qualificavel: m.qualificavel ?? null,
+    graduacao: m.graduacao ?? null,
+    graduacao_expansao: m.graduacaoExpansao ?? null,
+    licenciados_diretos: m.licenciadosDiretos ?? null,
+    licenciados_diretos_ativos: m.licenciadosDiretosAtivos ?? null,
+    diretos_pro: m.diretosPro ?? null,
+    pro: m.pro ?? null,
+    devolutivas: m.devolutivas ?? null,
+    ag_valid: m.agValid ?? null,
+  }));
+  dbg(`[network] /network-map/data?month=${mes}: ${members.length} membros`);
+  return members;
+}
+
+// TELECOM: /crm/telecom é um Kanban. Achata os cards + anexa financeiro das
+// faturas (/telecom/faturas) casando por nome do cliente (quando possível).
+async function fetchTelecom(session) {
+  const j = await apiGet(session, '/crm/telecom');
+  const cols = Array.isArray(j?.data) ? j.data : [];
+  const out = [];
+  for (const col of cols) {
+    for (const card of (col.cards || [])) {
+      out.push({ ...card, status_coluna: col.id, status_label: col.label });
+    }
+  }
+  // financeiro (faturas) — indexado por nome para enriquecer os cards; pagina de 100
+  const faturasByName = new Map();
+  try {
+    for (let p = 1; p <= 50; p++) {
+      const f = await apiGet(session, `/telecom/faturas?status=todos&search=&page=${p}&perPage=100`);
+      const items = f?.data?.items || [];
+      for (const it of items) {
+        const key = String(it.cliente || '').trim().toLowerCase();
+        if (key && !faturasByName.has(key)) faturasByName.set(key, it);
+      }
+      const total = Number(f?.data?.total || 0);
+      if (items.length < 100 || (total && p * 100 >= total)) break;
+    }
+  } catch (e) { dbg(`[telecom] faturas: ${e.message}`); }
+  for (const c of out) {
+    const fat = faturasByName.get(String(c.cliente || '').trim().toLowerCase());
+    if (fat) { c._fatura_valor = fat.valor; c._fatura_status = fat.status; c._fatura_mes = fat.mesReferencia; c._idcnxtelecom = fat.idcnxtelecom; }
+  }
+  dbg(`[telecom] /crm/telecom: ${out.length} clientes`);
+  return out;
+}
+
+// SEGUROS: /crm/seguros é um Kanban (seguro de veículo).
+async function fetchSeguros(session) {
+  const j = await apiGet(session, '/crm/seguros');
+  const cols = Array.isArray(j?.data) ? j.data : [];
+  const out = [];
+  for (const col of cols) {
+    for (const card of (col.cards || [])) {
+      out.push({ ...card, status_coluna: col.id, status_label: col.label });
+    }
+  }
+  dbg(`[seguros] /crm/seguros: ${out.length} apólices`);
+  return out;
+}
+
+// BOLETOS: /clientes-green/boletos (lista paginada). Traz boletos por cliente
+// com valores, vencimento, status, urls e celular. Pagina até acabar.
+async function fetchBoletos(session, { perPage = 100, maxPages = 50 } = {}) {
+  const all = [];
+  for (let p = 1; p <= maxPages; p++) {
+    const q = `status=todos&injecao=todos&tipo=todos&search=&page=${p}&perPage=${perPage}`;
+    const j = await apiGet(session, `/clientes-green/boletos?${q}`);
+    const items = j?.data?.items || [];
+    all.push(...items);
+    const total = Number(j?.data?.total || 0);
+    if (items.length < perPage || (total && p * perPage >= total)) break;
+  }
+  dbg(`[boletos] ${all.length} boletos`);
   return all;
+}
+
+// DETALHE do cliente (ficha completa): /clientes-green/boletos/{idcliente}.
+// Traz cpf, instalacao, concessionaria, dataAtivo, situacao etc. Usado para
+// enriquecer clientes validados/ativos. Chamado com throttle pelo caller.
+async function fetchCustomerDetail(session, idcliente) {
+  const j = await apiGet(session, `/clientes-green/boletos/${idcliente}`);
+  return j?.data || null;
+}
+
+// DEVOLUTIVAS detalhadas: combina /rotinas/devolutivas-novas (campos ricos:
+// iddevolutiva, campo, obs, impeditiva, data, propria) com as categorias de
+// /clientes-green/devolutivas (categoria por cliente). Casa por nome/cidade.
+async function fetchDevolutivas(session, month) {
+  const mes = month || new Date().toISOString().slice(0, 7);
+  const out = [];
+  // 1) devolutivas novas do mês (campos ricos)
+  try {
+    const nv = await apiGet(session, `/rotinas/devolutivas-novas?mes=${mes}`);
+    for (const it of (nv?.data?.items || [])) out.push({ ...it, _fonte: 'novas' });
+  } catch (e) { dbg(`[devol] novas: ${e.message}`); }
+  // 2) categorias por cliente (para anexar categoria às devolutivas) — pagina de 100
+  const catByCliente = new Map();
+  try {
+    for (let p = 1; p <= 50; p++) {
+      const cats = await apiGet(session, `/clientes-green/devolutivas?categoria=todos&search=&page=${p}&perPage=100`);
+      const items = cats?.data?.items || [];
+      for (const it of items) {
+        const key = String(it.nome || '').trim().toLowerCase();
+        if (key) catByCliente.set(key, it);
+      }
+      const total = Number(cats?.data?.total || 0);
+      if (items.length < 100 || (total && p * 100 >= total)) break;
+    }
+  } catch (e) { dbg(`[devol] categorias: ${e.message}`); }
+  for (const d of out) {
+    const cat = catByCliente.get(String(d.cliente || '').trim().toLowerCase());
+    if (cat) { d._categoria = cat.categoria; d._codigo = cat.codigo; d._licenciado = cat.licenciado; }
+  }
+  dbg(`[devol] ${out.length} devolutivas`);
+  return out;
+}
+
+// CASHBACK por origem (GREEN/TELECOM/SEGUROS): saldo gerado/usado + ranking.
+async function fetchCashback(session) {
+  const origens = ['GREEN', 'TELECOM'];
+  const res = {};
+  for (const o of origens) {
+    try {
+      const j = await apiGet(session, `/cashback/resumo?origem=${o}`);
+      res[o.toLowerCase()] = j?.data || null;
+    } catch (e) { dbg(`[cashback] ${o}: ${e.message}`); }
+  }
+  return res;
+}
+
+// MÉTRICAS/ROTINAS: painel do líder + rotinas + resumo geral de clientes.
+// Cada chamada é tolerante a erro (não derruba o sync inteiro).
+async function fetchMetrics(session, month) {
+  const mes = month || new Date().toISOString().slice(0, 7);
+  const safe = async (p) => { try { return await apiGet(session, p); } catch (e) { dbg(`[metrics] ${p} falhou: ${e.message}`); return null; } };
+  const [overview, producao, resumoClientes, rotinaDiaria, rotinaSemanal, rotinaMensal] = await Promise.all([
+    safe('/painel/overview'),
+    safe('/painel/producao'),
+    safe('/clientes-green/resumo-geral'),
+    safe('/rotinas/diaria'),
+    safe('/rotinas/semanal'),
+    safe('/rotinas/mensal'),
+  ]);
+  return {
+    mes,
+    overview: overview?.data ?? null,
+    producao: producao?.data ?? null,
+    resumo_clientes: resumoClientes?.data ?? null,
+    rotina_diaria: rotinaDiaria?.data ?? null,
+    rotina_semanal: rotinaSemanal?.data ?? null,
+    rotina_mensal: rotinaMensal?.data ?? null,
+  };
 }
 
 // ---------- HTTP ----------
@@ -391,7 +589,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+2captcha-v15',
+        mode: 'tor+playwright+api-vo-v16',
+        api_base: API_BASE,
         worker_token_configured: Boolean(WORKER_TOKEN),
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
         ia_vision: Boolean(OPENAI_API_KEY),
@@ -415,14 +614,80 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === '/sync-customers') {
       const s = await getOrCreateSession(email, password);
-      if (!s.consultorId) throw new HttpError(500, 'consultor_id indisponível');
-      const customers = await fetchPaginated(s, `/customer-map/${s.consultorId}`, { pageParam: 'page', sizeParam: 'pageSize', size: 500 });
+      const customers = await fetchCustomers(s);
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers });
     }
     if (req.url === '/sync-network') {
       const s = await getOrCreateSession(email, password);
-      const members = await fetchPaginated(s, `/network-map`, { pageParam: 'page', sizeParam: 'per_page', size: 100 });
+      const members = await fetchNetwork(s, body.month);
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, members });
+    }
+    if (req.url === '/sync-metrics') {
+      const s = await getOrCreateSession(email, password);
+      const metrics = await fetchMetrics(s, body.month);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, metrics });
+    }
+    if (req.url === '/sync-boletos') {
+      const s = await getOrCreateSession(email, password);
+      const boletos = await fetchBoletos(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, boletos });
+    }
+    if (req.url === '/sync-telecom') {
+      const s = await getOrCreateSession(email, password);
+      const telecom = await fetchTelecom(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, telecom });
+    }
+    if (req.url === '/sync-seguros') {
+      const s = await getOrCreateSession(email, password);
+      const seguros = await fetchSeguros(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, seguros });
+    }
+    if (req.url === '/sync-devolutivas') {
+      const s = await getOrCreateSession(email, password);
+      const devolutivas = await fetchDevolutivas(s, body.month);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, devolutivas });
+    }
+    if (req.url === '/sync-cashback') {
+      const s = await getOrCreateSession(email, password);
+      const cashback = await fetchCashback(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, cashback });
+    }
+    // /sync-all: 1 login -> tudo. `only` (array opcional) limita o que coletar
+    // conforme os toggles do consultor (ex.: ['customers','network','devolutivas']).
+    if (req.url === '/sync-all') {
+      const s = await getOrCreateSession(email, password);
+      const only = Array.isArray(body.only) && body.only.length ? new Set(body.only) : null;
+      const want = (k) => !only || only.has(k);
+      const [customers, members, metrics, boletos, telecom, seguros, devolutivas, cashback] = await Promise.all([
+        want('customers') ? fetchCustomers(s).catch((e) => { dbg(`[sync-all] customers: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('network') ? fetchNetwork(s, body.month).catch((e) => { dbg(`[sync-all] network: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('metrics') ? fetchMetrics(s, body.month).catch((e) => { dbg(`[sync-all] metrics: ${e.message}`); return null; }) : Promise.resolve(null),
+        want('boletos') ? fetchBoletos(s).catch((e) => { dbg(`[sync-all] boletos: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('telecom') ? fetchTelecom(s).catch((e) => { dbg(`[sync-all] telecom: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('seguros') ? fetchSeguros(s).catch((e) => { dbg(`[sync-all] seguros: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('devolutivas') ? fetchDevolutivas(s, body.month).catch((e) => { dbg(`[sync-all] devolutivas: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('cashback') ? fetchCashback(s).catch((e) => { dbg(`[sync-all] cashback: ${e.message}`); return {}; }) : Promise.resolve({}),
+      ]);
+
+      // Enriquecimento opcional: ficha completa (cpf/instalacao/concessionaria)
+      // dos clientes ativos/validados. Throttle ~5 req/s para não sobrecarregar.
+      let details = [];
+      if (body.enrich === true) {
+        const targets = customers.filter((c) =>
+          ['validado', 'adimplente', 'menos_30d', 'inadimplente'].includes(String(c.status_coluna || '').toLowerCase())
+        );
+        const limit = Math.min(targets.length, Number(body.enrich_limit) || 400);
+        for (let i = 0; i < limit; i++) {
+          const id = targets[i].codigo;
+          if (!id) continue;
+          try { const d = await fetchCustomerDetail(s, id); if (d) details.push(d); }
+          catch (e) { dbg(`[enrich] ${id}: ${e.message}`); }
+          await new Promise((r) => setTimeout(r, 200)); // ~5 req/s
+        }
+        dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
+      }
+
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
     }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
   } catch (e) {
@@ -433,7 +698,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v15 (tor+playwright+2captcha+waf-classify) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v16 (tor+playwright+api-vo) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas

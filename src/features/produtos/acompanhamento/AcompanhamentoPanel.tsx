@@ -38,6 +38,8 @@ import { FaturasGreenPanel } from "./FaturasGreenPanel";
 import { loadLocalGreenSettings } from "./greenData";
 import { formatBRLFromCents } from "../lib/money";
 import { VendasEmAndamentoPanel } from "./VendasEmAndamentoPanel";
+import { MultiprodutoCard } from "./MultiprodutoCard";
+import { AutomacaoIgreenCard } from "./AutomacaoIgreenCard";
 
 interface AcompanhamentoPanelProps {
   consultantId: string;
@@ -133,6 +135,12 @@ export function AcompanhamentoPanel({
 
   return (
     <div className="space-y-10 text-pv-ink">
+      {/* Carteira multiproduto (Telecom + Seguros) — sync iGreen */}
+      <MultiprodutoCard consultantId={consultantId} />
+
+      {/* Toggles de automação iGreen (tudo começa desligado) */}
+      <AutomacaoIgreenCard consultantId={consultantId} />
+
       {/* Onboarding / alertas de configuração */}
       {(needsGraduacaoSetup || needsEntradaRules) && (
         <section className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2">
