@@ -15,35 +15,62 @@ import { BoletosList } from "./BoletosList";
 import { DevolutivasList } from "./DevolutivasList";
 import { PaymentIntent } from "./PaymentIntent";
 
+const SYNC_STEPS = [
+  "Clientes",
+  "Boletos",
+  "Devolutivas",
+  "Métricas",
+  "Rede",
+  "Telecom",
+  "Seguros",
+  "Licenças",
+];
+
 export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const { data: boletos = [], isLoading: loadingB, refetch: refetchB } = useBoletosCarteira(consultantId);
   const { data: devolutivas = [], isLoading: loadingD, refetch: refetchD } = useDevolutivasCarteira(consultantId);
   const [syncing, setSyncing] = useState(false);
+  const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
   const { toast } = useToast();
 
   const stats = useMemo(() => computeCarteiraStats(boletos), [boletos]);
   const lastSync = boletos[0]?.synced_at;
+  const lastSyncTs = lastSync ? new Date(lastSync).getTime() : 0;
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncStartedAt(Date.now());
     const res = await runIgreenSync(consultantId, "sync_all");
-    setSyncing(false);
-    if (res.ok) {
-      toast({
-        title: "Sincronização iniciada",
-        description: "Os dados aparecem em alguns minutos. Recarregue quando terminar.",
-      });
-      setTimeout(() => {
-        refetchB();
-        refetchD();
-      }, 15_000);
-    } else {
+    if (!res.ok) {
+      setSyncing(false);
+      setSyncStartedAt(null);
       toast({
         title: "Falha ao sincronizar",
         description: (res as { error: string }).error,
         variant: "destructive",
       });
+      return;
     }
+    toast({
+      title: "Sincronização iniciada",
+      description: "Puxando clientes, boletos, devolutivas, métricas, rede, telecom, seguros e licenças…",
+    });
+    // Polling: recarrega a cada 10s por até 60s; para quando synced_at avança.
+    const startedAt = Date.now();
+    const baseline = lastSyncTs;
+    const interval = setInterval(async () => {
+      const [b] = await Promise.all([refetchB(), refetchD()]);
+      const newTs = b.data?.[0]?.synced_at ? new Date(b.data[0].synced_at).getTime() : 0;
+      const elapsed = Date.now() - startedAt;
+      if (newTs > baseline || elapsed > 60_000) {
+        clearInterval(interval);
+        setSyncing(false);
+        setSyncStartedAt(null);
+        if (newTs > baseline) {
+          toast({ title: "Carteira atualizada", description: "Dados recém-sincronizados carregados." });
+        }
+      }
+    }, 10_000);
   };
 
   if (loadingB || loadingD) {
