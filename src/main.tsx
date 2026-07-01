@@ -8,6 +8,10 @@ import "@fontsource/space-grotesk/700.css";
 import "@fontsource/dm-sans/400.css";
 import "@fontsource/dm-sans/500.css";
 import "@fontsource/dm-sans/600.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/inter/700.css";
 import { ativarHardening } from "./lib/hardening";
 
 // ─── Gatilho de emergência: ?nuke=1 limpa tudo e recarrega ─────────────────

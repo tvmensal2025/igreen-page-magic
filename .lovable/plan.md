@@ -1,89 +1,98 @@
-# Auditoria — Sincronização iGreen por consultor
+# Novo Dashboard — Cadastros da Equipe (revisado após auditoria)
 
-## O que já está 100% certo
+## Diagnóstico da sync (executado agora no banco real)
 
-1. **Credenciais por consultor (isolado)**
-  `IGreenConnectionCard` (Admin → Configurações) grava `igreen_portal_email` + `igreen_portal_password` na linha do próprio `consultants.id`. A senha nunca é lida de volta (REVOKE SELECT para `authenticated`/`anon`, GRANT apenas INSERT/UPDATE) — o worker lê via `service_role` na edge.
-2. **Fluxo de sync individual**
-  Botão "Sincronizar agora" → `runIgreenSync(userId,"sync_all")` → edge `sync-igreen-customers` → lê credenciais do próprio consultor pelo `consultant_id` → chama worker green (`worker-igreen-sync`) → persiste tudo com `consultant_id` fixo em cada upsert. Isolamento por consultor confirmado em todas as tabelas.
-3. **Persistência completa (`sync_all`)** grava em:
-  - `customers` (`onConflict: phone_whatsapp,consultant_id`) — 562 hoje.
-  - `igreen_customer_boletos` (`consultant_id,idcliente,mes_referencia`) — 21.
-  - `igreen_customer_devolutivas` (`consultant_id,idcliente,campo,categoria`).
-  - `igreen_telecom_customers` (`consultant_id,idcnxtelecom`).
-  - `igreen_seguros_customers` (`consultant_id,seguro_id`).
-  - `igreen_consultant_metrics` (`consultant_id,mes_ref`).
-  - `consultant_network` (`consultant_id,igreen_id`).
-  - `igreen_automation_settings` (flags de captura, todas `true` por padrão).
-  - `settings.last_igreen_sync`.
-4. **Cron diário** `sync-igreen-customers-daily` (09:00 UTC) roda `sync_all` para **todos os consultores aprovados que têm email+senha**, em background (`EdgeRuntime.waitUntil`, evitando `504 IDLE_TIMEOUT`).
-5. **Fallback OCR / erros do portal** classificados corretamente (`not_configured`, `waf_blocked`, `invalid_credentials`), com mensagens amigáveis no toast.
+- Worker `worker-igreen-sync/server.mjs` já puxa `/network-map/data?month=YYYY-MM` no endpoint `/sync-network` e `/sync-all`, e grava em `public.consultant_network` (`codigo_igreen`, `nome`, `patrocinador_codigo`, `nivel`, `cidade`, `uf`, `graduacao`, `mes_ref`, etc.).
+- `customers` já tem `registered_by_igreen_id` e `registered_by_name` populados: **562 de 628 clientes têm o licenciado responsável identificado**.
+- Porém `consultants.referred_by` está **NULL para todos** — a RPC `get_team_consultant_ids(rafael)` devolve só o id do próprio Rafael. Por isso o toggle atual "Minha equipe" mostra os mesmos números do "Meus clientes".
 
-## O que NÃO está 100% (achados)
+**Conclusão:** a fonte real da "equipe inteira" NÃO é `consultant_id` — é `registered_by_igreen_id`. Precisamos agrupar por licenciado usando esse campo, e enriquecer com `consultant_network` via join por `codigo_igreen`.
 
-**A. Só 1 dos 8 consultores tem credenciais salvas.**  
-Verificado no banco: apenas *Rafael Ferreira* possui `igreen_portal_email`/`password`. Os outros 7 (Abel, Bruna, Bryan, elizavip4545, henzofelipef, olimpiajanete15, silviaclaudiaalmeida) nunca configuraram — logo o cron pula eles e a carteira deles fica vazia. **Não é bug**, mas a UI não avisa proativamente.
+## Como puxamos a equipe (arquitetura correta)
 
-**B. Card fica escondido em "Configurações".**  
-Consultores novos não descobrem sozinhos que precisam ligar o iGreen. Sem badge de status no Admin/Clientes/Central de Agendamentos.
+Novo hook `useTeamRegistrations(leaderConsultantId, periodDays)`:
 
-**C. Sem histórico por sync (só `last_igreen_sync` global).**  
-Hoje só sabemos o último timestamp global. Não temos, por consultor: quando rodou, quantos boletos/clientes/devolutivas vieram, se falhou (WAF/credenciais). O `igreen_automation_settings.last_sync_*` já tem colunas mas o worker/edge **não estão atualizando elas**.
+1. Lê `customers` do próprio `consultant_id` do líder (não precisa `.in()` — todos os cadastros da equipe caem no consultant_id de quem tem a credencial iGreen).
+2. Agrupa por `registered_by_igreen_id` → cada bucket = um licenciado da rede.
+3. Faz `select` em `consultant_network` `where consultant_id = leaderConsultantId` para buscar graduação/cidade/UF/patrocinador de cada `codigo_igreen`.
+4. Retorna: `porLicenciado`, `porDia`, `porStatus`, `porOrigem`, `porUF`, `totais`, `comparativoPeriodoAnterior`.
 
-**D. Nenhum retry automático quando falha.**  
-Se o Cloudflare bloqueia (`waf_blocked`) ou o login expira, a edge só devolve erro. Não há reagendamento nem alerta no painel.
+Zero mudança de schema, zero migração, zero mudança no worker. É reuso puro dos dados que o `/sync-all` já grava.
 
-**E. Diagnóstico de endpoints exposto só ao Rafael logado.**  
-`EndpointDiscoveryCard` só mostra dados globais — não filtra por `consultant_id`, então o admin não sabe *para qual consultor* um endpoint falhou.
+## Botão Sync (já funciona)
 
-**F. Sem validação no `save()`.**  
-O card grava email/senha sem testar login antes. Consultor pode salvar credencial errada e só descobrir horas depois no primeiro sync (ou pelo cron silencioso).
+`runIgreenSync(userId, "sync_all")` chama a edge function `sync-igreen-customers` → `EdgeRuntime.waitUntil` → worker Easypanel → `/sync-all`.
 
-**G. Secrets iGreen no consultor, não no vault.**  
-`igreen_portal_password` está em coluna `text` (com REVOKE SELECT). Funciona, mas ideal seria criptografar com `pgsodium`/`vault` para defesa em profundidade.
+Fluxo puxa em paralelo: `customers` + `network` + `boletos` + `devolutivas` + `telecom` + `seguros` + `metrics` (respeitando toggles em `igreen_automation_settings`).
 
-## Plano de melhoria (proposto — pequeno e incremental)
+Confirmado nos logs de código: `want('network') ? fetchNetwork(...)` está no fluxo default. Depois do sync o novo dashboard mostra dados atualizados sem nenhum ajuste extra.
 
-**PR 1 — Status visível por consultor**  
+## Estética (confirmada)
 
-- Novo componente `IGreenSyncStatusBadge` no header do Admin (aba Clientes) e ao lado do botão "Sincronizar":
-  - Se sem credencial → CTA vermelho "Ligar iGreen" que abre Configurações no card certo (deep-link `?section=igreen`).
-  - Se com credencial → mostra último sync por tabela (boletos/clientes/devolutivas) + contadores.
+- **Paleta**: mantida — verde iGreen atual (tokens `--primary`/`--accent` de `index.css`).
+- **Tipografia**: Space Grotesk (números/títulos) + Inter (corpo). Via `@fontsource`.
+- **Layout**: Dashboard clássico.
 
-**PR 2 — Persistir métricas por sync**  
+## Estrutura da tela
 
-- No worker, ao final de cada bloco (`persistBoletos`, `persistTelecom`, `persistSeguros`, `persistCustomers`, `persistNetwork`, `persistDevolutivas`), atualizar as colunas `last_sync_*` de `igreen_automation_settings` (upsert por `consultant_id`) com timestamp + count.
-- Criar tabela leve `igreen_sync_runs (consultant_id, started_at, finished_at, mode, status, counts jsonb, error text)` para histórico dos últimos 30 dias.
+```text
+┌────────────────────────────────────────────────────────────────┐
+│  Toolbar: [Período ▼] [Sync equipe] [PDF]                      │
+├────────────────────────────────────────────────────────────────┤
+│  KPI ROW                                                       │
+│  Cadastros totais │ Licenciados ativos │ Aprovados │ kWh total │
+│  (vs período ant.)                                             │
+├────────────────────────────────────────────────────────────────┤
+│  CADASTROS POR DIA (col-span-2)      │  RANKING LICENCIADOS    │
+│  Área empilhada — top 5 licenciados  │  Top 10 por cadastros   │
+│  + "outros"                          │  Nome · Graduação · Nº  │
+├────────────────────────────────────────────────────────────────┤
+│  STATUS (donut)   │ ORIGEM (bar)     │ UF/CIDADE (bar top 8)   │
+├────────────────────────────────────────────────────────────────┤
+│  TABELA "Cadastros da equipe"                                  │
+│  Cliente · Licenciado · Cidade · Status · kWh · Criado em      │
+│  Busca + filtro por licenciado + export CSV                    │
+└────────────────────────────────────────────────────────────────┘
+```
 
-**PR 3 — Validação de credenciais no salvar**  
+## Componentes (todos em `src/components/admin/team-dashboard/`)
 
-- Adicionar endpoint `POST /validate-credentials` no worker (só login, sem sync).
-- No `IGreenConnectionCard.save()`, após salvar chamar `sync-igreen-customers` com `mode:"validate"`; se falhar, exibir toast com motivo específico e marcar `igreen_credential_status` na linha do consultor (`valid|invalid|waf`).
+1. `TeamDashboard.tsx` — orquestrador, plugado dentro de `DashboardTab.tsx` acima dos cards atuais para o líder (quem tem credencial iGreen). Não substitui nada, adiciona seção nova.
+2. `useTeamRegistrations.ts` — hook novo em `src/hooks/`, encapsula toda a agregação por `registered_by_igreen_id`.
+3. `TeamKpiRow.tsx` — 4 `StatCard` com delta de período.
+4. `TeamRegistrationsChart.tsx` — Recharts `AreaChart` empilhado (top 5 licenciados + "outros").
+5. `TeamConsultantRanking.tsx` — lista com barra proporcional, badge de graduação vindo de `consultant_network`.
+6. `TeamStatusDonut.tsx`, `TeamOriginBar.tsx`, `TeamGeographyBar.tsx` — Recharts.
+7. `TeamRegistrationsTable.tsx` — `Table` shadcn + busca + filtro licenciado + export CSV.
 
-**PR 4 — Retry inteligente + alerta**  
+## Fonts e tokens
 
-- Se sync falhar por `waf_blocked`, reagendar automaticamente em 15/45/120 min (via `pg_cron` one-shot ou `scheduled_messages`-like).
-- Se falhar por `invalid_credentials`, disparar notificação in-app para o consultor + email opcional.
+- `bun add @fontsource/space-grotesk @fontsource/inter`.
+- `src/main.tsx`: imports dos pesos 400/500/700.
+- `tailwind.config.ts`: `fontFamily.display = ["Space Grotesk", ...]` e `fontFamily.sans = ["Inter", ...]`.
+- Nenhuma cor nova.
 
-**PR 5 — Diagnóstico por consultor**  
+## O que NÃO muda
 
-- Filtrar `EndpointDiscoveryCard` por `consultant_id` selecionado; superadmin escolhe consultor no dropdown.
-- Adicionar coluna `consultant_id` em `igreen_endpoint_discovery` (se ainda não tiver).
+- Schema do banco: zero migrações.
+- `worker-igreen-sync/server.mjs`: intocado.
+- Edge function `sync-igreen-customers`: intocada.
+- `useAnalytics`, `useTeamConsultantIds`, `DashboardTab` (cards antigos), Carteira iGreen, CRM: intocados.
 
-**PR 6 (opcional) — Vault para senha**  
+## Riscos e mitigação
 
-- Migrar `igreen_portal_password` para `vault.secrets` referenciado por `consultants.igreen_password_secret_id`.
-- Worker/edge passam a resolver via `vault.decrypted_secrets`.
+- **Rede grande** → paginação de 1000/página no fetch de `customers` (já usado em `useAnalytics`).
+- **Licenciado sem `registered_by_name`** (66 clientes hoje) → bucket "Sem licenciado identificado" no ranking, com aviso discreto.
+- **`consultant_network` sem match de `codigo_igreen`** → fallback usa `registered_by_name` puro, sem graduação/UF.
+- **Sync demorado** → botão "Sync equipe" mostra progresso já implementado (polling 60s) e desabilita durante execução.
 
-## Arquivos afetados
+## Ordem de implementação
 
-- `src/components/admin/IGreenConnectionCard.tsx` (validação inline + deep-link).
-- `src/pages/Admin.tsx` (badge de status na aba Clientes).
-- `supabase/functions/sync-igreen-customers/index.ts` (modo `validate`, atualização de `last_sync_*`, gravação em `igreen_sync_runs`).
-- `worker-igreen-sync/server.mjs` (endpoint `/validate-credentials`, retorno de counts).
-- Migração SQL: nova tabela `igreen_sync_runs` + colunas `igreen_credential_status`, `igreen_credential_checked_at` em `consultants`.
-- Novo `src/components/admin/IGreenSyncStatusBadge.tsx`.
+1. Instalar fontes + tokens Tailwind.
+2. Criar `useTeamRegistrations.ts` e validar contagem com `SELECT registered_by_igreen_id, count(*) FROM customers ... GROUP BY 1`.
+3. `TeamDashboard.tsx` + `TeamKpiRow.tsx` + `TeamRegistrationsChart.tsx`.
+4. Ranking + Status + Origem + Geografia.
+5. Tabela com filtros e export CSV.
+6. Plugar `<TeamDashboard />` no topo de `DashboardTab.tsx`.
 
-Nenhuma mudança quebra o fluxo atual — tudo é aditivo. Após o PR 1+2 já teremos visibilidade total do que cada consultor está capturando.  
-  
-EU AINDA NAO ENSINEI OS OUTROS CONSUTLOTRES, POR ISSO NINGUEM COLOCOU OS DADOS AINDA.
+Confirma que posso implementar assim?
