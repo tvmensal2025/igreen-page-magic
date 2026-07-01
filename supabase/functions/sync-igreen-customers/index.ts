@@ -647,17 +647,39 @@ async function syncOneConsultant(
   if (mode === "sync_all") {
     console.log(`[worker] sync-all for ${emailNorm}`);
 
-    // Carrega os toggles de automação do consultor (tudo começa desligado).
-    // deno-lint-ignore no-explicit-any
-    let toggles: Record<string, boolean> = {};
+    // Toggles do consultor. Se não houver linha ainda, tratamos captura+alertas como
+    // ligados (envio proativo ao cliente permanece off). Isso evita a "corrida"
+    // entre criar o consultor e configurar toggles: sync novo já traz tudo.
+    const DEFAULT_ON: Record<string, boolean> = {
+      capture_boletos: true,
+      capture_devolutivas: true,
+      capture_telecom: true,
+      capture_seguros: true,
+      capture_cashback: true,
+      alert_boletos_vencendo: true,
+      alert_devolutivas: true,
+      alert_licencas_expirando: true,
+      rotinas_tarefas: false,
+      auto_wa_boleto_vencendo: false,
+      auto_wa_aniversariante: false,
+      cross_sell_bot: false,
+    };
+    let toggles: Record<string, boolean> = { ...DEFAULT_ON };
     if (consultantId) {
       const { data: t } = await supabase
         .from("igreen_automation_settings")
         .select("*")
         .eq("consultant_id", consultantId)
         .maybeSingle();
-      toggles = (t as Record<string, boolean>) || {};
+      if (t) toggles = { ...DEFAULT_ON, ...(t as Record<string, boolean>) };
     }
+    // Consistência captura↔alerta: se o alerta está ligado, força a captura
+    // correspondente para esta rodada (não persiste na tabela).
+    const autoEnabled: string[] = [];
+    if (toggles.alert_boletos_vencendo && !toggles.capture_boletos) { toggles.capture_boletos = true; autoEnabled.push("capture_boletos"); }
+    if (toggles.alert_devolutivas && !toggles.capture_devolutivas) { toggles.capture_devolutivas = true; autoEnabled.push("capture_devolutivas"); }
+    if (autoEnabled.length) console.log(`[sync-all] auto-enabled for run: ${autoEnabled.join(",")}`);
+
     // Base sempre coletada; extras conforme toggle.
     const only = ["customers", "network", "metrics"];
     if (toggles.capture_boletos) only.push("boletos");
