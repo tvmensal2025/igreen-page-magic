@@ -538,13 +538,14 @@ async function fetchCashback(session) {
 async function fetchMetrics(session, month) {
   const mes = month || new Date().toISOString().slice(0, 7);
   const safe = async (p) => { try { return await apiGet(session, p); } catch (e) { dbg(`[metrics] ${p} falhou: ${e.message}`); return null; } };
-  const [overview, producao, resumoClientes, rotinaDiaria, rotinaSemanal, rotinaMensal] = await Promise.all([
+  const [overview, producao, resumoClientes, rotinaDiaria, rotinaSemanal, rotinaMensal, licencasExp] = await Promise.all([
     safe('/painel/overview'),
     safe('/painel/producao'),
     safe('/clientes-green/resumo-geral'),
     safe('/rotinas/diaria'),
     safe('/rotinas/semanal'),
     safe('/rotinas/mensal'),
+    safe('/painel/licencas-expirando'),
   ]);
   return {
     mes,
@@ -554,7 +555,47 @@ async function fetchMetrics(session, month) {
     rotina_diaria: rotinaDiaria?.data ?? null,
     rotina_semanal: rotinaSemanal?.data ?? null,
     rotina_mensal: rotinaMensal?.data ?? null,
+    licencas_expirando: licencasExp?.data ?? null,
   };
+}
+
+// Probe genérico: testa uma allowlist de paths e devolve {status, keys}. Útil
+// para descoberta segura de endpoints Pro/análises sem escrever integração.
+const PROBE_ALLOWLIST = [
+  '/painel/licencas-expirando',
+  '/painel/onboarding',
+  '/painel/inativos',
+  '/painel/eventos',
+  '/painel/top-expansao',
+  '/painel/ranking-movements',
+  '/pro-builder',
+  '/analise-pro/summary',
+  '/analise-retencao/summary',
+  '/estatisticas-pro',
+  '/telecom/resumo-geral',
+  '/telecom/licenciados',
+  '/seguros/resumo-geral',
+  '/seguros/licenciados',
+];
+async function probeEndpoints(session, paths) {
+  const list = Array.isArray(paths) && paths.length ? paths.filter((p) => PROBE_ALLOWLIST.includes(p)) : PROBE_ALLOWLIST;
+  const results = [];
+  for (const p of list) {
+    try {
+      const j = await apiGet(session, p);
+      const sample = j?.data ?? j;
+      const shape = Array.isArray(sample)
+        ? { type: 'array', length: sample.length, keys: sample[0] ? Object.keys(sample[0]).slice(0, 20) : [] }
+        : sample && typeof sample === 'object'
+        ? { type: 'object', keys: Object.keys(sample).slice(0, 30) }
+        : { type: typeof sample };
+      results.push({ path: p, status: 200, shape });
+    } catch (e) {
+      results.push({ path: p, status: e?.status || 500, error: e?.message?.slice(0, 200) || 'erro' });
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return results;
 }
 
 // ---------- HTTP ----------
