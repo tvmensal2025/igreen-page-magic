@@ -1,53 +1,74 @@
-## Objetivo
-Fechar as lacunas restantes da sincronização com o escritório iGreen — hoje trazemos clientes, rede, boletos, telecom, seguros, devolutivas, métricas e cashback (GREEN/TELECOM). Ainda faltam blocos inteiros do portal novo e enriquecimento de fichas.
+# Mapeamento do portal iGreen via Playwright (sem chutar endpoints)
 
-## Lacunas identificadas
-1. **Cashback Seguros**: `/cashback/resumo?origem=SEGUROS` retorna 400 (não existe). Precisamos descobrir o endpoint real de comissões de apólices (hoje só tem 3 tentativas às cegas).
-2. **Telecom** — só puxamos o Kanban `/crm/telecom` e faturas. Falta: resumo por linha (`/telecom/linhas`), portabilidade, recargas, comissões mensais.
-3. **Seguros** — só puxamos o Kanban de 5 apólices. Falta: sinistros, endosso, renovações próximas, comissão paga/pendente.
-4. **Financeiro do consultor** — não puxamos extrato de comissões, saques, saldo disponível, notas fiscais emitidas.
-5. **Rede / Onboarding** — trazemos `/network-map/data` mas não puxamos: histórico de qualificações, upgrades de licenciados, eventos de graduação, aniversariantes de licenças.
-6. **Devolutivas** — trazemos 5, mas não trazemos o histórico resolvido nem o detalhe por lead (motivo em texto longo, anexos).
-7. **Detalhamento de cliente (`/crm/green/{id}`)** — hoje enriquecemos 66/66 fichas mas os campos ricos (contrato assinado, data de ativação de injeção, histórico de kWh, número da UC, distribuidora ID) não estão sendo persistidos em `customers`.
-8. **Rotinas de tarefas** — puxamos `diaria/semanal/mensal` mas não gravamos como tarefas acionáveis (aniversário, boleto vencendo, licença expirando) numa tabela consultável.
-9. **Sem diagnóstico**: quando um endpoint falha (como o cashback SEGUROS), o erro só aparece no log do worker — a UI nunca informa. Sem observabilidade não sabemos o que está faltando.
+## Mudança de estratégia
 
-## Plano em 4 fases
+Nada de `PROBE_ALLOWLIST` com paths inventados. Em vez disso, **entro no portal de verdade com Playwright, navego em cada menu como um usuário faria, e capturo as chamadas de rede reais** que o próprio front do iGreen dispara. Só entra na v17 do worker aquilo que o próprio portal usa.
 
-### Fase 1 — Descoberta segura (probe estendido)
-- Ampliar `PROBE_ALLOWLIST` em `worker-igreen-sync/server.mjs` com candidatos:
-  `/seguros/comissoes`, `/seguros/sinistros`, `/seguros/renovacoes`,
-  `/telecom/linhas`, `/telecom/recargas`, `/telecom/comissoes`,
-  `/financeiro/extrato`, `/financeiro/saques`, `/financeiro/saldo`,
-  `/rede/qualificacoes`, `/rede/graduacoes`, `/rede/aniversariantes`,
-  `/clientes-green/{id}/historico`, `/clientes-green/{id}/kwh`.
-- Rodar 1x, salvar shape em `worker_phase_logs` para consulta.
-- Nenhum código de negócio é escrito antes de sabermos qual endpoint responde 200.
+## Como funciona a descoberta
 
-### Fase 2 — Persistência dos novos blocos
-Com base nos endpoints validados na Fase 1:
-- Novas tabelas (schema aditivo): `igreen_telecom_linhas`, `igreen_seguros_comissoes`, `igreen_seguros_sinistros`, `igreen_financeiro_extrato`, `igreen_rede_qualificacoes`, `igreen_rotinas_tarefas` (unificada).
-- Colunas novas em `customers` para os campos ricos do detalhe: `uc_numero`, `contrato_assinado_em`, `injecao_ativa_em`, `distribuidora_id`, `historico_kwh_jsonb`.
-- Todas com RLS por consultor + `GRANT` explícitos.
+Script Playwright local (`worker-igreen-sync/discover.mjs`) que roda 1x:
 
-### Fase 3 — Worker + edge function
-- `worker-igreen-sync`: novas funções `fetchTelecomLinhas`, `fetchSegurosComissoes`, `fetchFinanceiro`, `fetchRedeQualificacoes`, `enrichCustomerRich`. Incluir todas no `/sync-all` com `only[]` opcional.
-- `supabase/functions/sync-igreen-customers`: mapear os novos payloads para as tabelas da Fase 2. Um endpoint = uma função de persistência isolada, cada uma tolerante a falha (não derruba as outras).
+1. Login em `https://escritorio.igreenenergy.com.br/login` via Tor com as credenciais do usuário (`rafael.ids@icloud.com`).
+2. Instala `page.on('request')` e `page.on('response')` **antes** de qualquer navegação. Filtra só `api-vo.igreenenergy.com.br`.
+3. Para cada request/response captura: `method`, `url` (path + query), `status`, `request_headers` relevantes, `response_shape` (primeiras 2 chaves + tipo de cada campo do primeiro item se for array).
+4. Navega automaticamente pelos menus do portal:
+  - Dashboard / Painel
+  - Clientes → Green, Telecom, Seguros, Expansão (cada aba e cada coluna do Kanban)
+  - Um cliente aberto no detalhe (Green + Telecom + Seguros)
+  - Rede / Network Map (com troca de mês)
+  - Financeiro / Extrato / Saques / Notas Fiscais (se existir no menu)
+  - Rotinas (diária, semanal, mensal)
+  - Devolutivas (ativas + histórico se houver)
+  - Boletos / Faturas
+  - Cashback / Comissões (Green, Telecom, Seguros)
+  - Qualquer outro item de menu não catalogado — abre e observa.
+5. Salva o inventário em `/tmp/igreen-endpoints.json` **e** grava em `worker_phase_logs` (uma linha por endpoint com `sample`).
+6. Faz screenshot de cada tela + salva o HTML para eu ter contexto visual do que cada endpoint alimenta.
 
-### Fase 4 — UI + Diagnóstico
-- Painel `CarteiraGreenPanel`: novas seções condicionadas a dados presentes (`FinanceiroCard`, `TelecomLinhasList`, `SegurosDetalhesCard`, `RedeQualificacoesCard`).
-- Aba nova "Diagnóstico" no painel: lê `worker_phase_logs` e mostra em verde/vermelho quais endpoints responderam na última sync, com timestamp e amostra do shape. Assim qualquer novo bloco que a iGreen adicionar aparece imediatamente para decidirmos integrar.
+## Entregável da descoberta
+
+Um único arquivo `docs/igreen-endpoints-map.md` gerado a partir do JSON com:
+
+- Path exato + método + params obrigatórios (deduzidos das query strings observadas)
+- Shape real do response (campos + tipos)
+- Qual tela do portal usa cada endpoint (pra saber o que é "carteira", o que é "dashboard", o que é "detalhe")
+- Status (200 real, 4xx real) — não achismo
+
+## Só depois da descoberta: reescrita do worker (v17)
+
+Com o mapa em mãos, reescrevo `server.mjs` como planejado antes:
+
+- Registry central `ENDPOINTS` populado só com paths **observados no portal**.
+- `safeCall` wrapper: nenhum endpoint derruba o `sync-all`.
+- `Promise.allSettled` + bloco `_diagnostics` no response.
+- `fetchCashback` sem SEGUROS (a menos que a descoberta mostre um path real).
+- `enrichCustomerRich` puxando campos ricos do detalhe do cliente e devolvendo-os no array.
+- Novos blocos (Telecom Linhas, Seguros Comissões, Financeiro, Rede Qualificações) **só entram se o portal os expuser**.
+
+## Migration + edge + UI
+
+Depois do worker rodar e trazer dados reais:
+
+- Migration aditiva com colunas/tabelas para os blocos confirmados.
+- Edge `sync-igreen-customers` consome `_diagnostics` e grava em `worker_phase_logs`.
+- Aba "Diagnóstico" no `CarteiraGreenPanel` mostrando verde/vermelho por endpoint.
 
 ## Ordem de execução
-1. Fase 1 (probe) — sozinha, sem risco. Aguardar output antes de continuar.
-2. Fase 2 (migration) — só depois de saber o shape real de cada endpoint.
-3. Fase 3 (worker + edge) — depende do schema.
-4. Fase 4 (UI) — depende dos dados populados.
 
-## Riscos
-- Endpoints da API nova podem exigir `?consultor_id=` ou headers extras — a Fase 1 vai revelar.
-- `SESSION_TTL_MS` de 30min é suficiente para o probe (todos os endpoints numa sessão).
-- Zero impacto no fluxo D / WhatsApp — trabalho isolado no worker `igreen-sync` e na aba Clientes.
+1. **Descoberta** — escrevo e rodo `discover.mjs` no sandbox via Playwright (Tor + credenciais). Output: JSON + markdown + screenshots.
+2. Você revisa o mapa e valida se cobri tudo (ou pede pra abrir menus que faltaram).
+3. Reescrevo `server.mjs` com base 100% no observado.
+4. Migration + edge + UI de diagnóstico.
 
-## Observação sobre `.lovable/`
-O diretório `.lovable/` está no seu `.gitignore` — o `plan.md` que este tool grava não vai persistir no próximo snapshot. Se quiser guardar o plano, me diga que removo a entrada.
+## Riscos e cuidados
+
+- **Credenciais**: uso as suas (`rafael.ids@icloud.com`) só dentro do script, jamais logo/exponho.
+- **Tor**: portal exige (CF bloqueia datacenter). Sandbox tem network egress; se Tor não subir no sandbox, rodo direto (o script vai reportar CF 403 se bloquear).
+- **Zero impacto** no fluxo D/WhatsApp/portal-worker.
+- `**.lovable/**` está no `.gitignore` — este plano não persiste no próximo snapshot.
+
+## O que preciso de você
+
+Só confirmar que posso rodar a descoberta agora com as credenciais que você já mandou antes. Ao aprovar o plano, começo por `discover.mjs`.  
+  
+PODE RODAR
