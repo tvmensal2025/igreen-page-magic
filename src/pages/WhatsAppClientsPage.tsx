@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Search, Phone, Mail, MapPin, FileText, Calendar, Download, Users, CheckCircle, AlertTriangle, Clock, ChevronDown, ChevronUp, MessageCircle, Briefcase, BadgeDollarSign, TrendingUp } from "lucide-react";
+import { Loader2, Search, Phone, Mail, MapPin, FileText, Calendar, Download, Users, CheckCircle, AlertTriangle, Clock, ChevronDown, ChevronUp, MessageCircle, Briefcase, BadgeDollarSign } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
