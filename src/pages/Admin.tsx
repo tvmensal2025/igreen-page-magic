@@ -51,6 +51,8 @@ const AgendamentosHub = lazy(() => import("@/components/whatsapp/AgendamentosHub
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
+const CarteiraGreenPanel = lazy(() => import("@/features/produtos/carteira-green/CarteiraGreenPanel").then(m => ({ default: m.CarteiraGreenPanel })));
+const EndpointDiscoveryCard = lazy(() => import("@/features/produtos/carteira-green/EndpointDiscoveryCard").then(m => ({ default: m.EndpointDiscoveryCard })));
 
 import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
