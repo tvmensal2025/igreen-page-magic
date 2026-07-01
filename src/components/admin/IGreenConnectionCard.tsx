@@ -82,13 +82,14 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
         setValidating(true);
         const res = await runIgreenSync(userId, "validate");
         await reloadStatus();
-        if (!res.ok) {
-          if (res.reason === "invalid_credentials") {
+        if (res.ok === false) {
+          const failure = res as { ok: false; reason: string; error: string };
+          if (failure.reason === "invalid_credentials") {
             toast({ title: "Login inválido", description: "E-mail ou senha do escritório iGreen incorretos.", variant: "destructive" });
-          } else if (res.reason === "waf_blocked") {
+          } else if (failure.reason === "waf_blocked") {
             toast({ title: "Portal bloqueado agora", description: "Cloudflare bloqueou o teste. Tente novamente em alguns minutos.", variant: "destructive" });
           } else {
-            toast({ title: "Não consegui validar", description: res.error, variant: "destructive" });
+            toast({ title: "Não consegui validar", description: failure.error, variant: "destructive" });
           }
         } else {
           toast({ title: "✅ Credenciais válidas", description: "Login no escritório iGreen confirmado." });
