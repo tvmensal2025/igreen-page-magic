@@ -81,6 +81,10 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
     );
   }
 
+  // Progresso "otimista" — cada passo acende a cada ~2s enquanto o worker roda em background.
+  const elapsedSec = syncStartedAt ? Math.floor((Date.now() - syncStartedAt) / 1000) : 0;
+  const stepsDone = Math.min(SYNC_STEPS.length, Math.floor(elapsedSec / 2));
+
   return (
     <div className="space-y-6">
       <header className="flex items-center justify-between gap-3 flex-wrap">
@@ -89,15 +93,42 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
           <p className="text-xs text-muted-foreground">
             Boletos, devolutivas e injeção de energia — espelho do escritório iGreen.
             {lastSync && (
-              <> · Última sync: {new Date(lastSync).toLocaleString("pt-BR")}</>
+              <> · Última sync: <strong>{new Date(lastSync).toLocaleString("pt-BR")}</strong></>
             )}
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}>
           {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-          Sincronizar agora
+          {syncing ? "Sincronizando…" : "Sincronizar agora"}
         </Button>
       </header>
+
+      {syncing && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <p className="text-xs font-medium mb-2 text-emerald-700">
+            Puxando dados do escritório iGreen — isso leva ~30–60s.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SYNC_STEPS.map((s, i) => {
+              const done = i < stepsDone;
+              return (
+                <span
+                  key={s}
+                  className={
+                    "text-[10px] px-2 py-1 rounded-full border " +
+                    (done
+                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-700"
+                      : "bg-muted/40 border-border/60 text-muted-foreground")
+                  }
+                >
+                  {done ? "✓ " : "· "}
+                  {s}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {boletos.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/60 p-8 text-center space-y-2">
