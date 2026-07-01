@@ -14,6 +14,11 @@ import { StatusCards } from "./StatusCards";
 import { BoletosList } from "./BoletosList";
 import { DevolutivasList } from "./DevolutivasList";
 import { PaymentIntent } from "./PaymentIntent";
+import { ConsultantMetricsCard } from "./ConsultantMetricsCard";
+import { TelecomClientesList } from "./TelecomClientesList";
+import { SegurosClientesList } from "./SegurosClientesList";
+import { RedeDashboardCard } from "./RedeDashboardCard";
+import { RotinasPanel } from "./RotinasPanel";
 
 const SYNC_STEPS = [
   "Clientes",
