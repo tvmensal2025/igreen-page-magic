@@ -89,9 +89,10 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                     </div>
                     <Switch
                       id={it.key}
-                      checked={!!settings?.[it.key]}
-                      disabled={update.isPending}
-                      onCheckedChange={(v) => onToggle(it.key, v)}
+                      checked={g.locked ? true : !!settings?.[it.key]}
+                      disabled={g.locked || update.isPending}
+                      onCheckedChange={(v) => { if (!g.locked) onToggle(it.key, v); }}
+                      title={g.locked ? "Captura obrigatória — sempre salvando" : undefined}
                     />
                   </div>
                 ))}
