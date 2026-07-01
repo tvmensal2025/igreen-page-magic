@@ -5215,6 +5215,15 @@ export type Database = {
           consultant_id: string
           created_at: string
           cross_sell_bot: boolean
+          last_sync_boletos: string | null
+          last_sync_cashback: string | null
+          last_sync_customers: string | null
+          last_sync_devolutivas: string | null
+          last_sync_metrics: string | null
+          last_sync_network: string | null
+          last_sync_painel_rede: string | null
+          last_sync_seguros: string | null
+          last_sync_telecom: string | null
           rotinas_tarefas: boolean
           updated_at: string
         }
@@ -5232,6 +5241,15 @@ export type Database = {
           consultant_id: string
           created_at?: string
           cross_sell_bot?: boolean
+          last_sync_boletos?: string | null
+          last_sync_cashback?: string | null
+          last_sync_customers?: string | null
+          last_sync_devolutivas?: string | null
+          last_sync_metrics?: string | null
+          last_sync_network?: string | null
+          last_sync_painel_rede?: string | null
+          last_sync_seguros?: string | null
+          last_sync_telecom?: string | null
           rotinas_tarefas?: boolean
           updated_at?: string
         }
@@ -5249,6 +5267,15 @@ export type Database = {
           consultant_id?: string
           created_at?: string
           cross_sell_bot?: boolean
+          last_sync_boletos?: string | null
+          last_sync_cashback?: string | null
+          last_sync_customers?: string | null
+          last_sync_devolutivas?: string | null
+          last_sync_metrics?: string | null
+          last_sync_network?: string | null
+          last_sync_painel_rede?: string | null
+          last_sync_seguros?: string | null
+          last_sync_telecom?: string | null
           rotinas_tarefas?: boolean
           updated_at?: string
         }
@@ -5290,6 +5317,7 @@ export type Database = {
           cancelados_n: number | null
           cashback_green_saldo: number | null
           cashback_json: Json | null
+          cashback_seguros_saldo: number | null
           cashback_telecom_saldo: number | null
           clientes_green: number | null
           clientes_seguros: number | null
@@ -5308,13 +5336,18 @@ export type Database = {
           licenciados_total: number | null
           mes_ref: string
           mwh: number | null
+          painel_inativos_json: Json | null
+          painel_onboarding_json: Json | null
+          painel_ranking_json: Json | null
           raw_json: Json | null
           rede_tamanho: number | null
           reprovados_n: number | null
           rotina_diaria: Json | null
           rotina_mensal: Json | null
           rotina_semanal: Json | null
+          seguros_resumo_json: Json | null
           synced_at: string
+          telecom_resumo_json: Json | null
           total_cadastros: number | null
           updated_at: string
           validados_n: number | null
@@ -5325,6 +5358,7 @@ export type Database = {
           cancelados_n?: number | null
           cashback_green_saldo?: number | null
           cashback_json?: Json | null
+          cashback_seguros_saldo?: number | null
           cashback_telecom_saldo?: number | null
           clientes_green?: number | null
           clientes_seguros?: number | null
@@ -5343,13 +5377,18 @@ export type Database = {
           licenciados_total?: number | null
           mes_ref: string
           mwh?: number | null
+          painel_inativos_json?: Json | null
+          painel_onboarding_json?: Json | null
+          painel_ranking_json?: Json | null
           raw_json?: Json | null
           rede_tamanho?: number | null
           reprovados_n?: number | null
           rotina_diaria?: Json | null
           rotina_mensal?: Json | null
           rotina_semanal?: Json | null
+          seguros_resumo_json?: Json | null
           synced_at?: string
+          telecom_resumo_json?: Json | null
           total_cadastros?: number | null
           updated_at?: string
           validados_n?: number | null
@@ -5360,6 +5399,7 @@ export type Database = {
           cancelados_n?: number | null
           cashback_green_saldo?: number | null
           cashback_json?: Json | null
+          cashback_seguros_saldo?: number | null
           cashback_telecom_saldo?: number | null
           clientes_green?: number | null
           clientes_seguros?: number | null
@@ -5378,13 +5418,18 @@ export type Database = {
           licenciados_total?: number | null
           mes_ref?: string
           mwh?: number | null
+          painel_inativos_json?: Json | null
+          painel_onboarding_json?: Json | null
+          painel_ranking_json?: Json | null
           raw_json?: Json | null
           rede_tamanho?: number | null
           reprovados_n?: number | null
           rotina_diaria?: Json | null
           rotina_mensal?: Json | null
           rotina_semanal?: Json | null
+          seguros_resumo_json?: Json | null
           synced_at?: string
+          telecom_resumo_json?: Json | null
           total_cadastros?: number | null
           updated_at?: string
           validados_n?: number | null

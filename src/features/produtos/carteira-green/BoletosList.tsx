@@ -141,6 +141,13 @@ export function BoletosList({ boletos }: { boletos: BoletoRow[] }) {
                     {b.cidade || "?"}/{b.uf || "?"} · {b.fornecedora || "—"} · vence{" "}
                     {b.vencimento ? new Date(b.vencimento).toLocaleDateString("pt-BR") : "—"}
                   </p>
+                  {(b.valor_fornecedora || b.valor_distribuidora || b.tipo_pagamento) && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {b.valor_fornecedora ? <>Fornecedora: <strong>{BRL(Number(b.valor_fornecedora))}</strong> · </> : null}
+                      {b.valor_distribuidora ? <>Distribuidora: <strong>{BRL(Number(b.valor_distribuidora))}</strong> · </> : null}
+                      {b.tipo_pagamento ? <>Pgto: {b.tipo_pagamento}</> : null}
+                    </p>
+                  )}
                   {!pago && (
                     <p className="text-[11px] text-muted-foreground mt-0.5 italic">
                       Sugestão: {INTENT_ACTION[intent]}
@@ -159,6 +166,13 @@ export function BoletosList({ boletos }: { boletos: BoletoRow[] }) {
                       </Button>
                     </a>
                   )}
+                  {b.url_invoice && (
+                    <a href={b.url_invoice} target="_blank" rel="noreferrer">
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]">
+                        <ExternalLink className="h-3 w-3 mr-1" /> NF
+                      </Button>
+                    </a>
+                  )}
                   {b.phone_whatsapp && b.url_boleto && (
                     <a
                       href={`https://wa.me/${b.phone_whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
@@ -173,6 +187,7 @@ export function BoletosList({ boletos }: { boletos: BoletoRow[] }) {
                     </a>
                   )}
                 </div>
+
               </div>
             </li>
           );

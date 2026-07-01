@@ -12,6 +12,8 @@ export interface BoletoRow {
   uf: string | null;
   mes_referencia: string | null;
   total: number | null;
+  valor_fornecedora: number | null;
+  valor_distribuidora: number | null;
   vencimento: string | null;
   pagamento: string | null;
   status: string | null;
@@ -20,12 +22,14 @@ export interface BoletoRow {
   kwh_compensado: number | null;
   conta_unica: boolean | null;
   fornecedora: string | null;
+  tipo_pagamento: string | null;
   url_invoice: string | null;
   url_boleto: string | null;
   synced_at: string | null;
   phone_whatsapp: string | null;
   customer_name: string | null;
 }
+
 
 export interface DevolutivaRow {
   id: string;

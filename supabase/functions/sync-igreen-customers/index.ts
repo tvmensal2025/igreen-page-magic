@@ -287,6 +287,11 @@ async function persistMetrics(supabase: any, consultantId: string | null, metric
     rotina_diaria: metrics.rotina_diaria ?? null,
     rotina_semanal: metrics.rotina_semanal ?? null,
     rotina_mensal: metrics.rotina_mensal ?? null,
+    painel_onboarding_json: metrics.painel_onboarding ?? null,
+    painel_inativos_json: metrics.painel_inativos ?? null,
+    painel_ranking_json: metrics.painel_ranking ?? null,
+    telecom_resumo_json: metrics.telecom_resumo ?? null,
+    seguros_resumo_json: metrics.seguros_resumo ?? null,
     raw_json: metrics,
     synced_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -400,11 +405,13 @@ async function persistCashback(supabase: any, consultantId: string | null, cashb
   const mes = new Date().toISOString().slice(0, 7);
   const green = cashback.green || {};
   const telecom = cashback.telecom || {};
+  const seguros = cashback.seguros || {};
   const { error } = await supabase
     .from("igreen_consultant_metrics")
     .update({
       cashback_green_saldo: safeNum(green.saldo),
       cashback_telecom_saldo: safeNum(telecom.saldo),
+      cashback_seguros_saldo: safeNum(seguros.saldo),
       cashback_json: cashback,
       updated_at: new Date().toISOString(),
     })
@@ -659,10 +666,10 @@ async function syncOneConsultant(
       alert_boletos_vencendo: true,
       alert_devolutivas: true,
       alert_licencas_expirando: true,
-      rotinas_tarefas: false,
-      auto_wa_boleto_vencendo: false,
+      rotinas_tarefas: true,
+      auto_wa_boleto_vencendo: true,
       auto_wa_aniversariante: false,
-      cross_sell_bot: false,
+      cross_sell_bot: true,
     };
     let toggles: Record<string, boolean> = { ...DEFAULT_ON };
     if (consultantId) {
