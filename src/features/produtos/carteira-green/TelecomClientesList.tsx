@@ -63,20 +63,18 @@ export function TelecomClientesList({ consultantId }: { consultantId: string }) 
   const hasQuery = q.trim().length > 0;
 
   return (
-    <section className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.03] to-card">
-      <header className="p-4 border-b border-emerald-500/15 bg-emerald-500/5 space-y-2">
+    <section className="rounded-xl border border-border/60 bg-card">
+      <header className="p-4 border-b border-border/60 space-y-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <PhoneCall className="w-3.5 h-3.5" />
-            </span>
+            <PhoneCall className="w-4 h-4 text-muted-foreground" />
             Clientes Telecom
-            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-700">
+            <Badge variant="outline" className="text-[10px] font-normal">
               {hasQuery ? `${filtered.length} de ${data.length}` : data.length}
             </Badge>
           </h3>
           <span className="text-[11px] text-muted-foreground">
-            MRR {hasQuery ? "filtrado" : "ativos"}: <strong className="text-emerald-700">{BRL(mrr)}</strong>
+            MRR {hasQuery ? "filtrado" : "ativos"}: <strong className="text-foreground">{BRL(mrr)}</strong>
           </span>
         </div>
         <div className="relative">
@@ -89,9 +87,9 @@ export function TelecomClientesList({ consultantId }: { consultantId: string }) 
           Nenhum resultado para <strong>«{q}»</strong>.
         </div>
       ) : (
-        <ul className="divide-y divide-emerald-500/10 max-h-[500px] overflow-y-auto">
+        <ul className="divide-y divide-border/60 max-h-[500px] overflow-y-auto">
           {filtered.slice(0, 300).map((c) => (
-            <li key={c.id} className="p-3 hover:bg-emerald-500/5 transition-colors">
+            <li key={c.id} className="p-3 hover:bg-muted/40 transition-colors">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -121,11 +119,12 @@ export function TelecomClientesList({ consultantId }: { consultantId: string }) 
         </ul>
       )}
       {filtered.length > 300 && (
-        <p className="p-2 text-[10px] text-center text-muted-foreground border-t border-emerald-500/15">
+        <p className="p-2 text-[10px] text-center text-muted-foreground border-t border-border/60">
           Mostrando 300 primeiros — refine a busca.
         </p>
       )}
     </section>
   );
+
 
 }
