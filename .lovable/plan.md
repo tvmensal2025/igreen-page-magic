@@ -1,58 +1,89 @@
-# Enxugar aba Clientes — detalhes dentro do cliente
+# Auditoria — Sincronização iGreen por consultor
 
-## Objetivo
-A aba **Clientes** hoje empilha muitos blocos grandes lado a lado (Hero + 4 KPIs, Métricas do consultor com 4 sub-cards, Status da carteira, Intenção de pagamento, Boletos, Devolutivas). O usuário quer **menos ruído visual sem perder informação** — mover o que é "por cliente" para dentro do próprio cliente e deixar no topo só o que é panorâmico.
+## O que já está 100% certo
 
-## Princípio
-- **Topo (panorama):** poucos números, uma linha só.
-- **Meio (ação):** uma tabela unificada de clientes, com filtros.
-- **Detalhe (drawer):** ao clicar num cliente, abre um painel lateral com TODA a informação daquele cliente (boletos, devolutivas, injeção, telecom, seguros, cashback dele).
+1. **Credenciais por consultor (isolado)**
+  `IGreenConnectionCard` (Admin → Configurações) grava `igreen_portal_email` + `igreen_portal_password` na linha do próprio `consultants.id`. A senha nunca é lida de volta (REVOKE SELECT para `authenticated`/`anon`, GRANT apenas INSERT/UPDATE) — o worker lê via `service_role` na edge.
+2. **Fluxo de sync individual**
+  Botão "Sincronizar agora" → `runIgreenSync(userId,"sync_all")` → edge `sync-igreen-customers` → lê credenciais do próprio consultor pelo `consultant_id` → chama worker green (`worker-igreen-sync`) → persiste tudo com `consultant_id` fixo em cada upsert. Isolamento por consultor confirmado em todas as tabelas.
+3. **Persistência completa (`sync_all`)** grava em:
+  - `customers` (`onConflict: phone_whatsapp,consultant_id`) — 562 hoje.
+  - `igreen_customer_boletos` (`consultant_id,idcliente,mes_referencia`) — 21.
+  - `igreen_customer_devolutivas` (`consultant_id,idcliente,campo,categoria`).
+  - `igreen_telecom_customers` (`consultant_id,idcnxtelecom`).
+  - `igreen_seguros_customers` (`consultant_id,seguro_id`).
+  - `igreen_consultant_metrics` (`consultant_id,mes_ref`).
+  - `consultant_network` (`consultant_id,igreen_id`).
+  - `igreen_automation_settings` (flags de captura, todas `true` por padrão).
+  - `settings.last_igreen_sync`.
+4. **Cron diário** `sync-igreen-customers-daily` (09:00 UTC) roda `sync_all` para **todos os consultores aprovados que têm email+senha**, em background (`EdgeRuntime.waitUntil`, evitando `504 IDLE_TIMEOUT`).
+5. **Fallback OCR / erros do portal** classificados corretamente (`not_configured`, `waf_blocked`, `invalid_credentials`), com mensagens amigáveis no toast.
 
-## Mudanças em `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx`
+## O que NÃO está 100% (achados)
 
-### 1. Faixa 1 — Hero enxuto (era faixa hero + KPI ribbon)
-- Manter só o título "Carteira iGreen" + timestamp de última sync.
-- Colapsar os 4 HeroKpi numa **única linha compacta** (chips inline): `159 clientes · 21 boletos abertos · 92% adimplência · 12,4k kWh`.
-- Remove `HeroKpi` cards grandes.
+**A. Só 1 dos 8 consultores tem credenciais salvas.**  
+Verificado no banco: apenas *Rafael Ferreira* possui `igreen_portal_email`/`password`. Os outros 7 (Abel, Bruna, Bryan, elizavip4545, henzofelipef, olimpiajanete15, silviaclaudiaalmeida) nunca configuraram — logo o cron pula eles e a carteira deles fica vazia. **Não é bug**, mas a UI não avisa proativamente.
 
-### 2. Faixa 2 — Métricas do consultor (compactar)
-- Hoje: 4 sub-cards (Clientes, Rede, Cadastros do mês, Cashback) com 4-7 linhas cada = ~20 números.
-- Novo: **1 linha de KPIs colapsável** ("Métricas do mês" — clicar expande os detalhes). Fechado por padrão.
-- `ConsultantMetricsCard` ganha prop `defaultOpen={false}` e vira `<Collapsible>`.
+**B. Card fica escondido em "Configurações".**  
+Consultores novos não descobrem sozinhos que precisam ligar o iGreen. Sem badge de status no Admin/Clientes/Central de Agendamentos.
 
-### 3. Faixa 3 — Remover
-- `StatusCards` (Status da carteira) e `PaymentIntent` (Intenção de pagamento) são **derivados dos boletos**. Movê-los para **dentro do drawer do cliente** (mostra intenção daquele cliente) e no topo virar só os 2 chips do hero.
-- Elimina a grid 3/2 inteira da Faixa 3.
+**C. Sem histórico por sync (só `last_igreen_sync` global).**  
+Hoje só sabemos o último timestamp global. Não temos, por consultor: quando rodou, quantos boletos/clientes/devolutivas vieram, se falhou (WAF/credenciais). O `igreen_automation_settings.last_sync_*` já tem colunas mas o worker/edge **não estão atualizando elas**.
 
-### 4. Faixa 4 — Unificar em UMA tabela "Clientes"
-- Substituir `BoletosList` + `DevolutivasList` lado a lado por **uma tabela única `ClientesCarteiraTable`** agrupada por cliente (não por boleto):
-  - Colunas: Cliente · Cidade/UF · Status financeiro (badge derivado do último boleto) · Devolutivas pendentes (contador) · Injeção (✓/–) · Ação.
-  - Filtros no topo (chips): Todos / Vencidos / Disponíveis / Pagos / Com devolutiva.
-  - Busca única por nome/cidade/fornecedora.
-- Clicar no cliente abre um **drawer lateral** (`Sheet` shadcn já usado no projeto) `ClienteDetalheDrawer` que renderiza, para aquele `customer_id`:
-  - Cabeçalho: nome, telefone, cidade, fornecedora, botão WhatsApp.
-  - Aba **Boletos**: mini `BoletosList` filtrado por cliente (a lógica existente reaproveitada com prop `filterByCustomer`).
-  - Aba **Devolutivas**: mini `DevolutivasList` filtrado por cliente.
-  - Aba **Intenção de pagamento**: `PaymentIntent` recebendo só os boletos daquele cliente.
-  - Aba **Telecom/Seguros**: `TelecomClientesList`/`SegurosClientesList` filtrados por telefone/nome.
+**D. Nenhum retry automático quando falha.**  
+Se o Cloudflare bloqueia (`waf_blocked`) ou o login expira, a edge só devolve erro. Não há reagendamento nem alerta no painel.
 
-### 5. Resultado
-- Página passa de ~6 blocos grandes para **3 blocos** (Hero linha, Métricas colapsável, Tabela clientes).
-- Toda informação continua acessível — está a 1 clique dentro do cliente.
+**E. Diagnóstico de endpoints exposto só ao Rafael logado.**  
+`EndpointDiscoveryCard` só mostra dados globais — não filtra por `consultant_id`, então o admin não sabe *para qual consultor* um endpoint falhou.
+
+**F. Sem validação no `save()`.**  
+O card grava email/senha sem testar login antes. Consultor pode salvar credencial errada e só descobrir horas depois no primeiro sync (ou pelo cron silencioso).
+
+**G. Secrets iGreen no consultor, não no vault.**  
+`igreen_portal_password` está em coluna `text` (com REVOKE SELECT). Funciona, mas ideal seria criptografar com `pgsodium`/`vault` para defesa em profundidade.
+
+## Plano de melhoria (proposto — pequeno e incremental)
+
+**PR 1 — Status visível por consultor**  
+
+- Novo componente `IGreenSyncStatusBadge` no header do Admin (aba Clientes) e ao lado do botão "Sincronizar":
+  - Se sem credencial → CTA vermelho "Ligar iGreen" que abre Configurações no card certo (deep-link `?section=igreen`).
+  - Se com credencial → mostra último sync por tabela (boletos/clientes/devolutivas) + contadores.
+
+**PR 2 — Persistir métricas por sync**  
+
+- No worker, ao final de cada bloco (`persistBoletos`, `persistTelecom`, `persistSeguros`, `persistCustomers`, `persistNetwork`, `persistDevolutivas`), atualizar as colunas `last_sync_*` de `igreen_automation_settings` (upsert por `consultant_id`) com timestamp + count.
+- Criar tabela leve `igreen_sync_runs (consultant_id, started_at, finished_at, mode, status, counts jsonb, error text)` para histórico dos últimos 30 dias.
+
+**PR 3 — Validação de credenciais no salvar**  
+
+- Adicionar endpoint `POST /validate-credentials` no worker (só login, sem sync).
+- No `IGreenConnectionCard.save()`, após salvar chamar `sync-igreen-customers` com `mode:"validate"`; se falhar, exibir toast com motivo específico e marcar `igreen_credential_status` na linha do consultor (`valid|invalid|waf`).
+
+**PR 4 — Retry inteligente + alerta**  
+
+- Se sync falhar por `waf_blocked`, reagendar automaticamente em 15/45/120 min (via `pg_cron` one-shot ou `scheduled_messages`-like).
+- Se falhar por `invalid_credentials`, disparar notificação in-app para o consultor + email opcional.
+
+**PR 5 — Diagnóstico por consultor**  
+
+- Filtrar `EndpointDiscoveryCard` por `consultant_id` selecionado; superadmin escolhe consultor no dropdown.
+- Adicionar coluna `consultant_id` em `igreen_endpoint_discovery` (se ainda não tiver).
+
+**PR 6 (opcional) — Vault para senha**  
+
+- Migrar `igreen_portal_password` para `vault.secrets` referenciado por `consultants.igreen_password_secret_id`.
+- Worker/edge passam a resolver via `vault.decrypted_secrets`.
 
 ## Arquivos afetados
-- `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` — reescrever layout.
-- `src/features/produtos/carteira-green/ConsultantMetricsCard.tsx` — envolver em `Collapsible`, fechado por padrão.
-- **Novo** `src/features/produtos/carteira-green/ClientesCarteiraTable.tsx` — tabela unificada por cliente + filtros.
-- **Novo** `src/features/produtos/carteira-green/ClienteDetalheDrawer.tsx` — `Sheet` com abas (Boletos/Devolutivas/Intenção/Telecom/Seguros) do cliente selecionado.
-- `BoletosList.tsx` / `DevolutivasList.tsx` / `PaymentIntent.tsx` / `TelecomClientesList.tsx` / `SegurosClientesList.tsx` — aceitar prop opcional `customerKey` (idcliente/telefone) para filtrar por 1 cliente quando embutidos no drawer. Sem prop, seguem funcionando como hoje (para o Admin geral, se ainda usado).
 
-## Sem impacto
-- Nenhuma mudança de schema, hook de dados (`useBoletosCarteira`, `useDevolutivasCarteira`) ou lógica de sync.
-- Tokens de cor e tipografia (Space Grotesk + DM Sans) mantidos.
-- `RedeDashboardCard`, `RotinasPanel` e `EndpointDiscoveryCard` não são tocados (moram em outras abas).
+- `src/components/admin/IGreenConnectionCard.tsx` (validação inline + deep-link).
+- `src/pages/Admin.tsx` (badge de status na aba Clientes).
+- `supabase/functions/sync-igreen-customers/index.ts` (modo `validate`, atualização de `last_sync_*`, gravação em `igreen_sync_runs`).
+- `worker-igreen-sync/server.mjs` (endpoint `/validate-credentials`, retorno de counts).
+- Migração SQL: nova tabela `igreen_sync_runs` + colunas `igreen_credential_status`, `igreen_credential_checked_at` em `consultants`.
+- Novo `src/components/admin/IGreenSyncStatusBadge.tsx`.
 
-## Confirmação antes de implementar
-Duas perguntas rápidas:
-1. Prefere o drawer **lateral (Sheet)** ou uma **linha expansível na própria tabela**? (recomendo Sheet — cabe mais informação no mobile).
-2. A faixa "Métricas do consultor" deve ficar **colapsada por padrão** (mais limpo) ou **aberta** (visão imediata)?
+Nenhuma mudança quebra o fluxo atual — tudo é aditivo. Após o PR 1+2 já teremos visibilidade total do que cada consultor está capturando.  
+  
+EU AINDA NAO ENSINEI OS OUTROS CONSUTLOTRES, POR ISSO NINGUEM COLOCOU OS DADOS AINDA.

@@ -2,7 +2,7 @@
 // (que delega ao worker green no EasyPanel). Substitui a antiga extensão Chrome.
 import { supabase } from "@/integrations/supabase/client";
 
-export type SyncMode = "sync" | "sync_network" | "sync_metrics" | "sync_boletos" | "sync_all";
+export type SyncMode = "sync" | "sync_network" | "sync_metrics" | "sync_boletos" | "sync_all" | "validate";
 
 export type SyncResult =
   | { ok: true; data: Record<string, unknown> }

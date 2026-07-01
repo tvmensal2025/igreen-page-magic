@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useBoletosCarteira, useDevolutivasCarteira, computeCarteiraStats } from "./hooks";
 import { ConsultantMetricsCard } from "./ConsultantMetricsCard";
 import { ClientesCarteiraTable } from "./ClientesCarteiraTable";
+import { IGreenSyncStatusBadge } from "@/components/admin/IGreenSyncStatusBadge";
 
 const SYNC_STEPS = ["Clientes", "Boletos", "Devolutivas", "Métricas", "Licenças"];
 
@@ -109,15 +110,18 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
                 Sua carteira
               </h2>
             </div>
-            {lastSync && (
-              <div className="rounded-full border border-border/60 bg-background/60 px-3 py-1.5 flex items-center gap-2 text-[11px]">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                <span className="text-muted-foreground">Sincronizado</span>
-                <strong className="text-foreground font-medium">
-                  {new Date(lastSync).toLocaleString("pt-BR")}
-                </strong>
-              </div>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <IGreenSyncStatusBadge userId={consultantId} />
+              {lastSync && (
+                <div className="rounded-full border border-border/60 bg-background/60 px-3 py-1.5 flex items-center gap-2 text-[11px]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                  <span className="text-muted-foreground">Sincronizado</span>
+                  <strong className="text-foreground font-medium">
+                    {new Date(lastSync).toLocaleString("pt-BR")}
+                  </strong>
+                </div>
+              )}
+            </div>
           </div>
 
           {!noData && (

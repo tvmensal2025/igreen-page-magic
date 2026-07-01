@@ -29,27 +29,36 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [consultorId, setConsultorId] = useState<string | null>(null);
 
+  const [credStatus, setCredStatus] = useState<string | null>(null);
+  const [credCheckedAt, setCredCheckedAt] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+
+  const reloadStatus = async () => {
+    const { data } = await supabase
+      .from("consultants")
+      .select("igreen_portal_email, igreen_consultor_id, igreen_credential_status, igreen_credential_checked_at")
+      .eq("id", userId)
+      .maybeSingle();
+    if (data) {
+      setEmail((data.igreen_portal_email as string) || "");
+      setConsultorId((data.igreen_consultor_id as string) || null);
+      setHasSavedPassword(!!data.igreen_portal_email);
+      setCredStatus((data as { igreen_credential_status?: string }).igreen_credential_status ?? null);
+      setCredCheckedAt((data as { igreen_credential_checked_at?: string }).igreen_credential_checked_at ?? null);
+    }
+  };
+
   useEffect(() => {
     if (!userId) return;
     (async () => {
       setLoading(true);
-      // Não lemos a senha (coluna com REVOKE SELECT p/ authenticated). Só sabemos
-      // se existe via a flag igreen_consultor_id / presença anterior de sync.
-      const { data } = await supabase
-        .from("consultants")
-        .select("igreen_portal_email, igreen_consultor_id")
-        .eq("id", userId)
-        .maybeSingle();
-      if (data) {
-        setEmail((data.igreen_portal_email as string) || "");
-        setConsultorId((data.igreen_consultor_id as string) || null);
-        setHasSavedPassword(!!data.igreen_portal_email);
-      }
+      await reloadStatus();
       const { data: s } = await supabase
         .from("settings").select("value").eq("key", "last_igreen_sync").maybeSingle();
       if (s?.value) setLastSync(s.value as string);
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const save = async () => {
@@ -60,13 +69,33 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
     setSaving(true);
     try {
       const patch: Record<string, unknown> = { igreen_portal_email: email.trim().toLowerCase() };
-      // Só grava a senha se o usuário digitou uma nova (campo vem vazio por segurança).
-      if (password.trim()) patch.igreen_portal_password = password;
+      const passwordChanged = !!password.trim();
+      if (passwordChanged) patch.igreen_portal_password = password;
       const { error } = await supabase.from("consultants").update(patch as never).eq("id", userId);
       if (error) throw error;
-      if (password.trim()) setHasSavedPassword(true);
+      if (passwordChanged) setHasSavedPassword(true);
       setPassword("");
-      toast({ title: "Conexão salva", description: "Credenciais do escritório iGreen atualizadas." });
+      toast({ title: "Conexão salva", description: "Validando credenciais no portal iGreen…" });
+
+      // Validação: chama a edge em modo `validate` (login leve, sem sync completo).
+      if (passwordChanged || !credStatus) {
+        setValidating(true);
+        const res = await runIgreenSync(userId, "validate");
+        await reloadStatus();
+        if (res.ok === false) {
+          const failure = res as { ok: false; reason: string; error: string };
+          if (failure.reason === "invalid_credentials") {
+            toast({ title: "Login inválido", description: "E-mail ou senha do escritório iGreen incorretos.", variant: "destructive" });
+          } else if (failure.reason === "waf_blocked") {
+            toast({ title: "Portal bloqueado agora", description: "Cloudflare bloqueou o teste. Tente novamente em alguns minutos.", variant: "destructive" });
+          } else {
+            toast({ title: "Não consegui validar", description: failure.error, variant: "destructive" });
+          }
+        } else {
+          toast({ title: "✅ Credenciais válidas", description: "Login no escritório iGreen confirmado." });
+        }
+        setValidating(false);
+      }
     } catch (e) {
       toast({ title: "Erro ao salvar", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {
@@ -166,14 +195,29 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={save} disabled={saving} size="sm" variant="outline">
-              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-              Salvar credenciais
+            <Button onClick={save} disabled={saving || validating} size="sm" variant="outline">
+              {saving || validating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              {validating ? "Validando…" : "Salvar credenciais"}
             </Button>
             <Button onClick={sync} disabled={syncing || !hasSavedPassword} size="sm">
               {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               Sincronizar agora
             </Button>
+            {credStatus && (
+              <span
+                className={
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium " +
+                  (credStatus === "valid"
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
+                    : credStatus === "waf_blocked"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
+                    : "border-red-500/40 bg-red-500/10 text-red-700")
+                }
+                title={credCheckedAt ? `Verificado ${formatDistanceToNow(new Date(credCheckedAt), { addSuffix: true, locale: ptBR })}` : undefined}
+              >
+                {credStatus === "valid" ? "✓ Login OK" : credStatus === "invalid_credentials" ? "Login inválido" : credStatus === "waf_blocked" ? "Bloqueado (WAF)" : "Falha"}
+              </span>
+            )}
             <span className="text-xs text-muted-foreground ml-auto">
               {syncLabel}{consultorId ? ` • ID iGreen ${consultorId}` : ""}
             </span>

@@ -248,6 +248,77 @@ async function callWorker(
 }
 
 // =====================================================
+// Telemetria: registra a execução em igreen_sync_runs +
+// atualiza consultants.igreen_credential_status.
+// =====================================================
+function classifyError(err: string | undefined): string {
+  const msg = String(err || "").toLowerCase();
+  if (/invalid|credenc|senha|password|unauth|401|403/.test(msg)) return "invalid_credentials";
+  if (/cloudflare|challenge|blocked|waf|captcha|429/.test(msg)) return "waf_blocked";
+  return "failed";
+}
+
+// deno-lint-ignore no-explicit-any
+async function logSyncStart(supabase: any, consultantId: string | null, mode: string): Promise<string | null> {
+  if (!consultantId) return null;
+  const { data, error } = await supabase
+    .from("igreen_sync_runs")
+    .insert({ consultant_id: consultantId, mode, status: "running" })
+    .select("id")
+    .single();
+  if (error) { console.warn("[telemetry] logSyncStart:", error.message); return null; }
+  return data?.id ?? null;
+}
+
+// deno-lint-ignore no-explicit-any
+async function logSyncFinish(
+  supabase: any,
+  runId: string | null,
+  consultantId: string | null,
+  result: Record<string, unknown>,
+): Promise<void> {
+  const success = Boolean(result?.success);
+  const errText = success ? null : String(result?.error || "");
+  const status = success ? "ok" : classifyError(errText || undefined);
+  const counts: Record<string, unknown> = {};
+  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts"]) {
+    if (result[k] != null) counts[k] = result[k];
+  }
+  if (runId) {
+    await supabase.from("igreen_sync_runs").update({
+      status, counts, error: errText, finished_at: new Date().toISOString(),
+    }).eq("id", runId);
+  }
+  if (consultantId) {
+    await supabase.from("consultants").update({
+      igreen_credential_status: success ? "valid" : status,
+      igreen_credential_checked_at: new Date().toISOString(),
+      igreen_credential_error: errText,
+    }).eq("id", consultantId);
+  }
+  // Atualiza last_sync_* em igreen_automation_settings quando aplicável
+  if (consultantId && success) {
+    const now = new Date().toISOString();
+    const updates: Record<string, string> = {};
+    const map: Record<string, string> = {
+      customers: "last_sync_customers",
+      boletos: "last_sync_boletos",
+      devolutivas: "last_sync_devolutivas",
+      metrics: "last_sync_metrics",
+      network: "last_sync_network",
+      telecom: "last_sync_telecom",
+      seguros: "last_sync_seguros",
+      cashback: "last_sync_cashback",
+    };
+    for (const [k, col] of Object.entries(map)) if (result[k] != null) updates[col] = now;
+    if (Object.keys(updates).length > 0) {
+      await supabase.from("igreen_automation_settings")
+        .upsert({ consultant_id: consultantId, ...updates }, { onConflict: "consultant_id" });
+    }
+  }
+}
+
+// =====================================================
 // syncOneConsultant — chama o worker e processa os dados
 // =====================================================
 // =====================================================
@@ -649,6 +720,14 @@ async function syncOneConsultant(
   if (!emailNorm || !passwordNorm) {
     return { success: false, email: emailNorm, error: "Credenciais do portal iGreen não preenchidas." };
   }
+
+  // === VALIDATE MODE: só verifica login (chamada leve). ===
+  if (mode === "validate") {
+    const r = await callWorker(worker, "/sync-metrics", { portal_email: emailNorm, portal_password: passwordNorm });
+    if (!r.ok) return { success: false, email: emailNorm, error: r.error || "Falha ao validar", status: r.status };
+    return { success: true, mode: "validate", email: emailNorm };
+  }
+
 
   // === SYNC ALL MODE (recomendado): 1 login → tudo, respeitando os toggles ===
   if (mode === "sync_all") {
@@ -1078,8 +1157,10 @@ Deno.serve(async (req) => {
       const runAll = async () => {
         for (const c of usable) {
           console.log(`--- [bg] Syncing: ${c.name} (${c.igreen_portal_email}) ---`);
+          const runId = await logSyncStart(supabase, c.id, cronMode);
+          let r: Record<string, unknown> = { success: false, error: "unknown" };
           try {
-            await syncOneConsultant(
+            r = await syncOneConsultant(
               supabase,
               worker,
               c.igreen_portal_email,
@@ -1088,7 +1169,10 @@ Deno.serve(async (req) => {
               cronMode,
             );
           } catch (err) {
+            r = { success: false, error: err instanceof Error ? err.message : String(err) };
             console.error(`[bg] Error syncing ${c.name}:`, err);
+          } finally {
+            await logSyncFinish(supabase, runId, c.id, r);
           }
           await new Promise((r) => setTimeout(r, 3000));
         }
@@ -1138,15 +1222,30 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Modo validate roda inline e responde na hora (é leve).
+    if (mode === "validate") {
+      const runId = await logSyncStart(supabase, consultantId, mode);
+      const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode);
+      await logSyncFinish(supabase, runId, consultantId, r);
+      return new Response(JSON.stringify(r), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Executa em background e responde imediato (evita IDLE_TIMEOUT de 150s).
     const runOne = async () => {
+      const runId = await logSyncStart(supabase, consultantId, mode);
+      let r: Record<string, unknown> = { success: false, error: "unknown" };
       try {
-        const r = await syncOneConsultant(
+        r = await syncOneConsultant(
           supabase, worker, portalEmail!, portalPassword!, consultantId, mode,
         );
         console.log(`[bg] sync single done:`, JSON.stringify(r).slice(0, 300));
       } catch (err) {
+        r = { success: false, error: err instanceof Error ? err.message : String(err) };
         console.error(`[bg] sync single error:`, err);
+      } finally {
+        await logSyncFinish(supabase, runId, consultantId, r);
       }
     };
     // @ts-ignore EdgeRuntime existe no Supabase edge runtime

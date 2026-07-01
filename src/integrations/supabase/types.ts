@@ -2994,6 +2994,9 @@ export type Database = {
           google_analytics_id: string | null
           id: string
           igreen_consultor_id: string | null
+          igreen_credential_checked_at: string | null
+          igreen_credential_error: string | null
+          igreen_credential_status: string | null
           igreen_id: string | null
           igreen_portal_email: string | null
           igreen_portal_password: string | null
@@ -3038,6 +3041,9 @@ export type Database = {
           google_analytics_id?: string | null
           id: string
           igreen_consultor_id?: string | null
+          igreen_credential_checked_at?: string | null
+          igreen_credential_error?: string | null
+          igreen_credential_status?: string | null
           igreen_id?: string | null
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
@@ -3082,6 +3088,9 @@ export type Database = {
           google_analytics_id?: string | null
           id?: string
           igreen_consultor_id?: string | null
+          igreen_credential_checked_at?: string | null
+          igreen_credential_error?: string | null
+          igreen_credential_status?: string | null
           igreen_id?: string | null
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
@@ -5829,6 +5838,68 @@ export type Database = {
           },
           {
             foreignKeyName: "igreen_seguros_customers_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      igreen_sync_runs: {
+        Row: {
+          consultant_id: string
+          counts: Json
+          error: string | null
+          finished_at: string | null
+          id: string
+          mode: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          consultant_id: string
+          counts?: Json
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          mode: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          consultant_id?: string
+          counts?: Json
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          mode?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_sync_runs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_sync_runs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_sync_runs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_sync_runs_consultant_id_fkey"
             columns: ["consultant_id"]
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
