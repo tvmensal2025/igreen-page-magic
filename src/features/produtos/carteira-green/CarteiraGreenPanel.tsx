@@ -31,6 +31,12 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   const { data: devolutivas = [], isLoading: loadingD, refetch: refetchD } = useDevolutivasCarteira(consultantId);
   const [syncing, setSyncing] = useState(false);
   const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!syncing) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [syncing]);
   const { toast } = useToast();
 
   const stats = useMemo(() => computeCarteiraStats(boletos), [boletos]);
