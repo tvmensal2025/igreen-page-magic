@@ -254,8 +254,34 @@ export function AppSidebar({
               {mobileMoreOpen && (
                 <div className="space-y-0.5 pl-2 border-l border-white/10 ml-3">
                   {MOBILE_MORE_ITEMS.map(renderNavButton)}
+                  {onOpenSettings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenSettings();
+                        onOpenChange?.(false);
+                      }}
+                      className="pe-nav-item w-full text-left"
+                      aria-label="Configurações"
+                    >
+                      <Settings className="w-[18px] h-[18px] shrink-0" />
+                      <span className="truncate">Configurações</span>
+                    </button>
+                  )}
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={onLogout}
+                      className="pe-nav-item w-full text-left"
+                      aria-label="Sair"
+                    >
+                      <LogOut className="w-[18px] h-[18px] shrink-0" />
+                      <span className="truncate">Sair</span>
+                    </button>
+                  )}
                 </div>
               )}
+
             </div>
           )}
 
