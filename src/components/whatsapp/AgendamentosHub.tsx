@@ -308,6 +308,7 @@ export function AgendamentosHub({
             <TabsTrigger value="pos-venda" className="text-xs">Pós-venda</TabsTrigger>
             <TabsTrigger value="reaquecimento" className="text-xs">Reaquecimento</TabsTrigger>
             <TabsTrigger value="campanhas" className="text-xs">Campanhas</TabsTrigger>
+            <TabsTrigger value="igreen" className="text-xs">Automações iGreen</TabsTrigger>
             <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
           </TabsList>
 
