@@ -594,6 +594,17 @@ export function AgendamentosHub({
             )}
           </TabsContent>
 
+          {/* ── Automações iGreen ── */}
+          <TabsContent value="igreen" className="mt-0">
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Captura de dados do escritório iGreen (boletos, devolutivas, telecom, seguros, cashback) é obrigatória e sempre salva.
+              Automações que enviam mensagem ao cliente permanecem desligadas — ative com cuidado.
+            </p>
+            <Suspense fallback={<LoadingRow />}>
+              <AutomacaoIgreenCard consultantId={consultantId} />
+            </Suspense>
+          </TabsContent>
+
           {/* ── Histórico ── */}
           <TabsContent value="historico" className="mt-0">
             <p className="text-[11px] text-muted-foreground mb-3">
