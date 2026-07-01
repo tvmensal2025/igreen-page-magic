@@ -100,13 +100,13 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
             <RadioGroupItem value="D_ONLY" id="m-d" className="mt-1" />
             <Label htmlFor="m-d" className="cursor-pointer flex-1">
               <div className="font-medium">Apenas Fluxo D (botões guiados) — recomendado</div>
-              <div className="text-xs text-muted-foreground">Roteiro fixo e conversacional. Lead sobe pra Fluxo A automaticamente quando pedir cadastro.</div>
+              <div className="text-xs text-muted-foreground">Roteiro fixo e conversacional. Lead sobe pra CEMIG automaticamente quando pedir cadastro.</div>
             </Label>
           </div>
           <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("A_ONLY")}>
             <RadioGroupItem value="A_ONLY" id="m-a" className="mt-1" />
             <Label htmlFor="m-a" className="cursor-pointer flex-1">
-              <div className="font-medium">Apenas Fluxo A (cadastro direto)</div>
+              <div className="font-medium">Apenas CEMIG (cadastro direto)</div>
               <div className="text-xs text-muted-foreground">Vai direto em "envie sua conta de luz". Use só para campanhas/leads muito qualificados.</div>
             </Label>
           </div>

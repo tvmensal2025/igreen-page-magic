@@ -271,7 +271,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                 <WhatsAppStatusPill connected={connected} />
                 {/* Atalho de fluxos reais do consultor (variante + nome) */}
                 <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 shrink-0 max-w-full overflow-x-auto">
-                  {(flowOptions.length > 0 ? flowOptions : [{ variant: "A", name: "Fluxo A" }]).map((f) => (
+                  {(flowOptions.length > 0 ? flowOptions : [{ variant: "A", name: "CEMIG" }]).map((f) => (
                     <button
                       key={f.variant}
                       onClick={() => changeVariant(f.variant as "A" | "B" | "C" | "D" | "E")}
