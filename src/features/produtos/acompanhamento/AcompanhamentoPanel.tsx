@@ -138,8 +138,7 @@ export function AcompanhamentoPanel({
   return (
     <div className="space-y-10 text-pv-ink">
 
-      {/* Carteira multiproduto (Telecom + Seguros) — sync iGreen */}
-      <MultiprodutoCard consultantId={consultantId} />
+
 
       {/* Cross-sell manual: energia → telecom/seguros (consultor decide enviar) */}
       <CrossSellCard consultantId={consultantId} />
