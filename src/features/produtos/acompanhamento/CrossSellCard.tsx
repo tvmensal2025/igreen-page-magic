@@ -28,13 +28,19 @@ function useEnergyCustomers(consultantId?: string) {
     queryFn: async (): Promise<EnergyLead[]> => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, full_name, phone, city, state, sale_stage")
+        .select("id, name, phone_whatsapp, address_city, address_state, pos_venda_stage")
         .eq("consultant_id", consultantId!)
-        .in("sale_stage", ["aprovado", "d30_pos_venda", "d60_pos_venda", "d90_pos_venda", "d120_pos_venda"])
-        .not("phone", "is", null)
+        .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90", "d120"])
+        .not("phone_whatsapp", "is", null)
         .limit(500);
       if (error) throw error;
-      return (data || []) as EnergyLead[];
+      return (data || []).map((r) => ({
+        id: (r as { id: string }).id,
+        full_name: (r as { name: string | null }).name ?? null,
+        phone: (r as { phone_whatsapp: string | null }).phone_whatsapp ?? null,
+        city: (r as { address_city: string | null }).address_city ?? null,
+        state: (r as { address_state: string | null }).address_state ?? null,
+      }));
     },
     staleTime: 60_000,
   });
