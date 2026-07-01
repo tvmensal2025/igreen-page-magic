@@ -152,7 +152,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
     return { totalCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
-  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings]);
+  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds]);
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
