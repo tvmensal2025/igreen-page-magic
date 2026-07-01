@@ -242,8 +242,12 @@ export function useAnalytics(
 
       const licMap = new Map<string, number>();
       for (const c of scopedWalletCustomers) {
-        const lic = c.registered_by_name;
-        if (lic) licMap.set(lic, (licMap.get(lic) || 0) + 1);
+        const nm = (c as any).registered_by_name?.trim();
+        const igid = (c as any).registered_by_igreen_id;
+        const key = nm && nm.length > 0
+          ? nm
+          : (igid ? `#${igid}` : "Sem licenciado");
+        licMap.set(key, (licMap.get(key) || 0) + 1);
       }
       const topLicenciados: TopLicenciado[] = Array.from(licMap.entries())
         .map(([name, deals]) => {
