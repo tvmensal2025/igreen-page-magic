@@ -121,6 +121,14 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
       }
       setLastSync(new Date().toISOString());
       const d = res.data as Record<string, any>;
+      if (d?.background) {
+        await reloadStatus();
+        toast({
+          title: "Sincronização iniciada",
+          description: "O iGreen vai atualizar clientes, boletos, devolutivas, telecom, seguros, rede, métricas e cashback em segundo plano. Pode levar alguns minutos.",
+        });
+        return;
+      }
       if (d?.consultor_id) setConsultorId(String(d.consultor_id));
       const cust = d?.customers?.updated ?? d?.updated ?? 0;
       const net = d?.network?.updated ?? 0;
