@@ -254,8 +254,34 @@ export function AppSidebar({
               {mobileMoreOpen && (
                 <div className="space-y-0.5 pl-2 border-l border-white/10 ml-3">
                   {MOBILE_MORE_ITEMS.map(renderNavButton)}
+                  {onOpenSettings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenSettings();
+                        onOpenChange?.(false);
+                      }}
+                      className="pe-nav-item w-full text-left"
+                      aria-label="Configurações"
+                    >
+                      <Settings className="w-[18px] h-[18px] shrink-0" />
+                      <span className="truncate">Configurações</span>
+                    </button>
+                  )}
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={onLogout}
+                      className="pe-nav-item w-full text-left"
+                      aria-label="Sair"
+                    >
+                      <LogOut className="w-[18px] h-[18px] shrink-0" />
+                      <span className="truncate">Sair</span>
+                    </button>
+                  )}
                 </div>
               )}
+
             </div>
           )}
 
@@ -271,54 +297,45 @@ export function AppSidebar({
             </div>
           ))}
           </div>
+
+          {/* Conta — Configurações e Sair no mesmo padrão dos demais itens */}
+          {(onOpenSettings || onLogout) && (
+            <div>
+              {!collapsed && <div className="pe-sidebar-section">Conta</div>}
+              {collapsed && <div className="my-2 mx-3 h-px bg-white/5" />}
+              <div className="space-y-0.5">
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenSettings();
+                      onOpenChange?.(false);
+                    }}
+                    className="pe-nav-item w-full text-left"
+                    title={collapsed ? "Configurações" : undefined}
+                    aria-label="Configurações"
+                  >
+                    <Settings className="w-[18px] h-[18px] shrink-0" />
+                    {!collapsed && <span className="truncate">Configurações</span>}
+                  </button>
+                )}
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="pe-nav-item w-full text-left"
+                    title={collapsed ? "Sair" : undefined}
+                    aria-label="Sair"
+                  >
+                    <LogOut className="w-[18px] h-[18px] shrink-0" />
+                    {!collapsed && <span className="truncate">Sair</span>}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </nav>
 
-        {/* Configurações + Sair — colados no final, só ao expandir */}
-        {!collapsed && (onOpenSettings || onLogout) && (
-          <div className="px-3 pb-3 shrink-0 space-y-0.5">
-            {onOpenSettings && (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenSettings();
-                  onOpenChange?.(false);
-                }}
-                className="pe-nav-item w-full text-left"
-                title="Configurações"
-                aria-label="Configurações"
-              >
-                <Settings className="w-[18px] h-[18px] shrink-0" />
-                <span className="truncate">Configurações</span>
-              </button>
-            )}
-            {onLogout && (
-              <button
-                type="button"
-                onClick={onLogout}
-                className="pe-nav-item w-full text-left"
-                title="Sair"
-                aria-label="Sair"
-              >
-                <LogOut className="w-[18px] h-[18px] shrink-0" />
-                <span className="truncate">Sair</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {collapsed && onLogout && (
-          <div className="p-2 shrink-0 flex justify-center">
-            <button
-              type="button"
-              onClick={onLogout}
-              className="p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-              aria-label="Sair"
-              title="Sair"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        )}
       </aside>
     </>
   );
