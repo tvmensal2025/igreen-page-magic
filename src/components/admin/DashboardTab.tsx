@@ -264,22 +264,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
         </div>
       )}
 
-      {/* NOVO — Dashboard "Cadastros da Equipe" (agrupa por registered_by_igreen_id) */}
-      {analytics?.allCustomers && (
-        <TeamDashboard
-          leaderConsultantId={userId}
-          customers={analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin))}
-          periodDays={periodDays}
-        />
-      )}
-
-      {/* CLIENTES iGREEN — 5 cards */}
+      {/* CLIENTES iGREEN — 4 cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
-
-        <StatCard icon={<Users className="w-5 h-5" />} label="Total de Clientes" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
+        <StatCard icon={<Users className="w-5 h-5" />} label="Total de cadastros" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Média kWh/cliente" value={`${(filteredMetrics?.avgKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle={`Total: ${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR")} kW`} />
         <StatCard icon={<DollarSign className="w-5 h-5" />} label="Ticket médio (conta)" value={formatCompactBRL(filteredMetrics?.avgBill ?? 0)} color="primary" subtitle="estimado pela tarifa média" />
-        <StatCard icon={<PiggyBank className="w-5 h-5" />} label="Economia gerada" value={formatCompactBRL(filteredMetrics?.economiaGerada ?? 0)} color="accent" subtitle="20% sobre a conta estimada" />
+        <StatCard icon={<Zap className="w-5 h-5" />} label="Total de kWh" value={`${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle="soma da média de consumo" />
       </div>
 
       <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} />
@@ -287,6 +277,15 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
       <TopConsumersCard customers={filteredMetrics?.filteredCustomers} />
       <GeographyCard customers={filteredMetrics?.filteredCustomers} />
       <RetentionCard customers={filteredMetrics?.filteredCustomers} />
+
+      {/* Cadastros da Equipe — no final, após aniversariantes */}
+      {analytics?.allCustomers && (
+        <TeamDashboard
+          leaderConsultantId={userId}
+          customers={analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin))}
+          periodDays={periodDays}
+        />
+      )}
 
 
       {/* Conexão com o Escritório iGreen — pede credenciais quando não configurado */}
