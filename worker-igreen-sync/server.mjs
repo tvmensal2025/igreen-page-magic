@@ -730,6 +730,11 @@ const server = http.createServer(async (req, res) => {
 
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
     }
+    if (req.url === '/probe-endpoints') {
+      const s = await getOrCreateSession(email, password);
+      const results = await probeEndpoints(s, body.paths);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, results });
+    }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
   } catch (e) {
     const status = e?.status || 500;
