@@ -1,53 +1,56 @@
-# Plano — Limpeza e redesign da Carteira iGreen
+# Plano — Reorganizar Clientes iGreen com sidebar
 
-## 1. Remover o CRM Pós-Venda duplicado desta página
+Manter **tokens/cores atuais da plataforma** (nada de nova paleta, nada de dark novo) e **fontes atuais**. A mudança é só de estrutura: sair do "empilhão" vertical atual e dar uma navegação lateral entre seções.
 
-Hoje o bloco `PosVendaKanban` aparece em dois lugares:
+Sem botões duplicados no header: **remover "Abrir CRM Pós-Venda"** (já existe em Admin) e **remover "Sincronizar agora"** deste card (já existe no Início / topo do admin). O sync continua acontecendo em background quando disparado dos outros locais — este painel só consome os dados.
 
-- `src/pages/Admin.tsx` (linha 414) — local **oficial** do CRM Pós-Venda.
-- `src/pages/WhatsAppClientsPage.tsx` (linhas 346-362) — **duplicado**, foi o que "trocou de página".
+## Novo layout — sidebar de seções
 
-**Ação:** apagar o bloco `{/* CRM Pós-Venda (Clientes iGreen) */} … <PosVendaKanban … />` de `WhatsAppClientsPage.tsx` e remover o `import PosVendaKanban` não usado. Nada muda no Admin/CRM oficial.
+Dentro do card "Carteira iGreen" da aba Clientes iGreen (`WhatsAppClientsPage.tsx`), substituir o empilhamento por um shell de duas colunas:
 
-Adicionar, no lugar, um botão discreto **"Abrir CRM Pós-Venda"** no cabeçalho da aba Clientes iGreen que leva ao Admin/CRM — evita a sensação de "sumiu".
+```text
+┌──────────── Carteira iGreen ─────────────────────────────────────┐
+│ [aside 200px]  │ [conteúdo da seção ativa]                       │
+│ • Resumo       │                                                 │
+│ • Financeiro   │   Só a seção selecionada renderiza aqui,        │
+│ • Produtos     │   com título e subtítulo próprios.              │
+│ • Rede         │                                                 │
+│ • Diagnóstico  │                                                 │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-## 2. Corrigir busca em Telecom e Seguros
+- Sidebar em `aside` fixa à esquerda, largura `w-56`, colapsável para `w-14` (só ícones) em telas `< md`.
+- Estado da seção ativa em `useState` + `?sec=` na URL (para deep-link).
+- Item ativo usa tokens semânticos (`bg-accent text-accent-foreground` + `border-l-2 border-primary`).
+- Contadores discretos ao lado do rótulo (ex: "Financeiro · 21", "Produtos · 14"), badge outline padrão.
+- Header do card mantém só título + subtítulo + indicador "Última sync: …" — nenhum botão de ação.
 
-Sintoma: ao digitar na busca, os itens somem visualmente ou os contadores continuam mostrando o total, dando impressão de que o filtro "não funcionou".
+## Seções e conteúdo
 
-Correções em `TelecomClientesList.tsx` e `SegurosClientesList.tsx`:
+1. **Resumo** — `ConsultantMetricsCard` + `StatusCards` + `PaymentIntent` + banner de "N clientes sincronizados".
+2. **Financeiro** — `BoletosList` (col-span-3) + `DevolutivasList` (col-span-2). Empty-state próprio quando 0.
+3. **Produtos** — grid 2 col: `TelecomClientesList` + `SegurosClientesList`.
+4. **Rede** — `RedeDashboardCard` + `RotinasPanel`.
+5. **Diagnóstico** — `EndpointDiscoveryCard` (recolhido, para uso pontual).
 
-- Contador do cabeçalho passa a mostrar **`filtered.length` de `data.length`** (ex: "12 de 159").
-- MRR recalculado sobre `filtered` quando há busca ativa.
-- Empty-state quando `filtered.length === 0 && q` → mensagem "Nenhum resultado para «termo»".
-- Busca ampliada: normalizar acentos (`.normalize("NFD").replace(/\p{Diacritic}/gu, "")`) e incluir campos que faltam (Telecom: `status_label`, `fatura_status`; Seguros: `status_label`, `uf`).
-- Debounce leve (150 ms) para evitar flicker em listas grandes.
+O bloco de progresso do sync (chips de passos) permanece na `CarteiraGreenPanel` — aparece automaticamente enquanto uma sincronização estiver rodando em background (state `syncing` detectado por polling do `synced_at`), mas sem o botão para dispará-lo daqui.
 
-## 3. Unificar visual — mesma paleta emerald, tudo em uma tela
+## Padronização visual (sem mudar paleta)
 
-Hoje a `CarteiraGreenPanel` mistura `bg-card` neutro com o wrapper emerald da página, e cada sub-card tem borda/estilo próprio. Padronizar todos os sub-blocos com o mesmo token emerald usado no wrapper da Carteira iGreen:
+- Todos os sub-cards herdam `border-border/60 bg-card` (tokens do tema), removendo variações locais `bg-emerald-500/[0.03]` inseridas antes. Cabeçalho de cada sub-card: ícone lucide em `text-muted-foreground`, título `text-sm font-semibold`, badge de contagem `variant="outline"`.
+- Divisor entre "linhas" de conteúdo dentro da seção: `border-border/40`.
+- Espaçamento uniforme: `space-y-6` dentro da seção; `gap-6` nos grids.
+- Nenhum gradiente novo. Nenhuma cor hardcoded (`text-emerald-*`, `text-amber-*` só onde já representam status semântico).
 
-- Tokens locais (em `CarteiraGreenPanel`): `border-emerald-500/20`, `bg-gradient-to-br from-emerald-500/[0.03] to-background`, header com faixa `bg-emerald-500/5`.
-- Aplicar em: `StatusCards`, `BoletosList`, `DevolutivasList`, `TelecomClientesList`, `SegurosClientesList`, `ConsultantMetricsCard`, `RedeDashboardCard`, `RotinasPanel`, `EndpointDiscoveryCard`, `PaymentIntent`.
-- Cabeçalho de cada sub-card ganha: ícone circular emerald (`bg-emerald-500/10 text-emerald-600`), título em `font-heading`, contagem em badge outline emerald.
-- Reagrupar layout em 3 faixas claras dentro do painel único (sem trocar de tela):
-  1. **Resumo** — `ConsultantMetricsCard` + `StatusCards` + `PaymentIntent`.
-  2. **Financeiro** — `BoletosList` (col-span-3) + `DevolutivasList` (col-span-2).
-  3. **Produtos & Rede** — grid 2 col: `TelecomClientesList` | `SegurosClientesList`; abaixo `RedeDashboardCard` e `RotinasPanel` lado a lado; `EndpointDiscoveryCard` como accordion recolhido no final.
-- Separadores discretos entre faixas (`<hr class="border-emerald-500/10" />`) com rótulo pequeno da seção.
+## Arquivos alterados
 
-## Detalhes técnicos
+- `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` — reescrita do JSX para o layout com sidebar; extrai um `<SectionNav />` e renderiza só a seção ativa. Remove `handleSync` UI (mantém o efeito de polling que atualiza a lista quando o `synced_at` avança).
+- `src/features/produtos/carteira-green/TelecomClientesList.tsx`, `SegurosClientesList.tsx` — reverter o esquema emerald aplicado antes; voltar aos tokens da plataforma. Manter a lógica de busca/contagem corrigida.
+- `src/pages/WhatsAppClientsPage.tsx` — remover o gradiente emerald do wrapper e o botão "Abrir CRM Pós-Venda" adicionado antes; usar `premium-card` padrão sem botões no header.
 
-- Arquivos alterados:
-  - `src/pages/WhatsAppClientsPage.tsx` — remove bloco PosVenda + import, adiciona botão "Abrir CRM Pós-Venda" apontando para `/admin?tab=posvenda` (ou rota atual do CRM em `Admin.tsx`).
-  - `src/features/produtos/carteira-green/CarteiraGreenPanel.tsx` — reorganiza faixas, aplica tokens emerald e separadores.
-  - `src/features/produtos/carteira-green/TelecomClientesList.tsx` e `SegurosClientesList.tsx` — busca normalizada, contador `filtered/data`, MRR sobre filtrados, empty-state.
-  - Sub-cards restantes — trocar `border-border/60 bg-card` por tokens emerald definidos acima.
-- Sem mudança de rotas, dados ou queries. Nenhum hook ou serviço tocado.
-- Sem novas dependências.
+## Não faz parte
 
-## Fora de escopo
-
-- Não mexer no `PosVendaKanban` do Admin.
-- Não alterar schema, edge functions ou lógica de sincronização.
-- Não redesenhar outras abas da página (`igreen_leads`), apenas Clientes iGreen.
+- Não instalar novas fontes (usuário pediu "igual às outras páginas").
+- Não alterar o `SidebarProvider` global do admin. O sidebar do painel é local.
+- Não mexer em rotas, hooks, queries ou lógica de sync.
+- Nenhuma outra aba da página é redesenhada.
