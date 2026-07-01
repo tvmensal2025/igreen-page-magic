@@ -430,39 +430,6 @@ export function CustomerManager({
           )}
         </div>
 
-        {/* Carteira iGreen — boletos, devolutivas, injeção, telecom, seguros, rede */}
-        <div className="px-4 sm:px-5 pb-4">
-          <div className="rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/5 to-transparent">
-            <button
-              type="button"
-              onClick={() => setShowCarteira((v) => !v)}
-              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-emerald-500/5 rounded-2xl transition-colors"
-              aria-expanded={showCarteira}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center border border-emerald-500/25 shrink-0">
-                  <Briefcase className="w-4.5 h-4.5 text-emerald-600" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="font-bold text-sm text-foreground">Carteira iGreen</h4>
-                  <p className="text-[11px] text-muted-foreground truncate">
-                    Boletos, devolutivas, injeção, telecom, seguros, rede e cashback
-                  </p>
-                </div>
-              </div>
-              {showCarteira ? (
-                <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-              )}
-            </button>
-            {showCarteira && (
-              <div className="px-4 pb-4 pt-1">
-                <CarteiraGreenPanel consultantId={consultantId} />
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* List with pagination */}
         <div className="px-4 sm:px-5 pb-5">
