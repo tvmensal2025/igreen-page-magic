@@ -425,18 +425,10 @@ const AdminContent = () => {
 
 
           {userId && activeTab === "clientes" && (
-            <div className="space-y-6">
-              <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
-                <div className="mb-4">
-                  <h2 className="text-base font-semibold text-foreground">Carteira iGreen</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Resumo, financeiro e clientes sincronizados do escritório iGreen.
-                  </p>
-                </div>
-                <Suspense fallback={null}>
-                  <CarteiraGreenPanel consultantId={userId} />
-                </Suspense>
-              </section>
+            <div className="space-y-5">
+              <Suspense fallback={null}>
+                <CarteiraGreenPanel consultantId={userId} />
+              </Suspense>
               <CustomerManager
                 customers={customers as never[]}
                 consultantId={userId}
