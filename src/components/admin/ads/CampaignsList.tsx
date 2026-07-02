@@ -108,7 +108,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       const [campsRes, settingsRes] = await Promise.all([
         supabase
           .from("facebook_campaigns")
-          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at,thumbnail_url,creative_format")
+          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at,started_at,thumbnail_url,creative_format")
           .eq("consultant_id", consultantId)
           .order("created_at", { ascending: false }),
         supabase
@@ -122,7 +122,15 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       setWaNumber((settingsRes.data as any)?.whatsapp_destination_number || null);
 
       if (list.length > 0) {
-        const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+        // Janela dinâmica: começa no mais antigo entre (started_at | created_at) das campanhas
+        // ou 30 dias atrás — o que for MAIS RECENTE. Assim campanha de 5d mostra 5d, não 30d.
+        const cutoff30d = Date.now() - 30 * 86400_000;
+        const earliestStart = list.reduce((min, c) => {
+          const t = new Date(c.started_at || c.created_at).getTime();
+          return isNaN(t) ? min : Math.min(min, t);
+        }, Date.now());
+        const sinceMs = Math.max(cutoff30d, earliestStart);
+        const since = new Date(sinceMs).toISOString().slice(0, 10);
         const { data: ms } = await supabase
           .from("facebook_metrics_daily")
           .select("campaign_id,impressions,clicks,spend_cents,leads,messaging_conversations_started,cost_per_lead_cents")
