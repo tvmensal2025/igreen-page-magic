@@ -39,10 +39,10 @@ export function CookieBanner() {
           Cookies para melhorar sua experiência.{" "}
           <Link to="/politica-privacidade" className="text-primary underline underline-offset-2">Privacidade</Link>.
         </p>
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          <Button size="sm" variant="ghost" onClick={() => decide("rejected")} className="text-[11px] sm:text-xs h-7 sm:h-9 px-2 sm:px-3">Rejeitar</Button>
-          <Button size="sm" onClick={() => decide("accepted")} className="text-[11px] sm:text-xs h-7 sm:h-9 px-2 sm:px-3">Aceitar</Button>
-          <button onClick={() => decide("rejected")} aria-label="Fechar" className="text-muted-foreground hover:text-foreground p-1 min-h-[32px] min-w-[32px] flex items-center justify-center">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <Button size="sm" variant="ghost" onClick={() => decide("rejected")} className="text-xs sm:text-xs min-h-11 sm:h-9 px-3 sm:px-3">Rejeitar</Button>
+          <Button size="sm" onClick={() => decide("accepted")} className="text-xs sm:text-xs min-h-11 sm:h-9 px-3 sm:px-3">Aceitar</Button>
+          <button onClick={() => decide("rejected")} aria-label="Fechar" className="text-muted-foreground hover:text-foreground p-1 min-h-11 min-w-11 flex items-center justify-center">
             <X className="w-4 h-4" />
           </button>
         </div>
