@@ -1,44 +1,54 @@
-# Executar probe → identificar endpoint → implementar enrich → validar puxada completa
+## Objetivo
 
-## Estado atual
-- Worker configurado: `https://igreen-worker-igreen.d9v63q.easypanel.host`
-- 1 consultor com credenciais iGreen cadastrado
-- Edge function `probe-igreen-detail` já deployada
-- Tabela `igreen_endpoint_discovery` vazia (nenhum probe rodado ainda)
+Preencher os 2 campos que faltam (endereço completo + licenciado responsável) para atingir 100% de paridade com o modal do escritório iGreen, e revalidar todos os 15 campos da Sandra (idcliente 1117549).
 
-## Passos que vou executar agora
+## Situação atual
 
-**1. Rodar probe automaticamente**
-Invoco `probe-igreen-detail` via `curl_edge_functions` com `sample_idcliente=1117549` (SANDRA) e o consultor com credenciais.
-Timeout esperado: 30-90s (worker faz login + testa 12 rotas).
+Sync automático já traz 13/15 campos via `worker /sync-all` (endpoint `api-vo /clientes-green/boletos/{id}`). Faltam:
+- **Endereço:** rua, número, complemento, bairro, cidade, UF, CEP
+- **Licenciado responsável:** nome do consultor dono do cliente no iGreen (ex.: "Rafael Ferreira Dias")
+- **Bug menor:** data de nascimento salva invertida (mês/dia trocados) — corrigir parser
 
-**2. Ler resultado da tabela `igreen_endpoint_discovery`**
-Identifico o vencedor (bucket=`ok`, status=200). Analiso o `sample_body` para mapear campos da API → colunas do banco (endereço, PJ, procurador, distribuidora, etc.).
+## Passos
 
-**3. Implementar `fetchCustomerDetail` no worker + rota `/enrich-customer-batch`**
-- Adiciona função que chama o endpoint vencedor para um `idcliente`
-- Nova rota `POST /enrich-customer-batch { portal_email, portal_password, ids: string[] }` com concorrência 3
-- Retorna `{ results: [{ id, mapped, error? }] }`
+**1. Descobrir endpoints faltantes (probe automático)**
+Rodar `probe-igreen-detail` (já implementado) contra Sandra com lista expandida de candidatos que costumam expor endereço/licenciado no portal iGreen:
+- `/clientes-green/dados/{id}`, `/clientes-green/endereco/{id}`, `/clientes-green/completo/{id}`
+- `/clientes/{id}`, `/clientes/detalhe/{id}`, `/clientes/full/{id}`
+- `/consultores/cliente/{id}`, `/licenciado/cliente/{id}`
 
-**4. Reintroduzir modo enrich em `sync-igreen-customers` (edge function)**
-- Parâmetro `mode: "enrich"` + `enrichCustomerIds?: string[]` + `enrichLimit?: number`
-- Seleção por `igreen_code` (não portal2_idcliente)
-- Persiste nas colunas já existentes da Fase 1 + `last_enriched_at`
+Registrar em `igreen_endpoint_discovery`, inspecionar `sample_body` dos status 200 e escolher o vencedor para cada campo (pode ser 1 ou 2 endpoints).
 
-**5. Validar puxando 1 cliente real (SANDRA 1117549)**
-- Executo `sync-igreen-customers { mode: "enrich", enrichCustomerIds: ["1117549"] }`
-- Leio a linha do banco e comparo os campos preenchidos vs o modal do escritório (endereço, CPF, telefone, email, distribuidora, fornecedora, ativo desde, consumo médio, etc.)
+**2. Estender worker (VPS)**
+Adicionar no worker `igreen-worker`:
+- Função `fetchCustomerAddress(idcliente)` → chama endpoint vencedor
+- Função `fetchCustomerLicensee(idcliente)` → chama endpoint vencedor
+- Incluir os campos no payload do `/sync-all` (dentro do enrich, junto com boletos)
 
-**6. Reportar validação**
-Mostro tabela: campo | valor no banco | valor esperado (screenshot) | status ✓/✗
+**Nota:** worker roda em VPS Easypanel — deploy manual. Vou gerar o patch pronto para o usuário aplicar (`git pull && docker compose up -d --build`).
 
-## Se o probe não encontrar vencedor
-Alguns endpoints candidatos podem retornar 404. Nesse caso, analiso os corpos de erro (podem revelar o formato correto do path), amplio para 6-10 candidatos adicionais e re-rodo — sem pedir sua ajuda.
+**3. Estender schema do Supabase (migration)**
+Adicionar em `igreen_seguros_customers` (ou tabela equivalente Phase 1):
+- `endereco_rua`, `endereco_numero`, `endereco_complemento`, `endereco_bairro`, `endereco_cidade`, `endereco_uf`, `endereco_cep`
+- `licenciado_nome`, `licenciado_codigo`
 
-## Se o worker falhar no login (Cloudflare/WAF)
-Reporto o erro exato e paramos — nada a implementar até o worker voltar.
+**4. Atualizar `sync-igreen-customers` (edge function)**
+Mapear os novos campos do payload do worker para as colunas novas. Corrigir parser de `data_nascimento` (trocar formato `dd/mm/yyyy` para ISO correto).
 
-## Escopo intocado
-`worker-portal-2`, cadastro, OTP, contratos.
+**5. Rodar sync + validar 15/15 campos**
+Executar `sync-igreen-customers` para Sandra, ler linha do DB, comparar 1-a-1 com screenshot do modal escritório. Meta: 15/15 ✅.
 
-Aprovar → rodo tudo em sequência e volto com o resultado da validação.
+**6. Rodar sync completo**
+Após validação, rodar `sync-igreen-customers` sem filtro (todos os clientes da consultora) e reportar estatísticas: total, sucesso, falha, campos preenchidos.
+
+## Detalhes técnicos
+
+- **Sem mudança de contrato do worker** para o Lovable além dos novos campos em `enrich` (backward-compatible).
+- **Sem alteração** em `worker-portal-2`, cadastro, OTP, contratos.
+- **Rate limit:** manter concorrência 3 no worker; endpoints extras multiplicam por ~2 as chamadas por cliente.
+- **Fallback:** se probe não achar endereço/licenciado em nenhum endpoint, reportar ao usuário e parar (não inventar).
+
+## Riscos
+
+- Worker precisa de redeploy manual (VPS) — vou entregar patch + comando exato.
+- Se iGreen bloquear login (Cloudflare/WAF), paro no passo 1.
