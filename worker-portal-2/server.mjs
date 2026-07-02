@@ -1276,49 +1276,7 @@ app.get('/lead/:idcliente/status', authRequired, async (req, res) => {
   }
 });
 
-// ─── Enriquecimento por cliente ─────────────────────────────────────────────
-// POST /enrich-customer  { idcliente, idconsultor }
-//
-// Chama, em paralelo, TODOS os endpoints de detalhe da API do portal e
-// devolve o resultado bruto normalizado num objeto único. Cada chamada é
-// isolada com .catch — falha parcial não invalida as demais.
-//
-// Consumidor esperado: supabase/functions/sync-igreen-customers (modo enrich).
-app.post('/enrich-customer', authRequired, async (req, res) => {
-  const idcliente = req.body?.idcliente;
-  const idconsultor = Number(req.body?.idconsultor);
-  if (!idcliente) return res.status(400).json({ ok: false, error: 'idcliente obrigatório' });
-  if (!idconsultor) return res.status(400).json({ ok: false, error: 'idconsultor obrigatório' });
 
-  const started = Date.now();
-  try {
-    const c = new Portal2Client({ idconsultor });
-    const safe = (p) => p.then((v) => ({ ok: true, data: v })).catch((e) => ({ ok: false, error: e?.message || String(e) }));
-
-    const [detail, signatureSummary, contractGenerated, contractSigned, otpStatus, docVerify] = await Promise.all([
-      safe(c.getCustomer(idcliente)),
-      safe(c.getSignatureSummary(idcliente)),
-      safe(c.getContractGenerated(idcliente)),
-      safe(c.getContractSigned(idcliente)),
-      safe(c.getVerificationCodeStatus(idcliente)),
-      safe(c._fetch('GET', `/file-upload/verify/${idcliente}`)),
-    ]);
-
-    return res.json({
-      ok: true,
-      idcliente,
-      duration_ms: Date.now() - started,
-      detail,
-      signature_summary: signatureSummary,
-      contract_generated: contractGenerated,
-      contract_signed: contractSigned,
-      otp_status: otpStatus,
-      document_verify: docVerify,
-    });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e?.message || String(e) });
-  }
-});
 
 
 
