@@ -20,7 +20,7 @@ import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatu
 import PageStatus from "@/components/common/PageStatus";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
-import { useVenceHojeCount } from "@/components/admin/financeiro/useVenceHojeCount";
+import { useAlertasBoletosCount } from "@/components/admin/financeiro/useAlertasBoletosCount";
 import { useUserRole } from "@/hooks/useUserRole";
 
 
@@ -612,8 +612,8 @@ const AdminContent = () => {
   );
 };
 
-/** Sidebar com badge dinâmico de boletos vencendo hoje. Mantém isolado para
- *  que o hook não força re-render em todos os inputs do Admin. */
+/** Sidebar com badge dinâmico de boletos alertando (vence hoje + vencidos).
+ *  Mantém isolado para que o hook não force re-render em todos os inputs. */
 function AdminSidebarWithBadges({
   userId,
   ...rest
@@ -622,8 +622,8 @@ function AdminSidebarWithBadges({
 } & Omit<React.ComponentProps<typeof AppSidebar>, "badges">) {
   const { isSuperAdmin, isAdmin } = useUserRole(userId);
   const scope: "all" | "self" = isSuperAdmin || isAdmin ? "all" : "self";
-  const { data: venceHoje } = useVenceHojeCount(userId ?? undefined, scope);
-  return <AppSidebar {...rest} badges={{ financeiro: venceHoje && venceHoje > 0 ? venceHoje : undefined }} />;
+  const { data: alertas } = useAlertasBoletosCount(userId ?? undefined, scope);
+  return <AppSidebar {...rest} badges={{ financeiro: alertas && alertas > 0 ? alertas : undefined }} />;
 }
 
 
