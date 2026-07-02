@@ -612,6 +612,21 @@ const AdminContent = () => {
   );
 };
 
+/** Sidebar com badge dinâmico de boletos vencendo hoje. Mantém isolado para
+ *  que o hook não força re-render em todos os inputs do Admin. */
+function AdminSidebarWithBadges({
+  userId,
+  ...rest
+}: {
+  userId: string | null;
+} & Omit<React.ComponentProps<typeof AppSidebar>, "badges">) {
+  const { isSuperAdmin, isAdmin } = useUserRole(userId);
+  const scope: "all" | "self" = isSuperAdmin || isAdmin ? "all" : "self";
+  const { data: venceHoje } = useVenceHojeCount(userId ?? undefined, scope);
+  return <AppSidebar {...rest} badges={{ financeiro: venceHoje && venceHoje > 0 ? venceHoje : undefined }} />;
+}
+
+
 const Admin = () => (
   <PrivacyModeProvider>
     <AdminContent />
