@@ -290,8 +290,8 @@ const Auth = () => {
                   <Input id="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" required minLength={6}
                     className="h-12 rounded-xl bg-secondary/50 border-border text-base pr-12 placeholder:text-muted-foreground/50" />
-                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors min-h-11 min-w-11 flex items-center justify-center rounded-md">
                     {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
