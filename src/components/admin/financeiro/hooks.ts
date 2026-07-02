@@ -32,11 +32,11 @@ export function useBoletosAdmin(params: { userId?: string; scope: "all" | "self"
       if (ids.length === 0) return rows;
       const { data: consultants } = await supabase
         .from("consultants")
-        .select("id, full_name, name")
+        .select("id, display_name, name")
         .in("id", ids as string[]);
       const nameById = new Map<string, string>();
-      for (const c of (consultants || []) as Array<{ id: string; full_name?: string | null; name?: string | null }>) {
-        nameById.set(c.id, c.full_name || c.name || "");
+      for (const c of ((consultants || []) as unknown) as Array<{ id: string; display_name?: string | null; name?: string | null }>) {
+        nameById.set(c.id, c.display_name || c.name || "");
       }
       for (const r of rows) {
         r.consultant_name = nameById.get(r.consultant_id) || null;
