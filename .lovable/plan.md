@@ -1,43 +1,53 @@
-## Plano paralelo
+# Plano — Spy SPA iGreen (Fase 1 em andamento)
 
-### Trilha A — Descobrir endpoints via Playwright (independe de redeploy)
+## Status atual
 
-1. Abro `escritorio.igreenenergy.com.br` num Chrome headless (Playwright), faço login com as credenciais do Rafael (leio `igreen_portal_email`/`igreen_portal_password` da tabela `consultants` via `supabase--read_query`).
-2. Navego para `/clientes-green`, aguardo a lista carregar.
-3. Ativo captura de rede (`page.on("request")` + `page.on("response")`) e clico no cliente SANDRA (idcliente `1117549`).
-4. Filtro requisições que:
-   - Vão para `api-vo.igreenenergy.com.br/v1/*`
-   - Retornam JSON com strings `SANDRA` **OU** `Salto` (cidade) **OU** `Rafael Ferreira` (licenciado)
-5. Registro na tabela `igreen_endpoint_discovery` (via edge function ou insert direto) o(s) endpoint(s) vencedor(es) com `sample_body`.
-6. Analiso o JSON e mapeio: `endereco_rua`, `endereco_numero`, `endereco_bairro`, `endereco_cidade`, `endereco_uf`, `endereco_cep`, `licenciado_nome`, `licenciado_codigo`.
+- ✅ Endpoint `/spy-spa-detail` adicionado em `worker-igreen-sync/server.mjs`
+- ✅ Edge function `spy-igreen-spa` criada
+- ⏳ **Aguardando você fazer commit + deploy do `worker-igreen` no Easypanel**
+- ⏭️  Depois eu chamo `spy-igreen-spa`, analiso o resultado e implemento Fase 2
 
-**Vantagem:** não depende de VPS, sai em ~2 min.
+## O que você precisa fazer AGORA
 
-### Trilha B — Destravar Easypanel
+1. `git add worker-igreen-sync/ && git commit -m "spy: /spy-spa-detail"` e push
+2. Easypanel → serviço **worker-igreen** → Deploy
+3. Me avisa "deploy ok"
 
-O erro `curl: (23) Failure writing output` + `tar: unexpected EOF` no build do `portal-worker` significa que o tarball do GitHub veio incompleto. Causas comuns em ordem de probabilidade:
+## Depois do deploy — eu executo
 
-1. **Disco cheio na VPS** — checar `df -h` em `/etc/easypanel`. Solução: `docker system prune -af --volumes`.
-2. **Token GitHub expirado no Easypanel** — Settings → Git → reconectar app do GitHub.
-3. **Rate limit / rede intermitente** — retry manual do deploy.
+```
+supabase.functions.invoke('spy-igreen-spa', {
+  body: { idcliente: '1117549' }  // Sandra
+})
+```
 
-Vou te entregar comandos de diagnóstico prontos (df, docker prune, teste manual do `git archive`) e, se for token, o passo-a-passo no Easypanel UI.
+O worker vai:
+1. Reusar a sessão Playwright já autenticada da Rafael
+2. Navegar para `https://escritorio.igreenenergy.com.br/clientes-green`
+3. Monitorar TODOS os XHRs para `api-vo.igreenenergy.com.br`
+4. Clicar no card da Sandra
+5. Aguardar 6 s, coletar respostas
+6. Devolver:
+   - `winners`: requests que contêm "SANDRA" ou campos de endereço/licenciado
+   - `requests`: lista completa com URL, status, tamanho e amostra do JSON
+7. Persistir tudo em `igreen_endpoint_discovery` (bucket `spy_spa`)
 
-**Observação:** esse erro é no `portal-worker`, não no `igreen-worker` que precisa do meu patch de sintaxe. Preciso confirmar se você tentou redeployar o worker errado, ou se ambos estão com o mesmo problema de disco/token.
+## Fase 2 (após descoberta)
 
-### Depois que Trilha A entregar os endpoints
+Com o path real em mãos:
+1. Adiciono `fetchCustomerDetailReal(session, idcliente)` no worker
+2. Modifico `/sync-all` com `enrich_all: true` (batch de 8 paralelo, sem cap de 400)
+3. Atualizo `sync-igreen-customers/index.ts` com mapeamento de:
+   - `endereco_rua/numero/bairro/cidade/uf/cep`
+   - `licenciado_nome/codigo`
+   - `data_nascimento` (corrige inversão dd/mm)
+4. **Deploy 2** no Easypanel
+5. Rodo sync completo da carteira de Rafael
+6. Relatório 15/15 campos
 
-- **Passo 3 (worker):** adiciono `fetchCustomerAddress` + `fetchCustomerLicensee` no `igreen-worker/server.mjs` chamando os endpoints descobertos, e ligo no `/sync-all` enrich.
-- **Passo 4 (edge function):** atualizo `sync-igreen-customers` para mapear os campos novos + corrigir parser de `data_nascimento` (invertendo dd/mm).
-- **Passo 5 (validação):** rodo sync da Sandra, comparo 15/15 campos com o modal do escritório.
-- **Passo 6 (sync completo):** rodo para toda a carteira do Rafael, reporto estatísticas.
+## Aceite
 
-### Fora do escopo
-
-- Não mexo em `worker-portal-2`, cadastro, OTP, contratos.
-- Não crio migration nova de schema (colunas `address_*` já existem em `customers`).
-
-### Riscos
-
-- Se o login pedir OTP/reCAPTCHA no Playwright, aviso e paro a Trilha A.
-- Se nenhum XHR de detalhe existir (SPA já ter tudo em memória do `/clientes-green` inicial), reporto e proponho alternativa (inspecionar payload da listagem completa).
+- 100 % dos clientes de Rafael com endereço preenchido (quando existir na origem)
+- ≥ 95 % com licenciado
+- `data_nascimento` da Sandra = 1971-06-01
+- `last_enriched_at` != null para todos
