@@ -129,10 +129,12 @@ export function renderCobrancaTemplate(
 ): string {
   const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const venc = ctx.vencimento ? new Date(ctx.vencimento).toLocaleDateString("pt-BR") : "";
-  return tpl
-    .replaceAll("{{nome}}", ctx.nome || "cliente")
-    .replaceAll("{{mes}}", ctx.mes || "")
-    .replaceAll("{{valor}}", ctx.valor != null ? BRL(Number(ctx.valor)) : "")
-    .replaceAll("{{vencimento}}", venc)
-    .replaceAll("{{url_boleto}}", ctx.url_boleto || "");
+  const map: Record<string, string> = {
+    nome: ctx.nome || "cliente",
+    mes: ctx.mes || "",
+    valor: ctx.valor != null ? BRL(Number(ctx.valor)) : "",
+    vencimento: venc,
+    url_boleto: ctx.url_boleto || "",
+  };
+  return tpl.replace(/\{\{\s*(nome|mes|valor|vencimento|url_boleto)\s*\}\}/g, (_, k) => map[k] ?? "");
 }
