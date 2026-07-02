@@ -401,7 +401,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
               <Stat icon={<TrendingUp className="w-3.5 h-3.5" />} label="Impressões" value={m.impressions.toLocaleString("pt-BR")} />
               <Stat icon={<Users className="w-3.5 h-3.5" />} label="Cliques" value={m.clicks.toLocaleString("pt-BR")} />
               <Stat icon={<MessageCircle className="w-3.5 h-3.5" />} label="Conversas" value={String(m.messaging_conversations_started)} />
@@ -413,7 +413,19 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                 highlight={waCount > 0}
                 tooltip="Clientes interessados que mandaram mensagem no WhatsApp e foram atribuídos a esta campanha (via mensagem pré-preenchida ou CTWA)"
               />
-              <Stat icon={<DollarSign className="w-3.5 h-3.5" />} label={m.leads > 0 ? "CPL" : "Gasto"} value={m.leads > 0 ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}` : `R$ ${(m.spend_cents / 100).toFixed(2)}`} highlight />
+              <Stat
+                icon={<DollarSign className="w-3.5 h-3.5" />}
+                label="Gasto"
+                value={`R$ ${(m.spend_cents / 100).toFixed(2)}`}
+                highlight
+                tooltip="Total gasto na campanha (últimos 30 dias)"
+              />
+              <Stat
+                icon={<DollarSign className="w-3.5 h-3.5" />}
+                label="CPL"
+                value={m.leads > 0 ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}` : "—"}
+                tooltip="Custo por lead = Gasto ÷ Clientes interessados Meta"
+              />
             </div>
             <CampaignHealthCheck campaignId={c.id} fbCampaignId={c.fb_campaign_id} whatsappNumber={waNumber} />
           </Card>
