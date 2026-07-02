@@ -818,29 +818,18 @@ Deno.serve(async (req) => {
             }
           }
 
-          // 2.5) Fallback: frase-âncora do Meta CTWA (anúncios sem ctwa_clid no payload)
-          //      → marca lead_source=meta_ads e, se há EXATAMENTE 1 pool ativa no
-          //      superadmin, usa essa campanha como atribuição determinística.
+          // 2.5) Frase-âncora do Meta CTWA — só marca sinal, NÃO tenta chutar
+          //      campanha via "pool única ativa" (blindagem do rodízio).
           if (!candidateCampaignId && messageText && !isFile && !hasAudio) {
             if (matchesMetaCtwaPhrase(messageText)) {
               metaCtwaSignal = true;
-              const sp = await resolveSingleActivePool(supabase, superAdminConsultantId);
-              if (sp?.campaign_id) {
-                candidateCampaignId = sp.campaign_id;
-                rodizioMatchMethod = "fallback_single_active_pool";
-                console.log(
-                  `[lead-attribution] customer=${customer.id} fallback_single_active_pool → campaign=${sp.campaign_id} (meta_ctwa_phrase)`,
-                );
-              } else {
-                console.log(
-                  `[lead-attribution] customer=${customer.id} meta_ctwa_phrase detectada mas pool não-única → sem fallback`,
-                );
-              }
+              console.log(
+                `[lead-attribution] customer=${customer.id} meta_ctwa_phrase detectada — sem campanha identificada, indo para fila manual`,
+              );
             }
           }
 
-          // Persistir lead_source='meta_ads' quando a frase-âncora bate, mesmo
-          // que não haja pool única (assim o CRM/relatório já marca a origem).
+          // Persistir lead_source='meta_ads' quando a frase-âncora bate.
           if (metaCtwaSignal && !(customer as any).lead_source) {
             await supabase
               .from("customers")
@@ -864,7 +853,6 @@ Deno.serve(async (req) => {
           }
 
           // 4) Atribuição efetiva por rodízio (paridade com evolution).
-          //    Só roda quando há pool ativa — caso contrário, fluxo normal.
           if (rodizioPoolAtiva && resolvedCampaignId) {
             try {
               const { data: rodizioRows, error: rodizioError } = await supabase.rpc(
@@ -873,68 +861,83 @@ Deno.serve(async (req) => {
               );
               if (rodizioError) {
                 console.warn("[rodizio] rodizio_next falhou:", rodizioError.message);
-              }
-              const rodizioDecision = decideRodizioAssignment({
-                customer: { ...(customer as any), source_campaign_id: resolvedCampaignId },
-                rodizioRows,
-              });
-              const rodizioPartnerId = rodizioDecision.referralPartnerId;
+                await markManualReview(supabase, customer.id, "rodizio_rpc_error");
+                await logRodizioOutcome(supabase, {
+                  customerId: customer.id,
+                  campaignId: resolvedCampaignId,
+                  method: "rodizio_next",
+                  outcome: "rpc_error",
+                  messageSample: messageText,
+                });
+                notifyOwnerManualReview(
+                  superAdminConsultantId,
+                  {
+                    id: customer.id,
+                    name: (customer as any).name,
+                    phone_whatsapp: (customer as any).phone_whatsapp,
+                    is_sandbox: (customer as any).is_sandbox,
+                  },
+                  "rodizio_rpc_error",
+                ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
+              } else {
+                const rodizioDecision = decideRodizioAssignment({
+                  customer: { ...(customer as any), source_campaign_id: resolvedCampaignId },
+                  rodizioRows,
+                });
+                const rodizioPartnerId = rodizioDecision.referralPartnerId;
 
-              if (rodizioDecision.applied && rodizioDecision.customerPatch) {
-                const patch: Record<string, unknown> = {
-                  ...rodizioDecision.customerPatch,
-                  referral_detected_at: new Date().toISOString(),
-                };
-                // Persistir source_campaign_id se foi resolvido aqui pela 1ª vez,
-                // para o lead-source posterior pular sem reprocessar.
-                if (!campaignAlreadyPersisted) {
-                  patch.source_campaign_id = resolvedCampaignId;
-                }
-                // Garante lead_source meta_ads quando saiu de fallback ou sinal forte.
-                if (metaCtwaSignal || rodizioMatchMethod !== "cached_campaign") {
-                  patch.lead_source = "meta_ads";
-                }
-                await supabase.from("customers").update(patch).eq("id", customer.id);
-                (customer as any).referral_partner_id = rodizioPartnerId;
-                if (!campaignAlreadyPersisted) {
-                  (customer as any).source_campaign_id = resolvedCampaignId;
-                }
-                console.log(
-                  `[rodizio] customer=${customer.id} campaign=${resolvedCampaignId} partner=${rodizioPartnerId} method=${rodizioMatchMethod}`,
-                );
+                if (rodizioDecision.applied && rodizioPartnerId) {
+                  // CAS anti-corrida (Furo 2)
+                  const cas = await casAssignPartner(supabase, customer.id, rodizioPartnerId);
 
-                // Log de auditoria do match.
-                try {
-                  await supabase.from("campaign_match_log").insert({
-                    customer_id: customer.id,
-                    campaign_id: resolvedCampaignId,
-                    method: rodizioMatchMethod,
-                    message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                  if (cas.applied) {
+                    // Persistir source_campaign_id e lead_source (não conflita com CAS).
+                    if (!campaignAlreadyPersisted || rodizioMatchMethod !== "cached_campaign") {
+                      const extraPatch: Record<string, unknown> = {};
+                      if (!campaignAlreadyPersisted) extraPatch.source_campaign_id = resolvedCampaignId;
+                      if (rodizioMatchMethod !== "cached_campaign") extraPatch.lead_source = "meta_ads";
+                      if (Object.keys(extraPatch).length > 0) {
+                        await supabase.from("customers").update(extraPatch).eq("id", customer.id);
+                      }
+                    }
+                    (customer as any).referral_partner_id = rodizioPartnerId;
+                    if (!campaignAlreadyPersisted) {
+                      (customer as any).source_campaign_id = resolvedCampaignId;
+                    }
+                    console.log(
+                      `[rodizio] customer=${customer.id} campaign=${resolvedCampaignId} partner=${rodizioPartnerId} method=${rodizioMatchMethod}`,
+                    );
+
+                    await logRodizioOutcome(supabase, {
+                      customerId: customer.id,
+                      campaignId: resolvedCampaignId,
+                      method: rodizioMatchMethod,
+                      outcome: "assigned",
+                      messageSample: messageText,
+                    });
+
+                    notifyPartnerNewLead(superAdminConsultantId, rodizioPartnerId, {
+                      id: customer.id,
+                      name: (customer as any).name,
+                      phone_whatsapp: (customer as any).phone_whatsapp,
+                      is_sandbox: (customer as any).is_sandbox,
+                    }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+                  } else if (cas.alreadyAssigned) {
+                    console.log(
+                      `[rodizio] customer=${customer.id} corrida detectada — turno descartado`,
+                    );
+                  }
+                } else {
+                  // Pool vazia / retorno inválido → fila de revisão manual
+                  await markManualReview(supabase, customer.id, "rodizio_pool_empty");
+                  await logRodizioOutcome(supabase, {
+                    customerId: customer.id,
+                    campaignId: resolvedCampaignId,
+                    method: "rodizio_next",
+                    outcome: "pool_empty",
+                    messageSample: messageText,
                   });
-                } catch (e) {
-                  console.warn("[campaign-match-log] insert falhou:", (e as Error).message);
-                }
-
-                // Aviso ao participante da vez (best-effort).
-                notifyPartnerNewLead(superAdminConsultantId, rodizioPartnerId, {
-                  id: customer.id,
-                  name: (customer as any).name,
-                  phone_whatsapp: (customer as any).phone_whatsapp,
-                  is_sandbox: (customer as any).is_sandbox,
-                }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
-
-                // Aviso ao super admin quando entrou via fallback (pool única).
-                if (rodizioMatchMethod === "fallback_single_active_pool") {
-                  let partnerName: string | null = null;
-                  try {
-                    const { data: prow } = await supabase
-                      .from("referral_partners")
-                      .select("nome")
-                      .eq("id", rodizioPartnerId)
-                      .maybeSingle();
-                    partnerName = (prow as any)?.nome ?? null;
-                  } catch { /* ignore */ }
-                  notifySuperAdminUnmatchedLead(
+                  notifyOwnerManualReview(
                     superAdminConsultantId,
                     {
                       id: customer.id,
@@ -942,21 +945,24 @@ Deno.serve(async (req) => {
                       phone_whatsapp: (customer as any).phone_whatsapp,
                       is_sandbox: (customer as any).is_sandbox,
                     },
-                    "fallback_single_active_pool",
-                    partnerName,
-                  ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
+                    "rodizio_pool_empty",
+                  ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
                 }
               }
-              // Fallback (pool ativa mas partner_id inválido): mantém
-              // rodizioPoolAtiva=true para preservar prioridade do rodízio
-              // sobre keyword (Req 8). Lead segue para o super admin.
             } catch (e) {
               console.warn("[rodizio] falhou:", (e as Error).message);
             }
           } else if (metaCtwaSignal) {
-            // Frase-âncora bateu mas não há pool única — avisa o super admin
-            // para revisar (lead vai ficar com ele, sem rodízio).
-            notifySuperAdminUnmatchedLead(
+            // Frase-âncora bateu mas nenhuma campanha determinística → fila manual.
+            await markManualReview(supabase, customer.id, "no_campaign_ctwa_phrase");
+            await logRodizioOutcome(supabase, {
+              customerId: customer.id,
+              campaignId: null,
+              method: "ctwa_phrase_no_campaign",
+              outcome: "no_campaign_manual_review",
+              messageSample: messageText,
+            });
+            notifyOwnerManualReview(
               superAdminConsultantId,
               {
                 id: customer.id,
@@ -964,20 +970,10 @@ Deno.serve(async (req) => {
                 phone_whatsapp: (customer as any).phone_whatsapp,
                 is_sandbox: (customer as any).is_sandbox,
               },
-              "meta_ctwa_phrase_no_single_pool",
-              null,
-            ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
-            try {
-              await supabase.from("campaign_match_log").insert({
-                customer_id: customer.id,
-                campaign_id: null,
-                method: "meta_ctwa_phrase_unmatched",
-                message_sample: messageText ? String(messageText).slice(0, 200) : null,
-              });
-            } catch (e) {
-              console.warn("[campaign-match-log] insert falhou:", (e as Error).message);
-            }
+              "no_campaign_ctwa_phrase",
+            ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
           }
+
         } catch (e) {
           // Fail-open: na dúvida, segue o fluxo normal de keyword.
           console.warn(
