@@ -91,9 +91,36 @@ export function EndpointDiscoveryCard({ consultantId }: { consultantId: string }
     }
   };
 
+  const runDetailProbe = async () => {
+    setProbingDetail(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("probe-igreen-detail", {
+        body: { consultant_id: consultantId, sample_idcliente: sampleId || undefined },
+      });
+      if (error) throw error;
+      const d = data as { ok: boolean; winners?: string[]; sample_idcliente?: string; error?: string };
+      if (!d?.ok) throw new Error(d?.error || "falha desconhecida");
+      toast({
+        title: d.winners?.length ? `${d.winners.length} endpoint(s) vencedor(es)!` : "Probe concluído (nenhum 200)",
+        description: d.winners?.length
+          ? d.winners.join(", ")
+          : `Amostra: ${d.sample_idcliente}. Veja categoria "customer_detail".`,
+      });
+      qc.invalidateQueries({ queryKey: ["igreen-endpoint-discovery"] });
+    } catch (e) {
+      toast({
+        title: "Erro no probe de detalhe",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setProbingDetail(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-border/60 bg-card/60 p-5 space-y-4">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h3 className="text-base font-semibold">Diagnóstico de Endpoints iGreen</h3>
           <p className="text-xs text-muted-foreground mt-1">
@@ -103,9 +130,29 @@ export function EndpointDiscoveryCard({ consultantId }: { consultantId: string }
         </div>
         <Button size="sm" onClick={runProbe} disabled={running}>
           {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          {running ? "Rodando..." : "Rodar probe"}
+          {running ? "Rodando..." : "Rodar probe geral"}
         </Button>
       </div>
+
+      <div className="rounded-lg border border-dashed border-border/60 bg-background/40 p-3 flex items-center gap-2 flex-wrap">
+        <div className="flex-1 min-w-[180px]">
+          <div className="text-xs font-medium mb-1">Descobrir endpoint de detalhe do cliente</div>
+          <div className="text-[10px] text-muted-foreground">
+            Testa 12 rotas candidatas contra o cliente informado. Resultado aparece na categoria "customer_detail".
+          </div>
+        </div>
+        <Input
+          value={sampleId}
+          onChange={(e) => setSampleId(e.target.value)}
+          placeholder="idcliente ex: 1117549"
+          className="h-8 w-40 text-xs"
+        />
+        <Button size="sm" variant="secondary" onClick={runDetailProbe} disabled={probingDetail}>
+          {probingDetail ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+          {probingDetail ? "Probing..." : "Probe detalhe"}
+        </Button>
+      </div>
+
 
       {rows.length > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
