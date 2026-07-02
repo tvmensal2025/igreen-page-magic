@@ -1103,8 +1103,6 @@ Deno.serve(async (req) => {
     let mode = "sync";
     let source = "";
     let credsFromBody = false;
-    let enrichCustomerIds: string[] | null = null;
-    let enrichLimit = 50;
 
     try {
       const body = await req.json();
@@ -1113,9 +1111,8 @@ Deno.serve(async (req) => {
       if (body.consultant_id) consultantId = body.consultant_id;
       if (body.mode) mode = body.mode;
       if (body.source) source = body.source;
-      if (Array.isArray(body.customer_ids)) enrichCustomerIds = body.customer_ids as string[];
-      if (typeof body.limit === "number") enrichLimit = Math.max(1, Math.min(500, body.limit));
     } catch (_) { /* sem body */ }
+
 
 
     const worker = await resolveSyncWorker(supabase);
