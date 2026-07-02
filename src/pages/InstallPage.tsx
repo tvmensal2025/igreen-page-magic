@@ -140,7 +140,7 @@ export default function InstallPage() {
         )}
 
         <div className="pt-2 border-t border-border text-center">
-          <a href="/admin" className="text-xs text-primary hover:underline">
+          <a href="/admin" className="text-sm text-primary hover:underline inline-flex items-center min-h-11 px-3">
             Voltar para o painel
           </a>
         </div>
