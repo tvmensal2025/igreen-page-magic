@@ -1,54 +1,96 @@
-# Auditoria profunda do sistema — 02/07/2026
+## Diagnóstico
 
-Varri banco, crons, logs de Edge Functions, AI Gateway, portal iGreen e instâncias WhatsApp. Resultado abaixo. Não é 100% ainda — tem 3 pontos que precisam de mão antes de abrir para muitos consultores novos.
+Fiz a análise profunda da aba de campanhas do Facebook e encontrei **2 causas raiz**:
 
-## Verde (funcionando)
+### 1) "Só tem conversa no WhatsApp" — métricas zeradas
 
-- **Kill switch global**: `bot_global_enabled = true`, `super_admin_phone` preenchido (`5511989000650`), `super_admin_instance_name = Consutor-alertas`.
-- **Crons pg_cron**: 39 jobs agendados, todos `active=true`. Nenhuma execução com `status != succeeded` nas últimas 2 h.
-- **AI Gateway**: 0 requests com erro nos últimos 7 dias. Custo 24h ≈ US$ 0 (2 chamadas).
-- **Sync iGreen**: última run OK em 01/07 23:16 (~2 h atrás).
-- **Portal iGreen 48h**: 2 sucessos, 1 falha — e a falha é "instalação já cadastrada" (comportamento esperado, tratado como validation_error sem retry infinito).
-- **Mídia inbound**: 0 falhas nas últimas 24 h; nenhum retry pendente.
-- **Engine v3 / Fluxo D**: sem erros em `engine_logs` recentes.
-- **CORS, cache-bust, Guard de Retomada, meta-ctwa-fallback, anexo garantido**: todos deployados.
+A tabela `facebook_metrics_daily` está **completamente vazia** (0 linhas em 30 dias), mesmo com 12 campanhas ativas. Motivo:
 
-## Amarelo (funciona, mas incomoda)
+- O cron `fb-sync-metrics` roda a cada 5 min (OK).
+- Mas ele chama a Edge Function passando **apenas** o header `apikey: <anon>` (sem `Authorization: Bearer <service_role>`).
+- A função `facebook-sync-metrics` valida `authHeader === "Bearer " + SERVICE_ROLE_KEY` para reconhecer o cron. Como não bate, cai no `authConsultant` (que também falha, é chamada máquina-a-máquina) e retorna **401**.
+- Logs confirmam: `POST | 401 | facebook-sync-metrics` a cada tick.
+- Resultado: nunca gravou `impressions`, `clicks`, `leads`, `spend`, nem `messaging_conversations_started`. A UI só mostra os poucos valores que vêm de outra fonte (conversas atribuídas via CRM/CTWA).
 
-- **2 leads "parados" há >1 h** com bot ativo em step diferente de welcome/end. Watchdog `bot-stuck-recovery-5min` deveria destravá-los; vale conferir manualmente.
-- **Watchdog `portal-otp-watchdog**`: loga `quota bloqueada whapi-superadmin: instance_not_found` a cada 30 s. É ruído — a instância `Consutor-alertas` do super admin está `connected`, mas o watchdog procura o nome errado. Ajustar o lookup evita poluir os logs (custo baixo, cosmético).
+### 2) "A capa ainda está errada"
 
-## Vermelho (bloqueadores para escalar)
+O componente `CampaignsList.tsx` monta a miniatura na seguinte ordem:
 
-1. **Instância do Rafael (`igreen-0c2711ad4836`) em `needs_reconnect` desde 25/06**. Enquanto não reconectar, o Super Admin **não envia mensagens** — leads chegam, mas ninguém responde pelo canal principal. Precisa reescanear o QR em `/admin/whatsapp`.
-2. **Instância órfã `igreen-f9594900e75b` com `fatal_lock_until = 2126-06-28**` (100 anos no futuro). É a mesma da auditoria anterior; segue lá. Enquanto não limpar, essa instância nunca volta.
-3. **Instância `igreen-4aa4c026d754` em status `unknown**` há 4 dias. Provavelmente ficou órfã — sem `instance-health-cron` conseguir classificar. Precisa validar se ainda pertence a algum consultor ativo ou se pode ser removida.
+1. `ad_template_usages` → `ad_templates.photos/video_thumb_url` → **tabela está vazia** (0 linhas).
+2. Fallback: pega a **última imagem enviada** para `ad_image_library` do consultor, independente de qual campanha.
 
-## O que fazer para ficar 100%
+Ou seja: hoje toda campanha mostra a mesma imagem (a mais recente da biblioteca do Rafael), não a criativa que a Meta realmente está veiculando. As campanhas foram criadas sem `creative_pack_id` nem registro em `ad_template_usages`, então não há link com a mídia original.
 
-Em ordem de impacto:
+A fonte de verdade correta é a própria Meta: cada `fb_ad_id` tem um `creative` com `image_url`/`thumbnail_url` (ou `video_id` → thumbnail).
 
-```text
-[1] Rafael reconecta WhatsApp em /admin/whatsapp     (usuário)
-[2] Limpar fatal_lock da instância f9594900e75b       (SQL 1 linha)
-[3] Reclassificar/remover instância 4aa4c026d754      (revisão manual)
-[4] Corrigir lookup do portal-otp-watchdog           (patch edge fn)
-[5] Investigar os 2 leads parados >1h                 (verificação pontual)
+---
+
+## Plano de correção
+
+### PR 1 — Consertar o cron (destrava todas as métricas)
+
+Nova migration para recriar o job `fb-sync-metrics` passando o header correto:
+
+```sql
+select cron.unschedule('fb-sync-metrics');
+select cron.schedule('fb-sync-metrics', '*/5 * * * *', $$
+  select net.http_post(
+    url := 'https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/facebook-sync-metrics',
+    headers := jsonb_build_object(
+      'Content-Type','application/json',
+      'Authorization','Bearer ' || current_setting('app.settings.service_role_key', true)
+    ),
+    body := jsonb_build_object('cron', true)
+  );
+$$);
 ```
 
-Detalhes técnicos por item:
+Fallback: se `current_setting` não estiver disponível, uso o valor via `vault.decrypted_secrets` ou coloco o service role literal (mesma estratégia já usada nos outros crons que funcionam — `bot-stuck-recovery`, `portal-otp-watchdog`).
 
-- **[2]** `UPDATE whatsapp_instances SET fatal_lock_until = NULL WHERE instance_name = 'igreen-f9594900e75b';` (migration).
-- **[3]** Confirmar dono via `consultants.instance_name`; se ninguém, `status='disabled'` e sair do pool.
-- **[4]** Em `supabase/functions/portal-otp-watchdog/index.ts`, resolver o nome da instância do super admin a partir de `app_settings.super_admin_instance_name` em vez do literal `whapi-superadmin`.
-- **[5]** `SELECT id, conversation_step FROM customers WHERE bot_paused=false AND updated_at < now()-interval '1 hour' AND updated_at > now()-interval '24 hours' AND conversation_step NOT IN ('welcome','end','completed');` — ver se são leads reais ou sandbox.
+Depois disparo `facebook-sync-metrics` manualmente 1x para popular o histórico de 7 dias.
 
-## Resposta direta
+### PR 2 — Capa real da campanha (fonte: Meta Graph API)
 
-**Não está 100%**. Está ~90%. O único bloqueador operacional real é o [1] (Rafael reconectar). Os itens [2]–[5] são higienização; podem entrar num único PR.
+**Schema aditivo** em `facebook_campaigns`:
 
-Aprove esse plano que eu já entro em build mode e resolvo [2], [4] e [5] (código + SQL). [1] e [3] dependem de você/consultor.  
+```sql
+alter table facebook_campaigns
+  add column if not exists thumbnail_url text,
+  add column if not exists creative_format text,       -- 'image' | 'video'
+  add column if not exists thumbnail_synced_at timestamptz;
+```
+
+**Estender `facebook-sync-ad-creatives**` (já roda a cada 6h) para, além do que já faz, buscar:
+
+```
+GET /{fb_ad_id}?fields=creative{image_url,thumbnail_url,object_story_spec,video_id}
+```
+
+- Se tiver `video_id` → busca `video_id?fields=picture` para thumb.
+- Grava `thumbnail_url` + `creative_format` no `facebook_campaigns` (pega o criativo do ad ativo com mais impressões nos últimos 7d).
+
+**Atualizar `CampaignsList.tsx**` (frontend):
+
+- Nova prioridade do `CreativeThumb`:
+  1. `campaign.thumbnail_url` (fonte real da Meta) ← **novo**
+  2. `ad_template_usages → ad_templates` (mantém para wizard futuro)
+  3. `ad_image_library` (último recurso, com badge "prévia — não é a capa veiculada")
+
+### PR 3 — Verificação
+
+- Rodo `facebook-sync-metrics` manualmente e confirmo linhas em `facebook_metrics_daily`.
+- Rodo `facebook-sync-ad-creatives` manualmente e confirmo `thumbnail_url` preenchido nos 12 registros ativos do Rafael.
+- Abro `/admin` → aba Performance/Campanhas: métricas com números reais e cada card com a capa correspondente.
+
+---
+
+## Detalhes técnicos
+
+- Não mudo a autenticação da função `facebook-sync-metrics` (funciona corretamente para o botão manual da UI); só corrijo o cron que estava incompleto.
+- O sync de criativos já roda a cada 6h — só amplio o payload para incluir `image_url/thumbnail_url` sem quebrar nada existente.
+- Grants: as duas colunas novas herdam grants existentes de `facebook_campaigns` (não requer nova policy).
+- Fallback anti-quebra: se a Meta não retornar thumbnail para um ad específico, mantenho o comportamento atual (biblioteca) marcado como "prévia".
+
+Aprovando, executo PR 1 e disparo o sync na mesma leva; PR 2 e PR 3 vão em seguida no mesmo turno.  
   
-irei conectar depois
-
-&nbsp;
+coloque um botao para sincronixar assim, nao fica automatico, as veses demora para eu entrar e ver, iria faer cron desnecessario

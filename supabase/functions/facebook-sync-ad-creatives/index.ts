@@ -25,42 +25,66 @@ function sumActions(actions: any[] | undefined, types: string[]): number {
   return total;
 }
 
-// Extrai copy real do creative.object_story_spec, cobrindo os 3 formatos comuns:
-// link_data (single image/video), video_data (video standalone), template_data (catálogo/carousel)
-function extractCopy(creative: any): { headline: string | null; primary_text: string | null; format: string } {
-  if (!creative) return { headline: null, primary_text: null, format: "unknown" };
+// Extrai copy + thumb real do creative.object_story_spec, cobrindo os formatos comuns:
+// link_data (image), video_data (video), template_data (catálogo/carousel), asset_feed_spec (Advantage+).
+// thumb_url é a MESMA imagem que a Meta está veiculando — não chute da biblioteca.
+function extractCopy(creative: any): { headline: string | null; primary_text: string | null; format: string; thumb_url: string | null; video_id: string | null } {
+  if (!creative) return { headline: null, primary_text: null, format: "unknown", thumb_url: null, video_id: null };
   const oss = creative.object_story_spec || {};
-  // body costuma vir em creative.body (Meta legacy) também — fallback final
   const link = oss.link_data;
   const video = oss.video_data;
   const tpl = oss.template_data;
   let headline: string | null = null;
   let primary_text: string | null = null;
   let format = "unknown";
+  let thumb_url: string | null = null;
+  let video_id: string | null = null;
   if (link) {
     headline = link.name || link.title || null;
     primary_text = link.message || link.description || null;
     format = link.child_attachments?.length ? "carousel" : "image";
+    thumb_url = link.picture || link.image_url || link.child_attachments?.[0]?.picture || null;
   } else if (video) {
     headline = video.title || null;
     primary_text = video.message || null;
     format = "video";
+    thumb_url = video.image_url || null;
+    video_id = video.video_id || null;
   } else if (tpl) {
     headline = tpl.name || null;
     primary_text = tpl.description || null;
     format = "catalog";
   }
-  // Asset feed (Advantage+ creative) — vem em asset_feed_spec
+  // Asset feed (Advantage+ creative)
   const afs = creative.asset_feed_spec;
-  if (afs && !headline) {
-    headline = afs.titles?.[0]?.text || null;
-    primary_text = afs.bodies?.[0]?.text || null;
-    format = afs.videos?.length ? "video" : "image";
+  if (afs) {
+    if (!headline) headline = afs.titles?.[0]?.text || null;
+    if (!primary_text) primary_text = afs.bodies?.[0]?.text || null;
+    if (!thumb_url) thumb_url = afs.images?.[0]?.url || afs.videos?.[0]?.thumbnail_url || null;
+    if (!video_id && afs.videos?.[0]?.video_id) video_id = afs.videos[0].video_id;
+    if (format === "unknown") format = afs.videos?.length ? "video" : "image";
   }
-  // Último fallback: title/body diretos no creative
+  // Últimos fallbacks (creative-level fields)
   if (!headline) headline = creative.title || creative.name || null;
   if (!primary_text) primary_text = creative.body || null;
-  return { headline, primary_text, format };
+  if (!thumb_url) thumb_url = creative.thumbnail_url || creative.image_url || null;
+  return { headline, primary_text, format, thumb_url, video_id };
+}
+
+// Se o creative for vídeo sem thumb resolvida, busca `${video_id}?fields=picture`.
+async function resolveVideoThumb(videoId: string, token: string, cache: Map<string, string | null>): Promise<string | null> {
+  if (cache.has(videoId)) return cache.get(videoId) ?? null;
+  try {
+    const url = `${FB_GRAPH}/${videoId}?fields=picture&access_token=${token}`;
+    const json = await fbFetch(url);
+    const pic = json?.picture || null;
+    cache.set(videoId, pic);
+    return pic;
+  } catch (e) {
+    console.warn("[fb-sync-creatives] video thumb fail", videoId, (e as Error).message);
+    cache.set(videoId, null);
+    return null;
+  }
 }
 
 // Cache simples por creative_id pra evitar refetch quando 5 ads dividem o mesmo criativo
@@ -74,7 +98,7 @@ async function getCreativeCopy(creativeId: string, token: string, cache: Map<str
     return out;
   } catch (e) {
     console.warn("[fb-sync-creatives] copy fetch fail", creativeId, (e as Error).message);
-    const empty = { headline: null, primary_text: null, format: "unknown" };
+    const empty = { headline: null, primary_text: null, format: "unknown", thumb_url: null, video_id: null };
     cache.set(creativeId, empty);
     return empty;
   }
@@ -113,7 +137,9 @@ Deno.serve(async (req) => {
 
     const tokenCache: Record<string, string> = {};
     const creativeCache = new Map<string, any>();
+    const videoThumbCache = new Map<string, string | null>();
     let adsSynced = 0;
+    let campaignsThumbed = 0;
     const errors: Array<{ campaign_id: string; error: string }> = [];
 
     for (const c of campaigns) {
@@ -139,6 +165,11 @@ Deno.serve(async (req) => {
         const insightsByAd = new Map<string, any>();
         for (const row of insJson?.data || []) insightsByAd.set(String(row.ad_id), row);
 
+        // Melhor ad da campanha (maior impressions) → vira a capa oficial
+        let bestThumb: string | null = null;
+        let bestFormat: string | null = null;
+        let bestImpressions = -1;
+
         for (const ad of ads) {
           if (!ad.creative?.id) continue;
           const copy = await getCreativeCopy(ad.creative.id, token, creativeCache);
@@ -150,14 +181,27 @@ Deno.serve(async (req) => {
           const conv = sumActions(ins?.actions, CONV_ACTIONS);
           const leads = directLeads > 0 ? directLeads : conv;
 
-          // Score determinístico: prioriza leads, penaliza desperdício
-          // CTR alto sem lead vale pouco; lead barato vale muito.
+          // Resolve thumb: se for vídeo sem picture direta, busca /{video_id}?fields=picture
+          let thumb = copy.thumb_url;
+          if (!thumb && copy.video_id) {
+            thumb = await resolveVideoThumb(copy.video_id, token, videoThumbCache);
+          }
+
+          // Candidato a "capa da campanha": ad com maior impressions (ou primeiro ativo se todos zerados)
+          const isCandidate = impressions > bestImpressions ||
+            (bestThumb === null && ad.status === "ACTIVE" && thumb);
+          if (thumb && isCandidate) {
+            bestThumb = thumb;
+            bestFormat = copy.format;
+            bestImpressions = impressions;
+          }
+
           let score = 0;
           if (leads > 0) {
             const cpl = spend_cents / leads;
-            score = leads * 10 - (cpl / 100); // +10 por lead, -1 por R$1 de CPL
+            score = leads * 10 - (cpl / 100);
           } else if (spend_cents >= 1000) {
-            score = -(spend_cents / 100); // desperdiçou sem converter → penalidade
+            score = -(spend_cents / 100);
           }
 
           await admin.from("ad_creative_performance").upsert({
@@ -174,6 +218,16 @@ Deno.serve(async (req) => {
           }, { onConflict: "fb_ad_id" });
           adsSynced++;
         }
+
+        // Grava capa oficial da campanha (fonte: Meta, não biblioteca)
+        if (bestThumb) {
+          await admin.from("facebook_campaigns").update({
+            thumbnail_url: bestThumb,
+            creative_format: bestFormat,
+            thumbnail_synced_at: new Date().toISOString(),
+          }).eq("id", c.id);
+          campaignsThumbed++;
+        }
       } catch (e) {
         errors.push({ campaign_id: c.id, error: (e as Error).message });
       }
@@ -182,6 +236,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       processed: campaigns.length,
       ads_synced: adsSynced,
+      campaigns_thumbed: campaignsThumbed,
       creative_cache_size: creativeCache.size,
       errors,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

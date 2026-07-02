@@ -37,6 +37,7 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
     setLoading(true);
     setErrorMsg(null);
     try {
+      // 1) Métricas (impressões, cliques, gasto, leads, CPL)
       const { data, error } = await supabase.functions.invoke("facebook-sync-metrics", {
         body: { consultant_id: consultantId },
       });
@@ -45,11 +46,16 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
       if (d?.error) throw new Error(d.error);
       setResult(d);
 
+      // 2) Criativos + capas reais da Meta (roda em paralelo, best-effort — não bloqueia UI se falhar)
+      supabase.functions.invoke("facebook-sync-ad-creatives", {
+        body: { consultant_id: consultantId },
+      }).catch((e) => console.warn("[sync creatives]", e?.message));
+
       const errs = d.errors?.length || 0;
       if (d.synced > 0 && errs === 0) {
         toast({
           title: "Métricas atualizadas",
-          description: `${d.synced} campanha${d.synced === 1 ? "" : "s"} sincronizada${d.synced === 1 ? "" : "s"} com a Meta.`,
+          description: `${d.synced} campanha${d.synced === 1 ? "" : "s"} sincronizada${d.synced === 1 ? "" : "s"} com a Meta. Capas dos anúncios sendo atualizadas em segundo plano.`,
         });
       } else if (d.synced > 0 && errs > 0) {
         toast({
