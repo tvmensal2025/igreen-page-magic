@@ -4516,6 +4516,7 @@ export type Database = {
           commission_rate: number | null
           consultant_id: string
           created_at: string
+          creative_format: string | null
           creative_pack_id: string | null
           daily_budget_cents: number
           distribuidora: string | null
@@ -4538,6 +4539,8 @@ export type Database = {
           rejection_reason: string | null
           started_at: string | null
           status: string
+          thumbnail_synced_at: string | null
+          thumbnail_url: string | null
           updated_at: string
         }
         Insert: {
@@ -4547,6 +4550,7 @@ export type Database = {
           commission_rate?: number | null
           consultant_id: string
           created_at?: string
+          creative_format?: string | null
           creative_pack_id?: string | null
           daily_budget_cents: number
           distribuidora?: string | null
@@ -4569,6 +4573,8 @@ export type Database = {
           rejection_reason?: string | null
           started_at?: string | null
           status?: string
+          thumbnail_synced_at?: string | null
+          thumbnail_url?: string | null
           updated_at?: string
         }
         Update: {
@@ -4578,6 +4584,7 @@ export type Database = {
           commission_rate?: number | null
           consultant_id?: string
           created_at?: string
+          creative_format?: string | null
           creative_pack_id?: string | null
           daily_budget_cents?: number
           distribuidora?: string | null
@@ -4600,6 +4607,8 @@ export type Database = {
           rejection_reason?: string | null
           started_at?: string | null
           status?: string
+          thumbnail_synced_at?: string | null
+          thumbnail_url?: string | null
           updated_at?: string
         }
         Relationships: [
