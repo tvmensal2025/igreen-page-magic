@@ -1,44 +1,43 @@
-## Validação da blindagem do rodízio
+## Análise: TOP 10 Clientes por Consumo
 
-Revisei toda a implementação (migração, edge functions `evolution-webhook` + `whapi-webhook`, helpers `rodizio-cas.ts`, `rodizio-assignment.ts`, `meta-ctwa-fallback.ts`, `notify-consultant.ts` e o card `ManualReviewQueueCard.tsx`). **O núcleo está correto e sem trava**: CAS previne notificar 2 parceiros, o unique index impede 2 pools ativas na mesma campanha, fallback silencioso foi removido, todas as rotas de falha caem na fila manual + WhatsApp pro dono, `logRodizioOutcome` grava rastro (o campo `campaign_match_log.campaign_id` é nullable, então o insert `no_campaign_manual_review` não quebra).
+Auditei o card `TopConsumersCard.tsx` contra o banco (562 clientes iGreen, 555 com `media_consumo`). Achei **6 problemas de dado desinformado/desatualizado** — nenhum é bug de segurança, mas o card hoje engana o usuário.
 
-Encontrei **4 ajustes finos** que valem aplicar antes de ligar anúncio real — nenhum é bloqueador, mas fecham brechas residuais.
+### Achados
 
-### Ajustes propostos
+**1. Coluna "Conta" está sempre "—" (100% dos clientes)**
+`electricity_bill_value` é `NULL` para **todos os 562 clientes iGreen** — o portal não devolve esse campo. O Dashboard já contorna isso estimando `media_consumo × R$ 0,95` (linha 116-122 de `DashboardTab.tsx`), mas o card não usa essa fórmula. Resultado: o KPI mais visível da linha ("Conta") não aparece nunca.
 
-**1. `resolveSingleActivePool` ainda está exportada em `meta-ctwa-fallback.ts`**
-O comentário diz "removido", mas a função continua no arquivo (linhas 58+). Ninguém importa mais, porém deixar código morto é armadilha — daqui a 2 meses alguém pode reimportar sem saber que ela é justamente o furo original. Remover a função (manter só o comentário-alerta explicando o porquê).
+**2. Unidade errada: "kW" em vez de "kWh"**
+`media_consumo` é consumo mensal em **kWh**, não potência instantânea (kW). Linha 57: `{...} kW`.
 
-**2. `markManualReview` não sobrescreve motivo quando já está em revisão**
-Hoje o filtro `.eq("needs_manual_review", false)` torna a função idempotente, mas se o mesmo lead entrar por 2 motivos (ex.: 1ª msg `rodizio_pool_empty`, 2ª msg `rodizio_rpc_error`), só o 1º motivo fica registrado — o admin vê a razão errada. Ajuste: sempre gravar o motivo mais recente (remover o filtro `.eq(...false)` e sempre atualizar `manual_review_reason`/`manual_review_at`; manter `needs_manual_review = true`).
+**3. Badge "—" ou slug técnico em 8 de 10 clientes**
+`STATUS_BADGE` só cobre 5 status (`approved`, `active`, `pending`, `rejected`, `devolutiva`). Os status reais do top 10 hoje são `contato_incompleto`, `awaiting_signature`, `data_complete`, `registered_igreen`, `contract_sent` — todos caem no fallback e mostram o slug cru ou "—". O Dashboard tem o mapa completo em `statusLabels` (linha 130) — está duplicado sem sincronia.
 
-**3. Atribuição manual não consome turno do rodízio nem notifica parceiro**
-No `ManualReviewQueueCard.handleAssign`, quando o admin escolhe um parceiro, o código só faz `UPDATE customers`. Não avisa o parceiro no WhatsApp e não registra `campaign_match_log`. Isso deixa o parceiro sem aviso e o histórico incompleto. Ajuste: após o UPDATE, chamar `notifyPartnerNewLead` (via nova edge function fina `assign-lead-manual` ou reaproveitando um endpoint já existente) e inserir em `campaign_match_log` com `method='manual_assignment'`, `rodizio_outcome='assigned'`.
+**4. Cliente de teste no top real**
+"EMPRESA TESTE BATERIA LTDA" (1500 kWh) aparece no top 10 de produção. Card não filtra `is_sandbox = true` nem nomes claramente de teste.
 
-**4. Realtime do card invalida em qualquer UPDATE de `customers`**
-O filtro `consultant_id=eq.${consultantId}` dispara refetch em toda atualização de qualquer cliente do consultor (pode ser dezenas por minuto em produção). Custa Realtime à toa. Ajuste: trocar por `event: '*'` com um debounce leve, ou (melhor) escutar apenas UPDATE e filtrar client-side por `payload.new.needs_manual_review === true || payload.old.needs_manual_review === true` antes de invalidar.
+**5. "Frescor do dado" invisível**
+O último sync completo foi ontem 01/jul às 23:16 (`igreen_sync_runs`). O usuário não vê essa data no card, então não sabe se está olhando dado de 1 hora ou de 1 semana atrás. Um cliente com sync travado (o de hoje 09:00 está `running` há horas) veria dado defasado sem alerta.
 
-### Fora de escopo (funcionando, não mexer)
-- CAS em `casAssignPartner` — OK, `.is("referral_partner_id", null)` no UPDATE é a forma correta.
-- `decideRodizioAssignment` puro + testável — OK.
-- Notificação `notifyOwnerManualReview` fire-and-forget com `.catch` — OK.
-- Unique index parcial `WHERE is_active = true` — OK.
-- Coluna `rodizio_outcome` nullable + índice parcial — OK.
+**6. Card sem ação**
+Clicar num cliente do top não faz nada. O objetivo do card ("onde está sua maior comissão") pede que o usuário consiga abrir o cliente pra agir (cobrar, atualizar, contatar).
+
+### Correções propostas
+
+1. **Estimar `Conta` quando faltar** — reusar a fórmula do Dashboard (`kwh × 0,95`) e marcar o valor com um `~` discreto pra indicar estimativa, com tooltip "Estimado — portal iGreen não devolve valor da conta".
+2. **Trocar "kW" por "kWh"** (linha 57).
+3. **Mapa de status completo** — importar/compartilhar o `statusLabels` do Dashboard em vez de duplicar, e adicionar cores para `contato_incompleto` (vermelho suave — pede ação) e `awaiting_signature` (âmbar).
+4. **Filtrar sandbox e teste óbvio** — `!c.is_sandbox` + descartar nomes que casem `/teste|test|empresa teste/i`.
+5. **Rodapé com "Atualizado há X"** — buscar `max(finished_at) WHERE status='ok'` de `igreen_sync_runs` e exibir "Atualizado há 2h" no header do card; se > 24h, badge âmbar "Dado defasado — rode o sync".
+6. **Linha clicável** — envolver o `<li>` num handler que abre o CustomerDetailDrawer (já existente no admin) pelo `customer.id`.
+
+### Fora de escopo (não tocar agora)
+- Sync do iGreen travado em `running` — problema de backend, é outro plano.
+- Padronização do campo `electricity_bill_value` no schema — só resolveria se o portal iGreen expusesse; hoje a estimativa é o certo.
 
 ### Diagnóstico técnico
 
-Fluxo validado ponta-a-ponta:
-```text
-msg WhatsApp
-  ├─ identifica campanha (AD ID / CTWA CLID / initial_message)
-  │    ├─ achou → rodizio_next(campaign_id)
-  │    │    ├─ RPC error       → markManualReview("rodizio_rpc_error") + notify owner
-  │    │    ├─ pool vazia      → markManualReview("rodizio_pool_empty") + notify owner
-  │    │    └─ partner_id ok   → casAssignPartner
-  │    │         ├─ applied    → notifyPartnerNewLead (só este ganha)
-  │    │         └─ race       → descarta silenciosamente (outro turno já venceu)
-  │    └─ frase-âncora sem campanha → markManualReview("no_campaign_ctwa_phrase")
-  └─ sem sinal de anúncio → fluxo normal do consultor dono
-```
-
-Nenhum caminho leva a "chuta um parceiro qualquer". Com os 4 ajustes acima, sistema fica pronto pra escalar (2, 10, 50 parceiros) sem risco de lead ir pro dono errado.
+Arquivos a mexer:
+- `src/components/admin/TopConsumersCard.tsx` — recebe `electricity_bill_value` cru, sem `is_sandbox`, sem hook de última sincronização, sem onClick.
+- `src/components/admin/DashboardTab.tsx` — passar `customers` já com `bill_estimated` calculado (ou passar a função `billOf`), e passar `lastSyncAt` + `onOpenCustomer`.
+- Novo helper (opcional): `src/components/admin/lib/customerStatusLabels.ts` — extrair `statusLabels` + `STATUS_BADGE` do Dashboard para reuso.

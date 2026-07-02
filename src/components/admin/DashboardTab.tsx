@@ -286,7 +286,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange }: Dashb
 
       <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} />
 
-      <TopConsumersCard customers={filteredMetrics?.filteredCustomers} />
+      <TopConsumersCard customers={filteredMetrics?.filteredCustomers} consultantId={userId} />
       <GeographyCard customers={filteredMetrics?.filteredCustomers} />
       <RetentionCard customers={filteredMetrics?.filteredCustomers} />
 
