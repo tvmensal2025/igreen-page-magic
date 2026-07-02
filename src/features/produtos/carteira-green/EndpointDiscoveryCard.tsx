@@ -186,18 +186,25 @@ export function EndpointDiscoveryCard({ consultantId }: { consultantId: string }
               </summary>
               <div className="divide-y divide-border/40">
                 {list.map((r) => (
-                  <div key={`${r.method}-${r.path}`} className="px-3 py-2 flex items-center justify-between gap-3 text-xs">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-mono truncate">{r.method} {r.path}</div>
-                      {r.notes && <div className="text-[10px] text-muted-foreground truncate">{r.notes}</div>}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-muted-foreground">{r.bytes ?? 0}B · {r.ms ?? 0}ms</span>
-                      <span className={`px-2 py-0.5 rounded-full border ${BUCKET_STYLE[r.bucket || "unknown"]}`}>
-                        {r.status ?? "—"} · {r.bucket ?? "?"}
-                      </span>
-                    </div>
-                  </div>
+                  <details key={`${r.method}-${r.path}-${r.checked_at}`} className="px-3 py-2 text-xs">
+                    <summary className="cursor-pointer flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-mono truncate">{r.method} {r.path}</div>
+                        {r.notes && <div className="text-[10px] text-muted-foreground truncate">{r.notes}</div>}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-muted-foreground">{r.bytes ?? 0}B · {r.ms ?? 0}ms</span>
+                        <span className={`px-2 py-0.5 rounded-full border ${BUCKET_STYLE[r.bucket || "unknown"]}`}>
+                          {r.status ?? "—"} · {r.bucket ?? "?"}
+                        </span>
+                      </div>
+                    </summary>
+                    {r.sample_body && (
+                      <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted/40 p-2 text-[10px] font-mono whitespace-pre-wrap break-all">
+                        {r.sample_body}
+                      </pre>
+                    )}
+                  </details>
                 ))}
               </div>
             </details>
