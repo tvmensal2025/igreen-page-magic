@@ -47,7 +47,7 @@ export function EndpointDiscoveryCard({ consultantId }: { consultantId: string }
     queryFn: async (): Promise<Row[]> => {
       const { data, error } = await supabase
         .from("igreen_endpoint_discovery")
-        .select("method,path,category,status,bytes,ms,bucket,is_alive,notes,checked_at")
+        .select("method,path,category,status,bytes,ms,bucket,is_alive,notes,sample_body,checked_at")
         .order("category", { ascending: true })
         .order("path", { ascending: true });
       if (error) throw error;
