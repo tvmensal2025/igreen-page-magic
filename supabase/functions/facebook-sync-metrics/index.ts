@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     const lowAlertCents = Number(pSettings?.low_balance_alert_cents ?? 2000);
     let campaignsQuery = admin
       .from("facebook_campaigns")
-      .select("id, consultant_id, fb_campaign_id, status, started_at, end_time_utc")
+      .select("id, consultant_id, fb_campaign_id, fb_adset_ids, daily_budget_cents, status, started_at, end_time_utc")
       .in("status", ["active", "paused", "pending_review"]);
     if (consultantFilter) campaignsQuery = campaignsQuery.eq("consultant_id", consultantFilter);
     const { data: campaigns } = await campaignsQuery;
