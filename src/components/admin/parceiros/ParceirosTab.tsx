@@ -94,6 +94,8 @@ export function ParceirosTab({
 
   return (
     <>
+      <ManualReviewQueueCard consultantId={consultantId} />
+
       <PartnerDashboard
         partners={partners}
         isLoading={isLoading}
@@ -102,6 +104,7 @@ export function ParceirosTab({
         onDelete={handleDelete}
         onQrCode={setQrPartner}
       />
+
 
       <PartnerForm
         open={formOpen}
