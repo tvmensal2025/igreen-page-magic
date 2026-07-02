@@ -1,47 +1,44 @@
-# Descoberta automática do endpoint de detalhe (sem VPS/curl manual)
+# Executar probe → identificar endpoint → implementar enrich → validar puxada completa
 
-Você pediu para automatizar: em vez de você fazer deploy do worker e rodar curl, crio uma **edge function Supabase** que faz o probe direto contra `api-vo.igreenenergy.com.br`, salva o resultado no banco e mostra na UI.
+## Estado atual
+- Worker configurado: `https://igreen-worker-igreen.d9v63q.easypanel.host`
+- 1 consultor com credenciais iGreen cadastrado
+- Edge function `probe-igreen-detail` já deployada
+- Tabela `igreen_endpoint_discovery` vazia (nenhum probe rodado ainda)
 
-## O que muda no plano
+## Passos que vou executar agora
 
-Fase A vira automática. Fases B–E permanecem iguais.
+**1. Rodar probe automaticamente**
+Invoco `probe-igreen-detail` via `curl_edge_functions` com `sample_idcliente=1117549` (SANDRA) e o consultor com credenciais.
+Timeout esperado: 30-90s (worker faz login + testa 12 rotas).
 
-## Nova Fase A (automática)
+**2. Ler resultado da tabela `igreen_endpoint_discovery`**
+Identifico o vencedor (bucket=`ok`, status=200). Analiso o `sample_body` para mapear campos da API → colunas do banco (endereço, PJ, procurador, distribuidora, etc.).
 
-**1. Edge function `probe-igreen-detail`**
-- Recebe: `{ consultant_id, sample_idcliente? }`
-- Faz login em `api-vo.igreenenergy.com.br/v1/auth/*` reusando as credenciais do consultor (mesmo fluxo do `worker-igreen-sync`, mas em Deno).
-- Se `sample_idcliente` não vier, busca 1 cliente em `/crm/green` e usa o primeiro.
-- Testa 12 endpoints candidatos:
-  - `/clientes-green/{id}`, `/crm/green/{id}`, `/customer/{id}`, `/customers/{id}`
-  - `/clientes-green/detalhe/{id}`, `/clientes-green/{id}/completo`
-  - `/clientes-green/{id}/dados-cadastrais`, `/clientes-green/{id}/endereco`
-  - `/clientes-green/dados/{id}`, `/green/{id}`, `/clientes/{id}`, `/cliente/{id}`
-- Para cada: status, tamanho, duração, top 3 KB do body.
-- Persiste em nova tabela `igreen_endpoint_discovery` (já existe no schema — reaproveitar).
-- Retorna JSON com resultados classificados (ok / denied / missing / bad_request).
+**3. Implementar `fetchCustomerDetail` no worker + rota `/enrich-customer-batch`**
+- Adiciona função que chama o endpoint vencedor para um `idcliente`
+- Nova rota `POST /enrich-customer-batch { portal_email, portal_password, ids: string[] }` com concorrência 3
+- Retorna `{ results: [{ id, mapped, error? }] }`
 
-**2. Migration**
-- Reaproveitar tabela `igreen_endpoint_discovery` existente (15 colunas, 2 policies). Se faltar coluna, adiciono.
+**4. Reintroduzir modo enrich em `sync-igreen-customers` (edge function)**
+- Parâmetro `mode: "enrich"` + `enrichCustomerIds?: string[]` + `enrichLimit?: number`
+- Seleção por `igreen_code` (não portal2_idcliente)
+- Persiste nas colunas já existentes da Fase 1 + `last_enriched_at`
 
-**3. UI de admin (`/admin` → nova seção "Descoberta de endpoint")**
-- Dropdown de consultor aprovado.
-- Input opcional `sample_idcliente` (default: SANDRA 1117549).
-- Botão "Rodar probe".
-- Tabela de resultados: endpoint, status, tamanho, preview do body expansível.
-- Botão "Marcar como vencedor" → salva em `app_settings` chave `igreen_customer_detail_endpoint`.
+**5. Validar puxando 1 cliente real (SANDRA 1117549)**
+- Executo `sync-igreen-customers { mode: "enrich", enrichCustomerIds: ["1117549"] }`
+- Leio a linha do banco e comparo os campos preenchidos vs o modal do escritório (endereço, CPF, telefone, email, distribuidora, fornecedora, ativo desde, consumo médio, etc.)
 
-## Fase B (após vencedor marcado)
-- `worker-igreen-sync` (ou edge function nova) lê o endpoint de `app_settings` e implementa `/enrich-customer-batch`.
-- Restante das fases C-E mantido.
+**6. Reportar validação**
+Mostro tabela: campo | valor no banco | valor esperado (screenshot) | status ✓/✗
 
-## Vantagem
-Você clica "Rodar probe" na UI, vê o resultado e marca o vencedor com 1 clique — sem VPS, sem curl, sem terminal.
+## Se o probe não encontrar vencedor
+Alguns endpoints candidatos podem retornar 404. Nesse caso, analiso os corpos de erro (podem revelar o formato correto do path), amplio para 6-10 candidatos adicionais e re-rodo — sem pedir sua ajuda.
 
-## Escopo
-- Nova edge function: `probe-igreen-detail`
-- Nova página admin: `src/pages/admin/IgreenEndpointProbe.tsx` (ou aba dentro de página existente)
-- Nenhuma alteração em `worker-portal-2`, `Portal2Client`, cadastro.
+## Se o worker falhar no login (Cloudflare/WAF)
+Reporto o erro exato e paramos — nada a implementar até o worker voltar.
 
-## Próximo passo
-Aprovar → implemento a edge function + UI. Depois você roda o probe pelo painel e me diz o vencedor (ou eu leio direto de `igreen_endpoint_discovery` na próxima interação).
+## Escopo intocado
+`worker-portal-2`, cadastro, OTP, contratos.
+
+Aprovar → rodo tudo em sequência e volto com o resultado da validação.
