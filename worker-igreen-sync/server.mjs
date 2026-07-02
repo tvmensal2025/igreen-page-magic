@@ -1012,9 +1012,8 @@ const server = http.createServer(async (req, res) => {
       const out = await probeAll(s);
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, ...out });
     }
-    }
     // /probe-customer-detail: descobre qual endpoint da API do escritório
-    // devolve o DETALHE de um cliente (nenhum está mapeado hoje).
+    // devolve o DETALHE de um cliente (endereço + licenciado ainda não mapeados).
     // Body opcional: { idcliente?: string }. Se ausente, usa o 1º de /crm/green.
     // Retorna, por candidato: status HTTP, tamanho do body, top-3-KB de amostra.
     if (req.url === '/probe-customer-detail') {
@@ -1033,13 +1032,30 @@ const server = http.createServer(async (req, res) => {
         `/clientes-green/${sampleId}/dados-cadastrais`,
         `/clientes-green/${sampleId}/endereco`,
         `/clientes-green/detalhe/${sampleId}`,
+        `/clientes-green/dados/${sampleId}`,
+        `/clientes-green/endereco/${sampleId}`,
+        `/clientes-green/completo/${sampleId}`,
+        `/clientes-green/ficha/${sampleId}`,
+        `/clientes-green/full/${sampleId}`,
+        `/clientes-green/cadastro/${sampleId}`,
+        `/clientes-green/perfil/${sampleId}`,
         `/crm/green/${sampleId}`,
         `/crm/green/card/${sampleId}`,
+        `/crm/green/detalhe/${sampleId}`,
+        `/crm/green/cliente/${sampleId}`,
         `/customer/${sampleId}`,
         `/customers/${sampleId}`,
         `/clientes/${sampleId}`,
         `/cliente/${sampleId}`,
+        `/clientes/detalhe/${sampleId}`,
+        `/clientes/full/${sampleId}`,
+        `/clientes/ficha/${sampleId}`,
+        `/consultores/cliente/${sampleId}`,
+        `/licenciado/cliente/${sampleId}`,
+        `/rotinas/cliente/${sampleId}`,
+        `/painel/cliente/${sampleId}`,
       ];
+
 
       const results = [];
       for (const path of candidates) {
