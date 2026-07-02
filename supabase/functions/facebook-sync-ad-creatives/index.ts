@@ -137,7 +137,9 @@ Deno.serve(async (req) => {
 
     const tokenCache: Record<string, string> = {};
     const creativeCache = new Map<string, any>();
+    const videoThumbCache = new Map<string, string | null>();
     let adsSynced = 0;
+    let campaignsThumbed = 0;
     const errors: Array<{ campaign_id: string; error: string }> = [];
 
     for (const c of campaigns) {
@@ -163,6 +165,11 @@ Deno.serve(async (req) => {
         const insightsByAd = new Map<string, any>();
         for (const row of insJson?.data || []) insightsByAd.set(String(row.ad_id), row);
 
+        // Melhor ad da campanha (maior impressions) → vira a capa oficial
+        let bestThumb: string | null = null;
+        let bestFormat: string | null = null;
+        let bestImpressions = -1;
+
         for (const ad of ads) {
           if (!ad.creative?.id) continue;
           const copy = await getCreativeCopy(ad.creative.id, token, creativeCache);
@@ -174,14 +181,27 @@ Deno.serve(async (req) => {
           const conv = sumActions(ins?.actions, CONV_ACTIONS);
           const leads = directLeads > 0 ? directLeads : conv;
 
-          // Score determinístico: prioriza leads, penaliza desperdício
-          // CTR alto sem lead vale pouco; lead barato vale muito.
+          // Resolve thumb: se for vídeo sem picture direta, busca /{video_id}?fields=picture
+          let thumb = copy.thumb_url;
+          if (!thumb && copy.video_id) {
+            thumb = await resolveVideoThumb(copy.video_id, token, videoThumbCache);
+          }
+
+          // Candidato a "capa da campanha": ad com maior impressions (ou primeiro ativo se todos zerados)
+          const isCandidate = impressions > bestImpressions ||
+            (bestThumb === null && ad.status === "ACTIVE" && thumb);
+          if (thumb && isCandidate) {
+            bestThumb = thumb;
+            bestFormat = copy.format;
+            bestImpressions = impressions;
+          }
+
           let score = 0;
           if (leads > 0) {
             const cpl = spend_cents / leads;
-            score = leads * 10 - (cpl / 100); // +10 por lead, -1 por R$1 de CPL
+            score = leads * 10 - (cpl / 100);
           } else if (spend_cents >= 1000) {
-            score = -(spend_cents / 100); // desperdiçou sem converter → penalidade
+            score = -(spend_cents / 100);
           }
 
           await admin.from("ad_creative_performance").upsert({
@@ -198,6 +218,16 @@ Deno.serve(async (req) => {
           }, { onConflict: "fb_ad_id" });
           adsSynced++;
         }
+
+        // Grava capa oficial da campanha (fonte: Meta, não biblioteca)
+        if (bestThumb) {
+          await admin.from("facebook_campaigns").update({
+            thumbnail_url: bestThumb,
+            creative_format: bestFormat,
+            thumbnail_synced_at: new Date().toISOString(),
+          }).eq("id", c.id);
+          campaignsThumbed++;
+        }
       } catch (e) {
         errors.push({ campaign_id: c.id, error: (e as Error).message });
       }
@@ -206,6 +236,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       processed: campaigns.length,
       ads_synced: adsSynced,
+      campaigns_thumbed: campaignsThumbed,
       creative_cache_size: creativeCache.size,
       errors,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
