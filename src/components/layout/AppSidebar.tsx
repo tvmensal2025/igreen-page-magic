@@ -121,7 +121,10 @@ interface AppSidebarProps {
   collapsed?: boolean;
   onCollapse?: () => void;
   onOpenSettings?: () => void;
+  /** Badge dinâmico por tab (ex.: contagem de boletos vencendo hoje). */
+  badges?: Partial<Record<AdminTabId, number | string | undefined>>;
 }
+
 
 export function AppSidebar({
   activeTab,
