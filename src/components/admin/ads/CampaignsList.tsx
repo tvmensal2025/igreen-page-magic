@@ -155,34 +155,50 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         setWaLeads(waCounts);
 
         // ─── Criativos por campanha (preview de mídia) ───
-        // Tenta: ad_template_usages → ad_templates (video_thumb_url, video_url, photos[0])
+        // Prioridade: (1) capa real da Meta em facebook_campaigns.thumbnail_url,
+        //             (2) ad_template_usages → ad_templates (wizard),
+        //             (3) última imagem da biblioteca (fallback genérico).
         try {
-          const { data: usages } = await (supabase as any)
-            .from("ad_template_usages")
-            .select("campaign_id, template_id")
-            .in("campaign_id", list.map(c => c.id));
-          const tplIds = Array.from(new Set(((usages as any[]) || []).map(u => u.template_id))).filter(Boolean);
-          const tplById: Record<string, any> = {};
-          if (tplIds.length > 0) {
-            const { data: tpls } = await (supabase as any)
-              .from("ad_templates")
-              .select("id, photos, video_url, video_thumb_url, creative_mode")
-              .in("id", tplIds);
-            (tpls || []).forEach((t: any) => { tplById[t.id] = t; });
-          }
           const cr: Record<string, Creative> = {};
-          ((usages as any[]) || []).forEach((u) => {
-            const t = tplById[u.template_id];
-            if (!t) return;
-            if (t.creative_mode === "video" || t.video_url) {
-              cr[u.campaign_id] = { kind: "video", url: t.video_thumb_url || (Array.isArray(t.photos) && t.photos[0]?.url) || null };
-            } else if (Array.isArray(t.photos) && t.photos[0]?.url) {
-              cr[u.campaign_id] = { kind: "image", url: t.photos[0].url };
+
+          // 1) capa real vinda da Meta (fonte de verdade)
+          list.forEach((c) => {
+            if (c.thumbnail_url) {
+              const kind = c.creative_format === "video" ? "video" : "image";
+              cr[c.id] = { kind, url: c.thumbnail_url };
             }
           });
-          // Fallback: primeira imagem da biblioteca do consultor
-          const missing = list.filter(c => !cr[c.id]).map(c => c.id);
-          if (missing.length > 0) {
+
+          // 2) usages do wizard — só pra campanhas que ainda não têm capa real
+          const remaining = list.filter(c => !cr[c.id]).map(c => c.id);
+          if (remaining.length > 0) {
+            const { data: usages } = await (supabase as any)
+              .from("ad_template_usages")
+              .select("campaign_id, template_id")
+              .in("campaign_id", remaining);
+            const tplIds = Array.from(new Set(((usages as any[]) || []).map(u => u.template_id))).filter(Boolean);
+            const tplById: Record<string, any> = {};
+            if (tplIds.length > 0) {
+              const { data: tpls } = await (supabase as any)
+                .from("ad_templates")
+                .select("id, photos, video_url, video_thumb_url, creative_mode")
+                .in("id", tplIds);
+              (tpls || []).forEach((t: any) => { tplById[t.id] = t; });
+            }
+            ((usages as any[]) || []).forEach((u) => {
+              const t = tplById[u.template_id];
+              if (!t) return;
+              if (t.creative_mode === "video" || t.video_url) {
+                cr[u.campaign_id] = { kind: "video", url: t.video_thumb_url || (Array.isArray(t.photos) && t.photos[0]?.url) || null };
+              } else if (Array.isArray(t.photos) && t.photos[0]?.url) {
+                cr[u.campaign_id] = { kind: "image", url: t.photos[0].url };
+              }
+            });
+          }
+
+          // 3) fallback genérico: última imagem da biblioteca (só se restou algo sem capa)
+          const stillMissing = list.filter(c => !cr[c.id]).map(c => c.id);
+          if (stillMissing.length > 0) {
             const { data: imgs } = await (supabase as any)
               .from("ad_image_library")
               .select("url")
@@ -190,7 +206,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               .order("created_at", { ascending: false })
               .limit(1);
             const fallbackUrl = (imgs && imgs[0]?.url) || null;
-            missing.forEach((cid) => {
+            stillMissing.forEach((cid) => {
               cr[cid] = fallbackUrl ? { kind: "image", url: fallbackUrl } : { kind: "none", url: null };
             });
           }
