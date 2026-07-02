@@ -98,7 +98,7 @@ async function getCreativeCopy(creativeId: string, token: string, cache: Map<str
     return out;
   } catch (e) {
     console.warn("[fb-sync-creatives] copy fetch fail", creativeId, (e as Error).message);
-    const empty = { headline: null, primary_text: null, format: "unknown" };
+    const empty = { headline: null, primary_text: null, format: "unknown", thumb_url: null, video_id: null };
     cache.set(creativeId, empty);
     return empty;
   }
