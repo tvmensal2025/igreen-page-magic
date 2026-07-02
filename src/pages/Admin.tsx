@@ -330,7 +330,8 @@ const AdminContent = () => {
 
   return (
     <div className="painel-elite h-[100dvh] flex overflow-hidden">
-      <AppSidebar
+      <AdminSidebarWithBadges
+        userId={userId}
         activeTab={activeTab}
         onTabChange={(t) => setActiveTab(t)}
         onNavigate={(href) => navigate(href)}
@@ -344,6 +345,7 @@ const AdminContent = () => {
         onCollapse={collapseSidebar}
         onOpenSettings={() => setSettingsOpen(true)}
       />
+
 
       <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
         <AppTopbar
