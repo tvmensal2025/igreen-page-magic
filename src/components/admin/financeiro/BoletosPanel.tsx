@@ -3,6 +3,7 @@ import { CalendarClock, AlertTriangle, Clock, CheckCircle2, Percent, Loader2 } f
 import { useBoletosAdmin } from "./hooks";
 import { computeFinanceiroKpis } from "./kpi";
 import { BoletosAdminTable } from "./BoletosAdminTable";
+import { BoletosTrendChart } from "./BoletosTrendChart";
 
 const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -11,17 +12,18 @@ interface Props {
   scope: "all" | "self";
 }
 
-/** Bloco de boletos: KPIs + tabela filtrável + export CSV + cobrança em lote. */
+/** Bloco de boletos: KPIs + gráfico + tabela filtrável + export CSV + cobrança em lote. */
 export function BoletosPanel({ userId, scope }: Props) {
   const { data: rows = [], isLoading } = useBoletosAdmin({ userId, scope });
   const kpis = useMemo(() => computeFinanceiroKpis(rows), [rows]);
 
-  // KPIs adicionais: ticket médio e inadimplência do mês
+  // Ticket médio (aberto) e inadimplência do mês (vencidos do mês / emitidos do mês).
   const extra = useMemo(() => {
     const abertos = rows.filter((r) => !r.pagamento);
     const ticket = abertos.length ? abertos.reduce((s, r) => s + Number(r.total || 0), 0) / abertos.length : 0;
-    const totalMes = kpis.pagosMesTotal + kpis.vencidosTotal;
-    const inadPct = totalMes ? Math.round((kpis.vencidosTotal / totalMes) * 100) : 0;
+    const inadPct = kpis.emitidosMesTotal
+      ? Math.round((kpis.vencidosMesTotal / kpis.emitidosMesTotal) * 100)
+      : 0;
     return { ticket, inadPct };
   }, [rows, kpis]);
 
@@ -58,11 +60,12 @@ export function BoletosPanel({ userId, scope }: Props) {
         />
         <KpiCard
           icon={<Percent className="w-5 h-5" />}
-          label="Inadimplência"
+          label="Inadimplência (mês)"
           value={extra.inadPct}
-          money={`${extra.inadPct}% do mês`}
+          money={`${kpis.vencidosMesCount} de ${kpis.emitidosMesCount} boletos`}
           tone="red"
           asPercent
+          title="Vencidos do mês corrente ÷ emitidos do mês corrente"
         />
         <KpiCard
           icon={<CalendarClock className="w-5 h-5" />}
@@ -79,7 +82,10 @@ export function BoletosPanel({ userId, scope }: Props) {
           <Loader2 className="w-5 h-5 animate-spin mr-2" /> Carregando boletos…
         </div>
       ) : (
-        <BoletosAdminTable rows={rows} />
+        <>
+          <BoletosTrendChart rows={rows} />
+          <BoletosAdminTable rows={rows} currentUserId={userId} />
+        </>
       )}
 
       <p className="text-[11px] text-muted-foreground">
@@ -98,6 +104,7 @@ function KpiCard({
   tone,
   asPercent,
   hideValue,
+  title,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -106,6 +113,7 @@ function KpiCard({
   tone: "amber" | "red" | "blue" | "emerald";
   asPercent?: boolean;
   hideValue?: boolean;
+  title?: string;
 }) {
   const toneMap = {
     amber: "bg-amber-500/10 text-amber-700 border-amber-500/20",
@@ -114,7 +122,7 @@ function KpiCard({
     emerald: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   } as const;
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-4">
+    <div className="rounded-xl border border-border/60 bg-card p-4" title={title}>
       <div className={`inline-flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-medium border ${toneMap[tone]}`}>
         {icon}
         {label}
