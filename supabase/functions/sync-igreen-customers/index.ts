@@ -702,7 +702,7 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     const email = safeStr(d.email); if (email) patch.email = email;
     const cid = safeStr(d.cidade); if (cid) patch.address_city = cid;
     const uf = safeStr(d.uf); if (uf) patch.address_state = uf.toUpperCase();
-    const cel = safeStr(d.celular); if (cel) patch.phone = normalizePhone(String(cel));
+    const cel = safeStr(d.celular); if (cel) patch.phone_whatsapp = normalizePhone(String(cel));
     patch.last_enriched_at = new Date().toISOString();
     if (Object.keys(patch).length === 1) continue; // apenas last_enriched_at
 
