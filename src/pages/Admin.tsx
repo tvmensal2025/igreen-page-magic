@@ -20,6 +20,9 @@ import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatu
 import PageStatus from "@/components/common/PageStatus";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
+import { useVenceHojeCount } from "@/components/admin/financeiro/useVenceHojeCount";
+import { useUserRole } from "@/hooks/useUserRole";
+
 
 
 // Heavy panels — lazy load on demand
