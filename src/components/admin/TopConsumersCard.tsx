@@ -1,7 +1,8 @@
-import { Flame, AlertTriangle } from "lucide-react";
+import { Flame, AlertTriangle, MessageCircle } from "lucide-react";
 import { getStatusPresentation } from "./lib/customerStatusLabels";
 import { useLastIgreenSync } from "@/hooks/useLastIgreenSync";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 
 interface Customer {
   id: string;
@@ -11,6 +12,7 @@ interface Customer {
   status?: string | null;
   is_sandbox?: boolean | null;
   is_test_lead?: boolean | null;
+  phone_whatsapp?: string | null;
 }
 
 // Portal iGreen não devolve valor da conta — estimamos a partir do kWh × tarifa média
@@ -51,9 +53,11 @@ function timeAgo(date: Date | null): { label: string; stale: boolean } {
 export function TopConsumersCard({
   customers,
   consultantId,
+  onOpenChat,
 }: {
   customers: Customer[] | undefined;
   consultantId?: string | null;
+  onOpenChat?: (phone: string, suggestedMessage?: string) => void;
 }) {
   const { data: lastSync } = useLastIgreenSync(consultantId);
   const freshness = timeAgo(lastSync ?? null);
@@ -91,38 +95,58 @@ export function TopConsumersCard({
             {top.map((c, i) => {
               const badge = getStatusPresentation(c.status);
               const bill = estimateBill(c);
+              const phoneCheck = validateBrazilPhone(c.phone_whatsapp);
+              const canOpen = !!onOpenChat && phoneCheck.valid;
+              const handleClick = () => {
+                if (!canOpen) return;
+                onOpenChat!(normalizeBrazilPhone(c.phone_whatsapp));
+              };
               return (
-                <li key={c.id} className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 px-5 py-3 hover:bg-muted/30">
-                  <span className="font-heading font-black text-base tabular-nums text-muted-foreground/60 w-6">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground truncate">{c.name || "Sem nome"}</p>
-                    <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${badge.cls}`}>{badge.label}</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Consumo</p>
-                    <p className="text-sm font-bold tabular-nums text-foreground">
-                      {Number(c.media_consumo).toLocaleString("pt-BR")} kWh
-                    </p>
-                  </div>
-                  <div className="text-right min-w-[80px]">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Conta</p>
-                    {bill.estimated ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <p className="text-sm font-bold tabular-nums text-primary/80 cursor-help">
-                            ~{brl(bill.value)}
-                          </p>
-                        </TooltipTrigger>
-                        <TooltipContent side="left" className="max-w-[220px] text-xs">
-                          Estimado — portal iGreen não devolve o valor da conta. Cálculo: kWh × R$ {TARIFA_MEDIA.toFixed(2)}.
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <p className="text-sm font-bold tabular-nums text-primary">{brl(bill.value)}</p>
-                    )}
-                  </div>
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={handleClick}
+                    disabled={!canOpen}
+                    title={canOpen ? "Abrir chat interno" : "Cliente sem WhatsApp válido cadastrado"}
+                    className={`w-full text-left grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 px-5 py-3 transition-colors ${
+                      canOpen ? "hover:bg-muted/40 cursor-pointer" : "opacity-60 cursor-not-allowed"
+                    }`}
+                  >
+                    <span className="font-heading font-black text-base tabular-nums text-muted-foreground/60 w-6">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">{c.name || "Sem nome"}</p>
+                      <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${badge.cls}`}>{badge.label}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Consumo</p>
+                      <p className="text-sm font-bold tabular-nums text-foreground">
+                        {Number(c.media_consumo).toLocaleString("pt-BR")} kWh
+                      </p>
+                    </div>
+                    <div className="text-right min-w-[80px]">
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Conta</p>
+                      {bill.estimated ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p className="text-sm font-bold tabular-nums text-primary/80 cursor-help">
+                              ~{brl(bill.value)}
+                            </p>
+                          </TooltipTrigger>
+                          <TooltipContent side="left" className="max-w-[220px] text-xs">
+                            Estimado — portal iGreen não devolve o valor da conta. Cálculo: kWh × R$ {TARIFA_MEDIA.toFixed(2)}.
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <p className="text-sm font-bold tabular-nums text-primary">{brl(bill.value)}</p>
+                      )}
+                    </div>
+                    <MessageCircle
+                      className={`w-4 h-4 ${canOpen ? "text-primary/70" : "text-muted-foreground/40"}`}
+                      aria-hidden
+                    />
+                  </button>
                 </li>
               );
             })}
