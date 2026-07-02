@@ -1,54 +1,91 @@
-## Melhorias na aba Financeiro
+# Blindagem do rodízio de parceiros
 
-Auditei os 4 painéis (Boletos, Recebíveis, Carteira, Extrato). Deixando Recebíveis e Extrato como estão hoje, dá pra melhorar bastante em pequenas doses. Proponho **dois lotes**: quick wins agora, e um lote maior depois se você topar.
+Análise completa feita. O sistema hoje **funciona na maior parte dos casos**, mas tem 3 furos que explicam o incidente que você relatou (lead foi para o parceiro errado). Este plano corrige esses furos **sem ativar nenhum anúncio** — só deixa o motor pronto para você adicionar 2, 10 ou 50 parceiros sem risco.
 
-### Lote 1 — Quick wins (sem migração, sem risco)
+---
 
-**Boletos**
+## Como funciona hoje (resumo em português)
 
-1. **Corrigir KPI de "Inadimplência %"** — hoje mistura pagos do mês com vencidos acumulados de meses anteriores, dando percentual distorcido. Passa a calcular sobre boletos emitidos no mês.
-2. **Ordenação da tabela** — clicar no cabeçalho ordena por valor, vencimento, consultor, dias de atraso.
-3. **Coluna "Última cobrança"** já estava prevista mas nunca chegou — ler `customer_auto_message_log` (kind `boleto_lembrete`) e mostrar "há X dias" ou "—".
-4. **Template de cobrança configurável** — hoje o texto do WhatsApp está hardcoded em dois lugares (`BoletosAdminTable.tsx:115` e `:287`) e não inclui valor nem vencimento. Passa a ler de `message_templates` (kind `boleto_cobranca`) com variáveis `{{nome}}`, `{{valor}}`, `{{vencimento}}`, `{{url_boleto}}`. Se não existir template, usa fallback atual.
-5. **Trocar `window.confirm()` do bulk cobrar** por um `Dialog` com preview do template e contagem.
+Quando alguém clica no anúncio do Facebook e cai no seu WhatsApp, o sistema tenta descobrir **de qual anúncio veio** em 4 tentativas, em ordem:
 
-**Extrato**
-6. **Trocar `window.prompt()` de rejeitar recarga** por `Dialog` com `Textarea` (acessível, funciona em mobile).
-7. **Nome do consultor legível** na lista de recargas pendentes e nas linhas de transação (hoje mostra `consultant_id.slice(0,8)…`). Reaproveita o padrão de join de `hooks.ts`.
-8. **"Mostrar mais 200"** no fim da lista (hoje corta em 200 sem aviso).
+1. **AD ID do Meta** (perfeito, sem erro) — se o Meta mandou o ID do anúncio no payload.
+2. **CTWA CLID** (ID único do clique) — se já foi visto antes.
+3. **Frase inicial cadastrada** — compara os primeiros 60 caracteres da mensagem com a `initial_message` da campanha.
+4. **Fallback pela frase-âncora genérica do CTWA** ("olá, posso ter mais informações…") — **AQUI mora o bug**.
 
-**Sidebar**
-9. **Badge da sidebar** passa a somar *vence hoje + vencidos* (hoje só conta hoje, vencidos ficam invisíveis).
+Depois de descobrir a campanha, chama a função `rodizio_next()` no Postgres, que devolve o próximo parceiro da fila (round-robin) e atribui.
 
-**Carteira**
-10. **Trocar `useEffect` manual por `useQuery**` no seletor de consultor do super-admin — ganha loading state, cache e retry.
+---
 
-### Lote 2 — Melhorias maiores (só se você aprovar)
+## Os 3 furos que precisam sumir
 
-- **Paginação real + filtros no servidor** em `useBoletosAdmin`. Hoje traz até 5.000 linhas e filtra no front — vai quebrar quando a rede crescer.
-- **Gráfico de tendência** (Recharts, já instalado): barras dos últimos 6 meses de pagos × vencidos no topo da aba Boletos.
-- **Régua automática de cobrança** via edge function agendada: D-3 aviso, D0 lembrete, D+5 cobrança. Usa o template do quick win #4 e liga/desliga por toggle.
+### 🔴 Furo 1 — Fallback "pool única" atribui ao parceiro errado
 
-### Fora de escopo
+**O que acontece:** se o sistema não consegue identificar o anúncio pelos métodos 1–3, ele cai no fallback que diz: *"se o consultor só tem 1 pool de rodízio ativa, use essa"*. Isso **parece seguro**, mas quebra em 2 casos:
 
-- Mudanças em Recebíveis e Extrato além dos itens 6–8 (você pediu para deixar como está).
-- Integração bancária, emissão de boletos, DRE contábil.
-- Alterações no worker `worker-igreen-sync`.
+- Você tem 2 anúncios rodando com pools diferentes → o lead do anúncio A pode ir para a pool do anúncio B.
+- Você pausou um anúncio mas esqueceu a pool ativa → todo lead novo vira "da pool errada".
 
-### Arquivos afetados (Lote 1)
+**Foi provavelmente isso que causou o incidente que você relatou.**
 
-- `BoletosPanel.tsx` — corrigir cálculo de inadimplência
-- `BoletosAdminTable.tsx` — ordenação, coluna última cobrança, dialog de bulk, template
-- `hooks.ts` — hook `useUltimaCobranca` + reaproveitar join de nomes no Extrato
-- `ExtratoPanel.tsx` — dialog de rejeição, nome do consultor, "mostrar mais"
-- `useVenceHojeCount.ts` → renomear para `useAlertasBoletosCount` e somar vencidos
-- `CarteiraGreenAdminPanel.tsx` — trocar `useEffect` por `useQuery`
-- **Novo**: `src/components/admin/financeiro/CobrarBulkDialog.tsx`, `RejeitarTopupDialog.tsx`
-- **Sem migrations**.
+**Correção:** desligar o fallback silencioso. Se não deu para identificar o anúncio com certeza, o lead fica com o consultor dono (você) e **não** é distribuído no rodízio. Nada de "chute educado".
 
-### Pergunta antes de eu implementar
+### 🔴 Furo 2 — Corrida de mensagens no primeiro contato
 
-- Toca o **Lote 1 inteiro** de uma vez, ou prefere escolher um subconjunto? faca tudo
-- O **Lote 2** entra depois, ou já embuto junto? faca tudo  
-  
-analise o codigo para implantar corretamente
+**O que acontece:** quando é um lead novinho (primeira vez que ele fala), o sistema **não trava** o processamento. Se o lead manda 2 mensagens em menos de meio segundo (comum: "oi" e depois a frase do anúncio), o webhook processa **as duas em paralelo**, chama `rodizio_next()` duas vezes, e dois parceiros diferentes recebem notificação do mesmo lead.
+
+**Correção:** adicionar lock de "primeira mensagem por telefone" para forçar processamento serial dos primeiros segundos.
+
+### 🔴 Furo 3 — Erro no rodízio é engolido em silêncio
+
+**O que acontece:** se a RPC `rodizio_next` der timeout, erro de conexão ou qualquer exceção, o código faz `console.warn` e segue. O lead vai para o consultor dono sem alerta nenhum. Você só descobre quando o parceiro reclama que não recebeu.
+
+**Correção:** registrar toda falha do rodízio em `campaign_match_log` com `method='rodizio_fallback'` + criar um alerta visível no `/admin` quando isso acontecer.
+
+---
+
+## Arquivos que serão tocados
+
+**Edge functions (backend WhatsApp):**
+
+- `supabase/functions/evolution-webhook/index.ts` — remover chamada ao fallback pool-única (linhas 983–1000), adicionar lock de primeira mensagem, registrar falhas de rodízio.
+- `supabase/functions/whapi-webhook/index.ts` — mesmas 3 correções (código espelhado).
+- `supabase/functions/_shared/meta-ctwa-fallback.ts` — deprecar a função `resolveSingleActivePool` (deixa comentada + throw se chamada).
+- `supabase/functions/_shared/rodizio-assignment.ts` — expor motivo do fallback pra cima.
+
+**Banco de dados (migration nova):**
+
+- Constraint `UNIQUE (campaign_id) WHERE is_active = true` em `rodizio_pools` — impede 2 pools ativas para a mesma campanha.
+- Nova tabela `lead_first_message_lock (phone, consultant_id, locked_at)` com TTL 30s — usada pelo lock do Furo 2.
+- Nova coluna `campaign_match_log.rodizio_outcome text` — registra `assigned | pool_empty | rpc_error | no_campaign`.
+
+**Frontend admin (visibilidade):**
+
+- Novo card em `src/pages/Admin.tsx` (aba Anúncios ou Conversão) mostrando "Leads que caíram no fallback nas últimas 24h" — pra você ver na hora quando algo não bater.
+
+---
+
+## O que NÃO faz parte deste plano
+
+- Nenhum anúncio será ligado, pausado ou modificado.
+- Nenhuma pool existente será mexida.
+- Nenhum parceiro será adicionado/removido — isso continua manual em `referral_partners`.
+- A RPC `rodizio_next` do Postgres **não** vai ser reescrita agora (ela está fora do repositório). Só será exposta como migration versionada em um plano futuro se você quiser.
+
+---
+
+## Ordem de execução
+
+1. **Migration** (constraint + lock table + coluna de log) — 1 arquivo SQL.
+2. **Edge functions** — 4 arquivos editados, deploy automático.
+3. **Frontend admin** — card de monitoramento.
+4. **Teste manual guiado**: te passo um checklist de 5 cenários para simular (lead com AD ID, lead sem nada, lead com 2 msgs em <1s, campanha sem pool, pool vazia) — todos devem ter comportamento previsível e logado.
+
+Depois disso, quando você quiser cadastrar mais parceiros e ligar um anúncio, o sistema aguenta sem chutar.
+
+---
+
+## Perguntas antes de eu implementar
+
+1. Ao remover o fallback "pool única" (Furo 1), leads não-identificados ficam com **você** (consultor dono). OK ou prefere que fiquem em uma fila de revisão manual visível no `/admin`? fique em uma fila, e quem fez o anuncio recebe uma mensagem. mas ai ele nao finaliza, e sim aguarda a pessoa finalizar manual, assim nunca cadastra errado. mas é uma situacao que nao pode acontecner
+2. O alerta de fallback no admin: notificação in-app basta, ou também quer WhatsApp para o seu número quando acontecer? sim no whatsapp do alerta 

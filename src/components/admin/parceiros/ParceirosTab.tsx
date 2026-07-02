@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PartnerDashboard } from "./PartnerDashboard";
 import { PartnerForm } from "./PartnerForm";
 import { PartnerQrCode } from "./PartnerQrCode";
+import { ManualReviewQueueCard } from "./ManualReviewQueueCard";
 import {
   useReferralPartners,
   type ReferralPartner,
@@ -9,6 +10,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 interface ParceirosTabProps {
+  consultantId: string;
   consultantPhone: string;
   consultantName?: string;
   consultantIgreenId?: string;
@@ -17,6 +19,7 @@ interface ParceirosTabProps {
 }
 
 export function ParceirosTab({
+  consultantId,
   consultantPhone,
   consultantName = "",
   consultantIgreenId = "",
@@ -29,6 +32,7 @@ export function ParceirosTab({
   const [qrPartner, setQrPartner] = useState<ReferralPartner | null>(null);
   const { partners, create, update, remove, isLoading } = useReferralPartners();
   const { toast } = useToast();
+
 
   const handleSave = (data: {
     nome: string;
@@ -90,6 +94,8 @@ export function ParceirosTab({
 
   return (
     <>
+      <ManualReviewQueueCard consultantId={consultantId} />
+
       <PartnerDashboard
         partners={partners}
         isLoading={isLoading}
@@ -98,6 +104,7 @@ export function ParceirosTab({
         onDelete={handleDelete}
         onQrCode={setQrPartner}
       />
+
 
       <PartnerForm
         open={formOpen}

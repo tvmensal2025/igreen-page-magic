@@ -4,15 +4,18 @@
  * Quando o Meta entrega o lead via Click-to-WhatsApp mas NÃO propaga o
  * `ctwa_clid`/`referral` no payload (acontece em ~10% dos cliques, depende do
  * template do anúncio), a única pista que sobra é a frase de abertura
- * genérica que o Meta pré-preenche. Cobrimos esse caso com 2 ferramentas:
+ * genérica que o Meta pré-preenche.
  *
- *   1. `matchesMetaCtwaPhrase(text)` — confere se a primeira mensagem do lead
- *      bate com uma das frases-âncora típicas do CTWA.
- *   2. `resolveSingleActivePool(supabase, consultantId)` — se o consultor
- *      tem EXATAMENTE 1 pool de rodízio ativa, devolve a `campaign_id` dela
- *      para servir de fallback determinístico (não há ambiguidade).
+ * `matchesMetaCtwaPhrase(text)` — confere se a primeira mensagem do lead
+ * bate com uma das frases-âncora típicas do CTWA.
  *
- * Use os dois em conjunto: detecta meta_ads via frase + atribui via pool única.
+ * ⚠️ `resolveSingleActivePool` foi REMOVIDO propositalmente (blindagem do
+ * rodízio — plano "blindagem-do-rodizio-de-parceiros"). Ele atribuía uma
+ * campanha ao acaso quando o consultor tinha exatamente 1 pool ativa, o que
+ * levou a leads irem para o parceiro errado. Hoje: se a frase-âncora bate
+ * mas nenhum sinal determinístico (AD ID / ctwa_clid / initial_message) casa
+ * uma campanha, o lead entra na **fila de revisão manual** (customers.
+ * needs_manual_review = true) e o dono do anúncio é notificado por WhatsApp.
  */
 
 export const META_CTWA_OPENING_PHRASES = [
@@ -48,26 +51,13 @@ export function matchesMetaCtwaPhrase(text: string | null | undefined): boolean 
 }
 
 /**
- * Se o consultor tem EXATAMENTE 1 pool de rodízio ativa (com campaign_id),
- * devolve `{ pool_id, campaign_id }`. Caso contrário (0 ou 2+) devolve null —
- * ambíguo demais para fallback automático.
+ * @deprecated Removido pela blindagem do rodízio. Chamadas antigas caem
+ * automaticamente na fila de revisão manual. Se algum código ainda importar
+ * esta função, ela devolve `null` (nunca atribui campanha por chute).
  */
 export async function resolveSingleActivePool(
-  supabase: any,
-  consultantId: string,
-): Promise<{ pool_id: string; campaign_id: string } | null> {
-  try {
-    const { data, error } = await supabase
-      .from("rodizio_pools")
-      .select("id, campaign_id")
-      .eq("consultant_id", consultantId)
-      .eq("is_active", true)
-      .not("campaign_id", "is", null);
-    if (error || !Array.isArray(data) || data.length !== 1) return null;
-    const row = data[0] as { id: string; campaign_id: string };
-    if (!row.campaign_id) return null;
-    return { pool_id: row.id, campaign_id: row.campaign_id };
-  } catch {
-    return null;
-  }
+  _supabase: unknown,
+  _consultantId: string,
+): Promise<null> {
+  return null;
 }

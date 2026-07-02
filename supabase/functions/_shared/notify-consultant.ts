@@ -439,3 +439,63 @@ export async function notifySuperAdminUnmatchedLead(
   }
 }
 
+// ─── Aviso ao dono quando lead vai para a FILA DE REVISÃO MANUAL ───────────
+// Usado quando o rodízio não pôde ser aplicado com segurança (sem campanha
+// identificada, pool vazia, erro na RPC). O lead **não** é distribuído — fica
+// esperando o dono revisar e atribuir manualmente pelo /admin. Dedup por lead
+// via `outbound_message_log.idempotency_key` (nunca avisa 2x o mesmo lead).
+export async function notifyOwnerManualReview(
+  ownerConsultantId: string,
+  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
+  reason:
+    | "no_campaign_ctwa_phrase"
+    | "rodizio_pool_empty"
+    | "rodizio_rpc_error"
+    | "no_campaign_generic",
+): Promise<boolean> {
+  try {
+    if (!ownerConsultantId || !lead?.id) return false;
+    if (lead?.is_sandbox) return false;
+
+    const admin = adminClient();
+    const idemKey = `owner_manual_review:${lead.id}`;
+
+    const { error: insErr } = await admin
+      .from("outbound_message_log")
+      .insert({
+        idempotency_key: idemKey,
+        customer_id: lead.id,
+        consultant_id: ownerConsultantId,
+        result_status: "queued_manual_review_alert",
+      });
+    if (insErr) {
+      const code = (insErr as any)?.code;
+      if (code === "23505") return false; // já avisado
+      console.warn("[notify-owner-review] insert log falhou:", insErr.message);
+    }
+
+    const reasonText: Record<string, string> = {
+      no_campaign_ctwa_phrase:
+        "Lead chegou do anúncio (frase-âncora do Meta) mas não foi possível identificar de QUAL campanha veio.",
+      rodizio_pool_empty: "A pool de rodízio dessa campanha está vazia ou inativa.",
+      rodizio_rpc_error:
+        "Erro técnico ao consultar o próximo parceiro da fila (o lead não foi distribuído).",
+      no_campaign_generic: "Sinal genérico de anúncio detectado, mas sem campanha vinculada.",
+    };
+
+    const text =
+      `🟡 *Lead para revisão manual*\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
+      `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n\n` +
+      `❗ ${reasonText[reason] || reason}\n\n` +
+      `➡️ Abra o painel Admin e atribua manualmente para não ir para o parceiro errado.`;
+
+    return sendRawToAlertNumber(ownerConsultantId, text);
+  } catch (e) {
+    console.warn("[notify-owner-review] erro:", (e as Error).message);
+    return false;
+  }
+}
+
+

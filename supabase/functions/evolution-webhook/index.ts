@@ -29,11 +29,14 @@ import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
 import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
+import { casAssignPartner, markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
+
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
-import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
+import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, notifyOwnerManualReview } from "../_shared/notify-consultant.ts";
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
-import { matchesMetaCtwaPhrase, resolveSingleActivePool } from "../_shared/meta-ctwa-fallback.ts";
+import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
+
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
@@ -977,27 +980,12 @@ Deno.serve(async (req) => {
         const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
         const textMatch = !isFile && messageText && adsRegex.test(messageText);
 
-        // 4.5) Fallback Meta CTWA — frase-âncora + pool única ativa do consultor.
-        //      Cobre o caso em que o anúncio NÃO propaga ctwa_clid e a
-        //      initial_message cadastrada não bate.
+        // 4.5) Frase-âncora do Meta CTWA (sinal fraco): NÃO tenta mais adivinhar
+        //      a campanha a partir de "única pool ativa" (blindagem do rodízio).
+        //      Apenas sinaliza que provavelmente é anúncio; a decisão de fila
+        //      de revisão manual acontece no bloco de rodízio abaixo.
         const ctwaPhraseMatch = !isFile && messageText && matchesMetaCtwaPhrase(messageText);
-        if (!sourceCampaignId && ctwaPhraseMatch) {
-          try {
-            const sp = await resolveSingleActivePool(supabase, instanceData.consultant_id);
-            if (sp?.campaign_id) {
-              sourceCampaignId = sp.campaign_id;
-              matchMethod = "exact_message"; // mapeia para método existente; reason abaixo distingue
-              jsonLog("info", "lead_source_fallback_single_pool", {
-                customer_id: customer.id,
-                consultant_id: instanceData.consultant_id,
-                campaign_id: sp.campaign_id,
-                reason: "meta_ctwa_phrase",
-              });
-            }
-          } catch (e) {
-            console.warn("[lead-source] single-pool fallback falhou:", (e as Error).message);
-          }
-        }
+
 
         if (hasReferral || textMatch || sourceCampaignId || ctwaPhraseMatch) {
           const patch: Record<string, any> = { lead_source: "meta_ads" };
@@ -1069,6 +1057,12 @@ Deno.serve(async (req) => {
     // Fail-open: qualquer falha aqui apenas loga e segue (o lead nunca se perde);
     // sem partner_id válido, o lead cai no consultor dono (Requisito 11).
     const rodizioCampaignId = (customer as any)?.source_campaign_id || null;
+    const ctwaSignalNoCampaign =
+      !rodizioCampaignId &&
+      !isFile &&
+      !!messageText &&
+      matchesMetaCtwaPhrase(messageText);
+
     if (customer && !(customer as any).referral_partner_id && rodizioCampaignId) {
       try {
         // Atribuição atômica: passa o id da campanha direto (sem slug).
@@ -1078,75 +1072,138 @@ Deno.serve(async (req) => {
         );
         if (rodizioError) {
           console.warn("[rodizio] rodizio_next falhou:", rodizioError.message);
-        }
-        // Decisão pura do ramo de atribuição (helper testável). A função
-        // rodizio_next retorna TABLE(partner_id, position, pool_id): 0 linhas
-        // ou partner_id inválido = fallback (não seta referral_partner_id).
-        const rodizioDecision = decideRodizioAssignment({
-          customer: customer as any,
-          rodizioRows,
-        });
-        const rodizioPartnerId = rodizioDecision.referralPartnerId;
+          // Erro na RPC → fila de revisão manual + aviso ao dono (Furo 3).
+          await markManualReview(supabase, customer.id, "rodizio_rpc_error");
+          await logRodizioOutcome(supabase, {
+            customerId: customer.id,
+            campaignId: rodizioCampaignId,
+            method: "rodizio_next",
+            outcome: "rpc_error",
+            messageSample: messageText,
+          });
+          notifyOwnerManualReview(
+            instanceData.consultant_id,
+            {
+              id: customer.id,
+              name: (customer as any).name,
+              phone_whatsapp: (customer as any).phone_whatsapp,
+              is_sandbox: (customer as any).is_sandbox,
+            },
+            "rodizio_rpc_error",
+          ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
+        } else {
+          const rodizioDecision = decideRodizioAssignment({
+            customer: customer as any,
+            rodizioRows,
+          });
+          const rodizioPartnerId = rodizioDecision.referralPartnerId;
 
-        if (rodizioDecision.applied && rodizioDecision.customerPatch) {
-          // Participante da vez → referral_partner_id. consultant_id intacto.
-          await supabase.from("customers").update({
-            ...rodizioDecision.customerPatch,
-            referral_detected_at: new Date().toISOString(),
-          }).eq("id", customer.id);
-          (customer as any).referral_partner_id = rodizioPartnerId;
-          console.log(
-            `[rodizio] customer=${customer.id} campaign=${rodizioCampaignId} partner=${rodizioPartnerId}`,
-          );
+          if (rodizioDecision.applied && rodizioPartnerId) {
+            // CAS: só atribui se ninguém atribuiu antes (blindagem contra
+            // corrida de 2 mensagens simultâneas — Furo 2).
+            const cas = await casAssignPartner(supabase, customer.id, rodizioPartnerId);
 
-          // Aviso ao participante da vez (Requisito 7.3). best-effort: a própria
-          // notifyPartnerNewLead resolve o notification_phone pelo partnerId e
-          // só envia se houver número configurado. O .catch garante que uma
-          // falha de aviso NUNCA quebra o fluxo do lead. NÃO duplicamos a regra
-          // de idconsultor/indcli (Requisito 12.4) — o pipeline existente
-          // (buildPortal2Payload) resolve isso a partir do referral_partner_id.
-          notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
-            id: customer.id,
-            name: (customer as any).name,
-            phone_whatsapp: (customer as any).phone_whatsapp,
-            is_sandbox: (customer as any).is_sandbox,
-          }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+            if (cas.applied) {
+              (customer as any).referral_partner_id = rodizioPartnerId;
+              console.log(
+                `[rodizio] customer=${customer.id} campaign=${rodizioCampaignId} partner=${rodizioPartnerId}`,
+              );
+              await logRodizioOutcome(supabase, {
+                customerId: customer.id,
+                campaignId: rodizioCampaignId,
+                method: "rodizio_next",
+                outcome: "assigned",
+                messageSample: messageText,
+              });
 
-          // Se a atribuição da campanha veio do fallback (frase-âncora do
-          // Meta + pool única) — sinal: temos source_campaign_id mas SEM
-          // source_ad_id E SEM source_ctwa_clid → avisa o consultor pra revisar
-          // o cadastro da campanha (Meta não propagou o ctwa_clid).
-          const cAny = customer as any;
-          if (cAny.source_campaign_id && !cAny.source_ad_id && !cAny.source_ctwa_clid) {
-            let partnerName: string | null = null;
-            try {
-              const { data: prow } = await supabase
-                .from("referral_partners")
-                .select("nome")
-                .eq("id", rodizioPartnerId)
-                .maybeSingle();
-              partnerName = (prow as any)?.nome ?? null;
-            } catch { /* ignore */ }
-            notifySuperAdminUnmatchedLead(
+              // Aviso ao participante da vez (Requisito 7.3). Só notifica quem
+              // GANHOU o CAS — evita 2 parceiros receberem o mesmo lead.
+              notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
+                id: customer.id,
+                name: (customer as any).name,
+                phone_whatsapp: (customer as any).phone_whatsapp,
+                is_sandbox: (customer as any).is_sandbox,
+              }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+
+              // Se a atribuição veio de sinal fraco (initial_message sem AD ID
+              // nem ctwa_clid) → ainda avisa o super admin pra conferir cadastro.
+              const cAny = customer as any;
+              if (cAny.source_campaign_id && !cAny.source_ad_id && !cAny.source_ctwa_clid) {
+                let partnerName: string | null = null;
+                try {
+                  const { data: prow } = await supabase
+                    .from("referral_partners")
+                    .select("nome")
+                    .eq("id", rodizioPartnerId)
+                    .maybeSingle();
+                  partnerName = (prow as any)?.nome ?? null;
+                } catch { /* ignore */ }
+                notifySuperAdminUnmatchedLead(
+                  instanceData.consultant_id,
+                  {
+                    id: customer.id,
+                    name: cAny.name,
+                    phone_whatsapp: cAny.phone_whatsapp,
+                    is_sandbox: cAny.is_sandbox,
+                  },
+                  "initial_message_match_no_ad_id",
+                  partnerName,
+                ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
+              }
+            } else if (cas.alreadyAssigned) {
+              console.log(
+                `[rodizio] customer=${customer.id} corrida detectada — outro turno já atribuiu, este é descartado`,
+              );
+            }
+          } else {
+            // Pool vazia / inativa / retorno inválido → fila de revisão manual.
+            await markManualReview(supabase, customer.id, "rodizio_pool_empty");
+            await logRodizioOutcome(supabase, {
+              customerId: customer.id,
+              campaignId: rodizioCampaignId,
+              method: "rodizio_next",
+              outcome: "pool_empty",
+              messageSample: messageText,
+            });
+            notifyOwnerManualReview(
               instanceData.consultant_id,
               {
                 id: customer.id,
-                name: cAny.name,
-                phone_whatsapp: cAny.phone_whatsapp,
-                is_sandbox: cAny.is_sandbox,
+                name: (customer as any).name,
+                phone_whatsapp: (customer as any).phone_whatsapp,
+                is_sandbox: (customer as any).is_sandbox,
               },
-              "fallback_or_initial_message_match",
-              partnerName,
-            ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
+              "rodizio_pool_empty",
+            ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
           }
         }
-        // Sem partner_id válido → fallback: não seta referral_partner_id; o lead
-        // segue para o consultor dono, preservando source_campaign_id.
       } catch (e) {
-        // Fail-open (Tarefa 6.3): apenas loga e segue, como o bloco de keyword.
         console.warn("[rodizio] falhou:", (e as Error).message);
       }
+    } else if (customer && !(customer as any).referral_partner_id && ctwaSignalNoCampaign) {
+      // Frase-âncora do CTWA bateu mas não conseguimos identificar a campanha
+      // com nenhum sinal determinístico → NÃO chuta parceiro. Vai pra fila
+      // de revisão manual + WhatsApp pro dono (Furo 1).
+      await markManualReview(supabase, customer.id, "no_campaign_ctwa_phrase");
+      await logRodizioOutcome(supabase, {
+        customerId: customer.id,
+        campaignId: null,
+        method: "ctwa_phrase_no_campaign",
+        outcome: "no_campaign_manual_review",
+        messageSample: messageText,
+      });
+      notifyOwnerManualReview(
+        instanceData.consultant_id,
+        {
+          id: customer.id,
+          name: (customer as any).name,
+          phone_whatsapp: (customer as any).phone_whatsapp,
+          is_sandbox: (customer as any).is_sandbox,
+        },
+        "no_campaign_ctwa_phrase",
+      ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
     }
+
 
     // ─── Partner Attribution (Detection Window: primeiras 3 mensagens) ───
     // 1º) Marcador determinístico `#R{short_code}` (inserido pelo qr-redirect).

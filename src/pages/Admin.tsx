@@ -523,12 +523,14 @@ const AdminContent = () => {
 
           {userId && activeTab === "parceiros" && (
             <ParceirosTab
+              consultantId={userId}
               consultantPhone={form.phone || ""}
               consultantName={form.name || ""}
               consultantIgreenId={form.igreen_id || ""}
               license={form.license || ""}
             />
           )}
+
 
           {userId && activeTab === "audio-studio" && (
             <div className="max-w-2xl mx-auto w-full">
