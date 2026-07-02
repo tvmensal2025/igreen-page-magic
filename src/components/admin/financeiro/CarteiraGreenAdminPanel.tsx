@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { CarteiraGreenPanel } from "@/features/produtos/carteira-green/CarteiraGreenPanel";
 
@@ -19,43 +21,46 @@ export function CarteiraGreenAdminPanel({
   userId: string;
   canPickConsultant: boolean;
 }) {
-  const [consultants, setConsultants] = useState<Consultant[]>([]);
   const [selectedId, setSelectedId] = useState<string>(userId);
 
-  useEffect(() => {
-    if (!canPickConsultant) return;
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
+  const { data: consultants = [], isLoading } = useQuery({
+    queryKey: ["carteira-admin-consultants"],
+    enabled: canPickConsultant,
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<Consultant[]> => {
+      const { data, error } = await supabase
         .from("consultants")
         .select("id, name, display_name")
         .order("name")
         .limit(500);
-      if (cancelled) return;
-      setConsultants((data || []) as Consultant[]);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [canPickConsultant]);
+      if (error) throw error;
+      return (data || []) as Consultant[];
+    },
+  });
 
   return (
     <div className="space-y-4">
-      {canPickConsultant && consultants.length > 0 && (
+      {canPickConsultant && (
         <div className="flex items-center gap-2 flex-wrap">
           <label className="text-xs text-muted-foreground uppercase tracking-wide">Consultor</label>
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[240px]"
-          >
-            <option value={userId}>Minha carteira</option>
-            {consultants.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.display_name || c.name || c.id.slice(0, 8)}
-              </option>
-            ))}
-          </select>
+          {isLoading ? (
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> carregando…
+            </span>
+          ) : (
+            <select
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[240px]"
+            >
+              <option value={userId}>Minha carteira</option>
+              {consultants.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.display_name || c.name || c.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
       <CarteiraGreenPanel consultantId={selectedId} />
