@@ -1,62 +1,47 @@
-# Enriquecimento de clientes via API do Escritório Oficial
+# Descoberta automática do endpoint de detalhe (sem VPS/curl manual)
 
-Fonte: `https://escritorio.igreenenergy.com.br` (API `api-vo.igreenenergy.com.br/v1`) — mesma que o worker `worker-igreen-sync` já usa. Sem tocar em `worker-portal-2`.
+Você pediu para automatizar: em vez de você fazer deploy do worker e rodar curl, crio uma **edge function Supabase** que faz o probe direto contra `api-vo.igreenenergy.com.br`, salva o resultado no banco e mostra na UI.
 
-## Estado atual
-- Fase 2 antiga (via `worker-portal-2`) já foi revertida.
-- Fase 1 (colunas no banco: endereço, PJ, procurador, `signature_summary`, `otp_status`, `document_verify`, `last_enriched_at`, etc.) permanece intacta.
-- `worker-igreen-sync` já tem rota `POST /probe-customer-detail` implementada (12 candidatos de endpoint).
+## O que muda no plano
 
-## Campos-alvo (confirmados no modal do escritório)
-Situação, Licenciado responsável, Fornecedora, Distribuidora, Conta, Titularidade, Instalação, Consumo médio, Ativo desde, CPF/CNPJ, Data de nascimento, Email, Telefone, Cidade/UF, além dos boletos (já sincronizados por outra rota).
+Fase A vira automática. Fases B–E permanecem iguais.
 
----
+## Nova Fase A (automática)
 
-## Fase A — Descoberta do endpoint (probe)
+**1. Edge function `probe-igreen-detail`**
+- Recebe: `{ consultant_id, sample_idcliente? }`
+- Faz login em `api-vo.igreenenergy.com.br/v1/auth/*` reusando as credenciais do consultor (mesmo fluxo do `worker-igreen-sync`, mas em Deno).
+- Se `sample_idcliente` não vier, busca 1 cliente em `/crm/green` e usa o primeiro.
+- Testa 12 endpoints candidatos:
+  - `/clientes-green/{id}`, `/crm/green/{id}`, `/customer/{id}`, `/customers/{id}`
+  - `/clientes-green/detalhe/{id}`, `/clientes-green/{id}/completo`
+  - `/clientes-green/{id}/dados-cadastrais`, `/clientes-green/{id}/endereco`
+  - `/clientes-green/dados/{id}`, `/green/{id}`, `/clientes/{id}`, `/cliente/{id}`
+- Para cada: status, tamanho, duração, top 3 KB do body.
+- Persiste em nova tabela `igreen_endpoint_discovery` (já existe no schema — reaproveitar).
+- Retorna JSON com resultados classificados (ok / denied / missing / bad_request).
 
-1. Deploy do `worker-igreen-sync` na VPS (rota `/probe-customer-detail` já commitada).
-2. Rodar via curl com um `consultant_id` aprovado e um `idcliente` real (ex.: 1117549 - SANDRA).
-3. Analisar resposta: identificar qual dos 12 candidatos retorna status 200 com o payload completo.
-4. Registrar em `docs/portal-api/ESCRITORIO_API_MAP.md` o endpoint vencedor + shape do JSON + mapa `campo API → coluna DB`.
+**2. Migration**
+- Reaproveitar tabela `igreen_endpoint_discovery` existente (15 colunas, 2 policies). Se faltar coluna, adiciono.
 
-Entregável: endpoint definitivo + mapeamento de campos.
+**3. UI de admin (`/admin` → nova seção "Descoberta de endpoint")**
+- Dropdown de consultor aprovado.
+- Input opcional `sample_idcliente` (default: SANDRA 1117549).
+- Botão "Rodar probe".
+- Tabela de resultados: endpoint, status, tamanho, preview do body expansível.
+- Botão "Marcar como vencedor" → salva em `app_settings` chave `igreen_customer_detail_endpoint`.
 
-## Fase B — Fetch de detalhe no worker
+## Fase B (após vencedor marcado)
+- `worker-igreen-sync` (ou edge function nova) lê o endpoint de `app_settings` e implementa `/enrich-customer-batch`.
+- Restante das fases C-E mantido.
 
-- Adicionar `fetchCustomerDetail(session, idcliente)` em `worker-igreen-sync/server.mjs` usando o endpoint da Fase A.
-- Adicionar `POST /enrich-customer-batch { consultant_id, ids: string[] }` com concorrência 3, retornando `{ ok, results: [{ id, mapped, raw_size, error? }] }`.
-- Mapeamento (`mapDetailToColumns`): normaliza para as colunas já existentes da Fase 1 (endereço, concessionária/fornecedora, PJ, procurador, flags, `signature_summary`, `otp_status`, `document_verify`).
+## Vantagem
+Você clica "Rodar probe" na UI, vê o resultado e marca o vencedor com 1 clique — sem VPS, sem curl, sem terminal.
 
-## Fase C — Edge function `sync-igreen-customers` (modo enrich)
+## Escopo
+- Nova edge function: `probe-igreen-detail`
+- Nova página admin: `src/pages/admin/IgreenEndpointProbe.tsx` (ou aba dentro de página existente)
+- Nenhuma alteração em `worker-portal-2`, `Portal2Client`, cadastro.
 
-- Reintroduzir bloco `ENRICH MODE`, mas chamando `worker-igreen-sync` (não Portal2).
-- Seleção por `igreen_code` (não `portal2_idcliente`).
-- Parâmetros: `mode: "enrich"`, `enrichCustomerIds?: string[]`, `enrichLimit?: number` (default 50).
-- Persistir campos + `last_enriched_at = now()`.
-
-## Fase D — UI (admin customer card)
-
-- 4 blocos: **Endereço completo**, **Concessionária/Fornecedora**, **Dados PJ/Procurador**, **Status contratuais** (assinatura, OTP, docs).
-- Botão "Enriquecer agora" (cliente único) e "Enriquecer todos pendentes" (bulk, top-nav).
-- Chip com timestamp `last_enriched_at`.
-
-## Fase E — Automação
-
-- Cron noturno via `pg_cron` + `pg_net`: `mode: enrich, limit: 200` por consultor aprovado.
-- Trigger em `INSERT` de novo `igreen_code` para enriquecer imediatamente (via `pg_net`).
-
----
-
-## Fora de escopo (não tocar)
-`worker-portal-2`, `Portal2Client`, cadastro, OTP, contratos, `sync-portal2-*`.
-
-## Próximo passo imediato
-Você (usuário) precisa fazer o **deploy do `worker-igreen-sync` na VPS** e rodar:
-
-```bash
-curl -X POST https://<worker-url>/probe-customer-detail \
-  -H "Content-Type: application/json" \
-  -d '{"consultant_id":"<uuid>","sample_idcliente":"1117549"}'
-```
-
-Cole aqui a resposta JSON → sigo direto para Fase B com o endpoint certo.
+## Próximo passo
+Aprovar → implemento a edge function + UI. Depois você roda o probe pelo painel e me diz o vencedor (ou eu leio direto de `igreen_endpoint_discovery` na próxima interação).
