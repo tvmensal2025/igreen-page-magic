@@ -21,7 +21,7 @@ import { captureError } from "../_shared/sentry.ts";
 import { detectHandoffIntent } from "../_shared/captureExtractors.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
 import { botRequestStore, isTestPhone, logTestOutbound } from "../_shared/test-mode.ts";
-import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead } from "../_shared/notify-consultant.ts";
+import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, notifyOwnerManualReview } from "../_shared/notify-consultant.ts";
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
