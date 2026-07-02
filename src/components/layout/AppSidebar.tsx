@@ -22,6 +22,7 @@ import {
   ChevronDown,
   MoreHorizontal,
   CalendarClock,
+  Receipt,
 } from "lucide-react";
 
 export type AdminTabId =
@@ -30,6 +31,7 @@ export type AdminTabId =
   | "crm-clientes"
   | "conversao"
   | "clientes"
+  | "financeiro"
   | "produtos"
   | "captacao"
   | "parceiros"
@@ -64,6 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "crm-clientes", label: "Clientes ativos", icon: UserCheck },
       { id: "conversao", label: "Conversão", icon: Flame },
       { id: "clientes", label: "Base de clientes", icon: Database },
+      { id: "financeiro", label: "Financeiro", icon: Receipt },
     ],
   },
   {
