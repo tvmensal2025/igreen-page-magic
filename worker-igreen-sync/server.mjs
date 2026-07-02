@@ -1012,8 +1012,77 @@ const server = http.createServer(async (req, res) => {
       const out = await probeAll(s);
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, ...out });
     }
+    }
+    // /probe-customer-detail: descobre qual endpoint da API do escritório
+    // devolve o DETALHE de um cliente (nenhum está mapeado hoje).
+    // Body opcional: { idcliente?: string }. Se ausente, usa o 1º de /crm/green.
+    // Retorna, por candidato: status HTTP, tamanho do body, top-3-KB de amostra.
+    if (req.url === '/probe-customer-detail') {
+      const s = await getOrCreateSession(email, password);
+      let sampleId = body.idcliente ? String(body.idcliente) : null;
+      if (!sampleId) {
+        const customers = await fetchCustomers(s);
+        sampleId = customers[0]?.idcliente || customers[0]?.id || customers[0]?.codigo || null;
+      }
+      if (!sampleId) return sendJson(res, 400, { ok: false, error: 'sem clientes para amostrar; passe idcliente no body' });
+
+      const candidates = [
+        `/clientes-green/${sampleId}`,
+        `/clientes-green/${sampleId}/detalhe`,
+        `/clientes-green/${sampleId}/completo`,
+        `/clientes-green/${sampleId}/dados-cadastrais`,
+        `/clientes-green/${sampleId}/endereco`,
+        `/clientes-green/detalhe/${sampleId}`,
+        `/crm/green/${sampleId}`,
+        `/crm/green/card/${sampleId}`,
+        `/customer/${sampleId}`,
+        `/customers/${sampleId}`,
+        `/clientes/${sampleId}`,
+        `/cliente/${sampleId}`,
+      ];
+
+      const results = [];
+      for (const path of candidates) {
+        const started = Date.now();
+        const out = await s.page.evaluate(async (args) => {
+          try {
+            const r = await fetch(args.api + args.path, {
+              headers: { Authorization: 'Bearer ' + args.token, Accept: 'application/json' },
+            });
+            const text = await r.text();
+            return { status: r.status, size: text.length, sample: text.slice(0, 3000) };
+          } catch (e) { return { status: 0, size: 0, sample: String(e?.message || e) }; }
+        }, { api: API_BASE, path, token: s.token });
+        results.push({
+          path,
+          status: out.status,
+          size: out.size,
+          duration_ms: Date.now() - started,
+          bucket: out.status === 200 ? 'ok'
+            : out.status === 401 || out.status === 403 ? 'denied'
+            : out.status === 404 ? 'missing'
+            : out.status >= 400 && out.status < 500 ? 'bad_request'
+            : out.status >= 500 ? 'error_5xx'
+            : 'other',
+          sample: out.sample,
+        });
+        // pequeno delay para não estressar
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      const winners = results.filter(r => r.bucket === 'ok');
+      return sendJson(res, 200, {
+        ok: true,
+        consultor_id: s.consultorId,
+        sample_idcliente: sampleId,
+        api_base: API_BASE,
+        winners: winners.map(w => w.path),
+        results,
+      });
+    }
     return sendJson(res, 404, { ok: false, error: 'not_found' });
     });
+
   } catch (e) {
     const status = e?.status || 500;
     console.error(`[err] ${req.method} ${req.url} → ${status}: ${e?.message}`);

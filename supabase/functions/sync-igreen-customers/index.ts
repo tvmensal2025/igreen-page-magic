@@ -1103,8 +1103,6 @@ Deno.serve(async (req) => {
     let mode = "sync";
     let source = "";
     let credsFromBody = false;
-    let enrichCustomerIds: string[] | null = null;
-    let enrichLimit = 50;
 
     try {
       const body = await req.json();
@@ -1113,9 +1111,8 @@ Deno.serve(async (req) => {
       if (body.consultant_id) consultantId = body.consultant_id;
       if (body.mode) mode = body.mode;
       if (body.source) source = body.source;
-      if (Array.isArray(body.customer_ids)) enrichCustomerIds = body.customer_ids as string[];
-      if (typeof body.limit === "number") enrichLimit = Math.max(1, Math.min(500, body.limit));
     } catch (_) { /* sem body */ }
+
 
 
     const worker = await resolveSyncWorker(supabase);
@@ -1129,136 +1126,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ========================================================
-    // ENRICH MODE: puxa detalhe completo dos clientes via
-    // POST /enrich-customer no worker e faz UPDATE incremental.
-    //
-    // Body:
-    //   { mode: "enrich", consultant_id, customer_ids?: string[], limit?: number }
-    //
-    // Se customer_ids não vier, seleciona os N clientes desse consultor com
-    // portal2_idcliente definido e last_enriched_at mais antigo (ou NULL).
-    // ========================================================
-    if (mode === "enrich") {
-      if (!consultantId) {
-        return new Response(
-          JSON.stringify({ success: false, error: "consultant_id é obrigatório no modo enrich" }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-      const { data: consultant } = await supabase
-        .from("consultants")
-        .select("igreen_id")
-        .eq("id", consultantId)
-        .maybeSingle();
-      const idconsultor = Number(consultant?.igreen_id || 0);
-      if (!idconsultor) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Consultor sem igreen_id configurado" }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
 
-      let query = supabase
-        .from("customers")
-        .select("id, portal2_idcliente")
-        .eq("consultant_id", consultantId)
-        .not("portal2_idcliente", "is", null);
-      if (enrichCustomerIds && enrichCustomerIds.length) query = query.in("id", enrichCustomerIds);
-      else query = query.order("last_enriched_at", { ascending: true, nullsFirst: true }).limit(enrichLimit);
-
-
-      const { data: rows, error: qErr } = await query;
-      if (qErr) {
-        return new Response(
-          JSON.stringify({ success: false, error: qErr.message }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-      const targets = (rows || []).filter((r: Record<string, unknown>) => r.portal2_idcliente);
-
-      const runEnrich = async () => {
-        const runId = await logSyncStart(supabase, consultantId, "enrich");
-        let enriched = 0;
-        let failed = 0;
-        for (const row of targets) {
-          const idcliente = String(row.portal2_idcliente);
-          const call = await callWorker(worker, "/enrich-customer", { idcliente, idconsultor });
-          if (!call.ok) { failed++; console.warn(`[enrich] ${idcliente} worker failed:`, call.error); continue; }
-          const payload = call.data || {};
-          const detail = payload.detail?.ok ? (payload.detail.data || {}) : null;
-          const sig = payload.signature_summary?.ok ? payload.signature_summary.data : null;
-          const contractGen = payload.contract_generated?.ok ? payload.contract_generated.data : null;
-          const contractSigned = payload.contract_signed?.ok ? payload.contract_signed.data : null;
-          const otp = payload.otp_status?.ok ? payload.otp_status.data : null;
-          const docVer = payload.document_verify?.ok ? payload.document_verify.data : null;
-
-          const patch: Record<string, unknown> = { last_enriched_at: new Date().toISOString() };
-          if (detail) {
-            if (detail.cep) patch.cep = String(detail.cep);
-            if (detail.endereco) patch.address_street = String(detail.endereco);
-            if (detail.numero) patch.address_number = String(detail.numero);
-            if (detail.complemento) patch.address_complement = String(detail.complemento);
-            if (detail.bairro) patch.address_neighborhood = String(detail.bairro);
-            if (detail.cidade) patch.address_city = String(detail.cidade);
-            if (detail.uf) patch.address_state = String(detail.uf).toUpperCase();
-            if (detail.concessionaria) patch.concessionaria = String(detail.concessionaria);
-            if (detail.fornecedora) patch.fornecedora = String(detail.fornecedora);
-            if (detail.num_cliente_distribuidora) patch.num_cliente_distribuidora = String(detail.num_cliente_distribuidora);
-            if (detail.numinstalacao) patch.numero_instalacao = String(detail.numinstalacao);
-            if (typeof detail.possui_placas === "boolean") patch.possui_placas = detail.possui_placas;
-            if (typeof detail.contaunica === "boolean") patch.contaunica = detail.contaunica;
-            if (typeof detail.transferir_titularidade === "boolean") patch.transferir_titularidade = detail.transferir_titularidade;
-            if (detail.logindistribuidora) patch.logindistribuidora = String(detail.logindistribuidora);
-            if (detail.senhadistribuidora) patch.senhadistribuidora = String(detail.senhadistribuidora);
-            if (detail.email && !patch.email) patch.email = String(detail.email);
-
-            // PJ: agrega no jsonb
-            const pjKeys = ["cnpj", "razao", "fantasia", "naturezajuridica", "cargo", "ie", "localregistro"];
-            const pj: Record<string, unknown> = {};
-            for (const k of pjKeys) if (detail[k] != null) pj[k] = detail[k];
-            if (Object.keys(pj).length) patch.pj_jsonb = pj;
-
-            // Procurador
-            const proc: Record<string, unknown> = {};
-            for (const k of ["testemunha_nome", "testemunha_cpf", "testemunha_datanasc", "testemunha_email", "testemunha_celular"]) {
-              if (detail[k] != null) proc[k] = detail[k];
-            }
-            if (Object.keys(proc).length) { patch.procurador_jsonb = proc; patch.possui_procurador = true; }
-          }
-          if (sig) patch.signature_summary = sig;
-          if (contractGen?.linkassinatura) {
-            patch.portal2_contract_link = String(contractGen.linkassinatura);
-            patch.link_assinatura = String(contractGen.linkassinatura);
-          }
-          if (contractSigned?.hasSignature === true) patch.assinatura_cliente_status = "assinado";
-          if (otp?.status) { patch.otp_status = String(otp.status); patch.otp_status_checked_at = new Date().toISOString(); }
-          if (docVer?.status) { patch.document_verify_status = String(docVer.status); patch.document_verify_at = new Date().toISOString(); }
-
-          const { error: uErr } = await supabase.from("customers").update(patch).eq("id", row.id);
-          if (uErr) { failed++; console.warn(`[enrich] ${idcliente} update failed:`, uErr.message); }
-          else enriched++;
-
-          // Rate limit: 200ms entre chamadas → ~5 req/s
-          await new Promise((r) => setTimeout(r, 200));
-        }
-        await logSyncFinish(supabase, runId, consultantId, { success: true, enriched, failed, total: targets.length });
-        console.log(`[enrich] done: ${enriched}/${targets.length} (failed=${failed})`);
-      };
-
-      // @ts-ignore EdgeRuntime existe no Supabase edge runtime
-      try { EdgeRuntime.waitUntil(runEnrich()); } catch { runEnrich(); }
-
-      return new Response(JSON.stringify({
-        success: true, mode: "enrich", background: true, total_targets: targets.length, consultant_id: consultantId,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-
-
-    // ========================================================
-    // CRON MODE: itera sobre todos os consultores aprovados
-    // ========================================================
     if (source === "cron") {
       console.log("=== CRON MODE: Syncing ALL consultants ===");
       // No cron, por padrão puxa TUDO (clientes + rede + métricas + boletos).
