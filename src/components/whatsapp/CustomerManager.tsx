@@ -28,7 +28,7 @@ import {
   type Customer, type StatusFilter,
   isDevolutiva, buildWhatsAppMessage,
 } from "./customerUtils";
-import { Briefcase } from "lucide-react";
+
 
 interface CustomerManagerProps {
   customers: Customer[];
