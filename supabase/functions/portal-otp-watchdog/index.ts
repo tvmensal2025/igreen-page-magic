@@ -372,7 +372,13 @@ async function bucketC(supabase: any) {
 
       try {
         const quota = await checkSendQuota(supabase, channel.instanceName);
-        if (!quota.allowed) {
+        // whapi superadmin não tem linha em whatsapp_instances (é global),
+        // então instance_not_found aqui é esperado e não bloqueia envio.
+        const isWhapiSuperadmin = channel.kind === "whapi";
+        const bypassQuota = !quota.allowed &&
+          isWhapiSuperadmin &&
+          (quota.reason === "instance_not_found" || quota.reason === "empty_response");
+        if (!quota.allowed && !bypassQuota) {
           console.warn(`[watchdog C] quota bloqueada ${channel.instanceName}: ${quota.reason}`);
           continue;
         }
