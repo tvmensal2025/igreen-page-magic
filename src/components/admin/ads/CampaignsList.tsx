@@ -431,7 +431,12 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               <Stat icon={<TrendingUp className="w-3.5 h-3.5" />} label="Impressões" value={m.impressions.toLocaleString("pt-BR")} />
               <Stat icon={<Users className="w-3.5 h-3.5" />} label="Cliques" value={m.clicks.toLocaleString("pt-BR")} />
               <Stat icon={<MessageCircle className="w-3.5 h-3.5" />} label="Conversas" value={String(m.messaging_conversations_started)} />
-              <Stat icon={<Users className="w-3.5 h-3.5" />} label="Clientes interessados Meta" value={String(m.leads)} />
+              <Stat
+                icon={<Users className="w-3.5 h-3.5" />}
+                label="Clientes interessados Meta"
+                value={String(m.leads)}
+                tooltip="Contados pelo Facebook via CTA/pixel. Pode diferir dos que chegaram no WhatsApp — muitos clicam e não escrevem."
+              />
               <Stat
                 icon={<MessageCircle className="w-3.5 h-3.5 text-primary" />}
                 label="Clientes interessados WhatsApp"
@@ -444,7 +449,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                 label="Gasto"
                 value={`R$ ${(m.spend_cents / 100).toFixed(2)}`}
                 highlight
-                tooltip="Total gasto na campanha (últimos 30 dias)"
+                tooltip="Total gasto no período (desde o início da campanha ou últimos 30 dias — o que for mais curto). Vem direto da Meta."
               />
               <Stat
                 icon={<DollarSign className="w-3.5 h-3.5" />}
