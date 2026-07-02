@@ -32,7 +32,7 @@ export default function PoliticaPrivacidade() {
         <p>Dúvidas sobre privacidade? Fale com o consultor que te atendeu ou envie SAIR para encerrar o contato automático.</p>
 
         <p className="mt-10">
-          <Link to="/" className="text-primary underline underline-offset-2">← Voltar</Link>
+          <Link to="/" className="text-primary underline underline-offset-2 inline-flex items-center min-h-11 px-2 -ml-2">← Voltar</Link>
         </p>
       </article>
     </main>

@@ -13,7 +13,7 @@ export function ThemeToggle() {
     <button
       onClick={cycle}
       className="relative p-2 rounded-xl text-muted-foreground hover:text-foreground
-        hover:bg-accent/10 transition-all duration-200 group"
+        hover:bg-accent/10 transition-all duration-200 group min-h-11 min-w-11 flex items-center justify-center"
       aria-label={`Tema: ${theme}`}
       title={`Tema: ${theme === "dark" ? "Escuro" : theme === "light" ? "Claro" : "Sistema"}`}
     >
