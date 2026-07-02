@@ -25,42 +25,66 @@ function sumActions(actions: any[] | undefined, types: string[]): number {
   return total;
 }
 
-// Extrai copy real do creative.object_story_spec, cobrindo os 3 formatos comuns:
-// link_data (single image/video), video_data (video standalone), template_data (catálogo/carousel)
-function extractCopy(creative: any): { headline: string | null; primary_text: string | null; format: string } {
-  if (!creative) return { headline: null, primary_text: null, format: "unknown" };
+// Extrai copy + thumb real do creative.object_story_spec, cobrindo os formatos comuns:
+// link_data (image), video_data (video), template_data (catálogo/carousel), asset_feed_spec (Advantage+).
+// thumb_url é a MESMA imagem que a Meta está veiculando — não chute da biblioteca.
+function extractCopy(creative: any): { headline: string | null; primary_text: string | null; format: string; thumb_url: string | null; video_id: string | null } {
+  if (!creative) return { headline: null, primary_text: null, format: "unknown", thumb_url: null, video_id: null };
   const oss = creative.object_story_spec || {};
-  // body costuma vir em creative.body (Meta legacy) também — fallback final
   const link = oss.link_data;
   const video = oss.video_data;
   const tpl = oss.template_data;
   let headline: string | null = null;
   let primary_text: string | null = null;
   let format = "unknown";
+  let thumb_url: string | null = null;
+  let video_id: string | null = null;
   if (link) {
     headline = link.name || link.title || null;
     primary_text = link.message || link.description || null;
     format = link.child_attachments?.length ? "carousel" : "image";
+    thumb_url = link.picture || link.image_url || link.child_attachments?.[0]?.picture || null;
   } else if (video) {
     headline = video.title || null;
     primary_text = video.message || null;
     format = "video";
+    thumb_url = video.image_url || null;
+    video_id = video.video_id || null;
   } else if (tpl) {
     headline = tpl.name || null;
     primary_text = tpl.description || null;
     format = "catalog";
   }
-  // Asset feed (Advantage+ creative) — vem em asset_feed_spec
+  // Asset feed (Advantage+ creative)
   const afs = creative.asset_feed_spec;
-  if (afs && !headline) {
-    headline = afs.titles?.[0]?.text || null;
-    primary_text = afs.bodies?.[0]?.text || null;
-    format = afs.videos?.length ? "video" : "image";
+  if (afs) {
+    if (!headline) headline = afs.titles?.[0]?.text || null;
+    if (!primary_text) primary_text = afs.bodies?.[0]?.text || null;
+    if (!thumb_url) thumb_url = afs.images?.[0]?.url || afs.videos?.[0]?.thumbnail_url || null;
+    if (!video_id && afs.videos?.[0]?.video_id) video_id = afs.videos[0].video_id;
+    if (format === "unknown") format = afs.videos?.length ? "video" : "image";
   }
-  // Último fallback: title/body diretos no creative
+  // Últimos fallbacks (creative-level fields)
   if (!headline) headline = creative.title || creative.name || null;
   if (!primary_text) primary_text = creative.body || null;
-  return { headline, primary_text, format };
+  if (!thumb_url) thumb_url = creative.thumbnail_url || creative.image_url || null;
+  return { headline, primary_text, format, thumb_url, video_id };
+}
+
+// Se o creative for vídeo sem thumb resolvida, busca `${video_id}?fields=picture`.
+async function resolveVideoThumb(videoId: string, token: string, cache: Map<string, string | null>): Promise<string | null> {
+  if (cache.has(videoId)) return cache.get(videoId) ?? null;
+  try {
+    const url = `${FB_GRAPH}/${videoId}?fields=picture&access_token=${token}`;
+    const json = await fbFetch(url);
+    const pic = json?.picture || null;
+    cache.set(videoId, pic);
+    return pic;
+  } catch (e) {
+    console.warn("[fb-sync-creatives] video thumb fail", videoId, (e as Error).message);
+    cache.set(videoId, null);
+    return null;
+  }
 }
 
 // Cache simples por creative_id pra evitar refetch quando 5 ads dividem o mesmo criativo
