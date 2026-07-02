@@ -22,6 +22,7 @@ type Row = {
   bucket: string | null;
   is_alive: boolean;
   notes: string | null;
+  sample_body: string | null;
   checked_at: string;
 };
 
