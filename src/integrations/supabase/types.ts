@@ -3705,6 +3705,8 @@ export type Database = {
           document_front_url: string | null
           document_type: string | null
           document_uploaded: boolean | null
+          document_verify_at: string | null
+          document_verify_status: string | null
           electricity_bill_photo_url: string | null
           electricity_bill_value: number | null
           email: string | null
@@ -3729,6 +3731,7 @@ export type Database = {
           last_bot_interaction_at: string | null
           last_bot_reply_at: string | null
           last_custom_prompt_at: string | null
+          last_enriched_at: string | null
           last_followup_at: string | null
           last_handoff_notified_at: string | null
           last_inbound_media_at: string | null
@@ -3792,6 +3795,8 @@ export type Database = {
           otp_code: string | null
           otp_pending_replay: boolean
           otp_received_at: string | null
+          otp_status: string | null
+          otp_status_checked_at: string | null
           otp_test_phone: string | null
           otp_validated_at: string | null
           pain_point: string | null
@@ -3841,6 +3846,7 @@ export type Database = {
           sales_phase: string | null
           senha_pdf: string | null
           senhadistribuidora: string | null
+          signature_summary: Json | null
           situacao_igreen: string | null
           source_ad_id: string | null
           source_campaign_id: string | null
@@ -3933,6 +3939,8 @@ export type Database = {
           document_front_url?: string | null
           document_type?: string | null
           document_uploaded?: boolean | null
+          document_verify_at?: string | null
+          document_verify_status?: string | null
           electricity_bill_photo_url?: string | null
           electricity_bill_value?: number | null
           email?: string | null
@@ -3957,6 +3965,7 @@ export type Database = {
           last_bot_interaction_at?: string | null
           last_bot_reply_at?: string | null
           last_custom_prompt_at?: string | null
+          last_enriched_at?: string | null
           last_followup_at?: string | null
           last_handoff_notified_at?: string | null
           last_inbound_media_at?: string | null
@@ -4020,6 +4029,8 @@ export type Database = {
           otp_code?: string | null
           otp_pending_replay?: boolean
           otp_received_at?: string | null
+          otp_status?: string | null
+          otp_status_checked_at?: string | null
           otp_test_phone?: string | null
           otp_validated_at?: string | null
           pain_point?: string | null
@@ -4069,6 +4080,7 @@ export type Database = {
           sales_phase?: string | null
           senha_pdf?: string | null
           senhadistribuidora?: string | null
+          signature_summary?: Json | null
           situacao_igreen?: string | null
           source_ad_id?: string | null
           source_campaign_id?: string | null
@@ -4161,6 +4173,8 @@ export type Database = {
           document_front_url?: string | null
           document_type?: string | null
           document_uploaded?: boolean | null
+          document_verify_at?: string | null
+          document_verify_status?: string | null
           electricity_bill_photo_url?: string | null
           electricity_bill_value?: number | null
           email?: string | null
@@ -4185,6 +4199,7 @@ export type Database = {
           last_bot_interaction_at?: string | null
           last_bot_reply_at?: string | null
           last_custom_prompt_at?: string | null
+          last_enriched_at?: string | null
           last_followup_at?: string | null
           last_handoff_notified_at?: string | null
           last_inbound_media_at?: string | null
@@ -4248,6 +4263,8 @@ export type Database = {
           otp_code?: string | null
           otp_pending_replay?: boolean
           otp_received_at?: string | null
+          otp_status?: string | null
+          otp_status_checked_at?: string | null
           otp_test_phone?: string | null
           otp_validated_at?: string | null
           pain_point?: string | null
@@ -4297,6 +4314,7 @@ export type Database = {
           sales_phase?: string | null
           senha_pdf?: string | null
           senhadistribuidora?: string | null
+          signature_summary?: Json | null
           situacao_igreen?: string | null
           source_ad_id?: string | null
           source_campaign_id?: string | null
