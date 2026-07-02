@@ -1159,22 +1159,14 @@ Deno.serve(async (req) => {
         );
       }
 
-      // deno-lint-ignore no-explicit-any
-      let requestedIds: string[] | null = null;
-      let limit = 50;
-      try {
-        const b = await req.clone().json();
-        if (Array.isArray(b.customer_ids)) requestedIds = b.customer_ids as string[];
-        if (typeof b.limit === "number") limit = Math.max(1, Math.min(500, b.limit));
-      } catch { /* já lido acima */ }
-
       let query = supabase
         .from("customers")
         .select("id, portal2_idcliente")
         .eq("consultant_id", consultantId)
         .not("portal2_idcliente", "is", null);
-      if (requestedIds && requestedIds.length) query = query.in("id", requestedIds);
-      else query = query.order("last_enriched_at", { ascending: true, nullsFirst: true }).limit(limit);
+      if (enrichCustomerIds && enrichCustomerIds.length) query = query.in("id", enrichCustomerIds);
+      else query = query.order("last_enriched_at", { ascending: true, nullsFirst: true }).limit(enrichLimit);
+
 
       const { data: rows, error: qErr } = await query;
       if (qErr) {
