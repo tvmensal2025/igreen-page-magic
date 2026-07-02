@@ -314,11 +314,29 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     return <Badge className={`${cls} gap-1`}><Icon className="w-3 h-3" />{h.label}</Badge>;
                   })()}
                 </div>
-                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
                   <MapPin className="w-3 h-3" />
-                  {(c.cities || []).slice(0, 3).map((x: any) => x.name).join(", ")}{(c.cities || []).length > 3 ? `... +${c.cities.length - 3}` : ""}
-                  · R$ {(c.daily_budget_cents / 100).toFixed(0)}/dia
+                  <span>{(c.cities || []).slice(0, 3).map((x: any) => x.name).join(", ")}{(c.cities || []).length > 3 ? `... +${c.cities.length - 3}` : ""}</span>
                 </div>
+                {(() => {
+                  const startMs = new Date(c.started_at || c.created_at).getTime();
+                  const days = Math.max(1, Math.floor((Date.now() - startMs) / 86400_000));
+                  return (
+                    <div className="mt-1.5 flex items-center gap-2 text-xs flex-wrap">
+                      <span className="rounded-md bg-secondary/60 px-2 py-0.5 text-foreground font-medium" title="Orçamento diário atual, sincronizado da Meta">
+                        R$ {(c.daily_budget_cents / 100).toFixed(2)}/dia
+                      </span>
+                      <span className="rounded-md bg-secondary/60 px-2 py-0.5 text-muted-foreground" title="Dias desde o início da campanha">
+                        Rodando há {days} {days === 1 ? "dia" : "dias"}
+                      </span>
+                      {m.spend_cents > 0 && (
+                        <span className="rounded-md bg-primary/10 text-primary px-2 py-0.5 font-semibold" title="Total gasto no período (soma real da Meta)">
+                          Total gasto: R$ {(m.spend_cents / 100).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 {c.rejection_reason && (() => {
                   const exp = explainRejection(c.rejection_reason);
                   const isSession = exp?.kind === "session";
