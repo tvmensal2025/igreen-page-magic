@@ -19,6 +19,7 @@ interface Campaign {
   daily_budget_cents: number; fb_campaign_id: string | null;
   created_at: string; rejection_reason: string | null;
   ended_at: string | null;
+  thumbnail_url: string | null; creative_format: string | null;
 }
 interface Creative { kind: "video" | "image" | "none"; url: string | null }
 interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }
