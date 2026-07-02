@@ -2283,6 +2283,7 @@ export type Database = {
           id: number
           message_sample: string | null
           method: string
+          rodizio_outcome: string | null
           similarity: number | null
         }
         Insert: {
@@ -2292,6 +2293,7 @@ export type Database = {
           id?: number
           message_sample?: string | null
           method: string
+          rodizio_outcome?: string | null
           similarity?: number | null
         }
         Update: {
@@ -2301,6 +2303,7 @@ export type Database = {
           id?: number
           message_sample?: string | null
           method?: string
+          rodizio_outcome?: string | null
           similarity?: number | null
         }
         Relationships: []
@@ -3750,6 +3753,8 @@ export type Database = {
           link_facial_sent_at: string | null
           logindistribuidora: string | null
           manual_override_reactivate: boolean
+          manual_review_at: string | null
+          manual_review_reason: string | null
           media_consumo: number | null
           media_message_id: string | null
           media_storage: string | null
@@ -3759,6 +3764,7 @@ export type Database = {
           name_mismatch_flag: boolean
           name_mismatch_reason: string | null
           name_source: string | null
+          needs_manual_review: boolean
           next_followup_at: string | null
           next_rescue_allowed_at: string | null
           nivel_licenciado: string | null
@@ -3975,6 +3981,8 @@ export type Database = {
           link_facial_sent_at?: string | null
           logindistribuidora?: string | null
           manual_override_reactivate?: boolean
+          manual_review_at?: string | null
+          manual_review_reason?: string | null
           media_consumo?: number | null
           media_message_id?: string | null
           media_storage?: string | null
@@ -3984,6 +3992,7 @@ export type Database = {
           name_mismatch_flag?: boolean
           name_mismatch_reason?: string | null
           name_source?: string | null
+          needs_manual_review?: boolean
           next_followup_at?: string | null
           next_rescue_allowed_at?: string | null
           nivel_licenciado?: string | null
@@ -4200,6 +4209,8 @@ export type Database = {
           link_facial_sent_at?: string | null
           logindistribuidora?: string | null
           manual_override_reactivate?: boolean
+          manual_review_at?: string | null
+          manual_review_reason?: string | null
           media_consumo?: number | null
           media_message_id?: string | null
           media_storage?: string | null
@@ -4209,6 +4220,7 @@ export type Database = {
           name_mismatch_flag?: boolean
           name_mismatch_reason?: string | null
           name_source?: string | null
+          needs_manual_review?: boolean
           next_followup_at?: string | null
           next_rescue_allowed_at?: string | null
           nivel_licenciado?: string | null
