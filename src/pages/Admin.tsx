@@ -53,6 +53,7 @@ const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").th
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
 const CarteiraGreenPanel = lazy(() => import("@/features/produtos/carteira-green/CarteiraGreenPanel").then(m => ({ default: m.CarteiraGreenPanel })));
 const EndpointDiscoveryCard = lazy(() => import("@/features/produtos/carteira-green/EndpointDiscoveryCard").then(m => ({ default: m.EndpointDiscoveryCard })));
+const FinanceiroPanel = lazy(() => import("@/components/admin/financeiro/FinanceiroPanel").then(m => ({ default: m.FinanceiroPanel })));
 
 import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
@@ -72,7 +73,7 @@ const SUPPORT_FAB_HIDDEN_COMPACT: ReadonlySet<AdminTabId> = new Set([
   "conversao",
 ]);
 const ADMIN_TAB_IDS: readonly AdminTabId[] = [
-  "dashboard", "crm", "crm-clientes", "conversao", "clientes", "produtos",
+  "dashboard", "crm", "crm-clientes", "conversao", "clientes", "financeiro", "produtos",
   "captacao", "parceiros", "rede", "whatsapp", "agendamentos", "central-anuncios", "links",
   "materiais", "audio-studio", "academy",
 ];
@@ -109,7 +110,7 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "historico" || (tab && (AI_SUB_TABS as readonly string[]).includes(tab))) return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos" || tab === "agendamentos") return tab as AdminTabId;
+      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "financeiro" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos" || tab === "agendamentos") return tab as AdminTabId;
       const stored = window.localStorage.getItem(ADMIN_ACTIVE_TAB_KEY) as AdminTabId | null;
       if (stored && ADMIN_TAB_IDS.includes(stored)) return stored;
     }
@@ -290,6 +291,7 @@ const AdminContent = () => {
     "crm-clientes": { title: "Clientes ativos", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
     "conversao": { title: "Conversão", subtitle: "Análise de funil e gargalos" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
+    "financeiro": { title: "Financeiro", subtitle: "Boletos, vencimentos e recebimentos da sua rede iGreen" },
     "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, pipeline, ganhos e faturas Green" },
     "captacao": { title: "Captação", subtitle: "Novos clientes interessados e originação" },
     "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
@@ -426,9 +428,6 @@ const AdminContent = () => {
 
           {userId && activeTab === "clientes" && (
             <div className="space-y-5">
-              <Suspense fallback={null}>
-                <CarteiraGreenPanel consultantId={userId} />
-              </Suspense>
               <CustomerManager
                 customers={customers as never[]}
                 consultantId={userId}
@@ -440,6 +439,13 @@ const AdminContent = () => {
               />
             </div>
           )}
+
+          {userId && activeTab === "financeiro" && (
+            <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" /></div>}>
+              <FinanceiroPanel userId={userId} />
+            </Suspense>
+          )}
+
 
           {userId && activeTab === "rede" && (
             <NetworkPanel consultantId={userId} />
