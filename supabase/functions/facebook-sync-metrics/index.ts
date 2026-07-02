@@ -374,6 +374,38 @@ Deno.serve(async (req) => {
             .eq("id", c.id);
         } catch (ue) { console.error("[fb-sync] leads_count update failed", c.id, (ue as Error).message); }
 
+        // Sincroniza daily_budget REAL vindo da Meta (soma dos adsets).
+        // Sem isso, o card mostra o valor gravado na criação — desatualizado
+        // se o usuário editou no Meta ou se o creative-rotator bumpou o budget.
+        try {
+          const adsetIds: string[] = Array.isArray((c as any).fb_adset_ids)
+            ? ((c as any).fb_adset_ids as string[])
+            : [];
+          if (adsetIds.length > 0) {
+            let sumDailyCents = 0;
+            let anyDaily = false;
+            for (const adsetId of adsetIds) {
+              try {
+                const adsetInfo = await fbFetch(
+                  `${FB_GRAPH}/${adsetId}?fields=daily_budget,lifetime_budget&access_token=${token}`,
+                );
+                const daily = Number(adsetInfo?.daily_budget || 0); // já em cents
+                if (daily > 0) { sumDailyCents += daily; anyDaily = true; }
+              } catch (adErr) {
+                console.warn("[fb-sync] adset budget fetch failed", adsetId, (adErr as Error).message);
+              }
+            }
+            const currentCents = Number((c as any).daily_budget_cents || 0);
+            if (anyDaily && sumDailyCents > 0 && sumDailyCents !== currentCents) {
+              await admin.from("facebook_campaigns")
+                .update({ daily_budget_cents: sumDailyCents, updated_at: new Date().toISOString() })
+                .eq("id", c.id);
+              console.info(`[fb-sync] budget updated ${c.fb_campaign_id}: ${currentCents} → ${sumDailyCents} cents`);
+            }
+          }
+        } catch (be) { console.error("[fb-sync] budget sync failed", c.id, (be as Error).message); }
+
+
         // Auto-pause adaptativo (2026):
         // 1) Frequência cap 3.0 (cold messaging cansa rápido)
         // 2) R$30+ sem nenhuma conversa/lead
