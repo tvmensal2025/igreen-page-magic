@@ -28,7 +28,7 @@ import {
   type Customer, type StatusFilter,
   isDevolutiva, buildWhatsAppMessage,
 } from "./customerUtils";
-import { Briefcase } from "lucide-react";
+
 
 interface CustomerManagerProps {
   customers: Customer[];
@@ -281,17 +281,6 @@ export function CustomerManager({
           <div className="flex items-center gap-2 shrink-0">
             <Button onClick={() => setShowAddDialog(true)} size="sm" className="gap-1.5 rounded-xl font-semibold shadow-lg shadow-primary/15 h-9 px-3.5 text-sm">
               <UserPlus className="w-4 h-4" /> <span>Novo</span><span className="hidden sm:inline">&nbsp;cliente</span>
-            </Button>
-            <Button
-              asChild
-              size="sm"
-              variant="outline"
-              className="gap-1.5 rounded-xl h-9 px-3.5 text-sm border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-700"
-            >
-              <a href="/admin/whatsapp-clients?tab=igreen">
-                <Briefcase className="w-4 h-4 text-emerald-600" />
-                <span>Carteira</span><span className="hidden sm:inline">&nbsp;iGreen</span>
-              </a>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
