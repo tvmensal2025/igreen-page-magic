@@ -38,6 +38,8 @@ export function EndpointDiscoveryCard({ consultantId }: { consultantId: string }
   const qc = useQueryClient();
   const { toast } = useToast();
   const [running, setRunning] = useState(false);
+  const [probingDetail, setProbingDetail] = useState(false);
+  const [sampleId, setSampleId] = useState("1117549");
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["igreen-endpoint-discovery"],
