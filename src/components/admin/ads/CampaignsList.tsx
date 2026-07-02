@@ -18,7 +18,7 @@ interface Campaign {
   id: string; name: string; status: string; cities: any[];
   daily_budget_cents: number; fb_campaign_id: string | null;
   created_at: string; rejection_reason: string | null;
-  ended_at: string | null;
+  ended_at: string | null; started_at: string | null;
   thumbnail_url: string | null; creative_format: string | null;
 }
 interface Creative { kind: "video" | "image" | "none"; url: string | null }
