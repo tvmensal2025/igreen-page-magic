@@ -121,7 +121,10 @@ interface AppSidebarProps {
   collapsed?: boolean;
   onCollapse?: () => void;
   onOpenSettings?: () => void;
+  /** Badge dinâmico por tab (ex.: contagem de boletos vencendo hoje). */
+  badges?: Partial<Record<AdminTabId, number | string | undefined>>;
 }
+
 
 export function AppSidebar({
   activeTab,
@@ -136,7 +139,9 @@ export function AppSidebar({
   collapsed = false,
   onCollapse,
   onOpenSettings,
+  badges,
 }: AppSidebarProps) {
+
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
 
   useEffect(() => {
@@ -162,6 +167,8 @@ export function AppSidebar({
   const renderNavButton = (item: NavItem) => {
     const Icon = item.icon;
     const isActive = activeTab === item.id;
+    const dynamicBadge = badges?.[item.id];
+    const badge = dynamicBadge ?? item.badge;
     return (
       <button
         key={item.id}
@@ -173,12 +180,13 @@ export function AppSidebar({
       >
         <Icon className="w-[18px] h-[18px] shrink-0" />
         {!collapsed && <span className="truncate">{item.label}</span>}
-        {!collapsed && item.badge !== undefined && (
-          <span className="pe-badge">{item.badge}</span>
+        {!collapsed && badge !== undefined && badge !== 0 && badge !== "" && (
+          <span className="pe-badge">{badge}</span>
         )}
       </button>
     );
   };
+
 
   const mobileMoreActive = MOBILE_MORE_ITEMS.some((i) => i.id === activeTab);
 

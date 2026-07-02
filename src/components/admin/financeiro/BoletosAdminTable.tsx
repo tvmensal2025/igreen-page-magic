@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
-import { ExternalLink, MessageCircle, Search, Copy } from "lucide-react";
+import { ExternalLink, MessageCircle, Search, Copy, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import type { BoletoAdminRow } from "./hooks";
+import { exportBoletosCsv } from "./csvExport";
 
 type FilterKey =
   | "todos"
@@ -29,16 +31,17 @@ function daysFromToday(iso?: string | null): number | null {
 }
 
 /**
- * Tabela de boletos com filtros por vencimento + consultor.
- * Compartilha visual/badge do BoletosList original, mas adiciona coluna
- * "Consultor" e filtros focados em vencimento (para admin).
+ * Tabela de boletos com filtros por vencimento + consultor + mês de referência,
+ * seleção em lote para cobrança rápida no WhatsApp e export CSV.
  */
 export function BoletosAdminTable({ rows }: { rows: BoletoAdminRow[] }) {
   const { toast } = useToast();
   const [status, setStatus] = useState<FilterKey>("todos");
   const [consultantId, setConsultantId] = useState<string>("all");
+  const [mesRef, setMesRef] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [visible, setVisible] = useState(100);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const consultants = useMemo(() => {
     const m = new Map<string, string>();
@@ -48,10 +51,17 @@ export function BoletosAdminTable({ rows }: { rows: BoletoAdminRow[] }) {
     return Array.from(m.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [rows]);
 
+  const mesesRef = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) if (r.mes_referencia) s.add(r.mes_referencia);
+    return Array.from(s).sort().reverse().slice(0, 12);
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((b) => {
       if (consultantId !== "all" && b.consultant_id !== consultantId) return false;
+      if (mesRef !== "all" && b.mes_referencia !== mesRef) return false;
       const pago = !!b.pagamento || String(b.status || "").toLowerCase().includes("pago");
       const d = daysFromToday(b.vencimento);
       const atraso = d != null && d < 0 ? Math.abs(d) : 0;
@@ -69,16 +79,66 @@ export function BoletosAdminTable({ rows }: { rows: BoletoAdminRow[] }) {
       }
       return true;
     });
-  }, [rows, status, consultantId, search]);
+  }, [rows, status, consultantId, mesRef, search]);
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allVisibleSelected = filtered.slice(0, visible).every((r) => selected.has(r.id)) && filtered.length > 0;
+  const toggleSelectAllVisible = () => {
+    const visibleIds = filtered.slice(0, visible).map((r) => r.id);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const bulkCobrar = () => {
+    const alvos = filtered.filter((r) => selected.has(r.id) && r.phone_whatsapp && r.url_boleto);
+    if (alvos.length === 0) {
+      toast({ title: "Nenhum selecionado com WhatsApp + boleto", variant: "destructive" });
+      return;
+    }
+    if (alvos.length > 8) {
+      const ok = confirm(`Isso vai abrir ${alvos.length} abas do WhatsApp. Continuar?`);
+      if (!ok) return;
+    }
+    for (const b of alvos) {
+      const url = `https://wa.me/${b.phone_whatsapp!.replace(/\D/g, "")}?text=${encodeURIComponent(
+        `Olá! Segue seu boleto de energia (${b.mes_referencia || ""}): ${b.url_boleto}`,
+      )}`;
+      window.open(url, "_blank", "noopener");
+    }
+    toast({ title: `${alvos.length} conversa(s) aberta(s)` });
+  };
 
   return (
     <section className="rounded-xl border border-border/60 bg-card">
       <header className="p-4 border-b border-border/60 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h3 className="text-sm font-semibold">Boletos</h3>
-          <span className="text-[11px] text-muted-foreground">
-            {filtered.length.toLocaleString("pt-BR")} de {rows.length.toLocaleString("pt-BR")}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">
+              {filtered.length.toLocaleString("pt-BR")} de {rows.length.toLocaleString("pt-BR")}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-[11px]"
+              onClick={() => exportBoletosCsv(filtered, `boletos-${new Date().toISOString().slice(0, 10)}.csv`)}
+              disabled={filtered.length === 0}
+            >
+              <Download className="h-3 w-3 mr-1" /> CSV
+            </Button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Chip active={status === "todos"} onClick={() => setStatus("todos")}>Todos em aberto</Chip>
@@ -100,6 +160,18 @@ export function BoletosAdminTable({ rows }: { rows: BoletoAdminRow[] }) {
               className="pl-9"
             />
           </div>
+          {mesesRef.length > 0 && (
+            <select
+              value={mesRef}
+              onChange={(e) => setMesRef(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[140px]"
+            >
+              <option value="all">Todos os meses</option>
+              {mesesRef.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          )}
           {consultants.length > 1 && (
             <select
               value={consultantId}
@@ -113,7 +185,28 @@ export function BoletosAdminTable({ rows }: { rows: BoletoAdminRow[] }) {
             </select>
           )}
         </div>
+
+        {selected.size > 0 && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+            <span className="text-xs">
+              <strong>{selected.size}</strong> selecionado(s)
+            </span>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="h-7" onClick={() => setSelected(new Set())}>
+                Limpar
+              </Button>
+              <Button size="sm" className="h-7" onClick={bulkCobrar}>
+                <MessageCircle className="w-3 h-3 mr-1" /> Cobrar selecionados
+              </Button>
+            </div>
+          </div>
+        )}
       </header>
+
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border/60 bg-muted/20">
+        <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAllVisible} aria-label="Selecionar todos" />
+        <span className="text-[11px] text-muted-foreground">Selecionar todos visíveis</span>
+      </div>
 
       <ul className="divide-y divide-border/60">
         {filtered.slice(0, visible).map((b) => {
@@ -122,78 +215,87 @@ export function BoletosAdminTable({ rows }: { rows: BoletoAdminRow[] }) {
           const vencido = d != null && d < 0;
           const venceHoje = d === 0;
           const venceEm7 = d != null && d > 0 && d <= 7;
+          const isSel = selected.has(b.id);
           return (
-            <li key={b.id} className="p-3 hover:bg-muted/30">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium truncate">{b.nome || b.customer_name || "Cliente"}</p>
-                    {pago ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]" variant="outline">Pago</Badge>
-                    ) : vencido ? (
-                      <Badge className="bg-red-500/10 text-red-600 border-red-500/30 text-[10px]" variant="outline">
-                        Vencido · {Math.abs(d!)}d
-                      </Badge>
-                    ) : venceHoje ? (
-                      <Badge className="bg-amber-500/10 text-amber-700 border-amber-500/30 text-[10px]" variant="outline">Vence hoje</Badge>
-                    ) : venceEm7 ? (
-                      <Badge className="bg-amber-500/10 text-amber-700 border-amber-500/30 text-[10px]" variant="outline">Em {d}d</Badge>
-                    ) : (
-                      <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/30 text-[10px]" variant="outline">A vencer</Badge>
+            <li key={b.id} className={`p-3 hover:bg-muted/30 ${isSel ? "bg-primary/5" : ""}`}>
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  checked={isSel}
+                  onCheckedChange={() => toggleSelect(b.id)}
+                  aria-label="Selecionar boleto"
+                  className="mt-1"
+                />
+                <div className="flex items-start justify-between gap-3 flex-wrap flex-1">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium truncate">{b.nome || b.customer_name || "Cliente"}</p>
+                      {pago ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px]" variant="outline">Pago</Badge>
+                      ) : vencido ? (
+                        <Badge className="bg-red-500/10 text-red-600 border-red-500/30 text-[10px]" variant="outline">
+                          Vencido · {Math.abs(d!)}d
+                        </Badge>
+                      ) : venceHoje ? (
+                        <Badge className="bg-amber-500/10 text-amber-700 border-amber-500/30 text-[10px]" variant="outline">Vence hoje</Badge>
+                      ) : venceEm7 ? (
+                        <Badge className="bg-amber-500/10 text-amber-700 border-amber-500/30 text-[10px]" variant="outline">Em {d}d</Badge>
+                      ) : (
+                        <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/30 text-[10px]" variant="outline">A vencer</Badge>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      <span className="font-medium text-foreground/70">{b.consultant_name || "—"}</span>
+                      {" · "}
+                      {b.cidade || "?"}/{b.uf || "?"} · {b.fornecedora || "—"} · vence{" "}
+                      {b.vencimento ? new Date(b.vencimento).toLocaleDateString("pt-BR") : "—"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{BRL(Number(b.total || 0))}</p>
+                      <p className="text-[10px] text-muted-foreground">{b.mes_referencia || ""}</p>
+                    </div>
+                    {b.url_boleto && (
+                      <>
+                        <a href={b.url_boleto} target="_blank" rel="noreferrer">
+                          <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]">
+                            <ExternalLink className="h-3 w-3 mr-1" /> Boleto
+                          </Button>
+                        </a>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => {
+                            navigator.clipboard.writeText(b.url_boleto!);
+                            toast({ title: "Link copiado" });
+                          }}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </>
                     )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    <span className="font-medium text-foreground/70">{b.consultant_name || "—"}</span>
-                    {" · "}
-                    {b.cidade || "?"}/{b.uf || "?"} · {b.fornecedora || "—"} · vence{" "}
-                    {b.vencimento ? new Date(b.vencimento).toLocaleDateString("pt-BR") : "—"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="text-right">
-                    <p className="text-sm font-semibold">{BRL(Number(b.total || 0))}</p>
-                    <p className="text-[10px] text-muted-foreground">{b.mes_referencia || ""}</p>
-                  </div>
-                  {b.url_boleto && (
-                    <>
-                      <a href={b.url_boleto} target="_blank" rel="noreferrer">
+                    {b.url_invoice && (
+                      <a href={b.url_invoice} target="_blank" rel="noreferrer">
                         <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]">
-                          <ExternalLink className="h-3 w-3 mr-1" /> Boleto
+                          <ExternalLink className="h-3 w-3 mr-1" /> NF
                         </Button>
                       </a>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-[11px]"
-                        onClick={() => {
-                          navigator.clipboard.writeText(b.url_boleto!);
-                          toast({ title: "Link copiado" });
-                        }}
+                    )}
+                    {b.phone_whatsapp && b.url_boleto && (
+                      <a
+                        href={`https://wa.me/${b.phone_whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
+                          `Olá! Segue seu boleto de energia (${b.mes_referencia || ""}): ${b.url_boleto}`,
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
                       >
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </>
-                  )}
-                  {b.url_invoice && (
-                    <a href={b.url_invoice} target="_blank" rel="noreferrer">
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]">
-                        <ExternalLink className="h-3 w-3 mr-1" /> NF
-                      </Button>
-                    </a>
-                  )}
-                  {b.phone_whatsapp && b.url_boleto && (
-                    <a
-                      href={`https://wa.me/${b.phone_whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
-                        `Olá! Segue seu boleto de energia (${b.mes_referencia || ""}): ${b.url_boleto}`,
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <Button size="sm" className="h-7 px-2 text-[11px]">
-                        <MessageCircle className="h-3 w-3 mr-1" /> Cobrar
-                      </Button>
-                    </a>
-                  )}
+                        <Button size="sm" className="h-7 px-2 text-[11px]">
+                          <MessageCircle className="h-3 w-3 mr-1" /> Cobrar
+                        </Button>
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             </li>

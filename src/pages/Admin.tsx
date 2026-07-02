@@ -20,6 +20,9 @@ import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatu
 import PageStatus from "@/components/common/PageStatus";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
+import { useVenceHojeCount } from "@/components/admin/financeiro/useVenceHojeCount";
+import { useUserRole } from "@/hooks/useUserRole";
+
 
 
 // Heavy panels — lazy load on demand
@@ -327,7 +330,8 @@ const AdminContent = () => {
 
   return (
     <div className="painel-elite h-[100dvh] flex overflow-hidden">
-      <AppSidebar
+      <AdminSidebarWithBadges
+        userId={userId}
         activeTab={activeTab}
         onTabChange={(t) => setActiveTab(t)}
         onNavigate={(href) => navigate(href)}
@@ -341,6 +345,7 @@ const AdminContent = () => {
         onCollapse={collapseSidebar}
         onOpenSettings={() => setSettingsOpen(true)}
       />
+
 
       <div className="flex-1 flex flex-col min-w-0 lg:ml-0">
         <AppTopbar
@@ -606,6 +611,21 @@ const AdminContent = () => {
     </div>
   );
 };
+
+/** Sidebar com badge dinâmico de boletos vencendo hoje. Mantém isolado para
+ *  que o hook não força re-render em todos os inputs do Admin. */
+function AdminSidebarWithBadges({
+  userId,
+  ...rest
+}: {
+  userId: string | null;
+} & Omit<React.ComponentProps<typeof AppSidebar>, "badges">) {
+  const { isSuperAdmin, isAdmin } = useUserRole(userId);
+  const scope: "all" | "self" = isSuperAdmin || isAdmin ? "all" : "self";
+  const { data: venceHoje } = useVenceHojeCount(userId ?? undefined, scope);
+  return <AppSidebar {...rest} badges={{ financeiro: venceHoje && venceHoje > 0 ? venceHoje : undefined }} />;
+}
+
 
 const Admin = () => (
   <PrivacyModeProvider>
