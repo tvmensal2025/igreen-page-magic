@@ -139,7 +139,9 @@ export function AppSidebar({
   collapsed = false,
   onCollapse,
   onOpenSettings,
+  badges,
 }: AppSidebarProps) {
+
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
 
   useEffect(() => {
