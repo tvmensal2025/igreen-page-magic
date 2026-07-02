@@ -39,9 +39,10 @@ interface DashboardTabProps {
   onFormUpdate?: (updates: Record<string, string>) => void;
   periodDays: number;
   onPeriodChange: (days: number) => void;
+  onOpenChat?: (phone: string, suggestedMessage?: string) => void;
 }
 
-export function DashboardTab({ userId, form, periodDays, onPeriodChange }: DashboardTabProps) {
+export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenChat }: DashboardTabProps) {
   const [scope, setScope] = useState<"me" | "team">("me");
   const { data: teamIds = [] } = useTeamConsultantIds(userId);
   const isLeader = teamIds.length > 1;
