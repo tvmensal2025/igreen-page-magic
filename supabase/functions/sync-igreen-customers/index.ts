@@ -696,7 +696,16 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     const consumo = safeNum(d.consumo); if (consumo != null) patch.media_consumo = consumo;
     const dAtivo = safeStr(d.dataAtivo); if (dAtivo && /^\d{4}-\d{2}-\d{2}/.test(dAtivo)) patch.data_ativo_igreen = dAtivo.slice(0, 10);
     const dInj = safeStr(d.dataInjecao); if (dInj && /^\d{4}-\d{2}-\d{2}/.test(dInj)) patch.data_injecao_igreen = dInj.slice(0, 10);
-    if (Object.keys(patch).length === 0) continue;
+    // Novos: campos que vêm no detail (/clientes-green/boletos/{id}) e não estavam sendo aplicados
+    const lic = safeStr(d.licenciado); if (lic) patch.registered_by_name = lic;
+    const nasc = safeStr(d.nascimento); if (nasc && /^\d{4}-\d{2}-\d{2}/.test(nasc)) patch.data_nascimento = nasc.slice(0, 10);
+    const email = safeStr(d.email); if (email) patch.email = email;
+    const cid = safeStr(d.cidade); if (cid) patch.address_city = cid;
+    const uf = safeStr(d.uf); if (uf) patch.address_state = uf.toUpperCase();
+    const cel = safeStr(d.celular); if (cel) patch.phone = normalizePhone(String(cel));
+    patch.last_enriched_at = new Date().toISOString();
+    if (Object.keys(patch).length === 1) continue; // apenas last_enriched_at
+
     const { error } = await supabase
       .from("customers")
       .update(patch)

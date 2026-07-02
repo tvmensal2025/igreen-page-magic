@@ -1,54 +1,43 @@
-## Objetivo
+## Plano paralelo
 
-Preencher os 2 campos que faltam (endereço completo + licenciado responsável) para atingir 100% de paridade com o modal do escritório iGreen, e revalidar todos os 15 campos da Sandra (idcliente 1117549).
+### Trilha A — Descobrir endpoints via Playwright (independe de redeploy)
 
-## Situação atual
+1. Abro `escritorio.igreenenergy.com.br` num Chrome headless (Playwright), faço login com as credenciais do Rafael (leio `igreen_portal_email`/`igreen_portal_password` da tabela `consultants` via `supabase--read_query`).
+2. Navego para `/clientes-green`, aguardo a lista carregar.
+3. Ativo captura de rede (`page.on("request")` + `page.on("response")`) e clico no cliente SANDRA (idcliente `1117549`).
+4. Filtro requisições que:
+   - Vão para `api-vo.igreenenergy.com.br/v1/*`
+   - Retornam JSON com strings `SANDRA` **OU** `Salto` (cidade) **OU** `Rafael Ferreira` (licenciado)
+5. Registro na tabela `igreen_endpoint_discovery` (via edge function ou insert direto) o(s) endpoint(s) vencedor(es) com `sample_body`.
+6. Analiso o JSON e mapeio: `endereco_rua`, `endereco_numero`, `endereco_bairro`, `endereco_cidade`, `endereco_uf`, `endereco_cep`, `licenciado_nome`, `licenciado_codigo`.
 
-Sync automático já traz 13/15 campos via `worker /sync-all` (endpoint `api-vo /clientes-green/boletos/{id}`). Faltam:
-- **Endereço:** rua, número, complemento, bairro, cidade, UF, CEP
-- **Licenciado responsável:** nome do consultor dono do cliente no iGreen (ex.: "Rafael Ferreira Dias")
-- **Bug menor:** data de nascimento salva invertida (mês/dia trocados) — corrigir parser
+**Vantagem:** não depende de VPS, sai em ~2 min.
 
-## Passos
+### Trilha B — Destravar Easypanel
 
-**1. Descobrir endpoints faltantes (probe automático)**
-Rodar `probe-igreen-detail` (já implementado) contra Sandra com lista expandida de candidatos que costumam expor endereço/licenciado no portal iGreen:
-- `/clientes-green/dados/{id}`, `/clientes-green/endereco/{id}`, `/clientes-green/completo/{id}`
-- `/clientes/{id}`, `/clientes/detalhe/{id}`, `/clientes/full/{id}`
-- `/consultores/cliente/{id}`, `/licenciado/cliente/{id}`
+O erro `curl: (23) Failure writing output` + `tar: unexpected EOF` no build do `portal-worker` significa que o tarball do GitHub veio incompleto. Causas comuns em ordem de probabilidade:
 
-Registrar em `igreen_endpoint_discovery`, inspecionar `sample_body` dos status 200 e escolher o vencedor para cada campo (pode ser 1 ou 2 endpoints).
+1. **Disco cheio na VPS** — checar `df -h` em `/etc/easypanel`. Solução: `docker system prune -af --volumes`.
+2. **Token GitHub expirado no Easypanel** — Settings → Git → reconectar app do GitHub.
+3. **Rate limit / rede intermitente** — retry manual do deploy.
 
-**2. Estender worker (VPS)**
-Adicionar no worker `igreen-worker`:
-- Função `fetchCustomerAddress(idcliente)` → chama endpoint vencedor
-- Função `fetchCustomerLicensee(idcliente)` → chama endpoint vencedor
-- Incluir os campos no payload do `/sync-all` (dentro do enrich, junto com boletos)
+Vou te entregar comandos de diagnóstico prontos (df, docker prune, teste manual do `git archive`) e, se for token, o passo-a-passo no Easypanel UI.
 
-**Nota:** worker roda em VPS Easypanel — deploy manual. Vou gerar o patch pronto para o usuário aplicar (`git pull && docker compose up -d --build`).
+**Observação:** esse erro é no `portal-worker`, não no `igreen-worker` que precisa do meu patch de sintaxe. Preciso confirmar se você tentou redeployar o worker errado, ou se ambos estão com o mesmo problema de disco/token.
 
-**3. Estender schema do Supabase (migration)**
-Adicionar em `igreen_seguros_customers` (ou tabela equivalente Phase 1):
-- `endereco_rua`, `endereco_numero`, `endereco_complemento`, `endereco_bairro`, `endereco_cidade`, `endereco_uf`, `endereco_cep`
-- `licenciado_nome`, `licenciado_codigo`
+### Depois que Trilha A entregar os endpoints
 
-**4. Atualizar `sync-igreen-customers` (edge function)**
-Mapear os novos campos do payload do worker para as colunas novas. Corrigir parser de `data_nascimento` (trocar formato `dd/mm/yyyy` para ISO correto).
+- **Passo 3 (worker):** adiciono `fetchCustomerAddress` + `fetchCustomerLicensee` no `igreen-worker/server.mjs` chamando os endpoints descobertos, e ligo no `/sync-all` enrich.
+- **Passo 4 (edge function):** atualizo `sync-igreen-customers` para mapear os campos novos + corrigir parser de `data_nascimento` (invertendo dd/mm).
+- **Passo 5 (validação):** rodo sync da Sandra, comparo 15/15 campos com o modal do escritório.
+- **Passo 6 (sync completo):** rodo para toda a carteira do Rafael, reporto estatísticas.
 
-**5. Rodar sync + validar 15/15 campos**
-Executar `sync-igreen-customers` para Sandra, ler linha do DB, comparar 1-a-1 com screenshot do modal escritório. Meta: 15/15 ✅.
+### Fora do escopo
 
-**6. Rodar sync completo**
-Após validação, rodar `sync-igreen-customers` sem filtro (todos os clientes da consultora) e reportar estatísticas: total, sucesso, falha, campos preenchidos.
+- Não mexo em `worker-portal-2`, cadastro, OTP, contratos.
+- Não crio migration nova de schema (colunas `address_*` já existem em `customers`).
 
-## Detalhes técnicos
+### Riscos
 
-- **Sem mudança de contrato do worker** para o Lovable além dos novos campos em `enrich` (backward-compatible).
-- **Sem alteração** em `worker-portal-2`, cadastro, OTP, contratos.
-- **Rate limit:** manter concorrência 3 no worker; endpoints extras multiplicam por ~2 as chamadas por cliente.
-- **Fallback:** se probe não achar endereço/licenciado em nenhum endpoint, reportar ao usuário e parar (não inventar).
-
-## Riscos
-
-- Worker precisa de redeploy manual (VPS) — vou entregar patch + comando exato.
-- Se iGreen bloquear login (Cloudflare/WAF), paro no passo 1.
+- Se o login pedir OTP/reCAPTCHA no Playwright, aviso e paro a Trilha A.
+- Se nenhum XHR de detalhe existir (SPA já ter tudo em memória do `/clientes-green` inicial), reporto e proponho alternativa (inspecionar payload da listagem completa).
