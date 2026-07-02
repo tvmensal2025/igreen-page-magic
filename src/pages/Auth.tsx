@@ -309,14 +309,14 @@ const Auth = () => {
         {forgotMode ? (
           <p className="text-center text-sm text-muted-foreground">
             Lembrou a senha?{" "}
-            <button onClick={() => setForgotMode(false)} className="text-primary font-semibold hover:underline underline-offset-4">
+            <button onClick={() => setForgotMode(false)} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
               Voltar ao login
             </button>
           </p>
         ) : !recoveryMode ? (
           <p className="text-center text-sm text-muted-foreground">
             {isLogin ? "Não tem conta?" : "Já tem conta?"}{" "}
-            <button onClick={() => setIsLogin(!isLogin)} className="text-primary font-semibold hover:underline underline-offset-4">
+            <button onClick={() => setIsLogin(!isLogin)} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
               {isLogin ? "Criar conta" : "Fazer login"}
             </button>
           </p>
