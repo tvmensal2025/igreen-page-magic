@@ -63,8 +63,9 @@ export async function casAssignPartner(
 }
 
 /**
- * Marca customer como precisando de revisão manual. Idempotente: se já
- * estava marcado, não sobrescreve o motivo original.
+ * Marca customer como precisando de revisão manual. Sempre grava o motivo
+ * mais recente — se o mesmo lead entrou por múltiplos motivos (ex.: pool
+ * vazia e depois erro de RPC), o admin vê a razão atual, não a antiga.
  */
 export async function markManualReview(
   supabase: SupabaseClient,
@@ -79,8 +80,7 @@ export async function markManualReview(
         manual_review_reason: reason,
         manual_review_at: new Date().toISOString(),
       })
-      .eq("id", customerId)
-      .eq("needs_manual_review", false);
+      .eq("id", customerId);
   } catch (e) {
     console.warn("[markManualReview] falhou:", (e as Error).message);
   }

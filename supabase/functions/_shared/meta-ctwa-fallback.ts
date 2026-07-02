@@ -50,14 +50,6 @@ export function matchesMetaCtwaPhrase(text: string | null | undefined): boolean 
   return false;
 }
 
-/**
- * @deprecated Removido pela blindagem do rodízio. Chamadas antigas caem
- * automaticamente na fila de revisão manual. Se algum código ainda importar
- * esta função, ela devolve `null` (nunca atribui campanha por chute).
- */
-export async function resolveSingleActivePool(
-  _supabase: unknown,
-  _consultantId: string,
-): Promise<null> {
-  return null;
-}
+// resolveSingleActivePool foi REMOVIDO — não reintroduzir. Se um caller
+// precisar reaparecer, use a fila de revisão manual em customers.needs_manual_review.
+

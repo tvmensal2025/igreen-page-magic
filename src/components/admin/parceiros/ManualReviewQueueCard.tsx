@@ -81,7 +81,8 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
     },
   });
 
-  // Realtime: atualiza a fila quando algo entra na revisão
+  // Realtime: atualiza a fila só quando needs_manual_review muda (evita
+  // refetch em cada update de qualquer cliente do consultor).
   useEffect(() => {
     if (!consultantId) return;
     const channel = supabase
@@ -94,7 +95,13 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
           table: "customers",
           filter: `consultant_id=eq.${consultantId}`,
         },
-        () => qc.invalidateQueries({ queryKey: ["manual-review-leads", consultantId] }),
+        (payload: any) => {
+          const before = payload?.old?.needs_manual_review;
+          const after = payload?.new?.needs_manual_review;
+          if (before === true || after === true) {
+            qc.invalidateQueries({ queryKey: ["manual-review-leads", consultantId] });
+          }
+        },
       )
       .subscribe();
     return () => {
@@ -110,16 +117,11 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
     }
     setAssigningId(lead.id);
     try {
-      const { error } = await supabase
-        .from("customers")
-        .update({
-          referral_partner_id: partnerId,
-          referral_detected_at: new Date().toISOString(),
-          needs_manual_review: false,
-        })
-        .eq("id", lead.id);
+      const { error } = await supabase.functions.invoke("assign-lead-manual", {
+        body: { customer_id: lead.id, partner_id: partnerId },
+      });
       if (error) throw error;
-      toast({ title: "Lead atribuído ao parceiro" });
+      toast({ title: "Lead atribuído — parceiro notificado no WhatsApp" });
       qc.invalidateQueries({ queryKey: ["manual-review-leads", consultantId] });
     } catch (e: any) {
       toast({ title: "Erro ao atribuir", description: e?.message, variant: "destructive" });
