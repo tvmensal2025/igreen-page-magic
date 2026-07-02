@@ -289,101 +289,29 @@ export function AcompanhamentoPanel({
         <VendasEmAndamentoPanel consultantId={consultantId} />
       </section>
 
-      {/* Ganhos Conexão Green — entrada + recorrente + carteira */}
-      <div className="rounded-xl border border-border/60 overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border/60 flex items-center justify-between gap-2 flex-wrap">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <Leaf className="h-4 w-4 text-primary" /> Ganhos Conexão Green
-          </h3>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className="text-[10px] gap-1 font-normal text-muted-foreground">
-              <RefreshCw className="h-3 w-3" />
-              {syncLabel}
-            </Badge>
-            <Badge variant="secondary" className="text-[10px] gap-1 font-semibold">
-              <Award className="h-3 w-3" />
-              {gradInfo.label} · +{bonusPct.toLocaleString("pt-BR")}% carreira
-            </Badge>
-            <EntradaRulesDialog consultantId={consultantId} />
+      {/* Ganhos Conexão Green migrou para /admin?tab=financeiro&sub=recebiveis */}
+      <a
+        href="/admin?tab=financeiro&sub=recebiveis"
+        className="block rounded-xl border border-border/60 bg-primary/5 hover:bg-primary/10 transition-colors p-4"
+      >
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Leaf className="h-4 w-4 text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Ganhos Conexão Green</p>
+              <p className="text-[11px] text-muted-foreground">
+                Entrada, recorrente e projeção 12 meses agora vivem em Financeiro → Recebíveis.
+              </p>
+            </div>
           </div>
+          <Badge variant="secondary" className="text-[10px] gap-1">
+            <Award className="h-3 w-3" />
+            {gradInfo.label} · +{bonusPct}% carreira
+          </Badge>
+          <span className="text-primary text-xs font-medium">Abrir Recebíveis →</span>
         </div>
+      </a>
 
-        {/* Graduação + valor do bônus — sempre visível */}
-        <div className="px-4 py-3 bg-primary/5 border-b border-border/40 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-xs font-medium text-foreground">
-              Plano de carreira: {gradInfo.label}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              Bônus somado ao recorrente: <span className="text-primary font-semibold">+{bonusPct.toLocaleString("pt-BR")}%</span>
-              {" "}· ex.: fatura {BRL(exemploFatura)} → +{BRL(bonusExemploMensal)}/mês só de carreira
-            </p>
-          </div>
-          <p className="text-[10px] text-muted-foreground">
-            Altere em Dados → Plano de Carreira
-          </p>
-        </div>
-
-        {/* Breakdown carteira sync */}
-        {greenGains?.portfolio && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 px-4 py-3 border-b border-border/40 bg-muted/20">
-            <StatPill label="Total sync" value={greenGains.portfolio.totalSync} />
-            <StatPill label="Diretos (CP)" value={greenGains.portfolio.diretosCp} highlight />
-            <StatPill label="Validados iGreen" value={greenGains.portfolio.validadosIgreen} />
-            <StatPill label="Validados CRM" value={greenGains.portfolio.validadosCrm} />
-            <StatPill label="Falta assinatura" value={greenGains.portfolio.faltaAssinatura} />
-            <StatPill label="Fatura informada" value={greenGains.portfolio.comFaturaReal} />
-            <StatPill label="Fatura estimada" value={greenGains.portfolio.comFaturaEstimada} />
-          </div>
-        )}
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 p-4">
-          <SummaryCard
-            icon={<HandCoins className="h-4 w-4" />}
-            label="Entrada agora (mês)"
-            value={BRL(greenGains?.entradaImediata ?? 0)}
-            hint={`${greenGains?.validadosMes ?? 0} validados CRM seus no mês`}
-          />
-          <SummaryCard
-            icon={<Hourglass className="h-4 w-4" />}
-            label="Entrada a receber"
-            value={BRL(greenGains?.entradaDiferida ?? 0)}
-            hint="2ª parcela (90 dias)"
-          />
-          <SummaryCard
-            icon={<Repeat className="h-4 w-4" />}
-            label="Recorrente CRM/mês"
-            value={BRL(greenGains?.recorrenteMensal ?? 0)}
-            hint={`${greenGains?.portfolio?.validadosCrm ?? 0} validados no CRM · inclui +${bonusPct}% carreira`}
-          />
-          <SummaryCard
-            icon={<TrendingUp className="h-4 w-4" />}
-            label="Potencial iGreen/mês"
-            value={BRL(greenGains?.recorrentePotencial ?? 0)}
-            hint={`${greenGains?.portfolio?.validadosIgreen ?? 0} Validados iGreen · fatura estimada por consumo`}
-          />
-        </div>
-        {(greenGains?.semFatura ?? 0) > 0 && (
-          <div className="px-4 pb-3 -mt-1">
-            <p className="text-[11px] text-warning flex items-center gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              {greenGains?.semFatura} cliente(s) validado(s) sem valor de fatura — informe no painel abaixo ou no Pós-Venda.
-            </p>
-          </div>
-        )}
-        {entradaRules.length === 0 && (
-          <div className="px-4 pb-3 -mt-1">
-            <p className="text-[11px] text-muted-foreground">
-              Você ainda não cadastrou faixas de entrada. Clique em <span className="font-medium">Regras de entrada</span> para definir
-              quantas pessoas valem cada % por distribuidora.
-            </p>
-          </div>
-        )}
-        <p className="px-4 pb-3 text-[10px] text-muted-foreground">
-          Entrada paga uma vez por cliente (parcela agora + parcela depois). Recorrente se repete todo mês.
-          Valores estimados — o oficial é o do portal iGreen.
-        </p>
-      </div>
 
       {/* Faturas Green — acompanhamento de valor de conta (não é cobrança/NF) */}
       <div className="rounded-xl border border-border/60 overflow-hidden">
