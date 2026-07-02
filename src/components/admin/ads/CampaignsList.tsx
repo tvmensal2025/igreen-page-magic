@@ -108,7 +108,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       const [campsRes, settingsRes] = await Promise.all([
         supabase
           .from("facebook_campaigns")
-          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at")
+          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at,thumbnail_url,creative_format")
           .eq("consultant_id", consultantId)
           .order("created_at", { ascending: false }),
         supabase
