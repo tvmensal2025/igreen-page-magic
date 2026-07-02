@@ -1096,6 +1096,152 @@ const server = http.createServer(async (req, res) => {
         results,
       });
     }
+
+    // /spy-spa-detail: navega o SPA logado (escritorio.igreenenergy.com.br/clientes-green),
+    // clica em um card (por idcliente/nome ou o 1º disponível) e captura TODAS as
+    // requisições que o front dispara para api-vo.igreenenergy.com.br/v1/*.
+    // Retorna as URLs + status + amostra do JSON, e destaca as "winners" que
+    // provavelmente representam o detalhe do cliente (contêm o idcliente/nome
+    // ou trazem campos de endereço/licenciado). Objetivo: descobrir o endpoint
+    // real de detalhe para o próximo passo (enrich em massa).
+    if (req.url === '/spy-spa-detail') {
+      const s = await getOrCreateSession(email, password);
+      const idcliente = body.idcliente ? String(body.idcliente) : null;
+      const nomeAlvo = body.nome ? String(body.nome).toUpperCase() : null;
+
+      // Coletor de requests/responses para api-vo.
+      const captured = new Map(); // key = method+url → { status, sample, ms, size }
+      const started = Date.now();
+      const reqListener = (r) => {
+        const u = r.url();
+        if (!u.includes('api-vo.igreenenergy.com.br')) return;
+        const key = r.method() + ' ' + u;
+        if (!captured.has(key)) {
+          captured.set(key, { method: r.method(), url: u, t_start: Date.now() - started });
+        }
+      };
+      const respListener = async (resp) => {
+        const u = resp.url();
+        if (!u.includes('api-vo.igreenenergy.com.br')) return;
+        const key = resp.request().method() + ' ' + u;
+        const rec = captured.get(key) || { method: resp.request().method(), url: u };
+        rec.status = resp.status();
+        rec.content_type = resp.headers()['content-type'] || '';
+        try {
+          const buf = await resp.body();
+          rec.size = buf.length;
+          rec.sample = buf.toString('utf8').slice(0, 4000);
+        } catch (e) {
+          rec.sample = `<<body_err: ${e.message}>>`;
+        }
+        rec.t_end = Date.now() - started;
+        captured.set(key, rec);
+      };
+      s.page.on('request', reqListener);
+      s.page.on('response', respListener);
+
+      const steps = [];
+      const step = (name, extra = {}) => steps.push({ t: Date.now() - started, name, ...extra });
+
+      try {
+        step('nav_clientes_green');
+        try {
+          await s.page.goto('https://escritorio.igreenenergy.com.br/clientes-green', {
+            waitUntil: 'domcontentloaded', timeout: 45000,
+          });
+        } catch (e) {
+          step('nav_err', { message: e.message });
+        }
+        try { await s.page.waitForLoadState('networkidle', { timeout: 15000 }); } catch {}
+        step('list_loaded');
+        await snapStep(s.page, 'spy_lista');
+
+        // Estratégia de clique: procura em todos os cards um que contenha o
+        // idcliente ou o nome; se não achar, clica no 1º card visível.
+        // Faz até 3 tentativas (cards podem estar dentro de accordions).
+        let clicked = false;
+        const alvoTexto = idcliente || nomeAlvo;
+        for (let attempt = 1; attempt <= 3 && !clicked; attempt++) {
+          if (attempt > 1) await s.page.waitForTimeout(1500);
+          const result = await s.page.evaluate((alvo) => {
+            const norm = (x) => String(x || '').toUpperCase();
+            const target = norm(alvo);
+            // Candidatos: qualquer elemento interativo que pareça um card
+            const nodes = Array.from(document.querySelectorAll(
+              '[class*="card" i], [class*="cliente" i], [class*="row" i], li, tr, button, a, div'
+            ));
+            let match = null;
+            if (target) {
+              for (const n of nodes) {
+                const txt = norm(n.innerText || '');
+                if (!txt || txt.length > 800) continue;
+                if (txt.includes(target)) {
+                  // pega o mais interno (menor)
+                  if (!match || n.innerText.length < match.innerText.length) match = n;
+                }
+              }
+            }
+            if (!match) {
+              // fallback: 1º card do kanban
+              match = document.querySelector('[class*="card" i]:not([class*="header" i])') ||
+                      document.querySelector('li,tr,button');
+            }
+            if (match) {
+              match.scrollIntoView({ block: 'center' });
+              try { match.click(); return { clicked: true, text: (match.innerText || '').slice(0, 200) }; }
+              catch (e) { return { clicked: false, error: String(e.message) }; }
+            }
+            return { clicked: false, error: 'no_card_found' };
+          }, alvoTexto);
+          if (result.clicked) {
+            clicked = true;
+            step('card_clicked', { text: result.text });
+          } else {
+            step('card_click_fail', { attempt, error: result.error });
+          }
+        }
+
+        // Espera adicional para XHRs do detalhe
+        await s.page.waitForTimeout(6000);
+        try { await s.page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+        step('collected');
+        await snapStep(s.page, 'spy_pos_clique');
+      } finally {
+        s.page.off('request', reqListener);
+        s.page.off('response', respListener);
+      }
+
+      const all = Array.from(captured.values()).sort((a, b) => (a.t_start || 0) - (b.t_start || 0));
+      // Heurística de "winner": path com id numérico OU sample contém campos de endereço/licenciado
+      const alvoUp = (idcliente || nomeAlvo || '').toUpperCase();
+      const winners = all.filter((r) => {
+        if (!r.sample) return false;
+        const upperSample = r.sample.toUpperCase();
+        if (alvoUp && upperSample.includes(alvoUp)) return true;
+        if (/"endereco|"cep"|"bairro"|"logradouro"|"licenciad/i.test(r.sample)) return true;
+        return false;
+      });
+
+      return sendJson(res, 200, {
+        ok: true,
+        consultor_id: s.consultorId,
+        target: { idcliente, nome: nomeAlvo },
+        elapsed_ms: Date.now() - started,
+        total_requests: all.length,
+        winners: winners.map((w) => ({
+          method: w.method, url: w.url, status: w.status,
+          size: w.size, sample: (w.sample || '').slice(0, 2000),
+        })),
+        requests: all.map((r) => ({
+          method: r.method, url: r.url, status: r.status,
+          content_type: r.content_type, size: r.size,
+          t_start: r.t_start, t_end: r.t_end,
+          sample: (r.sample || '').slice(0, 800),
+        })),
+        steps,
+      });
+    }
+
     return sendJson(res, 404, { ok: false, error: 'not_found' });
     });
 
