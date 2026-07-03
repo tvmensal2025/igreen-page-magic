@@ -1444,18 +1444,11 @@ Deno.serve(async (req) => {
     }
 
     // Modo operacional curto: grava clientes inline e só responde quando terminou.
-    // sync_all agora também responde só depois da Fase A, para o botão não indicar
-    // conclusão antes de Matias/qualquer cliente já estar persistido na carteira.
-    if (mode === "sync_all" || mode === "sync_now" || mode === "sync_customers_now") {
+    // sync_all padrão fica no bloco de background abaixo para evitar cancelamento
+    // do cliente HTTP; dentro do background ele executa Fase A antes dos extras.
+    if (mode === "sync_now" || mode === "sync_customers_now") {
       const runId = await logSyncStart(supabase, consultantId, mode);
-      const r = await syncOneConsultant(
-        supabase,
-        worker,
-        portalEmail!,
-        portalPassword!,
-        consultantId,
-        mode === "sync_all" ? "sync_all" : "sync",
-      );
+      const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, "sync");
       await logSyncFinish(supabase, runId, consultantId, r);
       return new Response(JSON.stringify(r), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
