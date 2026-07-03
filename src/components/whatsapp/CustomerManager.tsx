@@ -165,6 +165,8 @@ export function CustomerManager({
     return energiaBase;
   }, [energiaBase, telecomAsCustomers, segurosAsCustomers, selectedTipo]);
 
+  const dealsByCustomer = useCustomerDeals(consultantId, myCustomers);
+
 
   // Fetch last sync timestamp
   useEffect(() => {
