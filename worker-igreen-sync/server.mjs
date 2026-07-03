@@ -1019,17 +1019,13 @@ const server = http.createServer(async (req, res) => {
       ]);
       // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
       // concessionária, PJ, procurador, login distribuidora) de TODOS os
-      // clientes do Kanban — sem filtro de status. Throttle ~5 req/s.
+      // clientes do Kanban — sem filtro de status. Pool paralelo (concurrency=6)
+      // para caber dentro do timeout de 150s da edge function.
       let details = [];
       if (body.enrich === true) {
         const targets = customers.filter((c) => !!c.codigo);
         const limit = Number(body.enrich_limit) > 0 ? Math.min(targets.length, Number(body.enrich_limit)) : targets.length;
-        for (let i = 0; i < limit; i++) {
-          const id = targets[i].codigo;
-          try { const d = await fetchCustomerFull(s, id); if (d) details.push(d); }
-          catch (e) { dbg(`[enrich] ${id}: ${e.message}`); }
-          await new Promise((r) => setTimeout(r, 200)); // ~5 req/s
-        }
+        details = await enrichMany(s, targets.slice(0, limit).map((t) => t.codigo));
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
