@@ -682,27 +682,67 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
   if (!consultantId || !Array.isArray(details) || details.length === 0) return { details_applied: 0 };
   let applied = 0;
   for (const d of details) {
-    const code = safeStr(d.idcliente);
+    // idcliente pode vir como `idcliente` (api-green-connection) ou `idcliente`
+    // já injetado pelo worker no fetchCustomerFull.
+    const code = safeStr(d.idcliente || d.id);
     if (!code) continue;
     const patch: Record<string, unknown> = {};
-    const cpf = safeStr(d.cpf); if (cpf) patch.cpf = cpf.replace(/\D/g, "");
-    const inst = safeStr(d.instalacao); if (inst) patch.numero_instalacao = inst;
-    const numCli = safeStr(d.numCliente); if (numCli) patch.num_cliente_distribuidora = numCli;
+    // Documento
+    const cpf = safeStr(d.cpf_cnpj || d.cpf); if (cpf) patch.cpf = cpf.replace(/\D/g, "");
+    // Instalação / distribuidora
+    const inst = safeStr(d.numinstalacao || d.instalacao); if (inst) patch.numero_instalacao = inst;
+    const numCli = safeStr(d.num_cliente_distribuidora || d.numCliente); if (numCli) patch.num_cliente_distribuidora = numCli;
     const conc = safeStr(d.concessionaria); if (conc) { patch.concessionaria = conc; patch.distribuidora = conc; }
     const forn = safeStr(d.fornecedora); if (forn) patch.fornecedora = forn;
     const sit = safeStr(d.situacao); if (sit) patch.situacao_igreen = sit;
     if (typeof d.trocaTitularidade === "boolean") patch.transferir_titularidade = d.trocaTitularidade;
+    if (typeof d.transferir_titularidade === "boolean") patch.transferir_titularidade = d.transferir_titularidade;
     if (typeof d.contaUnica === "boolean") patch.contaunica = d.contaUnica;
-    const consumo = safeNum(d.consumo); if (consumo != null) patch.media_consumo = consumo;
+    if (typeof d.contaunica === "boolean") patch.contaunica = d.contaunica;
+    if (typeof d.possui_placas === "boolean") patch.possui_placas = d.possui_placas;
+    // Consumo / datas
+    const consumo = safeNum(d.consumomedio ?? d.consumo); if (consumo != null) patch.media_consumo = consumo;
+    const desc = safeNum(d.desconto_cliente); if (desc != null) patch.desconto_cliente = desc;
     const dAtivo = safeStr(d.dataAtivo); if (dAtivo && /^\d{4}-\d{2}-\d{2}/.test(dAtivo)) patch.data_ativo_igreen = dAtivo.slice(0, 10);
     const dInj = safeStr(d.dataInjecao); if (dInj && /^\d{4}-\d{2}-\d{2}/.test(dInj)) patch.data_injecao_igreen = dInj.slice(0, 10);
-    // Novos: campos que vêm no detail (/clientes-green/boletos/{id}) e não estavam sendo aplicados
+    // Pessoais
     const lic = safeStr(d.licenciado); if (lic) patch.registered_by_name = lic;
-    const nasc = safeStr(d.nascimento); if (nasc && /^\d{4}-\d{2}-\d{2}/.test(nasc)) patch.data_nascimento = nasc.slice(0, 10);
+    const nasc = safeStr(d.dtnasc || d.nascimento);
+    if (nasc && /^\d{4}-\d{2}-\d{2}/.test(nasc)) patch.data_nascimento = nasc.slice(0, 10);
     const email = safeStr(d.email); if (email) patch.email = email;
+    const cel = safeStr(d.celular); if (cel) patch.phone_whatsapp = normalizePhone(String(cel));
+    // Endereço COMPLETO (novo)
+    const cep = safeStr(d.cep); if (cep) patch.cep = cep.replace(/\D/g, "");
+    const rua = safeStr(d.endereco || d.logradouro); if (rua) patch.address_street = rua;
+    const num = safeStr(d.numero); if (num) patch.address_number = num;
+    const compl = safeStr(d.complemento); if (compl) patch.address_complement = compl;
+    const bairro = safeStr(d.bairro); if (bairro) patch.address_neighborhood = bairro;
     const cid = safeStr(d.cidade); if (cid) patch.address_city = cid;
     const uf = safeStr(d.uf); if (uf) patch.address_state = uf.toUpperCase();
-    const cel = safeStr(d.celular); if (cel) patch.phone_whatsapp = normalizePhone(String(cel));
+    // Credenciais da distribuidora (apenas login — senha NÃO sincronizamos por decisão)
+    const loginDist = safeStr(d.logindistribuidora); if (loginDist) patch.logindistribuidora = loginDist;
+    // PJ (dump agregado no jsonb, se qualquer campo de PJ presente)
+    const pjRazao = safeStr(d.razao);
+    const pjCnpj = safeStr(d.cnpj);
+    if (pjRazao || pjCnpj || d.fantasia || d.naturezajuridica || d.cargo || d.ie || d.localregistro) {
+      patch.pj_jsonb = {
+        cnpj: pjCnpj, razao: pjRazao, fantasia: safeStr(d.fantasia),
+        naturezajuridica: safeStr(d.naturezajuridica), cargo: safeStr(d.cargo),
+        ie: safeStr(d.ie), localregistro: safeStr(d.localregistro),
+      };
+      patch.possui_pj = true;
+    }
+    // Procurador
+    const procNome = safeStr(d.testemunha_nome || d.procurador_nome);
+    if (procNome) {
+      patch.procurador_jsonb = {
+        nome: procNome, cpf: safeStr(d.testemunha_cpf || d.procurador_cpf),
+        datanasc: safeStr(d.testemunha_datanasc || d.procurador_datanasc),
+        email: safeStr(d.testemunha_email || d.procurador_email),
+        celular: safeStr(d.testemunha_celular || d.procurador_celular),
+      };
+      patch.possui_procurador = true;
+    }
     patch.last_enriched_at = new Date().toISOString();
     if (Object.keys(patch).length === 1) continue; // apenas last_enriched_at
 
@@ -714,6 +754,35 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     if (!error) applied++;
   }
   return { details_applied: applied };
+}
+
+// Marca clientes que sumiram da carteira do portal.
+// Todo customer com customer_origin='igreen_sync' desse consultor que NÃO
+// veio no batch atual do Kanban recebe situacao_igreen='fora_da_carteira'.
+// deno-lint-ignore no-explicit-any
+async function markOutOfPortfolio(supabase: any, consultantId: string | null, customersBatch: any[]): Promise<Record<string, unknown>> {
+  if (!consultantId || !Array.isArray(customersBatch) || customersBatch.length === 0) {
+    return { out_of_portfolio_marked: 0, skipped: true };
+  }
+  const codes = customersBatch
+    .map((c: any) => safeStr(c?.igreen_code || c?.codigo))
+    .filter((v): v is string => !!v);
+  if (codes.length === 0) return { out_of_portfolio_marked: 0, skipped: true };
+
+  const { data, error } = await supabase
+    .from("customers")
+    .update({ situacao_igreen: "fora_da_carteira" })
+    .eq("consultant_id", consultantId)
+    .eq("customer_origin", "igreen_sync")
+    .not("igreen_code", "is", null)
+    .not("igreen_code", "in", `(${codes.map((c) => `"${c}"`).join(",")})`)
+    .neq("situacao_igreen", "fora_da_carteira")
+    .select("id");
+  if (error) {
+    console.error("markOutOfPortfolio:", error.message);
+    return { out_of_portfolio_marked: 0, error: error.message };
+  }
+  return { out_of_portfolio_marked: data?.length || 0 };
 }
 
 async function syncOneConsultant(
