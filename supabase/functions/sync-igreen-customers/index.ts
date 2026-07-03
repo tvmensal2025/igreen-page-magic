@@ -273,6 +273,28 @@ async function logSyncStart(supabase: any, consultantId: string | null, mode: st
 }
 
 // deno-lint-ignore no-explicit-any
+async function updateAutomationTimestamps(supabase: any, consultantId: string | null, result: Record<string, unknown>): Promise<void> {
+  if (!consultantId || !result?.success) return;
+  const now = new Date().toISOString();
+  const updates: Record<string, string> = {};
+  const map: Record<string, string> = {
+    customers: "last_sync_customers",
+    boletos: "last_sync_boletos",
+    devolutivas: "last_sync_devolutivas",
+    metrics: "last_sync_metrics",
+    network: "last_sync_network",
+    telecom: "last_sync_telecom",
+    seguros: "last_sync_seguros",
+    cashback: "last_sync_cashback",
+  };
+  for (const [k, col] of Object.entries(map)) if (result[k] != null) updates[col] = now;
+  if (Object.keys(updates).length > 0) {
+    await supabase.from("igreen_automation_settings")
+      .upsert({ consultant_id: consultantId, ...updates }, { onConflict: "consultant_id" });
+  }
+}
+
+// deno-lint-ignore no-explicit-any
 async function logSyncFinish(
   supabase: any,
   runId: string | null,
@@ -283,7 +305,7 @@ async function logSyncFinish(
   const errText = success ? null : String(result?.error || "");
   const status = success ? "ok" : classifyError(errText || undefined);
   const counts: Record<string, unknown> = {};
-  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts"]) {
+  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background"]) {
     if (result[k] != null) counts[k] = result[k];
   }
   if (runId) {
@@ -298,26 +320,149 @@ async function logSyncFinish(
       igreen_credential_error: errText,
     }).eq("id", consultantId);
   }
-  // Atualiza last_sync_* em igreen_automation_settings quando aplicável
-  if (consultantId && success) {
-    const now = new Date().toISOString();
-    const updates: Record<string, string> = {};
-    const map: Record<string, string> = {
-      customers: "last_sync_customers",
-      boletos: "last_sync_boletos",
-      devolutivas: "last_sync_devolutivas",
-      metrics: "last_sync_metrics",
-      network: "last_sync_network",
-      telecom: "last_sync_telecom",
-      seguros: "last_sync_seguros",
-      cashback: "last_sync_cashback",
-    };
-    for (const [k, col] of Object.entries(map)) if (result[k] != null) updates[col] = now;
-    if (Object.keys(updates).length > 0) {
-      await supabase.from("igreen_automation_settings")
-        .upsert({ consultant_id: consultantId, ...updates }, { onConflict: "consultant_id" });
-    }
+  await updateAutomationTimestamps(supabase, consultantId, result);
+}
+
+const DEFAULT_IGREEN_TOGGLES: Record<string, boolean> = {
+  capture_boletos: true,
+  capture_devolutivas: true,
+  capture_telecom: true,
+  capture_seguros: true,
+  capture_cashback: true,
+  alert_boletos_vencendo: true,
+  alert_devolutivas: true,
+  alert_licencas_expirando: true,
+  rotinas_tarefas: true,
+  auto_wa_boleto_vencendo: true,
+  auto_wa_aniversariante: false,
+  cross_sell_bot: true,
+};
+
+// deno-lint-ignore no-explicit-any
+async function loadIgreenToggles(supabase: any, consultantId: string | null): Promise<Record<string, boolean>> {
+  let toggles: Record<string, boolean> = { ...DEFAULT_IGREEN_TOGGLES };
+  if (consultantId) {
+    const { data: t } = await supabase
+      .from("igreen_automation_settings")
+      .select("*")
+      .eq("consultant_id", consultantId)
+      .maybeSingle();
+    if (t) toggles = { ...DEFAULT_IGREEN_TOGGLES, ...(t as Record<string, boolean>) };
   }
+
+  const autoEnabled: string[] = [];
+  if (toggles.alert_boletos_vencendo && !toggles.capture_boletos) { toggles.capture_boletos = true; autoEnabled.push("capture_boletos"); }
+  if (toggles.alert_devolutivas && !toggles.capture_devolutivas) { toggles.capture_devolutivas = true; autoEnabled.push("capture_devolutivas"); }
+  if (autoEnabled.length) console.log(`[sync-all] auto-enabled for run: ${autoEnabled.join(",")}`);
+  return toggles;
+}
+
+function buildExtrasOnly(toggles: Record<string, boolean>): string[] {
+  const only = ["network", "metrics"];
+  if (toggles.capture_boletos) only.push("boletos");
+  if (toggles.capture_telecom) only.push("telecom");
+  if (toggles.capture_seguros) only.push("seguros");
+  if (toggles.capture_devolutivas) only.push("devolutivas");
+  if (toggles.capture_cashback) only.push("cashback");
+  return only;
+}
+
+function extractCustomerCodes(customers: any[]): string[] {
+  const seen = new Set<string>();
+  const codes: string[] = [];
+  for (const c of customers || []) {
+    const code = safeStr(c?.codigo || c?.codigoIgreen || c?.codigoCliente || c?.idcliente || c?.id || c?.igreen_code);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    codes.push(code);
+  }
+  return codes;
+}
+
+// Fase B do sync_all: extras + enriquecimento. Nunca é pré-requisito para o
+// cliente aparecer na carteira; a Fase A já persistiu todos do Kanban.
+// deno-lint-ignore no-explicit-any
+async function runSyncAllBackgroundPhase(
+  supabase: any,
+  worker: { url: string; secret: string },
+  portalEmail: string,
+  portalPassword: string,
+  consultantId: string | null,
+  toggles: Record<string, boolean>,
+  baseCustomers: any[],
+): Promise<void> {
+  const emailNorm = String(portalEmail || "").trim().toLowerCase();
+  const passwordNorm = String(portalPassword || "");
+  const runId = await logSyncStart(supabase, consultantId, "sync_all_background");
+  const out: Record<string, unknown> = { success: true, mode: "sync_all_background", email: emailNorm };
+  try {
+    const r = await callWorker(worker, "/sync-all", {
+      portal_email: emailNorm,
+      portal_password: passwordNorm,
+      only: buildExtrasOnly(toggles),
+      enrich: false,
+    });
+    if (!r.ok) {
+      out.success = false;
+      out.error = `Worker falhou nos extras: ${r.error}`;
+      return;
+    }
+
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
+
+    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
+    catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
+    out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
+    if (toggles.capture_boletos) out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
+    if (toggles.capture_telecom) out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
+    if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
+    if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
+    if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
+    out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
+
+    const started = Date.now();
+    let detailsApplied = 0;
+    let detailsReceived = 0;
+    const codes = extractCustomerCodes(baseCustomers);
+    for (let i = 0; i < codes.length; i += 30) {
+      if (Date.now() - started > 100_000) {
+        out.details_stopped_reason = "edge_time_budget";
+        break;
+      }
+      const chunk = codes.slice(i, i + 30);
+      const er = await callWorker(worker, "/enrich-batch", {
+        portal_email: emailNorm,
+        portal_password: passwordNorm,
+        codigos: chunk,
+      });
+      if (!er.ok) {
+        out.details_error = `Worker falhou no enrich ${i}-${i + chunk.length}: ${er.error}`;
+        break;
+      }
+      const details = er.data?.details || [];
+      detailsReceived += details.length;
+      const applied = await applyCustomerDetails(supabase, consultantId, details);
+      detailsApplied += Number(applied.details_applied || 0);
+    }
+    out.details = { details_received: detailsReceived, details_applied: detailsApplied, total_codes: codes.length };
+    await supabase.from("settings").upsert({ key: "last_igreen_sync_background", value: new Date().toISOString() }, { onConflict: "key" });
+  } catch (err) {
+    out.success = false;
+    out.error = err instanceof Error ? err.message : String(err);
+    console.error("[sync-all background]", err);
+  } finally {
+    await logSyncFinish(supabase, runId, consultantId, out);
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+function scheduleSyncAllBackgroundPhase(...args: any[]): void {
+  const task = runSyncAllBackgroundPhase(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+  // @ts-ignore EdgeRuntime existe no Supabase edge runtime
+  try { EdgeRuntime.waitUntil(task); } catch { /* se não houver EdgeRuntime, task já iniciou */ }
 }
 
 // =====================================================
@@ -813,44 +958,13 @@ async function syncOneConsultant(
   if (mode === "sync_all") {
     console.log(`[worker] sync-all for ${emailNorm}`);
 
-    // Toggles do consultor. Se não houver linha ainda, tratamos captura+alertas como
-    // ligados (envio proativo ao cliente permanece off). Isso evita a "corrida"
-    // entre criar o consultor e configurar toggles: sync novo já traz tudo.
-    const DEFAULT_ON: Record<string, boolean> = {
-      capture_boletos: true,
-      capture_devolutivas: true,
-      capture_telecom: true,
-      capture_seguros: true,
-      capture_cashback: true,
-      alert_boletos_vencendo: true,
-      alert_devolutivas: true,
-      alert_licencas_expirando: true,
-      rotinas_tarefas: true,
-      auto_wa_boleto_vencendo: true,
-      auto_wa_aniversariante: false,
-      cross_sell_bot: true,
-    };
-    let toggles: Record<string, boolean> = { ...DEFAULT_ON };
-    if (consultantId) {
-      const { data: t } = await supabase
-        .from("igreen_automation_settings")
-        .select("*")
-        .eq("consultant_id", consultantId)
-        .maybeSingle();
-      if (t) toggles = { ...DEFAULT_ON, ...(t as Record<string, boolean>) };
-    }
-    // Consistência captura↔alerta: se o alerta está ligado, força a captura
-    // correspondente para esta rodada (não persiste na tabela).
-    const autoEnabled: string[] = [];
-    if (toggles.alert_boletos_vencendo && !toggles.capture_boletos) { toggles.capture_boletos = true; autoEnabled.push("capture_boletos"); }
-    if (toggles.alert_devolutivas && !toggles.capture_devolutivas) { toggles.capture_devolutivas = true; autoEnabled.push("capture_devolutivas"); }
-    if (autoEnabled.length) console.log(`[sync-all] auto-enabled for run: ${autoEnabled.join(",")}`);
+    const toggles = await loadIgreenToggles(supabase, consultantId);
 
     const out: Record<string, unknown> = { success: true, mode: "sync_all", email: emailNorm, toggles };
 
-    // Primeiro salva a lista-base de clientes numa chamada curta. Assim, mesmo
-    // se o enriquecimento completo/extras demorarem ou o Edge encerrar o worker
-    // em background, nenhum cliente do Kanban fica sem ser criado/atualizado.
+    // Fase A: salva a lista-base de clientes numa chamada curta. Essa é a parte
+    // que não pode falhar por timeout de enriquecimento/extras: cliente do Kanban
+    // precisa aparecer em "Meus clientes" imediatamente.
     const base = await callWorker(worker, "/sync-customers", {
       portal_email: emailNorm,
       portal_password: passwordNorm,
@@ -863,50 +977,24 @@ async function syncOneConsultant(
     }
     try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
     catch (e) { out.customers_error = e instanceof Error ? e.message : String(e); }
-
-    // Base sempre coletada; extras conforme toggle.
-    const only = ["customers", "network", "metrics"];
-    if (toggles.capture_boletos) only.push("boletos");
-    if (toggles.capture_telecom) only.push("telecom");
-    if (toggles.capture_seguros) only.push("seguros");
-    if (toggles.capture_devolutivas) only.push("devolutivas");
-    if (toggles.capture_cashback) only.push("cashback");
-
-    const r = await callWorker(worker, "/sync-all", {
-      portal_email: emailNorm,
-      portal_password: passwordNorm,
-      only,
-      enrich: true,
-    });
-    if (!r.ok) {
-      out.extras_error = `Worker falhou nos detalhes/extras: ${r.error}`;
-      return out;
-    }
-
-    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
-    if (consultantId && consultorId) {
-      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
-    }
-
-    // Base
-    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
-    catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
-    out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
-    out.details = await applyCustomerDetails(supabase, consultantId, r.data?.details || []);
-    out.portfolio = await markOutOfPortfolio(supabase, consultantId, r.data?.customers || []);
-    // Extras (só se o toggle correspondente estiver ligado)
-    if (toggles.capture_boletos) out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
-    if (toggles.capture_telecom) out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
-    if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
-    if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
-    if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
-
-    // Alertas acionáveis (só se o toggle de alerta estiver ligado)
-    out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
+    out.portfolio = await markOutOfPortfolio(supabase, consultantId, base.data?.customers || []);
 
     const syncTimestamp = new Date().toISOString();
     await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
     out.synced_at = syncTimestamp;
+    out.background = { extras_and_enrich: "started" };
+
+    // Fase B: extras + enriquecimento em background. Se ela falhar ou demorar,
+    // a carteira já está consistente e pesquisável.
+    scheduleSyncAllBackgroundPhase(
+      supabase,
+      worker,
+      emailNorm,
+      passwordNorm,
+      consultantId,
+      toggles,
+      base.data?.customers || [],
+    );
     return out;
   }
 
@@ -988,9 +1076,10 @@ async function syncOneConsultant(
     return { success: false, email: emailNorm, error: "Nenhum cliente retornado pelo worker." };
   }
   const cust = await persistCustomers(supabase, consultantId, allCustomers);
+  const portfolio = await markOutOfPortfolio(supabase, consultantId, allCustomers);
   const syncTimestamp = new Date().toISOString();
   await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
-  return { success: true, email: emailNorm, synced_at: syncTimestamp, ...cust };
+  return { success: true, email: emailNorm, synced_at: syncTimestamp, customers: cust, portfolio };
 }
 
 // deno-lint-ignore no-explicit-any

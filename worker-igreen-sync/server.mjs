@@ -18,6 +18,7 @@
 //   POST /sync-customers     { portal_email, portal_password }
 //   POST /sync-network       { portal_email, portal_password, month? }
 //   POST /sync-metrics       { portal_email, portal_password, month? }
+//   POST /enrich-batch       { portal_email, portal_password, codigos: [...] }
 //   POST /sync-all           { portal_email, portal_password, month? }  (recomendado)
 
 import http from 'node:http';
@@ -635,21 +636,43 @@ async function fetchCustomerFull(session, idcliente) {
 
 // Enrich em pool paralelo (concurrency limitada). Reduz N * latência para
 // N/CONC * latência. Sem sleep entre requests — o pool já limita a taxa.
-async function enrichMany(session, codigos, concurrency = 6) {
+// `timeoutMs` impede um batch de segurar a Edge indefinidamente.
+async function enrichMany(session, codigos, concurrency = 6, timeoutMs = 90000) {
   const out = [];
   const queue = codigos.slice();
+  const deadline = Date.now() + timeoutMs;
   let active = 0;
+  let settled = false;
   return await new Promise((resolve) => {
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve(out);
+    };
+    const timer = setTimeout(() => {
+      dbg(`[enrich] timeout ${timeoutMs}ms; retornando ${out.length}/${codigos.length}`);
+      queue.length = 0;
+      if (active === 0) finish();
+    }, timeoutMs).unref?.();
     const kick = () => {
-      if (queue.length === 0 && active === 0) return resolve(out);
-      while (active < concurrency && queue.length > 0) {
+      if (settled) return;
+      if (queue.length === 0 && active === 0) {
+        clearTimeout(timer);
+        return finish();
+      }
+      while (active < concurrency && queue.length > 0 && Date.now() < deadline) {
         const id = queue.shift();
         active++;
         fetchCustomerFull(session, id)
           .then((d) => { if (d) out.push(d); })
           .catch((e) => dbg(`[enrich] ${id}: ${e.message}`))
-          .finally(() => { active--; kick(); });
+          .finally(() => {
+            active--;
+            if (Date.now() >= deadline) queue.length = 0;
+            kick();
+          });
       }
+      if (Date.now() >= deadline) queue.length = 0;
     };
     kick();
   });
@@ -1029,8 +1052,8 @@ const server = http.createServer(async (req, res) => {
       const codigos = Array.isArray(body.codigos) ? body.codigos.map(String).filter(Boolean) : [];
       if (codigos.length === 0) return sendJson(res, 400, { ok: false, error: 'codigos vazio' });
       const s = await getOrCreateSession(email, password);
-      const details = await enrichMany(s, codigos);
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, details });
+      const details = await enrichMany(s, codigos, Number(body.concurrency) > 0 ? Number(body.concurrency) : 6, 90000);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, details, requested: codigos.length });
     }
     // /sync-all: 1 login -> tudo. `only` (array opcional) limita o que coletar
     // conforme os toggles do consultor (ex.: ['customers','network','devolutivas']).
@@ -1055,7 +1078,7 @@ const server = http.createServer(async (req, res) => {
       let details = [];
       if (body.enrich === true) {
         const targets = customers.filter((c) => !!c.codigo);
-        const limit = Number(body.enrich_limit) > 0 ? Math.min(targets.length, Number(body.enrich_limit)) : targets.length;
+        const limit = Number(body.enrich_limit) > 0 ? Math.min(targets.length, Number(body.enrich_limit)) : Math.min(targets.length, 30);
         details = await enrichMany(s, targets.slice(0, limit).map((t) => t.codigo));
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
