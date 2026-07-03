@@ -633,6 +633,28 @@ async function fetchCustomerFull(session, idcliente) {
   return { idcliente, ...(boletos || {}), ...(full || {}) };
 }
 
+// Enrich em pool paralelo (concurrency limitada). Reduz N * latência para
+// N/CONC * latência. Sem sleep entre requests — o pool já limita a taxa.
+async function enrichMany(session, codigos, concurrency = 6) {
+  const out = [];
+  const queue = codigos.slice();
+  let active = 0;
+  return await new Promise((resolve) => {
+    const kick = () => {
+      if (queue.length === 0 && active === 0) return resolve(out);
+      while (active < concurrency && queue.length > 0) {
+        const id = queue.shift();
+        active++;
+        fetchCustomerFull(session, id)
+          .then((d) => { if (d) out.push(d); })
+          .catch((e) => dbg(`[enrich] ${id}: ${e.message}`))
+          .finally(() => { active--; kick(); });
+      }
+    };
+    kick();
+  });
+}
+
 // DEVOLUTIVAS detalhadas: combina /rotinas/devolutivas-novas (campos ricos:
 // iddevolutiva, campo, obs, impeditiva, data, propria) com as categorias de
 // /clientes-green/devolutivas (categoria por cliente). Casa por nome/cidade.
