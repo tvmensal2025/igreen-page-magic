@@ -1014,25 +1014,21 @@ const server = http.createServer(async (req, res) => {
         want('devolutivas') ? fetchDevolutivas(s, body.month).catch((e) => { dbg(`[sync-all] devolutivas: ${e.message}`); return []; }) : Promise.resolve([]),
         want('cashback') ? fetchCashback(s).catch((e) => { dbg(`[sync-all] cashback: ${e.message}`); return {}; }) : Promise.resolve({}),
       ]);
-
-      // Enriquecimento opcional: ficha completa (cpf/instalacao/concessionaria)
-      // dos clientes ativos/validados. Throttle ~5 req/s para não sobrecarregar.
+      // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
+      // concessionária, PJ, procurador, login distribuidora) de TODOS os
+      // clientes do Kanban — sem filtro de status. Throttle ~5 req/s.
       let details = [];
       if (body.enrich === true) {
-        const targets = customers.filter((c) =>
-          ['validado', 'adimplente', 'menos_30d', 'inadimplente'].includes(String(c.status_coluna || '').toLowerCase())
-        );
-        const limit = Math.min(targets.length, Number(body.enrich_limit) || 400);
+        const targets = customers.filter((c) => !!c.codigo);
+        const limit = Number(body.enrich_limit) > 0 ? Math.min(targets.length, Number(body.enrich_limit)) : targets.length;
         for (let i = 0; i < limit; i++) {
           const id = targets[i].codigo;
-          if (!id) continue;
-          try { const d = await fetchCustomerDetail(s, id); if (d) details.push(d); }
+          try { const d = await fetchCustomerFull(s, id); if (d) details.push(d); }
           catch (e) { dbg(`[enrich] ${id}: ${e.message}`); }
           await new Promise((r) => setTimeout(r, 200)); // ~5 req/s
         }
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
-
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
     }
     // /debug-customer-scan: dump completo do Kanban /crm/green +
