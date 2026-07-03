@@ -594,6 +594,42 @@ async function fetchCustomerDetail(session, idcliente) {
   return j?.data || null;
 }
 
+// GET genérico em outra base (ex.: api-green-connection). Herda cookies/CF
+// via page.evaluate igual ao apiGet padrão. Não lança em 404 — devolve null.
+async function apiGetOn(session, baseUrl, path) {
+  const out = await session.page.evaluate(async (args) => {
+    try {
+      const res = await fetch(args.api + args.path, { headers: { Authorization: 'Bearer ' + args.token, Accept: 'application/json' } });
+      const text = await res.text();
+      return { status: res.status, text, contentType: res.headers.get('content-type') || '' };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  }, { api: baseUrl, path, token: session.token });
+  if (out.error) return null;
+  if (out.status === 404 || out.status === 403 || out.status === 401) return null;
+  if (out.status >= 400) return null;
+  try { return JSON.parse(out.text); } catch { return null; }
+}
+
+// FICHA COMPLETA: tenta api-green-connection (endereço, PJ, procurador,
+// concessionária, login/senha distribuidora). Fallback pro /clientes-green/boletos
+// se o endpoint retornar null. O merge junta os campos das duas fontes.
+async function fetchCustomerFull(session, idcliente) {
+  const bases = [
+    'https://api-green-connection.igreenenergy.com.br/v1',
+    'https://api-green-connection.igreenenergy.com.br',
+  ];
+  let full = null;
+  for (const b of bases) {
+    const r = await apiGetOn(session, b, `/customers/${idcliente}`);
+    const d = r?.data || r;
+    if (d && typeof d === 'object' && (d.nome || d.cpf_cnpj || d.endereco || d.cep)) { full = d; break; }
+  }
+  let boletos = null;
+  try { boletos = await fetchCustomerDetail(session, idcliente); } catch {}
+  if (!full && !boletos) return null;
+  return { idcliente, ...(boletos || {}), ...(full || {}) };
+}
+
 // DEVOLUTIVAS detalhadas: combina /rotinas/devolutivas-novas (campos ricos:
 // iddevolutiva, campo, obs, impeditiva, data, propria) com as categorias de
 // /clientes-green/devolutivas (categoria por cliente). Casa por nome/cidade.
