@@ -909,25 +909,56 @@ async function markOutOfPortfolio(supabase: any, consultantId: string | null, cu
   if (!consultantId || !Array.isArray(customersBatch) || customersBatch.length === 0) {
     return { out_of_portfolio_marked: 0, skipped: true };
   }
-  const codes = customersBatch
-    .map((c: any) => safeStr(c?.igreen_code || c?.codigo))
-    .filter((v): v is string => !!v);
-  if (codes.length === 0) return { out_of_portfolio_marked: 0, skipped: true };
+  const portalCodes = new Set(
+    customersBatch
+      .map((c: any) => safeStr(c?.igreen_code || c?.codigo))
+      .filter((v): v is string => !!v),
+  );
+  if (portalCodes.size === 0) return { out_of_portfolio_marked: 0, skipped: true };
 
-  const { data, error } = await supabase
-    .from("customers")
-    .update({ situacao_igreen: "fora_da_carteira" })
-    .eq("consultant_id", consultantId)
-    .eq("customer_origin", "igreen_sync")
-    .not("igreen_code", "is", null)
-    .not("igreen_code", "in", `(${codes.map((c) => `"${c}"`).join(",")})`)
-    .neq("situacao_igreen", "fora_da_carteira")
-    .select("id");
-  if (error) {
-    console.error("markOutOfPortfolio:", error.message);
-    return { out_of_portfolio_marked: 0, error: error.message };
+  // Busca todos igreen_codes existentes do consultor (paginado — supabase limita 1000).
+  const existing: { id: string; igreen_code: string | null; situacao_igreen: string | null }[] = [];
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id, igreen_code, situacao_igreen")
+      .eq("consultant_id", consultantId)
+      .eq("customer_origin", "igreen_sync")
+      .not("igreen_code", "is", null)
+      .range(from, from + pageSize - 1);
+    if (error) {
+      console.error("markOutOfPortfolio select:", error.message);
+      return { out_of_portfolio_marked: 0, error: error.message };
+    }
+    const rows = data || [];
+    existing.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
   }
-  return { out_of_portfolio_marked: data?.length || 0 };
+
+  const toMark = existing
+    .filter((r) => r.igreen_code && !portalCodes.has(String(r.igreen_code)) && r.situacao_igreen !== "fora_da_carteira")
+    .map((r) => r.id);
+
+  if (toMark.length === 0) return { out_of_portfolio_marked: 0, checked: existing.length };
+
+  let marked = 0;
+  for (let i = 0; i < toMark.length; i += 200) {
+    const chunk = toMark.slice(i, i + 200);
+    const { data, error } = await supabase
+      .from("customers")
+      .update({ situacao_igreen: "fora_da_carteira" })
+      .in("id", chunk)
+      .select("id");
+    if (error) {
+      console.error("markOutOfPortfolio update:", error.message);
+      return { out_of_portfolio_marked: marked, error: error.message, checked: existing.length };
+    }
+    marked += data?.length || 0;
+  }
+  return { out_of_portfolio_marked: marked, checked: existing.length, candidates: toMark.length };
 }
 
 async function syncOneConsultant(
