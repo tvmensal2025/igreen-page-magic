@@ -1,63 +1,58 @@
-## Diagnóstico atualizado
+## Resposta direta
 
-Rodei querys no banco e olhei os runs. O redeploy passou, mas o sync **ainda está travando** por 3 razões:
+Não está certo continuar tentando do mesmo jeito por tanto tempo.
 
-1. **Timeout da edge function.** Os 4 runs mais recentes (12:01, 12:07, 12:13, 12:15 UTC) estão presos em `status='running'` sem nunca finalizar. Motivo: o novo enrich sem filtro chama `fetchCustomerFull` para os 159 clientes com throttle de 200ms + latência 400ms cada = **90-120s só de enrich**. Somando login + kanban + network + boletos + persistência, estoura o teto de ~150s da edge function e o processo morre **antes** de chamar `persistCustomers`. Nada é gravado. Por isso Matias Brito continua ausente e os 400 órfãos continuam sem `fora_da_carteira`.
-2. **100 de 159 clientes falham no upsert** nos runs antigos que finalizaram (`errors: 100, updated: 59, processed: 159`). Não temos os `failed_samples` gravados no `counts` — só nos logs, que já rotacionaram. Precisa investigar caso a caso (provavelmente colisão em índice único `phone_whatsapp` sem `consultant_id` ou algum trigger).
-3. **Enriquecimento serial.** Mesmo dentro do worker, o loop de enrich é sequencial (`await` um por um) — desperdício e é o gargalo #1.
+O problema não é o Matias isoladamente: o fluxo atual estava tentando buscar dados enriquecidos de muitos clientes antes de garantir a gravação básica. Quando a edge function estoura timeout, ela morre antes de persistir tudo. Por isso um cliente pode existir no portal iGreen e ainda assim não aparecer em “Meus clientes”.
 
-## O que o plano vai fazer
+O caminho certo agora é mudar a regra do sync: primeiro gravar todos os clientes básicos rapidamente, depois enriquecer em segundo plano.
 
-### 1. Separar sync em duas fases (resolve o timeout)
+## Plano de correção
 
-**Fase A — persist básico (rápido, <60s):**
+### 1. Garantir que nenhum cliente falte
+- O sync principal deve chamar o worker sem enriquecimento pesado.
+- Persistir imediatamente todos os clientes retornados pelo portal.
+- Rodar a marcação de clientes fora da carteira só depois da persistência básica.
+- A tela “Meus clientes” passa a depender dessa base gravada, não do enriquecimento completo.
 
-- Edge chama o worker com `enrich=false` (só kanban + network + metrics + boletos + devolutivas).
-- Persiste TODOS os 159 clientes imediatamente. **Matias Brito aparece no banco na hora.**
-- Roda `markOutOfPortfolio` — 400 órfãos ficam com `situacao_igreen='fora_da_carteira'`.
-- Retorna 200 pro chamador.
+Resultado esperado: se o portal retornar 159 clientes, os 159 entram no banco antes de qualquer etapa lenta.
 
-**Fase B — enrich em background:**
+### 2. Deixar enriquecimento separado
+- Endereço, CEP, PJ, procurador, assinatura e outros detalhes entram em fase posterior.
+- Essa fase pode rodar em background, por lotes.
+- Se ela falhar ou demorar, o cliente continua aparecendo normalmente na lista.
 
-- Antes de retornar, edge dispara `EdgeRuntime.waitUntil(enrichPhase(...))` que:
-  - Chama o worker `/enrich-batch` (novo endpoint) passando lista de `codigos` em blocos de 30.
-  - Cada bloco preenche `address_street`, `cep`, `pj_jsonb`, etc. via `applyCustomerDetails`.
-  - Roda até acabar ou até 100s (dentro do teto).
-- Se sobrar cliente sem enrich, um novo run pega — ou o cron diário completa.
+Resultado esperado: Matias aparece mesmo que o enriquecimento ainda não tenha terminado.
 
-### 2. Paralelizar `fetchCustomerFull` no worker
+### 3. Paralelizar o worker
+- Usar o endpoint `/enrich-batch` no worker.
+- Buscar detalhes em janelas paralelas controladas, por exemplo 6 clientes por vez.
+- Evitar loop serial com espera artificial entre clientes.
 
-- Trocar o loop sequencial por `Promise.all` em janelas de **6 requests concorrentes** (mantém ~15 req/s, dentro do que o portal aguenta sem 429).
-- Novo endpoint `POST /enrich-batch` no worker: recebe `{portal_email, portal_password, codigos: [...]}`, devolve `details[]`. Timeout interno 90s.
-- Mantém o `enrich=true` no `/sync-all` como fallback, mas com `enrich_limit=30` default para não estourar timeout se alguém chamar direto.
+Resultado esperado: o enriquecimento deixa de levar vários minutos e passa a caber melhor no limite operacional.
 
-### 3. Investigar os 100 upserts que falham
+### 4. Registrar exatamente quem falhou
+- Salvar `failed_samples` no `counts` do run.
+- Quando houver erro de upsert, registrar exemplos reais com código, nome e mensagem.
+- Usar esses exemplos para corrigir constraint, dedupe, telefone, CPF ou trigger que esteja bloqueando gravação.
 
-- Adicionar `failed_samples` ao `counts.customers` (já existe na função, só falta incluir no JSON final que grava em `igreen_sync_runs`).
-- Rodar um sync, ler os 10 samples, entender o padrão de erro e corrigir (provavelmente um dos: `phone_whatsapp` NULL após dedupe, constraint em `cpf` único global, ou trigger de `crm_deals`).
+Resultado esperado: se 100 clientes falharem, vamos saber quais e por quê, sem depender de logs que expiram.
 
-### 4. Limpar runs presos
+### 5. Limpar runs presos
+- Marcar runs antigos em `running` como `failed` quando já passaram do tempo real de execução.
+- Isso evita painel travado dizendo que ainda há sync em andamento.
 
-- Marcar como `status='failed'` os 4 runs `running` de hoje que estão travados (via insert tool com UPDATE), para o painel não mostrar "sync em andamento" eternamente.
+### 6. Validação final
+Depois do redeploy do worker e da edge function:
 
-## Verificação pós-implementação
+```text
+1. Rodar sync do Rafael.
+2. Confirmar total de clientes iGreen ativos do consultor.
+3. Buscar Matias Brito / código 1578934 no banco.
+4. Confirmar que os clientes fora da carteira foram marcados corretamente.
+5. Rodar novo sync para confirmar idempotência.
+6. Verificar se errors = 0 ou analisar failed_samples.
+```
 
-1. Disparar `sync-igreen-customers` do Rafael.
-2. Em 60s: `SELECT count(*) FROM customers WHERE consultant_id='0c27...' AND customer_origin='igreen_sync' AND situacao_igreen!='fora_da_carteira'` → esperado **159**.
-3. Confirmar Matias Brito (código 1578934) presente.
-4. Em 3 minutos: `SELECT count(*) FILTER (WHERE address_street IS NOT NULL)` → esperado **>140** (enrich pode ter alguns 404 no portal).
-5. Rodar novamente o sync — segunda passada preenche os que faltaram.
-6. `errors` no `counts` deve ir a **0** depois do fix dos upserts.
+## Observação importante
 
-## Arquivos tocados
-
-- `worker-igreen-sync/server.mjs`: novo endpoint `/enrich-batch`, paralelização com janela de 6, throttle atualizado.
-- `supabase/functions/sync-igreen-customers/index.ts`: separar fase A (persist) da fase B (`EdgeRuntime.waitUntil` chamando `/enrich-batch` em loop de chunks), incluir `failed_samples` no `counts`.
-- **Sem migrations novas.** Colunas já existem.
-
-## Pergunta antes de executar
-
-Confirma que posso:
-
-- (a) Marcar os 4 runs travados como `failed` agora (sem esperar mais). 
-- (b) Redeploy do worker precisará ser feito por você de novo no Easypanel depois dessas mudanças. OK? Ok
+O plano está salvo em `.lovable/plan.md`, mas a pasta `.lovable/` está no `.gitignore`. Se você quiser que esse plano persista no repositório, precisamos remover essa entrada do `.gitignore` depois.
