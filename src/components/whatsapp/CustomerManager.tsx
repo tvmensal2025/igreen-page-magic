@@ -291,6 +291,10 @@ export function CustomerManager({
     : cidadeFiltered.filter((c) => c.status === statusFilter);
 
   async function handleDelete(id: string) {
+    if (id.startsWith("telecom:") || id.startsWith("seguro:")) {
+      toast({ title: "Não é possível remover", description: "Clientes de Telecom/Seguro vêm da sincronização iGreen.", variant: "destructive" });
+      return;
+    }
     try {
       const { error } = await supabase.from("customers").delete().eq("id", id);
       if (error) throw error;
