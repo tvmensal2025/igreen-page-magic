@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { PaginatedList } from "@/components/ui/PaginatedList";
 import {
   UserPlus, Users, Search, Loader2, RefreshCw, Filter, Smartphone, Zap, MoreVertical,
@@ -73,11 +73,100 @@ export function CustomerManager({
     consultantName: consultantName ?? null,
     cadastroIgreenIds: [],
   });
-  const myCustomers = useMemo(
+  const energiaBase = useMemo(
     () => (myClientsSettings ? filterMyClients(customers, myClientsSettings) : customers),
     [customers, myClientsSettings],
   );
+
+  // Telecom (iGreen) — clientes do consultor vindos da tabela dedicada
+  const { data: telecomRows = [] } = useQuery({
+    queryKey: ["cm-telecom", consultantId],
+    enabled: !!consultantId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("igreen_telecom_customers" as never)
+        .select("id, nome, numero, cidade, uf, licenciado, status_label, status, synced_at")
+        .eq("consultant_id", consultantId)
+        .limit(2000);
+      return (data || []) as Array<{
+        id: string; nome: string | null; numero: string | null;
+        cidade: string | null; uf: string | null; licenciado: string | null;
+        status_label: string | null; status: string | null; synced_at: string | null;
+      }>;
+    },
+  });
+
+  // Seguros (iGreen)
+  const { data: segurosRows = [] } = useQuery({
+    queryKey: ["cm-seguros", consultantId],
+    enabled: !!consultantId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("igreen_seguros_customers" as never)
+        .select("id, segurado, modelo, placa, cidade, uf, licenciado, status_label, status, mensal, synced_at")
+        .eq("consultant_id", consultantId)
+        .limit(2000);
+      return (data || []) as Array<{
+        id: string; segurado: string | null; modelo: string | null; placa: string | null;
+        cidade: string | null; uf: string | null; licenciado: string | null;
+        status_label: string | null; status: string | null; mensal: number | null; synced_at: string | null;
+      }>;
+    },
+  });
+
+  const telecomAsCustomers = useMemo<Customer[]>(() => {
+    return telecomRows.map((t) => ({
+      id: `telecom:${t.id}`,
+      name: t.nome,
+      phone_whatsapp: (t.numero || "").replace(/\D/g, ""),
+      address_city: t.cidade,
+      address_state: t.uf,
+      registered_by_name: t.licenciado,
+      status: "approved",
+      tipo_produto: "telefonia",
+      created_at: t.synced_at,
+      observacao: t.status_label || null,
+    }));
+  }, [telecomRows]);
+
+  const segurosAsCustomers = useMemo<Customer[]>(() => {
+    return segurosRows.map((s) => ({
+      id: `seguro:${s.id}`,
+      name: s.segurado,
+      phone_whatsapp: "",
+      address_city: s.cidade,
+      address_state: s.uf,
+      registered_by_name: s.licenciado,
+      status: "approved",
+      tipo_produto: "seguros",
+      created_at: s.synced_at,
+      observacao: [s.modelo, s.placa].filter(Boolean).join(" · ") || s.status_label || null,
+    }));
+  }, [segurosRows]);
+
+  const myCustomers = useMemo(() => {
+    const normalize = (p: string) => (p || "").replace(/\D/g, "");
+    if (selectedTipo === "telefonia") {
+      // Enriquece telecom com dados do cliente energia (nome/foto/status) quando bate telefone
+      const byPhone = new Map(energiaBase.map((c) => [normalize(c.phone_whatsapp), c]));
+      return telecomAsCustomers.map((t) => {
+        const match = byPhone.get(t.phone_whatsapp);
+        return match ? { ...match, id: t.id, tipo_produto: "telefonia", observacao: t.observacao } : t;
+      });
+    }
+    if (selectedTipo === "seguros") return segurosAsCustomers;
+    if (selectedTipo === "all") {
+      const phones = new Set(energiaBase.map((c) => normalize(c.phone_whatsapp)));
+      const telecomNew = telecomAsCustomers.filter((t) => !t.phone_whatsapp || !phones.has(t.phone_whatsapp));
+      return [...energiaBase, ...telecomNew, ...segurosAsCustomers];
+    }
+    return energiaBase;
+  }, [energiaBase, telecomAsCustomers, segurosAsCustomers, selectedTipo]);
+
   const dealsByCustomer = useCustomerDeals(consultantId, myCustomers);
+
 
   // Fetch last sync timestamp
   useEffect(() => {
@@ -202,6 +291,10 @@ export function CustomerManager({
     : cidadeFiltered.filter((c) => c.status === statusFilter);
 
   async function handleDelete(id: string) {
+    if (id.startsWith("telecom:") || id.startsWith("seguro:")) {
+      toast({ title: "Não é possível remover", description: "Clientes de Telecom/Seguro vêm da sincronização iGreen.", variant: "destructive" });
+      return;
+    }
     try {
       const { error } = await supabase.from("customers").delete().eq("id", id);
       if (error) throw error;

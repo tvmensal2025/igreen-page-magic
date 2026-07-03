@@ -1,58 +1,39 @@
-## Resposta direta
+## O problema
 
-Não está certo continuar tentando do mesmo jeito por tanto tempo.
+Na aba **Meus clientes**, o seletor de produto oferece Telecom, Seguro, Solar, Placas etc. Só que a lista lê apenas a tabela `customers` — e nela todos os 626 clientes do Rafael são `tipo_produto = 'energia'`. Os clientes de **Telecom** ficam em `igreen_telecom_customers` e os de **Seguro** em `igreen_seguros_customers`, tabelas separadas alimentadas pela sync do escritório iGreen.
 
-O problema não é o Matias isoladamente: o fluxo atual estava tentando buscar dados enriquecidos de muitos clientes antes de garantir a gravação básica. Quando a edge function estoura timeout, ela morre antes de persistir tudo. Por isso um cliente pode existir no portal iGreen e ainda assim não aparecer em “Meus clientes”.
+Resultado: escolher "📱 Telecom" ou "🛡️ Seguro" hoje sempre devolve lista vazia, mesmo com dados no banco.
 
-O caminho certo agora é mudar a regra do sync: primeiro gravar todos os clientes básicos rapidamente, depois enriquecer em segundo plano.
+## O que vou fazer
 
-## Plano de correção
+Fazer o filtro de produto **realmente** trazer clientes daquele produto:
 
-### 1. Garantir que nenhum cliente falte
-- O sync principal deve chamar o worker sem enriquecimento pesado.
-- Persistir imediatamente todos os clientes retornados pelo portal.
-- Rodar a marcação de clientes fora da carteira só depois da persistência básica.
-- A tela “Meus clientes” passa a depender dessa base gravada, não do enriquecimento completo.
+- **Energia / Solar / Placas**: continua vindo de `customers` (comportamento atual).
+- **Telecom**: quando selecionado, a lista mostra os registros de `igreen_telecom_customers` do consultor, adaptados ao formato da lista (nome, telefone, cidade, licenciado, status). Se um mesmo cliente já existir em `customers` (match por telefone/nome), reaproveita o card existente; senão, mostra um item "somente Telecom".
+- **Seguro**: mesma ideia usando `igreen_seguros_customers` (nome do segurado, cidade/UF, licenciado, mensalidade, placa/modelo como subtítulo).
+- **Todos os produtos**: soma tudo (energia + telecom + seguro) sem duplicar.
 
-Resultado esperado: se o portal retornar 159 clientes, os 159 entram no banco antes de qualquer etapa lenta.
+Os filtros de licenciado, cidade e status continuam funcionando por cima do conjunto resultante.
 
-### 2. Deixar enriquecimento separado
-- Endereço, CEP, PJ, procurador, assinatura e outros detalhes entram em fase posterior.
-- Essa fase pode rodar em background, por lotes.
-- Se ela falhar ou demorar, o cliente continua aparecendo normalmente na lista.
+## Detalhes técnicos
 
-Resultado esperado: Matias aparece mesmo que o enriquecimento ainda não tenha terminado.
+Arquivo principal: `src/components/whatsapp/CustomerManager.tsx`.
 
-### 3. Paralelizar o worker
-- Usar o endpoint `/enrich-batch` no worker.
-- Buscar detalhes em janelas paralelas controladas, por exemplo 6 clientes por vez.
-- Evitar loop serial com espera artificial entre clientes.
+1. Buscar as duas tabelas por `consultant_id` com React Query (chaves `carteira-telecom` e `carteira-seguros`), reaproveitando o padrão já usado em `ClientesCarteiraTable.tsx`.
+2. Criar um adapter local `telecomToCustomer(row)` e `seguroToCustomer(row)` que devolve um objeto compatível com `Customer` (id sintético prefixado `telecom:` / `seguro:`, `tipo_produto` correspondente, `phone_whatsapp` normalizado, `name`, `address_city`, `registered_by_name = licenciado`, `status = 'approved'`).
+3. Substituir `myCustomers` (que hoje é só `customers`) por um `mergedCustomers` calculado assim:
+   - base = `filterMyClients(customers, settings)`
+   - se `selectedTipo === 'all'`: base + telecom não-duplicados + seguros não-duplicados
+   - se `selectedTipo === 'telefonia'`: só telecom (com merge por telefone quando houver cliente energia correspondente para trazer nome/foto)
+   - se `selectedTipo === 'seguros'`: só seguros
+   - caso contrário: filtra `base` por `tipo_produto`
+4. Dedupe por telefone normalizado. Item mesclado ganha um badge extra (📱/🛡️) no `CustomerListItem` — mas isso é ajuste visual mínimo, o card já suporta `tipo_produto`.
+5. Contadores (`filterButtons`, header `({myCustomers.length})`) passam a considerar o conjunto mesclado, então o número muda conforme o filtro de produto ativo.
 
-Resultado esperado: o enriquecimento deixa de levar vários minutos e passa a caber melhor no limite operacional.
+Sem mudanças de schema. Sem mudanças em edge functions. Sem mexer na sync.
 
-### 4. Registrar exatamente quem falhou
-- Salvar `failed_samples` no `counts` do run.
-- Quando houver erro de upsert, registrar exemplos reais com código, nome e mensagem.
-- Usar esses exemplos para corrigir constraint, dedupe, telefone, CPF ou trigger que esteja bloqueando gravação.
+## Fora do escopo
 
-Resultado esperado: se 100 clientes falharem, vamos saber quais e por quê, sem depender de logs que expiram.
-
-### 5. Limpar runs presos
-- Marcar runs antigos em `running` como `failed` quando já passaram do tempo real de execução.
-- Isso evita painel travado dizendo que ainda há sync em andamento.
-
-### 6. Validação final
-Depois do redeploy do worker e da edge function:
-
-```text
-1. Rodar sync do Rafael.
-2. Confirmar total de clientes iGreen ativos do consultor.
-3. Buscar Matias Brito / código 1578934 no banco.
-4. Confirmar que os clientes fora da carteira foram marcados corretamente.
-5. Rodar novo sync para confirmar idempotência.
-6. Verificar se errors = 0 ou analisar failed_samples.
-```
-
-## Observação importante
-
-O plano está salvo em `.lovable/plan.md`, mas a pasta `.lovable/` está no `.gitignore`. Se você quiser que esse plano persista no repositório, precisamos remover essa entrada do `.gitignore` depois.
+- Não altero o cadastro/edição de clientes Telecom/Seguro (continuam vindo da sync do iGreen; a tela de "Novo cliente" segue só para energia).
+- Não mexo em Solar/Placas — não há tabela separada; se um dia surgirem clientes com `tipo_produto='solar'` em `customers`, o filtro já funciona.
+- Não mexo na aba "Carteira iGreen" (`ClientesCarteiraTable`), que já mostra Telecom/Seguro num formato próprio.
