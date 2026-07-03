@@ -393,7 +393,6 @@ async function runSyncAllBackgroundPhase(
 ): Promise<void> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
-  const runId = await logSyncStart(supabase, consultantId, "sync_all_background");
   const out: Record<string, unknown> = { success: true, mode: "sync_all_background", email: emailNorm };
   try {
     const r = await callWorker(worker, "/sync-all", {
@@ -454,7 +453,8 @@ async function runSyncAllBackgroundPhase(
     out.error = err instanceof Error ? err.message : String(err);
     console.error("[sync-all background]", err);
   } finally {
-    await logSyncFinish(supabase, runId, consultantId, out);
+    if (out.success) await updateAutomationTimestamps(supabase, consultantId, out);
+    console.log("[sync-all background] finished", JSON.stringify(out).slice(0, 500));
   }
 }
 
