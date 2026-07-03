@@ -1076,9 +1076,10 @@ async function syncOneConsultant(
     return { success: false, email: emailNorm, error: "Nenhum cliente retornado pelo worker." };
   }
   const cust = await persistCustomers(supabase, consultantId, allCustomers);
+  const portfolio = await markOutOfPortfolio(supabase, consultantId, allCustomers);
   const syncTimestamp = new Date().toISOString();
   await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
-  return { success: true, email: emailNorm, synced_at: syncTimestamp, ...cust };
+  return { success: true, email: emailNorm, synced_at: syncTimestamp, customers: cust, portfolio };
 }
 
 // deno-lint-ignore no-explicit-any
