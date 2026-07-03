@@ -1109,28 +1109,42 @@ const server = http.createServer(async (req, res) => {
       const idcliente = body.idcliente ? String(body.idcliente) : null;
       const nomeAlvo = body.nome ? String(body.nome).toUpperCase() : null;
 
-      // Coletor de requests/responses para api-vo.
-      const captured = new Map(); // key = method+url → { status, sample, ms, size }
+      // Coletor: captura TODO XHR/fetch (não só api-vo — o endpoint real pode
+      // estar em outro subdomínio). Filtra apenas responses JSON.
+      const captured = new Map();
       const started = Date.now();
+      const isInteresting = (u) => {
+        if (!u) return false;
+        if (u.startsWith('data:') || u.startsWith('blob:')) return false;
+        if (/\.(png|jpe?g|gif|svg|webp|ico|css|woff2?|ttf|map|js)(\?|$)/i.test(u)) return false;
+        // ignora o próprio bundle/estáticos do escritorio
+        if (/escritorio\.igreenenergy\.com\.br\/(assets|static|_next|images)/i.test(u)) return false;
+        return true;
+      };
       const reqListener = (r) => {
         const u = r.url();
-        if (!u.includes('api-vo.igreenenergy.com.br')) return;
+        if (!isInteresting(u)) return;
+        const rt = r.resourceType();
+        if (rt !== 'xhr' && rt !== 'fetch') return;
         const key = r.method() + ' ' + u;
         if (!captured.has(key)) {
-          captured.set(key, { method: r.method(), url: u, t_start: Date.now() - started });
+          captured.set(key, { method: r.method(), url: u, resource_type: rt, t_start: Date.now() - started });
         }
       };
       const respListener = async (resp) => {
         const u = resp.url();
-        if (!u.includes('api-vo.igreenenergy.com.br')) return;
-        const key = resp.request().method() + ' ' + u;
-        const rec = captured.get(key) || { method: resp.request().method(), url: u };
+        if (!isInteresting(u)) return;
+        const req = resp.request();
+        const rt = req.resourceType();
+        if (rt !== 'xhr' && rt !== 'fetch') return;
+        const key = req.method() + ' ' + u;
+        const rec = captured.get(key) || { method: req.method(), url: u, resource_type: rt };
         rec.status = resp.status();
         rec.content_type = resp.headers()['content-type'] || '';
         try {
           const buf = await resp.body();
           rec.size = buf.length;
-          rec.sample = buf.toString('utf8').slice(0, 4000);
+          rec.sample = buf.toString('utf8').slice(0, 6000);
         } catch (e) {
           rec.sample = `<<body_err: ${e.message}>>`;
         }
@@ -1144,6 +1158,11 @@ const server = http.createServer(async (req, res) => {
       const step = (name, extra = {}) => steps.push({ t: Date.now() - started, name, ...extra });
 
       try {
+        step('nav_blank_first');
+        // Vai pra about:blank primeiro para garantir que a próxima navegação
+        // dispare TODOS os XHRs iniciais (senão sessão reusada pode ter cache).
+        try { await s.page.goto('about:blank'); } catch {}
+
         step('nav_clientes_green');
         try {
           await s.page.goto('https://escritorio.igreenenergy.com.br/clientes-green', {
@@ -1152,59 +1171,68 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
           step('nav_err', { message: e.message });
         }
-        try { await s.page.waitForLoadState('networkidle', { timeout: 15000 }); } catch {}
-        step('list_loaded');
+        try { await s.page.waitForLoadState('networkidle', { timeout: 20000 }); } catch {}
+        step('list_loaded', { url: s.page.url() });
         await snapStep(s.page, 'spy_lista');
 
-        // Estratégia de clique: procura em todos os cards um que contenha o
-        // idcliente ou o nome; se não achar, clica no 1º card visível.
-        // Faz até 3 tentativas (cards podem estar dentro de accordions).
+        // Estratégia de clique melhorada: procura link/botão cujo texto/atributos
+        // contenham o idcliente/nome. Rejeita elementos de "reveal" (privacidade).
         let clicked = false;
         const alvoTexto = idcliente || nomeAlvo;
         for (let attempt = 1; attempt <= 3 && !clicked; attempt++) {
-          if (attempt > 1) await s.page.waitForTimeout(1500);
+          if (attempt > 1) await s.page.waitForTimeout(2000);
           const result = await s.page.evaluate((alvo) => {
             const norm = (x) => String(x || '').toUpperCase();
             const target = norm(alvo);
-            // Candidatos: qualquer elemento interativo que pareça um card
+            const REJECT = /REVEAL|CLIQUE PARA|MOSTRAR|OCULT|EYE|OLHO/i;
             const nodes = Array.from(document.querySelectorAll(
-              '[class*="card" i], [class*="cliente" i], [class*="row" i], li, tr, button, a, div'
+              'a[href], button, [role="button"], [class*="card" i], [class*="cliente" i], tr, li'
             ));
             let match = null;
+            let matchLen = Infinity;
             if (target) {
               for (const n of nodes) {
-                const txt = norm(n.innerText || '');
-                if (!txt || txt.length > 800) continue;
-                if (txt.includes(target)) {
-                  // pega o mais interno (menor)
-                  if (!match || n.innerText.length < match.innerText.length) match = n;
+                const txt = n.innerText || '';
+                if (!txt || txt.length > 1200) continue;
+                if (REJECT.test(txt)) continue;
+                const up = norm(txt);
+                const attrs = norm((n.getAttribute('href') || '') + ' ' + (n.getAttribute('data-id') || '') + ' ' + (n.getAttribute('id') || ''));
+                if (up.includes(target) || attrs.includes(target)) {
+                  if (txt.length < matchLen) { match = n; matchLen = txt.length; }
                 }
               }
             }
             if (!match) {
-              // fallback: 1º card do kanban
-              match = document.querySelector('[class*="card" i]:not([class*="header" i])') ||
-                      document.querySelector('li,tr,button');
+              // fallback: 1º link/botão que pareça abrir detalhe (href com id)
+              match = document.querySelector('a[href*="cliente"]') ||
+                      document.querySelector('button[class*="detail" i], button[class*="ver" i]');
             }
             if (match) {
               match.scrollIntoView({ block: 'center' });
-              try { match.click(); return { clicked: true, text: (match.innerText || '').slice(0, 200) }; }
-              catch (e) { return { clicked: false, error: String(e.message) }; }
+              try {
+                match.click();
+                return {
+                  clicked: true,
+                  tag: match.tagName,
+                  href: match.getAttribute('href') || null,
+                  text: (match.innerText || '').slice(0, 200),
+                };
+              } catch (e) { return { clicked: false, error: String(e.message) }; }
             }
             return { clicked: false, error: 'no_card_found' };
           }, alvoTexto);
           if (result.clicked) {
             clicked = true;
-            step('card_clicked', { text: result.text });
+            step('card_clicked', result);
           } else {
             step('card_click_fail', { attempt, error: result.error });
           }
         }
 
         // Espera adicional para XHRs do detalhe
-        await s.page.waitForTimeout(6000);
-        try { await s.page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
-        step('collected');
+        await s.page.waitForTimeout(8000);
+        try { await s.page.waitForLoadState('networkidle', { timeout: 10000 }); } catch {}
+        step('collected', { url: s.page.url() });
         await snapStep(s.page, 'spy_pos_clique');
       } finally {
         s.page.off('request', reqListener);
