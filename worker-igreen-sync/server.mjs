@@ -1025,7 +1025,12 @@ const server = http.createServer(async (req, res) => {
       }
       if (!sampleId) return sendJson(res, 400, { ok: false, error: 'sem clientes para amostrar; passe idcliente no body' });
 
-      const candidates = [
+      // Se o caller passar `paths` no body, usa esses paths custom (substituindo
+      // {id} ou {idcliente} pelo sampleId). Senão, usa o catálogo padrão.
+      const customPaths = Array.isArray(body.paths) && body.paths.length
+        ? body.paths.map((p) => String(p).replace(/\{id(?:cliente)?\}/gi, sampleId))
+        : null;
+      const candidates = customPaths || [
         `/clientes-green/${sampleId}`,
         `/clientes-green/${sampleId}/detalhe`,
         `/clientes-green/${sampleId}/completo`,
@@ -1055,6 +1060,7 @@ const server = http.createServer(async (req, res) => {
         `/rotinas/cliente/${sampleId}`,
         `/painel/cliente/${sampleId}`,
       ];
+
 
 
       const results = [];
