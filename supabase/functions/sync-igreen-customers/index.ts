@@ -958,44 +958,13 @@ async function syncOneConsultant(
   if (mode === "sync_all") {
     console.log(`[worker] sync-all for ${emailNorm}`);
 
-    // Toggles do consultor. Se não houver linha ainda, tratamos captura+alertas como
-    // ligados (envio proativo ao cliente permanece off). Isso evita a "corrida"
-    // entre criar o consultor e configurar toggles: sync novo já traz tudo.
-    const DEFAULT_ON: Record<string, boolean> = {
-      capture_boletos: true,
-      capture_devolutivas: true,
-      capture_telecom: true,
-      capture_seguros: true,
-      capture_cashback: true,
-      alert_boletos_vencendo: true,
-      alert_devolutivas: true,
-      alert_licencas_expirando: true,
-      rotinas_tarefas: true,
-      auto_wa_boleto_vencendo: true,
-      auto_wa_aniversariante: false,
-      cross_sell_bot: true,
-    };
-    let toggles: Record<string, boolean> = { ...DEFAULT_ON };
-    if (consultantId) {
-      const { data: t } = await supabase
-        .from("igreen_automation_settings")
-        .select("*")
-        .eq("consultant_id", consultantId)
-        .maybeSingle();
-      if (t) toggles = { ...DEFAULT_ON, ...(t as Record<string, boolean>) };
-    }
-    // Consistência captura↔alerta: se o alerta está ligado, força a captura
-    // correspondente para esta rodada (não persiste na tabela).
-    const autoEnabled: string[] = [];
-    if (toggles.alert_boletos_vencendo && !toggles.capture_boletos) { toggles.capture_boletos = true; autoEnabled.push("capture_boletos"); }
-    if (toggles.alert_devolutivas && !toggles.capture_devolutivas) { toggles.capture_devolutivas = true; autoEnabled.push("capture_devolutivas"); }
-    if (autoEnabled.length) console.log(`[sync-all] auto-enabled for run: ${autoEnabled.join(",")}`);
+    const toggles = await loadIgreenToggles(supabase, consultantId);
 
     const out: Record<string, unknown> = { success: true, mode: "sync_all", email: emailNorm, toggles };
 
-    // Primeiro salva a lista-base de clientes numa chamada curta. Assim, mesmo
-    // se o enriquecimento completo/extras demorarem ou o Edge encerrar o worker
-    // em background, nenhum cliente do Kanban fica sem ser criado/atualizado.
+    // Fase A: salva a lista-base de clientes numa chamada curta. Essa é a parte
+    // que não pode falhar por timeout de enriquecimento/extras: cliente do Kanban
+    // precisa aparecer em "Meus clientes" imediatamente.
     const base = await callWorker(worker, "/sync-customers", {
       portal_email: emailNorm,
       portal_password: passwordNorm,
@@ -1008,50 +977,24 @@ async function syncOneConsultant(
     }
     try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
     catch (e) { out.customers_error = e instanceof Error ? e.message : String(e); }
-
-    // Base sempre coletada; extras conforme toggle.
-    const only = ["customers", "network", "metrics"];
-    if (toggles.capture_boletos) only.push("boletos");
-    if (toggles.capture_telecom) only.push("telecom");
-    if (toggles.capture_seguros) only.push("seguros");
-    if (toggles.capture_devolutivas) only.push("devolutivas");
-    if (toggles.capture_cashback) only.push("cashback");
-
-    const r = await callWorker(worker, "/sync-all", {
-      portal_email: emailNorm,
-      portal_password: passwordNorm,
-      only,
-      enrich: true,
-    });
-    if (!r.ok) {
-      out.extras_error = `Worker falhou nos detalhes/extras: ${r.error}`;
-      return out;
-    }
-
-    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
-    if (consultantId && consultorId) {
-      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
-    }
-
-    // Base
-    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
-    catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
-    out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
-    out.details = await applyCustomerDetails(supabase, consultantId, r.data?.details || []);
-    out.portfolio = await markOutOfPortfolio(supabase, consultantId, r.data?.customers || []);
-    // Extras (só se o toggle correspondente estiver ligado)
-    if (toggles.capture_boletos) out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
-    if (toggles.capture_telecom) out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
-    if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
-    if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
-    if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
-
-    // Alertas acionáveis (só se o toggle de alerta estiver ligado)
-    out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
+    out.portfolio = await markOutOfPortfolio(supabase, consultantId, base.data?.customers || []);
 
     const syncTimestamp = new Date().toISOString();
     await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
     out.synced_at = syncTimestamp;
+    out.background = { extras_and_enrich: "started" };
+
+    // Fase B: extras + enriquecimento em background. Se ela falhar ou demorar,
+    // a carteira já está consistente e pesquisável.
+    scheduleSyncAllBackgroundPhase(
+      supabase,
+      worker,
+      emailNorm,
+      passwordNorm,
+      consultantId,
+      toggles,
+      base.data?.customers || [],
+    );
     return out;
   }
 
