@@ -1352,6 +1352,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Modo operacional curto: grava clientes inline e só responde quando terminou.
+    // Usado quando não pode faltar nenhum cliente e o background da Edge encerra cedo.
+    if (mode === "sync_now" || mode === "sync_customers_now") {
+      const runId = await logSyncStart(supabase, consultantId, mode);
+      const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, "sync");
+      await logSyncFinish(supabase, runId, consultantId, r);
+      return new Response(JSON.stringify(r), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Executa em background e responde imediato (evita IDLE_TIMEOUT de 150s).
     const runOne = async () => {
       const runId = await logSyncStart(supabase, consultantId, mode);
