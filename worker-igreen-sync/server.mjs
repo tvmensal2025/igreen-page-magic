@@ -633,6 +633,28 @@ async function fetchCustomerFull(session, idcliente) {
   return { idcliente, ...(boletos || {}), ...(full || {}) };
 }
 
+// Enrich em pool paralelo (concurrency limitada). Reduz N * latência para
+// N/CONC * latência. Sem sleep entre requests — o pool já limita a taxa.
+async function enrichMany(session, codigos, concurrency = 6) {
+  const out = [];
+  const queue = codigos.slice();
+  let active = 0;
+  return await new Promise((resolve) => {
+    const kick = () => {
+      if (queue.length === 0 && active === 0) return resolve(out);
+      while (active < concurrency && queue.length > 0) {
+        const id = queue.shift();
+        active++;
+        fetchCustomerFull(session, id)
+          .then((d) => { if (d) out.push(d); })
+          .catch((e) => dbg(`[enrich] ${id}: ${e.message}`))
+          .finally(() => { active--; kick(); });
+      }
+    };
+    kick();
+  });
+}
+
 // DEVOLUTIVAS detalhadas: combina /rotinas/devolutivas-novas (campos ricos:
 // iddevolutiva, campo, obs, impeditiva, data, propria) com as categorias de
 // /clientes-green/devolutivas (categoria por cliente). Casa por nome/cidade.
@@ -1001,6 +1023,15 @@ const server = http.createServer(async (req, res) => {
       const cashback = await fetchCashback(s);
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, cashback });
     }
+    // /enrich-batch: enriquece uma lista específica de códigos em paralelo.
+    // Body: { portal_email, portal_password, codigos: [ ... ] }
+    if (req.url === '/enrich-batch') {
+      const codigos = Array.isArray(body.codigos) ? body.codigos.map(String).filter(Boolean) : [];
+      if (codigos.length === 0) return sendJson(res, 400, { ok: false, error: 'codigos vazio' });
+      const s = await getOrCreateSession(email, password);
+      const details = await enrichMany(s, codigos);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, details });
+    }
     // /sync-all: 1 login -> tudo. `only` (array opcional) limita o que coletar
     // conforme os toggles do consultor (ex.: ['customers','network','devolutivas']).
     if (req.url === '/sync-all') {
@@ -1019,17 +1050,13 @@ const server = http.createServer(async (req, res) => {
       ]);
       // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
       // concessionária, PJ, procurador, login distribuidora) de TODOS os
-      // clientes do Kanban — sem filtro de status. Throttle ~5 req/s.
+      // clientes do Kanban — sem filtro de status. Pool paralelo (concurrency=6)
+      // para caber dentro do timeout de 150s da edge function.
       let details = [];
       if (body.enrich === true) {
         const targets = customers.filter((c) => !!c.codigo);
         const limit = Number(body.enrich_limit) > 0 ? Math.min(targets.length, Number(body.enrich_limit)) : targets.length;
-        for (let i = 0; i < limit; i++) {
-          const id = targets[i].codigo;
-          try { const d = await fetchCustomerFull(s, id); if (d) details.push(d); }
-          catch (e) { dbg(`[enrich] ${id}: ${e.message}`); }
-          await new Promise((r) => setTimeout(r, 200)); // ~5 req/s
-        }
+        details = await enrichMany(s, targets.slice(0, limit).map((t) => t.codigo));
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
