@@ -594,6 +594,42 @@ async function fetchCustomerDetail(session, idcliente) {
   return j?.data || null;
 }
 
+// GET genérico em outra base (ex.: api-green-connection). Herda cookies/CF
+// via page.evaluate igual ao apiGet padrão. Não lança em 404 — devolve null.
+async function apiGetOn(session, baseUrl, path) {
+  const out = await session.page.evaluate(async (args) => {
+    try {
+      const res = await fetch(args.api + args.path, { headers: { Authorization: 'Bearer ' + args.token, Accept: 'application/json' } });
+      const text = await res.text();
+      return { status: res.status, text, contentType: res.headers.get('content-type') || '' };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  }, { api: baseUrl, path, token: session.token });
+  if (out.error) return null;
+  if (out.status === 404 || out.status === 403 || out.status === 401) return null;
+  if (out.status >= 400) return null;
+  try { return JSON.parse(out.text); } catch { return null; }
+}
+
+// FICHA COMPLETA: tenta api-green-connection (endereço, PJ, procurador,
+// concessionária, login/senha distribuidora). Fallback pro /clientes-green/boletos
+// se o endpoint retornar null. O merge junta os campos das duas fontes.
+async function fetchCustomerFull(session, idcliente) {
+  const bases = [
+    'https://api-green-connection.igreenenergy.com.br/v1',
+    'https://api-green-connection.igreenenergy.com.br',
+  ];
+  let full = null;
+  for (const b of bases) {
+    const r = await apiGetOn(session, b, `/customers/${idcliente}`);
+    const d = r?.data || r;
+    if (d && typeof d === 'object' && (d.nome || d.cpf_cnpj || d.endereco || d.cep)) { full = d; break; }
+  }
+  let boletos = null;
+  try { boletos = await fetchCustomerDetail(session, idcliente); } catch {}
+  if (!full && !boletos) return null;
+  return { idcliente, ...(boletos || {}), ...(full || {}) };
+}
+
 // DEVOLUTIVAS detalhadas: combina /rotinas/devolutivas-novas (campos ricos:
 // iddevolutiva, campo, obs, impeditiva, data, propria) com as categorias de
 // /clientes-green/devolutivas (categoria por cliente). Casa por nome/cidade.
@@ -978,25 +1014,21 @@ const server = http.createServer(async (req, res) => {
         want('devolutivas') ? fetchDevolutivas(s, body.month).catch((e) => { dbg(`[sync-all] devolutivas: ${e.message}`); return []; }) : Promise.resolve([]),
         want('cashback') ? fetchCashback(s).catch((e) => { dbg(`[sync-all] cashback: ${e.message}`); return {}; }) : Promise.resolve({}),
       ]);
-
-      // Enriquecimento opcional: ficha completa (cpf/instalacao/concessionaria)
-      // dos clientes ativos/validados. Throttle ~5 req/s para não sobrecarregar.
+      // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
+      // concessionária, PJ, procurador, login distribuidora) de TODOS os
+      // clientes do Kanban — sem filtro de status. Throttle ~5 req/s.
       let details = [];
       if (body.enrich === true) {
-        const targets = customers.filter((c) =>
-          ['validado', 'adimplente', 'menos_30d', 'inadimplente'].includes(String(c.status_coluna || '').toLowerCase())
-        );
-        const limit = Math.min(targets.length, Number(body.enrich_limit) || 400);
+        const targets = customers.filter((c) => !!c.codigo);
+        const limit = Number(body.enrich_limit) > 0 ? Math.min(targets.length, Number(body.enrich_limit)) : targets.length;
         for (let i = 0; i < limit; i++) {
           const id = targets[i].codigo;
-          if (!id) continue;
-          try { const d = await fetchCustomerDetail(s, id); if (d) details.push(d); }
+          try { const d = await fetchCustomerFull(s, id); if (d) details.push(d); }
           catch (e) { dbg(`[enrich] ${id}: ${e.message}`); }
           await new Promise((r) => setTimeout(r, 200)); // ~5 req/s
         }
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
-
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
     }
     // /debug-customer-scan: dump completo do Kanban /crm/green +
