@@ -1023,6 +1023,15 @@ const server = http.createServer(async (req, res) => {
       const cashback = await fetchCashback(s);
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, cashback });
     }
+    // /enrich-batch: enriquece uma lista específica de códigos em paralelo.
+    // Body: { portal_email, portal_password, codigos: [ ... ] }
+    if (req.url === '/enrich-batch') {
+      const codigos = Array.isArray(body.codigos) ? body.codigos.map(String).filter(Boolean) : [];
+      if (codigos.length === 0) return sendJson(res, 400, { ok: false, error: 'codigos vazio' });
+      const s = await getOrCreateSession(email, password);
+      const details = await enrichMany(s, codigos);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, details });
+    }
     // /sync-all: 1 login -> tudo. `only` (array opcional) limita o que coletar
     // conforme os toggles do consultor (ex.: ['customers','network','devolutivas']).
     if (req.url === '/sync-all') {
