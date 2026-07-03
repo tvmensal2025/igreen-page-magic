@@ -876,6 +876,7 @@ async function syncOneConsultant(
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
     out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
     out.details = await applyCustomerDetails(supabase, consultantId, r.data?.details || []);
+    out.portfolio = await markOutOfPortfolio(supabase, consultantId, r.data?.customers || []);
     // Extras (só se o toggle correspondente estiver ligado)
     if (toggles.capture_boletos) out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
     if (toggles.capture_telecom) out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
