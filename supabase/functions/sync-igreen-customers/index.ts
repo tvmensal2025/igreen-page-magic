@@ -393,7 +393,6 @@ async function runSyncAllBackgroundPhase(
 ): Promise<void> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
-  const runId = await logSyncStart(supabase, consultantId, "sync_all_background");
   const out: Record<string, unknown> = { success: true, mode: "sync_all_background", email: emailNorm };
   try {
     const r = await callWorker(worker, "/sync-all", {
@@ -454,7 +453,8 @@ async function runSyncAllBackgroundPhase(
     out.error = err instanceof Error ? err.message : String(err);
     console.error("[sync-all background]", err);
   } finally {
-    await logSyncFinish(supabase, runId, consultantId, out);
+    if (out.success) await updateAutomationTimestamps(supabase, consultantId, out);
+    console.log("[sync-all background] finished", JSON.stringify(out).slice(0, 500));
   }
 }
 
@@ -976,7 +976,9 @@ async function syncOneConsultant(
       await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
     }
     try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
-    catch (e) { out.customers_error = e instanceof Error ? e.message : String(e); }
+    catch (e) {
+      return { success: false, email: emailNorm, error: `Falha ao gravar clientes: ${e instanceof Error ? e.message : String(e)}` };
+    }
     out.portfolio = await markOutOfPortfolio(supabase, consultantId, base.data?.customers || []);
 
     const syncTimestamp = new Date().toISOString();
@@ -1442,7 +1444,8 @@ Deno.serve(async (req) => {
     }
 
     // Modo operacional curto: grava clientes inline e só responde quando terminou.
-    // Usado quando não pode faltar nenhum cliente e o background da Edge encerra cedo.
+    // sync_all padrão fica no bloco de background abaixo para evitar cancelamento
+    // do cliente HTTP; dentro do background ele executa Fase A antes dos extras.
     if (mode === "sync_now" || mode === "sync_customers_now") {
       const runId = await logSyncStart(supabase, consultantId, mode);
       const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, "sync");
