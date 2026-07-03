@@ -1124,27 +1124,28 @@ const server = http.createServer(async (req, res) => {
       const reqListener = (r) => {
         const u = r.url();
         if (!isInteresting(u)) return;
-        const rt = r.resourceType();
-        if (rt !== 'xhr' && rt !== 'fetch') return;
         const key = r.method() + ' ' + u;
         if (!captured.has(key)) {
-          captured.set(key, { method: r.method(), url: u, resource_type: rt, t_start: Date.now() - started });
+          captured.set(key, { method: r.method(), url: u, resource_type: r.resourceType(), t_start: Date.now() - started });
         }
       };
       const respListener = async (resp) => {
         const u = resp.url();
         if (!isInteresting(u)) return;
         const req = resp.request();
-        const rt = req.resourceType();
-        if (rt !== 'xhr' && rt !== 'fetch') return;
         const key = req.method() + ' ' + u;
-        const rec = captured.get(key) || { method: req.method(), url: u, resource_type: rt };
+        const rec = captured.get(key) || { method: req.method(), url: u, resource_type: req.resourceType() };
         rec.status = resp.status();
         rec.content_type = resp.headers()['content-type'] || '';
         try {
           const buf = await resp.body();
           rec.size = buf.length;
-          rec.sample = buf.toString('utf8').slice(0, 6000);
+          // só guarda amostra se for JSON/text (não binário)
+          if (/json|text|xml|javascript/i.test(rec.content_type) || buf.length < 20000) {
+            rec.sample = buf.toString('utf8').slice(0, 6000);
+          } else {
+            rec.sample = `<<binary ${rec.content_type} ${buf.length}b>>`;
+          }
         } catch (e) {
           rec.sample = `<<body_err: ${e.message}>>`;
         }
@@ -1159,8 +1160,6 @@ const server = http.createServer(async (req, res) => {
 
       try {
         step('nav_blank_first');
-        // Vai pra about:blank primeiro para garantir que a próxima navegação
-        // dispare TODOS os XHRs iniciais (senão sessão reusada pode ter cache).
         try { await s.page.goto('about:blank'); } catch {}
 
         step('nav_clientes_green');
@@ -1171,9 +1170,22 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
           step('nav_err', { message: e.message });
         }
-        try { await s.page.waitForLoadState('networkidle', { timeout: 20000 }); } catch {}
-        step('list_loaded', { url: s.page.url() });
+        // Aguarda a listagem HIDRATAR — não confia só em networkidle porque
+        // SPAs re-hidratam em background. Espera aparecer algum link/row com número.
+        try {
+          await s.page.waitForFunction(() => {
+            const t = document.body?.innerText || '';
+            return t.length > 500 && /\d{6,}/.test(t); // algum idcliente numérico
+          }, { timeout: 25000 });
+        } catch (e) { step('hydrate_timeout', { message: e.message }); }
+        try { await s.page.waitForLoadState('networkidle', { timeout: 10000 }); } catch {}
+        step('list_loaded', {
+          url: s.page.url(),
+          body_len: await s.page.evaluate(() => document.body?.innerText?.length || 0).catch(() => 0),
+          captured_so_far: captured.size,
+        });
         await snapStep(s.page, 'spy_lista');
+
 
         // Estratégia de clique melhorada: procura link/botão cujo texto/atributos
         // contenham o idcliente/nome. Rejeita elementos de "reveal" (privacidade).
