@@ -1,74 +1,75 @@
-# Auditoria de completude do sync iGreen (caso Matias)
+# Sync iGreen 100% completo — clientes + todos os campos
 
-## O que já sabemos (checado agora no banco)
+## Diagnóstico honesto (o que hoje NÃO está correto)
 
-- **Matias Geraldo Muniz** existe em `customers`, mas foi criado via **lead do WhatsApp** (`customer_origin=whatsapp_lead`), não pelo sync do portal. Ele **nunca teve** `portal2_idcliente`, `situacao_igreen` nem `last_enriched_at`.
-- Rafael (`0c2711ad…`) tem no banco: **562** clientes marcados `igreen_sync` + 49 leads de WhatsApp.
-- O último `sync_all` (03/07 09:44) trouxe **apenas 159 clientes** do portal, com **100 erros de upsert** e só 59 atualizados. Ou seja: o banco tem histórico de 562, mas o portal hoje devolve 159 — 400+ "desapareceram" da fonte, e ainda por cima 100 dos 159 falharam.
-- A rota que o worker usa é `GET /crm/green`, que devolve **um Kanban**. Só entram no resultado os cards das colunas retornadas — se o portal esconde colunas tipo `cancelado`, `inativo`, `pendente`, esses clientes ficam invisíveis para o sync.
+Rodei o scan no portal do Rafael. Estes são os fatos:
 
-Conclusão preliminar: não temos como afirmar "Matias não é cliente" nem "só faltou ele" enquanto (a) não abrirmos o Kanban inteiro e (b) não entendermos os 100 erros. É isso que este plano resolve.
+1. **Lista de clientes:** `/crm/green` é a única fonte e devolve **todos os 159 clientes ativos da carteira** (todas as 9 colunas do Kanban, inclusive Reprovado/Cancelado). Isso está OK — não há cliente "escondido".
+2. **Matias Brito da Silva** (código 1578934) está no portal, coluna Validado. **Nunca foi salvo com `portal2_idcliente**` no banco porque o sync atual não faz o de-para. Vai ser salvo assim que a próxima etapa rodar.
+3. **Matias Geraldo Muniz** (o que você viu no banco) **não está mais na carteira do Rafael no portal** — saiu em algum momento após 15/06. Está órfão no banco.
+4. **Enriquecimento (rua, número, bairro, CEP, complemento, PJ, procurador, concessionária, login/senha da distribuidora):** hoje o worker chama `/clientes-green/boletos/{id}` que **não devolve endereço nenhum**. Por isso `address_street`, `address_number`, `address_neighborhood`, `address_complement`, `cep`, `pj_jsonb`, `procurador_jsonb` estão vazios pra todos os 562 clientes. A ficha completa está em outro endpoint (`/customers/{id}` da API `api-green-connection`) que **nunca é chamado**.
+5. Além disso, o enrich atual só roda pra status `validado/adimplente/menos_30d/inadimplente` e com limite de 400. Reprovados, cancelados e aguardando assinatura ficam sem enriquecer.
 
-## Passos
+Ou seja: **hoje o sync NÃO puxa 100% dos dados**. Puxa a lista completa, mas descarta metade dos campos.
 
-### 1. Descobrir se Matias está no portal iGreen do Rafael
+## O que o plano vai fazer
 
-Adicionar no worker o endpoint `**POST /debug-customer-scan**` que:
+### 1. Worker (`worker-igreen-sync/server.mjs`) — novo `fetchCustomerFull`
 
-- loga na sessão do Rafael
-- chama `GET /crm/green`
-- devolve: total de colunas, nome/id de cada coluna, contagem de cards por coluna, e um `matches[]` filtrando por `name`/`cpf` recebidos no body
-- **não persiste nada**, é só leitura
+Trocar/complementar `fetchCustomerDetail` por uma versão que bate no endpoint da ficha real:
 
-Rodar `curl` procurando `matias`, `mathias`, e também alguns nomes dos 400 "sumidos" para saber se `/crm/green` está mesmo devolvendo tudo ou está capado.
+```
+GET https://api-green-connection.igreenenergy.com.br/v1/customers/{idcliente}
+Authorization: Bearer <token da mesma sessão>
+```
 
-### 2. Testar rotas alternativas de listagem
+Retorno cru inclui: `cep, endereco, numero, complemento, bairro, cidade, uf, num_cliente_distribuidora, concessionaria, fornecedora, possui_placas, contaunica, transferir_titularidade, logindistribuidora, senhadistribuidora, indcli, PJ (cnpj/razao/fantasia/ie/cargo), procurador`. Se o endpoint der 404/403 (mudou de host), cair em fallback pra `/clientes-green/boletos/{id}` já existente.
 
-Se Matias não aparecer no Kanban, testar via `/probe-customer-detail` (já existe) os endpoints candidatos que a SPA usa para listagens paralelas:
+No `/sync-all`, quando `body.enrich === true`:
 
-- `/clientes-green?page=1&perPage=500&status=todos`
-- `/clientes-green/summary`
-- `/customer-map/{consultorId}` (rota antiga documentada em `docs/igreen-sync-worker.md`)
-- filtro por status: `cancelado`, `inativo`, `pendente`, `analise`
+- **Remover o filtro por status** — enriquecer TODOS os clientes vindos do Kanban.
+- **Remover o limite 400** (default). Deixar opcional (`enrich_limit`) só como safety.
+- Manter throttle 5 req/s.
 
-O objetivo é confirmar qual endpoint devolve a **carteira completa** (não só o Kanban ativo).
+### 2. Edge function `sync-igreen-customers` — `applyCustomerDetails` completo
 
-### 3. Ler os 100 erros do último sync
+Estender o mapeamento (arquivo `supabase/functions/sync-igreen-customers/index.ts`, função `applyCustomerDetails`) pra gravar:
 
-Puxar os logs da edge `sync-igreen-customers` da run `221d563d…` (03/07 09:44) e agrupar as mensagens de erro. Hipóteses a validar:
+- `cep, address_street, address_number, address_complement, address_neighborhood`
+- `num_cliente_distribuidora, concessionaria, fornecedora`
+- `possui_placas, contaunica, transferir_titularidade`
+- `logindistribuidora, senhadistribuidora` (colunas já existem — TEXT)
+- `pj_jsonb` (dump dos campos de PJ) e `possui_pj` derivado
+- `procurador_jsonb` e `possui_procurador` derivado
+- Continuar setando `last_enriched_at`
 
-- upsert por CPF colidindo com registros já existentes
-- clientes sem telefone/CPF caindo em constraint
-- conflito de `consultant_id` (cliente pertencia a outro consultor e mudou)
+### 3. Marcar quem saiu da carteira
 
-### 4. Relatório de reconciliação
+Ao fim de um `sync_all` bem-sucedido (com `customers.length > 0`), marcar como `situacao_igreen = 'fora_da_carteira'` (e opcionalmente `left_carteira_at = now()`) todo `customer` que:
 
-Com os dados dos passos 1–3, produzir uma tabela mostrando, para o Rafael:
+- `consultant_id = X`
+- `customer_origin = 'igreen_sync'`
+- `igreen_code` **NÃO** está no batch atual
 
-- total no portal (por endpoint testado)
-- total no banco por `customer_origin`
-- diff: quem está no portal e não no banco, e vice-versa
-- causa provável de cada diff (erro de upsert, coluna oculta, mudou de consultor, é lead de WhatsApp puro)
+Assim os 400+ órfãos do Rafael param de aparecer como ativos e o Matias Geraldo Muniz fica visivelmente sinalizado como "saiu do portal".
 
-### 5. Correção
+### 4. Verificação pós-deploy
 
-Depois do relatório, escolher entre:
-
-- **A.** Trocar `fetchCustomers` para usar o endpoint que devolve a carteira **completa** (não o Kanban).
-- **B.** Iterar todas as colunas + status ocultos do Kanban.
-- **C.** Corrigir o upsert da edge para não perder os 100 que falham.
-
-Provavelmente as três, mas priorizamos pela causa real que os dados mostrarem.
+- Rodar `sync_all` do Rafael.
+- Query no banco: `SELECT count(*) FILTER (WHERE address_street IS NOT NULL) AS com_rua, count(*) AS total FROM customers WHERE consultant_id='0c2711ad…' AND customer_origin='igreen_sync' AND situacao_igreen != 'fora_da_carteira'`.
+- Alvo: **com_rua = total = 159**.
+- Conferir Matias Brito: deve ter `portal2_idcliente=1578934`, rua/cep preenchidos.
+- Conferir Matias Geraldo: deve estar com `situacao_igreen='fora_da_carteira'`.
 
 ## Detalhes técnicos
 
-- Arquivos tocados nesta fase: `worker-igreen-sync/server.mjs` (só adicionar `/debug-customer-scan`; leitura pura, sem efeitos).
-- Sem migration nesta fase.
-- Requer redeploy do worker no Easypanel após o passo 1.
-- Depois de rodar o passo 1, eu volto com o print do que apareceu e propomos a correção no mesmo chat — não vamos alterar o pipeline de escrita antes de entender o dado.
+- **Sem migration nova nesta fase** — todas as colunas de endereço/PJ/procurador já existem em `customers` (confirmado em `docs/portal-api/PORTAL2_ENRIQUECIMENTO_MAP.md`). Só falta um `left_carteira_at TIMESTAMPTZ` se você quiser rastrear a data — opcional, posso pular.
+- **Custo:** 159 clientes × ~2,5s = ~7 min de worker no `sync_all` completo. Aceitável (hoje já leva 4–6 min sem endereço).
+- **Sensibilidade:** `logindistribuidora`/`senhadistribuidora` vão pro banco em TEXT. Se preferir não sincronizar `senhadistribuidora`, aviso e pulo o campo.
+- Arquivos tocados: `worker-igreen-sync/server.mjs` (fetchCustomerFull + loop sem filtro), `supabase/functions/sync-igreen-customers/index.ts` (`applyCustomerDetails` + marca fora_da_carteira).
+- Requer redeploy do worker no Easypanel após a mudança.
 
-## Pergunta antes de começar
+## Pergunta antes de executar
 
-Quer que eu prossiga por essa ordem (worker read-only → diagnóstico → correção), ou você prefere abrir o F12 no portal do Rafael, clicar em "Meus clientes", e me mandar o print da aba **Network** filtrada por `xhr`? O F12 pula direto pro passo 2 e economiza 1 deploy.  
-  
-precido da carteira completa
+1. `**senhadistribuidora**`: sincronizo ou pulo? (o `logindistribuidora` eu sincronizo em qualquer caso). nao precisa de senha da distribuidora, meus clientes nao tem
+2. `**left_carteira_at**`: quer que eu adicione a coluna pra rastrear quando o cliente saiu, ou basta mudar o `situacao_igreen`? basta mudar, assim nao precisa criar a coluna
