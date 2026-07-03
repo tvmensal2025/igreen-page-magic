@@ -976,7 +976,9 @@ async function syncOneConsultant(
       await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
     }
     try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
-    catch (e) { out.customers_error = e instanceof Error ? e.message : String(e); }
+    catch (e) {
+      return { success: false, email: emailNorm, error: `Falha ao gravar clientes: ${e instanceof Error ? e.message : String(e)}` };
+    }
     out.portfolio = await markOutOfPortfolio(supabase, consultantId, base.data?.customers || []);
 
     const syncTimestamp = new Date().toISOString();
