@@ -999,6 +999,84 @@ const server = http.createServer(async (req, res) => {
 
       return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
     }
+    // /debug-customer-scan: dump completo do Kanban /crm/green +
+    // varredura em endpoints alternativos de listagem, procurando por
+    // { name?, cpf? } no body. NÃO persiste nada, só leitura.
+    if (req.url === '/debug-customer-scan') {
+      const s = await getOrCreateSession(email, password);
+      const needleName = String(body.name || '').trim().toLowerCase();
+      const needleCpf = String(body.cpf || '').replace(/\D/g, '');
+      const matches = (rec) => {
+        const n = String(rec?.nome || rec?.name || '').toLowerCase();
+        const c = String(rec?.cpf || rec?.documento || '').replace(/\D/g, '');
+        return (needleName && n.includes(needleName)) || (needleCpf && c && c === needleCpf);
+      };
+
+      // 1) Kanban oficial
+      let kanban = null;
+      let kanbanErr = null;
+      try {
+        const j = await apiGet(s, '/crm/green');
+        const cols = Array.isArray(j?.data) ? j.data : [];
+        const columns = cols.map((c) => ({
+          id: c.id, label: c.label, count: (c.cards || []).length,
+        }));
+        const flat = [];
+        for (const c of cols) for (const card of (c.cards || [])) flat.push({ ...card, __col: c.id });
+        kanban = {
+          total: flat.length,
+          columns,
+          matches: flat.filter(matches).slice(0, 20),
+        };
+      } catch (e) { kanbanErr = e.message; }
+
+      // 2) Endpoints alternativos candidatos
+      const altPaths = Array.isArray(body.paths) && body.paths.length ? body.paths : [
+        '/clientes-green?page=1&perPage=1000&status=todos&search=',
+        '/clientes-green?page=1&perPage=1000&search=',
+        '/clientes-green/summary',
+        `/customer-map/${s.consultorId}?page=1&pageSize=1000`,
+        `/customer-map/${s.consultorId}`,
+        '/crm/green?status=cancelado',
+        '/crm/green?status=inativo',
+        '/crm/green?status=todos',
+      ];
+      const alts = [];
+      for (const p of altPaths) {
+        try {
+          const t0 = Date.now();
+          const j = await apiGet(s, p);
+          const arr =
+            Array.isArray(j) ? j :
+            Array.isArray(j?.data) ? j.data :
+            Array.isArray(j?.data?.cards) ? j.data.cards :
+            Array.isArray(j?.customers) ? j.customers :
+            [];
+          // Se vier estrutura Kanban (colunas), achatar
+          let flat = arr;
+          if (arr.length && Array.isArray(arr[0]?.cards)) {
+            flat = arr.flatMap((c) => (c.cards || []).map((k) => ({ ...k, __col: c.id })));
+          }
+          alts.push({
+            path: p,
+            ms: Date.now() - t0,
+            ok: true,
+            total: flat.length,
+            sample_keys: flat[0] ? Object.keys(flat[0]).slice(0, 20) : [],
+            matches: flat.filter(matches).slice(0, 20),
+          });
+        } catch (e) {
+          alts.push({ path: p, ok: false, error: e.message, status: e.status || null });
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+
+      return sendJson(res, 200, {
+        ok: true, consultor_id: s.consultorId,
+        needle: { name: needleName || null, cpf: needleCpf || null },
+        kanban, kanbanErr, alternatives: alts,
+      });
+    }
     if (req.url === '/probe-endpoints') {
       const s = await getOrCreateSession(email, password);
       const results = await probeEndpoints(s, body.paths);
