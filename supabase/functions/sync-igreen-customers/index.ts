@@ -846,6 +846,24 @@ async function syncOneConsultant(
     if (toggles.alert_devolutivas && !toggles.capture_devolutivas) { toggles.capture_devolutivas = true; autoEnabled.push("capture_devolutivas"); }
     if (autoEnabled.length) console.log(`[sync-all] auto-enabled for run: ${autoEnabled.join(",")}`);
 
+    const out: Record<string, unknown> = { success: true, mode: "sync_all", email: emailNorm, toggles };
+
+    // Primeiro salva a lista-base de clientes numa chamada curta. Assim, mesmo
+    // se o enriquecimento completo/extras demorarem ou o Edge encerrar o worker
+    // em background, nenhum cliente do Kanban fica sem ser criado/atualizado.
+    const base = await callWorker(worker, "/sync-customers", {
+      portal_email: emailNorm,
+      portal_password: passwordNorm,
+    });
+    if (!base.ok) return { success: false, email: emailNorm, error: `Worker falhou em clientes: ${base.error}`, status: base.status };
+
+    const baseConsultorId = base.data?.consultor_id ? String(base.data.consultor_id) : null;
+    if (consultantId && baseConsultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
+    }
+    try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
+    catch (e) { out.customers_error = e instanceof Error ? e.message : String(e); }
+
     // Base sempre coletada; extras conforme toggle.
     const only = ["customers", "network", "metrics"];
     if (toggles.capture_boletos) only.push("boletos");
@@ -859,19 +877,18 @@ async function syncOneConsultant(
       portal_password: passwordNorm,
       only,
       enrich: true,
-      enrich_limit: 400,
     });
-    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    if (!r.ok) {
+      out.extras_error = `Worker falhou nos detalhes/extras: ${r.error}`;
+      return out;
+    }
 
     const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
     if (consultantId && consultorId) {
       await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
     }
 
-    const out: Record<string, unknown> = { success: true, mode: "sync_all", email: emailNorm, toggles };
     // Base
-    try { out.customers = await persistCustomers(supabase, consultantId, r.data?.customers || []); }
-    catch (e) { out.customers_error = e instanceof Error ? e.message : String(e); }
     try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
     out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
@@ -1111,6 +1128,7 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
 
   let updatedCount = 0;
   let errorCount = 0;
+  const failedSamples: Array<Record<string, unknown>> = [];
   const BATCH_SIZE = 100;
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE);
@@ -1119,8 +1137,28 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
       .upsert(batch, { onConflict: "phone_whatsapp,consultant_id", ignoreDuplicates: false })
       .select("id");
     if (error) {
-      console.error(`Batch upsert error at ${i}:`, error);
-      errorCount += batch.length;
+      console.error(`Batch upsert error at ${i}: ${error.message}. Retrying individually.`);
+      for (const rec of batch) {
+        const { data: rowData, error: rowError } = await supabase
+          .from("customers")
+          .upsert(rec, { onConflict: "phone_whatsapp,consultant_id", ignoreDuplicates: false })
+          .select("id")
+          .maybeSingle();
+        if (rowError) {
+          errorCount++;
+          if (failedSamples.length < 10) {
+            failedSamples.push({
+              name: rec.name,
+              phone_whatsapp: rec.phone_whatsapp,
+              igreen_code: rec.igreen_code,
+              error: rowError.message,
+            });
+          }
+          console.error(`Customer upsert failed: ${String(rec.name || rec.igreen_code || rec.phone_whatsapp)}: ${rowError.message}`);
+        } else if (rowData?.id) {
+          updatedCount++;
+        }
+      }
     } else {
       updatedCount += (data?.length || 0);
     }
@@ -1158,6 +1196,7 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     skipped_no_phone: skippedNoPhone,
     updated: updatedCount,
     errors: errorCount,
+    failed_samples: failedSamples,
     cleaned_insights: cleanedInsights,
     cleaned_deals: cleanedDeals,
   };
@@ -1307,6 +1346,17 @@ Deno.serve(async (req) => {
     if (mode === "validate") {
       const runId = await logSyncStart(supabase, consultantId, mode);
       const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode);
+      await logSyncFinish(supabase, runId, consultantId, r);
+      return new Response(JSON.stringify(r), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Modo operacional curto: grava clientes inline e só responde quando terminou.
+    // Usado quando não pode faltar nenhum cliente e o background da Edge encerra cedo.
+    if (mode === "sync_now" || mode === "sync_customers_now") {
+      const runId = await logSyncStart(supabase, consultantId, mode);
+      const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, "sync");
       await logSyncFinish(supabase, runId, consultantId, r);
       return new Response(JSON.stringify(r), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

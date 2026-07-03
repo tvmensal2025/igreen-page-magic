@@ -408,6 +408,9 @@ async function getOrCreateSession(email, password) {
 
 async function withEmailOperationLock(email, fn) {
   const key = String(email || '').toLowerCase();
+  if (operationLocks.has(key)) {
+    throw new HttpError(409, 'Já existe uma sincronização iGreen em andamento para este e-mail. Aguarde finalizar ou reinicie o worker para limpar a fila.', 'sync_already_running');
+  }
   const prev = operationLocks.get(key) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
