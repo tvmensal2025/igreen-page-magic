@@ -1758,7 +1758,7 @@ Deno.serve(async (req) => {
       // são automáticos — não cair no short-circuit que silencia o bot.
       const _flowVariantA = String((customer as any)?.flow_variant || "").toUpperCase();
       let _hasActiveFlowA = false;
-      if (_flowVariantA !== "D") {
+      if (_flowVariantA !== "D" && _flowVariantA !== "M") {
         try {
           const { count } = await supabase
             .from("bot_flows")
