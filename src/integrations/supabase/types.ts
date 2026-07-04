@@ -9928,6 +9928,7 @@ export type Database = {
         Args: { p_hours?: number; p_instance: string }
         Returns: string
       }
+      publish_flow_as_public: { Args: { _flow_id: string }; Returns: undefined }
       reactivation_outcome_by_step: {
         Args: { p_consultant_id?: string; p_since?: string }
         Returns: {
