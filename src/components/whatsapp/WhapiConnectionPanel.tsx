@@ -23,8 +23,60 @@ const statusMeta: Record<WhapiHealthStatus, { label: string; tone: "default" | "
 export function WhapiConnectionPanel({ visible }: Props) {
   const health = useWhapiHealth(visible);
   const [tokenInput, setTokenInput] = useState("");
-  const [busy, setBusy] = useState<null | "save" | "qr" | "logout">(null);
+  const [busy, setBusy] = useState<null | "save" | "qr" | "logout" | "backfill">(null);
   const [qrImage, setQrImage] = useState<string | null>(null);
+  const [backfillStatus, setBackfillStatus] = useState<any>(null);
+  const pollRef = useRef<number | null>(null);
+
+  const fetchBackfillStatus = async () => {
+    try {
+      const { data } = await supabase.functions.invoke("whapi-history-status", {
+        method: "GET" as any,
+      });
+      if (data?.status) setBackfillStatus(data.status);
+    } catch {/* silent */}
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    fetchBackfillStatus();
+    pollRef.current = window.setInterval(() => {
+      if (backfillStatus?.state === "running") fetchBackfillStatus();
+    }, 5000);
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, backfillStatus?.state]);
+
+  const handleBackfill = async () => {
+    if (!confirm(
+      "Importar TODO o histórico do WhatsApp deste canal?\n\n" +
+      "• Pode demorar de 30 a 90 minutos.\n" +
+      "• Leads novos entram com o bot PAUSADO.\n" +
+      "• Clientes já importados do iGreen são ignorados.\n" +
+      "• Rodar 2× não duplica.\n\nContinuar?"
+    )) return;
+    setBusy("backfill");
+    try {
+      const { data, error } = await supabase.functions.invoke("whapi-history-backfill", {
+        body: {},
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error === "backfill_already_running") {
+        toast.info("Backfill já está rodando.");
+      } else if (data?.error) {
+        throw new Error(data.error);
+      } else {
+        toast.success("Importação iniciada em background.");
+      }
+      await fetchBackfillStatus();
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao iniciar importação");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (!visible) return null;
 
