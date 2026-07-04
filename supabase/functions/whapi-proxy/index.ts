@@ -70,16 +70,31 @@ function classifyWhapiError(status: number, data: any): {
     };
   }
 
+  const hasInvalidTokenSignal = /invalid[\s_-]*token|token.*invalid|api[\s_-]*key.*invalid|bearer.*invalid/i.test(blob);
+  const hasChannelAuthSignal =
+    /need.*channel.*authorization|channel.*authorization|channel.*not.*authorized|not.*authorized.*channel|authorize.*channel|login|logout|qr|session|device/i.test(blob);
+
   if (status === 401 || /unauthorized|invalid token|invalid_token|forbidden/i.test(blob)) {
-    // Whapi devolve 401 tanto para token errado quanto para canal em ERROR/desautenticado.
-    // Distinguimos consultando /health: se responder 200, o token está OK e o problema
-    // é o pareamento do WhatsApp.
+    // Whapi usa 401 para dois cenários diferentes:
+    // 1) token realmente inválido;
+    // 2) token aceito, mas o canal WhatsApp não está autorizado para ENVIAR
+    //    (mensagem oficial: "Need channel authorization for send message").
+    // Não rotulamos o segundo caso como invalid_token para não orientar o usuário
+    // a trocar token quando a ação correta é reconectar o canal.
+    if (hasChannelAuthSignal && !hasInvalidTokenSignal) {
+      return {
+        reasonCode: "channel_error",
+        httpStatus: 503,
+        error:
+          "Canal Whapi sem autorização para envio. No painel Whapi, faça Logout/Login do canal e escaneie o QR novamente.",
+        helpUrl: WHAPI_PANEL_URL,
+      };
+    }
+
     return {
       reasonCode: "invalid_token",
       httpStatus: 401,
-      error:
-        "Whapi rejeitou a requisição (401). Se o token está correto, o canal provavelmente está " +
-        "desautenticado — faça Logout do canal e escaneie o QR novamente.",
+      error: "Token Whapi inválido. Cole o token novo do painel da Whapi.",
       helpUrl: WHAPI_PANEL_URL,
     };
   }
@@ -99,6 +114,36 @@ function classifyWhapiError(status: number, data: any): {
     error: "Canal WhatsApp (Whapi) offline. Verifique conexão / QR no painel de reconexão.",
     helpUrl: null,
   };
+}
+
+async function classifyWhapiSendError(token: string, status: number, data: any): Promise<{
+  reasonCode: WhapiReasonCode;
+  httpStatus: number;
+  error: string;
+  helpUrl: string | null;
+}> {
+  const cls = classifyWhapiError(status, data);
+  if (status !== 401 || cls.reasonCode !== "invalid_token") return cls;
+
+  // Prova de token válido: se endpoints de leitura respondem, o problema não é
+  // o token; é autorização/sessão do canal especificamente para envio.
+  try {
+    const [profile, chats] = await Promise.all([
+      whapiFetch(token, "/users/profile", { method: "GET" }).catch(() => null),
+      whapiFetch(token, "/chats?count=1", { method: "GET" }).catch(() => null),
+    ]);
+    if (profile?.ok || chats?.ok) {
+      return {
+        reasonCode: "channel_error",
+        httpStatus: 503,
+        error:
+          "Token Whapi aceito, mas o canal não está autorizado para enviar mensagens. Faça Logout/Login do canal na Whapi e escaneie o QR novamente.",
+        helpUrl: WHAPI_PANEL_URL,
+      };
+    }
+  } catch (_) { /* mantém classificação original */ }
+
+  return cls;
 }
 
 function isWhapiErrorBlob(status: number, data: any): boolean {
@@ -360,7 +405,7 @@ Deno.serve(async (req) => {
         });
         if (!r.ok) {
           if (isWhapiErrorBlob(r.status, r.data)) {
-            const cls = classifyWhapiError(r.status, r.data);
+            const cls = await classifyWhapiSendError(whapiToken, r.status, r.data);
             console.warn(`[whapi-proxy] send_text bloqueado (${cls.reasonCode})`);
             return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
           }
@@ -454,7 +499,7 @@ Deno.serve(async (req) => {
 
         if (!r.ok) {
           if (isWhapiErrorBlob(r.status, r.data)) {
-            const cls = classifyWhapiError(r.status, r.data);
+            const cls = await classifyWhapiSendError(whapiToken, r.status, r.data);
             console.warn(`[whapi-proxy] send_media(${mediatype}) bloqueado (${cls.reasonCode})`);
             return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
           }
