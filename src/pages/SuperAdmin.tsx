@@ -31,6 +31,7 @@ const BotGlobalKillSwitch = lazy(() => import("@/components/superadmin/BotGlobal
 const DevToolsBlockToggle = lazy(() => import("@/components/superadmin/DevToolsBlockToggle").then(m => ({ default: m.DevToolsBlockToggle })));
 const ResolverStrictModeToggle = lazy(() => import("@/components/superadmin/ResolverStrictModeToggle").then(m => ({ default: m.ResolverStrictModeToggle })));
 const InfraHealthPanel = lazy(() => import("@/components/superadmin/InfraHealthPanel").then(m => ({ default: m.InfraHealthPanel })));
+const WhatsAppInstanceHealthCard = lazy(() => import("@/components/superadmin/WhatsAppInstanceHealthCard").then(m => ({ default: m.WhatsAppInstanceHealthCard })));
 const PlatformFacebookCard = lazy(() => import("@/components/admin/super/PlatformFacebookCard").then(m => ({ default: m.PlatformFacebookCard })));
 const PlatformPnLCard = lazy(() => import("@/components/admin/super/PlatformPnLCard").then(m => ({ default: m.PlatformPnLCard })));
 const NetworkHealthPanel = lazy(() => import("@/components/admin/super/NetworkHealthPanel").then(m => ({ default: m.NetworkHealthPanel })));
@@ -398,6 +399,9 @@ const SuperAdmin = () => {
 
             {/* Lote 3 — Infra: MinIO + alertas super_admin */}
             <InfraHealthPanel />
+
+            {/* Saúde das instâncias WhatsApp — marcar banida / destravar */}
+            <WhatsAppInstanceHealthCard />
 
             {/* Health Panel — saúde geral + religar bot global */}
             <SystemHealthPanel />
