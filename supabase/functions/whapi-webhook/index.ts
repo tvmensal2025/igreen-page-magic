@@ -2461,7 +2461,7 @@ Deno.serve(async (req) => {
         : null;
       const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
 
-      if (_fbVarCerebro === "D" && !_isAtivoOrigin) {
+      if ((_fbVarCerebro === "D" || _fbVarCerebro === "M") && !_isAtivoOrigin) {
         console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
       } else if (_fbVarCerebro === "A" && _emCadastro && !_isAtivoOrigin) {
         console.log(`[fluxo-a-bypass] customer=${customer.id} step=${stepBefore} — cadastro determinístico, Cérebro pulado`);
