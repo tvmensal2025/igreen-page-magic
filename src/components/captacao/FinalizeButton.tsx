@@ -18,7 +18,7 @@ import {
 interface Props {
   consultantId: string;
   customerId: string;
-  variant?: "A" | "B" | "C" | "D" | "E";
+  variant?: "A" | "B" | "C" | "D" | "E" | "M";
   missing: string[];
   isComplete: boolean;
   allStepsSent: boolean;

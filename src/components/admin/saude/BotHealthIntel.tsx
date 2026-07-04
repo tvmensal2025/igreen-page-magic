@@ -225,7 +225,7 @@ export default function BotHealthIntel({ consultantId }: { consultantId: string 
                   A: "Áudio", B: "Sem áudio", C: "Vídeo", D: "Botões/auto", E: "Custom",
                 };
                 // Mostra apenas variantes que têm dados, em ordem A→E.
-                const present = (["A", "B", "C", "D", "E"] as const).filter(
+                const present = (["A", "B", "C", "D", "E", "M"] as const).filter(
                   (v) => variantData[v] && variantData[v].total > 0,
                 );
                 const shown = present.length > 0 ? present : (["A", "B", "C"] as const);

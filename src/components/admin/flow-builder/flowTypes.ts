@@ -6,7 +6,7 @@ export type IconKey = "msg" | "video" | "sparkle" | "user" | "file";
 
 // Variantes de fluxo — ilimitadas até Z. D continua reservado para o padrão Camila.
 export type Variant =
-  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
+  | "A" | "B" | "C" | "D" | "E" | "M" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
   | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
 export const ALL_VARIANTS: Variant[] = (
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") as Variant[]

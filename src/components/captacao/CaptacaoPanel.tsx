@@ -29,7 +29,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [sentSteps, setSentSteps] = useState<Set<string>>(new Set());
   const [phone, setPhone] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
-  const [variant, setVariant] = useState<"A" | "B" | "C" | "D" | "E">("A");
+  const [variant, setVariant] = useState<"A" | "B" | "C" | "D" | "E" | "M">("A");
   // Fluxos reais do consultor (variante + nome) para o atalho dinâmico —
   // substitui o A/B/C fixo. Reflete renomeacoes feitas no construtor.
   const [flowOptions, setFlowOptions] = useState<Array<{ variant: string; name: string }>>([]);
@@ -124,7 +124,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
       setPhone(row?.phone_whatsapp || null);
       setCustomerName(row?.name || null);
       const v = String(row?.flow_variant || "A").toUpperCase();
-      setVariant((/^[A-Z]$/.test(v) ? v : "A") as "A" | "B" | "C" | "D" | "E");
+      setVariant((/^[A-Z]$/.test(v) ? v : "A") as "A" | "B" | "C" | "D" | "E" | "M");
       setMismatch({
         flag: !!row?.name_mismatch_flag,
         bill: row?.bill_holder_name || "",
@@ -134,7 +134,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
     })();
   }, [selectedId]);
 
-  const changeVariant = async (next: "A" | "B" | "C" | "D" | "E") => {
+  const changeVariant = async (next: "A" | "B" | "C" | "D" | "E" | "M") => {
     if (!selectedId || next === variant) return;
     setVariant(next);
     await supabase.from("customers").update({ flow_variant: next, updated_at: new Date().toISOString() }).eq("id", selectedId);
@@ -274,7 +274,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                   {(flowOptions.length > 0 ? flowOptions : [{ variant: "A", name: "CEMIG" }]).map((f) => (
                     <button
                       key={f.variant}
-                      onClick={() => changeVariant(f.variant as "A" | "B" | "C" | "D" | "E")}
+                      onClick={() => changeVariant(f.variant as "A" | "B" | "C" | "D" | "E" | "M")}
                       className={`px-2.5 py-1 text-[11px] font-semibold rounded-sm transition whitespace-nowrap min-h-[32px] ${variant === f.variant ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
                       title={`Usar ${f.name}`}
                     >

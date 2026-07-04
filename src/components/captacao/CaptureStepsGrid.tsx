@@ -10,7 +10,7 @@ interface Props {
   consultantId: string;
   customerId: string;
   /** Variante A/B/C do lead — filtra o fluxo certo */
-  variant?: "A" | "B" | "C" | "D" | "E";
+  variant?: "A" | "B" | "C" | "D" | "E" | "M";
   /** Map stepId -> "sent" | "responded" status */
   sentSteps: Set<string>;
   onSent: (stepId: string) => void;

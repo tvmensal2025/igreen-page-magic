@@ -29,7 +29,7 @@ import { resetLeadConversation } from "@/services/resetConversation";
 import { ManualStepDialog } from "./ManualStepDialog";
 import WinningConversationButton from "@/components/admin/WinningConversationButton";
 
-type Variant = "A" | "B" | "C" | "D" | "E";
+type Variant = "A" | "B" | "C" | "D" | "E" | "M";
 
 type Row = {
   id: string;

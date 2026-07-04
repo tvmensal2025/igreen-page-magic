@@ -18,7 +18,7 @@ export interface SendStepPayload {
   /** pula a checagem de nome — usar apenas no botão "Pedir nome" */
   skipNameGuard?: boolean;
   /** A/B/C escolhido pelo consultor nos chips (persiste no customer) */
-  variant?: "A" | "B" | "C" | "D" | "E";
+  variant?: "A" | "B" | "C" | "D" | "E" | "M";
   /** ignora a trava awaiting_inbound (reenvio explícito) */
   force?: boolean;
 }
