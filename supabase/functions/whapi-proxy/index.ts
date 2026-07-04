@@ -28,6 +28,7 @@ export type WhapiReasonCode =
   | "unpaid"
   | "channel_not_found"
   | "invalid_token"
+  | "channel_error"
   | "offline"
   | "rate_limited"
   | "unknown";
@@ -465,19 +466,34 @@ Deno.serve(async (req) => {
       case "health_check": {
         // Status do canal Whapi (para o painel de reconexão sem código).
         const r = await whapiFetch(whapiToken, `/health`, { method: "GET" });
-        const me = await whapiFetch(whapiToken, `/users/me`, { method: "GET" }).catch(() => ({ ok: false, status: 0, data: null }));
-        const status = r.data?.status?.text || r.data?.status || "UNKNOWN";
-        const phone = (me as any)?.data?.phone || (me as any)?.data?.id || null;
-        const channelId = r.data?.channel?.id || r.data?.channel_id || null;
+        const settingsResp = await whapiFetch(whapiToken, `/settings`, { method: "GET" })
+          .catch(() => ({ ok: false, status: 0, data: null }));
+
+        // Códigos Whapi: 0=INIT, 1=LAUNCH, 2=QR, 3=AUTH, 4=SYNC, 5=ERROR, 6=OFFLINE
+        const statusCodeNum: number | null =
+          typeof r.data?.status?.code === "number" ? r.data.status.code : null;
+        const statusText: string =
+          String(r.data?.status?.text || r.data?.status || "UNKNOWN").toUpperCase();
+        const phone = r.data?.user?.id || null;
+        const channelId = r.data?.channel_id || r.data?.channel?.id || null;
+
+        // Estado do webhook: precisa ter uma entrada apontando para nosso whapi-webhook
+        const expectedWebhookUrl = `${Deno.env.get("SUPABASE_URL") || ""}/functions/v1/whapi-webhook`;
+        const webhooks: any[] = (settingsResp as any)?.data?.webhooks || [];
+        const webhookOk = webhooks.some(
+          (w: any) => String(w?.url || "").includes("/functions/v1/whapi-webhook"),
+        );
+
         if (phone) {
           try {
             await admin.from("settings").upsert(
-              { key: "whapi_connected_phone", value: String(phone) },
+              { key: "whapi_connected_phone", value: `+${String(phone)}` },
               { onConflict: "key" },
             );
           } catch (_) { /* ignora */ }
         }
-        // Classifica motivo quando o canal não respondeu OK — ex.: 402 unpaid, 404 channel_not_found.
+
+        // Classifica motivo quando o canal não respondeu OK (ex.: 402 unpaid, 404 not_found)
         let reasonCode: WhapiReasonCode | null = null;
         let helpUrl: string | null = null;
         let reasonMessage: string | null = null;
@@ -486,17 +502,35 @@ Deno.serve(async (req) => {
           reasonCode = cls.reasonCode;
           helpUrl = cls.helpUrl;
           reasonMessage = cls.error;
-          console.warn(`[whapi-proxy] health_check: canal indisponível (${reasonCode}) status=${r.status}`);
+        } else if (statusCodeNum === 5 || statusCodeNum === 6) {
+          // Token OK mas canal desautenticado — banner específico.
+          reasonCode = "channel_error";
+          helpUrl = WHAPI_PANEL_URL;
+          reasonMessage =
+            statusCodeNum === 5
+              ? "Canal desautenticado (Whapi status ERROR). Reescaneie o QR."
+              : "Canal offline. Reescaneie o QR ou reconecte no painel Whapi.";
         }
+
+        // Semântica de "status" para o hook do front (mantém compat com AUTH/QR/INIT/OFFLINE)
+        let status = statusText;
+        if (statusCodeNum === 3) status = "AUTH";
+        else if (statusCodeNum === 2) status = "QR";
+        else if (statusCodeNum === 0 || statusCodeNum === 1 || statusCodeNum === 4) status = "INIT";
+        else if (statusCodeNum === 5 || statusCodeNum === 6) status = "OFFLINE";
+
         return json(200, {
           ok: r.ok,
-          status: String(status).toUpperCase(),
-          phone,
+          status,
+          statusCode: statusCodeNum,
+          statusText,
+          phone: phone ? `+${phone}` : null,
           channel_id: channelId,
+          webhook_ok: webhookOk,
+          expected_webhook_url: expectedWebhookUrl,
           reasonCode,
           reasonMessage,
           helpUrl,
-          raw: r.data,
         });
       }
 
@@ -516,6 +550,43 @@ Deno.serve(async (req) => {
       case "logout": {
         const r = await whapiFetch(whapiToken, `/users/logout`, { method: "POST" });
         return json(r.ok ? 200 : r.status, { ok: r.ok, raw: r.data });
+      }
+
+      case "refresh_webhook": {
+        // Reaplica o webhook do whapi-webhook nas configs da Whapi.
+        const url = `${Deno.env.get("SUPABASE_URL") || ""}/functions/v1/whapi-webhook`;
+        const body = {
+          webhooks: [
+            {
+              url,
+              mode: "body",
+              events: [
+                { type: "messages", method: "post" },
+                { type: "statuses", method: "post" },
+              ],
+            },
+          ],
+        };
+        const r = await whapiFetch(whapiToken, `/settings`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+        return json(r.ok ? 200 : r.status, { ok: r.ok, url, raw: r.data });
+      }
+
+      case "reauth": {
+        // Logout + request_qr em sequência, num único clique.
+        await whapiFetch(whapiToken, `/users/logout`, { method: "POST" }).catch(() => null);
+        await new Promise((res) => setTimeout(res, 1500));
+        const qr = await whapiFetch(whapiToken, `/users/login`, { method: "GET" });
+        if (!qr.ok) {
+          if (isWhapiErrorBlob(qr.status, qr.data)) {
+            const cls = classifyWhapiError(qr.status, qr.data);
+            return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
+          }
+          return json(qr.status, { error: qr.data });
+        }
+        return json(200, { qr: qr.data?.base64 || qr.data?.qr || null, raw: qr.data });
       }
 
       case "get_profile_pic": {

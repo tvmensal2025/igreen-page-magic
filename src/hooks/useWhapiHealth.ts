@@ -7,6 +7,7 @@ export type WhapiReasonCode =
   | "unpaid"
   | "channel_not_found"
   | "invalid_token"
+  | "channel_error"
   | "offline"
   | "rate_limited"
   | "unknown"
@@ -14,8 +15,12 @@ export type WhapiReasonCode =
 
 export interface WhapiHealth {
   status: WhapiHealthStatus;
+  statusCode: number | null;
+  statusText: string | null;
   phone: string | null;
   channelId: string | null;
+  webhookOk: boolean | null;
+  expectedWebhookUrl: string | null;
   checking: boolean;
   lastCheckedAt: number | null;
   error: string | null;
@@ -28,19 +33,24 @@ const POLL_MS = 30_000;
 
 function normalize(raw: any): WhapiHealthStatus {
   const s = String(raw?.status || "").toUpperCase();
-  if (!raw?.ok) return "OFFLINE";
-  if (s.includes("AUTH")) return "AUTH";
-  if (s.includes("QR")) return "QR";
-  if (s.includes("INIT") || s.includes("LAUNCH") || s.includes("STARTING")) return "INIT";
+  if (!raw?.ok && !s) return "OFFLINE";
+  if (s === "AUTH") return "AUTH";
+  if (s === "QR") return "QR";
+  if (s === "INIT" || s === "LAUNCH" || s === "STARTING" || s === "SYNC") return "INIT";
+  if (s === "OFFLINE" || s === "ERROR") return "OFFLINE";
   if (!s) return "UNKNOWN";
-  return s as WhapiHealthStatus;
+  return "UNKNOWN";
 }
 
 export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () => Promise<void> } {
   const [health, setHealth] = useState<WhapiHealth>({
     status: "UNKNOWN",
+    statusCode: null,
+    statusText: null,
     phone: null,
     channelId: null,
+    webhookOk: null,
+    expectedWebhookUrl: null,
     checking: false,
     lastCheckedAt: null,
     error: null,
@@ -61,8 +71,12 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
       if (!mountedRef.current) return;
       setHealth({
         status: normalize(data),
+        statusCode: typeof data?.statusCode === "number" ? data.statusCode : null,
+        statusText: data?.statusText ?? null,
         phone: data?.phone ?? null,
         channelId: data?.channel_id ?? null,
+        webhookOk: typeof data?.webhook_ok === "boolean" ? data.webhook_ok : null,
+        expectedWebhookUrl: data?.expected_webhook_url ?? null,
         checking: false,
         lastCheckedAt: Date.now(),
         error: null,
@@ -95,3 +109,4 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
 
   return { ...health, refresh };
 }
+

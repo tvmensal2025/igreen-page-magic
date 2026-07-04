@@ -23,8 +23,9 @@ const statusMeta: Record<WhapiHealthStatus, { label: string; tone: "default" | "
 export function WhapiConnectionPanel({ visible }: Props) {
   const health = useWhapiHealth(visible);
   const [tokenInput, setTokenInput] = useState("");
-  const [busy, setBusy] = useState<null | "save" | "qr" | "logout" | "backfill">(null);
+  const [busy, setBusy] = useState<null | "save" | "qr" | "logout" | "backfill" | "reauth" | "webhook">(null);
   const [qrImage, setQrImage] = useState<string | null>(null);
+  const reauthPollRef = useRef<number | null>(null);
   const [backfillStatus, setBackfillStatus] = useState<any>(null);
   const pollRef = useRef<number | null>(null);
 
@@ -144,6 +145,69 @@ export function WhapiConnectionPanel({ visible }: Props) {
     }
   };
 
+  const stopReauthPoll = () => {
+    if (reauthPollRef.current) {
+      window.clearInterval(reauthPollRef.current);
+      reauthPollRef.current = null;
+    }
+  };
+
+  const handleReauth = async () => {
+    setBusy("reauth");
+    setQrImage(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("whapi-proxy", {
+        body: { action: "reauth", payload: {} },
+      });
+      if (error || data?.error) throw new Error(error?.message || data?.error || "Falha");
+      const qr: string | null = data?.qr || null;
+      if (!qr) {
+        toast.info("A Whapi não devolveu QR agora. Aguarde 5s e clique de novo.");
+      } else {
+        setQrImage(qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`);
+        toast.success("QR gerado. Escaneie no WhatsApp.");
+      }
+      // Polling até virar AUTH
+      stopReauthPoll();
+      reauthPollRef.current = window.setInterval(async () => {
+        await health.refresh();
+      }, 3000);
+      // Para o polling depois de 3 min como safety
+      window.setTimeout(stopReauthPoll, 180_000);
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao reautenticar");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRefreshWebhook = async () => {
+    setBusy("webhook");
+    try {
+      const { data, error } = await supabase.functions.invoke("whapi-proxy", {
+        body: { action: "refresh_webhook", payload: {} },
+      });
+      if (error || data?.error) throw new Error(error?.message || data?.error || "Falha");
+      toast.success("Webhook reaplicado na Whapi.");
+      await health.refresh();
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao aplicar webhook");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Para polling quando canal volta a AUTH ou componente desmonta
+  useEffect(() => {
+    if (health.status === "AUTH" && reauthPollRef.current) {
+      stopReauthPoll();
+      setQrImage(null);
+      toast.success("Canal reconectado ✅");
+    }
+    return () => { if (!visible) stopReauthPoll(); };
+  }, [health.status, visible]);
+
+
   return (
     <Card className="border-border">
       <CardHeader className="pb-3">
@@ -159,17 +223,52 @@ export function WhapiConnectionPanel({ visible }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-1 text-xs text-muted-foreground">
+        {/* Diagnóstico ao vivo do canal Whapi */}
+        <div className="rounded-md border bg-muted/30 p-3 text-[11px] font-mono space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Whapi /health (ao vivo)</span>
+            <span className="text-muted-foreground">
+              {health.lastCheckedAt
+                ? new Date(health.lastCheckedAt).toLocaleTimeString()
+                : "—"}
+            </span>
+          </div>
           <div>
-            Telefone conectado: <span className="font-mono text-foreground">{health.phone || "—"}</span>
+            status.code:{" "}
+            <span
+              className={
+                health.statusCode === 3
+                  ? "text-green-600 font-bold"
+                  : health.statusCode === 2
+                  ? "text-yellow-600 font-bold"
+                  : "text-destructive font-bold"
+              }
+            >
+              {health.statusCode ?? "?"} ({health.statusText || meta.label})
+            </span>
+          </div>
+          <div>
+            user.id:{" "}
+            <span className="text-foreground">{health.phone || "—"}</span>
           </div>
           {health.channelId && (
             <div>
-              Canal: <span className="font-mono text-foreground">{health.channelId}</span>
+              channel_id:{" "}
+              <span className="text-foreground">{health.channelId}</span>
             </div>
           )}
+          <div>
+            webhook:{" "}
+            {health.webhookOk === true ? (
+              <span className="text-green-600">✅ apontando pro app</span>
+            ) : health.webhookOk === false ? (
+              <span className="text-destructive">❌ não configurado</span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
           {health.error && (
-            <div className="text-destructive">Último erro: {health.error}</div>
+            <div className="text-destructive">erro: {health.error}</div>
           )}
         </div>
 
@@ -219,13 +318,44 @@ export function WhapiConnectionPanel({ visible }: Props) {
           </div>
         )}
 
-        {health.status !== "AUTH" && !health.reasonCode && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div>
-              Canal Whapi está <b>{meta.label}</b>. Atualize o token ou escaneie um novo QR
-              para voltar a enviar mensagens — sem precisar tocar em código.
+        {(health.reasonCode === "channel_error" ||
+          (health.status !== "AUTH" && !health.reasonCode)) && (
+          <div className="rounded-md border-2 border-destructive bg-destructive/10 p-3 text-xs text-destructive space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold mb-1">Canal desautenticado</div>
+                <div>
+                  Token OK, mas o WhatsApp saiu de "Aparelhos conectados". Clique em
+                  <b> Reautenticar canal</b> abaixo, escaneie o QR e aguarde virar
+                  <b> AUTH (code=3)</b>.
+                </div>
+              </div>
             </div>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleReauth}
+              disabled={busy === "reauth"}
+              className="w-full"
+            >
+              <QrCode className="h-3.5 w-3.5 mr-1" />
+              {busy === "reauth" ? "Gerando QR…" : "Reautenticar canal (1 clique)"}
+            </Button>
+          </div>
+        )}
+
+        {health.webhookOk === false && (
+          <div className="rounded-md border border-orange-500/50 bg-orange-500/10 p-3 text-xs text-orange-700 dark:text-orange-300 flex items-center justify-between gap-2">
+            <span>Webhook não está configurado na Whapi.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRefreshWebhook}
+              disabled={busy === "webhook"}
+            >
+              {busy === "webhook" ? "Aplicando…" : "Reaplicar webhook"}
+            </Button>
           </div>
         )}
 
@@ -255,15 +385,22 @@ export function WhapiConnectionPanel({ visible }: Props) {
             <RefreshCcw className={`h-3.5 w-3.5 mr-1 ${health.checking ? "animate-spin" : ""}`} />
             Verificar status
           </Button>
-          <Button onClick={handleRequestQr} variant="outline" size="sm" disabled={busy === "qr"}>
+          <Button onClick={handleReauth} variant="outline" size="sm" disabled={busy === "reauth"}>
             <QrCode className="h-3.5 w-3.5 mr-1" />
-            {busy === "qr" ? "Pedindo…" : "Pedir QR"}
+            {busy === "reauth" ? "Gerando QR…" : "Reautenticar (Logout + QR)"}
           </Button>
-          <Button onClick={handleLogout} variant="outline" size="sm" disabled={busy === "logout"}>
+          <Button onClick={handleRequestQr} variant="ghost" size="sm" disabled={busy === "qr"}>
+            <QrCode className="h-3.5 w-3.5 mr-1" />
+            {busy === "qr" ? "Pedindo…" : "Só pedir QR"}
+          </Button>
+          <Button onClick={handleLogout} variant="ghost" size="sm" disabled={busy === "logout"}>
             <LogOut className="h-3.5 w-3.5 mr-1" />
-            {busy === "logout" ? "Saindo…" : "Logout do canal"}
+            {busy === "logout" ? "Saindo…" : "Só logout"}
           </Button>
         </div>
+
+
+
 
         {qrImage && (
           <div className="border rounded-md p-3 flex flex-col items-center gap-2">
