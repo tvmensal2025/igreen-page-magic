@@ -42,8 +42,8 @@ async function checkFlowDHealth(supabase: any): Promise<CheckResult> {
   // Busca candidatos em Fluxo D parados >30s em steps críticos
   const { data: candidates } = await supabase
     .from("customers")
-    .select("id, consultant_id, conversation_step, last_bot_reply_at, updated_at, name, phone_whatsapp")
-    .eq("flow_variant", "D")
+    .select("id, consultant_id, conversation_step, last_bot_reply_at, updated_at, name, phone_whatsapp, flow_variant")
+    .in("flow_variant", ["D", "M"])
     .not("status", "in", "(approved,cancelled)")
     .in("conversation_step", STUCK_STEPS)
     .lt("last_bot_reply_at", since)
