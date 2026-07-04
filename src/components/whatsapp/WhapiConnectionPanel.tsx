@@ -237,7 +237,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
             status.code:{" "}
             <span
               className={
-                health.statusCode === 3
+                health.status === "AUTH"
                   ? "text-green-600 font-bold"
                   : health.statusCode === 2
                   ? "text-yellow-600 font-bold"
@@ -245,8 +245,14 @@ export function WhapiConnectionPanel({ visible }: Props) {
               }
             >
               {health.statusCode ?? "?"} ({health.statusText || meta.label})
+              {health.status === "AUTH" && health.statusCode !== 3 && (
+                <span className="ml-1 text-[10px] text-muted-foreground font-normal">
+                  (canal operando — /users/profile OK)
+                </span>
+              )}
             </span>
           </div>
+
           <div>
             user.id:{" "}
             <span className="text-foreground">{health.phone || "—"}</span>
