@@ -400,6 +400,9 @@ const SuperAdmin = () => {
             {/* Lote 3 — Infra: MinIO + alertas super_admin */}
             <InfraHealthPanel />
 
+            {/* Saúde das instâncias WhatsApp — marcar banida / destravar */}
+            <WhatsAppInstanceHealthCard />
+
             {/* Health Panel — saúde geral + religar bot global */}
             <SystemHealthPanel />
 
