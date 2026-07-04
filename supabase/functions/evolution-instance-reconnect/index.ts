@@ -83,26 +83,10 @@ Deno.serve(async (req) => {
     }
     if (!owns && !isAdmin) return json({ error: "forbidden" }, 403);
 
-    // ── HARD-LOCK: bloqueia reconexão se instância está em revisão manual ──
-    const fatalLockActive =
-      !!inst.manual_review_required ||
-      (inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date());
-    if (fatalLockActive && !(isAdmin && body?.overrideFatalLock)) {
-      return json({
-        error: "manual_review_required",
-        message:
-          "Este número teve uma desconexão grave (possível restrição/bloqueio do WhatsApp). " +
-          "Não reconecte aqui agora. Verifique no app oficial do WhatsApp se o número voltou " +
-          "ao normal. Se quiser usar outro chip, escolha 'Desconectar / trocar chip'.",
-        fatal_disconnect_reason: inst.fatal_disconnect_reason,
-        fatal_disconnect_at: inst.fatal_disconnect_at,
-        fatal_lock_until: inst.fatal_lock_until,
-      }, 423); // 423 Locked
-    }
-
-    // ── RECREATE: apaga instância no Evolution e cria uma nova ──
+    // ── RECREATE: apaga instância no Evolution e cria uma nova. Precede o
+    // hard-lock porque recriar é justamente COMO se destrava uma instância
+    // que caiu em fatal (chip queimado / sessão invalidada pelo WhatsApp).
     if (body?.recreate === true) {
-      if (!isAdmin && !owns) return json({ error: "forbidden" }, 403);
       const { recreateInstance } = await import("../evolution-webhook/recreate-instance.ts");
       const result = await recreateInstance(admin, {
         instanceRowId: inst.id,
@@ -121,6 +105,23 @@ Deno.serve(async (req) => {
         new_instance_name: result.new_instance_name,
         qr_base64: result.qr_base64,
       });
+    }
+
+    // ── HARD-LOCK: bloqueia reconexão se instância está em revisão manual ──
+    const fatalLockActive =
+      !!inst.manual_review_required ||
+      (inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date());
+    if (fatalLockActive && !(isAdmin && body?.overrideFatalLock)) {
+      return json({
+        error: "manual_review_required",
+        message:
+          "Este número teve uma desconexão grave (possível restrição/bloqueio do WhatsApp). " +
+          "Não reconecte aqui agora. Verifique no app oficial do WhatsApp se o número voltou " +
+          "ao normal. Se quiser usar outro chip, escolha 'Desconectar / trocar chip'.",
+        fatal_disconnect_reason: inst.fatal_disconnect_reason,
+        fatal_disconnect_at: inst.fatal_disconnect_at,
+        fatal_lock_until: inst.fatal_lock_until,
+      }, 423); // 423 Locked
     }
 
     const headers = { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY };
