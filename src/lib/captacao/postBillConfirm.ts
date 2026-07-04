@@ -10,6 +10,8 @@
 // 4. Despacha o próximo capture step.
 
 import { supabase } from "@/integrations/supabase/client";
+import { discountRates } from "./discount-rates";
+
 
 export interface PostBillConfirmArgs {
   customer: any;
@@ -35,16 +37,17 @@ const STOP_CAPTURE_TYPES = new Set([
 const INTER_MESSAGE_DELAY_MS = 1800;
 const POST_FALLBACK_DELAY_MS = 1500;
 
-/** Copy oficial de simulação — segue mem://copy/discount-rate-20 ("até 20%"). */
+/** Copy oficial de simulação. Fluxo M (MG) usa 10-28%; demais 8-20%. */
 function buildSimulationText(customer: any, valor: number): string {
-  const economia = Math.max(1, Math.round(valor * 0.20));
+  const rates = discountRates(customer?.flow_variant);
+  const economia = Math.max(1, Math.round(valor * rates.max));
   const fmtBRL = (n: number) =>
     n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const firstName = String(customer?.name || "").trim().split(/\s+/)[0] || "";
   return (
     `🎉 *Pronto${firstName ? `, ${firstName}` : ""}!* Já fiz a *simulação* com base na sua conta.\n\n` +
     `💡 Conta atual: *R$ ${fmtBRL(valor)}*\n` +
-    `💚 Economia: *até R$ ${fmtBRL(economia)} todo mês* (até 20%)\n\n` +
+    `💚 Economia: *até R$ ${fmtBRL(economia)} todo mês* (${rates.label})\n\n` +
     `✅ Sem obra\n✅ Sem instalação\n✅ Mesma distribuidora — só muda quem fornece a energia\n\n` +
     `Bora *finalizar seu cadastro agora*? 🚀`
   );

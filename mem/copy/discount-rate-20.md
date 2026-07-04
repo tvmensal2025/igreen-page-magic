@@ -5,9 +5,10 @@ type: feature
 ---
 Padrão para todas as superfícies cliente-final (LP, WhatsApp bot, FAQ, IA):
 - **Desconto = até 20%** em LP/FAQ/bot. NUNCA 12%, 15% ou faixa 10-20%.
+- **Exceção — Fluxo M (MG, variant="M")**: runtime do bot usa **10%–28%** (max 0.28, min 0.10). Aplicado via helper único `supabase/functions/_shared/discount-rates.ts` (+ espelho em `src/lib/captacao/discount-rates.ts`). LP/FAQ públicas continuam "até 20%". Consumido por `render-vars.ts`, `postBillConfirm.ts`, `{whapi,evolution}-webhook/handlers/bot-flow.ts`. Para adicionar outra variante, editar SÓ o helper.
 - **Exceção — IA Fluxo B (Vendedora v1)**: na frase de SIMULAÇÃO verbal usa SEMPRE faixa "*entre 8% e 20%*" (varia por ICMS/consumo). O número em R$ exibido continua `valor × 0,20` fixo. Definido em `_shared/fluxo-b-prompt.ts` (seção "Simulação após receber o valor da conta") e reforçado em `vendedora-v1/planner.ts` e `playbook.ts`.
 - `supabase/functions/ai-sales-agent/index.ts`: prompt diz "≈20% sobre o valor"; cálculo `billNum * 0.20`.
-- `supabase/functions/{whapi,evolution}-webhook/handlers/bot-flow.ts`: `{economia_mensal/anual}` = `valor * 0.20`.
+- `supabase/functions/{whapi,evolution}-webhook/handlers/bot-flow.ts`: `{economia_mensal/anual}` = `valor * discountRates(variant).max`.
 - `ai_knowledge_sections` "FAQ 2 — DESCONTO E COBRANÇA": "O desconto é de até 20%…".
 - LP: `HowItWorksSection`, `LicConexaoGreen`, `ConsultantPage` meta — todos "até 20%".
 - Passos `bot_flow_steps.slot_key='como_funciona'` com texto vazio recebem o copy padrão via migration:

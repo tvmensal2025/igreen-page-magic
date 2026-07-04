@@ -125,6 +125,7 @@ export async function executeActions(
     cpf: null,
     representante: args.consultantName ?? null,
     valor_conta: args.state.customer.electricityBillValue,
+    variant: (args.state.customer as any)?.flowVariant ?? (args.state.customer as any)?.flow_variant,
   };
   const renderedOutbound: OutboundMessage[] = args.result.outbound.map((m) => {
     if (m.kind === "text") {

@@ -6,6 +6,7 @@
 // the closure variables are now properties of `ctx`.
 
 import { resolveFlowId } from "../../_shared/resolve-flow.ts";
+import { discountRates } from "../../_shared/discount-rates.ts";
 import {
   extractQuestionTail,
   resolveStepReentry,
@@ -1522,6 +1523,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           phone: (customer as any).phone_whatsapp || "",
           representante: nomeRepresentante || "",
           valor_conta: (customer as any).electricity_bill_value,
+          variant: (customer as any)?.flow_variant,
           extra: normalizedExtras,
         });
 
@@ -3042,13 +3044,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               if (rawText) {
                 const _fmtBRL = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 const _valor = Number((customer as any).electricity_bill_value || 0);
+                const _rates = discountRates((customer as any)?.flow_variant);
                 const _first = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
                 const _vars: Record<string, string> = {
                   "{{nome}}": _first, "{nome}": _first,
                   "{{representante}}": nomeRepresentante || "", "{representante}": nomeRepresentante || "",
                   "{{valor}}": _fmtBRL(_valor), "{valor}": _fmtBRL(_valor),
                   "{{valor_conta}}": _fmtBRL(_valor), "{valor_conta}": _fmtBRL(_valor),
-                  "{{economia_mensal}}": _fmtBRL(_valor * 0.20), "{economia_mensal}": _fmtBRL(_valor * 0.20),
+                  "{{economia_mensal}}": _fmtBRL(_valor * _rates.max), "{economia_mensal}": _fmtBRL(_valor * _rates.max),
                 };
                 let rendered = rawText;
                 for (const [k, v] of Object.entries(_vars)) rendered = rendered.split(k).join(v);
@@ -3146,6 +3149,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             // (dispatchStepFromFlow tem anti-rep interno de 10 min, então não duplica).
             const _fmtBRL = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const _valor = Number((customer as any).electricity_bill_value || 0);
+            const _rates = discountRates((customer as any)?.flow_variant);
             const _vars = {
               "{valor}": _fmtBRL(_valor),
               "{{valor}}": _fmtBRL(_valor),
@@ -3153,10 +3157,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               "{{valor_conta}}": _fmtBRL(_valor),
               "{conta}": _fmtBRL(_valor),
               "{{conta}}": _fmtBRL(_valor),
-              "{economia_mensal}": _fmtBRL(_valor * 0.20),
-              "{{economia_mensal}}": _fmtBRL(_valor * 0.20),
-              "{economia_anual}": _fmtBRL(_valor * 0.20 * 12),
-              "{{economia_anual}}": _fmtBRL(_valor * 0.20 * 12),
+              "{economia_mensal}": _fmtBRL(_valor * _rates.max),
+              "{{economia_mensal}}": _fmtBRL(_valor * _rates.max),
+              "{economia_anual}": _fmtBRL(_valor * _rates.max * 12),
+              "{{economia_anual}}": _fmtBRL(_valor * _rates.max * 12),
             };
             const emittedCurrent = await dispatchStepFromFlow(stepRow.step_key, _vars).catch(() => false);
             console.log(`[custom-step-resolver] emit-current step=${stepRow.step_key} ok=${emittedCurrent}`);
@@ -3716,14 +3720,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const billValue = Number(valueMatch[1].replace(".", "").replace(",", "."));
           if (Number.isFinite(billValue) && billValue >= 30) {
             updates.electricity_bill_value = billValue;
-            // Simulação inicial já com base no valor digitado (mem://copy/discount-rate-20 — "até 20%")
-            const economiaMin = Math.max(1, Math.round(billValue * 0.08));
-            const economiaMax = Math.max(2, Math.round(billValue * 0.20));
+            // Simulação inicial já com base no valor digitado. Fluxo M usa 10-28%; demais 8-20%.
+            const _rates = discountRates((customer as any)?.flow_variant);
+            const economiaMin = Math.max(1, Math.round(billValue * _rates.min));
+            const economiaMax = Math.max(2, Math.round(billValue * _rates.max));
             const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             reply =
               `Boa, ${first || "anotado"}! Anotei R$ ${fmt(billValue)} 💚\n\n` +
               `💡 Conta atual: *R$ ${fmt(billValue)}*\n` +
-              `💚 Economia estimada: *R$ ${economiaMin} a R$ ${economiaMax}* por mês (até 20%)\n\n` +
+              `💚 Economia estimada: *R$ ${economiaMin} a R$ ${economiaMax}* por mês (${_rates.label})\n\n` +
               `✅ Sem obra\n✅ Sem instalação\n✅ Mesma distribuidora\n\n` +
               `Pra travar o cálculo exato e seguir o cadastro, me manda agora a *foto* (ou PDF) da sua última conta de luz 📸`;
             break;
@@ -4058,6 +4063,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (updates.name || customer.name) updates.name_source = "user_confirmed";
 
         const _valor = Number((customer as any).electricity_bill_value || 0);
+        const _rates = discountRates((customer as any)?.flow_variant);
         const _fmtBRL = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const _vars = {
           "{valor}": _fmtBRL(_valor),
@@ -4066,10 +4072,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           "{{valor_conta}}": _fmtBRL(_valor),
           "{conta}": _fmtBRL(_valor),
           "{{conta}}": _fmtBRL(_valor),
-          "{economia_mensal}": _fmtBRL(_valor * 0.20),
-          "{{economia_mensal}}": _fmtBRL(_valor * 0.20),
-          "{economia_anual}": _fmtBRL(_valor * 0.20 * 12),
-          "{{economia_anual}}": _fmtBRL(_valor * 0.20 * 12),
+          "{economia_mensal}": _fmtBRL(_valor * _rates.max),
+          "{{economia_mensal}}": _fmtBRL(_valor * _rates.max),
+          "{economia_anual}": _fmtBRL(_valor * _rates.max * 12),
+          "{{economia_anual}}": _fmtBRL(_valor * _rates.max * 12),
         };
 
         // FIX: continuar a partir da POSIÇÃO do capture_conta no fluxo custom.

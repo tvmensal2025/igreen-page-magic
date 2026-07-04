@@ -1,44 +1,49 @@
-## Diagnóstico
+## Objetivo
 
-O canal Whapi (SHAZAM-A79TY, +55 34 9823-9056) está **funcional**:
-- Painel Whapi: "WhatsApp API authorized"
-- `GET /chats` retorna mensagens reais (envios recentes `from_me:true`)
-- Webhook aponta corretamente para `whapi-webhook`
+Trocar o cálculo de desconto/economia **apenas no Fluxo M (variant="M", Minas Gerais)** de **8%–20%** para **10%–28%**. Nenhum outro fluxo (A/B/C/D/E) muda — continuam com 8%–20% / 20%.
 
-O bug é **nosso**: `whapi-proxy` faz `health_check` via `/health` e trata `status.code=5 ("ERROR")` como canal desautenticado (`channel_error` / OFFLINE), bloqueando o botão de importar histórico e mostrando banner vermelho. Mas `/health` do Whapi devolve `code=5` mesmo com o canal operando normalmente — a verdade está nos endpoints de dados.
+## Onde o cálculo aparece hoje (todas hardcoded em 0.20 / 0.08)
 
-## Correção
+1. `supabase/functions/_shared/render-vars.ts` — helper central que renderiza `{{economia_mensal}}`, `{{economia_anual}}`, `{{economia_range}}`, `{{economia_faixa}}`.
+2. `supabase/functions/_shared/fluxo-b-prompt.ts` — prompt IA Fluxo B fala "entre 8% e 20%".
+3. `src/lib/captacao/postBillConfirm.ts` — fallback de simulação após "Eu confirmo" no OCR.
+4. `supabase/functions/whapi-webhook/handlers/bot-flow.ts` — mapa de substituição de `{economia_mensal|anual}` + simulação inline (min 8% / max 20%).
+5. `supabase/functions/evolution-webhook/handlers/bot-flow.ts` — idem whapi.
 
-### 1. `supabase/functions/whapi-proxy/index.ts` — `health_check`
-Substituir a lógica baseada no numérico de `/health` por uma **prova de vida real**:
+## Estratégia
 
-- Chamar em paralelo: `GET /health` (informativo) + `GET /users/profile` (ou `GET /chats?count=1` como fallback).
-- Regra nova:
-  - Se `/users/profile` responder **200** → `status = "AUTH"`, `reasonCode = null`, canal OK (independente do code do `/health`).
-  - Se responder **401/403** → `reasonCode = "invalid_token"`.
-  - Se responder **402** → `reasonCode = "unpaid"`.
-  - Se responder **404** com `channel not found` → `reasonCode = "channel_not_found"`.
-  - Só devolver `channel_error` quando `/users/profile` falhar com erro específico de canal desautenticado (mensagem contendo "not authorized"/"logout"/"qr").
-- Continuar retornando `statusCode` numérico do `/health` apenas como campo informativo no painel de diagnóstico (sem gatear o resto do UI).
-- Manter validação do webhook (`webhookOk`).
+Criar helper único **`supabase/functions/_shared/discount-rates.ts`** com:
 
-### 2. `supabase/functions/whapi-proxy/index.ts` — `mapWhapiError`
-Já existe o fallback que consulta `/health` antes de devolver `invalid_token`. Ajustar para também aceitar `/users/profile` OK como sinal de canal saudável — assim um 401 esporádico em outro endpoint não vira "token inválido" enganoso.
+```ts
+export type FlowVariant = "A" | "B" | "C" | "D" | "E" | "M";
+export function discountRates(variant?: string | null) {
+  const v = String(variant || "A").toUpperCase();
+  if (v === "M") return { min: 0.10, max: 0.28, label: "até 28%", rangeLabel: "10% e 28%" };
+  return { min: 0.08, max: 0.20, label: "até 20%", rangeLabel: "8% e 20%" };
+}
+```
 
-### 3. `src/components/whatsapp/WhapiConnectionPanel.tsx`
-- Remover o bloqueio do botão **"Importar histórico completo"** quando `reasonCode === "channel_error"` isoladamente — passar a habilitar sempre que `status === "AUTH"`.
-- No painel de Diagnóstico ao vivo, exibir `code=5` em amarelo (informativo) em vez de vermelho, quando `/users/profile` estiver OK.
-- Manter banner de reautenticação apenas quando a nova regra realmente detectar desautenticação.
+Refatorar os 5 pontos acima para usar `discountRates(variant)`:
 
-### 4. `src/hooks/useWhapiHealth.ts`
-Sem mudança de contrato; apenas se beneficia do novo payload correto.
+- `render-vars.ts`: aceitar `variant` no `RenderVars` e usar `rates.max` / `rates.min` no lugar de `0.20` / `0.08`. Todos os call sites que hoje passam `RenderVars` recebem também `variant` (pegar de `customer.flow_variant`).
+- `postBillConfirm.ts`: ler `customer.flow_variant`, usar `rates.max` no cálculo e trocar o texto "(até 20%)" por `(${rates.label})`.
+- Webhooks whapi + evolution: nos dois blocos de substituição `_valor * 0.20`, ler `_flowVariant` (já disponível no escopo) e usar rates; na simulação inline com `0.08` / `0.20`, mesma coisa; ajustar o texto fixo "(até 20%)" e "entre 8% e 20%" para usar `rates.label` / `rates.rangeLabel`.
+- `fluxo-b-prompt.ts`: **não mexer** — Fluxo B nunca é M. Só documentar no memory.
 
-## Fora do escopo
+## Mudanças no frontend
 
-- Não mexer no token (funciona).
-- Não recriar/logout do canal (funciona).
-- Não alterar `whapi-webhook` nem `whapi-history-backfill`.
+Nenhuma. LP/FAQ/copy pública continuam "até 20%" (regra atual mem://copy/discount-rate-20). A regra só muda dentro do runtime do Fluxo M.
 
-## Resultado esperado
+## Memory
 
-Após deploy, o painel Admin mostra status verde AUTH, sem banner falso de "canal desautenticado", e o botão **"Importar histórico completo"** fica liberado imediatamente.
+Atualizar `mem/copy/discount-rate-20.md`: adicionar exceção "Fluxo M (MG) usa 10%–28% em todas as simulações do bot (render-vars, postBillConfirm, webhooks). Superfícies públicas continuam 20%."
+
+## Não muda
+
+- Regra geral "até 20%" pra LP, WhatsApp bot A/B/C/D/E, FAQ.
+- Comissão de licenciado (15%).
+- Cálculo do simulador solar (`economics-br.ts`) — outro domínio.
+
+## Fora de escopo
+
+- Não alterar textos dos steps já salvos em `bot_flow_steps` do Fluxo M (usuário faz isso pelo builder se quiser). Só o cálculo automático das variáveis muda.
