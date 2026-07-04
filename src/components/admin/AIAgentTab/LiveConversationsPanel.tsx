@@ -64,6 +64,7 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
     C: { name: null, steps: [] },
     D: { name: null, steps: [] },
     E: { name: null, steps: [] },
+    M: { name: null, steps: [] },
   });
   const [confirmReset, setConfirmReset] = useState<Row | null>(null);
   const [manualStepFor, setManualStepFor] = useState<Row | null>(null);
