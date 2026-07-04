@@ -1,83 +1,78 @@
-## Diagnóstico
+# Clonar Fluxo D → "Fluxo MG" (independente, sem erro)
 
-A imagem HD do telhado é montada 100% no servidor (`supabase/functions/_shared/solar/data-layers.ts`, chamada por `solar-roof-hd`). Hoje os módulos ficam "tortos/errados" porque:
+## Descoberta importante (por que não pode ser literal "MG")
 
-1. **Sem rotação**: `drawPanel(...rot=0)` (linha 338). O código foi propositalmente zerado ("girar pelo azimute deixava tortos") — o problema não era girar, era girar com o ângulo errado e sem compensar a distorção Mercator (px/m diferente em X e Y).
-2. **Dimensões trocadas por orientação** em `extractPanelPositions` (economics-br.ts 318-319): `PORTRAIT` deveria ter `widthM = panelW (1.045)` e `heightM = panelH (1.879)`; hoje o `widthM` sempre recebe o maior lado quando LANDSCAPE, invertendo a proporção.
-3. **Escalas anisotrópicas**: `pxPerMx` (lng) ≠ `pxPerMy` (lat) numa mesma latitude. Ao girar um retângulo, precisa usar uma escala única (m→px) senão ele fica trapezoidal.
-4. **Estética "amadora"**: borda ciano grossa, sem gap entre módulos, sem sombra, heatmap por cima dos próprios módulos, sem vinheta — bem longe do padrão Reonic (módulos escuros uniformes, borda fina, gap regular, heatmap só na área livre).
+O banco só aceita variant de **1 letra** (`CHECK (variant ~ '^[A-Z]$')` em `bot_flows`, e `IN ('A','B','C','D','E')` em `customers.flow_variant`). Além disso, ~20 pontos de código fazem `variant === "D"` ou usam whitelists `["A","B","C","D","E"]`. Um valor `"MG"` (2 chars) **falha no INSERT** e é ignorado silenciosamente por todos os guards de webhook, watchdog, health cron e UI.
 
-Referência Reonic: painéis desenhados por segmento de telhado, alinhados à borda do segmento, mesma orientação por segmento, tom azul-marinho uniforme, borda hairline, leve espaçamento.
+**Solução segura:** usar a letra livre **`"M"`** como valor técnico e **"Fluxo MG"** como `name` (rótulo visível em `bot_flows.name` e em toda a UI). Fica 100% independente do D, sem risco.
 
-## Fase A — Alinhamento correto dos módulos (imagem HD)
+---
 
-Arquivo: `supabase/functions/_shared/solar/data-layers.ts` + `economics-br.ts`.
+## O que será feito
 
-1. Corrigir `extractPanelPositions` (economics-br.ts):
-   - `widthM  = orientation === "PORTRAIT" ? panelW : panelH` → **trocar**: PORTRAIT usa `panelW` como largura, `panelH` como altura; LANDSCAPE inverte. Garantir consistência com a rotação (o eixo "altura" do módulo aponta na direção do azimute do segmento).
+### 1. Migration — expandir constraints e clonar linhas
 
-2. Reintroduzir rotação por segmento em `composeHdRoofPng` / `drawPanel`:
-   - Converter `azimuthDegrees` (bússola Google, 0=N, sentido horário) para radianos de tela: `rot = ((azimuth - 180) * Math.PI) / 180` para módulos apontando "para fora" do telhado com norte para cima na imagem.
-   - Usar escala **isotrópica** para o desenho do módulo: `pxPerM = (pxPerMx + pxPerMy) / 2`. Manter posição do centro (cx, cy) com `pxPerMx / pxPerMy` (que já dão o ponto correto), mas `halfW`/`halfH` usam `pxPerM`.
-   - `drawPanel` já suporta rotação; apenas passar `rot` corrigido.
+Arquivo novo: `supabase/migrations/<ts>_clone_flow_d_as_m.sql`
 
-3. Anti-aliasing simples nas bordas do módulo: quando `|lx|` ou `|ly|` cair dentro de uma faixa de 0.5 px do limite, aplicar alpha proporcional (cobertura) para eliminar serrilhado.
+- Expandir `customers.flow_variant` CHECK para incluir `'M'` (mantém `A,B,C,D,E`).
+- Expandir `clone_bot_flow_as()` para aceitar `'M'` como alvo.
+- **Clonar o Fluxo D "público" (consultant_id NULL, variant='D', is_active=true)** em uma nova linha `variant='M', name='Fluxo MG', is_active=true`, copiando **todos os `bot_flow_steps`** (mesmo `step_key`, `step_type`, `position`, `message_text`, `slot_key`, `wait_for`, `captures`, `transitions`, `fallback`, `text_delay_ms`) com **novos UUIDs**.
+- Reescrever `transitions[].goto_step_id` e `fallback.goto_step_id` para apontarem aos IDs novos (via mapa `old_id → new_id`), preservando a topologia exata do D.
+- GRANTs herdados de `bot_flows`/`bot_flow_steps` (já existentes).
+- Sem tocar em nenhuma linha do D — clone é aditivo.
 
-## Fase B — Acabamento visual "Reonic-like"
+### 2. Backend — tratar "M" idêntico a "D" em todos os guards
 
-Ainda em `data-layers.ts` (`composeHdRoofPng` / `drawPanel` / `buildHdRoof`).
+Substituir toda condição `variant === "D"` por `(variant === "D" || variant === "M")` e whitelists `["A","B","C","D","E"]` por `["A","B","C","D","E","M"]` nos arquivos:
 
-1. Paleta do módulo:
-   - `fill = [11, 18, 32]` (azul-marinho quase preto).
-   - `border = [30, 41, 59]` hairline (1 px, sem ciano).
-   - Sombra: antes de pintar o módulo, escurecer um retângulo offset (+1, +1) em 25% de alpha.
-2. Gap real entre módulos: reduzir `halfW`/`halfH` em ~4% (`* 0.96`) para simular a moldura de instalação.
-3. Heatmap só onde **não há módulo**: manter um `panelMask` binário (buffer `Uint8Array` do tamanho da imagem) preenchido enquanto desenhamos os módulos; no loop de heatmap, aplicar cor da paleta apenas se `panelMask[i] === 0 && mask.values > 0.5`. Reduzir `fluxOpacity` default para `0.22`.
-4. Vinheta sutil no PNG: multiplicar RGB por `1 - 0.15 * r²` (r = distância radial normalizada) para focar visualmente no telhado.
-5. Manter cache existente (`hd_image_path`) — invalidar automaticamente para análises novas; nas antigas, o próximo pedido regenera se o campo `hd_bounds` estiver nulo.
+- `supabase/functions/whapi-webhook/index.ts` (linhas 1447, 1459, 1761, 1772, 2464)
+- `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (linhas 2349, 3197)
+- `supabase/functions/evolution-webhook/index.ts` (linhas 2269, 2275)
+- `supabase/functions/evolution-webhook/handlers/bot-flow.ts` (linha 3043)
+- `supabase/functions/manual-step-send/index.ts` (linhas 49, 311, 476)
+- `supabase/functions/flow-d-stuck-watchdog/index.ts` (linha 66): `.in("flow_variant", ["D","M"])`
+- `supabase/functions/flow-d-health-cron/index.ts` (linhas 46, 87): idem
+- `supabase/functions/_shared/captation/flow-d-alerts.ts` (linhas 47-48): aceitar D e M
+- `supabase/functions/_shared/pick-flow-variant.ts`: adicionar `"M"` ao union type (não altera lógica de sorteio — MG será atribuído manualmente por consultor via `active_variants`)
+- `supabase/functions/_shared/engine/helpers.ts` (linhas 318, 337): `case "M": return variantD` (reusa estratégia — MG é clone lógico do D)
+- `supabase/functions/_shared/engine/loader.ts` (linha 90): expandir cast
+- `supabase/functions/_shared/engine/types.ts`: expandir union
+- `supabase/functions/_shared/flow-templates/types.ts`: expandir union
 
-## Fase C — Frontend (apenas legenda/observabilidade)
+### 3. Frontend — chip MG na UI
 
-Arquivo: `src/features/solar-3d/components/SolarRealRoofView.tsx`.
+- `src/components/whatsapp/FlowQuickBar.tsx`, `src/components/admin/AIAgentTab/ManualStepDialog.tsx`, `.../LiveConversationsPanel.tsx`, `src/components/admin/saude/BotHealthIntel.tsx`, `src/pages/SaudeProducao.tsx`, `src/components/admin/fluxo-b-ia/ConsultantVariantsCard.tsx`: adicionar `"M"` às arrays e unions.
+- Label do chip: exibir `"MG"` (2 chars) quando `variant === "M"` — ajustar largura mínima do badge para caber.
+- `VariantDistributionBar.tsx` linha 134: manter proteção contra rename do D **e** do M ("Fluxo MG não pode ser renomeado").
+- Linha 254: desabilitar delete de M também (é fluxo oficial).
 
-1. Ao carregar o HD, trocar a legenda para: "Foto aérea · módulos alinhados ao telhado".
-2. Nenhuma outra mudança visual/estrutural (não mexer no overlay div do satélite, que continua servindo como base rápida).
+### 4. Independência
 
-## Diagrama do pipeline HD (após mudanças)
+- MG **não** é ativado automaticamente para nenhum consultor — só entra na distribuição quando o admin adiciona `"M"` ao `active_variants` do consultor via `VariantDistributionBar`.
+- Nenhuma alteração em Fluxo D, seus steps, `assign_flow_variant`, `flow_ab_mode`, ou clientes existentes.
+- Watchdog, health cron, engine e webhooks tratam D e M em paralelo (queries `.in(...)`, guards `||`), sem interferência cruzada.
 
-```text
-Solar API DataLayers
-   ├── rgbUrl (foto aérea)  ──► base
-   ├── maskUrl (telhado)     ──► restringe heatmap
-   └── annualFluxUrl        ──► heatmap só em (mask ∧ ¬panelMask)
-Building Insights
-   └── solarPanels[]  ──► extractPanelPositions
-                             (dimensões corretas + azimute segmento)
-                                     │
-composeHdRoofPng ────────────────────┤
-   1. desenha base RGB                │
-   2. sombra + módulos rotacionados   │  ← preenche panelMask
-   3. heatmap fora dos módulos        │
-   4. vinheta suave
-```
+### 5. Validação pós-deploy
 
-## Fora do escopo
+- `supabase read_query`: contar steps do D vs M — devem bater; validar que todo `goto_step_id` do M aponta para step do M (nenhum órfão para D).
+- Deploy das edges tocadas e chamada de teste (`manual-step-send` com `variant:"M"`) para garantir 200.
+- Build TS deve passar sem erros de union type.
 
-- Cálculos econômicos, banco, RLS, catálogo de produtos.
-- Overlay de módulos por `<div>` sobre a imagem de satélite (usado só como base rápida enquanto o HD é gerado).
-- 3D no Three.js (`SolarRoofViewer3DInner`) — este plano trata apenas da imagem HD (que é o que o cliente vê no PDF/modal).
-- Cross-sell/telecom/seguros.
+---
 
-## Detalhes técnicos
+## Riscos e mitigações
 
-- `drawPanel` passa a receber `pxPerM` isotrópico e `azimuthRad`; assinatura muda para `(out, w, h, cx, cy, halfW, halfH, rot, panelMask?)`.
-- `panelMask` é `Uint8Array(w*h)` alocado uma vez em `composeHdRoofPng`.
-- Anti-aliasing: dentro de `drawPanel`, calcular `coverage = clamp((halfW - |lx| + 0.5), 0, 1) * clamp((halfH - |ly| + 0.5), 0, 1)` e usar como alpha do blend.
-- Regeneração forçada opcional: aceitar `body.force === true` em `solar-roof-hd` para reprocessar mesmo com `hd_image_path` já salvo — permite testar sem apagar registros.
+| Risco | Mitigação |
+|---|---|
+| INSERT falhar por CHECK antigo em `customers.flow_variant` | Migration expande a CHECK antes de qualquer código atribuir "M" |
+| Chip "MG" quebrar layout single-char | Ajustar `min-w` do badge (mudança CSS pontual) |
+| Guard esquecido → MG silenciosamente ignorado | Lista completa de call-sites já mapeada acima (18 pontos); revisão dupla |
+| Rollback | Migration inclui `DOWN` opcional: `DELETE FROM bot_flows WHERE variant='M' AND name='Fluxo MG'` (cascata remove steps) |
 
-## Aceite
+---
 
-- Módulos visualmente paralelos às bordas do segmento de telhado (rotação correta), sem ficarem "trapezoidais".
-- Sem borda ciano; tom azul-marinho uniforme com hairline mais escura e leve sombra.
-- Heatmap só aparece entre e ao redor dos módulos, nunca por cima deles.
-- Imagem final visivelmente próxima da referência Reonic em qualidade percebida.
+## Fora de escopo (não faremos agora)
+
+- Criar estratégia própria `variants/m.ts` — MG reusa `variantD` (é clone lógico).
+- Alterar `pick-flow-variant.ts` para incluir MG no split aleatório — atribuição fica manual.
+- Novo `flow-mg-stuck-watchdog` — o watchdog do D passa a cobrir D e M via `.in([...])`.
