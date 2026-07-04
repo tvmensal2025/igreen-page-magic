@@ -119,7 +119,17 @@ export function WhatsAppInstanceHealthCard() {
                   {r.connected_phone ?? "sem número"}
                 </p>
               </div>
-              <div className="flex gap-2 shrink-0">
+              <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => recreate(r.instance_name)}
+                  disabled={busy === r.instance_name}
+                  title="Deleta esta instância no Evolution e cria uma nova (mesmo consultor). Usar quando o QR não autentica mais."
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  Recriar
+                </Button>
                 {locked ? (
                   <Button
                     size="sm"
