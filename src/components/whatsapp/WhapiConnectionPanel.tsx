@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWhapiHealth, type WhapiHealthStatus } from "@/hooks/useWhapiHealth";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { RefreshCcw, KeyRound, QrCode, LogOut, AlertTriangle, CheckCircle2, CreditCard, ExternalLink } from "lucide-react";
+import { RefreshCcw, KeyRound, QrCode, LogOut, AlertTriangle, CheckCircle2, CreditCard, ExternalLink, History, Download } from "lucide-react";
 
 interface Props {
   visible: boolean;
@@ -23,8 +23,60 @@ const statusMeta: Record<WhapiHealthStatus, { label: string; tone: "default" | "
 export function WhapiConnectionPanel({ visible }: Props) {
   const health = useWhapiHealth(visible);
   const [tokenInput, setTokenInput] = useState("");
-  const [busy, setBusy] = useState<null | "save" | "qr" | "logout">(null);
+  const [busy, setBusy] = useState<null | "save" | "qr" | "logout" | "backfill">(null);
   const [qrImage, setQrImage] = useState<string | null>(null);
+  const [backfillStatus, setBackfillStatus] = useState<any>(null);
+  const pollRef = useRef<number | null>(null);
+
+  const fetchBackfillStatus = async () => {
+    try {
+      const { data } = await supabase.functions.invoke("whapi-history-status", {
+        method: "GET" as any,
+      });
+      if (data?.status) setBackfillStatus(data.status);
+    } catch {/* silent */}
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    fetchBackfillStatus();
+    pollRef.current = window.setInterval(() => {
+      if (backfillStatus?.state === "running") fetchBackfillStatus();
+    }, 5000);
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, backfillStatus?.state]);
+
+  const handleBackfill = async () => {
+    if (!confirm(
+      "Importar TODO o histórico do WhatsApp deste canal?\n\n" +
+      "• Pode demorar de 30 a 90 minutos.\n" +
+      "• Leads novos entram com o bot PAUSADO.\n" +
+      "• Clientes já importados do iGreen são ignorados.\n" +
+      "• Rodar 2× não duplica.\n\nContinuar?"
+    )) return;
+    setBusy("backfill");
+    try {
+      const { data, error } = await supabase.functions.invoke("whapi-history-backfill", {
+        body: {},
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error === "backfill_already_running") {
+        toast.info("Backfill já está rodando.");
+      } else if (data?.error) {
+        throw new Error(data.error);
+      } else {
+        toast.success("Importação iniciada em background.");
+      }
+      await fetchBackfillStatus();
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao iniciar importação");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (!visible) return null;
 
@@ -219,6 +271,73 @@ export function WhapiConnectionPanel({ visible }: Props) {
             <img src={qrImage} alt="QR Whapi" className="w-56 h-56 object-contain" />
           </div>
         )}
+
+        {/* Histórico de conversas */}
+        <div className="border-t pt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <History className="h-4 w-4" />
+              Histórico de conversas do WhatsApp
+            </div>
+            {backfillStatus?.state && (
+              <Badge
+                variant={
+                  backfillStatus.state === "running"
+                    ? "secondary"
+                    : backfillStatus.state === "error"
+                    ? "destructive"
+                    : "default"
+                }
+                className="text-[10px]"
+              >
+                {backfillStatus.state}
+              </Badge>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Puxa todos os chats e mensagens da instância Whapi para a aba <b>Conversas</b>.
+            Leads novos entram com o bot pausado (contato manual). Clientes já vindos
+            do iGreen são ignorados. Rodar mais de uma vez não duplica.
+          </p>
+
+          {backfillStatus?.stats && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-muted-foreground bg-muted/40 rounded-md p-2">
+              <div>Chats processados: <b className="text-foreground">{backfillStatus.stats.chats_processed ?? 0}</b></div>
+              <div>Mensagens importadas: <b className="text-foreground">{backfillStatus.stats.messages_inserted ?? 0}</b></div>
+              <div>Leads criados: <b className="text-foreground">{backfillStatus.stats.customers_created ?? 0}</b></div>
+              <div>Reaproveitados: <b className="text-foreground">{backfillStatus.stats.customers_reused ?? 0}</b></div>
+              <div>Ignorados (iGreen): <b className="text-foreground">{backfillStatus.stats.chats_skipped_existing_igreen ?? 0}</b></div>
+              <div>Grupos ignorados: <b className="text-foreground">{backfillStatus.stats.chats_skipped_group ?? 0}</b></div>
+              {backfillStatus.stats.last_chat && (
+                <div className="col-span-2">Último chat: <span className="font-mono text-foreground">{backfillStatus.stats.last_chat}</span></div>
+              )}
+              {backfillStatus.stats.errors?.length > 0 && (
+                <div className="col-span-2 text-destructive">
+                  Erros: {backfillStatus.stats.errors.length} (últimos: {backfillStatus.stats.errors.slice(-2).join(" | ")})
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              onClick={handleBackfill}
+              size="sm"
+              disabled={busy === "backfill" || backfillStatus?.state === "running"}
+            >
+              <Download className="h-3.5 w-3.5 mr-1" />
+              {backfillStatus?.state === "running"
+                ? "Rodando…"
+                : busy === "backfill"
+                ? "Iniciando…"
+                : "Importar histórico completo"}
+            </Button>
+            <Button onClick={fetchBackfillStatus} variant="outline" size="sm">
+              <RefreshCcw className="h-3.5 w-3.5 mr-1" />
+              Atualizar status
+            </Button>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
