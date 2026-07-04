@@ -119,6 +119,13 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
               <div className="text-xs text-muted-foreground">Camila IA conduz toda a conversa até pedir a foto da conta.</div>
             </Label>
           </div>
+          <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("M_ONLY")}>
+            <RadioGroupItem value="M_ONLY" id="m-m" className="mt-1" />
+            <Label htmlFor="m-m" className="cursor-pointer flex-1">
+              <div className="font-medium">Apenas Fluxo M (MG) — CEMIG Minas Gerais</div>
+              <div className="text-xs text-muted-foreground">Fluxo público mantido pelo Super Admin. Simulação com desconto 10–28%. Todos os consultores compartilham as mesmas mídias e textos.</div>
+            </Label>
+          </div>
           <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("BOTH")}>
             <RadioGroupItem value="BOTH" id="m-both" className="mt-1" />
             <Label htmlFor="m-both" className="cursor-pointer flex-1">
