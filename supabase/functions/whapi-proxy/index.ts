@@ -70,10 +70,15 @@ function classifyWhapiError(status: number, data: any): {
   }
 
   if (status === 401 || /unauthorized|invalid token|invalid_token|forbidden/i.test(blob)) {
+    // Whapi devolve 401 tanto para token errado quanto para canal em ERROR/desautenticado.
+    // Distinguimos consultando /health: se responder 200, o token está OK e o problema
+    // é o pareamento do WhatsApp.
     return {
       reasonCode: "invalid_token",
       httpStatus: 401,
-      error: "Token Whapi inválido. Cole o token novo do painel da Whapi.",
+      error:
+        "Whapi rejeitou a requisição (401). Se o token está correto, o canal provavelmente está " +
+        "desautenticado — faça Logout do canal e escaneie o QR novamente.",
       helpUrl: WHAPI_PANEL_URL,
     };
   }
