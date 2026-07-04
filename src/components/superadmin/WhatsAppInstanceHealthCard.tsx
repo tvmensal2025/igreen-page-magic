@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { AlertTriangle, ShieldCheck, RefreshCw, Ban } from "lucide-react";
+import { AlertTriangle, ShieldCheck, RefreshCw, Ban, RotateCcw } from "lucide-react";
 
 interface InstanceRow {
   instance_name: string;
