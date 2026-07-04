@@ -92,8 +92,9 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
       A: { name: null, steps: [] },
       B: { name: null, steps: [] },
       C: { name: null, steps: [] },
-    D: { name: null, steps: [] },
-    E: { name: null, steps: [] },
+      D: { name: null, steps: [] },
+      E: { name: null, steps: [] },
+      M: { name: null, steps: [] },
     };
 
     if (flows?.length) {
