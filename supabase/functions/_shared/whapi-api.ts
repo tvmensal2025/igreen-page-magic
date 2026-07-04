@@ -68,7 +68,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
             previous_status: slot.previousResultStatus ?? null,
           });
           if (slot.previousResultStatus === "failed") {
-            logStructured("warning", "whapi_send_retry_after_failed", {
+            logStructured("warn", "whapi_send_retry_after_failed", {
               kind: label,
               idempotency_key: idemKey,
             });
