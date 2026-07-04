@@ -1542,6 +1542,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           cpf: (customer as any).cpf,
           representante: nomeRepresentante,
           valor_conta: _billValue > 0 ? _billValue : null,
+          variant: (customer as any)?.flow_variant,
           extra: extraVars as Record<string, string>,
         });
 

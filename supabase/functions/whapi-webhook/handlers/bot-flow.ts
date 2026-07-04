@@ -1523,6 +1523,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           phone: (customer as any).phone_whatsapp || "",
           representante: nomeRepresentante || "",
           valor_conta: (customer as any).electricity_bill_value,
+          variant: (customer as any)?.flow_variant,
           extra: normalizedExtras,
         });
 

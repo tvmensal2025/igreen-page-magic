@@ -109,6 +109,7 @@ export function goalFromStepRow(stepRow: any, customer: any, representante?: str
       cpf: customer?.cpf,
       representante: representante ?? undefined,
       valor_conta: customer?.electricity_bill_value,
+      variant: customer?.flow_variant,
     }).trim();
     const tail = extractQuestionTail(rendered);
     if (tail) return tail;

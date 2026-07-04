@@ -627,6 +627,7 @@ Deno.serve(async (req) => {
           cpf: (customer as any).cpf || "",
           representante: _repName,
           valor_conta: (customer as any).electricity_bill_value,
+          variant: (customer as any)?.flow_variant,
         })
       : "";
 
