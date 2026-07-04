@@ -464,20 +464,22 @@ Deno.serve(async (req) => {
       }
 
       case "health_check": {
-        // Status do canal Whapi (para o painel de reconexão sem código).
-        const r = await whapiFetch(whapiToken, `/health`, { method: "GET" });
-        const settingsResp = await whapiFetch(whapiToken, `/settings`, { method: "GET" })
-          .catch(() => ({ ok: false, status: 0, data: null }));
+        // Prova de vida REAL: /health é informativo, mas /users/profile diz se o canal opera.
+        const [r, profileResp, settingsResp] = await Promise.all([
+          whapiFetch(whapiToken, `/health`, { method: "GET" }),
+          whapiFetch(whapiToken, `/users/profile`, { method: "GET" })
+            .catch(() => ({ ok: false, status: 0, data: null })),
+          whapiFetch(whapiToken, `/settings`, { method: "GET" })
+            .catch(() => ({ ok: false, status: 0, data: null })),
+        ]);
 
-        // Códigos Whapi: 0=INIT, 1=LAUNCH, 2=QR, 3=AUTH, 4=SYNC, 5=ERROR, 6=OFFLINE
         const statusCodeNum: number | null =
           typeof r.data?.status?.code === "number" ? r.data.status.code : null;
         const statusText: string =
           String(r.data?.status?.text || r.data?.status || "UNKNOWN").toUpperCase();
-        const phone = r.data?.user?.id || null;
+        const phone = r.data?.user?.id || (profileResp as any)?.data?.id || null;
         const channelId = r.data?.channel_id || r.data?.channel?.id || null;
 
-        // Estado do webhook: precisa ter uma entrada apontando para nosso whapi-webhook
         const expectedWebhookUrl = `${Deno.env.get("SUPABASE_URL") || ""}/functions/v1/whapi-webhook`;
         const webhooks: any[] = (settingsResp as any)?.data?.webhooks || [];
         const webhookOk = webhooks.some(
@@ -493,34 +495,58 @@ Deno.serve(async (req) => {
           } catch (_) { /* ignora */ }
         }
 
-        // Classifica motivo quando o canal não respondeu OK (ex.: 402 unpaid, 404 not_found)
+        // Fonte da verdade: /users/profile. Se responder 200, canal está saudável
+        // (Whapi devolve /health code=5 ERROR mesmo com o canal operando).
+        const profileOk = (profileResp as any)?.ok === true;
+
         let reasonCode: WhapiReasonCode | null = null;
         let helpUrl: string | null = null;
         let reasonMessage: string | null = null;
-        if (!r.ok) {
-          const cls = classifyWhapiError(r.status, r.data);
-          reasonCode = cls.reasonCode;
-          helpUrl = cls.helpUrl;
-          reasonMessage = cls.error;
-        } else if (statusCodeNum === 5 || statusCodeNum === 6) {
-          // Token OK mas canal desautenticado — banner específico.
-          reasonCode = "channel_error";
-          helpUrl = WHAPI_PANEL_URL;
-          reasonMessage =
-            statusCodeNum === 5
-              ? "Canal desautenticado (Whapi status ERROR). Reescaneie o QR."
-              : "Canal offline. Reescaneie o QR ou reconecte no painel Whapi.";
+        let status = statusText;
+
+        if (profileOk) {
+          status = "AUTH";
+        } else {
+          const pStatus = (profileResp as any)?.status || 0;
+          const pData = (profileResp as any)?.data;
+          if (pStatus === 401 || pStatus === 403) {
+            const cls = classifyWhapiError(pStatus, pData);
+            reasonCode = cls.reasonCode;
+            helpUrl = cls.helpUrl;
+            reasonMessage = cls.error;
+            status = "OFFLINE";
+          } else if (pStatus === 402) {
+            const cls = classifyWhapiError(pStatus, pData);
+            reasonCode = cls.reasonCode;
+            helpUrl = cls.helpUrl;
+            reasonMessage = cls.error;
+            status = "OFFLINE";
+          } else if (pStatus === 404) {
+            const cls = classifyWhapiError(pStatus, pData);
+            reasonCode = cls.reasonCode;
+            helpUrl = cls.helpUrl;
+            reasonMessage = cls.error;
+            status = "OFFLINE";
+          } else {
+            // Fallback: só marca channel_error se /health realmente indicar desautenticação.
+            const txt = String(pData?.message || pData?.error || "").toLowerCase();
+            const looksDeauthed =
+              txt.includes("not authorized") || txt.includes("logout") || txt.includes("qr");
+            if (looksDeauthed || statusCodeNum === 6) {
+              reasonCode = "channel_error";
+              helpUrl = WHAPI_PANEL_URL;
+              reasonMessage = "Canal desautenticado. Reescaneie o QR no painel Whapi.";
+              status = "OFFLINE";
+            } else if (statusCodeNum === 2) {
+              status = "QR";
+            } else if (statusCodeNum === 0 || statusCodeNum === 1 || statusCodeNum === 4) {
+              status = "INIT";
+            }
+          }
         }
 
-        // Semântica de "status" para o hook do front (mantém compat com AUTH/QR/INIT/OFFLINE)
-        let status = statusText;
-        if (statusCodeNum === 3) status = "AUTH";
-        else if (statusCodeNum === 2) status = "QR";
-        else if (statusCodeNum === 0 || statusCodeNum === 1 || statusCodeNum === 4) status = "INIT";
-        else if (statusCodeNum === 5 || statusCodeNum === 6) status = "OFFLINE";
-
         return json(200, {
-          ok: r.ok,
+          ok: profileOk,
           status,
           statusCode: statusCodeNum,
           statusText,
@@ -531,8 +557,10 @@ Deno.serve(async (req) => {
           reasonCode,
           reasonMessage,
           helpUrl,
+          profile_ok: profileOk,
         });
       }
+
 
       case "request_qr": {
         // Pede QR code de pareamento (canal precisa estar em INIT/QR).
