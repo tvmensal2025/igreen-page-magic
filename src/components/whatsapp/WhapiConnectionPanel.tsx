@@ -23,8 +23,9 @@ const statusMeta: Record<WhapiHealthStatus, { label: string; tone: "default" | "
 export function WhapiConnectionPanel({ visible }: Props) {
   const health = useWhapiHealth(visible);
   const [tokenInput, setTokenInput] = useState("");
-  const [busy, setBusy] = useState<null | "save" | "qr" | "logout" | "backfill">(null);
+  const [busy, setBusy] = useState<null | "save" | "qr" | "logout" | "backfill" | "reauth" | "webhook">(null);
   const [qrImage, setQrImage] = useState<string | null>(null);
+  const reauthPollRef = useRef<number | null>(null);
   const [backfillStatus, setBackfillStatus] = useState<any>(null);
   const pollRef = useRef<number | null>(null);
 
